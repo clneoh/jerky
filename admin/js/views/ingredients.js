@@ -5,8 +5,8 @@
 // top; tapping Edit opens the same form in a pop-up, like products and orders.
 
 import { el, button, select, emptyState, confirmDialog, showPopup, toast } from "../ui.js";
-import { byId, fmtRM, newId, save } from "../state.js";
-import { priceEntryLabels } from "../purchasing.js";
+import { byId, fmtRM, newId, round2, save } from "../state.js";
+import { fmtStockAmount, priceEntryLabels } from "../purchasing.js";
 
 export function renderIngredients(root, state) {
   renderAll(root, state);
@@ -259,16 +259,71 @@ function ingredientCard(state, ing, root) {
     ? priceLabels.join(" · ")
     : `${perDisplay} fallback`;
 
+  const onHand = Math.max(0, Number(ing.onHand) || 0);
+
   return el("div", { class: "card" },
     el("div", { class: "card-row" },
       el("div", { style: "min-width:0" },
         el("p", { class: "card-title" }, ing.name),
         el("p", { class: "card-sub" }, mainSub),
+        el("div", {
+          class: "stockline" + (onHand > 0 ? " has-stock" : " empty"),
+          role: "button",
+          onclick: () => openStockPopup(state, ing, root),
+        },
+          el("span", { class: "stockline-label" }, "On hand"),
+          el("span", { class: "stockline-qty" }, onHand > 0 ? fmtStockAmount(state, ing, onHand) : "0"),
+          el("span", { class: "stockline-edit" }, "Adjust")),
         ing.purchaseNote ? el("p", { class: "card-sub" }, ing.purchaseNote) : null,
         usedBy.length ? el("p", { class: "po-breakdown" }, `Used in: ${usedBy.join(", ")}`) : null),
       el("div", { class: "li-right" },
         button("Edit", () => openEditIngredientPopup(state, ing, root), "ghost small"),
         button(usedBy.length ? "Hide" : "Delete", () => deleteIngredient(state, ing, usedBy.length > 0, root), "ghost small"))));
+}
+
+// Set how much of an ingredient is on the shelf (a stocktake, or "a lot of
+// strong flour left"). Stored as a base-unit count; the popup lets her type in
+// whatever unit of the family she's thinking in (g or kg, ml or L, pcs).
+function openStockPopup(state, ing, root) {
+  const units = (state.uoms || [])
+    .filter((u) => u.family === cookingFamilyOf(state.uoms, currentUomId(state, ing)))
+    .slice()
+    .sort((a, b) => Number(a.toBase) - Number(b.toBase));
+  const fallback = units[0] || { id: "", toBase: 1, name: "unit" };
+  const toBase = (uid) => Number(byId(state.uoms || [], uid)?.toBase) || 1;
+  const clean = (x) => String(parseFloat(Number(x).toFixed(4)));
+
+  const cur = Math.max(0, Number(ing.onHand) || 0);
+  const nice = [...units].reverse().find((u) => cur >= Number(u.toBase)) || fallback;
+  let uid = nice.id || fallback.id;
+
+  const num = el("input", { class: "input", type: "number", inputmode: "decimal", min: "0", step: "any",
+    value: clean(cur / (toBase(uid) || 1)) });
+  const unitSel = select(units.map((u) => ({ value: u.id, label: u.name })), uid, () => {
+    const old = Number(num.value);
+    const oldBase = toBase(uid) || 1;
+    uid = unitSel.value;
+    if (!Number.isNaN(old)) num.value = clean((old * oldBase) / (toBase(uid) || 1));
+  });
+
+  showPopup(el("div", { class: "popup-title-row" }, `On hand — ${ing.name}`), (refresh, close) => {
+    return el("div", {},
+      el("div", { class: "field" },
+        el("label", {}, "How much do you have right now?"),
+        el("div", { style: "display:flex;gap:8px;align-items:center" }, num, unitSel),
+        el("p", { class: "hint" }, "The shopping list buys whole packs only for what this doesn't cover. Marking an order Preparing takes its ingredients off automatically.")),
+      el("div", { class: "popup-actions" },
+        button("Cancel", close, "ghost"),
+        button("Save stock", () => {
+          const v = Number(num.value);
+          if (num.value.trim() === "" || Number.isNaN(v) || v < 0) return toast("Type how much you have, or tap Cancel");
+          ing.onHand = round2(v * (toBase(unitSel.value) || 1));
+          toast(`${ing.name}: on hand ${fmtStockAmount(state, ing, ing.onHand)}`);
+          save(state);
+          close();
+          renderAll(root, state);
+        }, "primary")));
+  });
 }
 
 function deleteIngredient(state, ing, referenced, root) {

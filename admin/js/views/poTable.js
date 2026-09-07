@@ -79,18 +79,23 @@ function rowFor(state, it, currency) {
   const first = el("td", {},
     it.ingredientName,
     it.unitsOk === false ? el("div", { class: "warn", style: "margin:4px 0 0" }, "⚠ check units") : null,
+    it.haveText ? el("div", { class: "po-have" }, it.haveText) : null,
     breakdown ? el("div", { class: "po-breakdown" }, breakdown) : null);
 
   let qtyCell;
-  if (it.buyText) {
+  if (it.covered) {
+    qtyCell = el("td", { class: "po-buy" },
+      el("span", { class: "muted" }, "already have"),
+      it.needText ? el("div", { class: "po-need" }, `need ${it.needText}`) : null);
+  } else if (it.buyText) {
     qtyCell = el("td", { class: "po-buy" },
       el("span", {}, it.buyText),
       el("div", { class: "po-need" }, `need ${it.needText || fmtQty(it.totalQty, it.unit)}`));
   } else {
-    qtyCell = el("td", { class: "num" }, fmtQty(it.totalQty, it.unit));
+    qtyCell = el("td", { class: "num" }, fmtQty(it.openQty != null ? it.openQty : it.totalQty, it.unit));
   }
 
-  return el("tr", {},
+  return el("tr", { class: it.covered ? "po-covered" : undefined },
     first,
     qtyCell,
     el("td", { class: "num" }, fmtRM(it.estCost, currency)));

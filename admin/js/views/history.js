@@ -7,6 +7,8 @@ import { longDate, weekdayName } from "../dates.js";
 import { el, button, emptyState, toast, confirmDialog } from "../ui.js";
 import { byId, fmtRM, save } from "../state.js";
 import { poTableEl } from "./poTable.js";
+import { fmtStockAmount } from "../purchasing.js";
+import { applyBought } from "../stock.js";
 
 // Navigate by hash so app.js isn't needed at import time.
 const navigate = (hash) => { location.hash = hash; };
@@ -87,6 +89,7 @@ function renderDetail(root, state, po) {
   const dates = poDateStrs(po);
   const multi = dates.length > 1;
   const table = poTableEl(state, po.items || [], {});
+  const canBuy = !po.bought && (po.items || []).some((it) => Number(it && it.addBase) > 0);
 
   const card = el("div", { class: "card po-card" },
     el("h2", { style: "margin:0 0 2px" },
@@ -101,13 +104,21 @@ function renderDetail(root, state, po) {
     table,
     el("p", { class: "po-snapshot-note" },
       `Snapshot from ${fmtTime(po.generatedAt)} — later order changes don't affect this PO.`),
+    po.bought
+      ? el("p", { class: "po-snapshot-note", style: "color:var(--green, #2e7d32)" },
+          `Bought ${fmtTime(po.boughtAt)} — these packs were added to your stock.`)
+      : (canBuy
+          ? el("p", { class: "po-snapshot-note" },
+              `After you're back from the shops, tap "Bought" above to add these to your stock.`)
+          : null),
     po.warnings?.length ? el("div", { class: "warn", style: "margin-top:10px" }, po.warnings.join(" ")) : null);
 
   root.replaceChildren(
     el("div", { class: "btn-row" },
       button("← Back", () => navigate("#/history"), "ghost"),
+      canBuy ? button("Bought ✓ — add to stock", () => markBought(state, po, root), "primary") : null,
       button("Print", () => window.print(), "soft"),
-      button("Regenerate", () => navigate(regenerateTarget(po)), "primary"),
+      button("Regenerate", () => navigate(regenerateTarget(po)), canBuy ? "soft" : "primary"),
       button("Delete", () => confirmDialog(
         `Delete this saved shopping list? It covers ${dates.length} day${dates.length === 1 ? "" : "s"} and can't be brought back. The covered day${dates.length === 1 ? "" : "s"} will count as not-yet-shopped again and return to the PO tick list.`,
         () => {
@@ -118,6 +129,18 @@ function renderDetail(root, state, po) {
         },
         { danger: true, yesLabel: "Delete" }), "danger small")),
     card);
+}
+
+function markBought(state, po, root) {
+  const added = applyBought(state, po);
+  po.bought = true;
+  po.boughtAt = new Date().toISOString();
+  save(state);
+  const names = added
+    .map(([ing, base]) => `${ing.name} +${fmtStockAmount(state, ing, base)}`)
+    .join(", ");
+  toast(`Added to stock: ${names}`);
+  renderDetail(root, state, po);
 }
 
 function fmtTime(iso) {

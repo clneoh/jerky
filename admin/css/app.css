@@ -1559,3 +1559,24 @@ textarea.input { min-height: 64px; resize: vertical; }
 .po-detail-line.ing { font-weight: 600; color: var(--brown-dark); }
 .po-detail-line.muted { color: var(--muted); }
 .po-day-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+
+/* Ingredient "On hand" stock strip + the PO "have / already have" cells. */
+.stockline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--brown-soft);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin: 8px 0 2px;
+  font-size: 13px;
+  color: var(--brown-dark);
+  cursor: pointer;
+}
+.stockline .stockline-label { color: var(--muted); }
+.stockline .stockline-qty { font-weight: 600; }
+.stockline .stockline-edit { font-weight: 600; color: var(--brown-dark); }
+.stockline.empty .stockline-qty { font-weight: 400; color: var(--muted); }
+.po-have { font-size: 12px; color: var(--muted); margin-top: 2px; }
+tr.po-covered td { color: var(--muted); }

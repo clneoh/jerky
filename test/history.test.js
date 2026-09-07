@@ -232,3 +232,56 @@ test("deleting the only saved list for a day marks that day not-yet-shopped agai
   assert.equal(poRows(after)[0].children[0].checked, true,
     "with no saved list left, the day rejoins the default tick list");
 });
+
+// --- "Bought" adds a saved snapshot's packs to stock -------------------------
+
+// A snapshot item as priceItems would have written it for a supplier-priced
+// ingredient with no on-hand: 3000 g of Flour to buy, so a Bought tap should
+// put 3000 g (in base units) onto the shelf.
+function boughtItem() {
+  return {
+    ingredientId: "ing_f", ingredientName: "Flour", unit: "g", totalQty: 3000,
+    needText: "3000g", buyText: "3 × 1000g", supplier: "Mydin", supplierWhatsapp: "",
+    packDisplay: "1000g", packs: 3, estCost: 0, costPerUnit: 0, lines: [],
+    onHand: 0, openBase: 3000, addBase: 3000, covered: false,
+  };
+}
+
+test("a saved snapshot that still has amounts to add shows the Bought button with a hint", () => {
+  const state = freshState();
+  const po = addPO(state, "p1", ["del_a"]);
+  po.items = [boughtItem()];
+
+  const root = mountHistory(state, "po=p1");
+  assert.ok(findBtn(root, "Bought ✓ — add to stock"), "Bought shows while the packs are still un-bought");
+  assert.ok(textOf(root).includes("to add these to your stock"), "hint says when to tap it");
+});
+
+test("tapping Bought adds the packs to stock once and replaces the button with a note", () => {
+  const state = freshState();
+  const po = addPO(state, "p1", ["del_a"]);
+  po.items = [boughtItem()];
+
+  const root = mountHistory(state, "po=p1");
+  fireClick(findBtn(root, "Bought ✓ — add to stock"));
+
+  assert.equal(state.ingredients[0].onHand, 3000, "the whole pack amount lands on the shelf");
+  assert.equal(po.bought, true, "marked so a second tap can't double-add");
+  assert.ok(po.boughtAt, "records when she tapped");
+  assert.ok(!findBtn(root, "Bought ✓ — add to stock"), "button is gone after one tap");
+  assert.ok(textOf(root).includes("added to your stock"), "the note confirms the stock move");
+  assert.ok(findBtn(root, "Regenerate"), "the other actions stay available");
+});
+
+test("a legacy snapshot saved before stock carries no buy amounts, so no Bought button", () => {
+  const state = freshState();
+  const po = addPO(state, "p1", ["del_a"]);
+  po.items = [{
+    ingredientId: "ing_f", ingredientName: "Flour", unit: "g", totalQty: 3000,
+    needText: "3000g", buyText: "3 × 1000g", supplier: "Mydin", estCost: 0,
+  }];
+
+  const root = mountHistory(state, "po=p1");
+  assert.equal(findBtn(root, "Bought ✓ — add to stock"), undefined,
+    "no addBase anywhere means there is nothing to add, exactly as before the feature");
+});

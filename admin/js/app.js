@@ -17,6 +17,7 @@ import { renderHistory } from "./views/history.js";
 import { renderCustomers } from "./views/customers.js";
 import { renderSettings } from "./views/settings.js";
 import { renderMore } from "./views/more.js";
+import { renderGuide } from "./views/guide.js";
 import { renderLogin } from "./views/login.js";
 import { renderLock } from "./views/lock.js";
 import { lockEnabled } from "./pin.js";
@@ -36,6 +37,7 @@ const routes = {
   "/suppliers": { title: "Suppliers",  tab: "more",      render: renderSuppliers },
   "/settings":  { title: "Settings",  tab: "more",      render: renderSettings },
   "/more":      { title: "More",      tab: "more",      render: renderMore },
+  "/guide":     { title: "Guide",     tab: "more",      render: renderGuide },
 };
 
 const viewEl = document.getElementById("view");

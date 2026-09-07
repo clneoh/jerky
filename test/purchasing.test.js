@@ -6,13 +6,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   toBaseQty, chosenSupplier, priceItems, groupItemsBySupplier,
-  priceEntryLabels, buildSupplierOrderText,
+  priceEntryLabels, buildSupplierOrderText, fmtStockAmount,
 } from "../admin/js/purchasing.js";
 
 const UOMS = [
   { id: "g", name: "g", family: "weight", toBase: 1 },
   { id: "kg", name: "kg", family: "weight", toBase: 1000 },
   { id: "ml", name: "ml", family: "volume", toBase: 1 },
+  { id: "L", name: "L", family: "volume", toBase: 1000 },
   { id: "pcs", name: "pcs", family: "count", toBase: 1 },
 ];
 
@@ -176,4 +177,105 @@ test("priceEntryLabels describes each supplier price for the ingredient card", (
   })]);
   const labels = priceEntryLabels(st, st.ingredients[0]);
   assert.deepEqual(labels, ["Mydin RM 25.00/4kg", "Yen Grocer RM 6.50/1000g"]);
+});
+
+// --- on-hand stock deductions (the PO buys only the gap) -------------------
+
+test("priceItems prices a no-on-hand item exactly as before the feature", () => {
+  const st = makeState([ingredient({
+    supplierPrices: [{ supplierId: "s_mydin", qty: 4000, uomId: "g", price: 25 }],
+  })]);
+  const it = priceItems(st, [bomItem({ totalQty: 6800 })])[0];
+  assert.equal(it.onHand, 0, "an ingredient with no on-hand reads as empty shelf");
+  assert.equal(it.packs, 2);
+  assert.equal(it.buyText, "2 × 4000g");
+  assert.equal(it.addBase, 8000, "what a Bought tap would later add");
+  assert.equal(it.estCost, 50);
+  assert.equal(it.haveText, undefined, "nothing to show when she has none");
+});
+
+test("priceItems subtracts on hand before rounding up to whole packs", () => {
+  const st = makeState([ingredient({
+    supplierPrices: [{ supplierId: "s_mydin", qty: 4000, uomId: "g", price: 25 }],
+    onHand: 2000, // 2 kg on the shelf
+  })]);
+  const it = priceItems(st, [bomItem({ totalQty: 6800 })])[0];
+  assert.equal(it.needBase, 6800);
+  assert.equal(it.haveBase, 2000);
+  assert.equal(it.openBase, 4800, "only the 4.8 kg gap still needs buying");
+  assert.equal(it.packs, 2, "2 × 4 kg covers the gap");
+  assert.equal(it.buyText, "2 × 4000g");
+  assert.equal(it.addBase, 8000);
+  assert.equal(it.estCost, 50);
+  assert.equal(it.haveText, "have 2 kg");
+});
+
+test("covered: on hand already covers the need → nothing to buy, RM0", () => {
+  const st = makeState([ingredient({
+    supplierPrices: [{ supplierId: "s_mydin", qty: 4000, uomId: "g", price: 25 }],
+    onHand: 8000,
+  })]);
+  const it = priceItems(st, [bomItem({ totalQty: 6800 })])[0];
+  assert.equal(it.covered, true);
+  assert.equal(it.openBase, 0);
+  assert.equal(it.haveBase, 6800, "all of the need is covered");
+  assert.equal(it.packs, 0);
+  assert.equal(it.buyText, null);
+  assert.equal(it.addBase, 0);
+  assert.equal(it.estCost, 0);
+  assert.equal(it.haveText, "have 8 kg");
+});
+
+test("loose (no supplier) lines price only the open amount and carry addBase", () => {
+  const st = makeState([ingredient({ costPerUnit: 0.006, supplierPrices: [], onHand: 2000 })]);
+  const it = priceItems(st, [bomItem({ totalQty: 6800, costPerUnit: 0.006 })])[0];
+  assert.equal(it.covered, undefined, "a positive open need stays loose, not covered");
+  assert.equal(it.openBase, 4800);
+  assert.equal(it.addBase, 4800, "a loose Bought adds the gap she bought");
+  assert.equal(it.estCost, 28.8, "4800 g × RM0.006");
+  assert.equal(it.haveText, "have 2 kg");
+});
+
+test("buildSupplierOrderText leaves 'already have' lines out and renumbers", () => {
+  const st = makeState([
+    ingredient({ id: "ing_b", name: "Butter",
+      supplierPrices: [{ supplierId: "s_mydin", qty: 2000, uomId: "g", price: 20 }], onHand: 9000 }),
+    ingredient({ id: "ing_f", name: "Strong flour",
+      supplierPrices: [{ supplierId: "s_mydin", qty: 4000, uomId: "g", price: 25 }] }),
+  ]);
+  const items = priceItems(st, [
+    bomItem({ ingredientId: "ing_b", ingredientName: "Butter", totalQty: 2000 }),
+    bomItem({ ingredientId: "ing_f", ingredientName: "Strong flour", totalQty: 6800 }),
+  ]);
+  const text = buildSupplierOrderText({
+    dateTitle: "Fri, 4 Sep", supplier: "Mydin", items, subtotal: 50, currency: "RM",
+  });
+  assert.ok(!text.includes("Butter"), "covered Butter is nothing to buy");
+  assert.ok(text.includes("1. Strong flour: 2 × 4000g (need 6800g)"), "renumbered to start at 1");
+  assert.ok(text.endsWith("Est. RM 50.00"));
+});
+
+// --- fmtStockAmount: friendly on-the-shelf amounts -------------------------
+
+test("fmtStockAmount shows weight in kg over 1000 g, else grams", () => {
+  const st = makeState([ingredient({})]);
+  const ing = st.ingredients[0];
+  assert.equal(fmtStockAmount(st, ing, 1500), "1.5 kg");
+  assert.equal(fmtStockAmount(st, ing, 1000), "1 kg");
+  assert.equal(fmtStockAmount(st, ing, 680), "680 g");
+  assert.equal(fmtStockAmount(st, ing, 0), "0 g");
+});
+
+test("fmtStockAmount shows volume in L over 1000 ml, else ml", () => {
+  const st = makeState([ingredient({ uomId: "ml" })]);
+  const ing = st.ingredients[0];
+  assert.equal(fmtStockAmount(st, ing, 2000), "2 L");
+  assert.equal(fmtStockAmount(st, ing, 750), "750 ml");
+});
+
+test("fmtStockAmount counts in the ingredient's own unit", () => {
+  const st = makeState([ingredient({ uomId: "pcs" })]);
+  const ing = st.ingredients[0];
+  assert.equal(fmtStockAmount(st, ing, 12), "12 pcs");
+  assert.equal(fmtStockAmount(st, ing, 2.5), "2.5 pcs");
 });

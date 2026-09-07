@@ -40,10 +40,12 @@ function createEl(tag) {
     },
   };
 }
+const registry = {};
 const doc = {
   createElement: createEl,
   createTextNode: (s) => ({ nodeType: 3, text: String(s) }),
-  getElementById: () => null,
+  // By id so the shared pop-up layer (ui.js showPopup) has somewhere to fill.
+  getElementById: (id) => (registry[id] ||= createEl("div")),
   querySelector: () => null,
   querySelectorAll: () => [],
   body: createEl("body"),
@@ -70,8 +72,8 @@ function freshState() {
   return {
     settings: { currency: "RM", supabase: {} },
     uoms: [
-      { id: "u_g", name: "g", family: "weight" },
-      { id: "u_kg", name: "kg", family: "weight" },
+      { id: "u_g", name: "g", family: "weight", toBase: 1 },
+      { id: "u_kg", name: "kg", family: "weight", toBase: 1000 },
     ],
     suppliers: [],
     ingredients: [],
@@ -140,4 +142,62 @@ test("an ingredient with no note saves cleanly (purchaseNote stays empty)", () =
   assert.equal(state.ingredients.length, 1);
   assert.equal(state.ingredients[0].name, "Sea salt");
   assert.equal(state.ingredients[0].purchaseNote, undefined, "no note typed → no note saved");
+});
+
+// --- On-hand stock strip + set-stock popup ----------------------------------
+
+function textOf(n) {
+  if (!n) return "";
+  if (n.nodeType === 3) return n.text ?? "";
+  if (n.textContent) return n.textContent;
+  return (n.children || []).map(textOf).join("");
+}
+
+function addIngredient(state, root, name) {
+  const f = formHandles(root);
+  f.name.value = name;
+  fire(f.add);
+  return state.ingredients[state.ingredients.length - 1];
+}
+
+test("a new ingredient's card reads On hand 0 and the strip opens the stock popup", () => {
+  const state = freshState();
+  const root = render(state);
+  addIngredient(state, root, "Strong flour");
+
+  const strip = walk(root).find((n) => n.nodeType === 1 && String(n.className).includes("stockline"));
+  assert.ok(strip, "the card carries an On hand strip");
+  assert.ok(String(strip.className).includes("empty"), "a brand-new ingredient has no stock yet");
+  const qty = walk(root).find((n) => n.nodeType === 1 && String(n.className).includes("stockline-qty"));
+  assert.equal(textOf(qty), "0", "reads zero until she sets it");
+
+  fire(strip);
+  const layer = registry["popup-layer"];
+  assert.ok(textOf(layer).includes("On hand — Strong flour"), "the popup opens over the screen");
+});
+
+test("typing 1.5 kg in the popup stores 1500 base grams and the card rereads it", () => {
+  const state = freshState();
+  const root = render(state);
+  const ing = addIngredient(state, root, "Strong flour");
+  assert.equal(ing.onHand, undefined);
+
+  const strip = walk(root).find((n) => n.nodeType === 1 && String(n.className).includes("stockline"));
+  fire(strip);
+
+  const layer = registry["popup-layer"];
+  const input = walk(layer).find((n) => n.tagName === "INPUT");
+  const unitSel = walk(layer).find((n) => n.tagName === "SELECT");
+  unitSel.value = "u_kg";                       // she thinks in kg
+  (unitSel._listeners.change || []).forEach((f) => f());
+  input.value = "1.5";                          // one and a half kilos
+
+  const save = walk(layer).find((n) => n.tagName === "BUTTON" && textOf(n).trim() === "Save stock");
+  fire(save);
+
+  assert.equal(ing.onHand, 1500, "1.5 kg of flour lands as 1500 base grams");
+  const qty = walk(root).find((n) => n.nodeType === 1 && String(n.className).includes("stockline-qty"));
+  assert.equal(textOf(qty), "1.5 kg", "the card now shows the friendly amount");
+  const strip2 = walk(root).find((n) => n.nodeType === 1 && String(n.className).includes("stockline"));
+  assert.ok(String(strip2.className).includes("has-stock"), "the strip flips to the has-stock style");
 });

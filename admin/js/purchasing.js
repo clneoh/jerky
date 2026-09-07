@@ -38,6 +38,21 @@ export function fmtQtyText(qty, unit) {
   return `${trimNum(qty)}${unit}`;
 }
 
+// Friendly "on the shelf" amount for a stock count stored in base units:
+// weight in kg above 1000 g (else g), volume in L above 1000 ml (else ml),
+// count in the ingredient's own cooking unit.
+export function fmtStockAmount(state, ingredient, base) {
+  const cook = cookingUnit(state.uoms || [], ingredient);
+  const n = Number(base) || 0;
+  if (cook && cook.family === "weight") {
+    return Math.abs(n) >= 1000 ? `${trimNum(n / 1000)} kg` : `${trimNum(n)} g`;
+  }
+  if (cook && cook.family === "volume") {
+    return Math.abs(n) >= 1000 ? `${trimNum(n / 1000)} L` : `${trimNum(n)} ml`;
+  }
+  return `${trimNum(n)} ${cook && cook.name ? cook.name : "pcs"}`;
+}
+
 // The cheapest valid supplier price for an ingredient, compared per base unit
 // (grams / ml / items). Ties keep the first entry (the primary supplier).
 // Returns null when the ingredient has no usable supplier price.
@@ -74,29 +89,51 @@ export function chosenSupplier(state, ingredient) {
   return best;
 }
 
-// Enrich BOM items so they know how the PO actually buys each one: the chosen
-// supplier's whole packs (cost = packs × price) or, with no supplier price,
-// today's loose estimate (qty × fallback unit cost). Used for BOTH the live PO
-// and the Generate & Save snapshot, so the two never drift.
+// Enrich BOM items so they know how the PO actually buys each one: stock on
+// hand first covers the need, then the chosen supplier's whole packs fill the
+// rest (cost = packs × price) or, with no supplier price, today's loose
+// estimate (the still-open amount × fallback unit cost). Each item records the
+// base-unit amounts (need/on-hand/open/add) so a saved snapshot can later add
+// exactly what was bought, and rows can show "have X". Used for BOTH the live
+// PO and the Generate & Save snapshot, so the two never drift.
 export function priceItems(state, bomItems) {
   return (bomItems || []).map((item) => {
     const ingredient = byId(state.ingredients || [], item.ingredientId);
     const out = { ...item, buyText: null, needText: fmtQtyText(item.totalQty, item.unit) };
+    const cook = cookingUnit(state.uoms || [], ingredient);
+    const cookBase = cook ? Number(cook.toBase) || 1 : 1;
+    const needBase = cookBase * (Number(item.totalQty) || 0);
+    const onHand = Math.max(0, Number(ingredient && ingredient.onHand) || 0);
+    const openBase = Math.max(0, needBase - onHand);
+    out.onHand = onHand;
+    out.needBase = needBase;
+    out.openBase = openBase;
+    out.haveBase = Math.min(needBase, onHand);
+    out.openQty = openBase / cookBase;
+    if (onHand > 0) out.haveText = `have ${fmtStockAmount(state, ingredient, onHand)}`;
     const c = ingredient ? chosenSupplier(state, ingredient) : null;
     if (!c) {
-      out.estCost = round2((Number(item.totalQty) || 0) * (Number(item.costPerUnit) || 0));
+      out.addBase = Math.max(0, openBase);
+      out.estCost = round2((openBase / cookBase) * (Number(item.costPerUnit) || 0));
+      if (openBase <= 0) out.covered = true;
       return out;
     }
-    const cook = cookingUnit(state.uoms || [], ingredient);
-    const needBase = toBaseQty(state.uoms, cook ? cook.uomId : "", Number(item.totalQty) || 0);
     const packBase = toBaseQty(state.uoms, c.uomId, c.qty);
-    const packs = Math.max(1, Math.ceil(needBase / packBase));
+    if (openBase <= 0) {
+      out.covered = true;
+      out.packs = 0;
+      out.addBase = 0;
+      out.estCost = 0;
+      return out;
+    }
+    const packs = Math.max(1, Math.ceil(openBase / packBase));
     out.supplierId = c.supplierId;
     out.supplier = c.name;
     out.supplierWhatsapp = c.whatsapp;
     out.packs = packs;
     out.packDisplay = `${trimNum(c.qty)}${c.uomName}`;
     out.buyText = `${packs} × ${out.packDisplay}`;
+    out.addBase = packs * packBase;
     out.estCost = round2(packs * c.price);
     return out;
   });
@@ -146,12 +183,14 @@ export function priceEntryLabels(state, ingredient) {
 export function buildSupplierOrderText({ dateTitle = "", supplier = "", items = [], subtotal = 0, currency = "RM" } = {}) {
   const lines = [];
   lines.push(`${dateTitle}${supplier ? ` — ${supplier}` : ""}`);
-  (items || []).forEach((it, i) => {
+  // "already have" lines are nothing to buy — leave them out of the order text.
+  const buyLines = (items || []).filter((it) => !it.covered);
+  buyLines.forEach((it, i) => {
     const amount = it.buyText
       ? `${it.buyText}${it.needText ? ` (need ${it.needText})` : ""}`
       : it.needText || `${fmtQtyText(it.totalQty, it.unit)}`;
     lines.push(`${i + 1}. ${it.ingredientName}: ${amount}`);
   });
-  if ((Number(subtotal) || 0) > 0) lines.push(`Est. ${currency} ${round2(subtotal).toFixed(2)}`);
+  if ((Number(subtotal) || 0) > 0 && buyLines.length) lines.push(`Est. ${currency} ${round2(subtotal).toFixed(2)}`);
   return lines.join("\n");
 }
