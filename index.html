@@ -40,8 +40,8 @@ h1{font-family:Arial,sans-serif;font-size:clamp(40px,6vw,70px);line-height:.95;l
 /* The big family photo in the banner. Swap images/hero-family.jpg to change it. */
 .hero-shot{width:min(400px,100%);aspect-ratio:2119/2560;object-fit:cover;border-radius:24px;box-shadow:var(--shadow)}
 .hero-badge{position:absolute;left:-18px;bottom:22px;background:var(--accent);color:#fff;padding:15px 18px;border-radius:50%;font-family:Arial,sans-serif;font-size:11px;font-weight:800;text-align:center;line-height:1.35;transform:rotate(-5deg)}
-/* Photo placeholders — owner sends real product photos after launch; each one
-   replaces its .photo-tile with a real <img> (see the note in #treats). */
+/* Product photos fill each card's left column via .product-photo img below.
+   The images live in images/*.jpg — swap the matching file to change a photo. */
 .photo-tile{display:grid;place-items:center;text-align:center;background:linear-gradient(160deg,#f7ecdb,#efe0c6);border:1.5px dashed var(--line);color:var(--muted);font-family:Arial,sans-serif;overflow:hidden}
 .photo-tile .tile-emoji{font-size:38px;line-height:1;margin-bottom:8px}
 .photo-tile .tile-label{font-size:11px;font-weight:800;letter-spacing:.1em}
@@ -55,8 +55,11 @@ h1{font-family:Arial,sans-serif;font-size:clamp(40px,6vw,70px);line-height:.95;l
 .story-caption{text-align:center;color:var(--muted);font-size:13px;margin-top:16px;font-style:italic}
 .products{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
 .product-card{display:grid;grid-template-columns:45% 55%;background:var(--paper);border:1px solid var(--line);box-shadow:0 8px 24px rgba(74,44,24,.05);min-height:300px}
-.product-photo{overflow:hidden}
+.product-photo{overflow:hidden;position:relative}
 .product-photo .photo-tile{width:100%;height:100%}
+/* Real product photos fill the tile; object-fit crops them neatly on phones.
+   Swap the matching images/*.jpg file to change a product's photo. */
+.product-photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .product-info{padding:27px 25px}
 .eyebrow{font-family:Arial,sans-serif;font-weight:900;letter-spacing:.05em;font-size:22px;color:var(--brown)}
 .size{font-family:Arial,sans-serif;font-size:13px;color:#7a563e;margin-top:3px}
@@ -163,11 +166,9 @@ footer a:hover{color:#fff}
   </div>
 </section>
 
-<!-- PRODUCT PHOTOS: each .photo-tile below is a placeholder. When a real photo is
-     ready, replace the tile's <div class="photo-tile">…</div> with
-     <img src="chicken-jerky.jpg" alt="Chicken Jerky"> (keep the same classes on the
-     wrapping .product-photo). Homepage menu text/prices are edited on request —
-     the live customer menu is managed in the backoffice (Settings). -->
+<!-- PRODUCT PHOTOS: real photos live in images/*.jpg — swap the matching file to
+     change one. Homepage menu text/prices are edited on request — the live customer
+     menu is managed in the backoffice (Settings). -->
 <section class="section" id="treats">
   <div class="container">
     <h2 class="section-title">OUR TREATS</h2>
@@ -176,7 +177,7 @@ footer a:hover{color:#fff}
 
       <article class="product-card">
         <div class="product-photo">
-          <div class="photo-tile"><div><div class="tile-emoji">🐔</div><div class="tile-label">PHOTO COMING SOON</div></div></div>
+          <img src="images/chicken-jerky.jpg" alt="Chicken Jerky" loading="lazy">
         </div>
         <div class="product-info">
           <div class="eyebrow">CHICKEN JERKY</div>
@@ -188,7 +189,7 @@ footer a:hover{color:#fff}
 
       <article class="product-card">
         <div class="product-photo">
-          <div class="photo-tile"><div><div class="tile-emoji">🦆</div><div class="tile-label">PHOTO COMING SOON</div></div></div>
+          <img src="images/duck-jerky.jpg" alt="Duck Jerky" loading="lazy">
         </div>
         <div class="product-info">
           <div class="eyebrow">DUCK JERKY</div>
@@ -200,7 +201,7 @@ footer a:hover{color:#fff}
 
       <article class="product-card">
         <div class="product-photo">
-          <div class="photo-tile"><div><div class="tile-emoji">🐖</div><div class="tile-label">PHOTO COMING SOON</div></div></div>
+          <img src="images/pork-jerky.jpg" alt="Pork Jerky" loading="lazy">
         </div>
         <div class="product-info">
           <div class="eyebrow">PORK JERKY <span class="soon pork">PORK</span></div>
@@ -212,7 +213,7 @@ footer a:hover{color:#fff}
 
       <article class="product-card">
         <div class="product-photo">
-          <div class="photo-tile"><div><div class="tile-emoji">🍠</div><div class="tile-label">PHOTO COMING SOON</div></div></div>
+          <img src="images/sweet-potato-chicken-chips.jpg" alt="Sweet Potato &amp; Chicken Chips" loading="lazy">
         </div>
         <div class="product-info">
           <div class="eyebrow">SWEET POTATO &amp; CHICKEN CHIPS</div>
@@ -224,7 +225,7 @@ footer a:hover{color:#fff}
 
       <article class="product-card">
         <div class="product-photo">
-          <div class="photo-tile"><div><div class="tile-emoji">🥕</div><div class="tile-label">PHOTO COMING SOON</div></div></div>
+          <img src="images/carrot-dino-biscuits.jpg" alt="Carrot Dino Biscuits" loading="lazy">
         </div>
         <div class="product-info">
           <div class="eyebrow">CARROT DINO BISCUITS</div>
@@ -236,7 +237,7 @@ footer a:hover{color:#fff}
 
       <article class="product-card">
         <div class="product-photo">
-          <div class="photo-tile"><div><div class="tile-emoji">🍎</div><div class="tile-label">PHOTO COMING SOON</div></div></div>
+          <img src="images/apple-chicken-roll.jpg" alt="Apple &amp; Chicken Roll" loading="lazy">
         </div>
         <div class="product-info">
           <div class="eyebrow">APPLE &amp; CHICKEN ROLL</div>
@@ -248,7 +249,7 @@ footer a:hover{color:#fff}
 
       <article class="product-card">
         <div class="product-photo">
-          <div class="photo-tile"><div><div class="tile-emoji">🍐</div><div class="tile-label">PHOTO COMING SOON</div></div></div>
+          <img src="images/pear-chicken-roll.jpg" alt="Pear &amp; Chicken Roll" loading="lazy">
         </div>
         <div class="product-info">
           <div class="eyebrow">PEAR &amp; CHICKEN ROLL</div>
@@ -260,7 +261,7 @@ footer a:hover{color:#fff}
 
       <article class="product-card">
         <div class="product-photo">
-          <div class="photo-tile"><div><div class="tile-emoji">🥬</div><div class="tile-label">PHOTO COMING SOON</div></div></div>
+          <img src="images/okra-chicken-roll.jpg" alt="Okra &amp; Chicken Roll" loading="lazy">
         </div>
         <div class="product-info">
           <div class="eyebrow">OKRA &amp; CHICKEN ROLL</div>
@@ -272,7 +273,7 @@ footer a:hover{color:#fff}
 
       <article class="product-card">
         <div class="product-photo">
-          <div class="photo-tile"><div><div class="tile-emoji">🌱</div><div class="tile-label">PHOTO COMING SOON</div></div></div>
+          <img src="images/chinese-yam-chicken.jpg" alt="Chinese Yam &amp; Chicken" loading="lazy">
         </div>
         <div class="product-info">
           <div class="eyebrow">CHINESE YAM &amp; CHICKEN</div>
@@ -284,7 +285,7 @@ footer a:hover{color:#fff}
 
       <article class="product-card">
         <div class="product-photo">
-          <div class="photo-tile"><div><div class="tile-emoji">🥚</div><div class="tile-label">PHOTO COMING SOON</div></div></div>
+          <img src="images/egg-yolk-melts.jpg" alt="Egg Yolk Melts" loading="lazy">
         </div>
         <div class="product-info">
           <div class="eyebrow">EGG YOLK MELTS</div>
