@@ -8,7 +8,7 @@
 // recursively, so the shopping list and cost always see the leaf ingredients.
 
 import { byId, round2 } from "./state.js";
-import { chosenSupplier, cookingUnit } from "./purchasing.js";
+import { chosenSupplier, cookingUnit, belowReserve } from "./purchasing.js";
 import { shortDate } from "./dates.js";
 
 const MAX_RECIPE_DEPTH = 6;
@@ -86,6 +86,35 @@ export function explodeBom(state, deliveryDateId) {
   const productLines = aggregateByProduct(orders, state.products);
 
   return { items, orders, totalUnits, productLines, warnings };
+}
+
+// Active ingredients sitting below their keep-at-least level (the 10% dead-band
+// in purchasing.belowReserve), as zero-need BOM-shaped items. A full generated
+// list appends these so a below-reserve ingredient gets topped back up even
+// when today's bakes don't use it ("add any low one"). `alreadyIds` = the
+// ingredient ids already on the list — those lines already carry their reserve.
+export function restockOnlyItems(state, alreadyIds = []) {
+  const have = new Set(alreadyIds || []);
+  const rows = [];
+  for (const ing of state.ingredients || []) {
+    if (ing.active === false) continue;
+    const keep = Math.max(0, Number(ing.safetyBase) || 0);
+    const onHand = Math.max(0, Number(ing.onHand) || 0);
+    if (!belowReserve(keep, onHand) || have.has(ing.id)) continue;
+    const cook = cookingUnit(state.uoms || [], ing);
+    rows.push({
+      ingredientId: ing.id,
+      ingredientName: ing.name || "(ingredient)",
+      unit: cook ? cook.name : "g",
+      costPerUnit: effectiveUnitCost(state, ing),
+      totalQty: 0,
+      estCost: 0,
+      unitsOk: true,
+      lines: [],
+    });
+  }
+  rows.sort((a, b) => String(a.ingredientName).localeCompare(String(b.ingredientName)));
+  return rows;
 }
 
 // A compact digest of what is ordered for a DATE STRING (not a date id): every

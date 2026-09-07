@@ -12,7 +12,7 @@
 // packs round on the combined total, and a running grand total shows below.
 
 import { longDate, todayISO, weekdayName, shortDate } from "../dates.js";
-import { explodeBomDates, ordersFingerprint, effectiveCapacity, dayChangeInfo } from "../bom.js";
+import { explodeBomDates, ordersFingerprint, effectiveCapacity, dayChangeInfo, restockOnlyItems } from "../bom.js";
 import { el, button, emptyState, toast } from "../ui.js";
 import { save, newId } from "../state.js";
 import { priceItems, fmtQtyText } from "../purchasing.js";
@@ -186,7 +186,7 @@ function acknowledgeDay(state, rec) {
 // day coverage (no dates[], po.topup flagged), so it never makes the day read
 // "saved" by itself — the ack does that, just like Ignore.
 function saveExtraOnly(state, rec, info) {
-  const items = priceItems(state, info.items);
+  const items = priceItems(state, info.items, { reserve: false });
   const total = totalOf(items);
   if (!items.length) return toast("No extra ingredients to buy");
   ackOwner(state, rec);
@@ -314,7 +314,14 @@ function headline(recs) {
 function previewCard(state, chosen, bom, needsReview) {
   if (!chosen.length || !bom || !bom.orders.length) return emptyPreview(state, chosen, needsReview);
 
-  const items = priceItems(state, bom.items);
+  // Any active ingredient below its keep-at-least level rides along as a
+  // top-up even when today's orders don't use it ("add any low one"). The sweep
+  // feeds BOTH the live table and the saved snapshot (generate reuses `items`),
+  // so the whole-pack top-up is already in the snapshot's addBase when she
+  // later taps Bought.
+  const restock = restockOnlyItems(state, bom.items.map((i) => i.ingredientId));
+  const items = priceItems(state, [...bom.items, ...restock].sort((a, b) =>
+    String(a.ingredientName).localeCompare(String(b.ingredientName))));
   const total = totalOf(items);
   const multi = bom.multi === true;
   const cap = multi ? 0 : effectiveCapacity(state, chosen[0].date);

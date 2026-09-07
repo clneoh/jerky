@@ -96,21 +96,40 @@ export function chosenSupplier(state, ingredient) {
 // base-unit amounts (need/on-hand/open/add) so a saved snapshot can later add
 // exactly what was bought, and rows can show "have X". Used for BOTH the live
 // PO and the Generate & Save snapshot, so the two never drift.
-export function priceItems(state, bomItems) {
+// The 10% dead-band: an ingredient is only treated as "below its keep level"
+// once on hand has dropped MORE than 10% under it (scaled integers dodge float
+// wobble at the boundary). Trivial 1-9% dips read as fine everywhere.
+export function belowReserve(safety, onHand) {
+  const s = Number(safety) || 0;
+  return s > 0 && (Number(onHand) || 0) * 10 < s * 9;
+}
+
+export function priceItems(state, bomItems, { reserve = true } = {}) {
   return (bomItems || []).map((item) => {
     const ingredient = byId(state.ingredients || [], item.ingredientId);
-    const out = { ...item, buyText: null, needText: fmtQtyText(item.totalQty, item.unit) };
+    const out = { ...item, buyText: null };
     const cook = cookingUnit(state.uoms || [], ingredient);
     const cookBase = cook ? Number(cook.toBase) || 1 : 1;
     const needBase = cookBase * (Number(item.totalQty) || 0);
     const onHand = Math.max(0, Number(ingredient && ingredient.onHand) || 0);
-    const openBase = Math.max(0, needBase - onHand);
+    // The keep-at-least reserve rides the buy gap ONLY once stock has truly
+    // dropped (>10% under the level) AND this is a full list — extra-only delta
+    // lists (reserve:false) skip it so a "changed orders" follow-up never
+    // re-buys the reserve the main list already covered.
+    const keep = reserve ? Math.max(0, Number(ingredient && ingredient.safetyBase) || 0) : 0;
+    const safety = belowReserve(keep, onHand) ? keep : 0;
+    const openBase = Math.max(0, (needBase + safety) - onHand);
     out.onHand = onHand;
     out.needBase = needBase;
+    out.safetyBase = keep;
     out.openBase = openBase;
-    out.haveBase = Math.min(needBase, onHand);
+    out.haveBase = Math.min(needBase + safety, onHand);
     out.openQty = openBase / cookBase;
+    // A need is only shown when bakes actually need some — a reserve-only row
+    // (below-keep ingredient with no bake need this time) must not read "need 0".
+    if (needBase > 0) out.needText = fmtQtyText(item.totalQty, item.unit);
     if (onHand > 0) out.haveText = `have ${fmtStockAmount(state, ingredient, onHand)}`;
+    if (safety > 0 && openBase > 0) out.reserveText = `keep ${fmtStockAmount(state, ingredient, safety)} on hand`;
     const c = ingredient ? chosenSupplier(state, ingredient) : null;
     if (!c) {
       out.addBase = Math.max(0, openBase);
@@ -186,9 +205,12 @@ export function buildSupplierOrderText({ dateTitle = "", supplier = "", items = 
   // "already have" lines are nothing to buy — leave them out of the order text.
   const buyLines = (items || []).filter((it) => !it.covered);
   buyLines.forEach((it, i) => {
+    const detail = [];
+    if (it.needText) detail.push(`need ${it.needText}`);
+    if (it.reserveText) detail.push(it.reserveText);
     const amount = it.buyText
-      ? `${it.buyText}${it.needText ? ` (need ${it.needText})` : ""}`
-      : it.needText || `${fmtQtyText(it.totalQty, it.unit)}`;
+      ? `${it.buyText}${detail.length ? ` (${detail.join(", ")})` : ""}`
+      : detail.join(", ") || `${fmtQtyText(it.totalQty, it.unit)}`;
     lines.push(`${i + 1}. ${it.ingredientName}: ${amount}`);
   });
   if ((Number(subtotal) || 0) > 0 && buyLines.length) lines.push(`Est. ${currency} ${round2(subtotal).toFixed(2)}`);

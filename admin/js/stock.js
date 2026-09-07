@@ -17,13 +17,18 @@ export function stockOf(state, ingredient) {
 }
 
 // The base multiplier for a recipe line whose unit name may or may not exist in
-// the Units list — fall back to the ingredient's own cooking unit.
+// the Units list — fall back to the ingredient's own cooking unit. A unit found
+// by name is only honoured when it shares the ingredient's cooking family: now
+// that hr/min/cm/m exist as convertible units, a cross-family line unit (say
+// "hr" on a gram ingredient) must never distort stock by a ×60/×100 factor.
 function baseOf(state, ingredient, unitName) {
   const list = state.uoms || [];
+  const cook = cookingUnit(list, ingredient);
   const byName = unitName
-    ? list.find((u) => String(u.name || "").toLowerCase() === String(unitName).toLowerCase())
+    ? list.find((u) => String(u.name || "").toLowerCase() === String(unitName).toLowerCase()
+        && (!cook || u.family === cook.family))
     : null;
-  const u = byName || cookingUnit(list, ingredient);
+  const u = byName || cook;
   return Number(u && u.toBase) || 1;
 }
 

@@ -108,7 +108,9 @@ test("cut-off is 6pm the day before", () => {
 
 test("deliveryStatus: future date is open with countdown", () => {
   const now = new Date("2026-09-01T12:00:00");
-  const st = deliveryStatus("2026-09-07", { cutoff: "18:00" }, now);
+  // Far-future date: `past` compares against the real clock, so a date near the
+  // suite's own time would silently tip over into the past as days roll by.
+  const st = deliveryStatus("2030-09-07", { cutoff: "18:00" }, now);
   assert.equal(st.closed, false);
   assert.ok(st.countdown.length > 0);
 });

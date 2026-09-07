@@ -6,7 +6,7 @@
 
 import { el, button, select, emptyState, confirmDialog, showPopup, toast } from "../ui.js";
 import { byId, fmtRM, newId, round2, save } from "../state.js";
-import { fmtStockAmount, priceEntryLabels } from "../purchasing.js";
+import { fmtStockAmount, priceEntryLabels, belowReserve } from "../purchasing.js";
 
 export function renderIngredients(root, state) {
   renderAll(root, state);
@@ -18,6 +18,12 @@ function renderAll(root, state) {
 
   const form = newIngredientCard(state, root);
 
+  const low = items.filter((ing) => belowReserve(Number(ing.safetyBase) || 0, Number(ing.onHand) || 0));
+  const banner = low.length ? el("div", { class: "low-stock-banner" },
+    el("p", { class: "low-stock-title" }, "Low stock — below your keep level"),
+    ...low.map((ing) => el("p", { class: "low-stock-line" },
+      `${ing.name} — have ${fmtStockAmount(state, ing, Math.max(0, Number(ing.onHand) || 0))}, keep ${fmtStockAmount(state, ing, Number(ing.safetyBase) || 0)}`))) : null;
+
   const cards = items.map((ing) => ingredientCard(state, ing, root));
   const hiddenSection = hidden.length ? el("div", {},
     el("h2", { class: "section" }, "Hidden ingredients"),
@@ -25,6 +31,7 @@ function renderAll(root, state) {
 
   root.replaceChildren(
     form,
+    ...(banner ? [banner] : []),
     el("h2", { class: "section" }, `Ingredients (${items.length})`),
     ...(cards.length ? cards : [emptyState("No ingredients yet",
       "Add every ingredient, its cooking unit, and its supplier prices so the PO can price real packs.")]),
@@ -260,6 +267,8 @@ function ingredientCard(state, ing, root) {
     : `${perDisplay} fallback`;
 
   const onHand = Math.max(0, Number(ing.onHand) || 0);
+  const keep = Math.max(0, Number(ing.safetyBase) || 0);
+  const below = belowReserve(keep, onHand);
 
   return el("div", { class: "card" },
     el("div", { class: "card-row" },
@@ -267,13 +276,22 @@ function ingredientCard(state, ing, root) {
         el("p", { class: "card-title" }, ing.name),
         el("p", { class: "card-sub" }, mainSub),
         el("div", {
-          class: "stockline" + (onHand > 0 ? " has-stock" : " empty"),
+          class: "stockline" + (onHand > 0 ? " has-stock" : " empty") + (below ? " low" : ""),
           role: "button",
-          onclick: () => openStockPopup(state, ing, root),
+          onclick: () => openAmountPopup(state, ing, root, "stock"),
         },
           el("span", { class: "stockline-label" }, "On hand"),
-          el("span", { class: "stockline-qty" }, onHand > 0 ? fmtStockAmount(state, ing, onHand) : "0"),
+          el("span", { class: "stockline-qty" },
+            `${onHand > 0 ? fmtStockAmount(state, ing, onHand) : "0"}${below ? " · low" : ""}`),
           el("span", { class: "stockline-edit" }, "Adjust")),
+        el("div", {
+          class: "keepline",
+          role: "button",
+          onclick: () => openAmountPopup(state, ing, root, "keep"),
+        },
+          el("span", { class: "stockline-label" }, "Keep at least"),
+          el("span", { class: "stockline-qty" }, keep > 0 ? fmtStockAmount(state, ing, keep) : "—"),
+          el("span", { class: "stockline-edit" }, keep > 0 ? "Edit" : "Set")),
         ing.purchaseNote ? el("p", { class: "card-sub" }, ing.purchaseNote) : null,
         usedBy.length ? el("p", { class: "po-breakdown" }, `Used in: ${usedBy.join(", ")}`) : null),
       el("div", { class: "li-right" },
@@ -281,10 +299,12 @@ function ingredientCard(state, ing, root) {
         button(usedBy.length ? "Hide" : "Delete", () => deleteIngredient(state, ing, usedBy.length > 0, root), "ghost small"))));
 }
 
-// Set how much of an ingredient is on the shelf (a stocktake, or "a lot of
-// strong flour left"). Stored as a base-unit count; the popup lets her type in
-// whatever unit of the family she's thinking in (g or kg, ml or L, pcs).
-function openStockPopup(state, ing, root) {
+// Set how much of an ingredient is on the shelf ("On hand"), or the level she
+// wants to keep on it ("Keep at least", the reorder reserve). Both store a
+// base-unit count; the popup lets her type in whatever unit of the family she's
+// thinking in (g or kg, ml or L, pcs).
+function openAmountPopup(state, ing, root, kind) {
+  const isStock = kind === "stock";
   const units = (state.uoms || [])
     .filter((u) => u.family === cookingFamilyOf(state.uoms, currentUomId(state, ing)))
     .slice()
@@ -293,9 +313,13 @@ function openStockPopup(state, ing, root) {
   const toBase = (uid) => Number(byId(state.uoms || [], uid)?.toBase) || 1;
   const clean = (x) => String(parseFloat(Number(x).toFixed(4)));
 
-  const cur = Math.max(0, Number(ing.onHand) || 0);
-  const nice = [...units].reverse().find((u) => cur >= Number(u.toBase)) || fallback;
-  let uid = nice.id || fallback.id;
+  const cur = Math.max(0, Number(isStock ? ing.onHand : ing.safetyBase) || 0);
+  const reversed = [...units].reverse();
+  const within = reversed.find((u) => cur >= Number(u.toBase));
+  let uid;
+  if (within) uid = within.id;
+  else if (isStock) uid = fallback.id;      // stock: smallest unit, today's behaviour
+  else uid = (reversed[0] || fallback).id;  // keep: biggest unit, so "5" reads as 5 kg
 
   const num = el("input", { class: "input", type: "number", inputmode: "decimal", min: "0", step: "any",
     value: clean(cur / (toBase(uid) || 1)) });
@@ -306,23 +330,49 @@ function openStockPopup(state, ing, root) {
     if (!Number.isNaN(old)) num.value = clean((old * oldBase) / (toBase(uid) || 1));
   });
 
-  showPopup(el("div", { class: "popup-title-row" }, `On hand — ${ing.name}`), (refresh, close) => {
+  const clearLevel = (close) => {
+    delete ing.safetyBase;
+    toast(`${ing.name}: no minimum — the list won't top it up`);
+    save(state);
+    close();
+    renderAll(root, state);
+  };
+
+  showPopup(el("div", { class: "popup-title-row" },
+    `${isStock ? "On hand" : "Keep at least"} — ${ing.name}`), (refresh, close) => {
+    const actions = [button("Cancel", close, "ghost")];
+    if (!isStock) actions.push(button("No minimum", () => clearLevel(close), "ghost"));
+    actions.push(button(isStock ? "Save stock" : "Save level", () => {
+      const v = Number(num.value);
+      if (num.value.trim() === "" || Number.isNaN(v) || v < 0) {
+        return toast(isStock
+          ? "Type how much you have, or tap Cancel"
+          : "Type the level you want to keep, or tap No minimum");
+      }
+      const base = round2(v * (toBase(unitSel.value) || 1));
+      if (isStock) {
+        ing.onHand = base;
+        toast(`${ing.name}: on hand ${fmtStockAmount(state, ing, base)}`);
+      } else if (base <= 0) {
+        clearLevel(close);
+        return;
+      } else {
+        ing.safetyBase = base;
+        toast(`${ing.name}: keep at least ${fmtStockAmount(state, ing, base)}`);
+      }
+      save(state);
+      close();
+      renderAll(root, state);
+    }, "primary"));
     return el("div", {},
       el("div", { class: "field" },
-        el("label", {}, "How much do you have right now?"),
+        el("label", {},
+          isStock ? "How much do you have right now?" : "How much do you always want to keep on the shelf?"),
         el("div", { style: "display:flex;gap:8px;align-items:center" }, num, unitSel),
-        el("p", { class: "hint" }, "The shopping list buys whole packs only for what this doesn't cover. Marking an order Preparing takes its ingredients off automatically.")),
-      el("div", { class: "popup-actions" },
-        button("Cancel", close, "ghost"),
-        button("Save stock", () => {
-          const v = Number(num.value);
-          if (num.value.trim() === "" || Number.isNaN(v) || v < 0) return toast("Type how much you have, or tap Cancel");
-          ing.onHand = round2(v * (toBase(unitSel.value) || 1));
-          toast(`${ing.name}: on hand ${fmtStockAmount(state, ing, ing.onHand)}`);
-          save(state);
-          close();
-          renderAll(root, state);
-        }, "primary")));
+        el("p", { class: "hint" }, isStock
+          ? "The shopping list buys whole packs only for what this doesn't cover. Marking an order Preparing takes its ingredients off automatically."
+          : "Your order list tops this ingredient back up to this level (in whole packs) whenever it has dropped more than 10% below it, so you're never caught short after a busy posting day. Tap No minimum to leave it alone.")),
+      el("div", { class: "popup-actions" }, ...actions));
   });
 }
 

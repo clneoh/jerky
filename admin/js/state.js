@@ -65,6 +65,9 @@ function seedUoms() {
     { id: "uom_kg", name: "kg", family: "weight", toBase: 1000 },
     { id: "uom_ml", name: "ml", family: "volume", toBase: 1 },
     { id: "uom_l", name: "L", family: "volume", toBase: 1000 },
+    // Time and length measure notes/sizes rather than ingredient amounts; each
+    // family keeps one relationship like g/kg (1 hr = 60 min, 1 m = 100 cm).
+    ...TIME_LENGTH.map(([name, family, toBase]) => ({ id: `uom_${name}`, name, family, toBase })),
     { id: "uom_pcs", name: "pcs", family: "count", toBase: 1 },
     // Standard pet-treat selling units (count family) — the product dropdown
     // draws from these. Deterministic ids so fresh installs match across devices.
@@ -79,12 +82,25 @@ const KNOWN_UNITS = {
   kg: ["weight", 1000], kilo: ["weight", 1000],
   ml: ["volume", 1], mL: ["volume", 1], millilitre: ["volume", 1],
   l: ["volume", 1000], L: ["volume", 1000], litre: ["volume", 1000],
+  min: ["time", 1], minute: ["time", 1], minutes: ["time", 1],
+  hr: ["time", 60], hour: ["time", 60], hours: ["time", 60],
+  cm: ["length", 1], centimetre: ["length", 1], centimetres: ["length", 1],
+  m: ["length", 100], metre: ["length", 100], metres: ["length", 100],
   pc: ["count", 1], pcs: ["count", 1], piece: ["count", 1], pieces: ["count", 1],
 };
 
 // Pet-treat selling units the owner pre-approved, added as count-family units.
 // Pouches by weight are the main form; the rest cover packs, jars and sets.
 const TREAT_COUNT = ["pouch", "pack", "jar", "box", "bag", "set", "piece"];
+
+// Time and length pairs, pre-loaded like g/kg and ml/L so a note or recipe can
+// speak in minutes/hours or cm/m. Name is also the id suffix (uom_min, uom_hr…).
+const TIME_LENGTH = [
+  ["min", "time", 1],
+  ["hr", "time", 60],
+  ["cm", "length", 1],
+  ["m", "length", 100],
+];
 
 export function loadState() {
   try {
@@ -236,6 +252,7 @@ function normalize(s) {
   out.deliveryDates = consolidated.deliveryDates;
   out.orders = consolidated.orders;
   ensureCountUnits(out);
+  ensurePlanningUnits(out);
   backfillUnitRefs(out);
   linkProductUnits(out);
   return out;
@@ -287,6 +304,21 @@ export function ensureCountUnits(state) {
     const u = { id: `uom_${n}`, name: n, family: "count", toBase: 1 };
     state.uoms.push(u);
     have.set(n, u);
+  }
+}
+
+// Same upgrade idea as ensureCountUnits but for the time/length pairs: an
+// existing install that predates them keeps its own unit list wholesale, so
+// this normalize-time step is what adds min/hr/cm/m to an older phone. Never
+// touches a unit that already exists under the same name, whatever its family.
+export function ensurePlanningUnits(state) {
+  const have = new Map();
+  for (const u of state.uoms || []) have.set(String(u.name || "").toLowerCase(), u);
+  for (const [name, family, toBase] of TIME_LENGTH) {
+    if (have.has(name)) continue;
+    const u = { id: `uom_${name}`, name, family, toBase };
+    state.uoms.push(u);
+    have.set(name, u);
   }
 }
 

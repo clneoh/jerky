@@ -65,6 +65,18 @@ test("recipe lines typed in kg convert to base grams when baking", () => {
   assert.equal(ing.onHand, 0, "0.5 kg × 2 = 1000 g comes off");
 });
 
+test("a time/length line unit never leaks into ingredient stock (family guard)", () => {
+  // hr (60) and m (100) now exist as convertible units. A recipe line that
+  // happens to say "hr" on a gram ingredient must fall back to grams — baking
+  // subtracts 2 g, never 2 × 60 = 120 g.
+  const ing = flour(1000);
+  const st = baseState([ing], [{ id: "p", name: "X", active: true,
+    recipe: [{ ingredientId: "ing_f", qty: 2, unit: "hr" }] }]);
+  st.uoms.push({ id: "hr", name: "hr", family: "time", toBase: 60 });
+  consumeOrder(st, { id: "o", productId: "p", qty: 1 });
+  assert.equal(ing.onHand, 998, "2 hr on a gram ingredient reads as 2 g");
+});
+
 test("a deleted product's order takes nothing off stock", () => {
   const ing = flour(100);
   const st = baseState([ing], []);

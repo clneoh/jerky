@@ -1578,5 +1578,32 @@ textarea.input { min-height: 64px; resize: vertical; }
 .stockline .stockline-qty { font-weight: 600; }
 .stockline .stockline-edit { font-weight: 600; color: var(--brown-dark); }
 .stockline.empty .stockline-qty { font-weight: 400; color: var(--muted); }
+.stockline.low { background: var(--red-bg); }
+.stockline.low .stockline-qty { color: var(--red); }
+.keepline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--brown-soft);
+  border: 1px dashed rgba(0, 0, 0, 0.14);
+  border-radius: 8px;
+  padding: 5px 10px;
+  margin: 2px 0 8px;
+  font-size: 13px;
+  color: var(--brown-dark);
+  cursor: pointer;
+}
+.keepline .stockline-qty { font-weight: 600; }
+.po-reserve { font-size: 12px; color: var(--amber); margin-top: 2px; }
+.low-stock-banner {
+  background: var(--red-bg);
+  color: var(--red);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin: 12px 0 4px;
+}
+.low-stock-banner .low-stock-title { font-weight: 700; margin: 0 0 4px; }
+.low-stock-banner .low-stock-line { margin: 2px 0; font-size: 13px; }
 .po-have { font-size: 12px; color: var(--muted); margin-top: 2px; }
 tr.po-covered td { color: var(--muted); }

@@ -67,9 +67,11 @@ export function renderGuide(root, state) {
 
     el("h2", { class: "section" }, "Newest in the engine"),
     el("div", { class: "card" },
-      el("p", { class: "card-title" }, "“On hand” stock (Engine v" + ENGINE_VERSION + ")"),
+      el("p", { class: "card-title" }, "“Keep at least” reserve stock (Engine v" + ENGINE_VERSION + ")"),
       el("p", { class: "card-sub" },
-        "On the Ingredients screen, tap “On hand … Adjust” to type how much of an ingredient you have. Your shopping list then buys whole packs only for what that doesn't cover — and when you mark an order Preparing, its ingredients come off your stock automatically. Because it syncs with the ingredient, both your phones see the same number.")));
+        "On the Ingredients screen, next to “On hand” there's now “Keep at least”. That's your floor — how much you want left on the shelf after a busy posting day. Your shopping list tops an ingredient back up to that level automatically, so you're never caught short. Set it once per ingredient; it syncs with the ingredient, so both your phones see the same number."),
+      el("p", { class: "hint" },
+        "Runs on top of the “On hand” stock number (Engine v54) — if you track what you have, the app can tell you what to re-buy.")));
 }
 
 function introCard() {

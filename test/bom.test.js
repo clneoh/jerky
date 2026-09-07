@@ -23,6 +23,7 @@ import {
   saveDayAdjustments,
   fpToProductQtys,
   dayChangeInfo,
+  restockOnlyItems,
 } from "../admin/js/bom.js";
 import { shortDate } from "../admin/js/dates.js";
 
@@ -652,4 +653,50 @@ test("explodeBomDates with no dates returns an empty combined list", () => {
   assert.equal(res.orders.length, 0);
   assert.equal(res.totalUnits, 0);
   assert.equal(res.perDate.length, 0);
+});
+
+// --- keep-at-least reserve: the below-level restock sweep -------------------
+
+test("restockOnlyItems sweeps an active ingredient that has truly dropped below its keep level as a zero-need row", () => {
+  const st = fixtureState();
+  const flour = st.ingredients.find((i) => i.id === "ing_f");
+  flour.safetyBase = 5000; // keep 5 kg
+  flour.onHand = 4000;     // 20% under → low
+  const rows = restockOnlyItems(st, []);
+  assert.equal(rows.length, 1);
+  const r = rows[0];
+  assert.equal(r.ingredientId, "ing_f");
+  assert.equal(r.ingredientName, "Strong flour");
+  assert.equal(r.unit, "g");
+  assert.equal(r.totalQty, 0, "a pure top-up has no bake need yet");
+  assert.equal(r.costPerUnit, flour.costPerUnit);
+});
+
+test("restockOnlyItems ignores a trivial dip within 10%, healthy and hidden ingredients, and ids already on the list", () => {
+  const st = fixtureState();
+  const flour = st.ingredients.find((i) => i.id === "ing_f");
+  flour.safetyBase = 5000;
+  flour.onHand = 4600; // 8% under → fine, within the dead-band
+  const yeast = st.ingredients.find((i) => i.id === "ing_y");
+  yeast.safetyBase = 1000;
+  yeast.onHand = 500;  // low, but hidden below
+  yeast.active = false;
+  const salt = st.ingredients.find((i) => i.id === "ing_s");
+  salt.safetyBase = 2000;
+  salt.onHand = 1000;  // 50% under, but already on the list
+  const rows = restockOnlyItems(st, ["ing_s"]);
+  assert.equal(rows.length, 0, "only genuinely low, active, not-yet-listed ingredients ride along");
+});
+
+test("restockOnlyItems returns only the low actives not already listed, in name order", () => {
+  const st = fixtureState();
+  const flour = st.ingredients.find((i) => i.id === "ing_f");
+  flour.safetyBase = 5000; flour.onHand = 3000; // low
+  const yeast = st.ingredients.find((i) => i.id === "ing_y");
+  yeast.safetyBase = 1000; yeast.onHand = 9000; // healthy
+  const salt = st.ingredients.find((i) => i.id === "ing_s");
+  salt.safetyBase = 2000; salt.onHand = 1000;   // low but already listed
+  const rows = restockOnlyItems(st, ["ing_s"]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].ingredientId, "ing_f");
 });

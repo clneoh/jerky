@@ -244,11 +244,13 @@ const OLD_UOMS = [
   { id: "uom_pcs", name: "pcs", family: "count", toBase: 1 },
 ];
 const PETTREAT = ["pouch", "pack", "jar", "box", "bag", "set", "piece"];
+const PLANNING = ["min", "hr", "cm", "m"];
 
 test("a fresh state seeds the standard pet-treat selling units", () => {
   const names = defaultState().uoms.map((u) => u.name);
   for (const n of PETTREAT) assert.ok(names.includes(n), `missing ${n}`);
-  assert.equal(defaultState().uoms.length, OLD_UOMS.length + PETTREAT.length);
+  for (const n of PLANNING) assert.ok(names.includes(n), `missing time/length unit ${n}`);
+  assert.equal(defaultState().uoms.length, OLD_UOMS.length + PETTREAT.length + PLANNING.length);
 });
 
 test("normalize adds the pet-treat units to an existing install's unit list", () => {
@@ -259,6 +261,29 @@ test("normalize adds the pet-treat units to an existing install's unit list", ()
   assert.equal(pouch.family, "count");
   assert.equal(pouch.toBase, 1);
   assert.equal(pouch.id, "uom_pouch", "deterministic id");
+});
+
+test("normalize adds the time/length units to an existing install, idempotently", () => {
+  const want = { min: ["time", 1], hr: ["time", 60], cm: ["length", 1], m: ["length", 100] };
+  const out = normalize({ version: 1, uoms: OLD_UOMS.map((u) => ({ ...u })) });
+  const byName = new Map(out.uoms.map((u) => [u.name.toLowerCase(), u]));
+  for (const [n, [family, toBase]] of Object.entries(want)) {
+    const u = byName.get(n);
+    assert.ok(u, `missing time/length unit ${n}`);
+    assert.equal(u.family, family, `${n} belongs to the ${family} family`);
+    assert.equal(u.toBase, toBase, `${n} keeps its relationship`);
+    assert.equal(u.id, `uom_${n}`, "deterministic id");
+  }
+  const again = normalize(out);
+  assert.equal(again.uoms.length, out.uoms.length, "second normalize adds nothing");
+});
+
+test("preloaded time/length units never overwrite a user's same-name unit", () => {
+  const mine = { id: "uom_myhr", name: "hr", family: "count", toBase: 1 };
+  const out = normalize({ version: 1, uoms: [mine] });
+  const hrs = out.uoms.filter((u) => u.name.toLowerCase() === "hr");
+  assert.equal(hrs.length, 1, "the user's own unit is not duplicated");
+  assert.equal(hrs[0].id, "uom_myhr", "the user's own unit is untouched");
 });
 
 test("preload is idempotent and never overwrites a same-name unit", () => {

@@ -80,17 +80,22 @@ function rowFor(state, it, currency) {
     it.ingredientName,
     it.unitsOk === false ? el("div", { class: "warn", style: "margin:4px 0 0" }, "⚠ check units") : null,
     it.haveText ? el("div", { class: "po-have" }, it.haveText) : null,
+    it.reserveText ? el("div", { class: "po-reserve" }, it.reserveText) : null,
     breakdown ? el("div", { class: "po-breakdown" }, breakdown) : null);
+
+  const needLine = it.needText
+    ? el("div", { class: "po-need" }, `need ${it.needText}`)
+    : (Number(it.totalQty) || 0) > 0 ? el("div", { class: "po-need" }, `need ${fmtQty(it.totalQty, it.unit)}`) : null;
 
   let qtyCell;
   if (it.covered) {
     qtyCell = el("td", { class: "po-buy" },
       el("span", { class: "muted" }, "already have"),
-      it.needText ? el("div", { class: "po-need" }, `need ${it.needText}`) : null);
+      needLine);
   } else if (it.buyText) {
     qtyCell = el("td", { class: "po-buy" },
       el("span", {}, it.buyText),
-      el("div", { class: "po-need" }, `need ${it.needText || fmtQty(it.totalQty, it.unit)}`));
+      needLine);
   } else {
     qtyCell = el("td", { class: "num" }, fmtQty(it.openQty != null ? it.openQty : it.totalQty, it.unit));
   }

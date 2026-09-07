@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   toBaseQty, chosenSupplier, priceItems, groupItemsBySupplier,
-  priceEntryLabels, buildSupplierOrderText, fmtStockAmount,
+  priceEntryLabels, buildSupplierOrderText, fmtStockAmount, belowReserve,
 } from "../admin/js/purchasing.js";
 
 const UOMS = [
@@ -278,4 +278,85 @@ test("fmtStockAmount counts in the ingredient's own unit", () => {
   const ing = st.ingredients[0];
   assert.equal(fmtStockAmount(st, ing, 12), "12 pcs");
   assert.equal(fmtStockAmount(st, ing, 2.5), "2.5 pcs");
+});
+
+// --- keep-at-least reserve: buy back up to the level after baking -----------
+
+const SUP4 = [{ supplierId: "s_mydin", qty: 4000, uomId: "g", price: 25 }];
+
+test("belowReserve triggers only once on hand is MORE than 10% under the keep level", () => {
+  assert.equal(belowReserve(5000, 5000), false);
+  assert.equal(belowReserve(5000, 4550), false, "9% under is fine");
+  assert.equal(belowReserve(5000, 4500), false, "exactly 10% under is fine");
+  assert.equal(belowReserve(5000, 4499), true);
+  assert.equal(belowReserve(5000, 0), true);
+  assert.equal(belowReserve(0, 0), false, "no keep level is never low");
+});
+
+test("a genuinely low ingredient's buy gap is need + keep - on-hand, packs round on it", () => {
+  const st = makeState([ingredient({ supplierPrices: SUP4, onHand: 2000, safetyBase: 5000 })]);
+  const it = priceItems(st, [bomItem({ totalQty: 3000 })])[0]; // need 3 kg, keep 5 kg
+  assert.equal(it.openBase, 6000, "target = need 3000 + keep 5000 - have 2000");
+  assert.equal(it.packs, 2, "2 × 4 kg covers the topped-up gap");
+  assert.equal(it.addBase, 8000);
+  assert.equal(it.buyText, "2 × 4000g");
+  assert.equal(it.reserveText, "keep 5 kg on hand");
+  assert.equal(it.haveText, "have 2 kg");
+});
+
+test("no top-up while the shelf is within 10% of its keep (the dead-band)", () => {
+  const st = makeState([ingredient({ supplierPrices: SUP4, onHand: 4600, safetyBase: 5000 })]);
+  const it = priceItems(st, [bomItem({ totalQty: 3000 })])[0]; // 8% under, need 3 kg
+  assert.equal(it.safetyBase, 5000, "the keep level is still recorded");
+  assert.equal(it.openBase, 0, "a trivial dip does not lift the buy");
+  assert.equal(it.covered, true);
+  assert.equal(it.reserveText, undefined);
+});
+
+test("a healthy shelf above its keep level still prices exactly as before", () => {
+  const enough = makeState([ingredient({ supplierPrices: SUP4, onHand: 8000, safetyBase: 2000 })]);
+  assert.equal(priceItems(enough, [bomItem({ totalQty: 6800 })])[0].covered, true);
+  const mid = makeState([ingredient({ supplierPrices: SUP4, onHand: 3000, safetyBase: 2000 })]);
+  const it = priceItems(mid, [bomItem({ totalQty: 6800 })])[0];
+  assert.ok(!it.covered, "an open gap is not flagged covered");
+  assert.equal(it.openBase, 3800, "only the bake gap, no reserve");
+  assert.equal(it.packs, 1);
+});
+
+test("extra-only lists (reserve:false) never re-buy the reserve", () => {
+  const st = makeState([ingredient({ supplierPrices: SUP4, onHand: 2000, safetyBase: 5000 })]);
+  const it = priceItems(st, [bomItem({ totalQty: 3000 })], { reserve: false })[0];
+  assert.equal(it.openBase, 1000, "only the 3 kg need minus the 2 kg on hand");
+  assert.equal(it.safetyBase, 0, "the reserve term is switched off");
+  assert.equal(it.reserveText, undefined);
+});
+
+test("a reserve-only row (no bake need) prices a top-up without a 'need 0'", () => {
+  const st = makeState([ingredient({ supplierPrices: SUP4, onHand: 2000, safetyBase: 5000 })]);
+  const it = priceItems(st, [bomItem({ totalQty: 0 })])[0];
+  assert.equal(it.openBase, 3000, "top-up to the keep level");
+  assert.equal(it.packs, 1);
+  assert.equal(it.needText, undefined);
+  assert.equal(it.reserveText, "keep 5 kg on hand");
+  const text = buildSupplierOrderText({ supplier: "Mydin", items: [it], subtotal: 25, currency: "RM" });
+  assert.ok(!text.includes("need 0"), text);
+  assert.ok(text.includes("1. Strong flour: 1 × 4000g (keep 5 kg on hand)"), text);
+});
+
+test("WhatsApp text keeps low reserve rows and drops covered rows", () => {
+  const st = makeState([
+    ingredient({ id: "ing_b", name: "Butter",
+      supplierPrices: [{ supplierId: "s_mydin", qty: 2000, uomId: "g", price: 20 }],
+      onHand: 9000, safetyBase: 1000 }),
+    ingredient({ id: "ing_f", name: "Strong flour",
+      supplierPrices: SUP4, onHand: 2000, safetyBase: 5000 }),
+  ]);
+  const items = priceItems(st, [
+    bomItem({ ingredientId: "ing_b", ingredientName: "Butter", totalQty: 2000 }),
+    bomItem({ ingredientId: "ing_f", ingredientName: "Strong flour", totalQty: 3000 }),
+  ]);
+  const text = buildSupplierOrderText({ supplier: "Mydin", items, subtotal: 50, currency: "RM" });
+  assert.ok(!text.includes("Butter"), "healthy Butter is nothing to buy");
+  assert.ok(text.includes("1. Strong flour: 2 × 4000g (need 3000g, keep 5 kg on hand)"), text);
+  assert.ok(text.endsWith("Est. RM 50.00"));
 });

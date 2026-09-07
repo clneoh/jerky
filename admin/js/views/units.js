@@ -9,9 +9,11 @@ import { newId, productUsesUnit, save } from "../state.js";
 const FAMILIES = [
   { value: "weight", label: "Weight (g, kg…)" },
   { value: "volume", label: "Volume (ml, L…)" },
+  { value: "time", label: "Time (min, hr…)" },
+  { value: "length", label: "Length (cm, m…)" },
   { value: "count", label: "Count (pcs…)" },
 ];
-const BASE_NAME = { weight: "g", volume: "ml", count: "items" };
+const BASE_NAME = { weight: "g", volume: "ml", time: "min", length: "cm", count: "items" };
 
 export function renderUnits(root, state) {
   renderAll(root, state);
