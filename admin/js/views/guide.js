@@ -49,10 +49,10 @@ export function renderGuide(root, state) {
     el("h2", { class: "section" }, "What stays yours alone"),
     ...analogyRows([
       ["Your cloud cabinet",
-        "Orders, products and customers sync between YOUR phones through your OWN online cabinet (Supabase).",
+        "Orders, products, your “On hand” stock and more sync between YOUR phones through your OWN online cabinet (Supabase). Customers never see any of it.",
         "A notebook in the sky — but each business has its OWN notebook. This app never touches your bakery's records."],
       ["On this phone only",
-        "Some things never leave the phone you're using: your PIN, the RM8 postage fee, and the “On hand” stock you type on this phone.",
+        "A few things never leave the phone you're using: your app PIN, the RM8 postage fee, and the cloud-login email & password you type in. Your “On hand” stock is NOT one of these — it syncs like the rest of your records.",
         "A sticky note on the till — not copied into the sky notebook."],
       ["Your branding & prices",
         "Domain munchies.com.my, product names, prices, photos, WhatsApp/Instagram — all yours, per shop.",
@@ -66,7 +66,7 @@ export function renderGuide(root, state) {
     el("div", { class: "card" },
       el("p", { class: "card-title" }, "“On hand” stock (Engine v" + ENGINE_VERSION + ")"),
       el("p", { class: "card-sub" },
-        "On the Ingredients screen, tap “On hand … Adjust” to type how much of an ingredient you have. Your shopping list then buys whole packs only for what that doesn't cover — and when you mark an order Preparing, its ingredients come off your stock automatically.")));
+        "On the Ingredients screen, tap “On hand … Adjust” to type how much of an ingredient you have. Your shopping list then buys whole packs only for what that doesn't cover — and when you mark an order Preparing, its ingredients come off your stock automatically. Because it syncs with the ingredient, both your phones see the same number.")));
 }
 
 function introCard() {
