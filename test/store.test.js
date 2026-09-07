@@ -29,8 +29,8 @@ globalThis.document = {
 };
 globalThis.window = { open() {} };
 
-// store/config.js holds "FILLME" Supabase placeholders until this business has
-// its own project; stub fetch so the module-level render() hits no network.
+// store/config.js carries this business's own Supabase url + anon key; stub fetch
+// so the module-level render() hits no network.
 globalThis.fetch = async () => ({ ok: true, json: async () => [] });
 
 const { buildMessage, mergeStorefront, upcomingDates, pillSpecs, dateKey, fmtDay, trackOrder, isOpen, waNumber, parseVia } = await import("../store/app.js");

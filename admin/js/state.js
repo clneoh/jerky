@@ -109,14 +109,13 @@ export function loadState() {
 // whatever the most recent backoffice user published — never a stale copy. The
 // app-login PASSWORD is also never shipped in code; the owner types email +
 // password once per phone at the sign-in gate.
-// The PUBLIC Supabase connection for this pet-treat business. URL + anon key ship
-// in code by design — they are public (any visitor to the order page already
-// holds them). Both are "FILLME" until this business's OWN Supabase project
-// exists (never reuse the bakery's project). The app-login email/password never
-// ship in code (see below).
-const BUILTIN_SUPABASE = {
-  url: "FILLME",
-  anonKey: "FILLME",
+// The PUBLIC Supabase connection for this pet-treat business — its own project
+// (never the bakery's). URL + anon key ship in code by design — they are public
+// (any visitor to the order page already holds them). The app-login
+// email/password never ship in code (see below).
+export const BUILTIN_SUPABASE = {
+  url: "https://ircwozniiyywsowamixy.supabase.co",
+  anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlyY3dvem5paXl5d3Nvd2FtaXh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3Njc2MDQsImV4cCI6MjEwNDM0MzYwNH0.N3T87IOj2nnvKnHXeFM4DN9WR2js2N2R66Dc15edxIg",
 };
 
 function seedFreshState() {

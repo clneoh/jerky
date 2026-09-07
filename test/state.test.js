@@ -3,7 +3,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalize, defaultState, updateOrderBadge, groupOrders, orderCode, waNumber, ensureSupabase, productUnitOptions, productUsesUnit } from "../admin/js/state.js";
+import { normalize, defaultState, updateOrderBadge, groupOrders, orderCode, waNumber, ensureSupabase, productUnitOptions, productUsesUnit, BUILTIN_SUPABASE } from "../admin/js/state.js";
 import { lockEnabled } from "../admin/js/pin.js";
 
 const HASH_1234 = "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4";
@@ -201,8 +201,8 @@ test("a partial stored lock fills its defaults (never accidentally active)", () 
 test("ensureSupabase fills blank connection boxes from the built-in project (public fields only)", () => {
   const s = { settings: { supabase: { url: "", anonKey: "", email: "", password: "" } } };
   assert.equal(ensureSupabase(s), true);
-  assert.equal(s.settings.supabase.url, "FILLME");
-  assert.equal(s.settings.supabase.anonKey, "FILLME");
+  assert.equal(s.settings.supabase.url, BUILTIN_SUPABASE.url, "fills this business's own project url");
+  assert.equal(s.settings.supabase.anonKey, BUILTIN_SUPABASE.anonKey, "fills this business's own anon key");
   assert.equal(s.settings.supabase.email, "", "never fills the app-login email");
   assert.equal(s.settings.supabase.password, "", "never fills the app-login password");
 });
@@ -220,7 +220,7 @@ test("ensureSupabase fills only the blank box and keeps the owner's login", () =
   const s = { settings: { supabase: { url: "https://mine.supabase.co", anonKey: "", email: "a@b.c", password: "pw" } } };
   assert.equal(ensureSupabase(s), true);
   assert.equal(s.settings.supabase.url, "https://mine.supabase.co", "present value is not overwritten");
-  assert.equal(s.settings.supabase.anonKey, "FILLME", "blank key gets the placeholder until the real project exists");
+  assert.equal(s.settings.supabase.anonKey, BUILTIN_SUPABASE.anonKey, "blank key fills from the built-in project");
   assert.equal(s.settings.supabase.email, "a@b.c");
 });
 

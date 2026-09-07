@@ -33,12 +33,12 @@ export const CONFIG = {
 
   // Live availability via Supabase: the backoffice app posts slots left per day
   // (drives the sold-out date pill) and per product (drives the "Only N left"
-  // stamps on each product card). url/anonKey are "FILLME" until this business's
-  // OWN Supabase project exists (never reuse the bakery's project). Leave both
-  // empty ("") to hide availability entirely.
+  // stamps on each product card). These are this business's OWN project creds
+  // (public by design — never the bakery's). Leave both empty ("") to hide
+  // availability entirely.
   supabase: {
-    url: "FILLME",
-    anonKey: "FILLME",
+    url: "https://ircwozniiyywsowamixy.supabase.co",
+    anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlyY3dvem5paXl5d3Nvd2FtaXh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3Njc2MDQsImV4cCI6MjEwNDM0MzYwNH0.N3T87IOj2nnvKnHXeFM4DN9WR2js2N2R66Dc15edxIg",
   },
 
   // What's on sale. price is in RM. unit is a short label (100g pouch / pack).
