@@ -1,0 +1,1513 @@
+:root {
+  --bg: #fbf4ea;
+  --surface: #fffdf9;
+  --ink: #3b2a1f;
+  --muted: #9a8471;
+  --line: #f0e2d2;
+  --brown: #c4552f;        /* terracotta brand */
+  --brown-dark: #a84322;
+  --brown-soft: #fbe7dc;
+  --green: #3f7d4e;
+  --green-bg: #e7f2e8;
+  --red: #c04538;
+  --red-bg: #fbe9e4;
+  --amber: #b26a16;
+  --amber-bg: #fdf1dc;
+  --gray-bg: #f1e9df;
+  --strip: #f7efe1;            /* soft band behind each "How it adds up" line */
+  --radius: 16px;
+  --radius-sm: 12px;
+  --tabbar-h: 58px;
+  --topbar-h: 56px;
+  --shadow: 0 2px 12px rgba(120, 66, 32, .08);
+  --shadow-lg: 0 12px 30px rgba(120, 66, 32, .18);
+  --serif: "Iowan Old Style", "Palatino Linotype", Georgia, "Times New Roman", serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  -webkit-text-size-adjust: 100%;
+}
+
+body { min-height: 100vh; }
+
+/* ---------- Top bar ---------- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: var(--topbar-h);
+  background: linear-gradient(120deg, #c4552f, #d9742c);
+  color: #fff;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 0 16px;
+  padding-top: env(safe-area-inset-top);
+  box-shadow: 0 2px 10px rgba(120, 66, 32, .25);
+}
+.topbar h1 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: .2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.logo { font-size: 20px; }
+.topbar-sub {
+  font-size: 13px;
+  opacity: .9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Hero (Home) ---------- */
+.hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 20px;
+  padding: 20px 18px;
+  margin-bottom: 6px;
+  color: #fff;
+  background:
+    radial-gradient(120% 140% at 90% -10%, rgba(255, 220, 160, .4), transparent 60%),
+    linear-gradient(130deg, #c4552f, #d9742c 55%, #d99a3a);
+  box-shadow: var(--shadow-lg);
+}
+.hero-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.hero-text { min-width: 0; }
+.hero-eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .6px;
+  text-transform: uppercase;
+  opacity: .9;
+  margin: 0 0 4px;
+}
+.hero-title {
+  font-family: var(--serif);
+  font-size: 22px;
+  line-height: 1.2;
+  margin: 0 0 8px;
+}
+.hero-sub { font-size: 13px; opacity: .92; margin: 0; }
+.hero .hero-btn {
+  flex: 0 0 auto;
+  background: #fff;
+  color: var(--brown-dark);
+  font-size: 14px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  box-shadow: 0 3px 10px rgba(120, 66, 32, .25);
+  min-height: 40px;
+}
+
+/* ---------- View / main ---------- */
+.view {
+  max-width: 540px;
+  margin: 0 auto;
+  padding: 14px 14px calc(var(--tabbar-h) + 20px + env(safe-area-inset-bottom));
+  outline: none;
+}
+.view:focus { outline: none; }
+
+/* ---------- Bottom tab bar ---------- */
+.tabbar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  display: flex;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -4px 16px rgba(120, 66, 32, .06);
+  z-index: 30;
+  max-width: 540px;
+  margin: 0 auto;
+}
+.tabbar[hidden] { display: none; }
+.tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+}
+.tab-badge {
+  position: absolute;
+  top: 2px;
+  right: 10px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: #d64541;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+}
+.tab-ico { font-size: 20px; line-height: 1; }
+.tab.active { color: var(--brown); }
+.tab.active::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 34px;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--brown);
+}
+
+/* ---------- Cards ---------- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 15px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow);
+}
+/* A delivery day whose order window has passed (after the 6pm cut-off) but
+   that hasn't ended yet — kept visible, greyed out until the day is over. */
+.card.closed { opacity: .55; filter: saturate(.8); }
+.card.tappable {
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.card.tappable:active { transform: scale(.985); box-shadow: none; background: #f9efe6; }
+
+.card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.card-title { font-size: 16px; font-weight: 700; margin: 0 0 2px; font-family: var(--serif); }
+.card-sub { font-size: 13px; color: var(--muted); margin: 0; }
+
+h2.section {
+  font-family: var(--serif);
+  font-size: 18px;
+  color: var(--ink);
+  margin: 20px 2px 10px;
+}
+h2.section:first-child { margin-top: 0; }
+
+/* ---------- Badges ---------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.badge::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: .85;
+}
+.badge-open   { background: var(--green-bg); color: var(--green); }
+.badge-closed { background: var(--red-bg);   color: var(--red); }
+.badge-past   { background: var(--gray-bg);  color: var(--muted); }
+.badge-full   { background: var(--amber-bg); color: var(--amber); }
+.badge-over   { background: var(--red-bg);   color: var(--red); }
+
+/* ---------- Fill meter ---------- */
+.meter {
+  position: relative;
+  height: 20px;
+  background: var(--gray-bg);
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 8px 0 2px;
+}
+.meter-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #d9812f, var(--brown));
+  border-radius: 999px;
+  transition: width .3s ease;
+}
+.meter-fill.over { background: linear-gradient(90deg, #d0564b, var(--red)); }
+.meter-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  text-shadow: 0 0 4px rgba(255,255,255,.7);
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+  appearance: none;
+  border: none;
+  border-radius: 13px;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 12px 18px;
+  cursor: pointer;
+  background: linear-gradient(180deg, #d0632f, #b34a28);
+  color: #fff;
+  min-height: 46px;
+  box-shadow: 0 3px 10px rgba(140, 70, 40, .28);
+  -webkit-tap-highlight-color: transparent;
+}
+.btn:active { transform: translateY(1px) scale(.99); box-shadow: 0 1px 4px rgba(140,70,40,.25); }
+.btn.primary { background: linear-gradient(180deg, #d0632f, #b34a28); color: #fff; }
+.btn.ghost { background: var(--surface); color: var(--brown-dark); border: 1px solid var(--line); box-shadow: none; }
+.btn.danger { background: linear-gradient(180deg, #d0564b, #b3352b); color: #fff; box-shadow: 0 3px 10px rgba(190, 60, 50, .28); }
+.btn.soft { background: var(--brown-soft); color: var(--brown-dark); box-shadow: none; }
+.btn.block { display: block; width: 100%; }
+.btn.small { font-size: 13px; padding: 8px 13px; min-height: 36px; border-radius: 11px; }
+.btn[disabled] { opacity: .5; }
+
+.btn-row { display: flex; gap: 10px; margin-top: 12px; }
+.btn-row .btn { flex: 1; }
+
+/* ---------- Forms ---------- */
+.field { margin-bottom: 12px; }
+.field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 5px;
+}
+.field .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+.input, select.input, textarea.input {
+  width: 100%;
+  font-size: 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  min-height: 46px;
+}
+.input:focus { outline: 2px solid var(--brown); outline-offset: -1px; border-color: transparent; }
+textarea.input { min-height: 64px; resize: vertical; }
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface);
+}
+.stepper button {
+  width: 44px;
+  height: 44px;
+  font-size: 20px;
+  font-weight: 700;
+  border: none;
+  background: var(--brown-soft);
+  color: var(--brown-dark);
+  cursor: pointer;
+}
+.stepper .stepper-val {
+  min-width: 52px;
+  text-align: center;
+  font-size: 17px;
+  font-weight: 700;
+}
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.form-grid .span2 { grid-column: 1 / -1; }
+.edit-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+}
+.add-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+.add-item select { flex: 1; min-width: 0; }
+
+/* Order-status flow map above the Orders list */
+.status-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 2px;
+  margin: 2px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.status-flow .flow-step {
+  background: var(--gray-bg);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.status-flow .flow-arrow {
+  color: var(--muted);
+  margin: 0 1px;
+  font-weight: 700;
+}
+
+/* Compact per-order status journey under each Orders row: the six statuses in
+   order with this row's own step lit (reached = green ✓, current = amber dot,
+   later = grey). Spans its own full line under the row. */
+.list-item .oj { flex: 1 1 100%; min-width: 0; }
+.oj { display: flex; padding: 0 2px; }
+.oj-step {
+  position: relative;
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+/* connector from this step's node across to the next step's node */
+.oj-step::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  left: 50%;
+  width: 100%;
+  height: 2px;
+  border-radius: 2px;
+  background: #e9dfd0;
+}
+.oj-step:last-child::after { display: none; }
+.oj-step.done::after { background: #3e8e5a; }
+.oj-track {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 14px;
+}
+.oj-node {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #d8cbbb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.oj-step.done .oj-node { background: #3e8e5a; }
+.oj-step.now .oj-node {
+  width: 16px;
+  height: 16px;
+  background: #c9641f;
+  animation: oj-pulse 1.4s ease-in-out infinite;
+}
+@keyframes oj-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(201, 100, 31, .24); }
+  50%      { box-shadow: 0 0 0 7px rgba(201, 100, 31, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .oj-step.now .oj-node { animation: none; box-shadow: 0 0 0 3px rgba(201, 100, 31, .2); }
+}
+.oj-check { color: #fff; font-size: 8px; font-weight: 800; line-height: 1; }
+.oj-dot { width: 5px; height: 5px; border-radius: 50%; background: #fff; }
+.oj-label {
+  margin-top: 3px;
+  font-size: 8.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  color: #a2968b;
+}
+.oj-step.done .oj-label { color: #2f6f46; }
+.oj-step.now .oj-label { color: #c9641f; font-weight: 800; }
+
+/* ---------- Lists / rows ---------- */
+.list-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  column-gap: 10px;
+  row-gap: 6px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
+}
+.list-item:last-child { border-bottom: none; }
+.list-item .li-main { min-width: 0; }
+.list-item .li-title { font-weight: 600; font-size: 15px; }
+.list-item .li-sub { font-size: 13px; color: var(--muted); }
+.list-item .li-right { display: flex; align-items: center; gap: 8px; row-gap: 6px; flex-wrap: wrap; }
+
+/* ---------- Bring-a-friend ---------- */
+.ref-block {
+  flex: 1 1 100%;
+  min-width: 0;
+  margin-top: 4px;
+  padding: 8px 10px;
+  background: var(--green-bg);
+  border-radius: 10px;
+}
+.ref-block .btn-row { gap: 6px; margin-bottom: 0; }
+.ref-block .card-sub { margin: 0; }
+.st-chip {
+  display: inline-block;
+  font-weight: 700;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.st-chip.valid { background: var(--green-bg); color: var(--green); }
+.st-chip.used { background: var(--gray-bg); color: var(--muted); }
+.st-chip.expired { background: var(--gray-bg); color: var(--muted); text-decoration: line-through; }
+.credit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.credit-row:last-child { border-bottom: none; }
+.credit-row .li-main { min-width: 0; }
+.credit-row .btn-row { gap: 6px; margin: 0; }
+
+.qty-chip {
+  font-weight: 700;
+  font-size: 15px;
+  background: var(--brown-soft);
+  color: var(--brown-dark);
+  padding: 3px 11px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.warn {
+  background: var(--amber-bg);
+  color: var(--amber);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 8px 0;
+}
+.danger-banner {
+  background: var(--red-bg);
+  color: var(--red);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  margin: 8px 0;
+}
+.muted { color: var(--muted); }
+
+.avail-line {
+  margin: -2px 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.avail-line.warn { color: var(--red); }
+
+/* ---------- Tabs strip (dates) ---------- */
+.date-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 2px 10px;
+  -webkit-overflow-scrolling: touch;
+}
+.date-tab {
+  flex: 0 0 auto;
+  padding: 8px 13px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.date-tab.active { background: var(--brown); color: #fff; border-color: var(--brown); }
+.date-tab .dot { color: var(--green); }
+.date-tab .dot.closed { color: var(--red); }
+
+/* ---------- PO table ---------- */
+.po-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.po-table th {
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  color: var(--muted);
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--line);
+}
+.po-table td { padding: 8px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.po-table td.num, .po-table th.num { text-align: right; }
+.po-total { font-size: 17px; font-weight: 700; text-align: right; padding-top: 10px; }
+.po-breakdown { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+/* The owner's product description on the Products list card — quieter than the
+   title but legible, so she can read each blurb without opening the editor. */
+.product-desc {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #8a6a52;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.po-snapshot-note { font-size: 12px; color: var(--muted); margin-top: 10px; }
+/* Group header per supplier inside the PO table */
+.po-supplier td { border-bottom: none; padding: 10px 4px 2px; }
+.po-supplier:first-child td { padding-top: 4px; }
+.po-suprow { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.po-sup-name { font-weight: 700; font-size: 15px; }
+.po-sup-name.muted { font-weight: 600; color: var(--muted); }
+.po-sup-side { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.po-sup-sub { font-weight: 700; color: var(--brown-dark); }
+.po-buy { font-weight: 600; }
+.po-need { font-size: 12px; font-weight: 400; color: var(--muted); }
+
+/* ---------- Empty ---------- */
+.empty { text-align: center; padding: 36px 16px; color: var(--muted); }
+.empty-icon {
+  font-size: 40px;
+  width: 84px;
+  height: 84px;
+  margin: 0 auto 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--brown-soft);
+  border-radius: 50%;
+}
+.empty h3 { margin: 0 0 4px; font-family: var(--serif); color: var(--ink); }
+.empty p { margin: 0; }
+
+/* ---------- Confirm dialog ---------- */
+.confirm-layer {
+  position: fixed;
+  inset: 0;
+  background: rgba(43, 33, 24, .5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 60;
+}
+.confirm-layer[hidden] { display: none; }
+.confirm-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 18px;
+  max-width: 340px;
+  width: 100%;
+  box-shadow: var(--shadow-lg);
+}
+.confirm-text { margin: 0 0 14px; font-size: 15px; line-height: 1.4; }
+.confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.confirm-actions .btn { flex: 0 1 auto; }
+
+/* ---------- Order edit pop-up ---------- */
+.popup-layer {
+  position: fixed;
+  inset: 0;
+  background: rgba(43, 33, 24, .5);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 14px;
+  overflow: auto;
+  z-index: 65; /* above the tabbar, below the app-password lock */
+}
+.popup-layer[hidden] { display: none; }
+.popup-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  width: 100%;
+  max-width: 430px;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 28px);
+}
+.popup-card.wide { max-width: 560px; }
+.popup-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px 4px;
+}
+.popup-title { font-family: var(--serif); font-size: 17px; font-weight: 700; color: var(--ink); min-width: 0; }
+.popup-body { overflow-y: auto; padding: 8px 16px 16px; }
+
+/* ---------- App-password lock ---------- */
+.lock-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 80; /* above toast(70), confirm(60), tabbar(30), topbar(20) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: linear-gradient(160deg, #c4552f, #d9742c 55%, #d99a3a);
+}
+.lock-layer[hidden] { display: none; }
+.lock-card {
+  width: 100%;
+  max-width: 320px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 26px 22px 24px;
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+}
+.lock-emoji { font-size: 40px; margin: 0 0 6px; }
+.lock-title { font-family: var(--serif); font-size: 19px; font-weight: 700; margin: 0 0 4px; color: var(--ink); }
+.lock-sub { font-size: 13px; color: var(--muted); margin: 0 0 16px; }
+.lock-input { text-align: center; font-size: 22px; letter-spacing: 10px; }
+.lock-error { color: var(--red); font-size: 13px; min-height: 18px; margin: 8px 0 0; }
+.lock-actions { margin-top: 14px; }
+.lock-actions .btn { width: 100%; }
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--tabbar-h) + 16px);
+  transform: translate(-50%, 10px);
+  background: var(--ink);
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .25s ease, transform .25s ease;
+  z-index: 70;
+  max-width: 90vw;
+  text-align: center;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- More menu ---------- */
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 15px 4px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+}
+.menu-item:last-child { border-bottom: none; }
+.menu-item .chev { color: var(--muted); }
+
+/* ---------- Chips (ingredient rows) ---------- */
+.ing-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px 58px 40px;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.ing-row select,
+.ing-row .input { min-width: 0; }
+.ing-row .unit { font-size: 13px; color: var(--muted); }
+.ing-row .line-cost {
+  grid-column: 1 / -1;
+  justify-self: end;
+  font-size: 12px;
+  color: var(--muted);
+  margin: -3px 0 2px;
+}
+/* "How it adds up:" table under the recipe lines — the lines' rounded costs in
+   order, ending on the same total the header shows. */
+.cost-sum {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+}
+.cost-sum-title { margin: 0 0 3px; font-size: 12px; font-weight: 600; color: var(--muted); }
+/* Each filled line is its own rounded strip: the name and its % sit on the same
+   band, so a % at the far right still clearly belongs to its line. */
+.cost-grid { display: flex; flex-direction: column; gap: 3px; }
+.cost-row {
+  display: grid;
+  grid-template-columns: 18px auto 1fr auto;
+  gap: 1px 8px;
+  align-items: baseline;
+  font-size: 12px;
+  background: var(--strip);
+  border-radius: 9px;
+  padding: 4px 9px;
+}
+.cost-op { text-align: right; color: var(--muted); }
+.cost-val { font-variant-numeric: tabular-nums; }
+.cost-name { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cost-pct { font-variant-numeric: tabular-nums; }
+.cost-total-val { grid-column: 2 / 4; }
+.cost-total-row {
+  background: transparent;
+  margin-top: 3px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--line);
+}
+.cost-total-row .cost-op,
+.cost-total-row .cost-val,
+.cost-total-row .cost-pct { font-weight: 600; }
+
+/* ---------- Supplier price rows (ingredient editor) ---------- */
+.price-row { border-top: 1px dashed var(--line); padding-top: 8px; margin-top: 8px; }
+.price-row:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+.price-row-label { margin: 0 0 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.price-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) 72px 58px minmax(0, 1fr) 30px;
+  gap: 6px;
+  align-items: center;
+}
+.price-grid .input { min-width: 0; }
+.price-grid .btn.price-del {
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  width: 100%;
+  min-width: 0;
+  text-align: center;
+  color: var(--brown-dark);
+}
+
+@media (min-width: 541px) {
+  .view { padding-top: 20px; }
+  .tabbar { border-radius: var(--radius) var(--radius) 0 0; }
+}
+
+/* ---------- Order status / source ---------- */
+/* The order's shareable code (#A3F9C2) shown on every order row, inbox row and
+   the edit pop-up, so the baker can match a WhatsApp message to its order. */
+.ord-code {
+  display: inline-block;
+  margin-left: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .3px;
+  color: var(--brown-dark, #7a4a2a);
+  background: var(--brown-soft, #f7eddf);
+  border: 1px solid #ead8c3;
+  border-radius: 5px;
+  padding: 1px 5px;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+.src-tag {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--brown-dark, #7a4a2a);
+  background: var(--brown-soft, #f4e6da);
+  padding: 1px 7px;
+  border-radius: 999px;
+  vertical-align: 2px;
+}
+.ref-tag {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--green, #3f7d4e);
+  background: var(--green-bg, #e7f2e8);
+  padding: 1px 7px;
+  border-radius: 999px;
+  vertical-align: 2px;
+}
+.fulfill-tag {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--green-dark, #2f6b2f);
+  background: var(--green-soft, #eaf6ea);
+  padding: 1px 7px;
+  border-radius: 999px;
+  vertical-align: 2px;
+}
+.fulfill-tag.courier { color: #7a4a2a; background: #f4e6da; }
+.fulfill-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.row-actions select.input { width: 100%; }
+
+.sel-small {
+  font-size: 13px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+/* ---------- New-orders inbox ---------- */
+.inbox {
+  border: 2px solid #d64541;
+}
+.inbox h3 { color: #d64541; }
+.inbox-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
+}
+.inbox-item:last-child { border-bottom: none; }
+.inbox-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-decoration: none;
+  color: inherit;
+}
+.inbox-main:active { background: var(--red-bg); border-radius: 8px; }
+.inbox-item .li-title { color: var(--ink); }
+.inbox-arrow { color: var(--muted); font-size: 18px; font-weight: 700; }
+.inbox-del {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 10px 10px 10px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.inbox-del:active { background: var(--red-bg); color: #d64541; }
+
+/* ---------- Order finder (top of the Orders screen) ---------- */
+.finder { padding: 10px 12px 6px; }
+.finder-bar { display: flex; align-items: center; gap: 8px; }
+.finder-ico { font-size: 17px; line-height: 1; opacity: .85; flex: 0 0 auto; }
+.finder-input {
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  -webkit-appearance: none;
+}
+.finder-results { margin-top: 10px; padding-top: 2px; }
+.finder-results .inbox-item { padding: 12px 0; }
+.finder-results h3 { font-size: 15px; }
+
+/* An order row just landed on via the finder briefly glows so the baker can
+   see exactly where the search took her, then fades back. */
+.list-item.hit { animation: hit-glow 1.8s ease; }
+@keyframes hit-glow {
+  0%, 100% { box-shadow: none; background: transparent; }
+  15%, 40% { box-shadow: 0 0 0 3px rgba(62, 142, 90, .55); background: rgba(62, 142, 90, .10); }
+}
+
+/* ---------- Packing label (Packed orders) ---------- */
+.label-styles { display: flex; gap: 8px; flex-wrap: wrap; margin: 2px 0 12px; }
+.style-pill {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--brown-dark);
+  font-weight: 600;
+  font-size: 13px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.style-pill.active { background: var(--brown-soft); border-color: var(--brown); }
+.label-preview-wrap { display: flex; justify-content: center; padding: 2px 0 14px; }
+
+.label-sheet {
+  width: 100%;
+  max-width: 300px;
+  background: #fff;
+  border: 2px dashed #d8c3ae;
+  border-radius: 12px;
+  padding: 14px 16px;
+  color: #3b2a1f;
+  text-align: center;
+}
+.label-sheet .ls-brand {
+  font-family: var(--serif);
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--brown);
+}
+.label-sheet .ls-meta, .label-sheet .ls-date { font-size: 12px; color: #7a6a58; margin-top: 6px; }
+.label-sheet .ls-code { font-size: 20px; font-weight: 800; letter-spacing: .04em; margin-top: 10px; }
+.label-sheet .ls-customer { font-size: 17px; font-weight: 700; margin-top: 4px; }
+.label-sheet .ls-item { font-size: 13px; margin-top: 3px; }
+.label-sheet .ls-items { font-size: 13px; margin-top: 6px; }
+.label-sheet .ls-note, .label-sheet .ls-address { font-size: 12px; color: #7a6a58; margin-top: 8px; }
+.label-sheet .ls-address { font-weight: 600; }
+.label-print-body .popup-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* The name-only sheet puts the customer front and center. */
+.label-sheet.style-name .ls-code { font-size: 22px; margin-top: 16px; }
+.label-sheet.style-name .ls-customer { font-size: 27px; margin-top: 10px; }
+
+/* Mailing sheet: three addressed blocks (FROM / TO / ORDER), left-aligned. */
+.label-sheet.style-mailing {
+  text-align: left;
+  max-width: 340px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.label-sheet.style-mailing .ls-mail-sec {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed #e6d8c8;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  color: #a58b70;
+}
+.label-sheet.style-mailing .ls-mail-sec:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+.label-sheet.style-mailing .ls-mail-name { font-size: 20px; font-weight: 800; }
+.label-sheet.style-mailing .ls-mail-line { font-size: 14px; }
+
+/* ---- customers: pick-to-message + history pop-up ---- */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.li-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.list-item .pick-mark { display: none; }
+.list-item.picking .pick-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; flex: 0 0 auto;
+  border: 2px solid var(--brown-dark); border-radius: 50%;
+  color: #fff; font-weight: 800; font-size: 13px; background: transparent;
+}
+.list-item.picking .pick-mark.on { background: var(--brown-dark); border-color: var(--brown-dark); }
+.list-item.picked { background: var(--brown-soft); }
+.msg-preview {
+  border: 1px dashed var(--line); border-radius: 10px;
+  padding: 8px 10px; margin: 8px 0; background: var(--bg);
+}
+.msg-preview .preview-text { font-weight: 600; color: var(--brown-dark); }
+.hist-ord { padding: 10px 0; border-top: 1px solid var(--line); }
+.hist-ord:first-of-type { border-top: none; padding-top: 4px; }
+.hist-line { font-size: 14px; padding: 2px 0; }
+.hist-code { font-weight: 800; color: var(--brown-dark); letter-spacing: .02em; }
+
+/* "Set day's availability" pop-up (per-delivery-date product adjustments) */
+.day-adj-rows { display: flex; flex-direction: column; gap: 8px; }
+.day-adjust-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  border: 1px dashed var(--line); border-radius: 10px; padding: 8px 10px; }
+.day-adjust-row .day-adj-right { display: flex; align-items: center; gap: 8px; }
+.day-adjust-row .day-adj-preview { font-size: 13px; color: var(--brown-dark); font-weight: 600;
+  min-width: 74px; text-align: right; }
+.day-adjust-row .day-adj-input { width: 76px; min-height: 36px; text-align: center; }
+
+/* ---------- Home: at a glance + weekly to-do ---------- */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin: 10px 0 2px;
+}
+.stat-num {
+  font-family: var(--serif);
+  font-size: 21px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.15;
+  margin: 0;
+}
+.stat-label {
+  font-size: 11.5px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin: 2px 0 0;
+}
+.bake-lines { margin-top: 8px; }
+.bake-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 14px;
+  padding: 4px 0;
+}
+.bake-line + .bake-line { border-top: 1px dashed var(--line); }
+.check-list { margin-top: 8px; }
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 8px 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+}
+.check-row + .check-row { border-top: 1px solid var(--line); }
+.check-row:active .check-label { opacity: .7; }
+.check-dot {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1.5px solid var(--brown);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: transparent;
+}
+.check-dot.done { background: var(--green-bg); border-color: var(--green); color: var(--green); }
+.check-label { color: var(--ink); }
+.check-label.done { color: var(--muted); text-decoration: line-through; }
+.check-toggle {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 10px;
+  padding: 0; border: none; background: none;
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+.check-toggle:active .check-label { opacity: .7; }
+.check-row { gap: 6px; }
+.check-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.check-acts { flex: none; display: flex; gap: 2px; }
+.act-btn {
+  flex: none; width: 32px; height: 32px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: 8px; background: none;
+  color: var(--muted); font-size: 15px; line-height: 1; padding: 0;
+}
+.act-btn:active { background: var(--gray-bg); }
+.check-edit { display: flex; align-items: center; gap: 8px; width: 100%; }
+.check-edit .check-input, .check-add .check-input {
+  flex: 1; min-width: 0; min-height: 38px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 10px;
+  font: inherit; font-size: 14px; background: var(--surface); color: var(--ink);
+}
+.check-add { display: flex; align-items: center; gap: 8px; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--line); }
+
+/* Home delivery "fuel gauge" needle dial */
+.gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 6px;
+}
+.gauge-svg {
+  width: 150px;
+  max-width: 70%;
+  height: auto;
+  display: block;
+}
+.gauge-label {
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: -2px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Home: "Coming 4 weeks" forecast rows */
+.fore-list { margin-top: 2px; }
+.fore-row { padding: 9px 0; }
+.fore-row + .fore-row { border-top: 1px solid var(--line); }
+.fore-row.tappable:active { opacity: .65; }
+.fore-line1 { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.fore-range { font-family: var(--serif); font-weight: 700; font-size: 15px; white-space: nowrap; }
+.fore-chips { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.chip-date {
+  border: 1px solid var(--line); background: var(--surface);
+  border-radius: 999px; padding: 2px 8px; font-size: 12px;
+  color: var(--ink); min-height: 26px; line-height: 1;
+}
+.chip-date:active { background: var(--gray-bg); }
+.fore-empty { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
+.fore-stats { margin: 5px 0 0; font-size: 13px; }
+.fore-stats .muted { font-size: 12px; }
+
+/* Home: one-week delivery dial pager (up to 5 dials in a row) */
+.pager-head { display: flex; align-items: center; gap: 10px; margin: 14px 0 10px; }
+.pager-arrow { flex: none; }
+.pager-arrow.disabled { opacity: .35; pointer-events: none; }
+.pager-center { flex: 1; min-width: 0; text-align: center; }
+.pager-range { margin: 0; font-family: var(--serif); font-weight: 700; font-size: 15px; }
+.week-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.date-tile {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 2px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 12px; padding: 6px 2px 5px; min-height: 96px;
+}
+.date-tile:active { background: var(--gray-bg); }
+.tile-day { margin: 0; font-size: 12px; font-weight: 700; color: var(--ink); white-space: nowrap; }
+.date-tile .gauge { margin-top: 0; }
+.date-tile .gauge-svg { width: 54px; max-width: none; }
+.date-tile .gauge-label { font-size: 10px; margin-top: 0; }
+
+/* Manage delivery dates — month calendar picker */
+.cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 2px 0 2px;
+}
+.cal-title { font-family: var(--serif); font-weight: 700; font-size: 16px; }
+.cal-nav { min-width: 36px; padding: 6px 0; }
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-top: 6px;
+  position: relative; /* anchor the absolutely-placed occasion papers */
+}
+.cal-dow {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  padding: 2px 0;
+}
+.cal-cell {
+  position: relative;
+  height: 34px;
+  border: none;
+  background: none;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--ink);
+  /* Above the occasion papers (see .occ-paper) so the day number and any
+     green/selected fill stay legible on top of a mark. The cell background is
+     transparent, so a paper behind still shows through around the number. */
+  z-index: 1;
+}
+.cal-cell.tappable { cursor: pointer; }
+.cal-cell.tappable:active { background: var(--gray-bg); }
+.cal-cell.sel { background: var(--brown); color: #fff; font-weight: 700; }
+.cal-cell.past { color: var(--muted); opacity: .5; }
+.cal-cell.today:not(.added):not(.sel):not(.sol) { box-shadow: inset 0 0 0 1.5px var(--brown); }
+.cal-cell.blank { visibility: hidden; }
+
+/* Occasion marks — reminder periods painted on the delivery calendar. Purely
+   visual: an occasion never adds or blocks a delivery date. Everything reads
+   as same-tall "sheets" stacked back to front:
+     • a holiday spanning MORE days sits LOWEST — a translucent band over its
+       days (the longer it runs, the paler it is);
+     • a holiday spanning FEWER days (a single-day public holiday) sits ABOVE
+       it as a SOLID box in its strong colour;
+     • a date chosen as a delivery day sits HIGHEST — a smaller, solid
+       light-green pill carrying the date number and its tick.
+   Longer marks are laid first so shorter ones paint on top of them. */
+.cal-modes { display: flex; gap: 8px; margin: 0 0 12px; }
+.cal-modes .btn { flex: 1; font-size: 13px; padding: 9px 0; }
+.btn.cal-mode-on { background: var(--brown); border-color: var(--brown); color: #fff; box-shadow: none; }
+
+/* The eight mark colours. --occ-solid is the strong colour used for a mark's
+   solid box, tag and swatch; the translucent band wash is mixed from it at low
+   alpha, so no per-colour tints are needed. --occ-ink overrides the white text
+   a colour is too light to carry (only yellow). */
+.occ-red    { --occ-solid: #c04538; }
+.occ-orange { --occ-solid: #d1641a; }
+.occ-yellow { --occ-solid: #e0a80c; --occ-ink: #5c4a00; }
+.occ-green  { --occ-solid: #1f7a47; }
+.occ-blue   { --occ-solid: #2a63a6; }
+.occ-purple { --occ-solid: #73408f; }
+.occ-pink   { --occ-solid: #b23a6e; }
+.occ-grey   { --occ-solid: #6b6f76; }
+
+.occ-cell { cursor: pointer; }
+/* One multi-day occasion = one rounded band, an absolutely-positioned grid
+   child: grid-column/grid-row (set in JS) pick its week-row area — without
+   disturbing the auto-placed day cells — and it sits UNDER the day cells
+   (z-index 0 vs the cells' 1), with pointer-events off so taps and drags pass
+   through to the dates. The 2px top/bottom margin makes it the same height as
+   the sheets that can sit on top of it. */
+.occ-paper {
+  position: absolute;
+  grid-area: var(--gr) / var(--gc1) / var(--gr) / var(--gc2);
+  inset: 2px 1px; /* 2px top/bottom margin = a 30px-tall sheet; 1px side inset so
+                     a sheet sitting on top still shows around its edges */
+  z-index: 0;
+  pointer-events: none;
+  border-radius: 9px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--occ-solid, #8a7a6b) 22%, transparent);
+}
+/* Translucent fills, one per strength: each mark's own solid colour mixed
+   down to a wash, so the stronger the mark (shorter run) the deeper its band. */
+.occ-paper { background: color-mix(in srgb, var(--occ-solid, #8a7a6b) 22%, transparent); }
+.occ-paper.occ-strong { background: color-mix(in srgb, var(--occ-solid, #8a7a6b) 32%, transparent); }
+.occ-paper.occ-mid    { background: color-mix(in srgb, var(--occ-solid, #8a7a6b) 22%, transparent); }
+.occ-paper.occ-soft   { background: color-mix(in srgb, var(--occ-solid, #8a7a6b) 14%, transparent); }
+
+/* Second sheet: a single-day holiday is a SOLID box in its strong colour, nearly
+   the whole day wide, so a longer band underneath peeks out at the sides. */
+.cal-cell.sol { font-weight: 700; }
+.cal-cell.sol::before {
+  content: "";
+  position: absolute;
+  z-index: -1; /* in the cell's stacking context → above the bands, under the number */
+  left: 50%;
+  top: 50%;
+  width: calc(100% - 8px);
+  height: 30px;
+  border-radius: 9px;
+  transform: translate(-50%, -50%);
+  background: var(--occ-solid, var(--brown));
+}
+.cal-cell.sol:not(.added) .num { color: var(--occ-ink, #fff); }
+
+/* Top sheet: a chosen delivery date is a smaller, SOLID light-green pill with
+   the date number and its tick sitting on it — always the front of the stack,
+   even when it sits on top of a solid single-day box above a long band. */
+.cal-cell.added { font-weight: 700; }
+.cal-cell.added .d {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  top: 50%;
+  width: clamp(22px, 58%, 34px);
+  height: 30px;
+  border-radius: 9px;
+  transform: translate(-50%, -50%);
+  background: var(--green-bg); /* light green, not see-through */
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green) 45%, transparent);
+}
+.cal-cell.added .num {
+  position: relative;
+  z-index: 2;
+  color: var(--green);
+}
+.cal-cell.added .d::after {
+  content: "✓";
+  position: absolute;
+  top: 0;
+  right: 2px;
+  font-size: 8px;
+  font-weight: 800;
+  color: var(--green);
+}
+/* Live drag ring while choosing a range. */
+.cal-cell.occ-sel { box-shadow: inset 0 0 0 2px var(--brown); }
+
+.occ-tag {
+  display: inline-block;
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--occ-ink, #fff);
+  background: var(--occ-solid, var(--brown));
+}
+
+.occ-tip { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+.occ-sublabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin: 14px 0 4px;
+}
+.occ-body { margin-top: 2px; }
+.occ-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--line);
+}
+.occ-row:last-child { border-bottom: none; }
+.occ-row .occ-tag { margin-right: auto; }
+.occ-row-dates { font-size: 12px; color: var(--muted); }
+.occ-row .btn { flex: none; min-height: 34px; padding: 6px 11px; font-size: 12px; }
+
+/* Home's "Upcoming holidays" card rows. */
+.hol-list { margin-top: 2px; }
+.hol-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--line);
+}
+.hol-row:last-child { border-bottom: none; }
+.hol-row .occ-tag {
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 62%;
+}
+.hol-row .occ-row-dates { margin-left: auto; flex: none; text-align: right; }
+
+.cal-range { font-size: 15px; font-weight: 700; font-family: var(--serif); margin: 0 0 10px; }
+
+/* Popup: an 8-colour swatch grid for the mark's colour, a free-text name box,
+   and — when names have been typed before — one-tap chips to reuse them. */
+.occ-swatches { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 2px; }
+.occ-swatch {
+  width: 42px;
+  height: 42px;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--occ-solid, #8a7a6b);
+  flex: none;
+}
+.occ-swatch:active { transform: scale(.93); }
+.occ-swatch.on { outline: 3px solid var(--brown); outline-offset: 2px; }
+.occ-swatch-name {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--brown-dark);
+  text-transform: capitalize;
+}
+.occ-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.occ-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--brown-soft);
+  color: var(--brown-dark);
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1;
+  padding: 8px 8px 8px 13px;
+  min-height: 34px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.occ-chip-x {
+  width: 18px;
+  height: 18px;
+  border: none;
+  padding: 0;
+  margin: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, .12);
+  color: var(--brown-dark);
+  font-size: 11px;
+  line-height: 1;
+  flex: none;
+  cursor: pointer;
+}
+.occ-edit-note { font-size: 12px; color: var(--muted); margin: -2px 0 0; }
+
+/* "Add Malaysia's occasions" import (Delivery calendar → Mark an occasion) */
+.occ-importrow { margin: 10px 0 2px; }
+.occ-importrow .btn { font-size: 13px; }
+.mycal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.7;
+  margin: 0 0 4px;
+}
+.mycal-groups { max-height: 46vh; overflow-y: auto; }
+.mycal-sub {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--brown-dark);
+  margin: 12px 0 4px;
+}
+.mycal-sub:first-child { margin-top: 2px; }
+.mycal-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 2px;
+  border-bottom: 1px dashed var(--line);
+}
+.mycal-row:last-child { border-bottom: none; }
+.mycal-row input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  accent-color: var(--brown);
+}
+.mycal-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--occ-solid, #8a7a6b);
+  flex: none;
+  display: inline-block;
+}
+.mycal-label { flex: 1 1 auto; min-width: 0; font-size: 14px; font-weight: 600; color: var(--brown-dark); }
+.mycal-date { flex: none; font-size: 12px; color: var(--muted); white-space: nowrap; }

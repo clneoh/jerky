@@ -1,0 +1,12 @@
+{
+  "name": "Furkidz — Pet Treats Backoffice",
+  "short_name": "Furkidz",
+  "description": "Handmade pet-treat backoffice: recipes, orders, and auto ingredient purchase orders.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#faf6f0",
+  "theme_color": "#a34a26",
+  "icons": []
+}

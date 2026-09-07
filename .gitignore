@@ -1,0 +1,7 @@
+# Private / tooling files — never publish these.
+.claude/
+.DS_Store
+node_modules/
+
+# Marketing PDF — keep it off the public site.
+marketing/

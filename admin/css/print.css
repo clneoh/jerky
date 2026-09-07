@@ -1,0 +1,52 @@
+/* print.css — printed output shows ONLY the purchase-order card. */
+
+@media print {
+  body { background: #fff; }
+  .topbar, .tabbar, .toast, .confirm-layer, .btn, .no-print { display: none !important; }
+  .view { padding: 0; max-width: none; }
+
+  .card { box-shadow: none; border: 1px solid #ccc; page-break-inside: avoid; }
+  .card:not(.po-card) { display: none !important; }
+
+  .po-card h2 { margin-top: 0; }
+  .po-total { font-size: 16px; }
+}
+
+/* Packing-label printing shows ONLY the label sheet. Scoped to body.label-print
+   (added only for the instant of printing) so a PO print is never affected. */
+@media print {
+  body.label-print .view,
+  body.label-print .topbar,
+  body.label-print .tabbar,
+  body.label-print .toast,
+  body.label-print .confirm-layer,
+  body.label-print .lock-layer { display: none !important; }
+
+  body.label-print .popup-layer {
+    position: static;
+    display: block;
+    background: none;
+    padding: 0;
+    overflow: visible;
+  }
+  body.label-print .popup-card {
+    max-width: none;
+    max-height: none;
+    box-shadow: none;
+    border: none;
+    background: #fff;
+  }
+  body.label-print .popup-head,
+  body.label-print .label-styles,
+  body.label-print .popup-actions { display: none !important; }
+  body.label-print .popup-body { overflow: visible; padding: 0; }
+  body.label-print .label-preview-wrap { padding: 0; }
+  body.label-print .label-sheet {
+    max-width: 90mm;
+    margin: 0 auto;
+    border: 1px solid #999;
+    border-radius: 0;
+    page-break-inside: avoid;
+  }
+  body.label-print .label-sheet.style-mailing { max-width: 110mm; }
+}

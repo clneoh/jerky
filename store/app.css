@@ -1,0 +1,488 @@
+:root {
+  --bg: #fbf4ea;
+  --surface: #fffdf9;
+  --ink: #3b2a1f;
+  --muted: #9a8471;
+  --line: #f0e2d2;
+  --brown: #c4552f;
+  --brown-dark: #a84322;
+  --brown-soft: #fbe7dc;
+  --shadow: 0 2px 12px rgba(120, 66, 32, .08);
+  --shadow-lg: 0 12px 30px rgba(120, 66, 32, .18);
+  --radius: 16px;
+  --serif: "Iowan Old Style", "Palatino Linotype", Georgia, "Times New Roman", serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  -webkit-text-size-adjust: 100%;
+}
+
+/* ---------- Hero banner ---------- */
+.hero {
+  color: #fff;
+  padding: 26px 20px calc(20px + env(safe-area-inset-top));
+  padding-top: calc(26px + env(safe-area-inset-top));
+  background:
+    radial-gradient(120% 150% at 90% -10%, rgba(255, 220, 160, .4), transparent 60%),
+    linear-gradient(130deg, #c4552f, #d9742c 55%, #d99a3a);
+  box-shadow: var(--shadow-lg);
+}
+.hero-eyebrow {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .6px;
+  text-transform: uppercase;
+  opacity: .9;
+}
+.hero-title {
+  margin: 0 0 6px;
+  font-family: var(--serif);
+  font-size: 28px;
+  line-height: 1.15;
+}
+.hero-sub { margin: 0; font-size: 14px; opacity: .92; }
+
+/* ---------- Layout ---------- */
+.view {
+  max-width: 540px;
+  margin: 0 auto;
+  padding: 14px 14px calc(var(--bar-h, 92px) + 20px);
+}
+.section {
+  font-family: var(--serif);
+  font-size: 18px;
+  color: var(--ink);
+  margin: 20px 2px 10px;
+}
+.section:first-child { margin-top: 6px; }
+.muted { color: var(--muted); }
+
+/* ---------- Info card ---------- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 15px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow);
+}
+.info { padding: 12px 15px; }
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 4px 0;
+  font-size: 14px;
+}
+.info-val { font-weight: 600; }
+
+/* ---------- Date pills ---------- */
+.pills {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 2px 8px;
+  -webkit-overflow-scrolling: touch;
+}
+.pill {
+  flex: 0 0 auto;
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 16px 9px;
+  border-radius: 16px;
+  cursor: pointer;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  -webkit-tap-highlight-color: transparent;
+}
+.pill-date {
+  line-height: 1.25;
+  white-space: nowrap;
+}
+/* Always-present second line keeps every pill the same height: open days
+   leave it empty, a full day fills it with a red "Sold out" badge below the
+   date. The date is never covered up. */
+.pill-sub {
+  min-height: 18px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  color: transparent;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+.pill.active { background: var(--brown); color: #fff; border-color: var(--brown); }
+.pill.soldout {
+  background: #e6e0d8;
+  border: 1px dashed #cfc5b8;
+  color: var(--muted);
+  cursor: default;
+}
+.pill.soldout .pill-date { color: #7a6c5d; }
+.pill.soldout .pill-sub { color: #fff; background: #c0392b; }
+
+/* ---------- Menu ---------- */
+.menu-item {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.menu-item .stepper { align-self: flex-end; }
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.card-title { font-size: 16px; font-weight: 700; margin: 0 0 2px; font-family: var(--serif); }
+.card-sub { font-size: 13px; color: var(--muted); margin: 0; }
+
+/* The owner's short product description, under the name + price. Keeps its
+   line breaks (textarea) but stays quiet next to the title. */
+.prod-desc {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+/* Per-product "Only N left" / "Sold out" stamps on the menu cards. */
+.prod-stamp {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--brown);
+  border-radius: 6px;
+  padding: 3px 7px;
+  transform: rotate(-4deg);
+  box-shadow: 0 1px 3px rgba(80, 50, 30, .25);
+}
+.prod-stamp.soldout { background: #c0392b; }
+.menu-item.soldout .card-title { color: #b6a892; }
+.menu-item.soldout .step-btn { background: #f1e9de; color: #c9b8a5; cursor: default; }
+
+/* Small note under a value pack's stepper explaining the advance-order window
+   when its delivery date is too near (value packs need a date X+ days ahead). */
+.prod-note {
+  margin: -2px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* Notice shown when a live refresh had to fix the customer's order — e.g. an
+   item sold out (or only a few left) after they added it. Sits above the menu. */
+.menu-note {
+  margin: 0 0 12px;
+  padding: 11px 13px;
+  border-radius: 12px;
+  background: #fdf1dc;
+  border: 1px solid #e8c98a;
+  color: #8a5a12;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.menu-note p { margin: 0 0 2px; }
+.menu-note p:last-child { margin-bottom: 0; }
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.step-btn {
+  width: 40px;
+  height: 40px;
+  font-size: 19px;
+  font-weight: 700;
+  border: none;
+  background: var(--brown-soft);
+  color: var(--brown-dark);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.step-btn:active { background: #f5d6c4; }
+.stepper-val {
+  min-width: 44px;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* ---------- Forms ---------- */
+.field { margin-bottom: 12px; }
+.field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 5px;
+}
+.field label .req { font-style: normal; color: var(--c); }
+.input {
+  width: 100%;
+  font-size: 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  min-height: 46px;
+}
+.input:focus { outline: 2px solid var(--brown); outline-offset: -1px; border-color: transparent; }
+
+/* Self collect / courier picker */
+.seg {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: #f5ecdf;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.seg-btn {
+  flex: 1;
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 6px;
+  border-radius: 10px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.seg-btn.active {
+  background: var(--surface);
+  color: var(--brown-dark);
+  box-shadow: 0 1px 4px rgba(80, 50, 30, .15);
+}
+
+/* ---------- Track your order ---------- */
+.track-row {
+  display: flex;
+  gap: 8px;
+}
+.track-row .input { flex: 1; min-width: 0; }
+.track-btn {
+  appearance: none;
+  border: none;
+  border-radius: 12px;
+  background: var(--brown);
+  color: #fff;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 12px 18px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.track-btn:active { background: var(--brown-dark); }
+.track-btn:disabled { opacity: .55; cursor: default; }
+.track-result {
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+/* Journey progress line (New → Confirmed → Paid → Preparing → Packed → Delivered) */
+.tj { display: flex; margin: 4px 0 10px; }
+.tj-step {
+  position: relative;
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+/* connector from this step's node across to the next step's node */
+.tj-step::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background: #e9dfd0;
+}
+.tj-step:last-child::after { display: none; }
+.tj-step.done::after { background: #3e8e5a; }
+.tj-track {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 26px;
+}
+.tj-node {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #d8cbbb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tj-step.done .tj-node { background: #3e8e5a; }
+.tj-step.now .tj-node {
+  width: 24px;
+  height: 24px;
+  background: #c9641f;
+  animation: tj-pulse 1.4s ease-in-out infinite;
+}
+/* pulsing ring draws the eye to the live step (for a Packed order that is the
+   final Delivered node — the delivery is the only thing left to happen) */
+@keyframes tj-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(201, 100, 31, .22); }
+  50%      { box-shadow: 0 0 0 10px rgba(201, 100, 31, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tj-step.now .tj-node { animation: none; box-shadow: 0 0 0 4px rgba(201, 100, 31, .18); }
+}
+.tj-check { color: #fff; font-size: 11px; font-weight: 800; line-height: 1; }
+.tj-dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; }
+.tj-label {
+  margin-top: 6px;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  color: #a2968b;
+}
+.tj-step.done .tj-label { color: #2f6f46; }
+.tj-step.now .tj-label { color: #c9641f; font-weight: 800; }
+.track-details { margin-top: 2px; }
+.track-code { margin: 0 0 4px; font-weight: 700; }
+.track-result p { margin: 2px 0; }
+.track-note { color: var(--muted); font-size: 13px; }
+
+/* ---------- Social ---------- */
+.social {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 6px;
+}
+.social a {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brown-dark);
+  text-decoration: none;
+}
+
+/* ---------- Sticky order bar ---------- */
+.order-bar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -4px 16px rgba(120, 66, 32, .08);
+  max-width: 540px;
+  margin: 0 auto;
+}
+.order-summary {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.bar-count { font-size: 12px; color: var(--muted); }
+.bar-total { font-size: 20px; font-weight: 800; }
+.order-bar .btn {
+  flex: 1;
+  appearance: none;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #d0632f, #b34a28);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 14px 18px;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(140, 70, 40, .28);
+  min-height: 48px;
+  -webkit-tap-highlight-color: transparent;
+}
+.order-bar .btn:active { transform: translateY(1px) scale(.99); }
+.order-bar .btn[disabled] { opacity: .55; box-shadow: none; cursor: default; }
+
+.bar-spacer { height: 78px; }
+
+.confirm-msg {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius, 14px);
+  background: #eaf6ea;
+  border: 1px solid #bfe0bf;
+  color: #2f6b2f;
+  font-weight: 600;
+  font-size: 14px;
+  text-align: center;
+  line-height: 1.45;
+}
+.confirm-msg.warn {
+  background: #fdf1dc;
+  border: 1px solid #e8c98a;
+  color: #8a5a12;
+}
+.confirm-title { margin: 0 0 4px; font-size: 15px; font-weight: 700; }
+.confirm-body { margin: 2px 0; font-size: 13px; font-weight: 500; }
+.confirm-sub { margin: 6px 0 0; font-size: 12px; font-weight: 600; opacity: .85; }
+.confirm-link {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--brown-dark);
+}
+
+/* A referral-link visitor (?via=…) sees this amount-free banner at the very top
+   of the page. Green to match the "welcome" feel; the amount is quoted by the
+   bakery on WhatsApp, never here. */
+.referral-banner {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #eaf6ea;
+  border: 1px solid #bfe0bf;
+  color: #2f6b2f;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-align: center;
+}

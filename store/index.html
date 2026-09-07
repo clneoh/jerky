@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#c4552f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Order · Munchies Furkidz</title>
+  <link rel="stylesheet" href="app.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐾</text></svg>">
+</head>
+<body>
+  <header class="hero">
+    <p id="eyebrow" class="hero-eyebrow"></p>
+    <h1 id="name" class="hero-title"></h1>
+    <p id="tagline" class="hero-sub"></p>
+  </header>
+
+  <main class="view">
+    <div id="referral-banner" class="referral-banner" hidden>
+      🎁 You were referred — you have a welcome discount on your first order
+    </div>
+
+    <section class="card info">
+      <p class="info-row"><strong>Posting days</strong><span id="delivery-days" class="info-val"></span></p>
+      <p class="info-row"><strong>Order by</strong><span id="cutoff" class="info-val"></span></p>
+    </section>
+
+    <h2 class="section">Pick a posting day</h2>
+    <div id="dates" class="pills"></div>
+
+    <h2 class="section">What would you like?</h2>
+    <div id="menu-note" class="menu-note" hidden></div>
+    <div id="menu" class="menu"></div>
+
+    <h2 class="section">Your details</h2>
+    <div class="card">
+      <div class="field">
+        <label for="name-input">Your name</label>
+        <input id="name-input" class="input" type="text" placeholder="e.g. Aisyah" autocomplete="name">
+      </div>
+      <div class="field">
+        <label for="whatsapp-input">WhatsApp number <em class="req">*</em></label>
+        <input id="whatsapp-input" class="input" type="tel" inputmode="tel" placeholder="e.g. 012-345 6789" autocomplete="tel" required>
+        <p class="card-sub" style="margin:4px 0 0">We use this to confirm your order and send your payment QR — we'll never spam you.</p>
+      </div>
+      <div class="field">
+        <label>How will you get your order?</label>
+        <div class="seg" id="fulfillment">
+          <button type="button" class="seg-btn active" data-fulfillment="courier">Post (nationwide)</button>
+          <button type="button" class="seg-btn" data-fulfillment="collect">Collect (local)</button>
+        </div>
+      </div>
+      <div class="field" id="address-field">
+        <label for="address-input">Postal address <em class="req">*</em></label>
+        <input id="address-input" class="input" type="text" placeholder="Full address — street, area, town &amp; postcode" autocomplete="street-address">
+        <p class="card-sub" style="margin:4px 0 0">We post nationwide — your treats are made on the day you pick and posted to this address.</p>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label for="note-input">Note (optional)</label>
+        <input id="note-input" class="input" type="text" placeholder="Allergies, extras, anything…" autocomplete="off">
+      </div>
+    </div>
+
+    <h2 class="section">Track your order</h2>
+    <div class="card">
+      <p class="card-sub" style="margin:0 0 10px">
+        Placed an order? Enter the order number from your confirmation (it starts with <strong>#</strong>, e.g. #A3F9C2).
+      </p>
+      <div class="track-row">
+        <input id="track-input" class="input" type="text" placeholder="e.g. A3F9C2" autocomplete="off">
+        <button id="track-btn" class="track-btn">Track</button>
+      </div>
+      <div id="track-result" class="track-result" hidden></div>
+    </div>
+
+    <div id="confirm-msg" class="confirm-msg" hidden></div>
+    <div id="social" class="social"></div>
+  </main>
+
+  <div class="bar-spacer"></div>
+  <div class="order-bar">
+    <div class="order-summary">
+      <span id="bar-count" class="bar-count">0 items</span>
+      <span id="bar-total" class="bar-total">RM0.00</span>
+    </div>
+    <button id="order-btn" class="btn primary" disabled>Place order</button>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
