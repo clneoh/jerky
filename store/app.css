@@ -25,6 +25,18 @@ html, body {
   -webkit-text-size-adjust: 100%;
 }
 
+/* ---------- Relaunch banner (top of page) ---------- */
+.store-banner {
+  width: 100%;
+  overflow: hidden;
+  background: var(--surface);
+}
+.store-banner img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 /* ---------- Hero banner ---------- */
 .hero {
   color: #fff;
