@@ -74,7 +74,7 @@ function groupHeaderRow(g, { interactive, dateTitle, currency }) {
 
 function rowFor(state, it, currency) {
   const breakdown = (it.lines || []).map((l) =>
-    `${l.productName} ×${l.orderQty} = ${l.orderQty * l.perUnitQty}${it.unit}`).join(" · ");
+    `${l.dateLabel ? l.dateLabel + ": " : ""}${l.productName} ×${l.orderQty} = ${l.orderQty * l.perUnitQty}${it.unit}`).join(" · ");
 
   const first = el("td", {},
     it.ingredientName,

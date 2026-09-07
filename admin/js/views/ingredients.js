@@ -58,7 +58,8 @@ function buildIngredientEditor(state, ingredient) {
     currentUomId(state, ingredient), () => { syncDrafts(); renderPriceRows(); });
   const cost = el("input", { class: "input", type: "number", inputmode: "decimal", step: "0.001",
     placeholder: "cost per unit (RM)", value: ingredient?.costPerUnit ?? "" });
-  const note = el("input", { class: "input", placeholder: "e.g. pickup at Mydin (optional)",
+  const note = el("input", { class: "input",
+    placeholder: "e.g. brand or grade, or where you buy it (optional)",
     value: ingredient?.purchaseNote || "" });
 
   // Draft of the supplier price rows — as many as the ingredient already has,
@@ -156,7 +157,7 @@ function buildIngredientEditor(state, ingredient) {
     priceBox.replaceChildren(
       el("p", { class: "price-row-label" },
         "Supplier prices (optional) — the PO buys from the cheapest. Add as many shops as you like."),
-      hint,
+      ...(hint ? [hint] : []),
       ...rowEls,
       el("div", { style: "margin-top:8px" },
         button("＋ Add another supplier price", () => { syncDrafts(); drafts.push({ supplierId: "", qty: "", uomId: "", price: "" }); renderPriceRows(); }, "ghost small")));
@@ -200,6 +201,10 @@ function editorFields(editor) {
       el("label", {}, "Fallback cost"),
       editor.cost,
       editor.costHint),
+    el("div", { class: "field" },
+      el("label", {}, "Note (optional)"),
+      editor.note,
+      el("p", { class: "hint" }, "For you only — e.g. the brand or grade, or a buying reminder. Shows on this ingredient's card, never on products or the shop.")),
     editor.priceBox);
 }
 
@@ -258,8 +263,8 @@ function ingredientCard(state, ing, root) {
     el("div", { class: "card-row" },
       el("div", { style: "min-width:0" },
         el("p", { class: "card-title" }, ing.name),
-        el("p", { class: "card-sub" },
-          [mainSub, ing.purchaseNote].filter(Boolean).join(" · ")),
+        el("p", { class: "card-sub" }, mainSub),
+        ing.purchaseNote ? el("p", { class: "card-sub" }, ing.purchaseNote) : null,
         usedBy.length ? el("p", { class: "po-breakdown" }, `Used in: ${usedBy.join(", ")}`) : null),
       el("div", { class: "li-right" },
         button("Edit", () => openEditIngredientPopup(state, ing, root), "ghost small"),

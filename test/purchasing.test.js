@@ -103,6 +103,21 @@ test("priceItems rounds a priced ingredient up to whole packs with pack-based co
   assert.equal(it.supplierWhatsapp, "6012345678");
 });
 
+test("pack math runs ONCE on the combined total of several days, never per day", () => {
+  // Two days each needing 6800 g (say a 4 kg pack short twice) is 13600 g in
+  // total — rounding after summing gives 4 whole packs, not 2 + 2 = 4 with a
+  // wasted pack on each side of the midpoint. explodeBomDates feeds priceItems
+  // exactly this single summed totalQty.
+  const st = makeState([ingredient({
+    supplierPrices: [{ supplierId: "s_mydin", qty: 4000, uomId: "g", price: 25 }],
+  })]);
+  const it = priceItems(st, [bomItem({ ingredientId: "ing_f", totalQty: 13600, unit: "g" })])[0];
+  assert.equal(it.packs, 4);
+  assert.equal(it.buyText, "4 × 4000g");
+  assert.equal(it.needText, "13600g");
+  assert.equal(it.estCost, 100, "4 whole packs × RM 25");
+});
+
 test("a kg pack converts from a gram need without any user arithmetic", () => {
   const st = makeState([ingredient({
     supplierPrices: [{ supplierId: "s_mydin", qty: 4, uomId: "kg", price: 25 }],

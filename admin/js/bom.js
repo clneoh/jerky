@@ -9,6 +9,7 @@
 
 import { byId, round2 } from "./state.js";
 import { chosenSupplier, cookingUnit } from "./purchasing.js";
+import { shortDate } from "./dates.js";
 
 const MAX_RECIPE_DEPTH = 6;
 const NO_DEMAND = new Map();
@@ -85,6 +86,190 @@ export function explodeBom(state, deliveryDateId) {
   const productLines = aggregateByProduct(orders, state.products);
 
   return { items, orders, totalUnits, productLines, warnings };
+}
+
+// A compact digest of what is ordered for a DATE STRING (not a date id): every
+// order on that day as "productId:qty", sorted. Keyed by the date string so
+// consolidateDeliveryDates re-pointing an order to a survivor record never
+// flips a covered day to "orders changed" — and comparing two digests tells
+// the PO whether a day's saved list still matches today's orders.
+export function ordersFingerprint(state, dateStr) {
+  const dateIds = new Set(
+    (state.deliveryDates || [])
+      .filter((d) => d && d.date === dateStr)
+      .map((d) => d.id));
+  return (state.orders || [])
+    .filter((o) => o && dateIds.has(o.deliveryDateId))
+    .map((o) => `${o.productId}:${Number(o.qty) || 0}`)
+    .sort()
+    .join("|");
+}
+
+// Parse a saved per-date fingerprint back into per-product totals
+// ("prd_a:2|prd_b:1" → Map{prd_a→2, prd_b→1}). Sorted per-order entries for
+// the same product add up, so a digest never loses quantity.
+export function fpToProductQtys(fp) {
+  const map = new Map();
+  for (const part of String(fp || "").split("|")) {
+    if (!part) continue;
+    const i = part.indexOf(":");
+    if (i <= 0) continue;
+    const pid = part.slice(0, i);
+    map.set(pid, (map.get(pid) || 0) + (Number(part.slice(i + 1)) || 0));
+  }
+  return map;
+}
+
+// Orders that land on a DATE STRING — mirrors ordersFingerprint's deliveryDate
+// → date-ids mapping, so both always see the same set of orders.
+function ordersOnDateStr(state, dateStr) {
+  const dateIds = new Set(
+    (state.deliveryDates || [])
+      .filter((d) => d && d.date === dateStr)
+      .map((d) => d.id));
+  return (state.orders || []).filter((o) => o && dateIds.has(o.deliveryDateId));
+}
+
+// What changed on a covered bake day since its list was saved, and the extra
+// ingredient need of ONLY the added units. `savedFp` is that snapshot's
+// per-date fingerprint. added/removed are per-product order deltas; `items` is
+// the raw (not whole-pack) need of the added units, shaped like BOM items so
+// priceItems() can turn it into a small extra-only list.
+export function dayChangeInfo(state, dateStr, savedFp) {
+  const saved = fpToProductQtys(savedFp);
+  const current = new Map();
+  for (const o of ordersOnDateStr(state, dateStr)) {
+    current.set(o.productId, (current.get(o.productId) || 0) + (Number(o.qty) || 0));
+  }
+  const productIds = new Set([...saved.keys(), ...current.keys()]);
+  const added = [];
+  const removed = [];
+  for (const pid of productIds) {
+    const delta = (current.get(pid) || 0) - (saved.get(pid) || 0);
+    if (delta === 0) continue;
+    const p = byId(state.products || [], pid);
+    const row = { productId: pid, productName: p ? p.name : "(deleted product)", qty: Math.abs(delta) };
+    (delta > 0 ? added : removed).push(row);
+  }
+  added.sort((a, b) => a.productName.localeCompare(b.productName));
+  removed.sort((a, b) => a.productName.localeCompare(b.productName));
+
+  const acc = new Map();
+  let totalUnits = 0;
+  for (const a of added) {
+    const product = byId(state.products || [], a.productId);
+    if (!product) continue; // deleted product — its recipe is gone, nothing to price
+    totalUnits += a.qty;
+    const { lines } = expandProduct(state, product, a.qty, []);
+    for (const line of lines) {
+      let it = acc.get(line.ingredientId);
+      if (!it) {
+        const ing = byId(state.ingredients || [], line.ingredientId);
+        it = {
+          ingredientId: line.ingredientId,
+          ingredientName: ing ? ing.name : "(deleted ingredient)",
+          unit: line.unit,
+          costPerUnit: ing ? effectiveUnitCost(state, ing) : 0,
+          totalQty: 0,
+          estCost: 0,
+          unitsOk: true,
+        };
+        acc.set(line.ingredientId, it);
+      }
+      it.totalQty = round2(it.totalQty + line.qty);
+      it.unitsOk = it.unitsOk && line.unit === it.unit;
+    }
+  }
+  const items = [...acc.values()].map((it) => {
+    it.estCost = round2(it.totalQty * it.costPerUnit);
+    return it;
+  });
+  items.sort((a, b) => a.ingredientName.localeCompare(b.ingredientName));
+
+  return { added, removed, items, totalUnits };
+}
+
+// Several delivery dates → ONE ingredient list, so the owner can shop a few
+// bake days in one go. Each date explodes exactly as explodeBom does (identical
+// single-day result, pinned by tests); the merge then sums each ingredient's
+// need across days and tags every contributing order line with its day, so the
+// PO's whole-pack math runs once on the COMBINED total. recs = deliveryDate
+// records in the caller's (date-sorted) order.
+export function explodeBomDates(state, recs) {
+  const list = (recs || []).filter((r) => r && r.id && r.date);
+  const perDate = [];
+  if (list.length === 1) {
+    const bom = explodeBom(state, list[0].id);
+    perDate.push({ id: list[0].id, date: list[0].date, totalUnits: bom.totalUnits, orderCount: bom.orders.length });
+    return { ...bom, multi: false, perDate };
+  }
+  if (list.length === 0) {
+    return { items: [], orders: [], totalUnits: 0, productLines: [], warnings: [], multi: true, perDate };
+  }
+
+  const orders = [];
+  const warnings = [];
+  const seenWarn = new Set();
+  const products = new Map();
+  const merged = new Map(); // ingredientId → accumulated row
+  const crossUnit = new Set(); // ingredient ids measured in different units on different days
+  let totalUnits = 0;
+
+  for (const rec of list) {
+    const bom = explodeBom(state, rec.id);
+    const label = shortDate(rec.date);
+    perDate.push({ id: rec.id, date: rec.date, totalUnits: bom.totalUnits, orderCount: bom.orders.length });
+    totalUnits += bom.totalUnits;
+    orders.push(...bom.orders);
+    for (const p of bom.productLines) {
+      const cur = products.get(p.productId);
+      if (cur) cur.qty += p.qty;
+      else products.set(p.productId, { ...p });
+    }
+    for (const w of bom.warnings) {
+      if (!seenWarn.has(w)) { seenWarn.add(w); warnings.push(w); }
+    }
+    for (const it of bom.items) {
+      let cur = merged.get(it.ingredientId);
+      if (!cur) {
+        cur = {
+          ingredientId: it.ingredientId,
+          ingredientName: it.ingredientName,
+          unit: it.unit,
+          costPerUnit: it.costPerUnit,
+          totalQty: 0,
+          estCost: 0, // recomputed from the combined total below
+          unitsOk: it.unitsOk,
+          lines: [],
+        };
+        merged.set(it.ingredientId, cur);
+      } else {
+        if (it.unit !== cur.unit) crossUnit.add(it.ingredientId);
+        cur.unitsOk = cur.unitsOk && it.unitsOk && it.unit === cur.unit;
+      }
+      cur.totalQty += it.totalQty;
+      cur.lines.push(...it.lines.map((l) => ({ ...l, dateLabel: label })));
+    }
+  }
+
+  for (const ingredientId of crossUnit) {
+    const it = merged.get(ingredientId);
+    if (it) warnings.push(`"${it.ingredientName}" is measured in different units on the selected days — check units.`);
+  }
+
+  const items = [...merged.values()].map((it) => {
+    it.estCost = round2(it.totalQty * it.costPerUnit);
+    return it;
+  });
+  items.sort((a, b) => a.ingredientName.localeCompare(b.ingredientName));
+
+  return {
+    items, orders, totalUnits,
+    productLines: [...products.values()],
+    warnings,
+    multi: true,
+    perDate,
+  };
 }
 
 function aggregateByProduct(orders, products) {
