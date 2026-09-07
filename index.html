@@ -36,9 +36,9 @@ h1{font-family:Arial,sans-serif;font-size:clamp(40px,6vw,70px);line-height:.95;l
 .btn{display:inline-flex;align-items:center;justify-content:center;padding:14px 22px;border-radius:999px;text-decoration:none;font-family:Arial,sans-serif;font-weight:800;font-size:13px;letter-spacing:.06em}
 .btn-primary{background:var(--accent);color:white}
 .btn-secondary{border:1px solid var(--accent);color:var(--accent)}
-.hero-photo{position:relative;display:flex;align-items:center;justify-content:center;min-height:330px}
-/* Your transparent logo sits straight on the cream — no card, no box. */
-.hero-logo{width:min(400px,100%);height:auto;filter:drop-shadow(0 16px 26px rgba(74,44,24,.18))}
+.hero-photo{position:relative;display:flex;align-items:center;justify-content:center}
+/* The big family photo in the banner. Swap images/hero-family.jpg to change it. */
+.hero-shot{width:min(400px,100%);aspect-ratio:2119/2560;object-fit:cover;border-radius:24px;box-shadow:var(--shadow)}
 .hero-badge{position:absolute;left:-18px;bottom:22px;background:var(--accent);color:#fff;padding:15px 18px;border-radius:50%;font-family:Arial,sans-serif;font-size:11px;font-weight:800;text-align:center;line-height:1.35;transform:rotate(-5deg)}
 /* Photo placeholders — owner sends real product photos after launch; each one
    replaces its .photo-tile with a real <img> (see the note in #treats). */
@@ -93,8 +93,8 @@ footer a:hover{color:#fff}
   .brand img.logo{height:60px;width:72px}
   .hero{padding-top:20px}
   .hero-grid,.products,.notice-grid,.info-grid,.footer-grid{grid-template-columns:1fr}
-  .hero-photo{order:-1;min-height:0}
-  .hero-logo{width:min(300px,88%)}
+  .hero-photo{order:-1}
+  .hero-shot{width:min(300px,86%)}
   .product-card,.feature .product-card{grid-template-columns:1fr}
   .product-photo{height:260px}
   .story-photos{grid-template-columns:1fr 1fr}
@@ -139,9 +139,9 @@ footer a:hover{color:#fff}
       </div>
     </div>
     <div class="hero-photo">
-      <!-- OWNER: your transparent logo sits here. Later you can swap it for a favourite
-           photo of your treats/furkid by replacing the <img> below with <img src="...">. -->
-      <img class="hero-logo" src="images/logo.png" alt="Munchies Furkidz — Every pet deserves fresh treats">
+      <!-- OWNER: the big banner photo. To change it, drop a new picture in homepage-photos/
+           and tell me to swap it (or replace images/hero-family.jpg yourself). -->
+      <img class="hero-shot" src="images/hero-family.jpg" alt="The Munchies Furkidz family">
       <div class="hero-badge">SINCE<br>2021<br>♡</div>
     </div>
   </div>
