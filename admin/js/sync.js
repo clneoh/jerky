@@ -67,6 +67,15 @@ export function isSignedIn() {
 // (so Home's to-do agrees on both phones) and is union-merged on pull (below).
 function recordPayload(kind, rec) {
   if (kind === "settings") {
+    // The flat nationwide-post fee quotes posted orders on WhatsApp. It syncs
+    // between THIS owner's phones (last person who set it wins) so the quote is
+    // the same on both — but it is deliberately NOT in the storefront_config
+    // publish (see storefrontPayload in supabase.js), so customers never read
+    // it. Only a phone that has actually SET it (storefront.postageSet) emits
+    // it — a phone still at the default 8 must not overwrite the 6 she set on
+    // the other phone (same guard as `tasks` below).
+    const sf = rec.storefront || {};
+    const hasPostage = sf.postageSet === true && typeof sf.postageRM === "number";
     return {
       defaultCapacity: rec.defaultCapacity,
       deliveryDays: rec.deliveryDays,
@@ -74,6 +83,7 @@ function recordPayload(kind, rec) {
       currency: rec.currency,
       weekCheck: rec.weekCheck || { week: "", done: {} },
       referrals: rec.referrals || {}, // bring-a-friend scheme numbers
+      ...(hasPostage ? { postageRM: sf.postageRM } : {}),
       // The to-do list once she customises it. Absent until then: a phone that
       // never edited its tasks must not push the preset seed and overwrite the
       // other phone's customised list (last-write-wins below would clobber it).
@@ -196,7 +206,12 @@ function mergeCloudRows(state, rows, b) {
       // The checklist must not be overwritten wholesale: another phone's ticks
       // union with this phone's so a same-week tick is never lost. Everything
       // else merges as before, keeping per-device config local.
-      const { weekCheck: cloudWc, ...rest } = payload;
+      // The postage fee rides THIS private row (never the public storefront
+      // publish) so both phones quote the same fee, last-set-wins. The WhatsApp
+      // builders read it from settings.storefront.postageRM, so fold it back in
+      // there — and mark this phone as now knowing a real value (postageSet) so
+      // it carries the fee in its own future pushes instead of dropping it.
+      const { weekCheck: cloudWc, postageRM: cloudPostage, ...rest } = payload;
       const merged = {
         ...rest,
         supabase: (state.settings && state.settings.supabase) || {},
@@ -206,6 +221,13 @@ function mergeCloudRows(state, rows, b) {
           cloudWc || {}),
       };
       state.settings = { ...state.settings, ...merged };
+      if (typeof cloudPostage === "number") {
+        state.settings.storefront = {
+          ...(state.settings.storefront || {}),
+          postageRM: cloudPostage,
+          postageSet: true,
+        };
+      }
       b.meta[key] = cloudAt;
       b.snapshot[key] = canonical(recordPayload("settings", state.settings));
       delete b.pending[key];

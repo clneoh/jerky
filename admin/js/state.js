@@ -33,6 +33,7 @@ export function defaultState() {
         facebook: "",
         tngQr: "", // hosted image URL shown on the customer's track page for TNG payment
         postageRM: 8, // flat nationwide-post fee, quoted on posted orders when confirming
+        postageSet: false, // true once the owner sets postage here — gates the fee's phone-to-phone sync
         products: [], // [{ name, price, unit }]
       },
       referrals: { // bring-a-friend scheme; synced so both phones agree
@@ -412,6 +413,7 @@ function cleanStorefront(sf) {
     facebook: String(src.facebook ?? d.facebook),
     tngQr: String(src.tngQr ?? d.tngQr),
     postageRM: Number(src.postageRM ?? d.postageRM),
+    postageSet: src.postageSet === true,
     products,
   };
 }

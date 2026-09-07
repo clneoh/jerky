@@ -491,6 +491,92 @@ test("mergeRows: settings weekCheck ticks union across devices; never clobbered 
   } finally { restore(); }
 });
 
+// ── postage (nationwide posting): private phone-to-phone sync ─────────────
+
+test("recordPayload: the postage fee syncs only once the owner has set it (postageSet)", () => {
+  const st = baseState();
+  st.settings.storefront = { whatsapp: "60123", name: "Munchies", postageRM: 8, postageSet: false };
+
+  let rows = sync.computeRecords(st);
+  let settings = rows.find((r) => r.kind === "settings");
+  assert.equal("postageRM" in settings.data, false,
+    "a phone still at the default must not emit 8 and clobber the value set on another phone");
+
+  st.settings.storefront.postageRM = 6;
+  st.settings.storefront.postageSet = true;
+  rows = sync.computeRecords(st);
+  settings = rows.find((r) => r.kind === "settings");
+  assert.equal(settings.data.postageRM, 6, "once set, the fee rides the private settings row");
+});
+
+test("mergeRows: cloud postage folds into storefront.postageRM and keeps local storefront fields", () => {
+  const { store, restore } = installStorage();
+  try {
+    const st = baseState();
+    st.settings.storefront = { whatsapp: "60123123", name: "Munchies Furkidz", tagline: "T", postageRM: 8, postageSet: false };
+    seedJournal(store, { meta: { "settings:default": "2026-01-01T00:00:00.000Z" } });
+
+    const r = sync.mergeRows(st, [cloudRow("settings", "default",
+      { defaultCapacity: 12, deliveryDays: [1, 3, 5], cutoff: "18:00", currency: "RM", postageRM: 6 },
+      "2026-02-01T00:00:00.000Z")]);
+    assert.equal(r.changed, true);
+    assert.equal(st.settings.storefront.postageRM, 6, "cloud fee adopted");
+    assert.equal(st.settings.storefront.postageSet, true, "phone now knows a real value and will carry it");
+    assert.equal(st.settings.storefront.name, "Munchies Furkidz", "local storefront branding untouched by the merge");
+    assert.equal(st.settings.storefront.whatsapp, "60123123", "local storefront whatsapp untouched");
+    assert.equal("postageRM" in st.settings, false, "no stray top-level settings.postageRM");
+    const b = JSON.parse(store.get("bakeadmin.sync"));
+    assert.ok(!b.pending["settings:default"], "adopting the fee does not queue a push");
+  } finally { restore(); }
+});
+
+test("mergeRows: a phone still at the default cannot overwrite the other phone's set postage", () => {
+  const { store, restore } = installStorage();
+  try {
+    const st = baseState();
+    st.settings.storefront = { whatsapp: "1", name: "Munchies", postageRM: 6, postageSet: true };
+    seedJournal(store, { meta: { "settings:default": "2026-01-01T00:00:00.000Z" } });
+
+    // The OTHER phone never set postage, so its newer row carries no postageRM.
+    const r = sync.mergeRows(st, [cloudRow("settings", "default",
+      { defaultCapacity: 12, deliveryDays: [1, 3, 5], cutoff: "18:00", currency: "RM" },
+      "2026-02-01T00:00:00.000Z")]);
+    assert.equal(r.changed, true);
+    assert.equal(st.settings.storefront.postageRM, 6, "local set value survives a postage-less cloud row");
+    assert.equal(st.settings.storefront.postageSet, true, "flag still true");
+  } finally { restore(); }
+});
+
+test("mergeRows: postage is last-set-wins between phones", () => {
+  const { store, restore } = installStorage();
+  try {
+    // The owner sets RM6 on phone A and it syncs up.
+    const a = baseState();
+    a.settings.storefront = { postageRM: 6, postageSet: true };
+    const aRow = cloudRow("settings", "default",
+      sync.computeRecords(a).find((r) => r.kind === "settings").data, "2026-02-01T00:00:00.000Z");
+
+    // Phone B (still at the default 8) pulls A's row and adopts 6.
+    const b = baseState();
+    b.settings.storefront = { postageRM: 8, postageSet: false };
+    seedJournal(store, { meta: { "settings:default": "2026-01-01T00:00:00.000Z" } });
+    sync.mergeRows(b, [aRow]);
+    assert.equal(b.settings.storefront.postageRM, 6, "B quotes the RM6 set on A");
+
+    // The owner then edits postage to RM8 on B; B's newer local edit wins and syncs up.
+    b.settings.storefront.postageRM = 8;
+    b.settings.storefront.postageSet = true;
+    const bRow = cloudRow("settings", "default",
+      sync.computeRecords(b).find((r) => r.kind === "settings").data, "2026-02-02T00:00:00.000Z");
+
+    const a2 = baseState();
+    a2.settings.storefront = { postageRM: 6, postageSet: true };
+    seedJournal(store, { meta: { "settings:default": "2026-02-01T00:00:00.000Z" } });
+    sync.mergeRows(a2, [bRow]);
+    assert.equal(a2.settings.storefront.postageRM, 8, "A now quotes the newer RM8 set on B");
+  } finally { restore(); }
+});
+
 test("mergeRows: unchanged merge reports changed:false", () => {
   const { store, restore } = installStorage();
   try {

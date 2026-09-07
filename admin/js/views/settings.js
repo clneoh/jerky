@@ -203,16 +203,22 @@ export function renderSettings(root, state) {
   const fileInput = el("input", { class: "input", type: "file", accept: "application/json,.json", style: "display:none",
     onchange: (e) => doImport(e) });
 
-  // ── Nationwide postage (phone-level, like the mailing address) ───────────
-  // The flat fee quoted on posted orders. Kept on this phone only and NOT
-  // published with the storefront — the fee is the owner's private quote.
+  // ── Nationwide postage (private sync, like shared business settings) ──────
+  // The flat fee quoted on posted orders. It rides the PRIVATE shared-data row
+  // (never the public storefront publish) so whichever phone set it last quotes
+  // the same figure on both. postageSet marks "the owner has actually chosen a
+  // value here", so a phone still at the default 8 cannot overwrite it.
   const sfPostage = el("input", { class: "input", type: "number", inputmode: "decimal", min: 0, step: "0.5",
     value: sf.postageRM == null ? "" : String(sf.postageRM),
-    onchange: () => { sf.postageRM = Math.max(0, Number(sfPostage.value) || 0); save(state); toast("Saved"); } });
+    onchange: () => {
+      sf.postageRM = Math.max(0, Number(sfPostage.value) || 0);
+      sf.postageSet = true;
+      save(state); toast("Saved");
+    } });
   const postageCard = el("div", { class: "card" },
     el("h3", { style: "margin:0 0 4px" }, "Postage (nationwide posting)"),
     el("p", { class: "card-sub", style: "margin:0 0 10px" },
-      "The flat posting fee added to the To-pay line on your WhatsApp confirmations for posted orders. Blank or 0 = no postage line. Kept on this phone only — customers never see it."),
+      "The flat posting fee added to the To-pay line on your WhatsApp confirmations for posted orders. Blank or 0 = no postage line. Shared with your other phones (last one you set wins) so they quote the same — never shown to customers."),
     el("div", { class: "field" },
       el("label", {}, "Flat postage per posted order (RM)"),
       sfPostage));
