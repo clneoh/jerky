@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <!-- Single paw print, filled brand brown (Munchies Furkidz) -->
+  <!-- Single paw print, filled brand brown, sized to fill the tile -->
   <g fill="#7a4a2a">
-    <ellipse cx="50" cy="72" rx="24" ry="16"/>
-    <ellipse cx="27" cy="50" rx="7.8" ry="10.5" transform="rotate(-16 27 50)"/>
-    <ellipse cx="42" cy="37" rx="8.2" ry="11.5" transform="rotate(-6 42 37)"/>
-    <ellipse cx="58" cy="37" rx="8.2" ry="11.5" transform="rotate(6 58 37)"/>
-    <ellipse cx="73" cy="50" rx="7.8" ry="10.5" transform="rotate(16 73 50)"/>
+    <ellipse cx="50" cy="68" rx="27" ry="17"/>
+    <ellipse cx="28" cy="46" rx="8.5" ry="11.5" transform="rotate(-15 28 46)"/>
+    <ellipse cx="42" cy="30" rx="9" ry="12.5" transform="rotate(-5 42 30)"/>
+    <ellipse cx="58" cy="30" rx="9" ry="12.5" transform="rotate(5 58 30)"/>
+    <ellipse cx="72" cy="46" rx="8.5" ry="11.5" transform="rotate(15 72 46)"/>
   </g>
 </svg>

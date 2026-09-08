@@ -1,22 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <!-- Cat head, outline only (store accent rust) -->
-  <g fill="none" stroke="#c4552f" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="50" cy="57" r="30"/>
-    <path d="M29 36 L35 6 L46 29"/>
-    <path d="M71 36 L65 6 L54 29"/>
-    <path d="M31 24 L35 15 L40 23"/>
-    <path d="M69 24 L65 15 L60 23"/>
-    <path d="M30 58 L6 54"/>
-    <path d="M28 65 L5 64"/>
-    <path d="M31 71 L7 74"/>
-    <path d="M70 58 L94 54"/>
-    <path d="M72 65 L95 64"/>
-    <path d="M69 71 L93 74"/>
-    <path d="M44.5 70 Q47.3 74 50 70 Q52.7 74 55.5 70"/>
-  </g>
-  <g fill="#c4552f">
-    <circle cx="36" cy="55" r="4"/>
-    <circle cx="64" cy="55" r="4"/>
-    <path d="M46 63 L54 63 L50 69 Z"/>
-  </g>
+  <defs>
+    <mask id="cat">
+      <!-- Solid cat-head silhouette (kept where white), eye holes where black -->
+      <g fill="#fff">
+        <circle cx="50" cy="61" r="32"/>
+        <path d="M22 44 L28 6 L46 40 Z"/>
+        <path d="M78 44 L72 6 L54 40 Z"/>
+      </g>
+      <ellipse cx="36" cy="55" rx="3.4" ry="5.6" fill="#000" transform="rotate(-16 36 55)"/>
+      <ellipse cx="64" cy="55" rx="3.4" ry="5.6" fill="#000" transform="rotate(16 64 55)"/>
+    </mask>
+  </defs>
+  <rect width="100" height="100" fill="#c4552f" mask="url(#cat)"/>
 </svg>
