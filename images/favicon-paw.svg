@@ -1,10 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <!-- Single paw print, filled brand brown, sized to fill the tile -->
-  <g fill="#7a4a2a">
-    <ellipse cx="50" cy="68" rx="27" ry="17"/>
-    <ellipse cx="28" cy="46" rx="8.5" ry="11.5" transform="rotate(-15 28 46)"/>
-    <ellipse cx="42" cy="30" rx="9" ry="12.5" transform="rotate(-5 42 30)"/>
-    <ellipse cx="58" cy="30" rx="9" ry="12.5" transform="rotate(5 58 30)"/>
-    <ellipse cx="72" cy="46" rx="8.5" ry="11.5" transform="rotate(15 72 46)"/>
-  </g>
-</svg>
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="2.5" y="2.5" width="95" height="95" rx="24" fill="#7a4a2a"/><g transform="translate(-9.3 -10.8) scale(1.186)"><g fill="#ffffff"><ellipse cx="50" cy="68" rx="27" ry="17"/><ellipse cx="28" cy="46" rx="8.5" ry="11.5" transform="rotate(-15 28 46)"/><ellipse cx="42" cy="30" rx="9" ry="12.5" transform="rotate(-5 42 30)"/><ellipse cx="58" cy="30" rx="9" ry="12.5" transform="rotate(5 58 30)"/><ellipse cx="72" cy="46" rx="8.5" ry="11.5" transform="rotate(15 72 46)"/></g></g></svg>
