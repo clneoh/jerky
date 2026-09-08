@@ -582,3 +582,66 @@ function importIncoming(state, row) {
   }
   return created.length ? created : null;
 }
+
+// ─────────────────────────────────────────────────────────────
+// Customer reviews moderation — More → Reviews.
+// Reviews posted from the homepage (supabase/reviews.sql) start unpublished and
+// only show there once the owner Publishes one here. Same anon-insert /
+// authenticated-moderation RLS model as incoming_orders.
+// ─────────────────────────────────────────────────────────────
+async function reviewAuth(c) {
+  let token = cachedToken();
+  if (!token) token = await login(c.url, c.anonKey, c.email, c.password);
+  return { apikey: c.anonKey, Authorization: `Bearer ${token}` };
+}
+
+function reviewErr(err, fallback) {
+  return err && err.message ? err.message : fallback;
+}
+
+// Every review, newest first (published and waiting). The view splits them.
+export async function fetchReviews(state) {
+  const c = cfg(state);
+  if (!ready(c)) return { ok: false, reason: "Supabase not configured", reviews: [] };
+  try {
+    const res = await fetch(
+      `${c.url}/rest/v1/reviews?select=id,name,stars,message,lang,photo,published,created_at&order=created_at.desc`,
+      { headers: await reviewAuth(c) });
+    if (!res.ok) return { ok: false, reason: `Reviews failed to load (HTTP ${res.status})`, reviews: [] };
+    const rows = await res.json().catch(() => []);
+    return { ok: true, reviews: Array.isArray(rows) ? rows : [] };
+  } catch (err) {
+    return { ok: false, reason: reviewErr(err, "Couldn't reach Supabase"), reviews: [] };
+  }
+}
+
+export async function setReviewPublished(state, id, published) {
+  const c = cfg(state);
+  if (!ready(c)) return { ok: false, reason: "Supabase not configured" };
+  try {
+    const res = await fetch(`${c.url}/rest/v1/reviews?id=eq.${encodeURIComponent(String(id))}`, {
+      method: "PATCH",
+      headers: { ...(await reviewAuth(c)), "Content-Type": "application/json" },
+      body: JSON.stringify({ published: !!published }),
+    });
+    if (!res.ok) return { ok: false, reason: `Update failed (HTTP ${res.status})` };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: reviewErr(err, "Couldn't reach Supabase") };
+  }
+}
+
+export async function deleteReview(state, id) {
+  const c = cfg(state);
+  if (!ready(c)) return { ok: false, reason: "Supabase not configured" };
+  try {
+    const res = await fetch(`${c.url}/rest/v1/reviews?id=eq.${encodeURIComponent(String(id))}`, {
+      method: "DELETE",
+      headers: await reviewAuth(c),
+    });
+    if (!res.ok) return { ok: false, reason: `Delete failed (HTTP ${res.status})` };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: reviewErr(err, "Couldn't reach Supabase") };
+  }
+}

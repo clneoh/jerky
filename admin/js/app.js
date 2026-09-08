@@ -3,6 +3,7 @@
 import { loadState, save, setSaveHook, updateOrderBadge, ensureSupabase } from "./state.js";
 import { el, button } from "./ui.js";
 import * as sync from "./sync.js";
+import { maybeAutoBackup } from "./backups.js";
 import { cachedToken, maybeSync, pullIncoming, refreshStorefront } from "./supabase.js";
 
 import { renderDashboard } from "./views/dashboard.js";
@@ -16,6 +17,7 @@ import { renderPO } from "./views/po.js";
 import { renderHistory } from "./views/history.js";
 import { renderCustomers } from "./views/customers.js";
 import { renderSettings } from "./views/settings.js";
+import { renderReviews } from "./views/reviews.js";
 import { renderMore } from "./views/more.js";
 import { renderGuide } from "./views/guide.js";
 import { renderLogin } from "./views/login.js";
@@ -34,6 +36,7 @@ const routes = {
   "/customers": { title: "Customers", tab: "more",      render: renderCustomers },
   "/deliveries":{ title: "Delivery Dates", tab: "more", render: renderDeliveries },
   "/units":     { title: "Units",      tab: "more",      render: renderUnits },
+  "/reviews":   { title: "Reviews",    tab: "more",      render: renderReviews },
   "/suppliers": { title: "Suppliers",  tab: "more",      render: renderSuppliers },
   "/settings":  { title: "Settings",  tab: "more",      render: renderSettings },
   "/more":      { title: "More",      tab: "more",      render: renderMore },
@@ -190,6 +193,7 @@ function showLogin() {
       startSync();
       startIntake();
       refreshStorefront(state);
+      maybeAutoBackup(state).catch(() => {});
     },
     onOffline: () => {
       loggedOut = false;
@@ -243,7 +247,7 @@ function bootApp() {
     } else if (c.email && c.password) {
       // Stored credentials — silent auto-login (owner's flow stays seamless);
       // the gate only appears if the login actually fails.
-      sync.login(state).then(() => startSync()).catch(() => showLogin());
+      sync.login(state).then(() => { startSync(); maybeAutoBackup(state); }).catch(() => showLogin());
     } else {
       showLogin();
       return;
@@ -252,6 +256,9 @@ function bootApp() {
   render();
   startSync();
   startIntake();
+  // A quiet daily/weekly/monthly cloud backup when it's due — fire-and-forget,
+  // silent on any failure, at most one attempt per day.
+  maybeAutoBackup(state).catch(() => {});
   // Adopt the latest published storefront (name/WhatsApp/tagline/QR) so this
   // phone shows whatever the most recent backoffice user set, not a baked copy.
   refreshStorefront(state);

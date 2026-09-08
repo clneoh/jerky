@@ -1473,7 +1473,7 @@ textarea.input { min-height: 64px; resize: vertical; }
 }
 .occ-edit-note { font-size: 12px; color: var(--muted); margin: -2px 0 0; }
 
-/* "Add Malaysia's occasions" import (Delivery calendar → Mark an occasion) */
+/* "Add occasion" import (Delivery calendar → Mark an occasion) */
 .occ-importrow { margin: 10px 0 2px; }
 .occ-importrow .btn { font-size: 13px; }
 .mycal-legend {
@@ -1520,6 +1520,36 @@ textarea.input { min-height: 64px; resize: vertical; }
 }
 .mycal-label { flex: 1 1 auto; min-width: 0; font-size: 14px; font-weight: 600; color: var(--brown-dark); }
 .mycal-date { flex: none; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.mycal-own { border-top: 1px dashed var(--line); margin-top: 10px; padding-top: 2px; }
+.mycal-own-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+.mycal-own-row .input { width: auto; min-width: 0; }
+.mycal-own-row input[type="date"] { flex: 0 0 auto; }
+.mycal-own-row input:not([type="date"]) { flex: 1 1 140px; }
+.mycal-own-row .btn { flex: none; white-space: nowrap; }
+.mycal-allrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 6px;
+}
+.mycal-allnote { font-size: 12px; color: var(--muted); }
+.mycal-ghead { display: flex; align-items: center; gap: 8px; }
+.mycal-ghead > input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  margin: 0;
+  accent-color: var(--brown);
+}
+.mycal-ghead .mycal-sub { margin: 10px 0 4px; }
+.mycal-groups > .mycal-ghead:first-child .mycal-sub { margin-top: 2px; }
 
 /* ---------- PO: tick several posting days into one combined list ---------- */
 .po-day-list { display: flex; flex-direction: column; margin-top: 6px; }

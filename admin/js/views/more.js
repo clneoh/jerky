@@ -19,6 +19,7 @@ export function renderMore(root, state) {
     menuItem("#/ingredients", "🧂 Ingredients", "Cooking units + supplier prices for the PO"),
     menuItem("#/history", "🧾 PO history", "Saved purchase orders"),
     menuItem("#/units", "📐 Units", "g, kg, L — how packs compare"),
+    menuItem("#/reviews", "⭐ Reviews", "Approve & remove homepage reviews"),
     menuItem("#/settings", "⚙️ Settings", "Defaults, backup, transfer"));
 
   root.replaceChildren(

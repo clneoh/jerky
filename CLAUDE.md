@@ -23,10 +23,10 @@ That repo contains: a static shop/storefront, a single-page admin app (`/admin/`
 - **Never `git commit` or `git push`.** The owner deploys via GitHub Desktop. Report changes and suggest a commit summary instead.
 - **Never ship or embed the Supabase app-login email/password.** The owner types both in on each phone (confirmed wanted).
 - Keep private keys out of the repo (e.g. any ntfy topic).
-- The marketing guide is the SOP — keep it in sync with every change (`build_guide.py`, rebuild, re-send the PDF). `marketing/` is gitignored. **Its version FOLLOWS THE ENGINE** (read live from `admin/js/version.js`): an engine build is `v<N>` (e.g. v54); a rebuild that is ONLY a manual/content change adds a letter — `v54a`, `v54b`… — reset to plain `v<N+1>` on the next engine sync. `build_guide.py` reads the engine number itself; just set the PDF-only `LETTER` (currently `""` — the engine is v57, so the manual is plain v57).
+- The marketing guide is the SOP — keep it in sync with every change (`build_guide.py`, rebuild, re-send the PDF). `marketing/` is gitignored. **Its version FOLLOWS THE ENGINE** (read live from `admin/js/version.js`): an engine build is `v<N>` (e.g. v61); a rebuild that is ONLY a manual/content change adds a letter — `v61a`, `v61b`… — reset to plain `v<N+1>` on the next engine sync. `build_guide.py` reads the engine number itself; just set the PDF-only `LETTER` (currently `""` — the engine is v61, so the manual is plain v61).
 - Verify only against an isolated throwaway origin (sandbox), never real data.
 - Only create commits when the user explicitly asks.
-- The bakery's **real** Supabase url/anonKey and its CNAME domain must NOT be copied into this repo. The jerky Supabase values stay blanked to `"FILLME"` placeholders until the owner creates her own Supabase project. Her OWN domain is final — **`munchies.com.my`** (apex) — set in `CNAME`.
+- The bakery's **real** Supabase url/anonKey and its CNAME domain must NOT be copied into this repo. jerky keeps its OWN Supabase values (project `ircwozniiyywsowamixy`, in `store/config.js` + `admin/js/state.js` `BUILTIN_SUPABASE`). Her domain is final — **`munchies.com.my`** (apex) — set in `CNAME`.
 
 ## Owner decisions (confirmed 2026-09-06)
 
@@ -55,18 +55,18 @@ Internal storage keys (`localStorage` `bakeadmin.v1` / `bakeadmin.sync` / `bakea
 - Copied code tree, neutralised bakery identity (CNAME empty, Supabase creds → `"FILLME"`).
 - Adapted homepage, storefront, and admin visible copy + units + sample data to pet treats / nationwide post (README and this file document it).
 - **Domain final: `munchies.com.my`** (2026-09-07) — brand kept "Munchies Furkidz"; `CNAME` now contains `munchies.com.my`; marketing guide rebuilt as v2 with the domain; referral/track links auto-build from `location.origin` so no code changes needed.
-- Full test suite green: `node --test test/*.test.js` → **436 tests, all passing** (bakery 430).
-- Sandbox-verified on an isolated localhost port: homepage, storefront order flow (falls back to WhatsApp with Supabase `"FILLME"`), admin offline sign-in, Products units, Settings postage card. All 404s observed were the expected `FILLME` Supabase calls — no broken local assets.
+- Full test suite green: `node --test test/*.test.js` → **470 tests, all passing** (436 pre-v61-sync).
+- **Engine synced to v61** (2026-09-08) — bakery HEAD → jerky, wholesale for the business-agnostic engine files: occasion import catalogue + whole-group ticking (`occasion_catalog.js`, `deliveries.js`, `.mycal-*` CSS), homepage customer reviews with approve-first moderation (`views/reviews.js`, root `reviews.js`, homepage section, `supabase/reviews.sql`), and cloud backups Daily/Weekly/Monthly/manual with restore/download/delete (`backups.js`, `Backup & safety` card, `supabase/backups.sql`). jerky-localized files hand-merged (app.js, supabase.js, settings.js, more.js, guide.js, README). Marketing guide rebuilt as plain v61.
+- Sandbox-verified on an isolated localhost port: homepage, storefront order flow, admin offline sign-in, Products units, Settings postage card, Settings Backup & safety cloud-copies card. No broken local assets.
 
 **Not done yet (owner go-live, she acts — I guide):**
-1. **Name/domain: DONE in the repo** ("Munchies Furkidz", `CNAME` = munchies.com.my, guide v2). Remaining outside the repo: point the domain's DNS at the site and enable GitHub Pages on the repo so munchies.com.my actually serves this folder.
-2. Publish this folder as a NEW GitHub repo via GitHub Desktop (Pages on); then set the custom domain (munchies.com.my) in the repo's Pages settings.
-3. Create a NEW Supabase project; run the 8 `.sql` files in dependency order (backoffice → storefront → availability → instant_slots → shared_pool_slots → tracking → tracking_stages → incoming_cleanup); create the app-login user. Type email+password once per phone.
-4. Give me the new project url/anonKey → I wire the `"FILLME"` spots + the test assertion that checks them.
-5. Send product list + photos → I fill the homepage grid (she edits the live menu via the admin app).
-6. Set WhatsApp/Instagram, TNG QR, postage fee, PIN — Settings → Storefront on the phone.
-7. Test on her phone: order → inbox → confirm → track; then I re-version + re-send the guide PDF.
+1. **Supabase project: DONE** (2026-09-07) — her own project `ircwozniiyywsowamixy`, all core `.sql` run, creds wired into `store/config.js` + `admin/js/state.js`. **NEW from this sync:** run `supabase/reviews.sql` and `supabase/backups.sql` in the SQL editor (once) so the homepage-reviews table/bucket and cloud-backup snapshots exist.
+2. **Domain: DONE in the repo** (CNAME = munchies.com.my). Outside the repo: point the domain's DNS at the site and enable GitHub Pages on the repo so munchies.com.my actually serves this folder (owner commits/pushes via GitHub Desktop first).
+3. Send product list + photos → I fill the homepage grid (she edits the live menu via the admin app).
+4. Set WhatsApp/Instagram, TNG QR, postage fee, PIN — Settings → Storefront on the phone.
+5. Test on her phone: order → inbox → confirm → track; then I re-version + re-send the guide PDF.
 
 **Open questions for her (not blockers, settle at go-live):**
 - Is **Collect (local)** actually offered, or is delivery strictly postal? The copy currently keeps a "Collect (local)" option (homepage card + storefront toggle) — trim it if she is post-only.
+- The occasion import catalogue (Delivery calendar → Add occasion) is byte-identical to the bakery, so its groups include "Baking & sweet days" (Cookie Day etc.) alongside pet/people days. If she doesn't want baking-promo days on a pet-treat calendar, the catalogue becomes a permanent jerky-localized file (trimmed) on the next sync — reversible either way.
 - Product photos are placeholders ("PHOTO COMING SOON") until she sends images.

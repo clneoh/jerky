@@ -68,6 +68,37 @@ h1{font-family:Arial,sans-serif;font-size:clamp(40px,6vw,70px);line-height:.95;l
 .product-info p{margin:0;font-size:15px;color:#553a2b}
 .eyebrow .soon{display:inline-block;margin-left:8px;vertical-align:3px;font-family:Arial,sans-serif;font-size:9px;font-weight:800;letter-spacing:.08em;color:var(--accent);border:1px solid rgba(163,74,38,.5);border-radius:999px;padding:2px 8px;line-height:1.4}
 .eyebrow .soon.pork{color:var(--red);border-color:rgba(192,57,43,.55)}
+/* ── Reviews — "What customers say" ────────────────────────── */
+.review-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.review-none{grid-column:1/-1;text-align:center;color:var(--muted);border:1px dashed var(--line);background:var(--paper);border-radius:8px;padding:36px 16px;margin:0}
+.review-card{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:22px 20px;box-shadow:0 8px 24px rgba(74,44,24,.05);display:flex;flex-direction:column}
+.review-card-photo{width:100%;height:170px;object-fit:cover;border-radius:8px;margin:0 0 14px;background:var(--line)}
+.review-card-stars{color:#d9a62e;font-family:Arial,sans-serif;font-size:21px;letter-spacing:4px;line-height:1.2}
+.review-card-msg{margin:10px 0 0;font-size:15px;color:#553a2b;white-space:pre-wrap}
+.review-card-name{margin:14px 0 0;font-family:Arial,sans-serif;font-size:13px;font-weight:700;color:var(--accent);letter-spacing:.03em}
+.review-card-meta{font-family:Arial,sans-serif;font-size:12px;color:var(--muted);margin:2px 0 0}
+.review-form{background:var(--paper);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(74,44,24,.05);padding:26px 24px;margin:36px auto 0;max-width:660px}
+.review-form h3{font-family:Arial,sans-serif;color:var(--accent);letter-spacing:.06em;margin:0 0 6px;text-align:center}
+.review-note{font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin:0 0 18px;text-align:center}
+.review-form .flabel{display:block;font-family:Arial,sans-serif;font-size:12px;font-weight:700;letter-spacing:.05em;color:var(--accent);margin:14px 0 6px}
+.field-input{width:100%;border:1px solid var(--line);border-radius:10px;padding:13px 14px;font-family:Arial,sans-serif;font-size:15px;background:#fff;color:var(--brown)}
+textarea.field-input{resize:vertical;min-height:110px}
+.rv-stars{display:flex;gap:6px}
+.rv-stars button{font-size:38px;line-height:1;width:50px;height:50px;border:none;background:none;color:#e0cba6;cursor:pointer;padding:0}
+.rv-stars button.is-on{color:#d9a62e}
+.rv-langs{display:flex;flex-wrap:wrap;gap:8px}
+.rv-lang{border:1px solid var(--accent);background:none;color:var(--accent);font-family:Arial,sans-serif;font-size:13px;font-weight:700;border-radius:999px;padding:8px 14px;cursor:pointer}
+.rv-lang.is-on{background:var(--accent);color:#fff}
+.rv-photo-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.rv-photo-btn{border:1px dashed var(--line);background:#fff;color:var(--accent);font-family:Arial,sans-serif;font-size:13px;font-weight:700;border-radius:10px;padding:10px 14px;cursor:pointer}
+.rv-preview-img{width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.rv-error{color:var(--red);font-size:13px;margin:10px 0 0}
+.review-form .btn{width:100%;margin-top:16px}
+.review-thanks{background:var(--paper);border:1px solid var(--accent);color:var(--accent);border-radius:10px;text-align:center;padding:18px;font-family:Arial,sans-serif;font-size:15px;margin:36px auto 0;max-width:660px}
+@media (max-width:800px){
+  .review-cards{grid-template-columns:1fr}
+  .rv-stars{justify-content:center}
+}
 .allergen-note{text-align:center;color:var(--muted);font-size:14px;max-width:640px;margin:26px auto 0}
 .notice-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px}
 .notice{background:var(--paper);border:1px solid var(--line);padding:30px;text-align:center}
@@ -122,6 +153,7 @@ footer a:hover{color:#fff}
       <a href="#treats">OUR TREATS</a>
       <a href="#order">HOW TO ORDER</a>
       <a href="#postage">POSTAGE</a>
+      <a href="#reviews">REVIEWS</a>
       <a href="#contact">CONTACT</a>
     </nav>
   </div>
@@ -346,6 +378,56 @@ footer a:hover{color:#fff}
     </div>
   </div>
 </section>
+
+<section class="section" id="reviews">
+  <div class="container">
+    <h2 class="section-title">WHAT CUSTOMERS SAY</h2>
+    <p class="section-sub">Real words from happy furkids (and their humans) — reviews are welcome in English, Mandarin (中文) or Bahasa Malaysia.</p>
+    <div class="review-cards" id="review-grid"></div>
+
+    <form class="review-form" id="review-form" novalidate>
+      <h3>LEAVE A REVIEW</h3>
+      <p class="review-note">Did your pet try a Munchies Furkidz treat? Tell us how it went.</p>
+
+      <label class="flabel" for="rv-name">Your name</label>
+      <input class="field-input" id="rv-name" name="name" type="text" maxlength="60" autocomplete="name" placeholder="e.g. Aisyah">
+
+      <label class="flabel" for="rv-stars">Your rating</label>
+      <div class="rv-stars" id="rv-stars" role="group" aria-label="Star rating, 1 to 5">
+        <button type="button" data-val="1" aria-label="1 star">★</button>
+        <button type="button" data-val="2" aria-label="2 stars">★</button>
+        <button type="button" data-val="3" aria-label="3 stars">★</button>
+        <button type="button" data-val="4" aria-label="4 stars">★</button>
+        <button type="button" data-val="5" aria-label="5 stars">★</button>
+      </div>
+
+      <label class="flabel" for="rv-message">Your review</label>
+      <textarea class="field-input" id="rv-message" name="message" maxlength="400" rows="4" placeholder="Which treat did your pet try? What did they think?"></textarea>
+      <p class="review-note" style="text-align:left;margin:6px 0 0">Write in whichever language you are comfortable with — English, Mandarin or Bahasa Malaysia.</p>
+
+      <label class="flabel" for="rv-langs">Review language</label>
+      <div class="rv-langs" id="rv-langs">
+        <button type="button" class="rv-lang is-on" data-lang="en">English</button>
+        <button type="button" class="rv-lang" data-lang="zh">中文</button>
+        <button type="button" class="rv-lang" data-lang="ms">Bahasa Malaysia</button>
+      </div>
+
+      <label class="flabel" for="rv-photo">Add a photo (optional)</label>
+      <div class="rv-photo-row">
+        <button type="button" class="rv-photo-btn" id="rv-photo-btn">📷  Choose photo</button>
+        <div id="rv-photo-preview"></div>
+      </div>
+      <input type="file" id="rv-photo" name="photo" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+
+      <p class="rv-error" id="rv-error" role="alert"></p>
+      <button type="submit" class="btn btn-primary" id="rv-submit">SEND REVIEW</button>
+    </form>
+
+    <div class="review-thanks" id="review-thanks" hidden>
+      Thank you! Your review is with us and will appear here once it is approved.
+    </div>
+  </div>
+</section>
 </main>
 
 <footer id="contact">
@@ -369,5 +451,6 @@ footer a:hover{color:#fff}
   </div>
   <div class="container small" style="margin-top:28px;text-align:center">MUNCHIES FURKIDZ | SMALL BATCH. BIG LOVE. 🐾 | SINCE 2021</div>
 </footer>
+<script type="module" src="reviews.js"></script>
 </body>
 </html>

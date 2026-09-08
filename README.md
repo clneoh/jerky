@@ -153,6 +153,26 @@ Two things to know: an item is imported only when its name matches a backoffice
 product (add it in Products and it'll import next time), and — since anyone with
 the link can place an order — review New orders before confirming them.
 
+## Homepage customer reviews (Supabase)
+
+The homepage (repo root `index.html`) now carries a **What customers say**
+section: the reviews the owner has approved, newest first, plus a form any
+visitor can fill in — name, a 1–5 star tap rating, a message, the language they
+wrote in (English / 中文 / Bahasa Malaysia), and an optional photo. Reviews live
+only on the homepage, never the order page.
+
+- A review is posted to a `reviews` table with `published = false` (public
+  anon insert, like `incoming_orders`). Unpublished rows are invisible to
+  anonymous readers — a `published = eq.false` query returns nothing.
+- **The owner approves every review first** (nothing public without her tap):
+  backoffice → **More → Reviews** lists new ones under *Waiting for you* with
+  the name, stars, message, language, date and photo; **Publish** shows it on
+  the homepage, **Take down** hides it again, **Delete** removes it for good.
+- Photos upload to the public `review-photos` Storage bucket via the anon key.
+
+**One-time setup:** run `supabase/reviews.sql` in the SQL editor (adds the
+`reviews` table + RLS and the `review-photos` Storage bucket + policies).
+
 ## Order tracking & confirmation (Supabase)
 
 Customers choose **Post (nationwide)** / **Collect (local)** when ordering (a
@@ -219,6 +239,50 @@ The connection config (URL, anon key, login) is per-phone and isn't synced, so
 each phone signs in with its owner's account. The app-login email/password is
 never embedded in the code — she types it in once per phone.
 
+## Cloud backups (Supabase)
+
+A real safety net behind the sync mirror. Shared data holds only the *current*
+state; cloud backups hold **history** — a dated copy of everything she can step
+back to. Every time she opens the app while signed in, it quietly saves a full
+snapshot of the backoffice (orders, products, ingredients, POs, credits, the
+posting-date calendar, storefront copy) to her own Supabase cloud:
+
+| Copy | When it saves | Kept |
+| --- | --- | --- |
+| Daily | the first time the app opens each day | newest 7 |
+| Weekly | the first Monday of each week the app opens | newest 4 |
+| Monthly | the first time the app opens on the 1st | newest 3 |
+| Manual | the "Back up to cloud now" button, and one "Before restore" copy saved before every restore | until she deletes it |
+
+The retention prune keeps the table small; older automatic copies are dropped,
+manual ones stay. Everything lives under **More → Settings → Backup & safety**
+(the existing card, renamed). Each listed copy can be:
+
+- **Restore** — steps her phone back to that copy, then the sync engine rewinds
+  the shared cloud and her other phone to match (records that only exist after
+  the copy are seen as removed and stay removed). A **"Before restore" copy is
+  saved first**, so a restore is never one-way. Like any sync, it is still
+  last-write-wins at the record level: a change another phone makes *after* the
+  restore and syncs will win back over that record — a step back, not a
+  delete-the-future.
+- **Download** — saves a real file named
+  `furkidz-backup-2026-09-08-daily.json` (date + kind). Downloads use the
+  same envelope as Export, so they **re-import through file Import** too.
+- **Delete** — removes that one copy (the owner's choice; nothing is ever
+  pruned automatically after a manual keep).
+
+A copy is the same coverage as an Export file **minus the per-device settings**
+(`settings.supabase`, `.cloud` and `.lock`) — the app-login email/password and
+the app password never leave the phone, so restoring on another phone keeps
+that phone's own sign-in, cloud switch and lock. The "Back up to cloud now"
+button and the daily guard marker make the automatic cadence silent: an offline
+day is skipped, not retried in a loop, and the next open on a new day tries
+again.
+
+**One-time setup:** run `supabase/backups.sql` in the SQL editor (adds the
+`backup_snapshots` table + row-level security: only signed-in bakers can read or
+write copies).
+
 ## Host it free — Netlify Drop
 
 For both phones to open the same URL:
@@ -251,10 +315,11 @@ Sweet Potato Chews).
 By default all data is stored in the device's browser (localStorage) — no
 account, no cloud. The two opt-in Supabase features publish/echo data to her own
 Supabase project: **Live availability** uploads slots-left counts (readable by
-anyone, so the storefront can show them), and **Shared data** mirrors the full
+anyone, so the storefront can show them), **Shared data** mirrors the full
 backoffice data with **row-level security: only signed-in bakers can read or
-write it**. Backup files and the app login password are stored in the app's local
-storage on her phone.
+write it**, and **Cloud backups** stores dated snapshot copies under the same
+row-level security (signed-in bakers only). Backup files and the app login
+password are stored in the app's local storage on her phone.
 
 ## Tests
 
@@ -284,6 +349,7 @@ admin/ — backoffice app (/admin/):
   js/bom.js           BOM explosion, costs, capacity (pure)
   js/supabase.js      live availability + storefront config publish, order intake
   js/sync.js          shared-data sync engine (queue, pull-then-flush, conflict)
+  js/backups.js       cloud backups (auto daily/weekly/monthly snapshots, restore)
   js/validate.js      import-file validation
   js/ui.js            DOM builder + shared render helpers
   js/app.js           hash router + bootstrap + shared-data gate
@@ -293,7 +359,9 @@ admin/ — backoffice app (/admin/):
 
 supabase/availability.sql   run once in Supabase SQL editor (public slots)
 supabase/backoffice.sql     run once in Supabase SQL editor (shared data, RLS)
+supabase/backups.sql        run once in Supabase SQL editor (cloud backup snapshots, RLS)
 supabase/storefront.sql     run once in Supabase SQL editor (storefront config + order intake)
+supabase/reviews.sql        run once in Supabase SQL editor (homepage reviews + photo bucket)
 supabase/tracking.sql       run once in Supabase SQL editor (order tracking)
 test/               node --test suites (import from admin/js and store/)
 marketing/          social-media marketing guide generator (gitignored)

@@ -6,12 +6,14 @@ import { hashPin, isPin, hasStoredPin } from "../pin.js";
 import { parseImport } from "../validate.js";
 import { generateUpcomingDates, todayISO } from "../dates.js";
 import { syncAvailability, cachedToken, signOut, syncStorefront, maybeSyncStorefront } from "../supabase.js";
+import * as backups from "../backups.js";
 import * as sync from "../sync.js";
 import { CONFIG } from "../../../store/config.js";
 
 export function renderSettings(root, state) {
   const dayNames = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   const cur = state.settings;
+  let dead = false; // the cloud-copies fill never touches the DOM after a re-render
   seedStorefront(state); // prefill the editor from store/config.js once, then stay editable
 
   const capInput = el("input", { class: "input", type: "number", inputmode: "numeric", min: 1,
@@ -321,14 +323,16 @@ export function renderSettings(root, state) {
       signedIn ? `Signed in with ${sb.email || "your Supabase login"}.` : "Not signed in."),
     cldStatus);
 
+  const bkZone = el("div", { style: "margin-top:14px;border-top:1px solid var(--line);padding-top:4px" });
   const backupCard = el("div", { class: "card" },
-    el("h3", { style: "margin:0 0 4px" }, "Backup & transfer"),
+    el("h3", { style: "margin:0 0 4px" }, "Backup & safety"),
     el("p", { class: "card-sub", style: "margin:0 0 10px" },
-      "Export a backup file regularly (weekly is plenty). Use Import to move data to a new phone, or to load the setup you prepared on another device."),
+      "Every day you open the app, a Daily copy of your data saves to your Supabase cloud — a Weekly copy on Mondays, a Monthly copy on the 1st. It keeps the newest 7 daily, 4 weekly and 3 monthly, and Manual copies stay until you delete them. Restore steps your phone (and the shared cloud) back to that copy."),
     el("div", { class: "btn-row" },
       button("⬇ Export backup", () => exportState(state), "primary"),
       button("⬆ Import backup", () => fileInput.click(), "soft")),
-    fileInput);
+    fileInput,
+    bkZone);
 
   const dangerCard = el("div", { class: "card" },
     el("h3", { style: "margin:0 0 4px" }, "Danger zone"),
@@ -428,6 +432,95 @@ export function renderSettings(root, state) {
           }, { danger: true, yesLabel: "Delete everything" });
       }, { danger: true, yesLabel: "Continue" });
   }
+
+  // ── Cloud copies (Backup & safety card) ─────────────────────────────────
+  // The cloud section loads after the card renders, so the list fetch never
+  // blocks the settings screen. `dead` stops a fill that outlives a re-render
+  // (app.js treats a returned function as route cleanup, like Reviews does).
+  function rowEl(row) {
+    const meta = [];
+    if (row.summary) meta.push(row.summary);
+    if (row.engine) meta.push(`Engine ${row.engine}`);
+    return el("div", { style: "margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:10px 12px" },
+      el("p", { class: "card-title", style: "margin:0 0 2px" },
+        String(row.label || row.kind || "Backup")),
+      el("p", { class: "card-sub", style: "margin:0 0 8px" }, meta.join(" · ")),
+      el("div", { class: "btn-row", style: "margin:0" },
+        button("Restore", () => restoreOne(row), "primary"),
+        button("Download", () => downloadOne(row), "soft"),
+        button("Delete", () => deleteOne(row), "ghost")));
+  }
+
+  function restoreOne(row) {
+    confirmDialog(
+      `Rewind to "${row.label || "this backup"}"? Everything added after it — orders, products, edits — is removed from this phone AND your shared cloud, and from your other phone when it next syncs. A "Before restore" copy is saved first, so you can undo this.`,
+      async () => {
+        const r = await backups.restoreSnapshot(state, row);
+        if (!r.ok) return toast(String(r.reason || "Restore failed"));
+        toast("Restored — reloading…");
+        location.reload();
+      }, { danger: true, yesLabel: "Restore" });
+  }
+
+  function downloadOne(row) {
+    backups.getBackup(state, row.id).then((g) => {
+      if (!g.ok) return toast(String(g.reason || "Couldn't load that copy"));
+      const when = backups.dateKey(g.row.created_at);
+      downloadJSON(backups.backupFileName(when, g.row.kind), JSON.stringify(backups.exportEnvelope(g.row), null, 2));
+      toast("Downloaded — look in your phone's downloads.");
+    });
+  }
+
+  function deleteOne(row) {
+    confirmDialog(`Delete the "${row.label || "backup"}" copy? This can't be undone.`,
+      async () => {
+        const r = await backups.deleteSnapshots(state, [row.id]);
+        if (!r.ok) return toast(String(r.reason || "Delete failed"));
+        toast("Copy deleted.");
+        fillBackups();
+      }, { danger: true, yesLabel: "Delete" });
+  }
+
+  async function fillBackups() {
+    const show = (...nodes) => { if (!dead) bkZone.replaceChildren(...nodes); };
+    const line = (text) => el("p", { class: "card-sub", style: "margin:8px 0 0" }, text);
+    if (!backups.ready(state)) {
+      show(line("Cloud copies turn on with Shared data — when it's on and you're signed in, opening the app saves a Daily copy on its own. You can still Export a file anytime."));
+      return;
+    }
+    const list = await backups.listBackups(state);
+    if (dead) return;
+    if (!list.ok) {
+      show(line(String(list.reason || "Cloud copies couldn't load. Check you're online and try again.")));
+      return;
+    }
+    const rows = list.rows;
+    const today = todayISO();
+    const daily = rows.find((r) => r.kind === "daily" && backups.dateKey(r.created_at) === today);
+    const when = rows[0] ? backups.localWhen(rows[0].created_at) : "";
+    const status = daily ? "Daily copy saved today."
+      : when ? `Last cloud copy ${when}.`
+      : "No cloud copies yet — the first saves on its own the next time you open the app.";
+    const btn = button("Back up to cloud now", async () => {
+      btn.disabled = true;
+      btn.textContent = "Saving…";
+      const r = await backups.backupNow(state);
+      btn.disabled = false;
+      btn.textContent = "Back up to cloud now";
+      if (!r.ok) return toast(String(r.reason || "Backup failed"));
+      toast(`Saved a manual copy at ${backups.localWhen(r.at)}.`);
+      fillBackups();
+    }, "soft");
+    const kids = [line(status), el("div", { class: "btn-row", style: "margin-top:8px" }, btn)];
+    if (rows.length) {
+      kids.push(el("p", { class: "card-sub", style: "margin:12px 0 4px" }, "Recent copies (newest first)"));
+      kids.push(...rows.map(rowEl));
+    }
+    show(...kids);
+  }
+
+  fillBackups();
+  return () => { dead = true; };
 }
 
 function loadSample(state) {
@@ -492,11 +585,18 @@ function exportState(state) {
     exportedAt: new Date().toISOString(),
     data: state,
   };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  downloadJSON(`furkidz-backup-${todayISO()}.json`, JSON.stringify(payload, null, 2));
+}
+
+// Save a text file under a chosen name. Shared by Export (local, keeps the
+// connection details so a new phone is preconfigured) and by downloading a
+// cloud copy (backups.js, wrapped in the same envelope, so it re-imports too).
+function downloadJSON(name, text) {
+  const blob = new Blob([text], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `furkidz-backup-${todayISO()}.json`;
+  a.download = name;
   a.click();
   URL.revokeObjectURL(url);
 }

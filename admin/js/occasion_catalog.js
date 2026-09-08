@@ -1,17 +1,21 @@
-// Malaysia's dates for the "Add Malaysia's occasions" import button, from the
-// Delivery-calendar "Mark an occasion" mode. Curated to what Malaysians across
-// the Peninsular actually celebrate — nationwide public holidays + big
-// cultural/family days + the year-end school break + the extra public holidays
-// each state or territory observes on top of the nationwide ones (rows name
-// the states that observe them, so the baker can tick or delete by what
-// applies to her). `pub: true` = an official public holiday somewhere
-// (imports red); everything else imports orange.
+// The special-days catalogue behind the Delivery-calendar "Add occasion"
+// import button (in "Mark an occasion" mode). It starts with the dates
+// Malaysians across the Peninsular actually celebrate — nationwide public
+// holidays + big cultural/family days + the year-end school break + the extra
+// public holidays each state or territory observes on top of the nationwide
+// ones (rows name the states that observe them, so the baker can tick or
+// delete by what applies to her). On top of those sit general fun days she
+// can bake and promote around: pet days, baking & sweet days, and people &
+// kindness days. `pub: true` = an official public holiday somewhere (imports
+// red); everything else imports orange.
 //
 // Dates follow the published calendar where one exists. Anything the state or
 // federal gazette has not yet confirmed is labelled "(est.)" — lunar and
 // annually-gazetted holidays — and she can Edit any imported mark later
-// anyway. Rows whose `to` is in the past are never offered for import.
-export const MALAYSIAN_OCCASIONS = [
+// anyway. Rows whose `to` is in the past are never offered for import. The
+// exported OCCASION_CATALOG is these sections date-sorted, so the list always
+// runs oldest → newest no matter where a new day is added.
+const MALAYSIAN_DATES = [
   // ── 2026 (from today, 5 Sep) ──────────────────────────────────────────────
   { label: "Malaysia Day", from: "2026-09-16", to: "2026-09-16", cat: "national", pub: true },
   { label: "Mid-Autumn Festival", from: "2026-09-25", to: "2026-09-25", cat: "festive", pub: false },
@@ -67,6 +71,37 @@ export const MALAYSIAN_OCCASIONS = [
   { label: "Sultan of Selangor's Birthday — Selangor", from: "2027-12-11", to: "2027-12-11", cat: "state", pub: true },
   { label: "Christmas", from: "2027-12-25", to: "2027-12-25", cat: "festive", pub: true },
 ];
+
+// ── Fun & pet days — international days pet owners celebrate ────────────────
+// Lightweight, informal marketing days (not gazetted anywhere) — orange.
+const FUN_PET_DAYS = [
+  { label: "World Animal Day", from: "2026-10-04", to: "2026-10-04", cat: "pet", pub: false },
+  { label: "National Pet Day", from: "2027-04-11", to: "2027-04-11", cat: "pet", pub: false },
+  { label: "International Cat Day", from: "2027-08-08", to: "2027-08-08", cat: "pet", pub: false },
+  { label: "International Dog Day", from: "2027-08-26", to: "2027-08-26", cat: "pet", pub: false },
+  { label: "World Animal Day", from: "2027-10-04", to: "2027-10-04", cat: "pet", pub: false },
+];
+
+// ── Baking & sweet days — days made for a bakery promo ──────────────────────
+const BAKE_SWEET_DAYS = [
+  { label: "Cookie Day", from: "2026-12-04", to: "2026-12-04", cat: "bake", pub: false },
+  { label: "World Baking Day", from: "2027-05-17", to: "2027-05-17", cat: "bake", pub: false },
+  { label: "World Chocolate Day", from: "2027-07-07", to: "2027-07-07", cat: "bake", pub: false },
+  { label: "Cookie Day", from: "2027-12-04", to: "2027-12-04", cat: "bake", pub: false },
+];
+
+// ── People & kindness days ──────────────────────────────────────────────────
+const PEOPLE_KIND_DAYS = [
+  { label: "Random Acts of Kindness Day", from: "2027-02-17", to: "2027-02-17", cat: "kind", pub: false },
+  { label: "Siblings Day", from: "2027-04-10", to: "2027-04-10", cat: "kind", pub: false },
+  { label: "Friendship Day", from: "2027-08-01", to: "2027-08-01", cat: "kind", pub: false },
+];
+
+// The catalogue the import button offers: Malaysia's dates + the fun days,
+// date-sorted so rows always run oldest → newest.
+export const OCCASION_CATALOG =
+  [...MALAYSIAN_DATES, ...FUN_PET_DAYS, ...BAKE_SWEET_DAYS, ...PEOPLE_KIND_DAYS]
+    .sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
 
 // The import colour rule the baker chose: public holiday = red, else orange.
 // (She can re-colour any imported mark afterwards, like her own marks.)
