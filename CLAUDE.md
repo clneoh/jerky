@@ -23,7 +23,7 @@ That repo contains: a static shop/storefront, a single-page admin app (`/admin/`
 - **Never `git commit` or `git push`.** The owner deploys via GitHub Desktop. Report changes and suggest a commit summary instead.
 - **Never ship or embed the Supabase app-login email/password.** The owner types both in on each phone (confirmed wanted).
 - Keep private keys out of the repo (e.g. any ntfy topic).
-- The marketing guide is the SOP — keep it in sync with every change (`build_guide.py`, rebuild, re-send the PDF). `marketing/` is gitignored. **Its version FOLLOWS THE ENGINE** (read live from `admin/js/version.js`): an engine build is `v<N>` (e.g. v54); a rebuild that is ONLY a manual/content change adds a letter — `v54a`, `v54b`… — reset to plain `v<N+1>` on the next engine sync. `build_guide.py` reads the engine number itself; just set the PDF-only `LETTER` (currently `""` — the engine is v56, so the manual is plain v56).
+- The marketing guide is the SOP — keep it in sync with every change (`build_guide.py`, rebuild, re-send the PDF). `marketing/` is gitignored. **Its version FOLLOWS THE ENGINE** (read live from `admin/js/version.js`): an engine build is `v<N>` (e.g. v54); a rebuild that is ONLY a manual/content change adds a letter — `v54a`, `v54b`… — reset to plain `v<N+1>` on the next engine sync. `build_guide.py` reads the engine number itself; just set the PDF-only `LETTER` (currently `""` — the engine is v57, so the manual is plain v57).
 - Verify only against an isolated throwaway origin (sandbox), never real data.
 - Only create commits when the user explicitly asks.
 - The bakery's **real** Supabase url/anonKey and its CNAME domain must NOT be copied into this repo. The jerky Supabase values stay blanked to `"FILLME"` placeholders until the owner creates her own Supabase project. Her OWN domain is final — **`munchies.com.my`** (apex) — set in `CNAME`.
@@ -55,7 +55,7 @@ Internal storage keys (`localStorage` `bakeadmin.v1` / `bakeadmin.sync` / `bakea
 - Copied code tree, neutralised bakery identity (CNAME empty, Supabase creds → `"FILLME"`).
 - Adapted homepage, storefront, and admin visible copy + units + sample data to pet treats / nationwide post (README and this file document it).
 - **Domain final: `munchies.com.my`** (2026-09-07) — brand kept "Munchies Furkidz"; `CNAME` now contains `munchies.com.my`; marketing guide rebuilt as v2 with the domain; referral/track links auto-build from `location.origin` so no code changes needed.
-- Full test suite green: `node --test test/*.test.js` → **363 tests, all passing**.
+- Full test suite green: `node --test test/*.test.js` → **436 tests, all passing** (bakery 430).
 - Sandbox-verified on an isolated localhost port: homepage, storefront order flow (falls back to WhatsApp with Supabase `"FILLME"`), admin offline sign-in, Products units, Settings postage card. All 404s observed were the expected `FILLME` Supabase calls — no broken local assets.
 
 **Not done yet (owner go-live, she acts — I guide):**

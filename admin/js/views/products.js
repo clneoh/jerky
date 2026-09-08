@@ -74,7 +74,7 @@ function buildEditor(state, product) {
   const recipeCard = el("div", { class: "card" },
     el("h3", { style: "margin:0 0 4px" }, "Recipe (per unit)"),
     el("p", { class: "card-sub", style: "margin:0 0 8px" },
-      "Type the ingredients… or pick another product to make a bundle (e.g. 3 × Chicken Jerky pouch) — its own recipe is used automatically. Under each line is how its cost is counted (amount × price); the list below adds the lines up and shows each one's share of the total."),
+      "Type the ingredients… or pick another product to make a bundle (e.g. 3 × Chicken Jerky pouch) — its own recipe is used automatically. Under each line is how its cost is counted (amount × price); the list below adds the lines up and shows each one's share of the total. Each ingredient line can also carry a short private note about itself for this product alone (e.g. which cut or brand of meat) — for your eyes only, never shown to customers."),
     costEl,
     el("div", { id: "recipe-lines" }),
     sumEl,
@@ -117,7 +117,10 @@ function buildEditor(state, product) {
       if (l.productId && !l.ingredientId) {
         recipe.push({ productId: l.productId, qty, unit: (l.unit || "").trim() });
       } else if (l.ingredientId) {
-        recipe.push({ ingredientId: l.ingredientId, qty, unit: (l.unit || "g").trim() });
+        const rec = { ingredientId: l.ingredientId, qty, unit: (l.unit || "g").trim() };
+        const desc = String(l.description || "").trim();
+        if (desc) rec.description = desc;
+        recipe.push(rec);
       }
     }
     const cycle = validateRecipeNoCycle(state, { id: product && product.id, name: pname, recipe });
@@ -355,6 +358,14 @@ function recipeLine(state, line, i, draft, refresh, selfId, cost) {
     onchange: () => { line.qty = Number(qty.value); refresh(); } });
   const unitInp = el("input", { class: "input", placeholder: "unit", value: line.unit,
     style: "min-height:38px", onchange: () => { line.unit = unitInp.value.trim(); refresh(); } });
+  // A private per-product note under the ingredient line — "which cut / brand is
+  // this?" Written separately for each product, so the same ingredient can read
+  // differently here and there. Never published (the storefront drops recipes)
+  // and never on a label.
+  const note = el("input", { class: "input line-note",
+    placeholder: "Describe this ingredient in this product (for your eyes only) — optional",
+    value: line.description || "",
+    onchange: () => { line.description = note.value.trim() || undefined; refresh(); } });
 
   return el("div", { class: "ing-row" },
     ingSel,
@@ -363,7 +374,8 @@ function recipeLine(state, line, i, draft, refresh, selfId, cost) {
     button("✕", () => { draft.splice(i, 1); refresh(); }, "ghost small"),
     mismatch ? el("div", { class: "warn", style: "grid-column:1/-1;margin:0" },
       `Unit "${line.unit}" differs from ${ing.name}'s unit (${ing.unit}) — check this line.`) : null,
-    captionForLine(state, line, cost));
+    captionForLine(state, line, cost),
+    line.ingredientId ? note : null);
 }
 
 function productRecipeLine(state, line, i, draft, refresh, selfId, cost) {

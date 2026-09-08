@@ -321,6 +321,101 @@ test("an ingredient priced per pack (no fallback cost) prices its recipe line fr
     "the pack-priced salt is 100% of its own RM 0.04 total");
 });
 
+test("an ingredient line's typed description saves onto that line, blank leaves no key", () => {
+  doc.body.replaceChildren();
+  const state = freshState();
+  state.ingredients = [
+    { id: "ing_flour", name: "Strong flour", unit: "g", active: true, costPerUnit: 0.01 },
+    { id: "ing_water", name: "Water", unit: "ml", active: true }, // no note typed
+  ];
+  const root = render(state);
+  const nodes = walk(root.children[0]);
+  const addIng = nodes.find((n) => n.tagName === "BUTTON"
+    && (n.children || []).some((c) => c.text === "＋ Add ingredient"));
+  assert.ok(addIng, "the recipe card offers + Add ingredient");
+  fire(addIng);
+  fire(addIng); // two lines
+
+  const fireType = (n, t) => (n._listeners[t] || []).forEach((f) => f());
+  const row = (i) => walk(root.children[0])
+    .find((n) => n.attrs && n.attrs.id === "recipe-lines").children[i];
+  const sel = (i) => row(i).children.find((c) => c.tagName === "SELECT");
+  const qty = (i) => row(i).children.find((c) => c.tagName === "INPUT" && c.attrs && c.attrs.type === "number");
+  const note = (i) => row(i).children.find((c) => c.tagName === "INPUT" && c.attrs && c.attrs.placeholder
+    && c.attrs.placeholder.startsWith("Describe this ingredient"));
+
+  assert.ok(!note(0), "an empty row shows no note box yet");
+  sel(0).value = "ing_flour"; fireType(sel(0), "change");
+  assert.ok(note(0), "picking an ingredient reveals its note box under the row");
+  qty(0).value = "500"; fireType(qty(0), "change");
+  note(0).value = "high-protein bread flour"; fireType(note(0), "change");
+
+  sel(1).value = "ing_water"; fireType(sel(1), "change");
+  qty(1).value = "350"; fireType(qty(1), "change");
+
+  const f = formHandles(root);
+  f.name.value = "Focaccia";
+  f.unit.value = "u_loaf";
+  fire(f.add);
+
+  assert.equal(state.products.length, 1);
+  const rec = state.products[0].recipe;
+  assert.equal(rec.length, 2);
+  assert.equal(rec[0].description, "high-protein bread flour", "typed note round-trips onto the flour line");
+  assert.equal(rec[1].description, undefined, "the water line has no note");
+  assert.ok(!("description" in rec[1]), "and a blank note leaves no stray key on the saved line");
+  assert.deepEqual(Object.keys(rec[1]).sort(), ["ingredientId", "qty", "unit"],
+    "untouched lines keep exactly their old shape");
+});
+
+test("two products share one ingredient, each keeping its own description", () => {
+  doc.body.replaceChildren();
+  const state = freshState();
+  state.ingredients = [
+    { id: "ing_flour", name: "Strong flour", unit: "g", active: true, costPerUnit: 0.01 },
+  ];
+  const root = render(state);
+
+  const fireType = (n, t) => (n._listeners[t] || []).forEach((f) => f());
+  const addIng = () => walk(root.children[0]).find((n) => n.tagName === "BUTTON"
+    && (n.children || []).some((c) => c.text === "＋ Add ingredient"));
+  const row = () => walk(root.children[0])
+    .find((n) => n.attrs && n.attrs.id === "recipe-lines").children[0];
+  const sel = () => row().children.find((c) => c.tagName === "SELECT");
+  const qty = () => row().children.find((c) => c.tagName === "INPUT" && c.attrs && c.attrs.type === "number");
+  const note = () => row().children.find((c) => c.tagName === "INPUT" && c.attrs && c.attrs.placeholder
+    && c.attrs.placeholder.startsWith("Describe this ingredient"));
+
+  // Product 1: Focaccia, flour = "high-protein bread flour".
+  fire(addIng());
+  sel().value = "ing_flour"; fireType(sel(), "change");
+  qty().value = "500"; fireType(qty(), "change");
+  note().value = "high-protein bread flour"; fireType(note(), "change");
+  let f = formHandles(root);
+  f.name.value = "Focaccia";
+  f.unit.value = "u_loaf";
+  fire(f.add);
+  assert.equal(state.products.length, 1);
+
+  // Product 2: Sandwich, same flour ingredient, its own wording.
+  fire(addIng());
+  sel().value = "ing_flour"; fireType(sel(), "change");
+  qty().value = "250"; fireType(qty(), "change");
+  note().value = "soft all-purpose"; fireType(note(), "change");
+  f = formHandles(root);
+  f.name.value = "Sandwich";
+  f.unit.value = "u_loaf";
+  fire(f.add);
+  assert.equal(state.products.length, 2);
+
+  const foc = state.products.find((p) => p.name === "Focaccia");
+  const snd = state.products.find((p) => p.name === "Sandwich");
+  assert.equal(foc.recipe[0].description, "high-protein bread flour",
+    "Focaccia's flour line keeps its own note");
+  assert.equal(snd.recipe[0].description, "soft all-purpose",
+    "Sandwich's flour line keeps a different note for the same ingredient");
+});
+
 test("each line's share of the total shows as a rounded %, and no-cost lines read 0%", () => {
   doc.body.replaceChildren();
   const state = freshState();

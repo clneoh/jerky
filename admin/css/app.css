@@ -768,6 +768,15 @@ textarea.input { min-height: 64px; resize: vertical; }
   color: var(--muted);
   margin: -3px 0 2px;
 }
+/* Per-ingredient-line private note in the product editor — full width under the
+   row so a long "which cut / brand is this" reads as a full line, not squeezed. */
+.ing-row .line-note {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  padding: 6px 8px;
+  min-height: 0;
+  margin: -2px 0 2px;
+}
 /* "How it adds up:" table under the recipe lines — the lines' rounded costs in
    order, ending on the same total the header shows. */
 .cost-sum {
