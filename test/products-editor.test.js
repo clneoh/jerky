@@ -41,10 +41,17 @@ function createEl(tag) {
     },
   };
 }
+// The layer divs that confirmDialog / showPopup fill and hide. There is no real
+// <body> here, so getElementById hands back these stand-ins (nothing in the
+// existing tests called getElementById, so this only enables new behaviour).
+const layers = {
+  "confirm-layer": createEl("div"),
+  "popup-layer": createEl("div"),
+};
 const doc = {
   createElement: createEl,
   createTextNode: (s) => ({ nodeType: 3, text: String(s) }),
-  getElementById: () => null,
+  getElementById: (id) => layers[id] || null,
   querySelector: () => null,
   querySelectorAll: () => [],
   body: createEl("body"),
@@ -451,4 +458,95 @@ test("each line's share of the total shows as a rounded %, and no-cost lines rea
      "+", "RM 0.00", "Yeast  (no cost set)", "0%",
      "=", "RM 1.45", "100%"],
     "flour and cheddar split the RM 1.45 total (68.97→69% and 31.03→31%), and the no-cost yeast reads 0%");
+});
+
+// ── Engine v66: Draft / Publish / Hidden states ────────────────────────────
+
+const buttonByText = (root, text) => walk(root).find((n) => n.tagName === "BUTTON"
+  && (n.children || []).some((c) => c.text === text));
+const groupHeadings = (root) => walk(root)
+  .filter((n) => n.tagName === "H2" && n.className === "section")
+  .map((n) => (n.children[0] ? n.children[0].text : ""));
+const resetLayers = () => {
+  for (const id of Object.keys(layers)) { layers[id].hidden = true; layers[id].replaceChildren(); }
+};
+
+test("a brand-new product starts as a Draft, sitting in its own list, never on the shop", () => {
+  doc.body.replaceChildren();
+  resetLayers();
+  const state = freshState();
+  const root = render(state);
+  const f = formHandles(root);
+  f.name.value = "Focaccia";
+  f.unit.value = "u_loaf";
+  fire(f.add);
+
+  assert.equal(state.products.length, 1);
+  const saved = state.products[0];
+  assert.equal(saved.draft, true, "new products start as a draft");
+  assert.equal(saved.active, false, "active:false keeps it out of every for-sale list automatically");
+
+  assert.deepEqual(groupHeadings(root),
+    ["On the shop (0)", "Draft — not on the shop yet (1)", "Hidden — taken down (0)"],
+    "the screen shows three separate lists with counts");
+  assert.ok(buttonByText(root, "Publish"), "the draft card offers Publish");
+  assert.ok(!buttonByText(root, "Hide"), "a draft is not on the shop, so nothing to hide");
+});
+
+test("Publish moves a draft onto the shop — draft cleared, active true, re-listed live", () => {
+  doc.body.replaceChildren();
+  resetLayers();
+  const state = freshState();
+  const root = render(state);
+  const f = formHandles(root);
+  f.name.value = "Focaccia";
+  f.unit.value = "u_loaf";
+  fire(f.add);
+  const p = state.products[0];
+
+  fire(buttonByText(root, "Publish"));
+
+  assert.equal(p.active, true, "published products are active");
+  assert.notEqual(p.draft, true, "the draft flag is cleared");
+  assert.deepEqual(groupHeadings(root),
+    ["On the shop (1)", "Draft — not on the shop yet (0)", "Hidden — taken down (0)"],
+    "the published product now reads On the shop");
+  assert.ok(!buttonByText(root, "Publish"), "a live product has nothing left to publish");
+});
+
+test("a live product with order history Hides into the Hidden list, and Unhide brings it back", () => {
+  doc.body.replaceChildren();
+  resetLayers();
+  const state = freshState();
+  let root = render(state);
+  const f = formHandles(root);
+  f.name.value = "Focaccia";
+  f.unit.value = "u_loaf";
+  fire(f.add);
+  const p = state.products[0];
+  fire(buttonByText(root, "Publish"));
+
+  // History makes the live card offer Hide instead of Delete (Delete is guarded).
+  state.orders = [{ id: "o1", productId: p.id, qty: 1, customerName: "Aisyah", whatsapp: "60123456789" }];
+  root = render(state);
+  assert.ok(buttonByText(root, "Hide"), "a product with orders can be hidden, never deleted");
+  fire(buttonByText(root, "Hide"));
+
+  // The Hide confirm asks, and the yes tap actually hides.
+  const yes = walk(layers["confirm-layer"]).find((n) => n.tagName === "BUTTON"
+    && (n.children || []).some((c) => c.text === "Hide it"));
+  assert.ok(yes, "the confirm offers 'Hide it'");
+  fire(yes);
+  assert.equal(p.active, false, "hidden products are inactive");
+  assert.notEqual(p.draft, true, "and are not drafts");
+  root = render(state);
+  assert.deepEqual(groupHeadings(root),
+    ["On the shop (0)", "Draft — not on the shop yet (0)", "Hidden — taken down (1)"],
+    "the hidden product reads in the Hidden list");
+
+  fire(buttonByText(root, "Unhide"));
+  assert.equal(p.active, true, "unhiding puts it back on the shop");
+  root = render(state);
+  assert.deepEqual(groupHeadings(root),
+    ["On the shop (1)", "Draft — not on the shop yet (0)", "Hidden — taken down (0)"]);
 });

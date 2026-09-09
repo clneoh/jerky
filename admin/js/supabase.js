@@ -266,7 +266,7 @@ function storefrontPayload(state) {
   // list, so adding/editing/hiding a product in the app updates the customer
   // page after a publish. No separate menu to drift or clobber.
   const products = (Array.isArray(state.products) ? state.products : [])
-    .filter((p) => p && p.active !== false && String(p.name || "").trim())
+    .filter((p) => p && p.draft !== true && p.active !== false && String(p.name || "").trim())
     .map((p) => {
       const out = {
         name: String(p.name).trim(),
@@ -298,6 +298,15 @@ function storefrontPayload(state) {
       // Optional translated names for 中文 / BM shoppers. Published only when
       // written — blank falls back to the English name on the shop (nameFor).
       for (const k of ["nameZh", "nameMs"]) {
+        const v = p && p[k];
+        if (typeof v === "string" && v.trim()) out[k] = v.trim();
+      }
+      // The translated description line and selling-unit word a shopper reads
+      // on the card (descFor / unitFor on the shop). Auto-translated with the
+      // product's English text; blank keeps English. The serving-tip
+      // translations never leave the app (they only dress up the baker's
+      // follow-up message).
+      for (const k of ["descZh", "descMs", "unitZh", "unitMs"]) {
         const v = p && p[k];
         if (typeof v === "string" && v.trim()) out[k] = v.trim();
       }

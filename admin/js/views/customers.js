@@ -39,6 +39,9 @@ const STATUS_LABEL = {
 // filter change or a re-render never drops a selection mid-compose.
 let picked = new Set();
 let messageBody = "";
+// Which language the copied "follow-up" is written in this session (English
+// unless the baker switches it before copying).
+let followupLang = "en";
 
 const short = (iso) => (iso ? `${weekdayName(iso)} ${iso.slice(8)}` : "");
 const dateLine = (iso) => (iso ? `${weekdayName(iso)}, ${longDate(iso)}` : "");
@@ -457,16 +460,21 @@ function referralSection(state, r, ui, refresh, product) {
       el("span", { class: "st-chip valid" }, `${ready} ready`)),
     el("p", { class: "card-sub", style: "margin:0 0 8px" },
       `New friends who order through ${name}'s personal link get ${fmtRM(scheme.friendRM, cur)} off their first order, and ${name} earns ${fmtRM(scheme.referrerRM, cur)} a credit for each one. ${validTxt}`),
+    el("div", { class: "li-row", style: "align-items:center;gap:6px;margin:0 0 8px" },
+      el("span", { class: "card-sub", style: "margin:0" }, "Follow-up language:"),
+      [["en", "EN"], ["zh", "中文"], ["ms", "BM"]].map(([code, label]) =>
+        button(label, () => { followupLang = code; refresh(); },
+          followupLang === code ? "soft small" : "ghost small"))),
     el("div", { class: "btn-row" },
       button("📋 Copy share message",
         () => copyText(shareMessage(state, r, origin), "Share message copied — paste it in WhatsApp"),
         "primary small"),
       button("🎉 Copy follow-up",
-        () => copyText(followupMessage(state, r, product, origin), "Follow-up copied — send it after they collect"),
+        () => copyText(followupMessage(state, r, product, origin, followupLang), "Follow-up copied — send it after they collect"),
         "soft small"),
       button("🔗 Copy link", () => copyText(link, "Link copied"), "ghost small")),
     el("p", { class: "card-sub", style: "margin:6px 0 0" },
-      `The follow-up is a warm check-in${pname ? ` ("how did the ${pname} go?")` : ""} that slides the referral in after a delivery — send it instead of a plain "how was it?" message.`),
+      `The follow-up is a warm check-in${pname ? ` ("how did the ${pname} go?")` : ""} that slides the referral in after a delivery — send it instead of a plain "how was it?" message. The copy above is in ${followupLang === "en" ? "English" : followupLang === "zh" ? "Chinese (中文)" : "Bahasa Malaysia"}.`),
     linkEl(link),
   ];
 

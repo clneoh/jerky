@@ -1110,3 +1110,36 @@ test("mergeRows: a cloud settings row without wishList never deletes the local w
       "an absent cloud field is not a delete");
   } finally { restore(); }
 });
+
+test("a product's auto-translated text + provenance survives a sync round trip", () => {
+  const { store, restore } = installStorage();
+  try {
+    const a = baseState();
+    a.products = [{
+      id: "prd1", name: "Focaccia", description: "Crispy airy crumb", unit: "loaf", active: true,
+      nameZh: "佛卡夏", nameMs: "Roti Focaccia", descZh: "香脆空心", descMs: "Rangup berangin",
+      servingZh: "以 150°C 加热", servingMs: "Panaskan",
+      trOverride: ["nameMs", "descMs"],                                   // boxes she typed by hand
+      trSrc: { nameZh: "Focaccia", descZh: "Crispy airy crumb" },         // machine lines' English source
+    }];
+
+    // Phone A saves → computes the row that would be pushed.
+    const rows = sync.computeRecords(a);
+    const prodRow = rows.find((r) => r.kind === "products" && r.id === "prd1");
+    assert.deepEqual(prodRow.data, a.products[0],
+      "the whole product row rides the sync, translated lines included");
+
+    // Phone B (nothing yet) pulls it: every field arrives intact, including the
+    // nested trOverride array and trSrc map.
+    const b = baseState();
+    seedJournal(store);
+    const r = sync.mergeRows(b, [cloudRow("products", "prd1", prodRow.data, "2026-09-09T00:00:00.000Z")]);
+    assert.equal(r.changed, true);
+    const got = b.products[0];
+    assert.equal(got.descZh, "香脆空心");
+    assert.equal(got.servingMs, "Panaskan");
+    assert.deepEqual(got.trOverride, ["nameMs", "descMs"], "hand-typed provenance survives");
+    assert.deepEqual(got.trSrc, { nameZh: "Focaccia", descZh: "Crispy airy crumb" },
+      "machine-translation provenance survives");
+  } finally { restore(); }
+});

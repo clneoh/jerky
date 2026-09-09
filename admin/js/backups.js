@@ -189,7 +189,10 @@ export function snapshotViewData(data) {
     name: String(p.name || "").trim() || "(no name)",
     priceText: p.price == null || p.price === "" ? "" : fmtRM(p.price, currency),
     unit: String(p.unit || ""),
-    hidden: p.active === false,
+    // A draft is never "hidden" (it was never on the shop) — it reads as a
+    // draft in the View, distinct from a product she took down.
+    draft: p.draft === true,
+    hidden: p.draft !== true && p.active === false,
   }));
 
   const ingredientRows = list("ingredients").map((ing) => {

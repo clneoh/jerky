@@ -1,8 +1,33 @@
-# Munchies Furkidz — change history (v54 → v65)
+# Munchies Furkidz — change history (v54 → v66)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+## v66 — Products that translate themselves + Draft / On the shop / Hidden (9 Sep 2026)
+**Product text now translates itself into 中文 and Bahasa Malaysia.** When you
+save or publish a product, the app quietly fills Chinese and Malay versions of
+its name, description, selling unit and feeding tip — machine-made from your
+English, free, whenever you're online. Each translated box is tagged **"auto"**.
+Type over any box and it becomes yours, never overwritten again; and in
+**Products → Edit** you can tap **Fill all 中文** / **Fill all Bahasa Malaysia**
+to fill a whole language now, or **↻ Translate this one** for a single line. If
+you later change the English, the box is re-filled to match; delete the English
+and the translation is dropped. Shoppers reading in that language then see the
+product in their own words on your order page.
+
+**Products now have three states, shown as three lists** — **On the shop**
+(live, orderable), **Draft — not on the shop yet** (a brand-new product starts
+here, fully built but not for sale), and **Hidden — taken down** (off the menu,
+history and recipe kept). Publish a draft to put it on the shop; Hide a live
+product to pause it. Drafts and Hidden products never appear on the storefront
+and can't be ordered, so building a new recipe can't accidentally go live.
+
+**The "Copy follow-up" referral message now has a language choice.** In a
+customer's profile, before you copy the follow-up, pick **English / 中文 / BM** —
+the whole check-in (greeting, the product's translated name and feeding tip, the
+scheme pitch, the link) is written in that language, ready to paste into
+WhatsApp. English stays the default. No SQL this version.
 
 ## v65 — Reviews to publish, one at a time (9 Sep 2026)
 **More → Reviews** now walks you through the reviews **one at a time**, drawing

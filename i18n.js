@@ -44,8 +44,8 @@ export function rememberLang(l) {
 
 // The localized display name for a shop product. A shop product carries a
 // canonical English `name` (used for ordering/availability) and optional
-// `nameZh` / `nameMs` typed by the baker; the English name shows until she
-// gives a product its Chinese/Malay name.
+// `nameZh` / `nameMs` (typed by the baker or auto-translated); the English name
+// shows until a Chinese/Malay name exists.
 export function nameFor(product, lang) {
   const p = product && typeof product === "object" ? product : null;
   if (!p) return "";
@@ -58,6 +58,49 @@ export function nameFor(product, lang) {
     if (typeof m === "string" && m.trim()) return m.trim();
   }
   return String(p.name || "").trim();
+}
+
+// The translated boxes are named after a SHORT stem, not the full English field:
+// descZh/descMs (not descriptionZh), servingZh/servingMs (not servingTipZh);
+// name and unit happen to share their stem with the English field. map the full
+// field name down so the right box is read.
+const VARIANT_STEM = { description: "desc", servingTip: "serving", name: "name", unit: "unit" };
+
+// The same pick-a-language fallback for the product's other customer-facing
+// lines. `key` is the English field ("description", "unit", "servingTip") and
+// the translated boxes are <stem>Zh / <stem>Ms (descZh, unitMs, …). English
+// always shows until a translation exists.
+function fieldFor(product, lang, key, fallback) {
+  const p = product && typeof product === "object" ? product : null;
+  if (!p) return fallback || "";
+  const stem = VARIANT_STEM[key] || key;
+  if (lang === "zh") {
+    const z = p[`${stem}Zh`];
+    if (typeof z === "string" && z.trim()) return z.trim();
+  }
+  if (lang === "ms") {
+    const m = p[`${stem}Ms`];
+    if (typeof m === "string" && m.trim()) return m.trim();
+  }
+  const en = p[key];
+  if (typeof en === "string" && en.trim()) return en.trim();
+  return fallback || "";
+}
+
+// The description line a customer reads under the product on the shop.
+export function descFor(product, lang) {
+  return fieldFor(product, lang, "description", "");
+}
+
+// The serving tip used in the baker's localized follow-up message.
+export function servingFor(product, lang) {
+  return fieldFor(product, lang, "servingTip", "");
+}
+
+// The selling unit word shown after the price ("RM15.00 / loaf") — translated
+// on the shop; English (or "piece") is the fallback.
+export function unitFor(product, lang) {
+  return fieldFor(product, lang, "unit", "piece");
 }
 
 // Apply `dict[lang]` to a tagged subtree: sets text, placeholders, inner HTML

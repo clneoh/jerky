@@ -57,7 +57,8 @@ function body(digest, caption, close) {
   }
 
   // ── products ────────────────────────────────────────────────────────────
-  const live = productRows.filter((p) => !p.hidden);
+  const live = productRows.filter((p) => !p.hidden && !p.draft);
+  const drafts = productRows.filter((p) => p.draft);
   const hidden = productRows.filter((p) => p.hidden);
   if (live.length) {
     kids.push(section("Products"));
@@ -65,6 +66,11 @@ function body(digest, caption, close) {
   } else if (!productRows.length) {
     kids.push(section("Products"));
     kids.push(el("p", { class: "muted", style: "margin:8px 0 0" }, "No products yet in this copy."));
+  }
+  if (drafts.length) {
+    kids.push(el("p", { style: "margin:12px 0 2px;font-weight:700;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px" },
+      `Draft products (${drafts.length})`));
+    for (const p of drafts) kids.push(nameRow(p.name, priceLine(p)));
   }
   if (hidden.length) {
     kids.push(el("p", { style: "margin:12px 0 2px;font-weight:700;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px" },

@@ -12,6 +12,8 @@
 
 import { fmtRM, newId, orderCode, round2, waNumber } from "./state.js";
 import { addDays, todayISO } from "./dates.js";
+import { nameFor, servingFor } from "../../i18n.js";
+import { FOLLOWUP, fmtFollowup } from "./followup-lang.js";
 
 const DEFAULT_SCHEME = { enabled: false, friendRM: 3, referrerRM: 3, validDays: 90 };
 
@@ -100,30 +102,46 @@ export function shareMessage(state, r, origin) {
 // numbers + link as shareMessage, phrased as a chat. No product → the message
 // asks generally about their order instead. `product` may be a product row or
 // just its name.
-export function followupMessage(state, r, product, origin) {
+//
+// `lang` ("en" | "zh" | "ms") picks the language the whole message is written
+// in — the baker copies it to a customer who reads that language. The product
+// name and serving tip use the product's own 中文 / BM text when written (nameFor
+// / servingFor fall back to English). English stays the default and reads
+// byte-for-byte as it always did.
+export function followupMessage(state, r, product, origin, lang = "en") {
   const scheme = schemeOf(state);
   const digits = waNumber(r && r.whatsapp);
   const link = referralLink(origin, digits);
   const name = r && r.name && r.name !== "(no name)" ? r.name : "";
   const cur = (state.settings && state.settings.currency) || "RM";
+  const t = FOLLOWUP[lang] || FOLLOWUP.en;
   const validity = scheme.validDays === "" || scheme.validDays == null
-    ? "Your credit never expires."
-    : `Each credit is valid ${scheme.validDays} days from when your friend orders.`;
+    ? t.neverExpires
+    : fmtFollowup(t.validDays, { n: scheme.validDays });
   const pname = String((product && typeof product === "object" && product.name) || product || "").trim();
   const serve = product && typeof product === "object"
     ? String(product.servingTip || "").trim() : "";
+  // Localized product name + serving tip when the customer's language has its
+  // own words for them; otherwise the English text rides along.
+  const isRow = !!(product && typeof product === "object");
+  const langName = (isRow && lang !== "en" && nameFor(product, lang)) || pname;
+  const langServe = (isRow && lang !== "en" && servingFor(product, lang)) || serve;
 
   const lines = [];
+  const greeting = name ? `${t.hi} ${name}! ` : "";
   if (pname) {
-    lines.push(`${name ? `Hi ${name}! ` : ""}How did the ${pname} go? Hope you enjoyed it 😊`);
-    if (serve) lines.push(`Feeding tip: ${serve}`);
+    lines.push(`${greeting}${fmtFollowup(t.howProduct, { p: langName })}`);
+    if (langServe) lines.push(fmtFollowup(t.serving, { tip: langServe }));
   } else {
-    lines.push(`${name ? `Hi ${name}! ` : ""}Hope your order was lovely 😊`);
+    lines.push(`${greeting}${fmtFollowup(t.howOrder)}`);
   }
   lines.push("");
-  lines.push(`If you liked it, why not share your personal link below? A friend who is NEW to us gets ${fmtRM(scheme.friendRM, cur)} off their FIRST order — and you get ${fmtRM(scheme.referrerRM, cur)} off a future order for every friend who orders through your link.`);
+  lines.push(fmtFollowup(t.pitch, {
+    off: fmtRM(scheme.friendRM, cur),
+    ref: fmtRM(scheme.referrerRM, cur),
+  }));
   lines.push("");
-  lines.push("Your link to share:");
+  lines.push(t.yourLink);
   lines.push(link);
   lines.push("");
   lines.push(validity);

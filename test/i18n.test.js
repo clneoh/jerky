@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { HOME } from "../home-lang.js";
-import { LANGS, nameFor } from "../i18n.js";
+import { LANGS, nameFor, descFor, unitFor, servingFor } from "../i18n.js";
 import { carouselStep } from "../reviews.js";
 
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
@@ -75,4 +75,36 @@ test("nameFor shows the translated name when typed, else the English name", () =
   assert.equal(nameFor(null, "en"), "");
   const q = { name: "Croissant", nameZh: "牛角包", nameMs: "Croissant" };
   assert.equal(nameFor(q, "ms"), "Croissant");
+});
+
+// ── descFor / unitFor / servingFor (Engine v66 auto-translated fields) ──────
+
+test("descFor / servingFor / unitFor pick the language's line, English until one exists", () => {
+  const p = {
+    name: "Focaccia", description: "Crispy airy crumb", unit: "loaf", servingTip: "Warm 10 min",
+    descZh: "香脆空心", descMs: "Rangup berangin",
+    unitZh: "条", unitMs: "loaf",
+    servingZh: "加热 10 分钟", servingMs: "Panaskan 10 minit",
+  };
+  for (const lang of ["en", "zh", "ms"]) {
+    assert.equal(descFor(p, lang), lang === "zh" ? "香脆空心" : lang === "ms" ? "Rangup berangin" : "Crispy airy crumb");
+    assert.equal(servingFor(p, lang), lang === "zh" ? "加热 10 分钟" : lang === "ms" ? "Panaskan 10 minit" : "Warm 10 min");
+    assert.equal(unitFor(p, lang), lang === "zh" ? "条" : "loaf");
+  }
+});
+
+test("a missing translation keeps the English text (or 'piece'), never a blank or a crash", () => {
+  const englishOnly = { name: "Focaccia", description: "Crispy", unit: "loaf", servingTip: "Warm it" };
+  for (const lang of ["zh", "ms"]) {
+    assert.equal(descFor(englishOnly, lang), "Crispy");
+    assert.equal(servingFor(englishOnly, lang), "Warm it");
+    assert.equal(unitFor(englishOnly, lang), "loaf");
+  }
+  assert.equal(descFor(englishOnly, "en"), "Crispy");
+  assert.equal(unitFor({}, "zh"), "piece", "no unit at all falls back to 'piece', as the price line expects");
+  assert.equal(unitFor({ unit: "  " }, "zh"), "piece");
+  assert.equal(descFor(null, "zh"), "");
+  assert.equal(servingFor(undefined, "ms"), "");
+  const blankZh = { name: "Focaccia", description: "Crispy", descZh: "   " };
+  assert.equal(descFor(blankZh, "zh"), "Crispy", "whitespace-only translation reads as absent");
 });

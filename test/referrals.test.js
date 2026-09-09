@@ -65,10 +65,10 @@ test("schemeOf: blank validDays means never expire", () => {
 // ── referralLink / expiryDate ──────────────────────────────────────────────
 
 test("referralLink normalises digits into the share URL", () => {
-  assert.equal(referralLink("https://jienluv2bake.com.my", "012-345 6789"),
-    "https://jienluv2bake.com.my/store/?via=60123456789");
-  assert.equal(referralLink("https://jienluv2bake.com.my/", "+60123456789"),
-    "https://jienluv2bake.com.my/store/?via=60123456789");
+  assert.equal(referralLink("https://munchies.com.my", "012-345 6789"),
+    "https://munchies.com.my/store/?via=60123456789");
+  assert.equal(referralLink("https://munchies.com.my/", "+60123456789"),
+    "https://munchies.com.my/store/?via=60123456789");
 });
 
 test("referralLink returns '' for blank digits so callers can guard", () => {
@@ -292,11 +292,11 @@ test("shareMessage quotes the live scheme numbers and the customer's link", () =
   const st = baseState();
   st.settings.referrals = { enabled: true, friendRM: 5, referrerRM: 2, validDays: "" };
   const r = { name: "Aisyah", whatsapp: "60123456789" };
-  const msg = shareMessage(st, r, "https://jienluv2bake.com.my");
+  const msg = shareMessage(st, r, "https://munchies.com.my");
   assert.match(msg, /Hi Aisyah!/);
   assert.match(msg, /RM 5\.00 off their FIRST order/);
   assert.match(msg, /you get RM 2\.00 off a future order/);
-  assert.match(msg, /https:\/\/jienluv2bake\.com\.my\/store\/\?via=60123456789/);
+  assert.match(msg, /https:\/\/munchies\.com\.my\/store\/\?via=60123456789/);
   assert.match(msg, /never expires/);
 });
 
@@ -327,6 +327,65 @@ test("followupMessage without a known product asks generally instead", () => {
   const msg = followupMessage(st, { name: "Mei", whatsapp: "60123456789" }, null, "https://x.com");
   assert.match(msg, /Hope your order was lovely/);
   assert.doesNotMatch(msg, /How did the/);
+});
+
+// ── Engine v66: follow-up in the customer's own language ────────────────────
+
+// A product row with its 中文/BM text filled (as auto-translate does).
+const TRILINGUAL = {
+  id: "p1", name: "Focaccia", servingTip: "Warm 10 min at 150°C — crisp on top, soft inside",
+  nameZh: "佛卡夏", servingZh: "以 150°C 加热 10 分钟",
+  nameMs: "Roti Focaccia", servingMs: "Panaskan 10 minit pada 150°C",
+};
+const R = { name: "Aisyah", whatsapp: "60123456789" };
+const ORIGIN = "https://munchies.com.my";
+
+test("followupMessage with no language or 'en' is byte-for-byte the pre-v66 message", () => {
+  const st = baseState(); // 3/3/90 scheme, RM currency
+  const expected = [
+    "Hi Aisyah! How did the Focaccia go? Hope you enjoyed it 😊",
+    "Feeding tip: Warm 10 min at 150°C — crisp on top, soft inside",
+    "",
+    "If you liked it, why not share your personal link below? A friend who is NEW to us gets RM 3.00 off their FIRST order — and you get RM 3.00 off a future order for every friend who orders through your link.",
+    "",
+    "Your link to share:",
+    "https://munchies.com.my/store/?via=60123456789",
+    "",
+    "Each credit is valid 90 days from when your friend orders.",
+  ].join("\n");
+  assert.equal(followupMessage(st, R, TRILINGUAL, ORIGIN), expected, "default stays English");
+  assert.equal(followupMessage(st, R, TRILINGUAL, ORIGIN, "en"), expected, "explicit 'en' matches the default");
+});
+
+test("followupMessage in 中文 uses the product's Chinese name + serving tip and Chinese sentences", () => {
+  const st = baseState();
+  const msg = followupMessage(st, R, TRILINGUAL, ORIGIN, "zh");
+  assert.match(msg, /^你好 Aisyah! 你觉得佛卡夏怎么样/);
+  assert.match(msg, /食用建议：以 150°C 加热 10 分钟/);
+  assert.match(msg, /新朋友首次下单立减 RM 3\.00，朋友通过你的链接每下一单，你的下一次订单也减 RM 3\.00。$/m);
+  assert.match(msg, /分享你的链接：/);
+  assert.match(msg, /https:\/\/munchies\.com\.my\/store\/\?via=60123456789/);
+  assert.match(msg, /每份奖励自朋友下单起 90 天内有效。$/);
+  assert.doesNotMatch(msg, /Hope you enjoyed it|Your link to share|Serving tip:/, "no English sentences leak in");
+});
+
+test("followupMessage in Bahasa Malaysia uses the product's Malay name + serving tip and Malay sentences", () => {
+  const st = baseState();
+  const msg = followupMessage(st, R, TRILINGUAL, ORIGIN, "ms");
+  assert.match(msg, /^Hai Aisyah! Macam mana Roti Focaccia tadi/);
+  assert.match(msg, /Tip hidangan: Panaskan 10 minit pada 150°C/);
+  assert.match(msg, /rakan yang BARU kepada kami dapat RM 3\.00 diskaun untuk pesanan PERTAMA mereka/);
+  assert.match(msg, /anda dapat RM 3\.00 diskaun untuk pesanan akan datang\.$/m);
+  assert.match(msg, /Pautan anda untuk dikongsi:/);
+  assert.match(msg, /Setiap kredit sah 90 hari dari tarikh rakan anda membuat pesanan\.$/);
+  assert.doesNotMatch(msg, /Hope you enjoyed it|How did the/, "no English sentences leak in");
+});
+
+test("a product passed as just its name still localizes around the sentences, with English for the name", () => {
+  const st = baseState();
+  const msg = followupMessage(st, R, "Focaccia", ORIGIN, "ms");
+  assert.match(msg, /^Hai Aisyah! Macam mana Focaccia tadi/);
+  assert.doesNotMatch(msg, /Serving tip|Roti Focaccia/, "a bare name carries no serving tip to translate");
 });
 
 test("ROLE_LABEL covers the two credit kinds", () => {

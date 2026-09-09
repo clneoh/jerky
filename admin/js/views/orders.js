@@ -670,7 +670,11 @@ export function openDayAdjustPopup(state, date, refresh) {
 // "(hidden)") — so the baker can still add or edit an order for a product she
 // has temporarily taken off the menu. Active products list first.
 function productOptions(state, dateId, excludeOrderId = null) {
+  // Drafts are never for sale yet, so they have no orders — keep them out of
+  // the backoffice picker too. Hidden products stay (marked below) so an order
+  // for something temporarily off the menu can still be added or edited.
   return state.products
+    .filter((p) => p.draft !== true)
     .map((p) => {
       const pr = productRemaining(state, dateId, p.id, excludeOrderId);
       let label = pr ? `${p.name} — ${pr.remaining <= 0 ? "sold out" : `${pr.remaining} left`}` : p.name;

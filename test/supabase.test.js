@@ -99,6 +99,19 @@ test("product limits are ignored when no product has one (default capacity)", ()
   assert.deepEqual(row, { date: dates[0], slots_left: 12, capacity: 12 }); // falls back to the default capacity
 });
 
+test("a draft product's limit never inflates a day's capacity (drafts can't be ordered)", () => {
+  const dates = generateUpcomingDates(baseSettings(), 1);
+  const state = makeState();
+  state.products = [
+    { id: "prd_1", name: "Focaccia", active: true, limit: 12 },
+    { id: "prd_2", name: "Sandwich (draft)", active: false, draft: true, limit: 12 }, // being built, not for sale
+  ];
+  const rows = computeSlots(state, 10);
+  const row = rows.find((r) => r.date === dates[0]);
+  assert.deepEqual(row, { date: dates[0], slots_left: 12, capacity: 12 },
+    "only the published product's 12 counts — the draft adds nothing to the shop's capacity");
+});
+
 test("syncAvailability returns ok:false when not configured", async () => {
   let called = false;
   globalThis.fetch = async () => { called = true; return { ok: true, json: async () => ({}) }; };
@@ -312,8 +325,8 @@ test("syncStorefront publishes the whole config to storefront_config", async () 
   const state = makeState();
   state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
   state.settings.storefront = {
-    whatsapp: "60123456789", name: "Jienluv2bake", tagline: "Focaccia & sandwiches",
-    instagram: "jen", facebook: "jenbakes", tngQr: "https://img/tng.png",
+    whatsapp: "60123456789", name: "Munchies Furkidz", tagline: "Jerky & treats",
+    instagram: "munchies_furkidz", facebook: "", tngQr: "https://img/tng.png",
   };
   // The storefront menu comes from the backoffice product list (single source
   // of truth) — state.products.price/unit feed the published menu.
@@ -337,7 +350,7 @@ test("syncStorefront publishes the whole config to storefront_config", async () 
     assert.equal(body[0].id, "default");
     const payload = JSON.parse(body[0].data);
     assert.equal(payload.whatsapp, "60123456789");
-    assert.equal(payload.name, "Jienluv2bake");
+    assert.equal(payload.name, "Munchies Furkidz");
     assert.equal(payload.tngQr, "https://img/tng.png");
     assert.ok(!("setDays" in payload), "no global value-pack window — date rules live on each product");
     assert.deepEqual(payload.deliveryDays, [1, 3, 5]);
@@ -352,7 +365,7 @@ test("syncStorefront publishes the whole config to storefront_config", async () 
 test("storefront payload publishes the set's component and its per-product date rules", async () => {
   const state = makeState();
   state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
-  state.settings.storefront = { whatsapp: "60123456789", name: "Jienluv2bake" };
+  state.settings.storefront = { whatsapp: "60123456789", name: "Munchies Furkidz" };
   state.products = [
     { id: "prd_1", name: "Focaccia", price: 15, unit: "loaf", active: true, limit: 12 },
     { id: "prd_2", name: "Focaccia Value Pack (4)", price: 54, unit: "set", active: true,
@@ -433,6 +446,42 @@ test("storefront payload omits the developer keys until a name + email are set",
     assert.ok(!("developerName" in payload), "no developer key before it is configured");
     assert.ok(!("developerEmails" in payload));
     assert.ok(!("developerWhatsapp" in payload), "a blank WhatsApp number is not published either");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("storefront payload excludes drafts and publishes the translated description + unit only when written", async () => {
+  const state = makeState();
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
+  state.settings.storefront = { whatsapp: "60123456789", name: "Munchies Furkidz" };
+  state.products = [
+    { id: "prd_1", name: "Focaccia", price: 15, unit: "loaf", active: true,
+      descZh: "香脆空心", descMs: "   ", unitZh: "条", unitMs: "",
+      servingZh: "以 150°C 加热", servingMs: "Panaskan" },
+    { id: "prd_2", name: "Sandwich (draft)", price: 8, unit: "piece", active: false, draft: true },
+    { id: "prd_3", name: "Roti (half-published draft)", price: 6, unit: "piece", active: true, draft: true },
+  ];
+  const calls = [];
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ url, opts });
+    if (url.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    return { ok: true, text: async () => "" };
+  };
+  try {
+    const r = await syncStorefront(state);
+    assert.ok(r.ok);
+    const upsert = calls.find((c) => c.url.includes("/rest/v1/storefront_config"));
+    const payload = JSON.parse(JSON.parse(upsert.opts.body)[0].data);
+    assert.deepEqual(payload.products.map((p) => p.name), ["Focaccia"],
+      "neither an organic draft nor a half-published draft reaches the shop");
+    const foc = payload.products[0];
+    assert.equal(foc.descZh, "香脆空心");
+    assert.ok(!("descMs" in foc), "a blank BM description is not published — the shop falls back to English");
+    assert.equal(foc.unitZh, "条");
+    assert.ok(!("unitMs" in foc), "a blank BM unit word is not published either");
+    assert.ok(!("servingZh" in foc) && !("servingMs" in foc),
+      "serving-tip translations only dress up the baker's follow-up — never published");
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -758,8 +807,8 @@ test("refreshStorefront adopts the latest published storefront into the phone's 
   state.settings.supabase = { url: "https://x.supabase.co", anonKey: "anon" };
   state.settings.storefront = { name: "", whatsapp: "", tagline: "", instagram: "", facebook: "", tngQr: "", products: [] };
   const remote = {
-    name: "Jienluv2bake Cakes", whatsapp: "60111223344", tagline: "Cakes & more",
-    instagram: "jienluv2bake", facebook: "", tngQr: "https://img/qr.png",
+    name: "Munchies Furkidz", whatsapp: "60111223344", tagline: "Jerky & treats",
+    instagram: "munchies_furkidz", facebook: "", tngQr: "https://img/qr.png",
   };
   globalThis.fetch = async (url, opts) => {
     assert.ok(String(url).includes("storefront_config"), "reads the published config row");
@@ -769,10 +818,10 @@ test("refreshStorefront adopts the latest published storefront into the phone's 
   try {
     const adopted = await refreshStorefront(state);
     assert.equal(adopted, true);
-    assert.equal(state.settings.storefront.name, "Jienluv2bake Cakes");
+    assert.equal(state.settings.storefront.name, "Munchies Furkidz");
     assert.equal(state.settings.storefront.whatsapp, "60111223344");
-    assert.equal(state.settings.storefront.tagline, "Cakes & more");
-    assert.equal(state.settings.storefront.instagram, "jienluv2bake");
+    assert.equal(state.settings.storefront.tagline, "Jerky & treats");
+    assert.equal(state.settings.storefront.instagram, "munchies_furkidz");
     assert.equal(state.settings.storefront.facebook, "");
     assert.equal(state.settings.storefront.tngQr, "https://img/qr.png");
     assert.equal(state.settings.storefront.products.length, 0, "the menu is not adopted — it stays managed per phone");

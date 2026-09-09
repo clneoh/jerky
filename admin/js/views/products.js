@@ -6,28 +6,46 @@ import { el, button, select, emptyState, confirmDialog, showPopup, toast } from 
 import { byId, productUnitOptions, fmtRM, round2, newId, save } from "../state.js";
 import { costOf, recipeLineCosts, validateRecipeNoCycle } from "../bom.js";
 import { maybeSyncStorefront } from "../supabase.js";
+import { isLive, isDraft, isHidden, newDraftRow } from "../productState.js";
+import { translateAllowed, autoTranslateProduct, translateTo, LANG_OF, SRC_OF } from "../translate.js";
+
+const ALL_VARIANTS = ["nameZh", "descZh", "unitZh", "servingZh", "nameMs", "descMs", "unitMs", "servingMs"];
+const LANG_VARIANTS = { zh: ["nameZh", "descZh", "unitZh", "servingZh"], ms: ["nameMs", "descMs", "unitMs", "servingMs"] };
+const LANG_LABEL = { zh: "Chinese (中文)", ms: "Bahasa Malaysia" };
+const FIELD_LABEL = { name: "Name", description: "Description", unit: "Selling unit", servingTip: "Feeding tip" };
 
 export function renderProducts(root, state) {
   renderAll(root, state);
 }
 
 function renderAll(root, state) {
-  const products = state.products.filter((p) => p.active !== false);
-  const inactive = state.products.filter((p) => p.active === false);
+  const live = state.products.filter(isLive);
+  const drafts = state.products.filter(isDraft);
+  const hidden = state.products.filter(isHidden);
 
   const form = newProductCard(state, root);
 
-  const cards = products.map((p) => productCard(state, p, root));
-  const inactiveSection = inactive.length ? el("div", {},
-    el("h2", { class: "section" }, "Hidden products"),
-    ...inactive.map((p) => productCard(state, p, root))) : [];
+  if (!state.products.length) {
+    root.replaceChildren(form,
+      el("h2", { class: "section" }, "Products"),
+      emptyState("No products yet",
+        "Add a product and its recipe (ingredients per unit). It starts as a draft — Publish it to put it on the shop."));
+    return;
+  }
+
+  const group = (title, list, hint) => {
+    const rows = list.map((p) => productCard(state, p, root));
+    return [
+      el("h2", { class: "section" }, `${title} (${list.length})`),
+      ...(rows.length ? rows : [el("p", { class: "card-sub muted", style: "margin:0 0 6px" }, hint)]),
+    ];
+  };
 
   root.replaceChildren(
     form,
-    el("h2", { class: "section" }, `Products (${products.length})`),
-    ...(cards.length ? cards : [emptyState("No products yet",
-      "Add a product and its recipe (ingredients per unit).")]),
-    ...(Array.isArray(inactiveSection) ? [] : [inactiveSection]));
+    ...group("On the shop", live, "Nothing on the shop yet — publish a draft below to start selling it."),
+    ...group("Draft — not on the shop yet", drafts, "New products start here as drafts. Publish one to put it on the shop."),
+    ...group("Hidden — taken down", hidden, "Hidden products keep their history and recipe; nothing here is shown to customers."));
 }
 
 // Builds the fields + recipe lines once and hands back the nodes plus `collect()`
@@ -37,13 +55,6 @@ function buildEditor(state, product) {
   const recipeDraft = (product && product.recipe ? product.recipe : []).map((l) => ({ ...l }));
 
   const name = el("input", { class: "input", placeholder: "e.g. Chicken Jerky", value: product?.name || "" });
-  // Optional translated names for the order page — 中文 / BM shoppers see these
-  // instead of the English name. Blank keeps English (the canonical name always
-  // drives availability, pools and the order the baker reads).
-  const nameZh = el("input", { class: "input", placeholder: "e.g. 鸡肉肉干 — blank keeps English",
-    value: product?.nameZh || "" });
-  const nameMs = el("input", { class: "input", placeholder: "e.g. Jerky Ayam — blank keeps English",
-    value: product?.nameMs || "" });
   const unitChoices = productUnitOptions(state, product);
   const unit = select(unitChoices.options, unitChoices.value, null, "Pick a unit…");
   const price = el("input", { class: "input", type: "number", inputmode: "decimal", step: "0.01",
@@ -75,6 +86,131 @@ function buildEditor(state, product) {
   const serving = el("textarea", { class: "input", rows: 2,
     placeholder: "e.g. Tear into small pieces, store sealed in a cool, dry place",
     value: product?.servingTip || "" });
+
+  // ── Auto-translated 中文 / Bahasa Malaysia text ───────────────────────────
+  // English is written once above; these lines are machine-filled from it when
+  // the product is saved or published online. The "auto" tag marks machine text;
+  // typing in any box makes that line hers (never overwritten again), and the ↻
+  // buttons fill a single line now. Good translations are simply left alone.
+  const manualSet = new Set(); // boxes the baker decided by typing or clearing
+  const regen = new Set();     // boxes machine-filled during THIS edit
+  const regenSrc = {};         // variant → the English each regen box was made from
+
+  const isText = (src) => src === "description" || src === "servingTip";
+  const boxes = {};
+  const tags = {};
+  const tagFor = (variant) => {
+    const tag = el("span", { class: "trans-tag", dataset: { variant } });
+    tags[variant] = tag;
+    return tag;
+  };
+  for (const variant of ALL_VARIANTS) {
+    const src = SRC_OF[variant];
+    const node = el(isText(src) ? "textarea" : "input", {
+      class: "input",
+      rows: isText(src) ? 2 : undefined,
+      placeholder: `Auto-translated ${LANG_LABEL[LANG_OF[variant]]} — blank keeps English`,
+      dataset: { variant },
+      value: product ? String(product[variant] ?? "") : "",
+    });
+    node.addEventListener("input", () => { manualSet.add(variant); refreshTags(); });
+    boxes[variant] = node;
+  }
+  if (product) {
+    for (const variant of ALL_VARIANTS) {
+      if (Array.isArray(product.trOverride) && product.trOverride.includes(variant)) { manualSet.add(variant); continue; }
+      const val = String(product[variant] ?? "").trim();
+      if (val && !(product.trSrc && product.trSrc[variant])) manualSet.add(variant); // legacy hand-typed (v64)
+    }
+  }
+
+  // The live English text a variant would be translated from ("" when blank).
+  function englishSource(variant) {
+    const src = SRC_OF[variant];
+    if (src === "name") return name.value.trim();
+    if (src === "description") return desc.value.trim();
+    if (src === "servingTip") return serving.value.trim();
+    if (src === "unit") { const u = byId(state.uoms, unit.value); return (u ? u.name : unit.value).trim(); }
+    return "";
+  }
+
+  function machineNow(variant) {
+    return !manualSet.has(variant) && String(boxes[variant].value ?? "").trim() !== ""
+      && (regen.has(variant) || !!(product && product.trSrc && product.trSrc[variant]));
+  }
+  function refreshTags() {
+    for (const variant of ALL_VARIANTS) {
+      const tag = tags[variant];
+      if (!tag) continue;
+      tag.textContent = machineNow(variant) ? "auto" : "";
+    }
+  }
+
+  async function fillLanguage(lang) {
+    if (!translateAllowed()) { toast("No connection — translations fill when you're back online"); return; }
+    let filled = 0;
+    for (const variant of LANG_VARIANTS[lang]) {
+      if (manualSet.has(variant)) continue;
+      const src = englishSource(variant);
+      const node = boxes[variant];
+      if (!src) {
+        if (String(node.value ?? "").trim()) node.value = ""; // English removed → drop a stale line
+        continue;
+      }
+      const t = await translateTo(fetch, src, lang);
+      if (t) { node.value = t; regen.add(variant); regenSrc[variant] = src; filled++; }
+    }
+    refreshTags();
+    if (filled) toast(`Filled ${filled} ${LANG_LABEL[lang]} line${filled === 1 ? "" : "s"} — tap Update to keep them`);
+  }
+
+  async function fillOne(variant) {
+    if (manualSet.has(variant)) { toast("You typed this one — your words stay"); return; }
+    if (!translateAllowed()) { toast("No connection — translations fill when you're back online"); return; }
+    const src = englishSource(variant);
+    const node = boxes[variant];
+    if (!src) {
+      if (String(node.value ?? "").trim()) node.value = "";
+      toast("Type the English for it above first, then tap ↻");
+      return;
+    }
+    const t = await translateTo(fetch, src, LANG_OF[variant]);
+    if (t) {
+      node.value = t; regen.add(variant); regenSrc[variant] = src; refreshTags();
+      toast("Translated — tap Update to keep it");
+    } else {
+      toast("Couldn't translate just now — try again in a moment");
+    }
+  }
+
+  function oneRow(variant) {
+    const field = FIELD_LABEL[SRC_OF[variant]];
+    const lang = LANG_OF[variant];
+    return el("div", { class: "field", style: "margin-bottom:8px", dataset: { variant } },
+      el("label", {}, `${field} — ${LANG_LABEL[lang]}`),
+      boxes[variant],
+      el("div", { class: "btn-row", style: "margin:5px 0 0" },
+        tagFor(variant),
+        button("↻ Translate this one", () => fillOne(variant), "ghost small")));
+  }
+
+  function langSection(lang) {
+    return el("div", { style: "margin-top:10px" },
+      el("p", { style: "margin:0 0 2px;font-weight:700;font-size:13px;color:var(--brown-dark)" }, LANG_LABEL[lang]),
+      ...LANG_VARIANTS[lang].map(oneRow));
+  }
+
+  const translations = el("div", { class: "card" },
+    el("h3", { style: "margin:0 0 4px" }, "Product text for your customers"),
+    el("p", { class: "card-sub", style: "margin:0 0 8px" },
+      "These 中文 and Bahasa Malaysia lines are filled automatically from the English above the first time you save or publish. The \"auto\" tag marks a machine translation; type over any box to make that line yours — it is never overwritten again. Tap a button to fill every line of one language now."),
+    el("div", { class: "btn-row", style: "margin:0 0 4px" },
+      button("Fill all 中文", () => fillLanguage("zh"), "soft small"),
+      button("Fill all Bahasa Malaysia", () => fillLanguage("ms"), "soft small")),
+    langSection("zh"),
+    langSection("ms"));
+
+  refreshTags();
 
   const costEl = el("p", { class: "card-sub", style: "margin:0 0 10px" });
   const sumEl = el("div"); // "How it adds up:" breakdown under the lines, empty until a line is filled
@@ -108,7 +244,36 @@ function buildEditor(state, product) {
     sumEl.replaceChildren(...addUpBreakdown(state, recipeDraft, shown));
   }
 
-  // Reads the form; returns { error } or { values: {...} } ready to save.
+  // What to keep of the translated boxes when the form saves: which are hers
+  // (override), which are machine and from what English (src), and which stored
+  // values must be dropped because their English went blank or was cleared.
+  function trCollect() {
+    const vals = {};
+    const override = [];
+    const src = {};
+    const drop = [];
+    for (const variant of ALL_VARIANTS) {
+      const raw = String(boxes[variant].value ?? "").trim();
+      const es = englishSource(variant);
+      const manual = manualSet.has(variant);
+      if (manual) {
+        override.push(variant);
+        if (raw) vals[variant] = raw;
+        else if (product && Object.prototype.hasOwnProperty.call(product, variant)) drop.push(variant);
+        continue;
+      }
+      if (!raw) continue;
+      if (!es) {
+        if (product && Object.prototype.hasOwnProperty.call(product, variant)) drop.push(variant);
+        continue;
+      }
+      if (regen.has(variant)) { src[variant] = regenSrc[variant] || es; vals[variant] = raw; continue; }
+      vals[variant] = raw; // machine text from an earlier save — kickoff reconciles it against English
+    }
+    return { vals, override, src, drop };
+  }
+
+  // Reads the form; returns { error } or { values, tr } ready to save.
   function collect() {
     const pname = name.value.trim();
     if (!pname) return { error: "Product needs a name" };
@@ -145,8 +310,6 @@ function buildEditor(state, product) {
     if (vf && vt && vf > vt) return { error: "The \"from\" date is after the \"to\" date — swap them" };
     const descVal = desc.value.trim();
     const servingVal = serving.value.trim();
-    const nameZhVal = nameZh.value.trim();
-    const nameMsVal = nameMs.value.trim();
     return {
       values: {
         name: pname,
@@ -159,14 +322,76 @@ function buildEditor(state, product) {
         validTo: vt,
         description: descVal || undefined,
         servingTip: servingVal || undefined,
-        nameZh: nameZhVal || undefined,
-        nameMs: nameMsVal || undefined,
         recipe,
       },
+      tr: trCollect(),
     };
   }
 
-  return { name, nameZh, nameMs, unit, price, limit, closeDays, validFrom, validTo, desc, serving, recipeCard, renderRecipeLines, collect };
+  return { name, unit, price, limit, closeDays, validFrom, validTo, desc, serving, translations, recipeCard, renderRecipeLines, collect };
+}
+
+// Fold the translated boxes + their provenance onto a saved product row.
+// `tr` is what collect() returned: the override list is the FULL set of boxes
+// the baker owns (so an old machine entry she now types over stops being auto),
+// `src`/`drop` are the ones to record or forget.
+function applyTrMeta(p, tr) {
+  if (!tr) return;
+  for (const k of tr.drop) delete p[k];
+  const src = { ...(p.trSrc || {}) };
+  for (const k of tr.override) delete src[k];
+  for (const k of tr.drop) delete src[k];
+  for (const [k, v] of Object.entries(tr.src)) src[k] = v;
+  if (tr.override.length) p.trOverride = tr.override;
+  else delete p.trOverride;
+  const keys = Object.keys(src);
+  if (keys.length) p.trSrc = src;
+  else delete p.trSrc;
+  for (const [k, v] of Object.entries(tr.vals)) {
+    if (v === undefined) delete p[k];
+    else p[k] = v;
+  }
+}
+
+// After a save/publish, quietly finish the job online: fill any box that still
+// needs a translation (or drop one whose English went away), then persist and
+// push the finished text to the shop if the product is live. Never touches a box
+// the baker typed. Offline or offline-midway → leave as is; the next save or
+// Publish simply tries again.
+async function kickoffAutoTranslate(state, product) {
+  if (!translateAllowed() || !product) return;
+  try {
+    const changed = await autoTranslateProduct(product, (url) => fetch(url));
+    if (!changed.length) return;
+    save(state);
+    if (isLive(product)) maybeSyncStorefront(state);
+  } catch {
+    /* transient blip — the next save or Publish retries */
+  }
+}
+
+// Move a product between Draft / On the shop / Hidden. Live → hidden takes it
+// off the menu (history kept); hidden/draft → live puts it back. Publishing
+// re-runs auto-translate so a draft built offline reads correctly the moment
+// it can go up.
+function setProductState(state, p, target, root) {
+  const wasDraft = isDraft(p);
+  if (target === "live") {
+    p.active = true;
+    delete p.draft;
+    save(state);
+    maybeSyncStorefront(state);
+    toast(wasDraft ? `"${p.name}" is on the shop now` : `"${p.name}" back on the menu`);
+    renderAll(root, state);
+    if (wasDraft) kickoffAutoTranslate(state, p);
+  } else {
+    p.active = false;
+    delete p.draft;
+    save(state);
+    maybeSyncStorefront(state);
+    toast(`"${p.name}" hidden — history kept`);
+    renderAll(root, state);
+  }
 }
 
 // The common field layout under whichever shell (card or pop-up) hosts it.
@@ -175,24 +400,19 @@ function editorFields(state, editor) {
     el("div", { class: "form-grid" },
       el("div", {}, el("label", {}, "Name"), editor.name),
       el("div", {}, el("label", {}, "Unit"), editor.unit)),
-    el("div", { class: "field" }, el("label", {}, "Shop names (optional)"),
-      el("p", { class: "card-sub", style: "margin:0 0 5px" },
-        "What shoppers see in 中文 and Bahasa Malaysia on your order page. Blank keeps the English name — that name always stays the real one."),
-      el("div", { class: "form-grid" },
-        el("div", {}, el("label", {}, "中文"), editor.nameZh),
-        el("div", {}, el("label", {}, "Bahasa Malaysia"), editor.nameMs))),
-    el("div", { class: "field" }, el("label", {}, "Description (customers see it on your shop)"),
+    el("div", { class: "field" }, el("label", {}, "Description (customers read it on your shop)"),
       el("p", { class: "card-sub", style: "margin:0 0 5px" },
         "A sentence or two about what this is — e.g. chicken jerky, soft, chewy strips. Blank shows nothing."),
       editor.desc),
-    el("div", { class: "field" }, el("label", {}, "Feeding tip (only used in your follow-up message)"),
+    el("div", { class: "field" }, el("label", {}, "Feeding tip (sent in your follow-up message)"),
       el("p", { class: "card-sub", style: "margin:0 0 5px" },
-        "A short way-to-feed line you send with the bring-a-friend follow-up — e.g. “Tear into small pieces.” Blank keeps the follow-up simple."),
+        "A short way-to-feed line — e.g. “Tear into small pieces.” Blank keeps the follow-up simple."),
       editor.serving),
+    editor.translations,
     el("div", { class: "field" }, el("label", {}, "Sell price"), editor.price),
     el("div", { class: "field" }, el("label", {}, "Daily limit (optional)"),
       el("p", { class: "card-sub", style: "margin:0 0 5px" },
-        "Max units per batch/posting day. Limits add up for availability — 12 chicken + 12 duck = 24 left."),
+        "Max pouches per batch/posting day. Limits add up for availability — 12 chicken + 12 duck = 24 left."),
       editor.limit),
     el("div", { class: "field" }, el("label", {}, "Orders close (days before delivery)"),
       el("p", { class: "card-sub", style: "margin:0 0 5px" },
@@ -215,13 +435,18 @@ function newProductCard(state, root) {
     el("h3", { style: "margin:0 0 10px" }, "New product"),
     editorFields(state, editor),
     button("Add product", () => {
-      const { error, values } = editor.collect();
+      const { error, values, tr } = editor.collect();
       if (error) return toast(error);
-      state.products.push({ id: newId("prd"), ...values, active: true });
-      toast("Product added");
+      // New products start as a draft — fully built but not on the shop (and not
+      // orderable) until the owner publishes it. active:false keeps it out of
+      // every "for sale" list automatically; draft:true marks its state.
+      const row = { id: newId("prd"), ...values, ...newDraftRow() };
+      applyTrMeta(row, tr);
+      state.products.push(row);
+      toast("Saved as a draft — Publish it when it's ready to sell");
       save(state);
-      maybeSyncStorefront(state); // the storefront menu is the product list — keep it live
       renderAll(root, state);
+      kickoffAutoTranslate(state, row); // fill the 中文/BM boxes online, if any
     }, "block primary"));
 
   editor.renderRecipeLines();
@@ -238,14 +463,17 @@ function openEditProductPopup(state, product, root) {
       el("div", { class: "popup-actions" },
         button("Cancel", close, "ghost"),
         button("Update product", () => {
-          const { error, values } = editor.collect();
+          const { error, values, tr } = editor.collect();
           if (error) return toast(error);
+          const wasLive = isLive(product);
           Object.assign(product, values);
+          applyTrMeta(product, tr);
           toast("Product updated");
           save(state);
-          maybeSyncStorefront(state); // the storefront menu is the product list — keep it live
+          if (wasLive) maybeSyncStorefront(state); // live text changed → shop gets it
           close();
           renderAll(root, state);
+          kickoffAutoTranslate(state, product); // fill / refresh translations online
         }, "primary")));
     editor.renderRecipeLines();
     return body;
@@ -400,7 +628,7 @@ function productRecipeLine(state, line, i, draft, refresh, selfId, cost) {
   // keep working). The product being edited is excluded — a set can't hold
   // itself, and validateRecipeNoCycle is the backstop.
   let prodOpts = state.products
-    .filter((p) => p.id !== selfId && p.active !== false)
+    .filter((p) => p.id !== selfId && p.draft !== true && p.active !== false)
     .map((p) => ({ value: p.id, label: p.name }));
   if (line.productId && !prodOpts.some((o) => o.value === line.productId)) {
     const hidden = byId(state.products, line.productId);
@@ -451,6 +679,19 @@ function productCard(state, p, root) {
     return `${l.qty}${l.unit} ${ing ? ing.name : "(deleted)"}`;
   });
 
+  const actions = [button("Edit", () => openEditProductPopup(state, p, root), "ghost small")];
+  if (isDraft(p)) {
+    actions.push(button("Publish", () => setProductState(state, p, "live", root), "soft small"));
+    actions.push(button("Delete", () => deleteProduct(state, p, usedBy, usedInSets, root), "ghost small"));
+  } else if (isHidden(p)) {
+    actions.push(button("Unhide", () => setProductState(state, p, "live", root), "ghost small"));
+    if (!protect) actions.push(button("Delete", () => deleteProduct(state, p, usedBy, usedInSets, root), "ghost small"));
+  } else {
+    // Live: Hide when it has history/use (keeps PO + sets working), Delete when clean.
+    actions.push(button(protect ? "Hide" : "Delete",
+      () => deleteProduct(state, p, usedBy, usedInSets, root), "ghost small"));
+  }
+
   return el("div", { class: "card" },
     el("div", { class: "card-row" },
       el("div", { style: "min-width:0" },
@@ -460,18 +701,7 @@ function productCard(state, p, root) {
         usedInSets.length
           ? el("p", { class: "po-breakdown" }, `Used in: ${usedInSets.map((n) => `"${n}"`).join(", ")}`)
           : null),
-      el("div", { class: "li-right" },
-        button("Edit", () => openEditProductPopup(state, p, root), "ghost small"),
-        p.active === false
-          ? button("Unhide", () => {
-              p.active = true;
-              save(state);
-              maybeSyncStorefront(state); // the storefront menu is the product list — keep it live
-              toast(`"${p.name}" back on the menu`);
-              renderAll(root, state);
-            }, "ghost small")
-          : button(protect ? "Hide" : "Delete",
-              () => deleteProduct(state, p, usedBy, usedInSets, root), "ghost small"))),
+      el("div", { class: "li-right" }, ...actions)),
     lines.length ? el("p", { class: "po-breakdown" }, lines.join("  ·  ")) : null);
 }
 
@@ -485,6 +715,7 @@ function deleteProduct(state, p, usedBy, usedInSets, root) {
   confirmDialog(msg, () => {
     if (protect) {
       p.active = false;
+      delete p.draft;
       toast("Product hidden");
     } else {
       state.products = state.products.filter((x) => x.id !== p.id);

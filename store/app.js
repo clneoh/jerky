@@ -5,7 +5,7 @@
 // config.js fallback at runtime.
 import { CONFIG } from "./config.js";
 import { poolCaps, poolGroups, clampPool, groupFor, poolPieces, closedReason } from "./pool.js";
-import { loadLang, pick, rememberLang, nameFor, applyTo } from "../i18n.js";
+import { loadLang, pick, rememberLang, nameFor, descFor, unitFor, applyTo } from "../i18n.js";
 import { STORE } from "../store-lang.js";
 
 // Day/month short names per site language. English is today's authoring default;
@@ -195,6 +195,12 @@ export function mergeStorefront(base, remote) {
           const v = p && typeof p[k] === "string" && p[k].trim();
           if (v) out[k] = v;
         }
+        // Translated description line + selling-unit word, published only when
+        // written (blank keeps the English text on the card).
+        for (const k of ["descZh", "descMs", "unitZh", "unitMs"]) {
+          const v = p && typeof p[k] === "string" && p[k].trim();
+          if (v) out[k] = v;
+        }
         // A value pack carries component {name, qty}: which product's pool it
         // shares, and how many pieces each pack takes. Kept so the storefront
         // can cap a mixed cart and run the advance-order window.
@@ -369,6 +375,7 @@ export function render() {
     const byProduct = prodAvail && selected ? prodAvail[selected] || {} : {};
     const groups = poolGroups(CONFIG.products);
     menu.replaceChildren(...CONFIG.products.map((p) => {
+      const lang = loadLang();
       const group = groupFor(groups, p);
       const baseLeft = group && byProduct[group.baseName] != null
         ? Number(byProduct[group.baseName]) : undefined;
@@ -409,12 +416,14 @@ export function render() {
         ? el("span", { class: soldOut ? "prod-stamp soldout" : "prod-stamp" }, soldOut ? t("soldOut") : sub(t("onlyLeft"), left))
         : null;
       const note = reason ? el("p", { class: "prod-note" }, reason) : null;
-      const desc = p && String(p.description || "").trim();
+      // The card reads in the visitor's language: translated name/description/
+      // unit when the product has them, else the English text.
+      const desc = p && descFor(p, lang);
       return el("div", { class: `card menu-item${soldOut ? " soldout" : ""}` },
         el("div", { class: "card-head" },
           el("div", {},
-            el("p", { class: "card-title" }, nameFor(p, loadLang())),
-            el("p", { class: "card-sub" }, `RM${p.price.toFixed(2)} / ${p.unit}`),
+            el("p", { class: "card-title" }, nameFor(p, lang)),
+            el("p", { class: "card-sub" }, `RM${p.price.toFixed(2)} / ${unitFor(p, lang)}`),
             desc ? el("p", { class: "prod-desc" }, desc) : null),
           stamp),
         el("div", { class: "stepper" }, dec, qtyLabel, inc),

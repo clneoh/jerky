@@ -341,7 +341,14 @@ software wish list, posted to the optional `wish-mail` edge function
 (`supabase/functions/wish-mail/`) with an always-works mailto row as fallback.
 **Engine v65** made **More → Reviews** a review-at-a-time moderation carousel
 (waiting-to-publish first) with an "N waiting" pill on Home and the More menu.
-Like v62/v63 this is all code — no SQL.
+**Engine v66** made product shop-text (name, description, selling unit, feeding
+tip) auto-translate into 中文 and Bahasa Malaysia via the free MyMemory API —
+machine values tagged "auto", typing over a box makes it hers (`translate.js`,
+provenance in `trOverride`/`trSrc`) — gave products **three states** shown as
+three lists (Draft / On the shop / Hidden; a new product starts as a draft via
+`productState.js`), and gave the "Copy follow-up" referral message an
+EN / 中文 / BM choice (`followup-lang.js`, `i18n.js` `descFor`/`servingFor`/
+`unitFor`). Like v62–v65 this is all code — no SQL.
 
 ## Host it free — Netlify Drop
 

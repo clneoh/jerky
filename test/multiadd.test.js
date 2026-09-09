@@ -81,7 +81,7 @@ const baseState = () => ({
     currency: "RM",
     defaultCapacity: 12,
     cutoff: "18:00",
-    storefront: { name: "Jienluv2bake", tngQr: "" },
+    storefront: { name: "Munchies Furkidz", tngQr: "" },
   },
   products: [
     { id: "p1", name: "Focaccia", price: 15 },
