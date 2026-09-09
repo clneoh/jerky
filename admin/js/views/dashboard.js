@@ -8,6 +8,7 @@ import { occColour, upcomingOccasions } from "../calendar.js";
 import { el, button, emptyState, confirmDialog } from "../ui.js";
 import { gauge } from "../gauge.js";
 import { newId, save } from "../state.js";
+import { pendingReviewCount } from "../supabase.js";
 import {
   addTask, comingWeeks, loadRoutine, money, newOrderCount, nextBake,
   removeTask, renameTask, taskList, toggleRoutine, weekStats,
@@ -49,6 +50,47 @@ function needsCard(n) {
         el("p", { class: "card-title" }, `${n} new order${n === 1 ? "" : "s"} to confirm`),
         el("p", { class: "card-sub" }, "Waiting on you — tap to open")),
       el("span", { class: "badge badge-open" }, n > 99 ? "99+" : String(n))));
+}
+
+// "New review(s) to publish": same shape as the new-orders card, tapping
+// through to the Reviews moderation screen. Filled asynchronously below —
+// reviews live in the cloud, not local state.
+function reviewNeedsCard(n) {
+  return el("div", {
+    class: "card tappable",
+    onclick: () => navigate("#/reviews"),
+  },
+    el("div", { class: "card-row" },
+      el("div", {},
+        el("p", { class: "card-title" }, `⭐ ${n} new review${n === 1 ? "" : "s"} to publish`),
+        el("p", { class: "card-sub" }, "Waiting on you — tap to open")),
+      el("span", { class: "badge badge-open" }, n > 99 ? "99+" : String(n))));
+}
+
+// Review-pending state for the Home card. `revDead` turns off once the view
+// unmounts so a slow fetch never paints into a screen she's left.
+let revDead = true;
+let revTimer = null;
+let revFillT = null;
+
+async function fillRevSlot(slot, state) {
+  if (!slot) return;
+  const n = await pendingReviewCount(state); // null when off the cloud / offline
+  if (revDead || !slot.isConnected) return;
+  slot.replaceChildren(n && n > 0 ? reviewNeedsCard(n) : []);
+}
+
+// Debounced fill: renderInner rebuilds the slot on every internal re-render
+// (a to-do tick, an added date), so re-querying and refilling after each
+// rebuild keeps the card fresh without stampeding the cloud.
+function scheduleRevFill(root, state) {
+  if (revDead) return;
+  clearTimeout(revFillT);
+  revFillT = setTimeout(() => {
+    const slot = root.querySelector(".dash-rev-slot");
+    if (!slot || !slot.isConnected) return;
+    fillRevSlot(slot, state);
+  }, 0);
 }
 
 // "Next bake": the next delivery with orders still to bake, product by product.
@@ -250,6 +292,10 @@ function routineCard(root, state, today) {
 function atAGlanceBlocks(root, state, today, fc) {
   const blocks = [];
 
+  // First "needs you" slot: the async review-pending card lives here. It is
+  // always present (a zero-height placeholder when nothing is waiting).
+  blocks.push(el("div", { class: "dash-rev-slot" }));
+
   const needs = newOrderCount(state);
   if (needs > 0) blocks.push(needsCard(needs));
 
@@ -406,6 +452,7 @@ function renderInner(root, state) {
         ]),
     ...(past.length ? [pastSection(state, past)] : []),
   );
+  scheduleRevFill(root, state);
 }
 
 function pastSection(state, past) {
@@ -430,6 +477,15 @@ function pastSection(state, past) {
 
 export function renderDashboard(root, state) {
   weekPage = 0;
+  revDead = false;
+  if (revTimer) clearInterval(revTimer);
+  // While Home is on screen, refresh the review-pending card every ~45 s so a
+  // review published (or arriving) elsewhere shows up without a page change.
+  revTimer = setInterval(() => scheduleRevFill(root, state), 45000);
   renderInner(root, state);
-  return () => {};
+  return () => {
+    revDead = true;
+    if (revTimer) { clearInterval(revTimer); revTimer = null; }
+    if (revFillT) { clearTimeout(revFillT); revFillT = null; }
+  };
 }

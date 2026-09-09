@@ -37,6 +37,13 @@ function buildEditor(state, product) {
   const recipeDraft = (product && product.recipe ? product.recipe : []).map((l) => ({ ...l }));
 
   const name = el("input", { class: "input", placeholder: "e.g. Chicken Jerky", value: product?.name || "" });
+  // Optional translated names for the order page — 中文 / BM shoppers see these
+  // instead of the English name. Blank keeps English (the canonical name always
+  // drives availability, pools and the order the baker reads).
+  const nameZh = el("input", { class: "input", placeholder: "e.g. 鸡肉肉干 — blank keeps English",
+    value: product?.nameZh || "" });
+  const nameMs = el("input", { class: "input", placeholder: "e.g. Jerky Ayam — blank keeps English",
+    value: product?.nameMs || "" });
   const unitChoices = productUnitOptions(state, product);
   const unit = select(unitChoices.options, unitChoices.value, null, "Pick a unit…");
   const price = el("input", { class: "input", type: "number", inputmode: "decimal", step: "0.01",
@@ -138,6 +145,8 @@ function buildEditor(state, product) {
     if (vf && vt && vf > vt) return { error: "The \"from\" date is after the \"to\" date — swap them" };
     const descVal = desc.value.trim();
     const servingVal = serving.value.trim();
+    const nameZhVal = nameZh.value.trim();
+    const nameMsVal = nameMs.value.trim();
     return {
       values: {
         name: pname,
@@ -150,12 +159,14 @@ function buildEditor(state, product) {
         validTo: vt,
         description: descVal || undefined,
         servingTip: servingVal || undefined,
+        nameZh: nameZhVal || undefined,
+        nameMs: nameMsVal || undefined,
         recipe,
       },
     };
   }
 
-  return { name, unit, price, limit, closeDays, validFrom, validTo, desc, serving, recipeCard, renderRecipeLines, collect };
+  return { name, nameZh, nameMs, unit, price, limit, closeDays, validFrom, validTo, desc, serving, recipeCard, renderRecipeLines, collect };
 }
 
 // The common field layout under whichever shell (card or pop-up) hosts it.
@@ -164,6 +175,12 @@ function editorFields(state, editor) {
     el("div", { class: "form-grid" },
       el("div", {}, el("label", {}, "Name"), editor.name),
       el("div", {}, el("label", {}, "Unit"), editor.unit)),
+    el("div", { class: "field" }, el("label", {}, "Shop names (optional)"),
+      el("p", { class: "card-sub", style: "margin:0 0 5px" },
+        "What shoppers see in 中文 and Bahasa Malaysia on your order page. Blank keeps the English name — that name always stays the real one."),
+      el("div", { class: "form-grid" },
+        el("div", {}, el("label", {}, "中文"), editor.nameZh),
+        el("div", {}, el("label", {}, "Bahasa Malaysia"), editor.nameMs))),
     el("div", { class: "field" }, el("label", {}, "Description (customers see it on your shop)"),
       el("p", { class: "card-sub", style: "margin:0 0 5px" },
         "A sentence or two about what this is — e.g. chicken jerky, soft, chewy strips. Blank shows nothing."),

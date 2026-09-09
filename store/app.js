@@ -5,9 +5,38 @@
 // config.js fallback at runtime.
 import { CONFIG } from "./config.js";
 import { poolCaps, poolGroups, clampPool, groupFor, poolPieces, closedReason } from "./pool.js";
+import { loadLang, pick, rememberLang, nameFor, applyTo } from "../i18n.js";
+import { STORE } from "../store-lang.js";
 
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// Day/month short names per site language. English is today's authoring default;
+// fmtDay and the "Posting days" info card read by the visitor's language so a
+// date pill or that row shows in 中文/BM too.
+const DAYS_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const DAYS_ZH = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+const MONTHS_ZH = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"];
+const DAYS_MS = ["Ahad", "Isnin", "Selasa", "Rabu", "Khamis", "Jumaat", "Sabtu"];
+const MONTHS_MS = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"];
+
+// The store re-loads when a visitor switches language, so reading the saved
+// choice fresh on every lookup is right — and these helpers stay DOM-free, so
+// the Node tests (which default to English) keep asserting today's strings.
+function t(key) { return pick(STORE, loadLang(), key); }
+
+// Fill %1, %2, … placeholders left-to-right.
+function sub(s) {
+  const args = Array.prototype.slice.call(arguments, 1);
+  let out = String(s);
+  for (let i = 0; i < args.length; i++) out = out.split(`%${i + 1}`).join(String(args[i]));
+  return out;
+}
+
+function dayName(n) {
+  const lang = loadLang();
+  if (lang === "zh") return DAYS_ZH[n] || "";
+  if (lang === "ms") return DAYS_MS[n] || "";
+  return DAYS_EN[n] || "";
+}
 
 // Normalize a customer's WhatsApp number to the digits-only international form
 // wa.me links require (local leading "0" → "+60"). Mirror of admin/js/state.js,
@@ -72,7 +101,10 @@ export function isOpen(cfg, d, now = new Date()) {
 }
 
 export function fmtDay(d) {
-  return `${DAYS[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+  const lang = loadLang();
+  if (lang === "zh") return `${MONTHS_ZH[d.getMonth()]}${d.getDate()}日 ${DAYS_ZH[d.getDay()]}`;
+  if (lang === "ms") return `${DAYS_MS[d.getDay()]}, ${d.getDate()} ${MONTHS_MS[d.getMonth()]}`;
+  return `${DAYS_EN[d.getDay()]}, ${d.getDate()} ${MONTHS_EN[d.getMonth()]}`;
 }
 
 export function dateKey(d) {
@@ -105,7 +137,7 @@ export function pillSpecs(dates, availMap = {}) {
     const day = fmtDay(d);
     const left = availMap[dateKey(d)];
     const soldOut = left != null && left <= 0;
-    return { date: d, day, left, soldOut, avail: soldOut ? "Sold out" : "", label: soldOut ? `${day} Sold out` : day };
+    return { date: d, day, left, soldOut, avail: soldOut ? t("soldOut") : "", label: soldOut ? `${day} ${t("soldOut")}` : day };
   });
 }
 
@@ -156,6 +188,13 @@ export function mergeStorefront(base, remote) {
         };
         const desc = p && String(p.description || "").trim();
         if (desc) out.description = desc;
+        // Optional shop names in 中文/BM — the English `name` stays the key for
+        // availability, the pool and the order; the translated names only dress
+        // up what the customer reads on the card.
+        for (const k of ["nameZh", "nameMs"]) {
+          const v = p && typeof p[k] === "string" && p[k].trim();
+          if (v) out[k] = v;
+        }
         // A value pack carries component {name, qty}: which product's pool it
         // shares, and how many pieces each pack takes. Kept so the storefront
         // can cap a mixed cart and run the advance-order window.
@@ -174,6 +213,16 @@ export function mergeStorefront(base, remote) {
         return out;
       });
     if (products.length) out.products = products;
+  }
+  // The developer credit shown in the store footer (and on the homepage) — set
+  // once in the app's Settings and republished. Hidden until both exist.
+  if (typeof remote.developerName === "string" && remote.developerName.trim()) out.developerName = remote.developerName.trim();
+  if (Array.isArray(remote.developerEmails)) {
+    const emails = remote.developerEmails.map((e) => String(e).trim()).filter(Boolean);
+    if (emails.length) out.developerEmails = emails;
+  }
+  if (typeof remote.developerWhatsapp === "string" && remote.developerWhatsapp.trim()) {
+    out.developerWhatsapp = remote.developerWhatsapp.trim();
   }
   return out;
 }
@@ -235,23 +284,62 @@ function tryOpenWa(url) {
   }
 }
 
+// A wa.me link that opens a chat to the developer's WhatsApp number with "Hi!"
+// ready to send — same digit-cleaning as the bakery's own number. The owner
+// types the number (digits, country code) once in Settings → Website & developer.
+function devWaHref(number) {
+  const digits = waNumber(number);
+  return digits ? `https://wa.me/${digits}?text=${encodeURIComponent("Hi!")}` : "";
+}
+
+// The small "Website by {name}" credit in the store footer. The developer's
+// WhatsApp (when the baker set a number) is the primary link and opens a chat
+// with a ready "Hi!"; the email address(es) stay as a smaller second line — the
+// wish-list email still uses them. Reads the same published storefront data as
+// the homepage, so it shows only once the baker has set a developer name in the
+// app and republished.
+function renderDevFoot(cfg) {
+  const holder = document.getElementById("dev-foot");
+  if (!holder) return;
+  holder.replaceChildren();
+  const name = cfg && typeof cfg.developerName === "string" ? cfg.developerName.trim() : "";
+  const emails = Array.isArray(cfg && cfg.developerEmails)
+    ? cfg.developerEmails.map((e) => String(e).trim()).filter(Boolean)
+    : [];
+  const wa = cfg && typeof cfg.developerWhatsapp === "string" ? cfg.developerWhatsapp.trim() : "";
+  if (!name || (!wa && !emails.length)) {
+    holder.hidden = true;
+    return;
+  }
+  holder.hidden = false;
+  holder.appendChild(el("div", { class: "dev-note" }, `${t("devBy")} ${name}`));
+  if (wa) {
+    holder.appendChild(el("a", { class: "dev-wa", href: devWaHref(wa), target: "_blank", rel: "noopener" }, `💬 ${t("devWa")}`));
+  }
+  if (emails.length) {
+    holder.appendChild(el("a", { class: "dev-mail", href: `mailto:${emails.join(",")}` }, `✉ ${emails.join(", ")}`));
+  }
+}
+
 // The static header parts (name, tagline, delivery days, social links). Kept
 // separate so a later-published config can re-render just these.
 export function renderStatic(cfg) {
-  document.title = `Order · ${cfg.name}`;
+  document.title = `${t("titleWord")} · ${cfg.name}`;
   document.getElementById("name").textContent = cfg.name;
   document.getElementById("tagline").textContent = cfg.tagline;
-  document.getElementById("eyebrow").textContent = `Made to order · closes ${cfg.cutoff} the day before`;
+  document.getElementById("eyebrow").textContent = sub(t("madeToOrder"), cfg.cutoff);
 
-  const days = cfg.deliveryDays.map((n) => DAYS[n]).join(", ");
+  const days = cfg.deliveryDays.map((n) => dayName(n)).join(", ");
   document.getElementById("delivery-days").textContent = days;
-  document.getElementById("cutoff").textContent = `${cfg.cutoff} the day before`;
+  document.getElementById("cutoff").textContent = sub(t("beforeVal"), cfg.cutoff);
 
   const social = document.getElementById("social");
   const links = [];
   if (cfg.instagram) links.push(el("a", { href: `https://instagram.com/${cfg.instagram}`, target: "_blank", rel: "noopener" }, "📷 Instagram"));
   if (cfg.facebook) links.push(el("a", { href: `https://facebook.com/${cfg.facebook}`, target: "_blank", rel: "noopener" }, "📘 Facebook"));
   social.replaceChildren(...links);
+
+  renderDevFoot(cfg);
 }
 
 // A referral-link visitor (?via=…) sees one amount-free line near the top of the
@@ -318,14 +406,14 @@ export function render() {
       } }, "+");
       if (soldOut) { dec.disabled = true; inc.disabled = true; }
       const stamp = left != null
-        ? el("span", { class: soldOut ? "prod-stamp soldout" : "prod-stamp" }, soldOut ? "Sold out" : `Only ${left} left`)
+        ? el("span", { class: soldOut ? "prod-stamp soldout" : "prod-stamp" }, soldOut ? t("soldOut") : sub(t("onlyLeft"), left))
         : null;
       const note = reason ? el("p", { class: "prod-note" }, reason) : null;
       const desc = p && String(p.description || "").trim();
       return el("div", { class: `card menu-item${soldOut ? " soldout" : ""}` },
         el("div", { class: "card-head" },
           el("div", {},
-            el("p", { class: "card-title" }, p.name),
+            el("p", { class: "card-title" }, nameFor(p, loadLang())),
             el("p", { class: "card-sub" }, `RM${p.price.toFixed(2)} / ${p.unit}`),
             desc ? el("p", { class: "prod-desc" }, desc) : null),
           stamp),
@@ -420,7 +508,7 @@ export function render() {
   const buildPills = () => {
     const specs = pillSpecs(dates, avail || {});
     if (!specs.length) {
-      dateWrap.replaceChildren(el("p", { class: "muted" }, "No upcoming posting days right now — check back soon."));
+      dateWrap.replaceChildren(el("p", { class: "muted" }, t("noDates")));
       return;
     }
     const open = specs.filter((s) => !s.soldOut);
@@ -430,7 +518,7 @@ export function render() {
     if (!selected) selected = open.length ? dateKey(open[0].date) : null;
 
     if (!open.length) {
-      dateWrap.replaceChildren(el("p", { class: "muted" }, "All upcoming posting days are full right now — check back soon."));
+      dateWrap.replaceChildren(el("p", { class: "muted" }, t("noOpenDates")));
       return;
     }
     dateWrap.replaceChildren(...specs.map((s) => {
@@ -447,7 +535,7 @@ export function render() {
       if (s.soldOut) attrs.disabled = "true";
       return el("button", attrs,
         el("span", { class: "pill-date" }, s.day),
-        el("span", { class: "pill-sub" }, s.soldOut ? "Sold out" : ""));
+        el("span", { class: "pill-sub" }, s.soldOut ? t("soldOut") : ""));
     }));
   };
 
@@ -566,8 +654,9 @@ export function render() {
       count += q;
       total += q * p.price;
     }
-    document.getElementById("bar-count").textContent = `${count} item${count === 1 ? "" : "s"}`;
+    document.getElementById("bar-count").textContent = count === 1 ? t("oneItem") : sub(t("items"), count);
     document.getElementById("bar-total").textContent = `RM${total.toFixed(2)}`;
+    document.getElementById("order-btn").textContent = t("placeOrder");
     document.getElementById("order-btn").disabled = count === 0;
     return total;
   }
@@ -589,8 +678,8 @@ export function render() {
     if (!whatsapp) {
       if (waInput && waInput.focus) waInput.focus();
       showConfirm([
-        el("p", { class: "confirm-title" }, "Please add your WhatsApp number."),
-        el("p", { class: "confirm-body" }, "We use it to confirm your order and send your payment QR."),
+        el("p", { class: "confirm-title" }, t("confirmAddWaTitle")),
+        el("p", { class: "confirm-body" }, t("confirmAddWaBody")),
       ], "warn");
       return;
     }
@@ -603,8 +692,8 @@ export function render() {
       const addrInput = document.getElementById("address-input");
       if (addrInput && addrInput.focus) addrInput.focus();
       showConfirm([
-        el("p", { class: "confirm-title" }, "Please add your postal address."),
-        el("p", { class: "confirm-body" }, "We post nationwide — your treats can't be sent without your full address (street, area, town & postcode)."),
+        el("p", { class: "confirm-title" }, t("confirmAddrTitle")),
+        el("p", { class: "confirm-body" }, t("confirmAddrBody")),
       ], "warn");
       return;
     }
@@ -612,8 +701,8 @@ export function render() {
     // re-check the selected day at the moment they tap Place order.
     if (!isOpen(CONFIG, new Date(`${selected}T00:00:00`))) {
       showConfirm([
-        el("p", { class: "confirm-title" }, "That day's orders are closed."),
-        el("p", { class: "confirm-body" }, `Orders for this day close at ${CONFIG.cutoff} the day before — please pick a new posting day.`),
+        el("p", { class: "confirm-title" }, t("confirmClosedTitle")),
+        el("p", { class: "confirm-body" }, sub(t("confirmClosedBody"), CONFIG.cutoff)),
       ], "warn");
       return;
     }
@@ -625,10 +714,10 @@ export function render() {
     const fixes = reconcileCart();
     if (fixes.length) {
       showConfirm([
-        el("p", { class: "confirm-title" }, "Your order changed just now."),
-        el("p", { class: "confirm-body" }, "Something sold out while you were ordering — we've fixed your cart to match what's left."),
-        ...fixes.map((t) => el("p", { class: "confirm-body" }, `• ${t}`)),
-        el("p", { class: "confirm-sub" }, "Please review your order and tap Place order again."),
+        el("p", { class: "confirm-title" }, t("confirmChangedTitle")),
+        el("p", { class: "confirm-body" }, t("confirmChangedBody")),
+        ...fixes.map((note) => el("p", { class: "confirm-body" }, `• ${note}`)),
+        el("p", { class: "confirm-sub" }, t("confirmChangedSub")),
       ], "warn");
       return;
     }
@@ -657,13 +746,18 @@ export function render() {
     if (pool.length) order.pool = pool;
     // `selected` is a YYYY-MM-DD key; fmtDay wants a Date.
     const dayLabel = fmtDay(new Date(`${selected}T00:00:00`));
-    const items = lines.map((l) => `${l.name} ×${l.qty}`).join(" + ");
+    // The receipt the customer sees uses each product's shop name in their
+    // language (the order the baker reads keeps the canonical English names).
+    const items = lines.map((l) => {
+      const p = CONFIG.products.find((x) => x.name === l.name);
+      return `${p ? nameFor(p, loadLang()) : l.name} ×${l.qty}`;
+    }).join(" + ");
 
     // Immediate feedback + block the button while sending, so a slow network
     // can't make a customer tap repeatedly and send duplicates.
     orderBtn.disabled = true;
-    orderBtn.textContent = "Sending…";
-    showConfirm("Sending your order…");
+    orderBtn.textContent = t("sending");
+    showConfirm(t("sendingToBakery"));
 
     const r = await placeOrder(order);
     if (r.ok) {
@@ -689,13 +783,13 @@ export function render() {
       const addrField = document.getElementById("address-field");
       if (addrField) addrField.hidden = false;
       renderBar();
-      orderBtn.textContent = "Place order"; // stays disabled — the cart is empty
+      // order-btn label was reset by renderBar — the cart is now empty.
       showConfirm([
-        el("p", { class: "confirm-title" }, "🎉 Order received!"),
+        el("p", { class: "confirm-title" }, t("orderRecvTitle")),
         el("p", { class: "confirm-body" },
-          order.customer ? `Thanks ${order.customer}! ${CONFIG.name} has your order.` : `${CONFIG.name} has your order.`),
-        el("p", { class: "confirm-body" }, `📅 ${dayLabel} · ${items} · RM${total.toFixed(2)}`),
-        el("p", { class: "confirm-sub" }, "Your order is in — we'll WhatsApp you once we confirm it."),
+          order.customer ? sub(t("orderRecvThanksBody"), order.customer, CONFIG.name) : sub(t("orderRecvBody"), CONFIG.name)),
+        el("p", { class: "confirm-body" }, sub(t("orderRecvLine"), dayLabel, items, total.toFixed(2))),
+        el("p", { class: "confirm-sub" }, t("orderRecvSub")),
       ], "ok");
     } else {
       // The order could not reach the bakery's app — hand it over on WhatsApp
@@ -705,15 +799,15 @@ export function render() {
       const url = CONFIG.whatsapp ? waUrl(order, dayLabel) : null;
       const opened = url ? tryOpenWa(url) : false;
       orderBtn.disabled = false;
-      orderBtn.textContent = "Place order";
+      orderBtn.textContent = t("placeOrder");
       showConfirm([
-        el("p", { class: "confirm-title" }, "We couldn't send your order just now."),
-        el("p", { class: "confirm-body" }, "Don't worry — send your order on WhatsApp so it isn't lost."),
+        el("p", { class: "confirm-title" }, t("failTitle")),
+        el("p", { class: "confirm-body" }, t("failBody")),
         url
           ? (opened
-              ? el("p", { class: "confirm-sub" }, "WhatsApp has opened with your order — press Send so it isn't lost.")
-              : el("a", { class: "confirm-link", href: url, target: "_blank", rel: "noopener" }, "📲 Send your order via WhatsApp"))
-          : el("p", { class: "confirm-sub" }, "Please try again in a moment."),
+              ? el("p", { class: "confirm-sub" }, t("failOpened"))
+              : el("a", { class: "confirm-link", href: url, target: "_blank", rel: "noopener" }, t("failLink")))
+          : el("p", { class: "confirm-sub" }, t("failRetry")),
       ], "warn");
     }
   };
@@ -727,13 +821,15 @@ export function render() {
 // order details only. Payment instructions and the receipt flow live in the
 // WhatsApp confirmation, not here. Friendly fallbacks keep the card usable when
 // the code is wrong or tracking is unreachable.
+// Status ids in order, each with the dictionary key for its label — the labels
+// read in the visitor's language, the ids stay stable for matching.
 const JOURNEY = [
-  ["new", "New"],
-  ["confirmed", "Confirmed"],
-  ["paid", "Paid"],           // TNG payment received, right after Confirmed
-  ["baking", "Preparing"],
-  ["ready", "Packed"],
-  ["delivered", "Delivered"],
+  ["new", "trkNew"],
+  ["confirmed", "trkConfirmed"],
+  ["paid", "trkPaid"],        // TNG payment received, right after Confirmed
+  ["baking", "trkBaking"],
+  ["ready", "trkReady"],
+  ["delivered", "trkDelivered"],
 ];
 
 // A progress line for the track card, like an online-shop parcel tracker: each
@@ -766,14 +862,14 @@ function journeyEl(row) {
     end = i + 1;
   }
   const root = el("div", { class: "tj", "aria-label": "Order status journey" });
-  JOURNEY.forEach(([id, label], i) => {
+  JOURNEY.forEach(([id, labelKey], i) => {
     const state = i < end ? "done" : i === end ? "now" : "todo";
     const mark =
       state === "done" ? el("span", { class: "tj-check" }, "✓")
       : state === "now" ? el("span", { class: "tj-dot" }) : null;
     root.append(el("div", { class: `tj-step ${state}` }, [
       el("div", { class: "tj-track" }, [el("div", { class: "tj-node" }, mark)]),
-      el("div", { class: "tj-label" }, label),
+      el("div", { class: "tj-label" }, t(labelKey)),
     ]));
   });
   return root;
@@ -786,14 +882,14 @@ export async function trackOrder(code) {
   box.hidden = false;
   const sb = CONFIG.supabase;
   if (!clean) {
-    box.replaceChildren(el("p", { class: "track-note" }, "Enter your order number to track it."));
+    box.replaceChildren(el("p", { class: "track-note" }, t("trackEnter")));
     return;
   }
   if (!sb || !sb.url || !sb.anonKey) {
-    box.replaceChildren(el("p", { class: "track-note" }, "Tracking isn't available right now."));
+    box.replaceChildren(el("p", { class: "track-note" }, t("trackUnavailable")));
     return;
   }
-  box.replaceChildren(el("p", { class: "track-note" }, "Looking up your order…"));
+  box.replaceChildren(el("p", { class: "track-note" }, t("trackLooking")));
   const base = String(sb.url).replace(/\/+$/, "");
   try {
     // cache: no-store so a repeated lookup (e.g. re-checking the same order
@@ -805,14 +901,13 @@ export async function trackOrder(code) {
     const rows = res.ok ? await res.json() : null;
     const row = Array.isArray(rows) && rows[0];
     if (!row) {
-      box.replaceChildren(el("p", { class: "track-note" },
-        `We couldn't find order #${clean}. Check the number in your confirmation message — it's the 6 characters after the #.`));
+      box.replaceChildren(el("p", { class: "track-note" }, sub(t("trackNotFound"), clean)));
       return;
     }
     // The card reads like a parcel tracker: order code, the journey progress
     // line (reached stages green, current highlighted), then the delivery and
     // item details underneath.
-    const codeLine = el("p", { class: "track-code" }, `Order #${clean}`);
+    const codeLine = el("p", { class: "track-code" }, sub(t("orderCode"), clean));
     const journey = journeyEl(row);
     const details = el("div", { class: "track-details" }, [
       el("p", {}, row.delivery),
@@ -822,11 +917,11 @@ export async function trackOrder(code) {
       codeLine,
       journey,
       details,
-      row.customer ? el("p", { class: "track-note" }, `For ${row.customer}`) : null,
+      row.customer ? el("p", { class: "track-note" }, sub(t("forCustomer"), row.customer)) : null,
     ];
     box.replaceChildren(...kids.filter(Boolean));
   } catch {
-    box.replaceChildren(el("p", { class: "track-note" }, "Tracking isn't available right now — try again in a moment."));
+    box.replaceChildren(el("p", { class: "track-note" }, t("trackUnavailable")));
   }
 }
 
@@ -868,3 +963,20 @@ render();
 renderReferralBanner();
 wireFulfillment();
 wireTrack();
+
+// ── Site language (EN / 中文 / BM) ────────────────────────────────────────
+// The store rebuilds everything in render()'s local closures, so a switch
+// remembers the choice and reloads rather than trying to re-render in place.
+// Only a real browser reaches this block (Node tests have no documentElement).
+if (typeof document !== "undefined" && document.documentElement) {
+  const bootLang = loadLang();
+  applyTo(document, STORE, bootLang);
+  document.documentElement.lang = bootLang;
+  const pills = document.querySelectorAll("#lang-switch .lang-pill");
+  pills.forEach((b) => b.classList.toggle("is-on", b.dataset.lang === bootLang));
+  pills.forEach((b) => b.addEventListener("click", () => {
+    if (b.dataset.lang === loadLang()) return;
+    rememberLang(b.dataset.lang);
+    window.location.reload();
+  }));
+}

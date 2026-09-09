@@ -328,6 +328,21 @@ runs, and **Full change history** links to `changelog.pdf` at the root of the
 site — a PDF of every version from v54, built from `CHANGELOG.md` by
 `marketing/build_changelog.py`. No SQL was needed for any of this.
 
+**The site speaks three languages (Engine v64+).** The homepage and the
+storefront order page each carry a language switch (English / 中文 / Bahasa
+Malaysia) that re-translates the whole page on the spot and remembers the choice
+per visitor (`i18n.js` shared loader, `home-lang.js` + `store-lang.js`
+dictionaries, `home.js`/`store/app.js` apply them; a product can carry
+`nameZh`/`nameMs` shop names that dress up its card while orders keep the
+English name). The published homepage reviews render as a swipeable carousel,
+and **Settings → Website & developer** sets a "Website by …" credit on the
+homepage + order page footer and More → About — the same developer receives the
+software wish list, posted to the optional `wish-mail` edge function
+(`supabase/functions/wish-mail/`) with an always-works mailto row as fallback.
+**Engine v65** made **More → Reviews** a review-at-a-time moderation carousel
+(waiting-to-publish first) with an "N waiting" pill on Home and the More menu.
+Like v62/v63 this is all code — no SQL.
+
 ## Host it free — Netlify Drop
 
 For both phones to open the same URL:
@@ -380,11 +395,16 @@ engine (`admin/js/sync.js`), the app bootstrap + sign-in gate
 
 ```
 changelog.pdf       full change history (every version from v54, PDF) — root of the site
-index.html          public homepage (domain root)
+index.html          public homepage (domain root) — trilingual, data-i18n tags
+home.js             homepage logic: i18n apply + carousel + reviews boot (module)
+home-lang.js        homepage dictionary (en / zh / ms)
+i18n.js             shared language loader (LANGS, loadLang/rememberLang, applyTo)
+reviews.js          homepage reviews fetch + carousel + review form (root module)
 store/index.html    customer order page (/store/)
 store/app.css       storefront styling
 store/app.js        storefront logic + order intake + availability + published config
 store/config.js     fallback name, WhatsApp, menu, days, supabase (overridden by Settings → Storefront)
+store-lang.js       order-page dictionary (en / zh / ms)
 
 admin/ — backoffice app (/admin/):
   index.html          entry (bottom nav shell)
@@ -400,6 +420,7 @@ admin/ — backoffice app (/admin/):
   js/validate.js      import-file validation
   js/ui.js            DOM builder + shared render helpers
   js/wishlist.js      software wish list on More (lazy settings.wishList CRUD)
+  js/devmail.js       builds the wish-list email + developer contact links (pure, sends via wish-mail)
   js/profiles.js      customer profiles (join to the customer rows, pure)
   js/photo.js         shrinks a picked photo to a small thumb (browser only)
   js/app.js           hash router + bootstrap + shared-data gate
@@ -413,6 +434,7 @@ supabase/backups.sql        run once in Supabase SQL editor (cloud backup snapsh
 supabase/storefront.sql     run once in Supabase SQL editor (storefront config + order intake)
 supabase/reviews.sql        run once in Supabase SQL editor (homepage reviews + photo bucket)
 supabase/tracking.sql       run once in Supabase SQL editor (order tracking)
+supabase/functions/wish-mail  optional edge function: emails the wish list to the developer
 test/               node --test suites (import from admin/js and store/)
 marketing/          social-media marketing guide generator (gitignored)
 ```

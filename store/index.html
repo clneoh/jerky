@@ -16,71 +16,79 @@
   </div>
 
   <header class="hero">
-    <p id="eyebrow" class="hero-eyebrow"></p>
+    <div class="hero-top">
+      <p id="eyebrow" class="hero-eyebrow"></p>
+      <nav id="lang-switch" class="lang-switch" aria-label="Language">
+        <button type="button" class="lang-pill is-on" data-lang="en">EN</button>
+        <button type="button" class="lang-pill" data-lang="zh">中文</button>
+        <button type="button" class="lang-pill" data-lang="ms">BM</button>
+      </nav>
+    </div>
     <h1 id="name" class="hero-title"></h1>
     <p id="tagline" class="hero-sub"></p>
   </header>
 
   <main class="view">
-    <div id="referral-banner" class="referral-banner" hidden>
+    <div id="referral-banner" class="referral-banner" hidden data-i18n="referral">
       🎁 You were referred — you have a welcome discount on your first order
     </div>
 
     <section class="card info">
-      <p class="info-row"><strong>Posting days</strong><span id="delivery-days" class="info-val"></span></p>
-      <p class="info-row"><strong>Order by</strong><span id="cutoff" class="info-val"></span></p>
+      <p class="info-row"><strong data-i18n="deliveryDays">Posting days</strong><span id="delivery-days" class="info-val"></span></p>
+      <p class="info-row"><strong data-i18n="orderBy">Order by</strong><span id="cutoff" class="info-val"></span></p>
     </section>
 
-    <h2 class="section">Pick a posting day</h2>
+    <h2 class="section" data-i18n="sPickDay">Pick a posting day</h2>
     <div id="dates" class="pills"></div>
 
-    <h2 class="section">What would you like?</h2>
+    <h2 class="section" data-i18n="sWhat">What would you like?</h2>
     <div id="menu-note" class="menu-note" hidden></div>
     <div id="menu" class="menu"></div>
 
-    <h2 class="section">Your details</h2>
+    <h2 class="section" data-i18n="sYourDetails">Your details</h2>
     <div class="card">
       <div class="field">
-        <label for="name-input">Your name</label>
-        <input id="name-input" class="input" type="text" placeholder="e.g. Aisyah" autocomplete="name">
+        <label for="name-input" data-i18n="yourName">Your name</label>
+        <input id="name-input" class="input" type="text" data-i18n-ph="namePh" placeholder="e.g. Aisyah" autocomplete="name">
       </div>
       <div class="field">
-        <label for="whatsapp-input">WhatsApp number <em class="req">*</em></label>
-        <input id="whatsapp-input" class="input" type="tel" inputmode="tel" placeholder="e.g. 012-345 6789" autocomplete="tel" required>
-        <p class="card-sub" style="margin:4px 0 0">We use this to confirm your order and send your payment QR — we'll never spam you.</p>
+        <label for="whatsapp-input"><span data-i18n="whatsappNo">WhatsApp number</span> <em class="req">*</em></label>
+        <input id="whatsapp-input" class="input" type="tel" inputmode="tel" data-i18n-ph="whatsPh" placeholder="e.g. 012-345 6789" autocomplete="tel" required>
+        <p class="card-sub" style="margin:4px 0 0" data-i18n="waSub">We use this to confirm your order and send your payment QR — we'll never spam you.</p>
       </div>
       <div class="field">
-        <label>How will you get your order?</label>
+        <label data-i18n="howGet">How will you get your order?</label>
         <div class="seg" id="fulfillment">
-          <button type="button" class="seg-btn active" data-fulfillment="courier">Post (nationwide)</button>
-          <button type="button" class="seg-btn" data-fulfillment="collect">Collect (local)</button>
+          <button type="button" class="seg-btn active" data-fulfillment="courier" data-i18n="courier">Post (nationwide)</button>
+          <button type="button" class="seg-btn" data-fulfillment="collect" data-i18n="selfCollect">Collect (local)</button>
         </div>
       </div>
       <div class="field" id="address-field">
-        <label for="address-input">Postal address <em class="req">*</em></label>
-        <input id="address-input" class="input" type="text" placeholder="Full address — street, area, town &amp; postcode" autocomplete="street-address">
-        <p class="card-sub" style="margin:4px 0 0">We post nationwide — your treats are made on the day you pick and posted to this address.</p>
+        <label for="address-input"><span data-i18n="addressLabel">Postal address</span> <em class="req">*</em></label>
+        <input id="address-input" class="input" type="text" data-i18n-ph="addressPh" placeholder="Full address — street, area, town &amp; postcode" autocomplete="street-address">
+        <p class="card-sub" style="margin:4px 0 0" data-i18n="addressSub">We post nationwide — your treats are made on the day you pick and posted to this address.</p>
       </div>
       <div class="field" style="margin-bottom:0">
-        <label for="note-input">Note (optional)</label>
-        <input id="note-input" class="input" type="text" placeholder="Allergies, extras, anything…" autocomplete="off">
+        <label for="note-input" data-i18n="noteLabel">Note (optional)</label>
+        <input id="note-input" class="input" type="text" data-i18n-ph="notePh" placeholder="Allergies, extras, anything…" autocomplete="off">
       </div>
     </div>
 
-    <h2 class="section">Track your order</h2>
+    <h2 class="section" data-i18n="sTrack">Track your order</h2>
     <div class="card">
-      <p class="card-sub" style="margin:0 0 10px">
+      <p class="card-sub" style="margin:0 0 10px" data-i18n-html="trackHint">
         Placed an order? Enter the order number from your confirmation (it starts with <strong>#</strong>, e.g. #A3F9C2).
       </p>
       <div class="track-row">
-        <input id="track-input" class="input" type="text" placeholder="e.g. A3F9C2" autocomplete="off">
-        <button id="track-btn" class="track-btn">Track</button>
+        <input id="track-input" class="input" type="text" data-i18n-ph="trackPh" placeholder="e.g. A3F9C2" autocomplete="off">
+        <button id="track-btn" class="track-btn" data-i18n="trackBtn">Track</button>
       </div>
       <div id="track-result" class="track-result" hidden></div>
     </div>
 
     <div id="confirm-msg" class="confirm-msg" hidden></div>
     <div id="social" class="social"></div>
+    <div id="dev-foot" class="dev-foot" hidden></div>
   </main>
 
   <div class="bar-spacer"></div>

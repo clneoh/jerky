@@ -144,6 +144,18 @@ export function renderSettings(root, state) {
         sf.instagram = typeof remote.instagram === "string" ? remote.instagram : sf.instagram;
         sf.facebook = typeof remote.facebook === "string" ? remote.facebook : sf.facebook;
         sf.tngQr = typeof remote.tngQr === "string" ? remote.tngQr : sf.tngQr;
+        // Same adoption for the developer credit: the published values win so
+        // every phone's Settings shows what customers actually see.
+        if (typeof remote.developerName === "string" && remote.developerName.trim()) {
+          dev.name = remote.developerName.trim();
+        }
+        if (Array.isArray(remote.developerEmails)) {
+          const remoteEmails = remote.developerEmails.map((e) => String(e).trim()).filter(Boolean);
+          if (remoteEmails.length) dev.emails = remoteEmails;
+        }
+        if (typeof remote.developerWhatsapp === "string" && remote.developerWhatsapp.trim()) {
+          dev.whatsapp = remote.developerWhatsapp.trim();
+        }
         save(state);
         sfName.value = sf.name;
         sfWhatsapp.value = sf.whatsapp;
@@ -151,6 +163,9 @@ export function renderSettings(root, state) {
         sfInsta.value = sf.instagram;
         sfFacebook.value = sf.facebook;
         sfTngQr.value = sf.tngQr;
+        devName.value = dev.name;
+        devWa.value = dev.whatsapp || "";
+        renderDevEmails();
       })
       .catch(() => {});
   }
@@ -226,6 +241,76 @@ export function renderSettings(root, state) {
     el("div", { class: "field" },
       el("label", {}, "Flat postage per posted order (RM)"),
       sfPostage));
+
+  // ── Website & developer ──────────────────────────────────────────────────
+  // Whose site this is and who the wish-list email reaches. Shown as the little
+  // "Website by …" credit on the homepage + store footer and as the ✉ row in
+  // More → About. Emails may be several — every one gets the credit link and a
+  // copy of the wish-list email. Nothing shows on the pages until a name AND at
+  // least one email are set (see mergeStorefront's developer whitelist).
+  const dev = cur.developer ??= { name: "", emails: [], whatsapp: "" };
+  if (!Array.isArray(dev.emails)) dev.emails = [];
+  if (typeof dev.whatsapp !== "string") dev.whatsapp = "";
+  const devName = el("input", { class: "input", placeholder: "e.g. Clara's Web Studio",
+    value: dev.name || "",
+    onchange: () => { dev.name = devName.value.trim(); save(state); maybeSyncStorefront(state); toast("Saved"); } });
+  const devEmailBox = el("div", { style: "margin-top:2px" });
+  const devAddBtn = button("＋ Add another email", () => {
+    dev.emails.push("");
+    save(state); maybeSyncStorefront(state);
+    renderDevEmails();
+    const rows = devEmailBox.children;
+    const last = rows.length && rows[rows.length - 1].querySelector("input");
+    if (last) last.focus();
+  }, "soft");
+  const devWa = el("input", { class: "input", type: "tel", inputmode: "tel",
+    placeholder: "e.g. 60123456789 (digits, country code)",
+    value: dev.whatsapp || "",
+    onchange: () => { dev.whatsapp = devWa.value.trim(); save(state); maybeSyncStorefront(state); toast("Saved"); } });
+  function renderDevEmails() {
+    devEmailBox.replaceChildren(...dev.emails.map((email, i) => {
+      const inp = el("input", { class: "input", type: "email", inputmode: "email",
+        placeholder: "dev@example.com", value: email,
+        onchange: () => {
+          const v = inp.value.trim();
+          if (v) dev.emails[i] = v;
+          else if (dev.emails.length > 1) dev.emails.splice(i, 1);
+          else dev.emails[i] = "";
+          save(state); maybeSyncStorefront(state);
+          renderDevEmails();
+        } });
+      return el("div", { class: "form-grid", style: "margin:8px 0 0;align-items:center" },
+        inp,
+        el("button", { class: "btn ghost small", type: "button", style: "flex:0 0 auto;white-space:nowrap",
+          title: "Remove this email", onclick: () => {
+            dev.emails.splice(i, 1);
+            save(state); maybeSyncStorefront(state);
+            renderDevEmails();
+          } }, "✕"));
+    }));
+    if (!dev.emails.length) {
+      devEmailBox.append(el("p", { class: "card-sub", style: "margin:8px 0 0" },
+        "No email yet — the credit link and the wish-list email appear once you add one (name + email)."));
+    }
+  }
+  renderDevEmails();
+  const devCard = el("div", { class: "card" },
+    el("h3", { style: "margin:0 0 4px" }, "Website & developer"),
+    el("p", { class: "card-sub", style: "margin:0 0 10px" },
+      "Who the little “Website by …” credit belongs to — shown at the bottom of your homepage and order page, and under More → About. This is also who receives the email when you add a software wish. You can list more than one email — each one gets the credit link and the wish email."),
+    el("div", { class: "field", style: "margin-bottom:0" },
+      el("label", {}, "Developer name"),
+      devName,
+      el("p", { class: "card-sub", style: "margin:4px 0 0" }, "The name shown in the credit line.")),
+    el("div", { class: "field", style: "margin:12px 0 0" },
+      el("label", {}, "Developer email(s)"),
+      devEmailBox,
+      el("div", { class: "btn-row", style: "margin-top:10px" }, devAddBtn)),
+    el("div", { class: "field", style: "margin:14px 0 0" },
+      el("label", {}, "Developer WhatsApp (optional)"),
+      devWa,
+      el("p", { class: "card-sub", style: "margin:4px 0 0" },
+        "The developer link (homepage, order page, About) opens WhatsApp with a ready “Hi!”. The email link stays underneath — the wish-list email still uses it.")));
 
   const sb = (cur.supabase ??= {});
   const sbUrl = el("input", { class: "input", type: "text", inputmode: "url",
@@ -408,7 +493,7 @@ export function renderSettings(root, state) {
           button("Load sample data", () => loadSample(state), "soft")))
     : null;
 
-  root.replaceChildren(daysCard, lockCard, storefrontCard, postageCard, referralsCard, mailingCard, supabaseCard, sharedCard, backupCard, dangerCard, sampleCard);
+  root.replaceChildren(daysCard, lockCard, storefrontCard, postageCard, devCard, referralsCard, mailingCard, supabaseCard, sharedCard, backupCard, dangerCard, sampleCard);
 
   function doImport(e) {
     const file = e.target.files && e.target.files[0];

@@ -1,8 +1,43 @@
-# Munchies Furkidz — change history (v54 → v63)
+# Munchies Furkidz — change history (v54 → v65)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+## v65 — Reviews to publish, one at a time (9 Sep 2026)
+**More → Reviews** now walks you through the reviews **one at a time**, drawing
+each exactly as it will look on your homepage (photo, stars, message, name).
+The ones waiting for you to publish come first; **Publish** puts it on the
+homepage, **Take down** hides it again, **Delete** removes it for good — and
+every action moves you on to the next review. It deliberately does not
+auto-play, because you are deciding, not watching: the review in front of you
+stays until you move it with the ‹ › arrows, the dots, or a swipe.
+
+Two places now tell you when reviews are waiting on you: **Home** shows an
+"⭐ N new review(s) to publish" card near the top (tap it straight into
+Reviews), and the **⭐ Reviews** row on More gains a green "N waiting" pill.
+The count refreshes every ~45 seconds while Home is open. No SQL this version.
+
+## v64 — Your site in 中文 / English / Bahasa Malaysia + a website credit (9 Sep 2026)
+Your **homepage and ordering page now speak three languages.** Tap **English /
+中文 / BM** at the top of either page and every word — navigation, product
+cards, the delivery-day and order form, even the track page — switches over on
+the spot, and each phone remembers the language it picked. Because the choice
+lives in the browser, one shop link serves every customer in their own
+language. Each product can also carry a Chinese or Malay **shop name** in
+Products (e.g. 鸡肉肉干 or Jerky Ayam): it shows on the product card while the
+order and your records keep the English name.
+
+The homepage **reviews** section is now a **swipeable carousel** — drag left or
+right through the reviews you have published, or tap the dots — and if your
+website was built for you, **Settings → Website & developer** lets you name who
+made it. A small **"Website by …"** credit then appears at the bottom of your
+homepage and order page, and **More → About** adds a WhatsApp and an email row
+to reach them. That same developer is who the **software wish list** emails:
+add a wish on More and the whole list is sent to them automatically (quietly —
+if it can't send, a gentle note points you to the always-works **"✉ Email the
+full list"** row underneath). The credit and the email links stay hidden until
+you type a name and an email in Settings.
 
 ## v63 — Customers tab, wish list, holidays fix (8 Sep 2026)
 **Customers** is a real tab of its own, swapped with **Purchase Order** (now

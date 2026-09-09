@@ -8,6 +8,11 @@
 // "review-photos" bucket. A chosen photo is shrunk to a small JPEG before it is
 // uploaded, so a customer's phone picture of any size is accepted.
 //
+// Published reviews show one at a time in an animated carousel (auto-advance
+// every few seconds, with arrows, dots and swipe) once two or more exist. The
+// whole page is trilingual — this module reads its own dynamic strings from
+// home-lang.js for the visitor's chosen site language.
+//
 // This page has no build step, so the public project address + anon key are
 // written here directly — same values ship in store/config.js and the admin
 // Settings. The anon key is public by design (it only gates which Supabase
@@ -16,6 +21,9 @@
 // Everything above the DOM section is a pure helper so it runs under Node for
 // tests; the DOM work only starts when this file loads in a browser that has
 // the #reviews section.
+
+import { pick, loadLang } from "./i18n.js";
+import { HOME } from "./home-lang.js";
 
 const SUPABASE = {
   url: "https://ircwozniiyywsowamixy.supabase.co",
@@ -61,6 +69,16 @@ export function fmtDate(iso) {
   const d = new Date(String(iso || ""));
   if (Number.isNaN(d.getTime())) return "";
   return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+// The slide index that is `step` positions on from `index`, wrapping around the
+// carousel. With fewer than two slides there is nothing to step through.
+export function carouselStep(total, index, step) {
+  const n = Math.floor(Number(total) || 0);
+  if (n < 2) return 0;
+  const i = ((Math.floor(Number(index) || 0) % n) + n) % n;
+  const s = Math.floor(Number(step) || 0);
+  return ((i + s) % n + n) % n;
 }
 
 // Client-side gate before anything is sent: a name, an integer rating 1–5 and a
@@ -205,6 +223,11 @@ export async function uploadPhoto(file) {
   }
 }
 
+// The current visitor's site language (saved by home.js), for dynamic strings.
+function tHome(key) {
+  return pick(HOME, loadLang(), key);
+}
+
 // ─────────────────────────────────────────────────────────────
 // DOM — only runs on the homepage, never under Node.
 // ─────────────────────────────────────────────────────────────
@@ -214,16 +237,34 @@ function byId(id) {
   return hasDOM ? document.getElementById(id) : null;
 }
 
+let rowsCache = null; // last batch of published reviews, so a language switch
+                      // can re-draw the section without another network call
+let stopCarousel = null; // tear-down for the running carousel, if any
+
 export async function refreshReviews() {
   const grid = byId("review-grid");
   if (!grid) return;
-  const rows = await loadApproved();
+  rowsCache = await loadApproved();
+  drawGrid();
+}
+
+function drawGrid() {
+  const grid = byId("review-grid");
+  if (!grid) return;
+  if (stopCarousel) { stopCarousel(); stopCarousel = null; }
   grid.replaceChildren();
+  const rows = rowsCache || [];
   if (!rows.length) {
-    grid.appendChild(emptyNote("No reviews yet — be the first!"));
+    grid.appendChild(emptyNote(tHome("rvEmpty")));
     return;
   }
-  for (const row of rows) grid.appendChild(reviewCard(row));
+  if (rows.length === 1) {
+    grid.appendChild(reviewCard(rows[0]));
+    return;
+  }
+  const ctl = buildCarousel(rows);
+  grid.appendChild(ctl.el);
+  stopCarousel = ctl.stop;
 }
 
 function emptyNote(text) {
@@ -270,6 +311,110 @@ function reviewCard(row) {
   return card;
 }
 
+// One published review at a time: auto-advances ~every 6 s, pauses on hover,
+// touch or a hidden tab, and is fully usable by arrows, dots or a swipe.
+function buildCarousel(rows) {
+  const n = rows.length;
+  const holder = document.createElement("div");
+  holder.className = "r-slider";
+
+  const stage = document.createElement("div");
+  stage.className = "r-stage";
+  const track = document.createElement("div");
+  track.className = "r-track";
+  rows.forEach((row) => {
+    const slide = document.createElement("div");
+    slide.className = "r-slide";
+    slide.setAttribute("aria-roledescription", "slide");
+    slide.appendChild(reviewCard(row));
+    track.appendChild(slide);
+  });
+  stage.appendChild(track);
+
+  const navEl = document.createElement("div");
+  navEl.className = "r-nav";
+  const prev = document.createElement("button");
+  prev.type = "button";
+  prev.className = "r-btn";
+  prev.setAttribute("aria-label", tHome("rvPrevAria"));
+  prev.textContent = "‹";
+  const next = document.createElement("button");
+  next.type = "button";
+  next.className = "r-btn";
+  next.setAttribute("aria-label", tHome("rvNextAria"));
+  next.textContent = "›";
+  const dots = document.createElement("div");
+  dots.className = "r-dots";
+  const dotEls = [];
+  rows.forEach((row, idx) => {
+    const dot = document.createElement("button");
+    dot.type = "button";
+    dot.className = "r-dot";
+    dot.setAttribute("aria-label", `${idx + 1} / ${n}`);
+    dot.addEventListener("click", () => { go(idx); restart(); });
+    dots.appendChild(dot);
+    dotEls.push(dot);
+  });
+  navEl.append(prev, dots, next);
+
+  const live = document.createElement("span");
+  live.className = "r-live";
+  live.setAttribute("role", "status");
+  live.textContent = `1 / ${n}`;
+
+  holder.append(stage, navEl, live);
+
+  let i = 0;
+  let timer = null;
+  let downX = null;
+  let hovered = false;
+
+  function move() {
+    track.style.transform = `translateX(-${i * 100}%)`;
+    dotEls.forEach((d, j) => d.classList.toggle("is-on", j === i));
+    live.textContent = `${i + 1} / ${n}`;
+  }
+  function go(target) {
+    i = carouselStep(n, i, target - i);
+    move();
+  }
+  function clearTimer() {
+    if (timer) { clearInterval(timer); timer = null; }
+  }
+  function restart() {
+    clearTimer();
+    if (document.hidden || hovered) return;
+    timer = setInterval(() => { i = carouselStep(n, i, 1); move(); }, 6000);
+  }
+  const onVis = () => { if (document.hidden) clearTimer(); else restart(); };
+
+  prev.addEventListener("click", () => { go(i - 1); restart(); });
+  next.addEventListener("click", () => { go(i + 1); restart(); });
+  holder.addEventListener("pointerenter", () => { hovered = true; clearTimer(); });
+  holder.addEventListener("pointerleave", () => { hovered = false; restart(); });
+  holder.addEventListener("pointerdown", (e) => { downX = e.clientX; clearTimer(); });
+  const endDrag = (e) => {
+    if (downX == null) return;
+    const dx = e.clientX - downX;
+    downX = null;
+    if (Math.abs(dx) > 40) go(i + (dx < 0 ? 1 : -1));
+    restart();
+  };
+  holder.addEventListener("pointerup", endDrag);
+  holder.addEventListener("pointercancel", () => { downX = null; restart(); });
+  document.addEventListener("visibilitychange", onVis);
+
+  move();
+
+  return {
+    el: holder,
+    stop() {
+      clearTimer();
+      document.removeEventListener("visibilitychange", onVis);
+    },
+  };
+}
+
 function initReviews() {
   const form = byId("review-form");
   const grid = byId("review-grid");
@@ -278,8 +423,10 @@ function initReviews() {
   const nameInput = byId("rv-name");
   const message = byId("rv-message");
   const starsWrap = form.querySelector(".rv-stars");
-  const photoInput = byId("rv-photo");
-  const photoBtn = byId("rv-photo-btn");
+  const cameraInput = byId("rv-photo-camera");
+  const galleryInput = byId("rv-photo-gallery");
+  const takeBtn = byId("rv-photo-take");
+  const chooseBtn = byId("rv-photo-choose");
   const preview = byId("rv-photo-preview");
   const error = byId("rv-error");
   const thanks = byId("review-thanks");
@@ -288,6 +435,7 @@ function initReviews() {
 
   let rating = 5;
   let lang = "en";
+  let chosenFile = null;
 
   function paintStars() {
     if (!starsWrap) return;
@@ -315,30 +463,51 @@ function initReviews() {
     });
   });
 
-  if (photoBtn && photoInput) photoBtn.addEventListener("click", () => photoInput.click());
-  photoInput.addEventListener("change", () => {
-    preview.replaceChildren();
-    const file = photoInput.files && photoInput.files[0];
+  function clearPicked() {
+    chosenFile = null;
+    if (cameraInput) cameraInput.value = "";
+    if (galleryInput) galleryInput.value = "";
+  }
+  function handlePick(file) {
+    if (preview) preview.replaceChildren();
     if (!file) return;
     if (!photoOk(file)) {
-      setError("That photo is too large — please choose a picture under 25 MB.");
-      photoInput.value = "";
+      setError(tHome("rvTooBig"));
+      clearPicked();
       return;
     }
-    const img = document.createElement("img");
-    img.src = URL.createObjectURL(file);
-    img.className = "rv-preview-img";
-    img.alt = "Your photo";
-    preview.appendChild(img);
+    chosenFile = file;
+    if (preview) {
+      const img = document.createElement("img");
+      img.src = URL.createObjectURL(file);
+      img.className = "rv-preview-img";
+      img.alt = tHome("rvPhotoAlt");
+      preview.appendChild(img);
+    }
     setError("");
-  });
+  }
+  const wireInput = (input, sibling) => {
+    if (!input) return;
+    input.addEventListener("change", () => {
+      if (sibling) sibling.value = "";
+      const file = input.files && input.files[0];
+      handlePick(file);
+    });
+  };
+  wireInput(cameraInput, galleryInput);
+  wireInput(galleryInput, cameraInput);
+  if (takeBtn && cameraInput) takeBtn.addEventListener("click", () => cameraInput.click());
+  if (chooseBtn && galleryInput) chooseBtn.addEventListener("click", () => galleryInput.click());
 
   function setError(text) {
     if (error) error.textContent = text;
   }
 
-  function showThanks() {
+  function showThanks(critical) {
     if (!thanks) return;
+    const parts = [tHome("rvThanksMain")];
+    if (critical) parts.push(tHome("rvThanksHonest"));
+    thanks.textContent = parts.join(" ");
     thanks.hidden = false;
     if (form) form.hidden = true;
     if (grid) grid.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -348,29 +517,29 @@ function initReviews() {
     ev.preventDefault();
     const name = (nameInput && nameInput.value) || "";
     if (!reviewOk(name, rating, message.value)) {
-      setError("Please add your name, a star rating (1–5) and a short review (up to 400 characters).");
+      setError(tHome("rvErrFields"));
       return;
     }
     if (submitBtn) {
       submitBtn.disabled = true;
-      submitBtn.textContent = "Sending…";
+      submitBtn.textContent = tHome("rvSending");
     }
     setError("");
-    const file = photoInput && photoInput.files && photoInput.files[0];
+    const critical = rating <= 3;
     let photo = "";
-    if (file) {
+    if (chosenFile) {
       // Shrink first so any phone photo is a small upload; an unreadable file
       // just means the review goes out without a picture.
-      const ready = await shrinkReviewPhoto(file);
+      const ready = await shrinkReviewPhoto(chosenFile);
       if (ready) photo = await uploadPhoto(ready);
     }
     const res = await submitReview({ name, stars: rating, message: message.value, lang, photo });
     if (submitBtn) {
       submitBtn.disabled = false;
-      submitBtn.textContent = "Send review";
+      submitBtn.textContent = tHome("rvSubmit");
     }
     if (!res.ok) {
-      setError("Something went wrong sending your review. Please check your connection and try again.");
+      setError(tHome("rvErrSend"));
       return;
     }
     form.reset();
@@ -381,12 +550,19 @@ function initReviews() {
     lang = "en";
     langBtns.forEach((x) => x.classList.toggle("is-on", x.dataset.lang === "en"));
     if (preview) preview.replaceChildren();
-    if (photoInput) photoInput.value = "";
-    showThanks();
+    clearPicked();
+    showThanks(critical);
   });
 
   paintStars();
   refreshReviews();
 }
 
-if (hasDOM) initReviews();
+if (hasDOM) {
+  // Re-draw the reviews section in the new language (home.js persists the
+  // choice and fires this event); the data is cached, so no re-fetch.
+  window.addEventListener("i18nchange", () => {
+    if (rowsCache) drawGrid();
+  });
+  initReviews();
+}

@@ -1,12 +1,15 @@
 // views/more.js — menu for the secondary screens, plus the software wish list.
 
-import { el, button, confirmDialog } from "../ui.js";
+import { el, button, confirmDialog, toast } from "../ui.js";
 import { ENGINE_VERSION } from "../version.js";
 import {
   addWish, removeWish, renameWish, toggleWish, wishList,
 } from "../wishlist.js";
+import { developerEmails, developerName, buildWishMail, sendWishMail, devWaHref } from "../devmail.js";
+import { pendingReviewCount } from "../supabase.js";
 
 export function renderMore(root, state) {
+  let dead = false; // set once this view unmounts, so async fills never paint
   const stats = [
     `${state.products.filter((p) => p.active !== false).length} products`,
     `${state.ingredients.filter((x) => x.active !== false).length} ingredients`,
@@ -26,11 +29,21 @@ export function renderMore(root, state) {
     menuItem("#/settings", "⚙️ Settings", "Defaults, backup, transfer"));
 
   const wish = wishCard(state);
+  // Developer contact rows — WhatsApp first when she set a number (it opens a
+  // chat with a ready "Hi!"), the ✉ email row kept underneath. Shown only once
+  // she set a name and at least one way to reach the developer in Settings.
+  const devMail = developerEmails(state);
+  const devWa = devWaHref(state); // null when no usable WhatsApp number is set
+  const devBy = developerName(state) ? `Website by ${developerName(state)}` : "";
   const about = el("div", {},
     el("h2", { class: "section" }, "About"),
     el("div", { class: "card", style: "padding:4px 14px" },
       linkRow("../changelog.pdf", "📄 Full change history",
-        "Every version from v54, as a PDF")));
+        "Every version from v54, as a PDF"),
+      ...(devWa ? [linkRow(devWa, "💬 WhatsApp the developer",
+        `Opens WhatsApp with a ready “Hi!”${devBy ? ` · ${devBy}` : ""}`)] : []),
+      ...(devMail.length ? [linkRow(`mailto:${devMail.join(",")}`, "✉ Email the developer",
+        `${devBy ? `${devBy} · ` : ""}${devMail.join(", ")}`)] : [])));
 
   root.replaceChildren(
     el("div", { class: "card" },
@@ -42,6 +55,19 @@ export function renderMore(root, state) {
     menu,
     wish,
     about);
+
+  // "N waiting" pill on the ⭐ Reviews row — reviews live in the cloud, so the
+  // count is fetched after render and only shown when reviews are waiting.
+  const revRow = root.querySelector('a.menu-item[href="#/reviews"]');
+  if (revRow) {
+    pendingReviewCount(state).then((n) => {
+      if (dead || !n || !revRow.isConnected) return;
+      const right = revRow.querySelector(".menu-right");
+      if (right) right.prepend(el("span", { class: "badge badge-open" }, `${n} waiting`));
+    }).catch(() => {});
+  }
+
+  return () => { dead = true; };
 }
 
 // A tappable row in the "About" card — plain <a> so it opens in a new tab and
@@ -59,7 +85,10 @@ function menuItem(href, title, sub) {
     el("div", {},
       el("div", {}, title),
       el("div", { class: "card-sub", style: "font-weight:400" }, sub)),
-    el("span", { class: "chev" }, "›"));
+    // The chev sits in a right-hand group so an async count pill (e.g. the
+    // "N waiting" on Reviews) can be tucked in beside it before the chev.
+    el("span", { class: "menu-right" },
+      el("span", { class: "chev" }, "›")));
 }
 
 // ── Software wish list — a to-do that never resets ─────────────────────────
@@ -72,13 +101,31 @@ function wishAddRow(card, state, redo) {
     class: "check-input", type: "text", placeholder: "A feature you wish the app had…", autocomplete: "off",
   });
   const submit = () => {
-    if (addWish(state, input.value)) redo();
-    else input.focus();
+    if (!addWish(state, input.value)) return input.focus();
+    redo();
+    // Best-effort email to the developer with the FULL list. Quiet on success;
+    // on failure one unobtrusive toast points to the always-works ✉ row below.
+    if (developerEmails(state).length) {
+      sendWishMail(state).then((m) => {
+        if (!m.ok) {
+          toast("Wish saved — the email didn't send. Tap “✉ Email the full list” to send it yourself.");
+        }
+      });
+    }
   };
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
   return el("div", { class: "check-add" },
     input,
     el("button", { class: "btn soft small", type: "button", onclick: submit }, "Add"));
+}
+
+// The mailto that carries the whole wish list to every developer email, or null
+// before any developer email is set in Settings (then nothing renders).
+function wishMailtoHref(state) {
+  const emails = developerEmails(state);
+  if (!emails.length) return null;
+  const { subject, body } = buildWishMail(state);
+  return `mailto:${emails.join(",")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 function removeWishIt(card, state, item, redo) {
@@ -139,11 +186,16 @@ function wishCard(state) {
         el("p", { class: "card-title" }, "Software wish list"),
         el("p", { class: "card-sub" }, "Ideas for the app — tick the ones that come true")),
       ...(items.length ? [el("span", { class: "qty-chip" }, `${doneCount}/${items.length}`)] : []));
+    const mailHref = wishMailtoHref(state);
     listBox.replaceChildren(
       ...(items.length ? [] : [el("p", { class: "muted", style: "padding:2px 0 0" },
         "No wishes yet — add one below.")]),
       ...items.map((w) => wishRow(card, state, w, redo)),
-      wishAddRow(card, state, redo));
+      wishAddRow(card, state, redo),
+      ...(mailHref ? [el("div", { class: "check-mail" },
+        el("a", { href: mailHref }, "✉ Email the full wish list to the developer"),
+        el("p", { class: "card-sub", style: "margin:0" },
+          "Opens your mail app with every wish above — handy if the automatic email hasn't reached the developer yet."))] : []));
   };
   redo();
   return card;

@@ -27,6 +27,9 @@ header{padding:22px 0 10px;background:linear-gradient(180deg,#fffdf6 0%,var(--cr
 .navlinks{display:flex;gap:24px;font-family:Arial,sans-serif;font-size:13px;font-weight:700;letter-spacing:.08em}
 .navlinks a{text-decoration:none}
 .navlinks a:hover{color:var(--accent)}
+.lang-switch{display:flex;align-items:center;gap:4px;flex:none}
+.lang-pill{border:1px solid var(--accent);background:none;color:var(--accent);font-family:Arial,sans-serif;font-size:12px;font-weight:800;border-radius:999px;padding:6px 11px;cursor:pointer;line-height:1}
+.lang-pill.is-on{background:var(--accent);color:#fff}
 .hero{padding:34px 0 64px}
 .hero-grid{display:grid;grid-template-columns:1.1fr .9fr;align-items:center;gap:55px}
 .kicker{font-family:Arial,sans-serif;color:var(--accent);font-weight:800;letter-spacing:.2em;font-size:13px}
@@ -68,9 +71,36 @@ h1{font-family:Arial,sans-serif;font-size:clamp(40px,6vw,70px);line-height:.95;l
 .product-info p{margin:0;font-size:15px;color:#553a2b}
 .eyebrow .soon{display:inline-block;margin-left:8px;vertical-align:3px;font-family:Arial,sans-serif;font-size:9px;font-weight:800;letter-spacing:.08em;color:var(--accent);border:1px solid rgba(163,74,38,.5);border-radius:999px;padding:2px 8px;line-height:1.4}
 .eyebrow .soon.pork{color:var(--red);border-color:rgba(192,57,43,.55)}
-/* ── Reviews — "What customers say" ────────────────────────── */
-.review-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
-.review-none{grid-column:1/-1;text-align:center;color:var(--muted);border:1px dashed var(--line);background:var(--paper);border-radius:8px;padding:36px 16px;margin:0}
+.allergen-note{text-align:center;color:var(--muted);font-size:14px;max-width:640px;margin:26px auto 0}
+.notice-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px}
+.notice{background:var(--paper);border:1px solid var(--line);padding:30px;text-align:center}
+.notice h3,.order h3{font-family:Arial,sans-serif;color:var(--accent);letter-spacing:.08em;margin:0 0 10px}
+.notice strong{font-family:Arial,sans-serif;color:var(--red);font-size:24px}
+.order-section{background:#efe3d0}
+.steps{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:35px}
+.step{text-align:center;padding:20px 10px}
+.step-num{width:44px;height:44px;border:1px solid var(--accent);border-radius:50%;display:grid;place-items:center;margin:0 auto 12px;color:var(--accent);font-family:Arial,sans-serif;font-weight:800}
+.step h4{margin:0 0 5px;font-family:Arial,sans-serif;font-size:12px;letter-spacing:.04em}
+.step p{font-size:13px;margin:0;color:var(--muted)}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:30px}
+.info-box{background:var(--paper);border:1px solid var(--line);padding:28px}
+.info-box h3{font-family:Arial,sans-serif;color:var(--accent);margin:0 0 8px;letter-spacing:.08em}
+.info-box a{color:var(--accent)}
+/* ── Reviews — "What customers say" (carousel) ────────────── */
+.review-cards{display:flex;flex-direction:column;gap:20px}
+.review-none{text-align:center;color:var(--muted);border:1px dashed var(--line);background:var(--paper);border-radius:8px;padding:36px 16px;margin:0}
+.r-slider{position:relative;width:100%}
+.r-stage{overflow:hidden}
+.r-track{display:flex;transition:transform .5s ease}
+.r-slide{flex:0 0 100%;min-width:100%;display:flex;align-items:stretch}
+.r-slide .review-card{flex:1}
+.r-nav{display:flex;align-items:center;justify-content:center;gap:16px;margin-top:18px}
+.r-btn{width:40px;height:40px;border-radius:50%;border:1px solid var(--accent);background:var(--paper);color:var(--accent);font-size:20px;line-height:1;cursor:pointer;font-family:Arial,sans-serif;padding:0}
+.r-btn:hover{background:var(--accent);color:#fff}
+.r-dots{display:flex;gap:8px}
+.r-dot{width:10px;height:10px;border-radius:50%;border:none;background:#d6c09e;padding:0;cursor:pointer}
+.r-dot.is-on{background:var(--accent)}
+.r-live{border:0;clip:rect(0 0 0 0);height:1px;margin:-1px;overflow:hidden;padding:0;position:absolute;width:1px}
 .review-card{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:22px 20px;box-shadow:0 8px 24px rgba(74,44,24,.05);display:flex;flex-direction:column}
 .review-card-photo{display:block;max-width:100%;max-height:340px;width:auto;height:auto;margin:0 auto 14px;border-radius:8px}
 .review-card-stars{color:#d9a62e;font-family:Arial,sans-serif;font-size:21px;letter-spacing:4px;line-height:1.2}
@@ -95,25 +125,6 @@ textarea.field-input{resize:vertical;min-height:110px}
 .rv-error{color:var(--red);font-size:13px;margin:10px 0 0}
 .review-form .btn{width:100%;margin-top:16px}
 .review-thanks{background:var(--paper);border:1px solid var(--accent);color:var(--accent);border-radius:10px;text-align:center;padding:18px;font-family:Arial,sans-serif;font-size:15px;margin:36px auto 0;max-width:660px}
-@media (max-width:800px){
-  .review-cards{grid-template-columns:1fr}
-  .rv-stars{justify-content:center}
-}
-.allergen-note{text-align:center;color:var(--muted);font-size:14px;max-width:640px;margin:26px auto 0}
-.notice-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px}
-.notice{background:var(--paper);border:1px solid var(--line);padding:30px;text-align:center}
-.notice h3,.order h3{font-family:Arial,sans-serif;color:var(--accent);letter-spacing:.08em;margin:0 0 10px}
-.notice strong{font-family:Arial,sans-serif;color:var(--red);font-size:24px}
-.order-section{background:#efe3d0}
-.steps{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:35px}
-.step{text-align:center;padding:20px 10px}
-.step-num{width:44px;height:44px;border:1px solid var(--accent);border-radius:50%;display:grid;place-items:center;margin:0 auto 12px;color:var(--accent);font-family:Arial,sans-serif;font-weight:800}
-.step h4{margin:0 0 5px;font-family:Arial,sans-serif;font-size:12px;letter-spacing:.04em}
-.step p{font-size:13px;margin:0;color:var(--muted)}
-.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:30px}
-.info-box{background:var(--paper);border:1px solid var(--line);padding:28px}
-.info-box h3{font-family:Arial,sans-serif;color:var(--accent);margin:0 0 8px;letter-spacing:.08em}
-.info-box a{color:var(--accent)}
 footer{background:#3d2413;color:#f7efe2;padding:40px 0}
 .footer-grid{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:35px;align-items:start}
 footer h3{font-family:Arial,sans-serif;letter-spacing:.1em;font-size:14px}
@@ -124,6 +135,7 @@ footer a:hover{color:#fff}
 @media (max-width:800px){
   .navlinks{display:none}
   .brand img.logo{height:60px;width:72px}
+  .lang-switch{margin-left:auto}
   .hero{padding-top:20px}
   .hero-grid,.products,.notice-grid,.info-grid,.footer-grid{grid-template-columns:1fr}
   .hero-photo{order:-1}
@@ -132,6 +144,7 @@ footer a:hover{color:#fff}
   .product-photo{height:260px}
   .story-photos{grid-template-columns:1fr 1fr}
   .steps{grid-template-columns:1fr 1fr}
+  .rv-stars{justify-content:center}
 }
 @media (max-width:500px){
   .container{width:min(94vw,1120px)}
@@ -149,13 +162,18 @@ footer a:hover{color:#fff}
   <div class="container nav">
     <div class="brand"><img class="logo" src="images/logo.png" alt="Munchies Furkidz"></div>
     <nav class="navlinks">
-      <a href="#story">OUR STORY</a>
-      <a href="#treats">OUR TREATS</a>
-      <a href="#order">HOW TO ORDER</a>
-      <a href="#postage">POSTAGE</a>
-      <a href="#reviews">REVIEWS</a>
-      <a href="#contact">CONTACT</a>
+      <a href="#story" data-i18n="navStory">OUR STORY</a>
+      <a href="#treats" data-i18n="navTreats">OUR TREATS</a>
+      <a href="#order" data-i18n="navOrder">HOW TO ORDER</a>
+      <a href="#postage" data-i18n="navPostage">POSTAGE</a>
+      <a href="#reviews" data-i18n="navReviews">REVIEWS</a>
+      <a href="#contact" data-i18n="navContact">CONTACT</a>
     </nav>
+    <div class="lang-switch" id="lang-switch" role="group" aria-label="Site language">
+      <button type="button" class="lang-pill is-on" data-lang="en">EN</button>
+      <button type="button" class="lang-pill" data-lang="zh">中文</button>
+      <button type="button" class="lang-pill" data-lang="ms">BM</button>
+    </div>
   </div>
 </header>
 
@@ -163,13 +181,13 @@ footer a:hover{color:#fff}
 <section class="hero">
   <div class="container hero-grid">
     <div>
-      <div class="kicker">HOMEMADE FOR DOGS &amp; CATS · SINCE 2021</div>
+      <div class="kicker" data-i18n="heroKicker">HOMEMADE FOR DOGS &amp; CATS · SINCE 2021</div>
       <h1>MUNCHIES<br>FURKIDZ</h1>
-      <div class="hero-script">Every pet deserves fresh treats. ♡</div>
-      <p class="hero-copy">Small-batch treats made with quality ingredients — no preservatives, no shortcuts. After a little break, we're back with a fresh relaunch batch of jerky, biscuits and chewy rolls, posted to you nationwide.</p>
+      <div class="hero-script" data-i18n="heroScript">Every pet deserves fresh treats. ♡</div>
+      <p class="hero-copy" data-i18n="heroCopy">Small-batch treats made with quality ingredients — no preservatives, no shortcuts. After a little break, we're back with a fresh relaunch batch of jerky, biscuits and chewy rolls, posted to you nationwide.</p>
       <div class="ctas">
-        <a class="btn btn-primary" href="/store/" target="_blank" rel="noopener">ORDER ONLINE</a>
-        <a class="btn btn-secondary" href="#treats">SEE OUR TREATS</a>
+        <a class="btn btn-primary" href="/store/" target="_blank" rel="noopener" data-i18n="ctaOrder">ORDER ONLINE</a>
+        <a class="btn btn-secondary" href="#treats" data-i18n="ctaTreats">SEE OUR TREATS</a>
       </div>
     </div>
     <div class="hero-photo">
@@ -183,19 +201,19 @@ footer a:hover{color:#fff}
 
 <section class="section" id="story">
   <div class="container">
-    <h2 class="section-title">OUR STORY — WE'RE BACK!</h2>
+    <h2 class="section-title" data-i18n="storyTitle">OUR STORY — WE'RE BACK!</h2>
     <div class="story-text">
-      <p>Munchies Furkidz started in <strong>2021</strong> with a simple goal — making homemade treats that our furkids can enjoy. After a little break while I studied, I'm excited to continue this journey: <strong>new batches, new treats, and the same love</strong>.</p>
-      <p>Thank you to everyone who supported us before — and welcome to everyone joining us for the first time. 🐶🐱</p>
+      <p data-i18n-html="story1">Munchies Furkidz started in <strong>2021</strong> with a simple goal — making homemade treats that our furkids can enjoy. After a little break while I studied, I'm excited to continue this journey: <strong>new batches, new treats, and the same love</strong>.</p>
+      <p data-i18n-html="story2">Thank you to everyone who supported us before — and welcome to everyone joining us for the first time. 🐶🐱</p>
     </div>
-    <div class="story-quote">"Every Pet Deserves Fresh Treats." 🐾</div>
+    <div class="story-quote" data-i18n="storyQuote">"Every Pet Deserves Fresh Treats." 🐾</div>
     <div class="story-photos">
       <img src="images/relaunch-3.jpg" alt="Munchies Furkidz relaunch — photo 3">
       <img src="images/relaunch-2.jpg" alt="Munchies Furkidz relaunch — photo 2">
       <img src="images/relaunch-1.jpg" alt="Munchies Furkidz relaunch — photo 1">
       <img src="images/relaunch-4.jpg" alt="Munchies Furkidz relaunch — photo 4">
     </div>
-    <p class="story-caption">Some memories from the journey so far — stay tuned for our relaunch batch.</p>
+    <p class="story-caption" data-i18n="storyCaption">Some memories from the journey so far — stay tuned for our relaunch batch.</p>
   </div>
 </section>
 
@@ -204,8 +222,8 @@ footer a:hover{color:#fff}
      menu is managed in the backoffice (Settings). -->
 <section class="section" id="treats">
   <div class="container">
-    <h2 class="section-title">OUR TREATS</h2>
-    <p class="section-sub">Slow-made in small batches — no preservatives, no added sugar. Real ingredients, clearly labelled, for dogs and cats.</p>
+    <h2 class="section-title" data-i18n="bakesTitle">OUR TREATS</h2>
+    <p class="section-sub" data-i18n="bakesSub">Slow-made in small batches — no preservatives, no added sugar. Real ingredients, clearly labelled, for dogs and cats.</p>
     <div class="products">
 
       <article class="product-card">
@@ -213,10 +231,10 @@ footer a:hover{color:#fff}
           <img src="images/chicken-jerky.jpg" alt="Chicken Jerky" loading="lazy">
         </div>
         <div class="product-info">
-          <div class="eyebrow">CHICKEN JERKY</div>
-          <div class="size">100g pouch</div>
+          <div class="eyebrow"><span data-i18n="p1Name">CHICKEN JERKY</span></div>
+          <div class="size" data-i18n="p1Size">100g pouch</div>
           <div class="price">RM24</div>
-          <p>100% chicken breast, sliced thin and slow-dehydrated. One ingredient, nothing else.</p>
+          <p data-i18n="p1Desc">100% chicken breast, sliced thin and slow-dehydrated. One ingredient, nothing else.</p>
         </div>
       </article>
 
@@ -225,10 +243,10 @@ footer a:hover{color:#fff}
           <img src="images/duck-jerky.jpg" alt="Duck Jerky" loading="lazy">
         </div>
         <div class="product-info">
-          <div class="eyebrow">DUCK JERKY</div>
-          <div class="size">100g pouch</div>
+          <div class="eyebrow"><span data-i18n="p2Name">DUCK JERKY</span></div>
+          <div class="size" data-i18n="p2Size">100g pouch</div>
           <div class="price">RM26</div>
-          <p>100% duck breast — a rich, gentle single-ingredient chew, great for sensitive pets.</p>
+          <p data-i18n="p2Desc">100% duck breast — a rich, gentle single-ingredient chew, great for sensitive pets.</p>
         </div>
       </article>
 
@@ -237,10 +255,10 @@ footer a:hover{color:#fff}
           <img src="images/pork-jerky.jpg" alt="Pork Jerky" loading="lazy">
         </div>
         <div class="product-info">
-          <div class="eyebrow">PORK JERKY <span class="soon pork">PORK</span></div>
-          <div class="size">100g pouch</div>
+          <div class="eyebrow"><span data-i18n="p3Name">PORK JERKY</span> <span class="soon pork" data-i18n="porkTag">PORK</span></div>
+          <div class="size" data-i18n="p3Size">100g pouch</div>
           <div class="price">RM28</div>
-          <p>Single-ingredient pork — an option for pets that can't take chicken or duck. Clearly labelled so you can choose with care.</p>
+          <p data-i18n="p3Desc">Single-ingredient pork — an option for pets that can't take chicken or duck. Clearly labelled so you can choose with care.</p>
         </div>
       </article>
 
@@ -249,10 +267,10 @@ footer a:hover{color:#fff}
           <img src="images/chicken-potato-puff.jpg" alt="Chicken Potato Puff" loading="lazy">
         </div>
         <div class="product-info">
-          <div class="eyebrow">CHICKEN POTATO PUFF</div>
-          <div class="size">80g pouch</div>
+          <div class="eyebrow"><span data-i18n="p4Name">CHICKEN POTATO PUFF</span></div>
+          <div class="size" data-i18n="p4Size">80g pouch</div>
           <div class="price">RM22</div>
-          <p>Chicken blended with sweet potato and rolled oats, dehydrated into a crunchy puff.</p>
+          <p data-i18n="p4Desc">Chicken blended with sweet potato and rolled oats, dehydrated into a crunchy puff.</p>
         </div>
       </article>
 
@@ -261,10 +279,10 @@ footer a:hover{color:#fff}
           <img src="images/carrot-chicken-biscuit.jpg" alt="Carrot Chicken Biscuit" loading="lazy">
         </div>
         <div class="product-info">
-          <div class="eyebrow">CARROT CHICKEN BISCUIT</div>
-          <div class="size">80g pouch</div>
+          <div class="eyebrow"><span data-i18n="p5Name">CARROT CHICKEN BISCUIT</span></div>
+          <div class="size" data-i18n="p5Size">80g pouch</div>
           <div class="price">RM23</div>
-          <p>Chicken and carrot with rolled oats and egg, baked into fun dino-shaped biscuits.</p>
+          <p data-i18n="p5Desc">Chicken and carrot with rolled oats and egg, baked into fun dino-shaped biscuits.</p>
         </div>
       </article>
 
@@ -273,10 +291,10 @@ footer a:hover{color:#fff}
           <img src="images/apple-chicken-roll.jpg" alt="Apple Chicken Roll" loading="lazy">
         </div>
         <div class="product-info">
-          <div class="eyebrow">APPLE CHICKEN ROLL</div>
-          <div class="size">50g pouch</div>
+          <div class="eyebrow"><span data-i18n="p6Name">APPLE CHICKEN ROLL</span></div>
+          <div class="size" data-i18n="p6Size">50g pouch</div>
           <div class="price">RM20</div>
-          <p>Chicken rolled with apple — a fruity, meaty little snack your furkid will love.</p>
+          <p data-i18n="p6Desc">Chicken rolled with apple — a fruity, meaty little snack your furkid will love.</p>
         </div>
       </article>
 
@@ -285,10 +303,10 @@ footer a:hover{color:#fff}
           <img src="images/pear-chicken-roll.jpg" alt="Pear Chicken Roll" loading="lazy">
         </div>
         <div class="product-info">
-          <div class="eyebrow">PEAR CHICKEN ROLL</div>
-          <div class="size">50g pouch</div>
+          <div class="eyebrow"><span data-i18n="p7Name">PEAR CHICKEN ROLL</span></div>
+          <div class="size" data-i18n="p7Size">50g pouch</div>
           <div class="price">RM20</div>
-          <p>Chicken rolled with pear — naturally sweet and gently dehydrated.</p>
+          <p data-i18n="p7Desc">Chicken rolled with pear — naturally sweet and gently dehydrated.</p>
         </div>
       </article>
 
@@ -297,10 +315,10 @@ footer a:hover{color:#fff}
           <img src="images/okra-chicken-roll.jpg" alt="Okra Chicken Roll" loading="lazy">
         </div>
         <div class="product-info">
-          <div class="eyebrow">OKRA CHICKEN ROLL</div>
-          <div class="size">50g pouch</div>
+          <div class="eyebrow"><span data-i18n="p8Name">OKRA CHICKEN ROLL</span></div>
+          <div class="size" data-i18n="p8Size">50g pouch</div>
           <div class="price">RM20</div>
-          <p>Chicken with okra (lady finger) — a veggie-packed roll for curious chewers.</p>
+          <p data-i18n="p8Desc">Chicken with okra (lady finger) — a veggie-packed roll for curious chewers.</p>
         </div>
       </article>
 
@@ -309,10 +327,10 @@ footer a:hover{color:#fff}
           <img src="images/chinese-yam-chicken.jpg" alt="Chinese Yam Chicken" loading="lazy">
         </div>
         <div class="product-info">
-          <div class="eyebrow">CHINESE YAM CHICKEN</div>
-          <div class="size">80g pouch</div>
+          <div class="eyebrow"><span data-i18n="p9Name">CHINESE YAM CHICKEN</span></div>
+          <div class="size" data-i18n="p9Size">80g pouch</div>
           <div class="price">RM24</div>
-          <p>Chicken with Chinese yam (山药) — a gentle, traditional combination.</p>
+          <p data-i18n="p9Desc">Chicken with Chinese yam (山药) — a gentle, traditional combination.</p>
         </div>
       </article>
 
@@ -321,25 +339,25 @@ footer a:hover{color:#fff}
           <img src="images/egg-yolk-melts.jpg" alt="Egg Yolk Melts" loading="lazy">
         </div>
         <div class="product-info">
-          <div class="eyebrow">EGG YOLK MELTS</div>
-          <div class="size">40g pouch</div>
+          <div class="eyebrow"><span data-i18n="p10Name">EGG YOLK MELTS</span></div>
+          <div class="size" data-i18n="p10Size">40g pouch</div>
           <div class="price">RM22</div>
-          <p>Crisp egg-yolk melts with goat-milk powder — a perfect little reward.</p>
+          <p data-i18n="p10Desc">Crisp egg-yolk melts with goat-milk powder — a perfect little reward.</p>
         </div>
       </article>
 
     </div>
-    <p class="allergen-note">Every pouch is clearly labelled with its meat, so you can pick the right treat for your pet — always check with your vet if your furkid has allergies.</p>
+    <p class="allergen-note" data-i18n="allergenNote">Every pouch is clearly labelled with its meat, so you can pick the right treat for your pet — always check with your vet if your furkid has allergies.</p>
     <div class="notice-grid">
       <div class="notice">
-        <h3>PRE-ORDER ONLY</h3>
-        <p>Orders close at <strong>6:00PM</strong><br>the day before your posting day.</p>
-        <p class="small">Each batch is made fresh after you order — quantities are limited.</p>
+        <h3 data-i18n="n1Title">PRE-ORDER ONLY</h3>
+        <p data-i18n-html="n1Line">Orders close at <strong>6:00PM</strong><br>the day before your posting day.</p>
+        <p class="small" data-i18n="n1Small">Each batch is made fresh after you order — quantities are limited.</p>
       </div>
       <div class="notice">
-        <h3>MADE WITH LOVE ♡</h3>
-        <p>Slow-made in small batches and posted to you nationwide.</p>
-        <p><em>Healthy snacks, happy furkids! 🐾</em></p>
+        <h3 data-i18n="n2Title">MADE WITH LOVE ♡</h3>
+        <p data-i18n="n2Line">Slow-made in small batches and posted to you nationwide.</p>
+        <p><em data-i18n="n2Em">Healthy snacks, happy furkids! 🐾</em></p>
       </div>
     </div>
   </div>
@@ -347,33 +365,33 @@ footer a:hover{color:#fff}
 
 <section class="section order-section" id="order">
   <div class="container">
-    <h2 class="section-title">HOW TO ORDER</h2>
-    <p class="section-sub">Simple, easy and confirmed over WhatsApp.</p>
+    <h2 class="section-title" data-i18n="oTitle">HOW TO ORDER</h2>
+    <p class="section-sub" data-i18n="oSub">Simple, easy and confirmed over WhatsApp.</p>
     <div style="text-align:center;margin:0 0 20px">
-      <a class="btn btn-primary" href="/store/" target="_blank" rel="noopener">ORDER ONLINE</a>
+      <a class="btn btn-primary" href="/store/" target="_blank" rel="noopener" data-i18n="ctaOrder">ORDER ONLINE</a>
     </div>
     <div class="steps">
-      <div class="step"><div class="step-num">1</div><h4>PICK POSTING DAY</h4><p>Mon / Wed / Fri</p></div>
-      <div class="step"><div class="step-num">2</div><h4>CHOOSE YOUR TREATS</h4><p>Select your favourites</p></div>
-      <div class="step"><div class="step-num">3</div><h4>SET YOUR QUANTITY</h4><p>Pouches &amp; packs</p></div>
-      <div class="step"><div class="step-num">4</div><h4>ADD YOUR ADDRESS</h4><p>Posting nationwide</p></div>
-      <div class="step"><div class="step-num">5</div><h4>CONFIRM &amp; PAY</h4><p>WhatsApp + TNG ♡</p></div>
+      <div class="step"><div class="step-num">1</div><h4 data-i18n="s1t">PICK POSTING DAY</h4><p data-i18n="s1d">Mon / Wed / Fri</p></div>
+      <div class="step"><div class="step-num">2</div><h4 data-i18n="s2t">CHOOSE YOUR TREATS</h4><p data-i18n="s2d">Select your favourites</p></div>
+      <div class="step"><div class="step-num">3</div><h4 data-i18n="s3t">SET YOUR QUANTITY</h4><p data-i18n="s3d">Pouches &amp; packs</p></div>
+      <div class="step"><div class="step-num">4</div><h4 data-i18n="s4t">ADD YOUR ADDRESS</h4><p data-i18n="s4d">Posting nationwide</p></div>
+      <div class="step"><div class="step-num">5</div><h4 data-i18n="s5t">CONFIRM &amp; PAY</h4><p data-i18n="s5d">WhatsApp + TNG ♡</p></div>
     </div>
   </div>
 </section>
 
 <section class="section" id="postage">
   <div class="container">
-    <h2 class="section-title">POSTAGE</h2>
+    <h2 class="section-title" data-i18n="postTitle">POSTAGE</h2>
     <div class="info-grid">
       <div class="info-box">
-        <h3>POST — NATIONWIDE</h3>
-        <p><strong>MONDAY / WEDNESDAY / FRIDAY</strong></p>
-        <p>Orders are packed on your chosen day and posted to you. A flat postage fee is added per order and confirmed with you on WhatsApp.</p>
+        <h3 data-i18n="postBoxTitle">POST — NATIONWIDE</h3>
+        <p><strong data-i18n="postDays">MONDAY / WEDNESDAY / FRIDAY</strong></p>
+        <p data-i18n="postFee">Orders are packed on your chosen day and posted to you. A flat postage fee is added per order and confirmed with you on WhatsApp.</p>
       </div>
       <div class="info-box">
-        <h3>WHATSAPP ORDERS</h3>
-        <p>Prefer to order directly? Message us on WhatsApp — we'll put your order together and confirm everything with you.</p>
+        <h3 data-i18n="waBoxTitle">WHATSAPP ORDERS</h3>
+        <p data-i18n="waBoxLine">Prefer to order directly? Message us on WhatsApp — we'll put your order together and confirm everything with you.</p>
       </div>
     </div>
   </div>
@@ -381,51 +399,51 @@ footer a:hover{color:#fff}
 
 <section class="section" id="reviews">
   <div class="container">
-    <h2 class="section-title">WHAT CUSTOMERS SAY</h2>
-    <p class="section-sub">Real words from happy furkids (and their humans) — reviews are welcome in English, Mandarin (中文) or Bahasa Malaysia.</p>
+    <h2 class="section-title" data-i18n="rvTitle">WHAT CUSTOMERS SAY</h2>
+    <p class="section-sub" data-i18n="rvSub">Real words from happy furkids (and their humans) — reviews are welcome in English, Mandarin (中文) or Bahasa Malaysia.</p>
     <div class="review-cards" id="review-grid"></div>
 
     <form class="review-form" id="review-form" novalidate>
-      <h3>LEAVE A REVIEW</h3>
-      <p class="review-note">Did your pet try a Munchies Furkidz treat? Tell us how it went.</p>
+      <h3 data-i18n="rvFormTitle">LEAVE A REVIEW</h3>
+      <p class="review-note" data-i18n="rvNote">Did your pet try a Munchies Furkidz treat? Tell us how it went.</p>
 
-      <label class="flabel" for="rv-name">Your name</label>
-      <input class="field-input" id="rv-name" name="name" type="text" maxlength="60" autocomplete="name" placeholder="e.g. Aisyah">
+      <label class="flabel" for="rv-name" data-i18n="nameLabel">Your name</label>
+      <input class="field-input" id="rv-name" name="name" type="text" maxlength="60" autocomplete="name" placeholder="e.g. Aisyah" data-i18n-ph="namePh">
 
-      <label class="flabel" for="rv-stars">Your rating</label>
-      <div class="rv-stars" id="rv-stars" role="group" aria-label="Star rating, 1 to 5">
-        <button type="button" data-val="1" aria-label="1 star">★</button>
-        <button type="button" data-val="2" aria-label="2 stars">★</button>
-        <button type="button" data-val="3" aria-label="3 stars">★</button>
-        <button type="button" data-val="4" aria-label="4 stars">★</button>
-        <button type="button" data-val="5" aria-label="5 stars">★</button>
+      <label class="flabel" for="rv-stars" data-i18n="ratingLabel">Your rating</label>
+      <div class="rv-stars" id="rv-stars" role="group" aria-label="Star rating, 1 to 5" data-i18n-aria="rvStarsAria">
+        <button type="button" data-val="1" aria-label="1 star" data-i18n-aria="rvStar1">★</button>
+        <button type="button" data-val="2" aria-label="2 stars" data-i18n-aria="rvStar2">★</button>
+        <button type="button" data-val="3" aria-label="3 stars" data-i18n-aria="rvStar3">★</button>
+        <button type="button" data-val="4" aria-label="4 stars" data-i18n-aria="rvStar4">★</button>
+        <button type="button" data-val="5" aria-label="5 stars" data-i18n-aria="rvStar5">★</button>
       </div>
 
-      <label class="flabel" for="rv-message">Your review</label>
-      <textarea class="field-input" id="rv-message" name="message" maxlength="400" rows="4" placeholder="Which treat did your pet try? What did they think?"></textarea>
-      <p class="review-note" style="text-align:left;margin:6px 0 0">Write in whichever language you are comfortable with — English, Mandarin or Bahasa Malaysia.</p>
+      <label class="flabel" for="rv-message" data-i18n="msgLabel">Your review</label>
+      <textarea class="field-input" id="rv-message" name="message" maxlength="400" rows="4" placeholder="Which treat did your pet try? What did they think?" data-i18n-ph="msgPh"></textarea>
+      <p class="review-note" style="text-align:left;margin:6px 0 0" data-i18n="msgNote">Write in whichever language you are comfortable with — English, Mandarin or Bahasa Malaysia.</p>
 
-      <label class="flabel" for="rv-langs">Review language</label>
+      <label class="flabel" for="rv-langs" data-i18n="langLabel">Review language</label>
       <div class="rv-langs" id="rv-langs">
         <button type="button" class="rv-lang is-on" data-lang="en">English</button>
         <button type="button" class="rv-lang" data-lang="zh">中文</button>
         <button type="button" class="rv-lang" data-lang="ms">Bahasa Malaysia</button>
       </div>
 
-      <label class="flabel" for="rv-photo">Add a photo (optional)</label>
+      <label class="flabel" for="rv-photo-take" data-i18n="photoLabel">Add a photo (optional)</label>
       <div class="rv-photo-row">
-        <button type="button" class="rv-photo-btn" id="rv-photo-btn">📷  Choose photo</button>
+        <button type="button" class="rv-photo-btn" id="rv-photo-take">📷 <span data-i18n="photoTake">Take photo</span></button>
+        <button type="button" class="rv-photo-btn" id="rv-photo-choose">🖼 <span data-i18n="photoChoose">Choose photo</span></button>
         <div id="rv-photo-preview"></div>
       </div>
-      <input type="file" id="rv-photo" name="photo" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+      <input type="file" id="rv-photo-camera" accept="image/*" capture="environment" hidden>
+      <input type="file" id="rv-photo-gallery" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
 
       <p class="rv-error" id="rv-error" role="alert"></p>
-      <button type="submit" class="btn btn-primary" id="rv-submit">SEND REVIEW</button>
+      <button type="submit" class="btn btn-primary" id="rv-submit" data-i18n="rvSubmit">SEND REVIEW</button>
     </form>
 
-    <div class="review-thanks" id="review-thanks" hidden>
-      Thank you! Your review is with us and will appear here once it is approved.
-    </div>
+    <div class="review-thanks" id="review-thanks" hidden></div>
   </div>
 </section>
 </main>
@@ -434,23 +452,25 @@ footer a:hover{color:#fff}
   <div class="container footer-grid">
     <div>
       <h3>MUNCHIES FURKIDZ</h3>
-      <p>Homemade dehydrated treats for dogs &amp; cats.<br>Small Batch. Big Love. 🐾</p>
+      <p data-i18n-html="fTag">Homemade dehydrated treats for dogs &amp; cats.<br>Small Batch. Big Love. 🐾</p>
       <p><a href="mailto:munchiesfurkidz@gmail.com">munchiesfurkidz@gmail.com</a></p>
     </div>
     <div>
-      <h3>WHATSAPP / ORDER</h3>
+      <h3 data-i18n="fWhatsappTitle">WHATSAPP / ORDER</h3>
       <p><a href="https://wa.me/601891336389" target="_blank" rel="noopener"><strong>+60 18-913 36389</strong></a></p>
-      <p class="small">Ordering via our store page is fastest.</p>
+      <p class="small" data-i18n="fWaSmall">Ordering via our store page is fastest.</p>
     </div>
     <div>
-      <h3>FOLLOW US</h3>
+      <h3 data-i18n="fFollowTitle">FOLLOW US</h3>
       <p><a href="https://www.instagram.com/munchies_furkidz/" target="_blank" rel="noopener">Instagram — @munchies_furkidz</a></p>
       <p><a href="https://www.facebook.com/munchies.furkidz/" target="_blank" rel="noopener">Facebook — Munchies Furkidz</a></p>
-      <p class="small" style="margin-top:12px"><a href="/admin/" target="_blank" rel="noopener">Back-office login</a></p>
+      <p class="small" style="margin-top:12px"><a href="/admin/" target="_blank" rel="noopener" data-i18n="fAdmin">Back-office login</a></p>
     </div>
   </div>
   <div class="container small" style="margin-top:28px;text-align:center">MUNCHIES FURKIDZ | SMALL BATCH. BIG LOVE. 🐾 | SINCE 2021</div>
+  <div class="container small" id="dev-line" style="margin-top:10px;text-align:center"></div>
 </footer>
+<script type="module" src="home.js"></script>
 <script type="module" src="reviews.js"></script>
 </body>
 </html>

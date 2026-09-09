@@ -162,3 +162,32 @@ test("placeOrder returns {ok:false} when no Supabase is configured", async () =>
   CONFIG.supabase = { url: "", anonKey: "" };
   assert.deepEqual(await placeOrder({}), { ok: false });
 });
+
+test("mergeStorefront keeps the shop product names (中文/BM) and the developer credit", () => {
+  const base = { name: "A", products: [{ name: "Chicken Jerky", price: 5, unit: "pouch" }] };
+  const out = mergeStorefront(base, {
+    products: [
+      { name: "Chicken Jerky", price: 5, unit: "pouch", nameZh: "鸡肉干", nameMs: "Jerky Ayam" },
+      { name: "Turkey Jerky", price: 4, unit: "pouch", nameZh: "   ", nameMs: "Jerky Turki" },
+    ],
+    developerName: "  Dev Studio  ",
+    developerEmails: ["a@b.com", "  ", "c@d.com"],
+    developerWhatsapp: " 012-345 6789 ",
+  });
+  const chicken = out.products.find((p) => p.name === "Chicken Jerky");
+  const turkey = out.products.find((p) => p.name === "Turkey Jerky");
+  assert.equal(chicken.nameZh, "鸡肉干");
+  assert.equal(chicken.nameMs, "Jerky Ayam");
+  assert.equal(turkey.nameMs, "Jerky Turki");
+  assert.equal("nameZh" in turkey, false, "a blank 中文 name is dropped — English shows instead");
+  assert.equal(out.developerName, "Dev Studio");
+  assert.deepEqual(out.developerEmails, ["a@b.com", "c@d.com"], "blank developer emails are dropped");
+  assert.equal(out.developerWhatsapp, "012-345 6789", "the developer's WhatsApp number is kept");
+  assert.equal("nameZh" in base.products[0], false, "base is not mutated");
+  assert.equal("developerName" in base, false, "developer keys only appear when the remote sets them");
+
+  // A remote without the WhatsApp number leaves the merged config without one
+  // (the local fallback never carries developer keys, so none leak through).
+  const noWa = mergeStorefront({ name: "A" }, { developerName: "X" });
+  assert.equal("developerWhatsapp" in noWa, false, "a blank/absent remote number is not copied over");
+});

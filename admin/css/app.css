@@ -803,6 +803,15 @@ textarea.input { min-height: 64px; resize: vertical; }
 }
 .menu-item:last-child { border-bottom: none; }
 .menu-item .chev { color: var(--muted); }
+/* Right-side group on a menu row — keeps a count pill tucked next to the chev
+   (space-between would otherwise float it to the middle of the row). */
+.menu-item .menu-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: 12px;
+  flex: none;
+}
 
 /* ---------- Chips (ingredient rows) ---------- */
 .ing-row {
@@ -1210,6 +1219,24 @@ textarea.input { min-height: 64px; resize: vertical; }
   font: inherit; font-size: 14px; background: var(--surface); color: var(--ink);
 }
 .check-add { display: flex; align-items: center; gap: 8px; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--line); }
+
+/* "✉ Email the full wish list" under the wish card — opens the owner's mail app
+   with the whole list, addressed to every developer email in Settings. */
+.check-mail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.check-mail a {
+  color: var(--brown);
+  font-weight: 700;
+  text-decoration: none;
+}
+.check-mail a:active { opacity: .7; }
 
 /* Home delivery "fuel gauge" needle dial */
 .gauge {
@@ -1719,3 +1746,127 @@ textarea.input { min-height: 64px; resize: vertical; }
 .low-stock-banner .low-stock-line { margin: 2px 0; font-size: 13px; }
 .po-have { font-size: 12px; color: var(--muted); margin-top: 2px; }
 tr.po-covered td { color: var(--muted); }
+
+/* ---------- Reviews preview (More → Reviews) ----------
+   Each review is drawn EXACTLY as the customer sees it on the homepage card
+   (root reviews.js + index.html): photo, stars, message, name, then
+   language · date. Homepage hexes are hard-coded here because this app's
+   palette differs; the moderation buttons ride along under the meta line. */
+.review-card {
+  background: #fbf7ef;
+  border: 1px solid #d7c6ad;
+  border-radius: 8px;
+  padding: 22px 20px;
+  box-shadow: 0 8px 24px rgba(73, 43, 25, .05);
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 12px;
+}
+.review-card-photo {
+  display: block;
+  max-width: 100%;
+  max-height: 340px;
+  width: auto;
+  height: auto;
+  margin: 0 auto 14px;
+  border-radius: 8px;
+}
+.review-card-stars {
+  color: #d9a62e;
+  font-family: Arial, sans-serif;
+  font-size: 21px;
+  letter-spacing: 4px;
+  line-height: 1.2;
+}
+.review-card-msg {
+  font-family: Georgia, serif;
+  margin: 10px 0 0;
+  font-size: 15px;
+  color: #553a2b;
+  white-space: pre-wrap;
+}
+.review-card-name {
+  margin: 14px 0 0;
+  font-family: Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: #465d26;
+  letter-spacing: .03em;
+}
+.review-card-meta {
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+  color: #725d4d;
+  margin: 2px 0 0;
+}
+/* The count strip at the top of the Reviews screen: "⭐ N review(s) waiting". */
+.rev-pending {
+  background: var(--green-bg);
+  color: var(--green);
+  border-radius: 12px;
+  padding: 13px 16px;
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 14px;
+}
+
+/* ---------- Reviews carousel (More → Reviews) ----------
+   One review at a time, exactly like the homepage "What customers say"
+   carousel (root index.html .r-slider block). No autoplay on purpose: this is
+   the decision screen, so the review in front of you stays until you move on
+   via the ‹ › arrows, the dots, or a swipe. */
+.r-slider { position: relative; width: 100%; }
+.r-stage { overflow: hidden; }
+.r-track { display: flex; transition: transform .5s ease; }
+.r-slide {
+  flex: 0 0 100%;
+  min-width: 100%;
+  display: flex;
+  align-items: stretch;
+}
+.r-slide .review-card {
+  flex: 1;
+  margin-bottom: 0;
+}
+.r-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 16px;
+}
+.r-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--green);
+  background: var(--surface);
+  color: var(--green);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  font-family: Arial, sans-serif;
+  padding: 0;
+}
+.r-btn:hover { background: var(--green); color: #fff; }
+.r-dots { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.r-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: none;
+  background: #d6c09e;
+  padding: 0;
+  cursor: pointer;
+}
+.r-dot.is-on { background: var(--green); }
+.r-live {
+  border: 0;
+  clip: rect(0 0 0 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  width: 1px;
+}
