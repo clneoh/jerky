@@ -16,14 +16,27 @@
 //      main domain's mail untouched).
 //   2. supabase functions secrets set RESEND_API_KEY <key>
 //   3. Optionally RESEND_FROM "Name <wishlist@send.munchies.com.my>"
-//      (defaults to wishlist@munchies.com.my).
+//      (defaults to wishlist@send.munchies.com.my — the Resend-verified domain).
 //   4. supabase functions deploy wish-mail
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
+// The app calls this function from munchies.com.my, a different origin than
+// supabase.co, so the browser first sends a CORS preflight (OPTIONS) and then
+// checks every response for these headers. Without them the browser blocks the
+// request entirely (ERR_FAILED) before it reaches the function.
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Authorization, Content-Type",
+};
+
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
   if (req.method !== "POST") {
-    return new Response("method not allowed", { status: 405 });
+    return new Response("method not allowed", { status: 405, headers: CORS_HEADERS });
   }
 
   const auth = req.headers.get("Authorization") || "";
@@ -33,12 +46,15 @@ Deno.serve(async (req) => {
   const resendKey = Deno.env.get("RESEND_API_KEY");
 
   if (!supabaseUrl || !supabaseAnon) {
+    console.error("[wish-mail] supabase env not configured");
     return json({ error: "Supabase env is not configured" }, 500);
   }
   if (!token) {
+    console.error("[wish-mail] request had no Authorization header");
     return json({ error: "Missing Authorization header" }, 401);
   }
   if (!resendKey) {
+    console.error("[wish-mail] RESEND_API_KEY secret is not visible to the function");
     return json({ error: "RESEND_API_KEY is not set — deploy with the secret first" }, 500);
   }
 
@@ -47,6 +63,7 @@ Deno.serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseAnon);
   const { data: { user }, error } = await supabase.auth.getUser(token);
   if (error || !user) {
+    console.error("[wish-mail] session rejected:", error && (error.message || error));
     return json({ error: "Invalid or expired session" }, 401);
   }
 
@@ -59,11 +76,13 @@ Deno.serve(async (req) => {
         .filter((e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e))
     : [];
   if (!subject || !body || !to.length) {
+    console.error("[wish-mail] bad payload:", { hasSubject: !!subject, hasBody: !!body, toCount: to.length });
     return json({ error: "subject, body and at least one recipient are required" }, 400);
   }
   const recipients = to.slice(0, 5); // cap: never mail more than a dev list
 
-  const from = Deno.env.get("RESEND_FROM") || "Munchies Furkidz wishes <wishlist@munchies.com.my>";
+  const from = Deno.env.get("RESEND_FROM") || "Munchies Furkidz wishes <wishlist@send.munchies.com.my>";
+  console.log("[wish-mail] sending via Resend from", from, "to", recipients.length, "recipient(s)");
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -74,14 +93,16 @@ Deno.serve(async (req) => {
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
+    console.error(`[wish-mail] Resend rejected the send (HTTP ${res.status}):`, detail.slice(0, 300));
     return json({ error: `Resend failed (HTTP ${res.status})`, detail: detail.slice(0, 300) }, 502);
   }
+  console.log("[wish-mail] Resend accepted the send");
   return json({ ok: true, sentTo: recipients.length });
 });
 
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...CORS_HEADERS },
   });
 }
