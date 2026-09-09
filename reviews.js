@@ -5,7 +5,8 @@
 // only appears here after the owner taps Publish in the admin app
 // (More → Reviews). The form states reviews are welcome in English, Mandarin
 // (Chinese) or Bahasa Malaysia; a customer may attach one photo, stored in the
-// "review-photos" bucket.
+// "review-photos" bucket. A chosen photo is shrunk to a small JPEG before it is
+// uploaded, so a customer's phone picture of any size is accepted.
 //
 // This page has no build step, so the public project address + anon key are
 // written here directly — same values ship in store/config.js and the admin
@@ -31,7 +32,16 @@ export const REVIEW_LANGS = [
 const LANG_CODES = REVIEW_LANGS.map((l) => l.code);
 const LANG_BY_CODE = Object.fromEntries(REVIEW_LANGS.map((l) => [l.code, l.label]));
 
-const MAX_PHOTO_BYTES = 5 * 1024 * 1024; // 5 MB
+// A picked photo may be up to this big — it is shrunk before upload (see
+// shrinkReviewPhoto), so real phone photos are never turned away on size.
+// Only a truly huge file is refused.
+export const MAX_INPUT_BYTES = 25 * 1024 * 1024; // 25 MB
+// Shrink target: the longest side after downscaling. Crisp on the homepage and
+// app cards, light enough that uploads and storage stay small.
+const PHOTO_MAX_SIDE = 1600;
+// Photos already this small (and not wider than the target) go up unchanged —
+// re-encoding them would only waste the customer's battery and the cloud.
+const SMALL_PHOTO_KEEP = 500 * 1024;
 const PHOTO_EXT = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif" };
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -66,7 +76,65 @@ export function reviewOk(name, n, message) {
 export function photoOk(file) {
   return !!file
     && typeof file.type === "string" && file.type.startsWith("image/")
-    && Number(file.size) <= MAX_PHOTO_BYTES;
+    && Number(file.size) <= MAX_INPUT_BYTES;
+}
+
+// Decode a picked image in the browser, honouring the photo's stored
+// orientation (so a phone picture isn't sideways), and hand back { el, close }.
+// `close` frees the decoded bitmap when it is one. Browser-only.
+async function loadImage(file) {
+  if (typeof createImageBitmap === "function") {
+    try {
+      const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+      return { el: bmp, close: () => bmp.close() };
+    } catch { /* fall through to <img> on older browsers */ }
+  }
+  if (typeof Image !== "function" || typeof URL === "undefined") return null;
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    await new Promise((res, rej) => {
+      img.onload = () => res();
+      img.onerror = () => rej(new Error("decode"));
+      img.src = url;
+    });
+    return { el: img, close: null };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// Shrink a picked photo into a small JPEG before upload: a several-megabyte
+// phone photo becomes a few hundred kilobytes, so any picture is accepted and
+// storage stays light. Returns the small JPEG Blob, or the original file when
+// it is already small (keeps PNGs/screenshots crisp), or null when the file
+// isn't an image / can't be read — the caller then sends the review without a
+// photo. Browser-only; safe to import under Node as long as it isn't called.
+export async function shrinkReviewPhoto(file) {
+  if (!file || typeof file.type !== "string" || !file.type.startsWith("image/")) return null;
+  const loaded = await loadImage(file).catch(() => null);
+  if (!loaded) return null;
+  const w = loaded.el.width || 0;
+  const h = loaded.el.height || 0;
+  if (!w || !h) {
+    if (loaded.close) loaded.close();
+    return null;
+  }
+  if (Number(file.size) <= SMALL_PHOTO_KEEP && Math.max(w, h) <= PHOTO_MAX_SIDE) {
+    if (loaded.close) loaded.close();
+    return file;
+  }
+  const scale = Math.min(1, PHOTO_MAX_SIDE / Math.max(w, h));
+  const cw = Math.max(1, Math.round(w * scale));
+  const ch = Math.max(1, Math.round(h * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = cw;
+  canvas.height = ch;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(loaded.el, 0, 0, cw, ch);
+  if (loaded.close) loaded.close();
+  const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.82));
+  return blob || null;
 }
 
 // Approved reviews for the homepage grid, newest first. Any failure quietly
@@ -122,6 +190,9 @@ export async function uploadPhoto(file) {
       method: "POST",
       headers: {
         apikey: SUPABASE.anonKey,
+        // The storage service needs the bearer token too (the public anon key is
+        // itself a JWT) — unlike PostgREST, `apikey` alone is rejected with 400.
+        Authorization: `Bearer ${SUPABASE.anonKey}`,
         "Content-Type": file.type,
         "x-upsert": "false",
       },
@@ -250,7 +321,7 @@ function initReviews() {
     const file = photoInput.files && photoInput.files[0];
     if (!file) return;
     if (!photoOk(file)) {
-      setError("That photo is too large — please use a picture under 5 MB.");
+      setError("That photo is too large — please choose a picture under 25 MB.");
       photoInput.value = "";
       return;
     }
@@ -286,7 +357,13 @@ function initReviews() {
     }
     setError("");
     const file = photoInput && photoInput.files && photoInput.files[0];
-    const photo = file ? await uploadPhoto(file) : "";
+    let photo = "";
+    if (file) {
+      // Shrink first so any phone photo is a small upload; an unreadable file
+      // just means the review goes out without a picture.
+      const ready = await shrinkReviewPhoto(file);
+      if (ready) photo = await uploadPhoto(ready);
+    }
     const res = await submitReview({ name, stars: rating, message: message.value, lang, photo });
     if (submitBtn) {
       submitBtn.disabled = false;

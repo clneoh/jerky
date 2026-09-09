@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { REVIEW_LANGS, langName, stars, fmtDate, reviewOk, photoOk, loadApproved, submitReview, uploadPhoto } from "../reviews.js";
+import { REVIEW_LANGS, langName, stars, fmtDate, reviewOk, photoOk, loadApproved, submitReview, uploadPhoto, MAX_INPUT_BYTES } from "../reviews.js";
 
 const realFetch = globalThis.fetch;
 
@@ -58,11 +58,12 @@ test("reviewOk requires a name, integer 1-5 stars and a 1-400 char message", () 
   assert.equal(reviewOk("Ain", 5, "x".repeat(401)), false); // too long
 });
 
-test("photoOk accepts a small image and rejects the rest", () => {
+test("photoOk accepts an image up to the 25 MB cap (it is shrunk before upload)", () => {
   const img = (bytes) => ({ type: "image/jpeg", size: bytes });
   assert.equal(photoOk(img(1024)), true);
-  assert.equal(photoOk({ type: "image/png", size: 5 * 1024 * 1024 }), true); // exactly 5 MB
-  assert.equal(photoOk(img(5 * 1024 * 1024 + 1)), false); // over 5 MB
+  assert.equal(photoOk({ type: "image/png", size: 8 * 1024 * 1024 }), true); // a big phone photo is now fine
+  assert.equal(photoOk(img(MAX_INPUT_BYTES)), true); // exactly at the cap
+  assert.equal(photoOk(img(MAX_INPUT_BYTES + 1)), false); // over the cap
   assert.equal(photoOk({ type: "text/plain", size: 10 }), false); // not an image
   assert.equal(photoOk(null), false);
   assert.equal(photoOk(undefined), false);
@@ -158,6 +159,7 @@ test("uploadPhoto uploads to the review-photos bucket and returns the public URL
     assert.ok(calls[0].url.endsWith(".jpg"));
     assert.equal(calls[0].opts.method, "POST");
     assert.equal(calls[0].opts.headers.apikey, ANON);
+    assert.equal(calls[0].opts.headers.Authorization, `Bearer ${ANON}`); // storage requires the bearer
     assert.equal(calls[0].opts.headers["Content-Type"], "image/jpeg");
     assert.equal(calls[0].opts.headers["x-upsert"], "false");
     assert.equal(calls[0].opts.body, file);

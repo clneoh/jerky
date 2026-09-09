@@ -114,3 +114,13 @@ export function occRange(from, to) {
   if (!from || !to) return null;
   return from <= to ? [from, to] : [to, from];
 }
+
+// The occasions still to come from `today` (inclusive), soonest first. A mark
+// needs a real end date at or after today; malformed marks are skipped. Used by
+// the Home "Upcoming holidays" card so it always sees the same list the
+// Delivery calendar paints.
+export function upcomingOccasions(occasions, today) {
+  return (occasions || [])
+    .filter((o) => o && o.from && o.to && o.to >= today)
+    .sort((a, b) => a.from.localeCompare(b.from));
+}

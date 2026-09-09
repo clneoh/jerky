@@ -5,7 +5,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 const { addMonth, DOW, OCC_COLOURS, monthLabel, monthWeeks, occColour,
-  occForDate, occForDateAll, occDays, occRange, occSingleDay, occStrength } =
+  occForDate, occForDateAll, occDays, occRange, occSingleDay, occStrength,
+  upcomingOccasions } =
   await import("../admin/js/calendar.js");
 
 function flatDates(grid) { return grid.flat().filter(Boolean); }
@@ -177,4 +178,30 @@ test("occRange normalises a backwards drag to earlier → later", () => {
   assert.deepEqual(occRange("2026-09-25", "2026-09-25"), ["2026-09-25", "2026-09-25"], "single day");
   assert.equal(occRange("", "2026-09-29"), null);
   assert.equal(occRange(null, null), null);
+});
+
+// ── upcomingOccasions (the Home "Upcoming holidays" card list) ────────────
+
+test("upcomingOccasions returns marks still to come, soonest first, from today inclusive", () => {
+  const occs = [
+    { id: "o_past", from: "2026-09-01", to: "2026-09-03", label: "Past" },
+    { id: "o_on", from: "2026-09-06", to: "2026-09-12", label: "Running now" },   // holds today
+    { id: "o_late", from: "2026-09-20", to: "2026-09-25", label: "Later" },
+    { id: "o_soon", from: "2026-09-14", to: "2026-09-18", label: "Soon" },
+  ];
+  const got = upcomingOccasions(occs, "2026-09-08").map((o) => o.id);
+  assert.deepEqual(got, ["o_on", "o_soon", "o_late"], "an occasion ending today still counts, sorted by start");
+});
+
+test("upcomingOccasions drops malformed marks (missing or mangled dates)", () => {
+  const occs = [
+    { id: "bad1", from: "2026-09-20" },          // no `to`
+    { id: "bad2", to: "2026-09-20" },            // no `from`
+    { id: "bad3" },                               // nothing
+    null,                                          // junk entry
+    { id: "ok", from: "2026-09-15", to: "2026-09-15", label: "One day" },
+  ];
+  assert.deepEqual(upcomingOccasions(occs, "2026-09-08").map((o) => o.id), ["ok"]);
+  assert.deepEqual(upcomingOccasions([], "2026-09-08"), [], "no occasions → empty list, never a crash");
+  assert.deepEqual(upcomingOccasions(null, "2026-09-08"), [], "null occasions → empty list");
 });

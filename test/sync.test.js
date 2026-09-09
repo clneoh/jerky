@@ -916,3 +916,140 @@ test("mergeRows: a cloud row without tasks never deletes the local customised li
       "an absent cloud field is not a delete");
   } finally { restore(); }
 });
+
+// ── sharingState (the amber "Not sharing right now" strip) ────────────────
+
+test("sharingState: sharing when the cloud is on and the session is live", () => {
+  const st = cloudOn(baseState()); // url + anonKey + cloud.enabled
+  assert.deepEqual(sync.sharingState(st, true), { on: true });
+});
+
+test("sharingState: treated as sharing while stored credentials would auto-login", () => {
+  const st = cloudOn(baseState());
+  st.settings.supabase.email = "baker@example.com";
+  st.settings.supabase.password = "pw";
+  // No live session yet (inject signedIn=false), but creds are saved, so the
+  // app logs in on its own next open — not a warning state.
+  assert.deepEqual(sync.sharingState(st, false), { on: true });
+});
+
+test("sharingState: 'off' when the switch is off but the connection is configured", () => {
+  const st = cloudOn(baseState());
+  st.settings.cloud.enabled = false;
+  assert.deepEqual(sync.sharingState(st, true), { on: false, kind: "off" });
+});
+
+test("sharingState: 'unset' on a phone that was never connected", () => {
+  const st = baseState(); // no url/anonKey
+  st.settings.cloud.enabled = true;
+  assert.deepEqual(sync.sharingState(st, true), { on: false, kind: "unset" });
+});
+
+test("sharingState: 'signedout' when the cloud is on but there is no session and no stored password", () => {
+  const st = cloudOn(baseState());
+  assert.deepEqual(sync.sharingState(st, false), { on: false, kind: "signedout" });
+});
+
+// ── the synced customers collection (profiles) ────────────────────────────
+
+test("computeRecords: customer-profile rows ride the sync like every other list", () => {
+  const st = baseState();
+  st.customers = [
+    { id: "cus_a", key: "6012-111", name: "Aunty Bee", whatsapp: "6012-111", dogName: "Coco", likes: "banana" },
+    { id: "cus_b", key: "6013-222", name: "Mr Lim", whatsapp: "6013-222", dogName: "Milo" },
+  ];
+
+  const rows = sync.computeRecords(st);
+  const cus = rows.filter((r) => r.kind === "customers");
+  assert.equal(cus.length, 2);
+  assert.equal(cus[0].id, "cus_a");
+  assert.deepEqual(cus[0].data, st.customers[0], "a profile is carried wholesale, photo included");
+  assert.deepEqual(cus[1].data, st.customers[1]);
+});
+
+test("mergeRows: a profile added on one phone appears on the other, and a tombstone removes it", () => {
+  const { store, restore } = installStorage();
+  try {
+    const st = baseState();
+    st.customers = []; // the current build always has the (empty) collection
+    seedJournal(store);
+    const add = sync.mergeRows(st, [cloudRow("customers", "cus_a",
+      { id: "cus_a", key: "6012-111", name: "Aunty Bee", whatsapp: "6012-111", dogName: "Coco" },
+      "2026-09-08T10:00:00.000Z")]);
+    assert.equal(add.changed, true);
+    assert.equal(st.customers.length, 1);
+    assert.equal(st.customers[0].dogName, "Coco");
+
+    const del = sync.mergeRows(st, [cloudRow("customers", "cus_a", null, "2026-09-08T11:00:00.000Z", true)]);
+    assert.equal(del.changed, true);
+    assert.equal(st.customers.length, 0, "a removed profile disappears like any other record");
+  } finally { restore(); }
+});
+
+test("mergeRows: a newer local profile edit wins over a stale cloud profile", () => {
+  const { store, restore } = installStorage();
+  try {
+    const st = baseState();
+    st.customers = [{ id: "cus_a", key: "6012-111", name: "Aunty Bee", whatsapp: "6012-111", likes: "edited on this phone" }];
+    seedJournal(store, {
+      pending: { "customers:cus_a": { kind: "customers", id: "cus_a", updated_at: "2026-09-08T10:30:00.000Z", data: st.customers[0], _deleted: false } },
+      meta: { "customers:cus_a": "2026-09-08T10:30:00.000Z" },
+    });
+    const r = sync.mergeRows(st, [cloudRow("customers", "cus_a",
+      { id: "cus_a", key: "6012-111", name: "Aunty Bee", whatsapp: "6012-111", likes: "older cloud" },
+      "2026-09-08T10:00:00.000Z")]);
+    assert.equal(r.changed, false);
+    assert.equal(st.customers[0].likes, "edited on this phone", "the pending local edit stays");
+  } finally { restore(); }
+});
+
+// ── the software wish list (settings.wishList) ────────────────────────────
+
+test("computeRecords: settings payload omits wishList until customised, then carries it", () => {
+  const st = baseState();
+  const bare = sync.computeRecords(st).find((r) => r.kind === "settings");
+  assert.equal("wishList" in bare.data, false,
+    "a phone that never opened the wish list pushes no wishList field");
+
+  st.settings.wishList = [{ id: "wsh_a", label: "Remind me when stock is low", done: true }];
+  const withWishes = sync.computeRecords(st).find((r) => r.kind === "settings");
+  assert.deepEqual(withWishes.data.wishList, st.settings.wishList,
+    "the customised list rides the settings row so both phones agree");
+});
+
+test("mergeRows: a newer cloud wish list replaces the local one wholesale", () => {
+  const { store, restore } = installStorage();
+  try {
+    const st = baseState();
+    st.settings.wishList = [{ id: "wsh_l", label: "local old idea", done: true }];
+    seedJournal(store, { meta: { "settings:default": "2026-01-01T00:00:00.000Z" } });
+
+    const r = sync.mergeRows(st, [cloudRow("settings", "default",
+      {
+        defaultCapacity: 12, deliveryDays: [1, 3, 5], cutoff: "18:00", currency: "RM",
+        wishList: [{ id: "wsh_c", label: "Call the supplier from the app", done: false }],
+        weekCheck: { week: "", done: {} },
+      },
+      "2026-02-01T00:00:00.000Z")]);
+    assert.equal(r.changed, true);
+    assert.deepEqual(st.settings.wishList, [{ id: "wsh_c", label: "Call the supplier from the app", done: false }],
+      "the newer list wins whole, exactly like the rest of settings");
+  } finally { restore(); }
+});
+
+test("mergeRows: a cloud settings row without wishList never deletes the local wish list", () => {
+  const { store, restore } = installStorage();
+  try {
+    const st = baseState();
+    st.settings.wishList = [{ id: "wsh_a", label: "Clean the oven timer", done: false }];
+    seedJournal(store, { meta: { "settings:default": "2026-01-01T00:00:00.000Z" } });
+
+    // Another phone (older build, or one that never customised) pushes a payload
+    // with no `wishList` key — the local list must survive that merge.
+    sync.mergeRows(st, [cloudRow("settings", "default",
+      { defaultCapacity: 9, deliveryDays: [1, 3, 5], cutoff: "18:00", currency: "RM" },
+      "2026-02-01T00:00:00.000Z")]);
+    assert.deepEqual(st.settings.wishList, [{ id: "wsh_a", label: "Clean the oven timer", done: false }],
+      "an absent cloud field is not a delete");
+  } finally { restore(); }
+});

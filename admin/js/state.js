@@ -49,6 +49,7 @@ export function defaultState() {
     products: [],
     deliveryDates: [],
     orders: [],
+    customers: [], // customer profiles (pet name/photo, likes, notes) keyed to orders
     purchaseOrders: [],
     credits: [], // bring-a-friend ledger: {holder, amountRM, role, expiresAt, ...}
     occasions: [], // delivery-calendar reminder marks: {from, to, label}
@@ -245,6 +246,7 @@ function normalize(s) {
       ? s.orders.map((o) => (o && typeof o === "object" ? { ...o, status: o.status || "new" } : o))
       : [],
     purchaseOrders: Array.isArray(s.purchaseOrders) ? s.purchaseOrders : [],
+    customers: Array.isArray(s.customers) ? s.customers : [],
     credits: Array.isArray(s.credits) ? s.credits : [],
     occasions: Array.isArray(s.occasions) ? s.occasions : [],
   };

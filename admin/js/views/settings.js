@@ -8,6 +8,8 @@ import { generateUpcomingDates, todayISO } from "../dates.js";
 import { syncAvailability, cachedToken, signOut, syncStorefront, maybeSyncStorefront } from "../supabase.js";
 import * as backups from "../backups.js";
 import * as sync from "../sync.js";
+import { refreshShareWarn } from "../sharewarn.js";
+import { openSnapshotView } from "./snapshot.js";
 import { CONFIG } from "../../../store/config.js";
 
 export function renderSettings(root, state) {
@@ -282,7 +284,10 @@ export function renderSettings(root, state) {
         toast("Shared data on — restarting to sign in");
         location.reload();
       } else {
-        toast("Shared data off");
+        toast("Shared data off — this phone now works alone");
+        // No reload on disable, so refresh the amber strip in place: this phone
+        // is exactly the "not sharing" state the banner exists to make visible.
+        refreshShareWarn(state);
       }
     } });
   const cldStatus = el("p", { class: "card-sub", style: "margin:10px 0 0" }, "Not synced yet.");
@@ -446,9 +451,16 @@ export function renderSettings(root, state) {
         String(row.label || row.kind || "Backup")),
       el("p", { class: "card-sub", style: "margin:0 0 8px" }, meta.join(" · ")),
       el("div", { class: "btn-row", style: "margin:0" },
+        button("View", () => viewOne(row), "soft"),
         button("Restore", () => restoreOne(row), "primary"),
-        button("Download", () => downloadOne(row), "soft"),
+        button("Download", () => downloadOne(row), "ghost"),
         button("Delete", () => deleteOne(row), "ghost")));
+  }
+
+  function viewOne(row) {
+    // Read-only: opens the copy in a window, changes nothing (no localStorage,
+    // no markDirty, no reload) — a safe way to check an old detail.
+    openSnapshotView(state, row);
   }
 
   function restoreOne(row) {

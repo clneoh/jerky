@@ -104,7 +104,9 @@ function reviewCard(state, row, action, reload) {
     bits.push(el("img", {
       src: String(row.photo),
       alt: "",
-      style: "width:100%;max-height:220px;object-fit:cover;border-radius:10px;background:var(--line)",
+      // Show the whole photo at a tidy "photo in a post" size — it is never
+      // cropped or stretched; a tall picture just shrinks to fit and centres.
+      style: "display:block;max-width:100%;max-height:340px;height:auto;width:auto;margin:0 auto 12px;border-radius:10px",
     }));
   }
   const when = fmtDate(row.created_at);

@@ -7,6 +7,8 @@
 
 import { navigate } from "../app.js";
 import { customerList, ordersForCustomer } from "../customers.js";
+import { attachProfiles, customerMatches, profileFor, upsertProfile } from "../profiles.js";
+import { readPhoto } from "../photo.js";
 import { el, button, select, emptyState, showPopup, copyText, toast, confirmDialog } from "../ui.js";
 import { byId, fmtRM, save, waNumber } from "../state.js";
 import { longDate, todayISO, weekdayName } from "../dates.js";
@@ -75,6 +77,16 @@ export function renderCustomers(root, state, params) {
   const sortSel = select(SORTS, sort, () => nav(pick), "");
   const whoSel = select(WHOS, who, () => nav(pick), "");
 
+  // Finder: like "find an order" — 2+ characters narrows the list live across
+  // name, number, dog name, likes/avoid/notes and favourite product.
+  let query = "";
+  const finder = el("input", {
+    class: "input", type: "search", autocomplete: "off",
+    placeholder: "Find a customer — name, number, pet, likes…",
+    oninput: () => { query = finder.value; drawList(); },
+  });
+  const finderCount = el("p", { class: "card-sub", style: "margin:6px 0 0" });
+
   const msgCard = el("div", { class: "card" });
   const listBox = el("div");
 
@@ -87,7 +99,9 @@ export function renderCustomers(root, state, params) {
           : `${shown.length} of ${all.length} customer${all.length === 1 ? "" : "s"} match — tap a name to see their history.`),
       el("div", { class: "two-col" },
         el("div", { class: "field" }, el("label", {}, "Who to look at"), whoSel),
-        el("div", { class: "field" }, el("label", {}, "Sort by"), sortSel))),
+        el("div", { class: "field" }, el("label", {}, "Sort by"), sortSel)),
+      finder,
+      finderCount),
     msgCard,
     el("h2", { class: "section" },
       who === "gone30" ? "Quiet customers — no order in 30 days"
@@ -96,8 +110,17 @@ export function renderCustomers(root, state, params) {
         : "Customers"),
     listBox);
 
+  function visibleRows() {
+    const q = String(query).trim();
+    if (q.length < 2) return attachProfiles(state, shown);
+    return attachProfiles(state, shown).filter((r) => customerMatches(r, q));
+  }
+
   function drawList() {
+    const rows = visibleRows();
+    const q = String(query).trim();
     if (!shown.length) {
+      finderCount.textContent = "";
       listBox.replaceChildren(emptyState(
         who === "all" ? "No customers yet" : "Nobody matches",
         who === "all"
@@ -107,7 +130,13 @@ export function renderCustomers(root, state, params) {
           : "Change the Who filter above to see everyone."));
       return;
     }
-    listBox.replaceChildren(...shown.map(rowEl));
+    if (!rows.length) {
+      finderCount.textContent = "";
+      listBox.replaceChildren(emptyState("Nothing found", `No customer matches “${query}” — try their name, number or their pet's name.`));
+      return;
+    }
+    finderCount.textContent = q.length >= 2 ? `${rows.length} of ${shown.length} match “${q}”` : "";
+    listBox.replaceChildren(...rows.map(rowEl));
   }
 
   function rowEl(r) {
@@ -132,10 +161,18 @@ export function renderCustomers(root, state, params) {
     if (r.lastOrdered) {
       subs.push(`last ${short(r.lastOrdered)}${r.last && r.last !== r.lastOrdered ? ` · delivered ${short(r.last)}` : ""}`);
     }
+    // A saved profile adds a small line under the row (dog + why they stand out).
+    if (r.profile && (r.profile.dogName || r.profile.likes || r.profile.avoid)) {
+      const bits = [];
+      if (r.profile.dogName) bits.push(`🐾 ${r.profile.dogName}`);
+      if (r.profile.likes) bits.push(`likes ${r.profile.likes}`);
+      if (r.profile.avoid) bits.push(`avoids ${r.profile.avoid}`);
+      subs.push(bits.join(" · "));
+    }
 
     row.append(
       el("div", { class: "li-main" },
-        el("div", { class: "li-title" }, r.name),
+        el("div", { class: "li-title" }, avatarEl(r.profile, "sm"), el("span", {}, r.name)),
         ...subs.map((s) => el("div", { class: "li-sub" }, s))),
       el("div", { class: "li-right" },
         r.whatsapp ? button("💬 Chat", (ev) => { ev.stopPropagation(); openChat(r); }, "ghost small") : null,
@@ -240,6 +277,128 @@ function downloadCsv(list) {
   URL.revokeObjectURL(url);
 }
 
+// ---- customer profiles (what we know about a person) ----
+
+// The person's photo (or a paw mark when we know their dog but no photo yet) as
+// a round thumb. `size` ∈ "sm" (row) | "" (profile card).
+function avatarEl(profile, size) {
+  const cls = `customer-avatar${size ? ` ${size}` : ""}`;
+  if (profile && profile.dogPhoto) return el("img", { class: cls, src: profile.dogPhoto, alt: "" });
+  if (profile && (profile.dogName || profile.likes)) return el("span", { class: cls }, "🐾");
+  return null;
+}
+
+// A profile belongs to a person we can re-find: anonymous rows (keyed only by a
+// random order id, no name or number ever on an order) have nothing stable to
+// save a profile under, so Edit is hidden for them.
+function editablePerson(r) {
+  const name = String(r.name || "").replace(/^\(no name\)$/, "").trim();
+  return !!(name || (r.whatsapp || "").trim());
+}
+
+// The profile block inside a customer's history pop-up — shows what's saved and
+// opens the edit form. An empty profile still shows, inviting the first entry.
+function profileBlockEl(state, r, refresh) {
+  const p = profileFor(state, r._key) || {};
+  const facts = [
+    p.dogName ? el("p", { class: "card-sub", style: "margin:2px 0 0" }, `🐾 ${p.dogName}`) : null,
+    p.likes ? el("p", { class: "card-sub", style: "margin:2px 0 0" }, `Likes ${p.likes}`) : null,
+    p.avoid ? el("p", { class: "card-sub", style: "margin:2px 0 0" }, `Avoids ${p.avoid}`) : null,
+    p.notes ? el("p", { class: "card-sub", style: "margin:2px 0 0" }, p.notes) : null,
+  ];
+  const empty = !p.name && !p.dogName && !p.likes && !p.avoid && !p.notes;
+
+  return el("div", { class: "profile-card" },
+    el("div", { class: "profile-top" },
+      avatarEl(p, ""),
+      el("div", { class: "profile-who" },
+        el("div", { class: "profile-name" }, p.name || r.name || "This customer"),
+        ...(empty
+          ? [el("p", { class: "card-sub", style: "margin:2px 0 0" },
+              "Get to know this customer — their pet's name, what they like, what to avoid.")]
+          : facts)),
+      el("div", { class: "profile-edit" },
+        editablePerson(r)
+          ? button(empty ? "✎ Add details" : "✎ Edit",
+              () => editProfilePopup(state, r, refresh), "ghost small")
+          : null)));
+}
+
+// The editable profile form (a pop-up over the history). Fields: name, WhatsApp,
+// dog's name, a photo, what they like, what to avoid, and a note. Photo is
+// shrunken to a thumb (photo.js) before it's saved; Remove clears it. Saved
+// profiles ride the synced customers collection, so both phones see them.
+function editProfilePopup(state, r, afterSave) {
+  const p = profileFor(state, r._key) || {};
+  let close = () => {};
+  let photo = String(p.dogPhoto || "");
+
+  const name = el("input", { class: "input", value: p.name != null ? p.name : (r.name && r.name !== "(no name)" ? r.name : "") });
+  const whatsapp = el("input", { class: "input", type: "tel", value: p.whatsapp != null ? p.whatsapp : (r.whatsapp || "") });
+  const dogName = el("input", { class: "input", value: p.dogName || "" });
+  const likes = el("input", { class: "input", value: p.likes || "", placeholder: "e.g. chicken, fish, sweet potato" });
+  const avoid = el("input", { class: "input", value: p.avoid || "", placeholder: "e.g. onion, grapes — not safe" });
+  const notes = el("input", { class: "input", value: p.notes || "", placeholder: "Anything to remember" });
+
+  const file = el("input", { type: "file", accept: "image/*", style: "display:none" });
+  const preview = el("div", { style: "display:flex;align-items:center;gap:10px;flex-wrap:wrap" });
+  const draw = () => {
+    preview.replaceChildren(
+      photo
+        ? el("img", { class: "customer-avatar", src: photo, alt: "" })
+        : el("span", { class: "customer-avatar" }, "🐾"),
+      photo
+        ? el("span", { class: "btn-row", style: "margin:0" },
+            button("Remove photo", () => { photo = ""; draw(); }, "ghost small"),
+            button("Choose different", () => file.click(), "soft small"))
+        : button("Choose a pet photo", () => file.click(), "soft small"),
+      el("span", { class: "card-sub", style: "margin:0" }, "Picked photos are shrunk to a small thumb for storage."));
+  };
+
+  file.addEventListener("change", () => {
+    const f = file.files && file.files[0];
+    if (!f) return;
+    readPhoto(f, (dataUrl) => {
+      if (dataUrl) { photo = dataUrl; draw(); toast("Photo added"); }
+      else toast("That file couldn't be read as a photo");
+    });
+  });
+
+  const saveProfile = () => {
+    const prof = upsertProfile(state, {
+      id: p.id || "",
+      name: name.value,
+      whatsapp: whatsapp.value,
+      dogName: dogName.value,
+      dogPhoto: photo,
+      likes: likes.value,
+      avoid: avoid.value,
+      notes: notes.value,
+    });
+    if (!prof) return toast("Enter a name or WhatsApp number first");
+    save(state);
+    maybeSync(state);
+    close();
+    toast("Profile saved");
+    afterSave();
+  };
+
+  showPopup(`Profile — ${(p.dogName || r.name || "this customer")}`, (refresh, closeFn) => {
+    close = closeFn;
+    draw();
+    return el("div", {},
+      el("div", { class: "two-col" },
+        el("div", { class: "field" }, el("label", {}, "Name"), name),
+        el("div", { class: "field" }, el("label", {}, "WhatsApp"), whatsapp)),
+      el("div", { class: "field" }, el("label", {}, "🐾 Pet's name"), dogName),
+      el("div", { class: "field" }, el("label", {}, "Photo"), file, preview),
+      el("div", { class: "field" }, el("label", {}, "What they like"), likes),
+      el("div", { class: "field" }, el("label", {}, "What to avoid"), avoid),
+      el("div", { class: "field" }, el("label", {}, "Note"), notes),
+      el("div", { class: "btn-row" }, button("Save profile", saveProfile, "primary"), button("Cancel", close, "ghost")));
+  });
+}
+
 // ---- history pop-up for one customer ----
 
 function openHistory(state, r) {
@@ -257,6 +416,7 @@ function openHistory(state, r) {
           ? el("span", { class: "qty-chip", style: "background:var(--brown-soft)" }, `about ${money(state, r.totalSpend)}`)
           : null),
       r.fav ? el("p", { class: "card-sub", style: "margin:8px 0 0" }, `⭐ Favourite: ${r.fav}`) : null,
+      profileBlockEl(state, r, refresh),
       referralSection(state, r, ui, refresh, recentProduct(state, blocks)),
       !blocks.length
         ? emptyState("No order history", "This customer's orders were removed.")

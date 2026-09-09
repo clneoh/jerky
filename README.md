@@ -14,8 +14,10 @@ pouches-by-weight pet treats posted nationwide.
 - **Posting days** are Mon/Wed/Fri with a daily batch capacity (default 12) and an
   order cut-off at 6pm the day before.
 - **Orders** are entered manually per posting day (from WhatsApp).
-- **PO** = sum(order qty × recipe qty) per ingredient, priced in RM. Saved
-  snapshots are kept in PO History and can be printed.
+- **PO** (under **More → Purchase Order**) = sum(order qty × recipe qty) per
+  ingredient, priced in RM. Saved snapshots are kept in PO History and can be
+  printed. The bottom tabs are **Home · Orders · Products · Customers · More** —
+  Customers is a tab of its own.
 - **Fulfilment** is **Post (nationwide)** by default — an order takes a postal
   address. A flat **postage fee** (default RM8) is stored on the phone in
   **Settings → Storefront → Postage** and added to the *To-pay* line of her
@@ -239,6 +241,16 @@ The connection config (URL, anon key, login) is per-phone and isn't synced, so
 each phone signs in with its owner's account. The app-login email/password is
 never embedded in the code — she types it in once per phone.
 
+### "Not sharing right now" strip
+
+Whenever a phone is *not* on the shared cloud — shared data turned off, the
+phone never set up, or signed out — a thin amber strip sits at the very top of
+every screen: **"⚠ Not sharing right now"**, with a one-line reason and a **Fix
+it** tap that jumps to More → Settings → Shared data. The strip does not lock
+the app (unlike the app password) — she can keep working — and it disappears on
+its own the moment the phone is sharing again, without a reload. A phone that is
+off the cloud still makes and keeps its own local backups.
+
 ## Cloud backups (Supabase)
 
 A real safety net behind the sync mirror. Shared data holds only the *current*
@@ -258,6 +270,10 @@ The retention prune keeps the table small; older automatic copies are dropped,
 manual ones stay. Everything lives under **More → Settings → Backup & safety**
 (the existing card, renamed). Each listed copy can be:
 
+- **View** — a read-only look inside that one copy: its orders grouped by
+  delivery date (customer, product, quantity, status), the product price list,
+  and ingredient stock at that time, plus how many suppliers/units/POs/credits
+  it held. Nothing is ever written — confirming a June price moves nothing today.
 - **Restore** — steps her phone back to that copy, then the sync engine rewinds
   the shared cloud and her other phone to match (records that only exist after
   the copy are seen as removed and stay removed). A **"Before restore" copy is
@@ -282,6 +298,35 @@ again.
 **One-time setup:** run `supabase/backups.sql` in the SQL editor (adds the
 `backup_snapshots` table + row-level security: only signed-in bakers can read or
 write copies).
+
+## Customers tab, profiles, finder & the wish list
+
+**Customers** is a tab of its own (swapped with Purchase Order, which now lives
+under **More**). It is the automatic customer book — one row per person with
+their order count, rough spend, favourite product and last order — and it adds:
+
+- **Finder** — type 2+ characters (name, WhatsApp number, a pet's name, a like,
+  a note, a favourite product) and the list narrows live with "N of M match",
+  the same way "Find an order" works on Orders.
+- **Profiles** — tap a person and their history pop-up leads with a **profile
+  card**. Edit (or "Add details") opens a form: name, WhatsApp, their pet's name,
+  a **photo** (shrunk to a small ~200px thumb before saving, by `js/photo.js`),
+  what they like, what to avoid, and a note. Profiles live in a synced
+  `customers` collection (`js/profiles.js`), keyed by the same trimmed/
+  lowercased WhatsApp-or-name rule the customer rows use, so they ride shared
+  data to both phones and stay attached as orders grow — a foundation for a
+  future AI chat. Photos stay thumb-sized on purpose: the whole app state lives
+  in one ~5 MB localStorage key.
+- **Software wish list** (bottom of More) — behaves like the weekly to-do: add
+  a feature you'd like, tick the ones that come true (ticks persist — never
+  reset weekly), reword or remove. Stored lazily in `settings.wishList`
+  (`js/wishlist.js`) with the same sync absence-guard as the to-do tasks, so a
+  phone that never opens it can't wipe another phone's list.
+
+A small green **Engine v##** pill on the More screen shows which build a phone
+runs, and **Full change history** links to `changelog.pdf` at the root of the
+site — a PDF of every version from v54, built from `CHANGELOG.md` by
+`marketing/build_changelog.py`. No SQL was needed for any of this.
 
 ## Host it free — Netlify Drop
 
@@ -334,6 +379,7 @@ engine (`admin/js/sync.js`), the app bootstrap + sign-in gate
 ## Files
 
 ```
+changelog.pdf       full change history (every version from v54, PDF) — root of the site
 index.html          public homepage (domain root)
 store/index.html    customer order page (/store/)
 store/app.css       storefront styling
@@ -350,8 +396,12 @@ admin/ — backoffice app (/admin/):
   js/supabase.js      live availability + storefront config publish, order intake
   js/sync.js          shared-data sync engine (queue, pull-then-flush, conflict)
   js/backups.js       cloud backups (auto daily/weekly/monthly snapshots, restore)
+  js/sharewarn.js     "Not sharing right now" amber strip (top of every screen)
   js/validate.js      import-file validation
   js/ui.js            DOM builder + shared render helpers
+  js/wishlist.js      software wish list on More (lazy settings.wishList CRUD)
+  js/profiles.js      customer profiles (join to the customer rows, pure)
+  js/photo.js         shrinks a picked photo to a small thumb (browser only)
   js/app.js           hash router + bootstrap + shared-data gate
   js/views/*          one module per screen (login.js is the sign-in gate)
   sw.js               service worker — offline app shell (/admin/ scope)

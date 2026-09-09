@@ -193,12 +193,12 @@ test("backupFileName is date + kind with the brand prefix", () => {
 
 test("exportEnvelope wraps a copy so a downloaded file re-imports via parseImport", () => {
   const data = backups.snapshotState(cloudState());
-  const row = { kind: "daily", created_at: "2026-09-08T12:00:00.000Z", engine: "61", data: JSON.stringify(data) };
+  const row = { kind: "daily", created_at: "2026-09-08T12:00:00.000Z", engine: "63", data: JSON.stringify(data) };
   const env = backups.exportEnvelope(row);
   assert.equal(env.app, "furkidz");
   assert.equal(env.formatVersion, 1);
   assert.equal(env.exportedAt, row.created_at);
-  assert.equal(env.engine, "61");
+  assert.equal(env.engine, "63");
   const imported = parseImport(JSON.stringify(env));
   assert.deepEqual(imported, normalize(data));
   assert.equal(imported.settings.supabase.email, ""); // creds never in the cloud copy
@@ -244,7 +244,7 @@ test("backupNow posts one manual copy without the per-device settings", async ()
     assert.equal(r.ok, true);
     assert.equal(seen.kind, "manual");
     assert.ok(seen.label.startsWith("Manual · "));
-    assert.equal(seen.engine, "61");
+    assert.equal(seen.engine, "63");
     assert.equal(seen.summary, "1 orders · 1 products · 1 ingredients");
     const data = JSON.parse(seen.data);
     assert.equal(data.settings.supabase, undefined);
@@ -371,7 +371,7 @@ test("deleteSnapshots sends id=in.(...) and skips an empty list", async () => {
 test("getBackup fetches the one full copy by id", async () => {
   const ls = installStorage();
   seedToken(ls.store);
-  const row = { id: 7, kind: "daily", label: "Daily · 8 Sep 2026", engine: "61",
+  const row = { id: 7, kind: "daily", label: "Daily · 8 Sep 2026", engine: "63",
     summary: "2 orders · 1 products · 1 ingredients", created_at: "2026-09-08T12:00:00.000Z",
     data: JSON.stringify(backups.snapshotState(cloudState())) };
   const restoreFetch = installFetch(async (url) => {
@@ -436,4 +436,104 @@ test("restoreSnapshot refuses to restore when the freshen pull fails (offline)",
     restoreFetch();
     ls.restore();
   }
+});
+
+// ── read-only View digest ─────────────────────────────────────────────────
+
+test("snapshotViewData digests one copy into a human display", () => {
+  const data = {
+    settings: { currency: "RM", storefront: { name: "Munchies Furkidz" } },
+    uoms: [], // normalize seeds the defaults, so g/pouch/etc. exist
+    ingredients: [
+      { id: "i1", name: "Chicken breast", unit: "g", onHand: 300, safetyBase: 500, active: true },
+      { id: "i2", name: "Sweet potato", unit: "g", onHand: 1200, safetyBase: 200, active: true },
+      { id: "i3", name: "Old spices", unit: "g", active: false }, // hidden + never stocked
+    ],
+    products: [
+      { id: "p1", name: "Chicken Jerky", unit: "pouch", price: 24, active: true },
+      { id: "p2", name: "Chicken Jerky Bundle", unit: "pack", price: "", active: true }, // no price set
+      { id: "p3", name: "Retired recipe", unit: "piece", price: 6, active: false }, // hidden
+    ],
+    deliveryDates: [
+      { id: "d1", date: "2026-09-08" },
+      { id: "d2", date: "2026-09-10" },
+    ],
+    orders: [
+      { id: "abcdefabcdef", productId: "p1", qty: 3, deliveryDateId: "d1",
+        customerName: "Aunty Bee", status: "ready", createdAt: "2026-09-08T01:00:00.000Z" },
+      { id: "0123456789ab", productId: "p-gone", qty: 2, deliveryDateId: "d1",
+        customerName: "", status: "new", createdAt: "2026-09-08T02:00:00.000Z" },
+      { id: "fedcba098765", productId: "p3", qty: 1, deliveryDateId: "d1",
+        customerName: "Mr Lim", status: "delivered", fulfillment: "courier", createdAt: "2026-09-08T03:00:00.000Z" },
+      { id: "111111222222", productId: "p1", qty: 1, deliveryDateId: "d-missing",
+        customerName: "", status: "baking" }, // its delivery date is gone — must not vanish
+    ],
+    suppliers: [{ id: "s1", name: "Pasar Malam" }],
+    credits: [{ id: "c1", amountRM: 3 }, { id: "c2", amountRM: 2.5 }],
+    purchaseOrders: [{ id: "po1", total: 5 }],
+    occasions: [],
+  };
+  const v = backups.snapshotViewData(data);
+
+  // Counts + the credit total.
+  assert.equal(v.counts.orders, 4);
+  assert.equal(v.counts.products, 3);
+  assert.equal(v.counts.ingredients, 3);
+  assert.equal(v.counts.deliveryDates, 2);
+  assert.equal(v.counts.credits, 2);
+  assert.equal(v.creditRM, 5.5);
+
+  // Product rows: live prices, "no price set", hidden flagged separately.
+  const jerky = v.productRows.find((p) => p.name === "Chicken Jerky");
+  assert.equal(jerky.priceText, "RM 24.00");
+  assert.equal(jerky.hidden, false);
+  const bundle = v.productRows.find((p) => p.name === "Chicken Jerky Bundle");
+  assert.equal(bundle.priceText, "");
+  const retired = v.productRows.find((p) => p.name === "Retired recipe");
+  assert.equal(retired.hidden, true);
+
+  // Ingredient rows: stock formatted + the "low" flag + hidden.
+  const chicken = v.ingredientRows.find((i) => i.name === "Chicken breast");
+  assert.equal(chicken.onHandText, "300 g");
+  assert.equal(chicken.keepText, "500 g");
+  assert.equal(chicken.low, true); // 300 is >10% under its keep-at-least of 500
+  assert.equal(chicken.hidden, false);
+  const potato = v.ingredientRows.find((i) => i.name === "Sweet potato");
+  assert.equal(potato.onHandText, "1.2 kg");
+  assert.equal(potato.low, false);
+  const spice = v.ingredientRows.find((i) => i.name === "Old spices");
+  assert.equal(spice.hidden, true);
+  assert.equal(spice.onHandText, "0 g");
+
+  // Orders grouped by delivery date (oldest date first), date-less group last.
+  assert.equal(v.dayRows.length, 2);
+  const d1 = v.dayRows[0];
+  assert.equal(d1.date, "2026-09-08");
+  assert.equal(d1.orders.length, 3);
+  const [bee, gone, lim] = d1.orders;
+  assert.equal(bee.code, "ABCDEF"); // orderCode from the id
+  assert.equal(bee.product, "Chicken Jerky");
+  assert.equal(bee.qty, 3);
+  assert.equal(bee.statusLabel, "Packed"); // status "ready" reads "Packed"
+  assert.equal(bee.courier, false);
+  assert.equal(bee.customer, "Aunty Bee");
+  assert.ok(bee.placed);
+  assert.equal(gone.product, "(product no longer listed)");
+  assert.equal(gone.customer, "(no name)");
+  assert.equal(gone.statusLabel, "New");
+  assert.equal(lim.courier, true);
+  assert.equal(lim.statusLabel, "Delivered");
+  const orphan = v.dayRows[1];
+  assert.equal(orphan.date, "");
+  assert.equal(orphan.orders[0].statusLabel, "Preparing"); // status "baking" reads "Preparing"
+});
+
+test("snapshotViewData survives sparse or empty data", () => {
+  const v = backups.snapshotViewData({ orders: [], products: [], ingredients: [] });
+  assert.equal(v.counts.orders, 0);
+  assert.equal(v.counts.products, 0);
+  assert.equal(v.counts.ingredients, 0);
+  assert.equal(v.dayRows.length, 0);
+  assert.deepEqual(v.productRows, []);
+  assert.deepEqual(v.ingredientRows, []);
 });

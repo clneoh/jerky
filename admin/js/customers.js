@@ -27,7 +27,11 @@ function norm(s) {
   return String(s || "").trim().toLowerCase();
 }
 
-function keyOf(o) {
+// The join key tying an order to a person and to a saved profile: WhatsApp
+// number when present, else name, else the single order id. Exported so
+// profiles.js keys a profile with the very same rule — a profile stored under a
+// slightly different spelling still joins its orders.
+export function keyOf(o) {
   return norm(o.whatsapp) || norm(o.customerName) || o.id;
 }
 

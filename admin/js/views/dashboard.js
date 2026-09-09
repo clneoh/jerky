@@ -4,7 +4,7 @@
 import { navigate } from "../app.js";
 import { generateUpcomingDates, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
 import { capacityStatus } from "../bom.js";
-import { occColour } from "../calendar.js";
+import { occColour, upcomingOccasions } from "../calendar.js";
 import { el, button, emptyState, confirmDialog } from "../ui.js";
 import { gauge } from "../gauge.js";
 import { newId, save } from "../state.js";
@@ -256,24 +256,20 @@ function atAGlanceBlocks(root, state, today, fc) {
   const bake = nextBake(state, { today });
   if (bake) blocks.push(bakeCard(state, bake));
 
-  const holiday = holidayCard(state, today);
-  if (holiday) blocks.push(holiday);
-
   if (fc.rows.some((r) => r.dates.length)) blocks.push(comingCard(state, fc));
 
   blocks.push(weekCard(state, weekStats(state, { today })));
+  blocks.push(holidayCard(state, today));
   blocks.push(routineCard(root, state, today));
   return blocks;
 }
 
-// "Upcoming holidays": the next three marked periods (from today) — reminders
-// she painted on the Delivery calendar. Tapping the card opens that calendar.
+// "Upcoming holidays": the marked periods still to come (from today) — reminders
+// she painted on the Delivery calendar. The card ALWAYS shows, so a quiet week
+// can't make it vanish: it lists the three soonest marks and scrolls for more,
+// and an empty list explains itself with a tap through to that calendar.
 function holidayCard(state, today) {
-  const occs = (state.occasions || [])
-    .filter((o) => o && o.from && o.to && o.to >= today)
-    .sort((a, b) => a.from.localeCompare(b.from))
-    .slice(0, 3);
-  if (!occs.length) return null;
+  const occs = upcomingOccasions(state.occasions || [], today);
   const rows = occs.map((o) => {
     const running = o.from <= today && today <= o.to;
     const when = running
@@ -283,6 +279,10 @@ function holidayCard(state, today) {
       el("span", { class: `occ-tag occ-${occColour(o)}` }, o.label),
       el("span", { class: "occ-row-dates" }, when));
   });
+  const body = occs.length
+    ? el("div", { class: `hol-list${occs.length > 3 ? " hol-list--scroll" : ""}` }, ...rows)
+    : el("p", { class: "card-sub", style: "margin-top:8px" },
+        "No upcoming days marked yet — add them on the Delivery calendar.");
   return el("div", {
     class: "card tappable",
     onclick: () => navigate("#/deliveries"),
@@ -291,8 +291,8 @@ function holidayCard(state, today) {
       el("div", {},
         el("p", { class: "card-title" }, "Upcoming holidays"),
         el("p", { class: "card-sub" }, "Marked on the Delivery calendar")),
-      el("span", { class: "qty-chip" }, String(occs.length))),
-    el("div", { class: "hol-list" }, ...rows));
+      occs.length ? el("span", { class: "qty-chip" }, String(occs.length)) : null),
+    body);
 }
 
 // ── Upcoming deliveries: one week of small dials at a time (up to 4 weeks) ──

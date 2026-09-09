@@ -20,8 +20,9 @@
 
 import { cachedToken } from "./supabase.js";
 import * as sync from "./sync.js";
-import { LS_KEY, normalize } from "./state.js";
+import { LS_KEY, normalize, orderCode, fmtRM } from "./state.js";
 import { fmtPlaced, longDate, toISODate, todayISO } from "./dates.js";
+import { fmtStockAmount, belowReserve } from "./purchasing.js";
 import { ENGINE_VERSION } from "./version.js";
 
 const TABLE = "backup_snapshots";
@@ -59,9 +60,13 @@ export function snapshotState(state) {
 
 // "72 orders · 31 products · 18 ingredients" — the one-line "what's inside"
 // shown in the copy list, stored so the list never has to pull the heavy data.
+// Customers only join the line once there are any, so old copies (made before
+// profiles existed) still read the same.
 export function summaryOf(data) {
   const n = (list) => (Array.isArray(list) ? list.length : 0);
-  return `${n(data.orders)} orders · ${n(data.products)} products · ${n(data.ingredients)} ingredients`;
+  let s = `${n(data.orders)} orders · ${n(data.products)} products · ${n(data.ingredients)} ingredients`;
+  if (n(data.customers) > 0) s += ` · ${n(data.customers)} customers`;
+  return s;
 }
 
 // Local calendar date of an instant (created_at timestamps are UTC; the cadence
@@ -160,6 +165,102 @@ export function mergeRestore(current, snapState) {
   restored.settings.cloud = keep("cloud");
   restored.settings.lock = keep("lock");
   return restored;
+}
+
+// ── read-only "View" digest ────────────────────────────────────────────────
+// Turns one copy's data into a pure, human-readable display digest for the
+// in-app View: what was sold (grouped by delivery date, with statuses and the
+// same order codes she sees today), the product price list, and ingredient
+// stock with any "low" flags. Pure — never writes localStorage, never marks
+// anything dirty; looking at a copy changes nothing.
+const VIEW_STATUS = {
+  new: "New", confirmed: "Confirmed", paid: "Paid",
+  baking: "Preparing", ready: "Packed", delivered: "Delivered",
+};
+
+export function snapshotViewData(data) {
+  const s = normalize((data && typeof data === "object") ? data : {});
+  const list = (k) => (Array.isArray(s[k]) ? s[k] : []);
+  const currency = (s.settings && s.settings.currency) || "RM";
+  const stockState = { uoms: list("uoms") };
+
+  const products = list("products");
+  const productRows = products.map((p) => ({
+    name: String(p.name || "").trim() || "(no name)",
+    priceText: p.price == null || p.price === "" ? "" : fmtRM(p.price, currency),
+    unit: String(p.unit || ""),
+    hidden: p.active === false,
+  }));
+
+  const ingredientRows = list("ingredients").map((ing) => {
+    const onHand = Math.max(0, Number(ing.onHand) || 0);
+    const keep = Math.max(0, Number(ing.safetyBase) || 0);
+    return {
+      name: String(ing.name || "").trim() || "(no name)",
+      onHandText: fmtStockAmount(stockState, ing, onHand),
+      keep: keep > 0 ? keep : 0,
+      keepText: keep > 0 ? fmtStockAmount(stockState, ing, keep) : "",
+      low: belowReserve(keep, onHand),
+      hidden: ing.active === false,
+    };
+  });
+
+  const pById = new Map(products.filter((p) => p.id).map((p) => [p.id, p]));
+  const orderOf = (o) => {
+    const p = o.productId ? pById.get(o.productId) : null;
+    const status = String(o.status || "new");
+    return {
+      code: orderCode(o),
+      product: p ? String(p.name || "(no name)") : "(product no longer listed)",
+      qty: Math.max(1, Number(o.qty) || 1),
+      customer: String(o.customerName || "").trim() || "(no name)",
+      statusLabel: VIEW_STATUS[status] || status,
+      courier: o.fulfillment === "courier",
+      placed: fmtPlaced(o.createdAt, ""),
+    };
+  };
+
+  // Group orders by delivery date, oldest date first; orders whose delivery-day
+  // row is missing (very old data) get a date-less group so they don't vanish.
+  const deliveryDates = list("deliveryDates")
+    .slice()
+    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+  const byDay = new Map();
+  for (const d of deliveryDates) if (d.id) byDay.set(d.id, []);
+  const orphans = [];
+  for (const o of list("orders")) {
+    if (o.deliveryDateId != null && byDay.has(o.deliveryDateId)) byDay.get(o.deliveryDateId).push(o);
+    else orphans.push(o);
+  }
+  const dayRows = [];
+  for (const d of deliveryDates) {
+    const os = byDay.get(d.id) || [];
+    if (os.length) dayRows.push({ date: d.date, orders: os.map(orderOf) });
+  }
+  if (orphans.length) dayRows.push({ date: "", orders: orphans.map(orderOf) });
+
+  const credits = list("credits");
+  let creditRM = 0;
+  for (const c of credits) creditRM += Number(c.amountRM) || 0;
+
+  return {
+    counts: {
+      orders: list("orders").length,
+      products: products.length,
+      ingredients: list("ingredients").length,
+      deliveryDates: deliveryDates.length,
+      suppliers: list("suppliers").length,
+      uoms: list("uoms").length,
+      purchaseOrders: list("purchaseOrders").length,
+      credits: credits.length,
+      occasions: list("occasions").length,
+      customers: list("customers").length,
+    },
+    creditRM,
+    productRows,
+    ingredientRows,
+    dayRows,
+  };
 }
 
 // ── network helpers (all { ok, … } shaped, gated on ready + token) ─────────

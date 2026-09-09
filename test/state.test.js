@@ -405,3 +405,12 @@ test("normalize keeps a set occasions list and backfills a missing one to empty"
   assert.deepEqual(normalize({ version: 1 }).occasions, [], "missing occasions becomes [], not undefined");
   assert.deepEqual(normalize({ version: 1, occasions: "junk" }).occasions, [], "non-array is discarded");
 });
+
+test("normalize keeps saved customer profiles and backfills a missing/non-array list to empty", () => {
+  const prof = [{ id: "cus_abc", key: "60123456789", name: "Aunty Bee", whatsapp: "60123456789",
+    dogName: "Coco", likes: "banana", createdAt: "2026-09-08T00:00:00.000Z" }];
+  assert.deepEqual(normalize({ version: 1, customers: prof }).customers, prof);
+  assert.deepEqual(normalize({ version: 1 }).customers, [], "missing customers becomes [], not undefined");
+  assert.deepEqual(normalize({ version: 1, customers: "junk" }).customers, [], "non-array is discarded");
+  assert.ok(Array.isArray(defaultState().customers), "a fresh state starts with an empty customers list");
+});
