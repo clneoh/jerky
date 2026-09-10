@@ -19,16 +19,6 @@ export function addDaysKey(key, days) {
   return new Date(Date.UTC(y, m - 1, d) + days * DAY_MS).toISOString().slice(0, 10);
 }
 
-// "Tue 1 Dec"-style label from a "YYYY-MM-DD" key (UTC parse — Malaysia has no
-// DST, so calendar days line up with the keys app.js builds).
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-export function humanKey(key) {
-  const [y, m, d] = String(key || "").split("-").map(Number);
-  if (!y || !m || !d) return "";
-  return `${DAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]}, ${d} ${MONTHS[m - 1]}`;
-}
-
 function isDayKey(k) {
   return typeof k === "string" && /^\d{4}-\d{2}-\d{2}$/.test(k);
 }
@@ -43,23 +33,29 @@ export function closeDaysFor(product) {
   return 0;
 }
 
-// Why this product can't be ordered for this delivery date — "" when it is
+// Why this product can't be ordered for this delivery date — null when it is
 // open. The rules are optional and per product: a fixed from–to window of
 // delivery dates, and/or orders closing N days before delivery. Blank products
 // (value packs included) are open on any date. Unknown dates never lock a
 // product.
+//
+// The RULE comes back as data, never as a sentence: the customer page writes it
+// in the visitor's language, and formats the date itself — an English weekday
+// baked in here would leak into the Chinese and Malay pages.
+//
+//   { kind: "from",  date: "YYYY-MM-DD" }  earlier than the window opens
+//   { kind: "to",    date: "YYYY-MM-DD" }  later than the window closes
+//   { kind: "close", days: N }             inside the window, but too near
 export function closedReason(product, dateKey, todayKey) {
-  if (!dateKey || !todayKey) return "";
+  if (!dateKey || !todayKey) return null;
   const p = product || {};
   const from = isDayKey(p.validFrom) ? p.validFrom : "";
   const to = isDayKey(p.validTo) ? p.validTo : "";
-  if (from && dateKey < from) return `Only available for delivery from ${humanKey(from)}.`;
-  if (to && dateKey > to) return `Only available for delivery up to ${humanKey(to)}.`;
+  if (from && dateKey < from) return { kind: "from", date: from };
+  if (to && dateKey > to) return { kind: "to", date: to };
   const close = closeDaysFor(p);
-  if (close > 0 && dateKey < addDaysKey(todayKey, close)) {
-    return `Orders close ${close} days before delivery — pick a later date.`;
-  }
-  return "";
+  if (close > 0 && dateKey < addDaysKey(todayKey, close)) return { kind: "close", days: close };
+  return null;
 }
 
 // Group the storefront products that share one pool. A value pack carries

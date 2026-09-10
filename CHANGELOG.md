@@ -1,4 +1,4 @@
-# Munchies Furkidz — change history (v54 → v71)
+# Munchies Furkidz — change history (v54 → v72)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
@@ -56,6 +56,21 @@ your stored photos light. This applies to photos left from now on; the reviews
 already on your page keep the picture they were stored with. (Your homepage
 itself already loads its pictures as separate files — its page is only about
 29 KB — so nothing needed changing there.)
+
+## v72 — A sold-out note reads in the customer's language (10 Sep 2026)
+Your order page switches language the moment a customer taps it, but two corners
+of it had stayed English whichever language they chose: the short note on a
+product that **cannot be ordered for the posting day they picked** (that it only
+opens from a certain date, only runs up to one, or that orders close so many days
+ahead — with the date written in the page's language), and the notes that appear
+above the menu when the page **has to change a basket** — something that just
+sold out, or a quantity trimmed to what is actually left.
+
+Both now read in **English / 中文 / BM** along with everything else. The reason a
+product is closed is handed to the page as a plain fact — which kind of rule, and
+the day or number of days behind it — and the page writes the sentence itself, so
+no English can slip into a Chinese or Malay page. An English visit reads word for
+word as it did. Engine v72, guide v72.
 
 ## v71 — The order page's 中文 / BM buttons answer instantly (10 Sep 2026)
 On your order page, tapping **EN / 中文 / BM** used to reload the whole page. That

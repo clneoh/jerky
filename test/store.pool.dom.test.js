@@ -145,7 +145,7 @@ test("value pack is gated on a near delivery date and freed on a far one", async
   assert.equal(stepperOf(nearPack).children[2].disabled, true);
   assert.ok(nearPack.children[2] && nearPack.children[2].className.includes("prod-note"),
     "gated pack carries the advance-order note");
-  assert.match(nearPack.children[2].children[0].text, /close 14 days before delivery/i);
+  assert.match(nearPack.children[2].children[0].text, /close 14 days before the posting day/i);
   // The base single is unaffected on the same day.
   assert.equal(stampOf(cardOf("Focaccia")), "Only 12 left");
 
@@ -209,4 +209,38 @@ test("placing a pack order sends the pool pieces separately from its line", asyn
   ]);
   assert.equal(payload.total, 162, "3 × 54 — pool pieces never add to the total");
   assert.deepEqual(payload.pool, [{ name: "Focaccia", qty: 12 }], "3 packs consume 3 × 4 = 12 base pieces");
+});
+
+// Engine v72: the advance-order note is composed from store-lang.js rather than
+// baked into pool.js, so a 中文 or BM visitor reads it in their own language —
+// including the date, which goes through the already-localized fmtDay. Jerky
+// wording ("the posting day"), so this check exists here and not in the bakery.
+test("the advance-order note reads in the visitor's own language", async () => {
+  // The page reads the chosen language back from storage on every repaint, so
+  // the harness needs the storage a browser would have.
+  globalThis.localStorage = {
+    _v: {},
+    getItem(k) { return Object.prototype.hasOwnProperty.call(this._v, k) ? this._v[k] : null; },
+    setItem(k, v) { this._v[k] = String(v); },
+    removeItem(k) { delete this._v[k]; },
+  };
+  const app = await import("../store/app.js");
+  const nearPill = registry["dates"].children[0];
+  nearPill._listeners.click[0]({ currentTarget: nearPill }); // back to the gated near day
+  const note = () => {
+    const c = cardOf("Focaccia Family (4 pcs)");
+    return c.children[2] && c.children[2].children[0] ? c.children[2].children[0].text : "";
+  };
+
+  assert.match(note(), /close 14 days before the posting day/i);
+
+  app.setLang("zh");
+  assert.match(note(), /需在发货日前 14 天下单/, "中文 visitor reads the reason in Chinese");
+  assert.ok(!/[A-Za-z]{3,}/.test(note()), "no English word leaks into the Chinese note");
+
+  app.setLang("ms");
+  assert.match(note(), /Tempahan ditutup 14 hari sebelum hari pos/, "BM visitor reads it in Bahasa Malaysia");
+
+  app.setLang("en");
+  assert.match(note(), /close 14 days before the posting day/i, "English is word for word as it was");
 });

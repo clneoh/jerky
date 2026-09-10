@@ -67,6 +67,12 @@ export function renderGuide(root, state) {
 
     el("h2", { class: "section" }, "Newest in the engine"),
     el("div", { class: "card" },
+      el("p", { class: "card-title" }, "Sold-out notes read in the customer's language (Engine v72)"),
+      el("p", { class: "card-sub" },
+        "Two corners of your order page used to stay English whichever language a customer picked: the small note on a product that can't be ordered for the posting day they chose (that it only opens from a date, only runs up to one, or that orders close so many days ahead), and the notes that appear above the menu when the page had to change their basket — something that just sold out, or a quantity trimmed to what is left."),
+      el("p", { class: "hint" },
+        "Both now read in English / 中文 / BM with everything else, and the date in the note is written in their language too — so nothing English can slip into a Chinese or Malay page. An English visit reads exactly as it did.")),
+    el("div", { class: "card" },
       el("p", { class: "card-title" }, "The order page's language buttons answer instantly (Engine v71)"),
       el("p", { class: "card-sub" },
         "Tapping English / 中文 / BM on your order page used to reload the whole page — re-downloading the menu, the “only N left” numbers and your saved order-page settings, which is a pause on a phone. It now switches in place, like your homepage already did: the words change the instant they tap and nothing is downloaded again."),

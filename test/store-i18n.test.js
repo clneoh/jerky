@@ -54,6 +54,30 @@ test("English dictionary values match the authored English copy", () => {
   assert.ok(checked > 10, "the check actually walked the store page tags");
 });
 
+// The reason on a product card that can't be ordered for the chosen day, and
+// the notes a refresh writes above the menu, are built in JS rather than tagged
+// in the HTML — so nothing else would notice them missing or half-translated.
+test("the closed-product reason and the basket notes are keyed in all three languages", () => {
+  const holders = {
+    closedFrom: ["%1"],
+    closedTo: ["%1"],
+    closedClose: ["%1"],
+    closedCloseAdvice: [],
+    sentenceEnd: [],
+    fixSoldOut: ["%1"],
+    fixPoolClamp: ["%1", "%2", "%3"],
+    fixClamp: ["%1", "%2", "%3"],
+    fixClosed: ["%1", "%2"],
+  };
+  for (const [key, phs] of Object.entries(holders)) {
+    for (const l of LANGS) {
+      const v = STORE[l][key];
+      assert.equal(typeof v, "string", `${l}.${key} is missing`);
+      for (const ph of phs) assert.ok(v.includes(ph), `${l}.${key} must keep ${ph}`);
+    }
+  }
+});
+
 test("placeholders and the html-track hint are keyed too", () => {
   const ph = tagKeys("data-i18n-ph");
   assert.ok(ph.includes("namePh") && ph.includes("whatsPh"));

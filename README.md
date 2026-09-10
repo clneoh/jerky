@@ -439,6 +439,19 @@ assigns a `repaintForLang` hook (tagged static HTML + title via `applyTo`,
 the pill highlight — so a switch never re-enters `render()` and never reloads.
 `i18n.js` gained an `isLang` guard. Code-only, no SQL.
 
+**Engine v72** closed the last two English-only corners of the order page: the
+note on a product that can't be ordered for the chosen posting day (only from a
+date, only up to one, or orders close so many days ahead) and the notes a
+refresh writes above the menu when it has to change a basket (something just
+sold out, or a quantity trimmed to what is left). `store/pool.js` now returns
+the date **rule as plain data** (`{kind: "from"|"to"|"close", …}`) instead of a
+finished English sentence — its unused `humanKey` is gone — and `store/app.js`
+composes the sentence from nine keyed strings in `store-lang.js`, with the date
+written by the already-localized `fmtDay`, so no English weekday can leak into a
+中文 or BM page. `test/store-i18n.test.js` now holds those keys and their `%1`
+placeholders together: a new customer-facing string is not done until it is
+keyed in all three languages. Code-only, no SQL.
+
 ## Host it free — Netlify Drop
 
 For both phones to open the same URL:

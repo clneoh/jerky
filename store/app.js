@@ -39,6 +39,24 @@ function sub(s) {
   return out;
 }
 
+// A closedReason() rule as a bare clause, in the visitor's language and with
+// the date written by fmtDay — so a Chinese or Malay visitor never reads an
+// English weekday. Used on the product card and quoted inside the basket notes.
+function closedReasonClause(reason) {
+  if (!reason) return "";
+  if (reason.kind === "close") return sub(t("closedClose"), reason.days);
+  const day = fmtDay(new Date(`${reason.date}T00:00:00`));
+  return sub(t(reason.kind === "from" ? "closedFrom" : "closedTo"), day);
+}
+
+// The card's own sentence: the clause, the advice when the rule has one, then
+// the sentence-ending punctuation that language uses.
+function closedReasonText(reason) {
+  if (!reason) return "";
+  const advice = reason.kind === "close" ? t("closedCloseAdvice") : "";
+  return closedReasonClause(reason) + advice + t("sentenceEnd");
+}
+
 function dayName(n) {
   const lang = loadLang();
   if (lang === "zh") return DAYS_ZH[n] || "";
@@ -391,7 +409,7 @@ export function render() {
       // A product's own date rules can make it unorderable on this date — it
       // reads sold out with the reason under it. A blank product (value pack
       // included) has no early close, so it sells on any open date.
-      const reason = closedReason(p, selected, todayKey);
+      const reason = closedReasonText(closedReason(p, selected, todayKey));
 
       // `left` drives the stamp + stepper cap. A live pool member is capped by
       // the shared pool (its pieces compete with every other pack/single in the
@@ -479,10 +497,10 @@ export function render() {
         if (from === to) continue;
         if (to === 0) {
           cart.delete(m.name);
-          notes.push(`${m.name} just sold out — removed from your order.`);
+          notes.push(sub(t("fixSoldOut"), m.name));
         } else {
           cart.set(m.name, to);
-          notes.push(`${m.name}: only ${to} can fit with the rest of your order now — we changed your ${from} to ${to}.`);
+          notes.push(sub(t("fixPoolClamp"), m.name, to, from));
         }
       }
     }
@@ -495,8 +513,7 @@ export function render() {
       if (!reason || !cart.has(p.name)) continue;
       cart.delete(p.name);
       handled.add(p.name);
-      const why = reason.split("—")[0].trim().replace(/\.$/, "");
-      notes.push(`${p.name}: ${why} — we removed it.`);
+      notes.push(sub(t("fixClosed"), p.name, closedReasonClause(reason)));
     }
 
     // Everything else keeps the old per-product clamp against its own row.
@@ -506,10 +523,10 @@ export function render() {
       if (left == null) continue;
       if (left <= 0) {
         cart.delete(name);
-        notes.push(`${name} just sold out — removed from your order.`);
+        notes.push(sub(t("fixSoldOut"), name));
       } else if (q > left) {
         cart.set(name, left);
-        notes.push(`${name}: only ${left} left now — we changed your ${q} to ${left}.`);
+        notes.push(sub(t("fixClamp"), name, left, q));
       }
     }
 

@@ -2,11 +2,14 @@
 // Pure module (store/pool.js): how a cart mixing singles and value packs is
 // capped against ONE shared base budget, and the per-product delivery-date
 // rules that gate individual products on some dates.
+//
+// closedReason() returns the RULE as data (never a sentence): the customer page
+// writes it in the visitor's language, so no English may be baked in here.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  addDaysKey, humanKey,
+  addDaysKey,
   closeDaysFor, closedReason,
   poolGroups, groupFor, poolCaps, clampPool, poolPieces,
 } from "../store/pool.js";
@@ -146,13 +149,13 @@ test("a blank value pack is open any day, like any other blank product", () => {
   // blank sells on any open date, exactly like a blank single.
   assert.equal(closeDaysFor(pack), 0);
   assert.equal(closeDaysFor(single), 0);
-  assert.equal(closedReason(pack, "2026-09-07", today), "", "near dates stay open for a blank pack");
-  assert.equal(closedReason(single, "2026-09-07", today), "");
-  assert.equal(closedReason(pack, "2026-09-18", today), "");
-  assert.equal(closedReason(pack, "2026-10-02", today), "");
+  assert.equal(closedReason(pack, "2026-09-07", today), null, "near dates stay open for a blank pack");
+  assert.equal(closedReason(single, "2026-09-07", today), null);
+  assert.equal(closedReason(pack, "2026-09-18", today), null);
+  assert.equal(closedReason(pack, "2026-10-02", today), null);
   // Unknown dates never lock a product.
-  assert.equal(closedReason(pack, "", today), "");
-  assert.equal(closedReason(pack, "2026-09-20", ""), "");
+  assert.equal(closedReason(pack, "", today), null);
+  assert.equal(closedReason(pack, "2026-09-20", ""), null);
 });
 
 test("a product's own close days gate near dates, and explicit 0 opens any day", () => {
@@ -162,33 +165,33 @@ test("a product's own close days gate near dates, and explicit 0 opens any day",
   assert.equal(closeDaysFor(pack3), 3);
   assert.equal(closeDaysFor(pack0), 0);
   // X = 3: 7 Sep is the first allowed date (today + 3).
-  assert.match(closedReason(pack3, "2026-09-06", today), /Orders close 3 days before delivery/);
-  assert.equal(closedReason(pack3, "2026-09-07", today), "");
+  assert.deepEqual(closedReason(pack3, "2026-09-06", today), { kind: "close", days: 3 });
+  assert.equal(closedReason(pack3, "2026-09-07", today), null);
   // Explicit 0 means no early close — even today's date stays open.
-  assert.equal(closedReason(pack0, "2026-09-04", today), "");
+  assert.equal(closedReason(pack0, "2026-09-04", today), null);
 });
 
 test("a from–to delivery window gates dates outside it", () => {
   const today = "2026-09-04";
   const seasonal = { name: "CNY set", closeDays: 0, validFrom: "2026-12-01", validTo: "2026-12-24" };
-  const before = closedReason(seasonal, "2026-11-30", today);
-  assert.match(before, /Only available for delivery from/);
-  assert.ok(before.includes(humanKey("2026-12-01")), "note names the window's start date");
-  assert.equal(closedReason(seasonal, "2026-12-01", today), "");
-  assert.equal(closedReason(seasonal, "2026-12-24", today), "");
-  assert.match(closedReason(seasonal, "2026-12-25", today), /Only available for delivery up to/);
+  assert.deepEqual(closedReason(seasonal, "2026-11-30", today), { kind: "from", date: "2026-12-01" },
+    "before the window names the day it opens");
+  assert.equal(closedReason(seasonal, "2026-12-01", today), null);
+  assert.equal(closedReason(seasonal, "2026-12-24", today), null);
+  assert.deepEqual(closedReason(seasonal, "2026-12-25", today), { kind: "to", date: "2026-12-24" },
+    "after the window names the last day it is open");
 });
 
 test("close and window combine: inside the window but too near still closes", () => {
   const today = "2026-12-01";
   const both = { name: "B", closeDays: 7, validFrom: "2026-12-01", validTo: "2026-12-24" };
   // Outside the window wins first.
-  assert.match(closedReason(both, "2026-12-25", today), /up to/);
-  assert.match(closedReason(both, "2026-11-20", today), /from/);
+  assert.deepEqual(closedReason(both, "2026-12-25", today), { kind: "to", date: "2026-12-24" });
+  assert.deepEqual(closedReason(both, "2026-11-20", today), { kind: "from", date: "2026-12-01" });
   // Inside the window, the 7-day close still applies (3 Dec is only 2 days out).
-  assert.match(closedReason(both, "2026-12-03", today), /Orders close 7 days before delivery/);
+  assert.deepEqual(closedReason(both, "2026-12-03", today), { kind: "close", days: 7 });
   // 8 Dec (7 days out) and beyond are open.
-  assert.equal(closedReason(both, "2026-12-08", today), "");
+  assert.equal(closedReason(both, "2026-12-08", today), null);
 });
 
 test("addDaysKey shifts whole days and survives month/year boundaries", () => {
