@@ -381,6 +381,16 @@ three lists (Draft / On the shop / Hidden; a new product starts as a draft via
 EN / 中文 / BM choice (`followup-lang.js`, `i18n.js` `descFor`/`servingFor`/
 `unitFor`). Like v62–v65 this is all code — no SQL.
 
+**Engine v71** made the order page's language switch **in place**: tapping
+English / 中文 / BM repaints the page instead of reloading it, so nothing is
+re-fetched (the menu, the "only N left" numbers, the product photos) and the
+customer's basket, chosen posting day and typed details survive. `render()`
+assigns a `repaintForLang` hook (tagged static HTML + title via `applyTo`,
+`renderStatic`, `rerender`, `renderBar`, and the track card from its cached
+`lastTrack` via `paintTrack`), and the exported `setLang(lang)` runs it and moves
+the pill highlight — so a switch never re-enters `render()` and never reloads.
+`i18n.js` gained an `isLang` guard. Code-only, no SQL.
+
 ## Host it free — Netlify Drop
 
 For both phones to open the same URL:

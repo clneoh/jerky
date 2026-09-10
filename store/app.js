@@ -5,7 +5,7 @@
 // config.js fallback at runtime.
 import { CONFIG } from "./config.js";
 import { poolCaps, poolGroups, clampPool, groupFor, poolPieces, closedReason } from "./pool.js";
-import { loadLang, pick, rememberLang, nameFor, descFor, unitFor, applyTo } from "../i18n.js";
+import { isLang, loadLang, pick, rememberLang, nameFor, descFor, unitFor, applyTo } from "../i18n.js";
 import { STORE } from "../store-lang.js";
 
 // Day/month short names per site language. English is today's authoring default;
@@ -18,10 +18,18 @@ const MONTHS_ZH = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月
 const DAYS_MS = ["Ahad", "Isnin", "Selasa", "Rabu", "Khamis", "Jumaat", "Sabtu"];
 const MONTHS_MS = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"];
 
-// The store re-loads when a visitor switches language, so reading the saved
-// choice fresh on every lookup is right — and these helpers stay DOM-free, so
+// Every lookup reads the saved choice fresh, so a language switch only has to
+// repaint — no text is cached in a variable. These helpers stay DOM-free, so
 // the Node tests (which default to English) keep asserting today's strings.
 function t(key) { return pick(STORE, loadLang(), key); }
+
+// Set from inside render(): repaints the language-dependent parts in place.
+// render()'s closures own the cart, the chosen day and the fetched availability,
+// so this is a hook rather than a second call to render() — re-rendering from
+// outside would throw the customer's basket away, and reloading the page would
+// re-fetch the menu, the slots and the product photos from Supabase (the pause
+// you feel on a phone). Null until render() has run.
+let repaintForLang = null;
 
 // Fill %1, %2, … placeholders left-to-right.
 function sub(s) {
@@ -822,6 +830,21 @@ export function render() {
   };
 
   renderBar();
+
+  // What a language switch repaints, in place. Nothing here re-reads the
+  // network: the tagged static HTML and the title (applyTo), the header + info
+  // cards + footer credit (renderStatic), the date pills and the menu cards
+  // with their translated product names/descriptions/units (rerender), the
+  // order bar, and the track card if the customer is looking one up. The cart
+  // and the chosen day are the same objects they were — switching language
+  // must never empty the customer's basket.
+  repaintForLang = (l) => {
+    applyTo(document, STORE, l);
+    renderStatic(CONFIG);
+    rerender();
+    renderBar();
+    paintTrack();
+  };
 }
 
 // ── Track your order ───────────────────────────────────────────────────────
@@ -884,21 +907,60 @@ function journeyEl(row) {
   return root;
 }
 
-export async function trackOrder(code) {
+// What the track card last showed, so a language switch can redraw it in the
+// new language without another round trip to Supabase. kind is one of
+// "enter" | "unavailable" | "looking" | "notfound" | "row"; only "row" carries
+// `row`. Null until the customer looks something up.
+let lastTrack = null;
+
+// Draw the track card from `lastTrack`. Every string comes from t(), so calling
+// this again after a language change repaints the card — including the journey
+// step labels — with no network.
+function paintTrack() {
   const box = document.getElementById("track-result");
-  if (!box) return;
-  const clean = String(code || "").trim().replace(/^#/, "").toUpperCase();
+  if (!box || !lastTrack) return;
   box.hidden = false;
-  const sb = CONFIG.supabase;
+  const { kind, code, row } = lastTrack;
+  if (kind !== "row") {
+    const text = kind === "enter" ? t("trackEnter")
+      : kind === "looking" ? t("trackLooking")
+      : kind === "notfound" ? sub(t("trackNotFound"), code)
+      : t("trackUnavailable");
+    box.replaceChildren(el("p", { class: "track-note" }, text));
+    return;
+  }
+  // The card reads like a parcel tracker: order code, the journey progress
+  // line (reached stages green, current highlighted), then the delivery and
+  // item details underneath.
+  const codeLine = el("p", { class: "track-code" }, sub(t("orderCode"), code));
+  const journey = journeyEl(row);
+  const details = el("div", { class: "track-details" }, [
+    el("p", {}, row.delivery),
+    el("p", {}, `${row.items} — ${row.total}`),
+  ]);
+  const kids = [
+    codeLine,
+    journey,
+    details,
+    row.customer ? el("p", { class: "track-note" }, sub(t("forCustomer"), row.customer)) : null,
+  ];
+  box.replaceChildren(...kids.filter(Boolean));
+}
+
+export async function trackOrder(code) {
+  if (!document.getElementById("track-result")) return;
+  const clean = String(code || "").trim().replace(/^#/, "").toUpperCase();
   if (!clean) {
-    box.replaceChildren(el("p", { class: "track-note" }, t("trackEnter")));
-    return;
+    lastTrack = { kind: "enter", code: "" };
+    return paintTrack();
   }
+  const sb = CONFIG.supabase;
   if (!sb || !sb.url || !sb.anonKey) {
-    box.replaceChildren(el("p", { class: "track-note" }, t("trackUnavailable")));
-    return;
+    lastTrack = { kind: "unavailable", code: clean };
+    return paintTrack();
   }
-  box.replaceChildren(el("p", { class: "track-note" }, t("trackLooking")));
+  lastTrack = { kind: "looking", code: clean };
+  paintTrack();
   const base = String(sb.url).replace(/\/+$/, "");
   try {
     // cache: no-store so a repeated lookup (e.g. re-checking the same order
@@ -909,28 +971,11 @@ export async function trackOrder(code) {
       { headers: { apikey: sb.anonKey }, cache: "no-store" });
     const rows = res.ok ? await res.json() : null;
     const row = Array.isArray(rows) && rows[0];
-    if (!row) {
-      box.replaceChildren(el("p", { class: "track-note" }, sub(t("trackNotFound"), clean)));
-      return;
-    }
-    // The card reads like a parcel tracker: order code, the journey progress
-    // line (reached stages green, current highlighted), then the delivery and
-    // item details underneath.
-    const codeLine = el("p", { class: "track-code" }, sub(t("orderCode"), clean));
-    const journey = journeyEl(row);
-    const details = el("div", { class: "track-details" }, [
-      el("p", {}, row.delivery),
-      el("p", {}, `${row.items} — ${row.total}`),
-    ]);
-    const kids = [
-      codeLine,
-      journey,
-      details,
-      row.customer ? el("p", { class: "track-note" }, sub(t("forCustomer"), row.customer)) : null,
-    ];
-    box.replaceChildren(...kids.filter(Boolean));
+    lastTrack = row ? { kind: "row", code: clean, row } : { kind: "notfound", code: clean };
+    paintTrack();
   } catch {
-    box.replaceChildren(el("p", { class: "track-note" }, t("trackUnavailable")));
+    lastTrack = { kind: "unavailable", code: clean };
+    paintTrack();
   }
 }
 
@@ -974,18 +1019,31 @@ wireFulfillment();
 wireTrack();
 
 // ── Site language (EN / 中文 / BM) ────────────────────────────────────────
-// The store rebuilds everything in render()'s local closures, so a switch
-// remembers the choice and reloads rather than trying to re-render in place.
-// Only a real browser reaches this block (Node tests have no documentElement).
+
+// Move the pill highlight to `l`. Set by the boot block below (it owns the pill
+// nodes); null in Node tests that never booted a real language bar.
+let paintPillsHook = null;
+
+// Switch the site language in place: remember the choice, repaint every
+// language-dependent part and move the pill highlight. Returns true when the
+// language actually changed, so a repeat tap on the pill that is already on
+// does nothing. Exported so the Node suite can drive a switch without a click.
+export function setLang(next) {
+  if (!isLang(next) || next === loadLang()) return false;
+  rememberLang(next);
+  if (repaintForLang) repaintForLang(next);
+  if (paintPillsHook) paintPillsHook(next);
+  return true;
+}
+
+// Switching repaints the page in place (see setLang) instead of reloading it:
+// a reload would re-fetch the menu, the slots-left numbers and the product
+// photos from Supabase, which is the pause a customer feels on a phone. Only a
+// real browser reaches this block (Node tests have no documentElement).
 if (typeof document !== "undefined" && document.documentElement) {
-  const bootLang = loadLang();
-  applyTo(document, STORE, bootLang);
-  document.documentElement.lang = bootLang;
-  const pills = document.querySelectorAll("#lang-switch .lang-pill");
-  pills.forEach((b) => b.classList.toggle("is-on", b.dataset.lang === bootLang));
-  pills.forEach((b) => b.addEventListener("click", () => {
-    if (b.dataset.lang === loadLang()) return;
-    rememberLang(b.dataset.lang);
-    window.location.reload();
-  }));
+  const pills = Array.from(document.querySelectorAll("#lang-switch .lang-pill"));
+  paintPillsHook = (l) => pills.forEach((b) => b.classList.toggle("is-on", b.dataset.lang === l));
+  applyTo(document, STORE, loadLang());
+  paintPillsHook(loadLang());
+  pills.forEach((b) => b.addEventListener("click", () => setLang(b.dataset.lang)));
 }

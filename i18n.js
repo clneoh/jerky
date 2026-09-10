@@ -128,7 +128,11 @@ export function applyTo(root, dict, lang) {
   const title = root.querySelector && root.querySelector("title");
   const tv = title && table.title;
   if (typeof tv === "string") title.textContent = tv;
-  if (typeof document !== "undefined") document.documentElement.lang = lang;
+  // Tell the browser the page language (screen readers, CJK font selection).
+  // Guarded because a non-browser caller may have no documentElement.
+  if (typeof document !== "undefined" && document.documentElement) {
+    document.documentElement.lang = lang;
+  }
 }
 
 // A DOM-free lookup a JS-driven part uses for its own strings: dict[lang][key],

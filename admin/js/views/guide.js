@@ -67,6 +67,12 @@ export function renderGuide(root, state) {
 
     el("h2", { class: "section" }, "Newest in the engine"),
     el("div", { class: "card" },
+      el("p", { class: "card-title" }, "The order page's language buttons answer instantly (Engine v71)"),
+      el("p", { class: "card-sub" },
+        "Tapping English / 中文 / BM on your order page used to reload the whole page — re-downloading the menu, the “only N left” numbers and every product photo, which is a pause on a phone. It now switches in place, like your homepage already did: the words change the instant they tap and nothing is downloaded again."),
+      el("p", { class: "hint" },
+        "Anything the customer had already done is left untouched — their basket, the posting day they chose, and the name, WhatsApp number and address they typed. If they were looking up an order, that card re-reads in the new language too.")),
+    el("div", { class: "card" },
       el("p", { class: "card-title" }, "An order keeps the name and price it was sold at (Engine v70)"),
       el("p", { class: "card-sub" },
         "An order now remembers what it was sold as and what it was sold for, frozen the moment you take it — from the shop or typed in by hand. Rename a product or change its price later and your past orders, the labels, customer spend and the tracking page a customer sees all stay on the old name and price. A product you delete afterwards still shows what it was that someone bought."),

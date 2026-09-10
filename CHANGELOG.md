@@ -1,8 +1,22 @@
-# Munchies Furkidz — change history (v54 → v70)
+# Munchies Furkidz — change history (v54 → v71)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+## v71 — The order page's 中文 / BM buttons answer instantly (10 Sep 2026)
+On your order page, tapping **EN / 中文 / BM** used to reload the whole page. That
+re-downloaded the page and fetched the menu, the "only N left" numbers and every
+product photo all over again, so each tap sat there for a moment before anything
+changed — and the slower the customer's connection, the longer the wait. A reload
+could also wipe a basket that was already half filled.
+
+Now the order page switches **in place**, exactly like your homepage already did:
+the words change the moment they tap, and nothing is downloaded again. Whatever
+the customer has already done is left exactly as it was — the items in their
+basket, the posting day they picked, the name, WhatsApp number and postal address
+they typed — and if they are looking up an order, that card re-reads in the new
+language too. Nothing to set up.
 
 ## v70 — An order keeps the name and price it was sold at (10 Sep 2026)
 Until now an order did not remember what it was sold as — it just looked the
