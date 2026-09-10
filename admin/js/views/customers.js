@@ -113,16 +113,20 @@ export function renderCustomers(root, state, params) {
         : "Customers"),
     listBox);
 
-  function visibleRows() {
+  // The list is re-derived on every draw, never off the `shown` snapshot taken
+  // above: a rename re-keys the customer, so their old row no longer joins to
+  // the profile that carries the new name, and the row would go stale.
+  function visibleRows(snapshot) {
+    const rows = attachProfiles(state, snapshot);
     const q = String(query).trim();
-    if (q.length < 2) return attachProfiles(state, shown);
-    return attachProfiles(state, shown).filter((r) => customerMatches(r, q));
+    return q.length < 2 ? rows : rows.filter((r) => customerMatches(r, q));
   }
 
   function drawList() {
-    const rows = visibleRows();
+    const now = customerList(state, sort, who, today);
+    const rows = visibleRows(now);
     const q = String(query).trim();
-    if (!shown.length) {
+    if (!now.length) {
       finderCount.textContent = "";
       listBox.replaceChildren(emptyState(
         who === "all" ? "No customers yet" : "Nobody matches",
@@ -138,7 +142,7 @@ export function renderCustomers(root, state, params) {
       listBox.replaceChildren(emptyState("Nothing found", `No customer matches “${query}” — try their name, number or their pet's name.`));
       return;
     }
-    finderCount.textContent = q.length >= 2 ? `${rows.length} of ${shown.length} match “${q}”` : "";
+    finderCount.textContent = q.length >= 2 ? `${rows.length} of ${now.length} match “${q}”` : "";
     listBox.replaceChildren(...rows.map(rowEl));
   }
 
@@ -377,7 +381,7 @@ function editProfilePopup(state, r, afterSave) {
       likes: likes.value,
       avoid: avoid.value,
       notes: notes.value,
-    });
+    }, r._key); // the person this pop-up was opened from
     if (!prof) return toast("Enter a name or WhatsApp number first");
     save(state);
     maybeSync(state);
@@ -393,6 +397,8 @@ function editProfilePopup(state, r, afterSave) {
       el("div", { class: "two-col" },
         el("div", { class: "field" }, el("label", {}, "Name"), name),
         el("div", { class: "field" }, el("label", {}, "WhatsApp"), whatsapp)),
+      el("p", { class: "card-sub", style: "margin:0 0 8px" },
+        "Their name and number are kept here and used on every one of their orders — fix them once and the labels, messages and customer list all follow. Leave a box empty to keep what is already there."),
       el("div", { class: "field" }, el("label", {}, "🐾 Pet's name"), dogName),
       el("div", { class: "field" }, el("label", {}, "Photo"), file, preview),
       el("div", { class: "field" }, el("label", {}, "What they like"), likes),

@@ -7,6 +7,7 @@ import * as backups from "../admin/js/backups.js";
 import { normalize, LS_KEY } from "../admin/js/state.js";
 import { todayISO } from "../admin/js/dates.js";
 import { parseImport } from "../admin/js/validate.js";
+import { ENGINE_VERSION } from "../admin/js/version.js";
 
 const realFetch = globalThis.fetch;
 const realLocalStorage = globalThis.localStorage;
@@ -244,7 +245,7 @@ test("backupNow posts one manual copy without the per-device settings", async ()
     assert.equal(r.ok, true);
     assert.equal(seen.kind, "manual");
     assert.ok(seen.label.startsWith("Manual · "));
-    assert.equal(seen.engine, "67");
+    assert.equal(seen.engine, ENGINE_VERSION);
     assert.equal(seen.summary, "1 orders · 1 products · 1 ingredients");
     const data = JSON.parse(seen.data);
     assert.equal(data.settings.supabase, undefined);

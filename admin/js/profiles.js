@@ -1,16 +1,20 @@
-// profiles.js — the customer database. A saved profile adds lasting facts about
-// a person (their dog's name/photo, what they like or avoid, notes) on top of
-// what order history already derives — the reusable knowledge a future AI chat
-// would draw on. Pure module: no DOM, runs under Node for tests.
+// profiles.js — the customer database. A person's name and WhatsApp number are
+// held in ONE place and kept in step: edit them on the saved profile or on any
+// of their orders and the other side follows, so whichever the baker touched
+// last is what every screen shows. The profile also holds the lasting facts
+// about them (their dog's name/photo, what they like or avoid, notes) that order
+// history can't derive — the reusable knowledge a future AI chat would draw on.
+// Pure module: no DOM, runs under Node for tests.
 //
 // A profile lives in state.customers, one per person, keyed EXACTLY like an
 // order row is keyed (keyOf: whatsapp number, else name, else the order id) so a
-// profile always joins the same people the Customers list shows. Because the key
-// is whatsapp-first, editing a person's profile never needs to rewrite their old
-// orders — the join is recomputed, never stored on orders.
+// profile always joins the same people the Customers list shows. Because that
+// key is DERIVED from the order's own fields, changing a person's name or number
+// is a re-key AND a rewrite: applyContact writes the new details onto every one
+// of their orders in the same step, so the profile can never drift off them.
 
 import { keyOf } from "./customers.js";
-import { newId, save } from "./state.js";
+import { newId, save, waNumber } from "./state.js";
 
 // The saved profile for a derived row (by its _key), or null.
 export function profileFor(state, rowKey) {
@@ -25,12 +29,122 @@ export function profileForOrder(state, o) {
   return profileFor(state, keyOf(o));
 }
 
-// Save (create or update) a profile from an edited draft. Matching is by key:
-// an existing profile for the same person is updated in place (keeps its id and
-// createdAt), otherwise a new profile is created. The draft may change the
-// person's name/whatsapp — the key is recomputed from the NEW details, so later
-// edits and later orders with the new number both land on this profile.
-export function upsertProfile(state, draft) {
+// ── name + WhatsApp: one saved copy, written through to the orders ──────────
+
+// The name and number a person's orders currently carry. One order is enough:
+// keyOf is derived from these very fields, so everyone under one key holds the
+// same pair.
+function contactOnOrders(state, key) {
+  const o = (state.orders || []).find((x) => x && keyOf(x) === key);
+  return {
+    name: String((o && o.customerName) || "").trim(),
+    whatsapp: String((o && o.whatsapp) || "").trim(),
+  };
+}
+
+// Referral credits are held by the number's digits (see referrals.js), so they
+// don't follow a number change on their own — they'd be stranded on a number
+// nobody owns any more.
+function repointCredits(state, fromWhatsapp, toWhatsapp, name) {
+  const from = waNumber(fromWhatsapp);
+  const to = waNumber(toWhatsapp);
+  if (!from || !to || from === to) return;
+  for (const c of state.credits || []) {
+    if (!c || waNumber(c.holder) !== from) continue;
+    c.holder = to;
+    if (name) c.holderName = name;
+  }
+}
+
+// Two profiles landing on one key means the same person now exists twice. The
+// profile being edited wins on the contact details and keeps the fields it
+// already has; the duplicate only fills the blanks in, then goes.
+function mergeDuplicateProfiles(state, base) {
+  const list = state.customers || [];
+  const clash = list.find((p) => p !== base && p && p.key === base.key);
+  if (!clash) return;
+  for (const f of ["dogName", "dogPhoto", "likes", "avoid", "notes"]) {
+    if (!base[f] && clash[f]) base[f] = clash[f];
+  }
+  const i = list.indexOf(clash);
+  if (i >= 0) list.splice(i, 1);
+}
+
+// The write-through in action: take the details the baker typed, resolve them
+// against what the orders already hold, and rewrite every order belonging to the
+// person at `oldKey`. Returns the details now in force and the key they now sit
+// under, so the caller can store exactly those.
+//
+// A blank box never overwrites a value the orders already hold — emptying the
+// WhatsApp box means "I'm not changing this", not "delete the number the
+// confirmations, payment QR and message drafts depend on".
+export function applyContact(state, oldKey, { name, whatsapp } = {}) {
+  const key = String(oldKey || "").trim();
+  const held = contactOnOrders(state, key);
+  const nextName = String(name || "").trim() || held.name;
+  const nextWhatsapp = String(whatsapp || "").trim() || held.whatsapp;
+  const newKey = keyOf({ whatsapp: nextWhatsapp, customerName: nextName }) || key;
+
+  for (const o of state.orders || []) {
+    if (!o || keyOf(o) !== key) continue;
+    if (o.customerName !== nextName) o.customerName = nextName;
+    if (o.whatsapp !== nextWhatsapp) o.whatsapp = nextWhatsapp;
+  }
+
+  const prof = profileFor(state, key);
+  repointCredits(state, held.whatsapp || (prof && prof.whatsapp), nextWhatsapp, nextName);
+  return { oldKey: key, newKey, name: nextName, whatsapp: nextWhatsapp };
+}
+
+// Orders → Edit. The baker fixed a name or a number on an order; carry it to
+// the person's other orders and to their saved record, so the order screen is
+// never a second, disagreeing copy. Creates no profile — someone with no saved
+// record has nothing to keep in step.
+export function syncContactFromOrder(state, fromKey, { customerName, whatsapp } = {}) {
+  const key = String(fromKey || "").trim();
+  if (!key) return null;
+  const prof = profileFor(state, key);
+  const contact = applyContact(state, key, { name: customerName, whatsapp });
+  if (prof) {
+    prof.key = contact.newKey || prof.key;
+    prof.name = contact.name;
+    prof.whatsapp = contact.whatsapp;
+    prof.updatedAt = new Date().toISOString();
+    // The order side made this edit, so it wins if a stale copy ever disagrees.
+    prof.orderEditAt = prof.updatedAt;
+    mergeDuplicateProfiles(state, prof);
+  }
+  save(state);
+  return contact;
+}
+
+// One-time catch-up for customers renamed before this version. Their saved
+// record holds the name they should have while their orders still carry the old
+// one, so labels and messages would keep printing it. Touches only people whose
+// profile already joins their orders — an orphaned profile is left alone rather
+// than guessed at, since merging the wrong two people is worse than leaving it.
+// Returns how many order fields moved, so the caller can skip a pointless save.
+export function reconcileContacts(state) {
+  let moved = 0;
+  for (const p of state.customers || []) {
+    if (!p || !p.key) continue;
+    const name = String(p.name || "").trim();
+    const whatsapp = String(p.whatsapp || "").trim();
+    if (!name && !whatsapp) continue;
+    for (const o of state.orders || []) {
+      if (!o || keyOf(o) !== p.key) continue;
+      if (name && o.customerName !== name) { o.customerName = name; moved++; }
+      if (whatsapp && o.whatsapp !== whatsapp) { o.whatsapp = whatsapp; moved++; }
+    }
+  }
+  return moved;
+}
+
+// Save (create or update) a profile from an edited draft. Matching is by id when
+// the draft carries one, else by the person's current key. The contact details
+// are written through to their orders first (applyContact), then the profile is
+// re-keyed to match, so the two move together and can't drift apart.
+export function upsertProfile(state, draft, fromKey) {
   if (!draft || typeof draft !== "object") return null;
   const list = Array.isArray(state.customers) ? state.customers : [];
   const now = new Date().toISOString();
@@ -39,21 +153,23 @@ export function upsertProfile(state, draft) {
     ? list.find((p) => p.id === draft.id)
     : null;
 
-  const base = existing || {
-    id: newId("cus"),
-    key: "", // set below, from the (possibly new) contact details
-    createdAt: now,
-  };
+  // Which person is this? The row the form was opened from, else the profile's
+  // own key, else whatever the typed details already match.
+  const key = String(fromKey || "").trim()
+    || (existing && existing.key)
+    || keyOf({ whatsapp: draft.whatsapp, customerName: draft.name })
+    || "";
 
-  const name = String(draft.name || "").trim();
-  const whatsapp = String(draft.whatsapp || "").trim();
-  // Re-key from the NEW contact details when any survive an edit; an edit that
-  // blanked both keeps the old key so the profile isn't orphaned off its person.
-  base.key = name || whatsapp
-    ? keyOf({ whatsapp, customerName: name }) || base.key || base.id
-    : base.key || base.id;
-  base.name = name;
-  base.whatsapp = whatsapp;
+  const contact = applyContact(state, key, { name: draft.name, whatsapp: draft.whatsapp });
+  // A profile keyed only by an order id (no name or number anywhere) can never
+  // be found again — the caller should have gated that away. Keep the invariant:
+  // never create a profile with nothing to key it by.
+  if (!existing && !contact.name && !contact.whatsapp) return null;
+
+  const base = existing || { id: newId("cus"), key: "", createdAt: now };
+  base.key = contact.newKey || base.key || base.id;
+  base.name = contact.name;
+  base.whatsapp = contact.whatsapp;
   base.dogName = String(draft.dogName || "").trim();
   base.dogPhoto = String(draft.dogPhoto || "");
   base.likes = String(draft.likes || "").trim();
@@ -61,15 +177,9 @@ export function upsertProfile(state, draft) {
   base.notes = String(draft.notes || "").trim();
   base.updatedAt = now;
 
-  if (!existing) {
-    // A profile keyed only by an order id (no name or number on the draft) can
-    // never be found again — the caller should have gated that away. Still, keep
-    // the invariant: never create a profile whose key is a brand-new random id
-    // unless it came from a real person row.
-    if (!name && !whatsapp) return null;
-    if (!list.some((p) => p.id === base.id)) list.push(base);
-  }
+  if (!list.some((p) => p.id === base.id)) list.push(base);
   if (!Array.isArray(state.customers)) state.customers = list;
+  mergeDuplicateProfiles(state, base);
   save(state);
   return base;
 }
@@ -86,16 +196,24 @@ export function attachProfiles(state, rows) {
 }
 
 // The name to show for a derived customer row (one from customerList, with its
-// profile attached). What their orders say wins when they carried a name; when
-// the order had none the row's own name reads "(no name)", and a name saved on
-// the profile still names them — the profile joins the person by key, so it is
-// the source of truth for someone recorded anonymously. Falls back to the
-// derived label when neither has a name.
+// profile attached). The saved record and the orders hold one shared name — a
+// fix in either place is written through to the other — so they normally agree
+// and the question doesn't arise. When they do disagree (data saved before the
+// two were kept in step, or a storefront order arriving with a different
+// spelling) the side the baker edited last is the one shown: a name typed on the
+// order after the saved card is used, otherwise the saved card's. With neither
+// side carrying a real edit time the order's own name is preferred, and with no
+// name anywhere the row reads "(no name)".
 export function customerRowName(row) {
-  const derived = String((row && row.name) || "").trim();
-  if (derived && derived !== "(no name)") return derived;
-  const saved = row && row.profile && String(row.profile.name || "").trim();
-  return saved || derived || "(no name)";
+  const prof = (row && row.profile) || null;
+  const saved = String((prof && prof.name) || "").trim();
+  const raw = String((row && row.name) || "").trim();
+  const orderName = raw === "(no name)" ? "" : raw;
+  if (!saved) return orderName || "(no name)";
+  if (!orderName || orderName === saved) return saved;
+  const cardAt = Date.parse((prof && prof.updatedAt) || "") || 0;
+  const orderAt = Date.parse((prof && prof.orderEditAt) || "") || 0;
+  return orderAt >= cardAt ? orderName : saved;
 }
 
 // A person matches the query when any of their fields contains it — the finder

@@ -5,6 +5,7 @@ import { el, button } from "./ui.js";
 import * as sync from "./sync.js";
 import { maybeAutoBackup } from "./backups.js";
 import { cachedToken, maybeSync, pullIncoming, refreshStorefront } from "./supabase.js";
+import { reconcileContacts } from "./profiles.js";
 
 import { renderDashboard } from "./views/dashboard.js";
 import { renderDeliveries } from "./views/deliveries.js";
@@ -64,6 +65,17 @@ setSaveHook((s) => {
   const r = sync.markDirty(s);
   if (r.changed) sync.scheduleRefresh(s);
 });
+
+// One-time catch-up (v68). Until now a customer's saved name and number were
+// ignored by their orders, so anyone renamed before this version still has the
+// old name on every order it belongs to — and that is what the labels and
+// WhatsApp messages print. Bring those orders into line with the saved record
+// once, then never again. Runs after the save hook so the corrected orders sync.
+if (!state.settings.migratedV68) {
+  reconcileContacts(state);
+  state.settings.migratedV68 = true;
+  save(state);
+}
 
 function parseHash() {
   const raw = location.hash.replace(/^#/, "") || "/dashboard";

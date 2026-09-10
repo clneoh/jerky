@@ -9,6 +9,8 @@ import { buildPaymentReminder, buildPickupReminder } from "../messages.js";
 import { maybeSync, publishTracking } from "../supabase.js";
 import { schemeOf, referralFlag, giveCredits, validCredits, markOneUsed, referrerName } from "../referrals.js";
 import { adjustForStatus } from "../stock.js";
+import { keyOf } from "../customers.js";
+import { syncContactFromOrder } from "../profiles.js";
 
 let orderStatusFilter = "";
 // Text in the "Find an order" box at the top of the Orders screen (empty = box
@@ -895,6 +897,11 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
     const keptIds = new Set(chosen.map((l) => l.id).filter(Boolean));
     const dropIds = new Set(group.orders.filter((o) => !keptIds.has(o.id)).map((o) => o.id));
     if (dropIds.size) state.orders = state.orders.filter((o) => !dropIds.has(o.id));
+    // The order screen is not a second copy of the customer: a name or number
+    // fixed here carries to their other orders and to their saved record too.
+    // keyOf(first) is read before the loop below rewrites these rows, so it
+    // still gives the person's pre-edit key.
+    syncContactFromOrder(state, keyOf(first), { customerName: shared.customerName, whatsapp: shared.whatsapp });
     let gid = first.groupId;
     if (!gid && chosen.length > 1) gid = newId("ordg"); // single order gains a second item
     for (const l of chosen) {

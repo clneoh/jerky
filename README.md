@@ -311,12 +311,15 @@ their order count, rough spend, favourite product and last order — and it adds
 - **Profiles** — tap a person and their history pop-up leads with a **profile
   card**. Edit (or "Add details") opens a form: name, WhatsApp, their pet's name,
   a **photo** (shrunk to a small ~200px thumb before saving, by `js/photo.js`),
-  what they like, what to avoid, and a note. Profiles live in a synced
+  what they like, what to avoid, and a note. The **name and WhatsApp number are
+  held once and kept in step**: saving them on the card writes them onto every
+  order that person has, and fixing them with Edit on an order writes them back
+  onto the card — either place works, and whichever was edited last is what
+  labels, WhatsApp messages and the customer list show. Profiles live in a synced
   `customers` collection (`js/profiles.js`), keyed by the same trimmed/
   lowercased WhatsApp-or-name rule the customer rows use, so they ride shared
-  data to both phones and stay attached as orders grow — a foundation for a
-  future AI chat. Photos stay thumb-sized on purpose: the whole app state lives
-  in one ~5 MB localStorage key.
+  data to both phones — a foundation for a future AI chat. Photos stay
+  thumb-sized on purpose: the whole app state lives in one ~5 MB localStorage key.
 - **Software wish list** (bottom of More) — behaves like the weekly to-do: add
   a feature you'd like, tick the ones that come true (ticks persist — never
   reset weekly), reword or remove. Stored lazily in `settings.wishList`
