@@ -3,7 +3,7 @@
 // data (orders, products, delivery dates). Pure module — no DOM, never imports
 // app.js — so it runs under Node for tests.
 
-import { byId, fmtRM, groupOrders, newId, save } from "./state.js";
+import { byId, fmtRM, groupOrders, newId, orderLinePrice, save } from "./state.js";
 import { addDays, todayISO } from "./dates.js";
 import { orderDateOf } from "./customers.js";
 import { capacityStatus } from "./bom.js";
@@ -49,11 +49,13 @@ export function weekStats(state, { today = todayISO() } = {}) {
   let unpriced = false;
   const byQty = new Map();
   for (const o of rows) {
+    // Sell value uses the price each order was sold at; the "what sold" tally
+    // below stays on today's product, because that list is what to bake next.
+    const price = orderLinePrice(state, o);
+    if (price == null) unpriced = true;
+    else rm += (Number(o.qty) || 0) * price;
     const p = byId(state.products, o.productId);
-    if (!p) continue;
-    if (p.price == null) unpriced = true;
-    else rm += (Number(o.qty) || 0) * Number(p.price);
-    byQty.set(p.id, (byQty.get(p.id) || 0) + (Number(o.qty) || 0));
+    if (p) byQty.set(p.id, (byQty.get(p.id) || 0) + (Number(o.qty) || 0));
   }
 
   const top = [...byQty.entries()]
@@ -158,8 +160,8 @@ export function mondayAnchor(today = todayISO()) {
 }
 
 // Booked pieces / free slots for a set of dates come from capacityStatus
-// (bom.js) — the same numbers the dials show. Money is price × qty for every
-// order on those dates, flagging unpriced products the way weekStats does.
+// (bom.js) — the same numbers the dials show. Money is the sold price × qty for
+// every order on those dates, flagging unpriced lines the way weekStats does.
 function weekNumbers(state, dates) {
   const ids = new Set(dates.map((d) => d.id));
   let booked = 0;
@@ -175,10 +177,9 @@ function weekNumbers(state, dates) {
   }
   for (const o of state.orders || []) {
     if (!ids.has(o.deliveryDateId)) continue;
-    const p = byId(state.products, o.productId);
-    if (!p) continue;
-    if (p.price == null) unpriced = true;
-    else rm += (Number(o.qty) || 0) * Number(p.price);
+    const price = orderLinePrice(state, o);
+    if (price == null) unpriced = true;
+    else rm += (Number(o.qty) || 0) * price;
   }
   return { booked, capacity, free, rm, unpriced };
 }

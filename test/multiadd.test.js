@@ -214,3 +214,40 @@ test("removing an item row drops it before submit", () => {
   assert.equal(state.orders.length, 1, "only the kept row is added");
   assert.equal(state.orders[0].qty, 1);
 });
+
+// ── Engine v70 — an order keeps the name and price it was sold at ────────────
+
+test("a manually added order freezes the product name and price it was sold at", () => {
+  const state = baseState();
+  const root = createEl("div");
+  renderOrders(root, state, new URLSearchParams({ date: "d1" }));
+
+  const row = byClass(root, "add-item")[0];
+  change(row.children[0], "p1"); // Focaccia, RM15
+  byPlaceholder(root, "Customer name (optional)")[0].value = "Bee";
+  click(byText(root, "＋ Add order")[0]);
+
+  assert.equal(state.orders[0].productName, "Focaccia");
+  assert.equal(state.orders[0].unitPrice, 15);
+});
+
+test("repricing or renaming a product afterwards does not rewrite the past order", () => {
+  const state = baseState();
+  const root = createEl("div");
+  renderOrders(root, state, new URLSearchParams({ date: "d1" }));
+
+  const row = byClass(root, "add-item")[0];
+  change(row.children[0], "p1");
+  byPlaceholder(root, "Customer name (optional)")[0].value = "Bee";
+  click(byText(root, "＋ Add order")[0]);
+
+  // The baker renames and reprices Focaccia on the Products screen.
+  state.products[0].name = "Sea Salt Focaccia";
+  state.products[0].price = 22;
+
+  const root2 = createEl("div");
+  renderOrders(root2, state, new URLSearchParams({ date: "d1" }));
+  const block = byClass(root2, "list-item")[0];
+  assert.equal(block.querySelectorAll(".li-title")[0].children[0].text, "Focaccia",
+    "the row still names what was sold");
+});

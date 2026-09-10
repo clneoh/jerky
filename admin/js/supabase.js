@@ -7,7 +7,7 @@
 
 import { generateUpcomingDates, shortDate, todayISO } from "./dates.js";
 import { effectiveCapacity, effectiveLimit, isPoolablePack, poolRemaining, totalUnitsOnDate } from "./bom.js";
-import { byId, fmtRM, newId, orderCode, save } from "./state.js";
+import { byId, fmtRM, newId, orderCode, orderLineName, orderLinePrice, save, stampOrderLine } from "./state.js";
 
 const TOKEN_KEY = "bakeadmin.supabase";
 
@@ -445,13 +445,15 @@ export function trackingSnapshot(state, group) {
   const fulfillment = courier ? "Post (nationwide)" : "Collect (local)";
   const address = courier && String(first.address || "").trim()
     ? ` · ${String(first.address).trim()}` : "";
+  // The customer's tracking page shows what they were sold, at the price they
+  // were sold it — never today's menu.
   const items = orders.map((o) => {
-    const p = byId(state.products, o.productId);
-    return `${p ? p.name : "item"} ×${o.qty}`;
+    const name = orderLineName(state, o);
+    return `${name === "(deleted product)" ? "item" : name} ×${o.qty}`;
   }).join(", ");
   const total = fmtRM(orders.reduce((s, o) => {
-    const p = byId(state.products, o.productId);
-    return s + (Number(o.qty) || 0) * (p ? Number(p.price) || 0 : 0);
+    const price = orderLinePrice(state, o);
+    return s + (Number(o.qty) || 0) * (price == null ? 0 : price);
   }, 0), state.settings.currency);
   return {
     code: orderCode(first),
@@ -619,6 +621,13 @@ function importIncoming(state, row) {
       groupId,
       createdAt: now,
     };
+    // Freeze what the shop sold it as, at the price the shop charged. The
+    // storefront sends its own name/price with the line; fall back to the
+    // product only when the line didn't carry one.
+    stampOrderLine(order, {
+      name: product.name,
+      price: line.price != null && line.price !== "" ? line.price : product.price,
+    });
     state.orders.push(order);
     created.push(order.id);
   }

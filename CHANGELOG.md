@@ -1,8 +1,29 @@
-# Munchies Furkidz — change history (v54 → v69)
+# Munchies Furkidz — change history (v54 → v70)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+## v70 — An order keeps the name and price it was sold at (10 Sep 2026)
+Until now an order did not remember what it was sold as — it just looked the
+product up afresh each time it was shown. So if you renamed a product or changed
+its price, **every past order changed with it**: last month's orders, the labels
+you printed, and even the amount a customer saw on their own tracking page all
+silently moved to today's wording and today's price. And if you later deleted a
+product, its orders fell back to "(deleted product)" with no price at all.
+
+Now each order **freezes the name and price at the moment it is taken** — whether
+it came from your shop or you typed it in yourself — and every message, the
+tracking page, customer spend totals and the Home estimate read that frozen
+record. Rename or reprice a product and the past stays as it was; a product you
+delete later still shows what it was that someone bought.
+
+Two careful edges: if you deliberately **swap a line to a different product**
+when editing an order, that line picks up the new product's price (you changed
+what is being sold), while a line you leave untouched keeps the price it was sold
+at. And orders taken **before** today are stamped just once with what they were
+already showing, so they stop moving from here on — a line whose product is gone,
+or has no price set, is left alone rather than guessed at. Engine v70, guide v70.
 
 ## v69 — Either place updates the customer (10 Sep 2026)
 Yesterday's fix put a customer's name and number back in one place — but it made

@@ -175,6 +175,34 @@ only on the homepage, never the order page.
 **One-time setup:** run `supabase/reviews.sql` in the SQL editor (adds the
 `reviews` table + RLS and the `review-photos` Storage bucket + policies).
 
+## An order is a record of a sale (price + name snapshot)
+
+An order row is not a pointer to a product — it is a record of what was sold and
+what it was sold for. Every order carries a **frozen `productName` + `unitPrice`**
+written at the moment it is taken: when the storefront cart is imported
+(`importIncoming` keeps the shop's own `line.price`, not the backoffice menu
+price), when an order is typed in by hand, and when an edit swaps a line to a
+different product (an untouched line keeps its old price). Every reader — the
+WhatsApp confirmation (`confirm.js`), the payment reminder (`messages.js`), the
+customer's **track page** (`trackingSnapshot`), lifetime spend (`customers.js`),
+the Home estimate and the weekly numbers (`weekly.js`) — reads through
+`orderLineName` / `orderLinePrice` (`state.js`), which prefer the snapshot and
+fall back to the live product only for orders saved before this.
+
+So renaming or re-pricing a product changes the shop, never history: last
+month's order still reads the price that customer paid, and a deleted product
+still shows what it was that someone bought. `orderLinePrice` returns **null**
+(not 0) when nothing is known, so "free" and "unknown" stay distinguishable. The
+one deliberate exception: the **favourite product** stat and the "what to
+prepare" list stay on today's product name, because those answer an operational
+question ("what do I make for them"), not a historical one.
+
+Existing orders are stamped once by the `migratedV70` catch-up in `app.js` with
+today's values — exactly what they were already displaying — so they stop
+drifting. A line whose product is gone, or has no price, is left alone rather
+than guessed at. No SQL — the fields live on order rows and sync/export/import
+wholesale.
+
 ## Order tracking & confirmation (Supabase)
 
 Customers choose **Post (nationwide)** / **Collect (local)** when ordering (a
@@ -420,7 +448,7 @@ admin/ — backoffice app (/admin/):
   index.html          entry (bottom nav shell)
   css/app.css         backoffice styling
   css/print.css       prints only the PO card
-  js/state.js         schema, localStorage load/save, ids, formatting
+  js/state.js         schema, localStorage load/save, ids, formatting, order-line snapshot
   js/dates.js         posting dates, cut-off, countdown (pure)
   js/bom.js           BOM explosion, costs, capacity (pure)
   js/supabase.js      live availability + storefront config publish, order intake

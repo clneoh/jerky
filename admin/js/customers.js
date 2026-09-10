@@ -4,7 +4,7 @@
 // (orders/units/approx total spend), their favourite product, and when they
 // last ordered/delivered — enough for a history pop-up and a marketing list.
 
-import { byId, orderCode, round2 } from "./state.js";
+import { byId, orderCode, orderLinePrice, round2 } from "./state.js";
 
 // The delivery date for an order. New orders snapshot their delivery date, so
 // history survives a delivery date being deleted; older orders fall back to
@@ -56,7 +56,7 @@ export function customerList(state, sort = "recent", filter = "all", today = "")
         whatsapp: (o.whatsapp || "").trim(),
         seenOrders: new Set(), // distinct storefront orders (groupId || id)
         units: 0,
-        spend: 0,            // approx: Σ price × qty at the prices of today's menu
+        spend: 0,            // Σ what each order was sold for (price frozen per order)
         productQty: new Map(), // productId → total qty, for the favourite
         last: "",            // most recent delivery date
         lastOrdered: "",     // most recent order date
@@ -65,11 +65,12 @@ export function customerList(state, sort = "recent", filter = "all", today = "")
     }
     row.seenOrders.add(o.groupId || o.id);
     row.units += Number(o.qty) || 0;
+    const price = orderLinePrice(state, o);
+    if (price != null) row.spend += (Number(o.qty) || 0) * price;
+    // The favourite stays on today's product name — it answers "what to bake
+    // for them", so a rename should carry through rather than split the count.
     const product = byId(products, o.productId);
     if (product) {
-      if (product.price != null) {
-        row.spend += (Number(o.qty) || 0) * Number(product.price);
-      }
       row.productQty.set(product.name, (row.productQty.get(product.name) || 0) + (Number(o.qty) || 0));
     }
     const d = deliveryDateOf(state, o);

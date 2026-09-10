@@ -67,6 +67,12 @@ export function renderGuide(root, state) {
 
     el("h2", { class: "section" }, "Newest in the engine"),
     el("div", { class: "card" },
+      el("p", { class: "card-title" }, "An order keeps the name and price it was sold at (Engine v70)"),
+      el("p", { class: "card-sub" },
+        "An order now remembers what it was sold as and what it was sold for, frozen the moment you take it — from the shop or typed in by hand. Rename a product or change its price later and your past orders, the labels, customer spend and the tracking page a customer sees all stay on the old name and price. A product you delete afterwards still shows what it was that someone bought."),
+      el("p", { class: "hint" },
+        "Deliberately swapping a line to a different product when you edit an order picks up the new price — you changed what is being sold. A line you leave alone keeps the price it was sold at. Orders from before today are stamped once with what they were already showing.")),
+    el("div", { class: "card" },
       el("p", { class: "card-title" }, "Either place updates the customer (Engine v69)"),
       el("p", { class: "card-sub" },
         "A customer's name and number now follow whichever you edited last. Fix a name with “Edit” on one of their orders and that is the one the list, the history pop-up and the “Hi {name}!” greeting use; open their card, type the name and save, and the card's name is used instead. Neither place is the boss — and because each save writes through to the other, they normally read the same anyway. This only decides the rare case where an old copy and a newer one both sit there."),

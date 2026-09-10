@@ -600,6 +600,38 @@ test("pullIncoming groups a multi-item storefront order under one groupId", asyn
   }
 });
 
+test("pullIncoming freezes the price the shop charged (not the backoffice menu price)", async () => {
+  storageShim(new Map());
+  const state = makeState();
+  // The backoffice menu has already moved to RM18 — the customer paid RM15
+  // because that is what the shop was showing when they ordered.
+  state.products = [{ id: "prd_1", name: "Focaccia", price: 18, active: true }];
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
+  const row = {
+    id: "abc-789",
+    data: JSON.stringify({
+      customer: "Ain", date: "2026-09-04", total: 30,
+      lines: [{ name: "Focaccia", qty: 2, price: 15 }],
+    }),
+  };
+  globalThis.fetch = async (url, opts) => {
+    if (url.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    if (url.includes("/rest/v1/incoming_orders") && !(opts && opts.method)) return { ok: true, json: async () => [row] };
+    if (url.includes("/rest/v1/incoming_orders") && (opts && opts.method === "PATCH")) return { ok: true, json: async () => [row] };
+    return { ok: true, text: async () => "" };
+  };
+  try {
+    const r = await pullIncoming(state);
+    assert.ok(r.ok);
+    const o = state.orders[0];
+    assert.equal(o.productName, "Focaccia", "the name it was sold under is frozen");
+    assert.equal(o.unitPrice, 15, "the price the customer actually paid is frozen");
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realLocalStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = realLocalStorage;
+  }
+});
+
 test("pullIncoming skips items with no matching backoffice product", async () => {
   storageShim(new Map());
   const state = makeState();

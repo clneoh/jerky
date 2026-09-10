@@ -10,7 +10,7 @@ import { customerList, ordersForCustomer } from "../customers.js";
 import { attachProfiles, customerMatches, customerRowName, profileFor, upsertProfile } from "../profiles.js";
 import { readPhoto } from "../photo.js";
 import { el, button, select, emptyState, showPopup, copyText, toast, confirmDialog } from "../ui.js";
-import { byId, fmtRM, save, waNumber } from "../state.js";
+import { byId, fmtRM, orderLineName, save, waNumber } from "../state.js";
 import { longDate, todayISO, weekdayName } from "../dates.js";
 import { maybeSync } from "../supabase.js";
 import {
@@ -46,7 +46,9 @@ let followupLang = "en";
 const short = (iso) => (iso ? `${weekdayName(iso)} ${iso.slice(8)}` : "");
 const dateLine = (iso) => (iso ? `${weekdayName(iso)}, ${longDate(iso)}` : "");
 const money = (state, n) => fmtRM(n, state.settings?.currency || "RM");
-const productName = (state, id) => (byId(state.products || [], id) || {}).name || "(deleted product)";
+// What they bought, named as it was sold (the order's own record), so a later
+// rename doesn't rewrite their history.
+const productName = (state, o) => orderLineName(state, o);
 // The product object from their most recent order (name + servingTip), so the
 // follow-up can ask about it AND recommend how to serve it. No history → null.
 const recentProduct = (state, blocks) => {
@@ -613,5 +615,5 @@ function historyBlock(state, b) {
       el("span", { class: `fulfill-tag${courier ? " courier" : ""}` }, courier ? "Post (nationwide)" : "Collect (local)"),
       el("span", { class: "qty-chip" }, STATUS_LABEL[b.status] || b.status)),
     when ? el("p", { class: "card-sub", style: "margin:2px 0 6px" }, when) : null,
-    ...b.lines.map((o) => el("div", { class: "hist-line" }, `${productName(state, o.productId)} ×${o.qty}`)));
+    ...b.lines.map((o) => el("div", { class: "hist-line" }, `${productName(state, o)} ×${o.qty}`)));
 }

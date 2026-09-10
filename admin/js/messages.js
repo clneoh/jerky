@@ -5,7 +5,7 @@
 // order code so the customer can always match it back to their order, and stays
 // plain ASCII - emoji have come back as broken boxes on some phones.
 
-import { byId, fmtRM, orderCode, waNumber } from "./state.js";
+import { byId, fmtRM, orderCode, orderLineName, orderLinePrice, waNumber } from "./state.js";
 import { shortDate } from "./dates.js";
 
 function basics(state, group, trackUrl) {
@@ -13,13 +13,14 @@ function basics(state, group, trackUrl) {
   const first = orders[0];
   if (!first) return null;
   const recipient = waNumber(first.whatsapp);
+  // Same rule as the confirmation: quote the sale, not today's prices.
   const items = orders.map((o) => {
-    const p = byId(state.products, o.productId);
-    return `${p ? p.name : "item"} x${o.qty}`;
+    const name = orderLineName(state, o);
+    return `${name === "(deleted product)" ? "item" : name} x${o.qty}`;
   }).join(", ");
   const subtotal = orders.reduce((s, o) => {
-    const p = byId(state.products, o.productId);
-    return s + (Number(o.qty) || 0) * (p ? Number(p.price) || 0 : 0);
+    const price = orderLinePrice(state, o);
+    return s + (Number(o.qty) || 0) * (price == null ? 0 : price);
   }, 0);
   const total = fmtRM(subtotal, state.settings.currency);
   const del = byId(state.deliveryDates, first.deliveryDateId);

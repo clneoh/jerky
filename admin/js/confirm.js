@@ -11,7 +11,7 @@
 // only - emoji have come back as broken "empty boxes" on some phones. The QR
 // is skipped when the baker hasn't set one.
 
-import { byId, fmtRM, orderCode, waNumber } from "./state.js";
+import { byId, fmtRM, orderCode, orderLineName, orderLinePrice, waNumber } from "./state.js";
 import { shortDate } from "./dates.js";
 
 // Returns { recipient, message }, or null when the group has no orders.
@@ -22,13 +22,15 @@ export function buildConfirmation(state, group, trackUrl) {
   if (!first) return null;
 
   const recipient = waNumber(first.whatsapp);
+  // The confirmation quotes what the customer is actually being charged: the
+  // name and price each line was sold at, not today's menu.
   const items = orders.map((o) => {
-    const p = byId(state.products, o.productId);
-    return `${p ? p.name : "item"} x${o.qty}`;
+    const name = orderLineName(state, o);
+    return `${name === "(deleted product)" ? "item" : name} x${o.qty}`;
   }).join(", ");
   const subtotal = orders.reduce((s, o) => {
-    const p = byId(state.products, o.productId);
-    return s + (Number(o.qty) || 0) * (p ? Number(p.price) || 0 : 0);
+    const price = orderLinePrice(state, o);
+    return s + (Number(o.qty) || 0) * (price == null ? 0 : price);
   }, 0);
   const total = fmtRM(subtotal, state.settings.currency);
 

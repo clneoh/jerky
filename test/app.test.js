@@ -291,3 +291,31 @@ test("lock + cloud-on-no-session: the PIN comes first, the sign-in gate second",
     assert.equal(document.getElementById("tabbar").hidden, true);
   } finally { restore(); }
 });
+
+// ── Engine v70 — the one-time price/name catch-up ────────────────────────────
+
+test("v70 catch-up stamps pre-existing orders with today's name and price once", async () => {
+  freshDOM();
+  const store = installStorage({ "bakeadmin.v1": stateJSON({
+    products: [{ id: "p1", name: "Focaccia", price: 15, active: true }],
+    orders: [
+      { id: "o1", productId: "p1", qty: 2, status: "new", deliveryDateId: "d1",
+        customerName: "Ain", whatsapp: "60123456789", createdAt: new Date().toISOString() },
+      { id: "o2", productId: "gone", qty: 1, status: "new", deliveryDateId: "d1",
+        customerName: "Ain", whatsapp: "60123456789", createdAt: new Date().toISOString() },
+    ],
+  }) });
+  try {
+    await import("../admin/js/app.js?case=v70");
+
+    const saved = JSON.parse(store.get("bakeadmin.v1"));
+    const o1 = saved.orders.find((o) => o.id === "o1");
+    assert.equal(o1.productName, "Focaccia", "the live name is frozen onto the old order");
+    assert.equal(o1.unitPrice, 15, "the live price is frozen onto the old order");
+    assert.equal(saved.settings.migratedV70, true, "the catch-up is marked done");
+
+    const o2 = saved.orders.find((o) => o.id === "o2");
+    assert.equal(o2.productName, undefined, "a vanished product is left alone, never guessed at");
+    assert.equal(o2.unitPrice, undefined);
+  } finally { restore(); }
+});

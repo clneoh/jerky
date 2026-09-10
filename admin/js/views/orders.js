@@ -3,7 +3,7 @@
 import { deliveryStatus, fmtPlaced, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
 import { capacityStatus, dayRuleRows, parseDayDelta, productRemaining, saveDayAdjustments } from "../bom.js";
 import { el, button, select, fillMeter, emptyState, confirmDialog, toast, showPopup } from "../ui.js";
-import { byId, fmtRM, groupOrders, newId, orderCode, save, updateOrderBadge, waNumber } from "../state.js";
+import { byId, fmtRM, groupOrders, newId, orderCode, orderLineName, save, stampOrderLine, updateOrderBadge, waNumber } from "../state.js";
 import { buildConfirmation } from "../confirm.js";
 import { buildPaymentReminder, buildPickupReminder } from "../messages.js";
 import { maybeSync, publishTracking } from "../supabase.js";
@@ -150,10 +150,7 @@ export function packingLabelData(state, group, style = "full") {
   const customer = String(first.customerName || "").trim();
   const note = String(first.note || "").trim();
   const address = courier ? String(first.address || "").trim() : "";
-  const itemLines = orders.map((o) => {
-    const p = byId(state.products, o.productId);
-    return `${p ? p.name : "(deleted product)"} ×${Number(o.qty) || 1}`;
-  });
+  const itemLines = orders.map((o) => `${orderLineName(state, o)} ×${Number(o.qty) || 1}`);
   const bakery = String((state.settings && state.settings.storefront
     && state.settings.storefront.name) || "Munchies Furkidz").trim();
   const code = `#${orderCode(first)}`;
@@ -229,6 +226,7 @@ function groupSearchText(state, group) {
   const digitChunks = [];
   for (const o of group.orders || []) {
     const product = o.productId ? byId(state.products, o.productId) : null;
+    words.push(orderLineName(state, o)); // the name this order was sold under
     const code = orderCode(o);
     words.push(`#${code}`, code);
     words.push(o.customerName);
@@ -421,9 +419,7 @@ export function newOrdersInbox(state, selectDate, root) {
     const first = g.orders[0];
     const date = byId(state.deliveryDates, first.deliveryDateId);
     const orphan = !date;
-    const title = g.orders
-      .map((o) => byId(state.products, o.productId)?.name || "(deleted product)")
-      .join(" + ");
+    const title = g.orders.map((o) => orderLineName(state, o)).join(" + ");
     const qtyTotal = g.orders.reduce((s, o) => s + o.qty, 0);
     const sub = [first.customerName || "No name", date ? shortDate(date.date) : "",
       `Placed ${fmtPlaced(first.createdAt, first.orderDate)}`]
@@ -481,8 +477,7 @@ function orderFinderEl(state, root, selectDate, body) {
     const first = group.orders[0];
     const date = byId(state.deliveryDates, first.deliveryDateId);
     const orphan = !date;
-    const items = group.orders
-      .map((o) => (byId(state.products, o.productId) || {}).name || "(deleted product)");
+    const items = group.orders.map((o) => orderLineName(state, o));
     const qtyTotal = group.orders.reduce((s, o) => s + o.qty, 0);
     const statusName = (STATUSES.find(([v]) => v === (first.status || "new")) || [])[1];
     const sub = [first.customerName || "No name",
@@ -907,12 +902,16 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
     for (const l of chosen) {
       const o = l.id ? byId(state.orders, l.id) : null;
       if (o) {
+        const before = o.productId;
         o.productId = l.productId;
         o.qty = Number(l.qty) || 1;
         Object.assign(o, shared);
         if (gid) o.groupId = gid;
+        // Only a line swapped to a different product re-prices; leaving a line
+        // alone keeps the price it was sold at.
+        if (before !== o.productId) stampOrderLine(o, byId(state.products, o.productId));
       } else {
-        state.orders.push({
+        const row = {
           id: newId("ord"),
           deliveryDateId: date.id,
           deliveryDate: date.date,
@@ -927,7 +926,9 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
           status: first.status || "new",
           groupId: gid,
           createdAt: new Date().toISOString(),
-        });
+        };
+        stampOrderLine(row, byId(state.products, row.productId));
+        state.orders.push(row);
       }
     }
     save(state);
@@ -952,7 +953,7 @@ function addNew(state, date, productId, qty, customerName, whatsapp, fulfillment
   const st = deliveryStatus(date.date, state.settings);
 
   function commit() {
-    state.orders.push({
+    const row = {
       id: newId("ord"),
       deliveryDateId: date.id,
       deliveryDate: date.date, // snapshot so the order stays in history if the date is deleted
@@ -966,7 +967,9 @@ function addNew(state, date, productId, qty, customerName, whatsapp, fulfillment
       note,
       status: "new",
       createdAt: new Date().toISOString(),
-    });
+    };
+    stampOrderLine(row, byId(state.products, productId));
+    state.orders.push(row);
     save(state);
     maybeSync(state);
     updateOrderBadge(state);
@@ -999,7 +1002,7 @@ function addGroupNew(state, date, items, customerName, whatsapp, fulfillment, ad
     const groupId = newId("ordg");
     const createdAt = new Date().toISOString();
     for (const it of items) {
-      state.orders.push({
+      const row = {
         id: newId("ord"),
         deliveryDateId: date.id,
         deliveryDate: date.date, // snapshot so the order stays in history if the date is deleted
@@ -1014,7 +1017,9 @@ function addGroupNew(state, date, items, customerName, whatsapp, fulfillment, ad
         status: "new",
         groupId,
         createdAt,
-      });
+      };
+      stampOrderLine(row, byId(state.products, it.productId));
+      state.orders.push(row);
     }
     save(state);
     maybeSync(state);
@@ -1161,10 +1166,7 @@ function orderGroupRow(state, group, root, dateId) {
   const orders = group.orders;
   const first = orders[0];
   const multi = orders.length > 1;
-  const items = orders.map((o) => {
-    const p = byId(state.products, o.productId);
-    return { name: p ? p.name : "(deleted product)", qty: o.qty };
-  });
+  const items = orders.map((o) => ({ name: orderLineName(state, o), qty: o.qty }));
   const title = items.map((i) => i.name).join(" + ");
   const qtyTotal = items.reduce((s, i) => s + i.qty, 0);
   const sub = [first.customerName, waNumber(first.whatsapp), first.note].filter(Boolean).join(" · ");
@@ -1401,10 +1403,7 @@ function firstOf(group) {
 }
 
 function removeOrder(state, group, root, dateId) {
-  const label = group.orders.map((o) => {
-    const p = byId(state.products, o.productId);
-    return `${p ? p.name : "?"} ×${o.qty}`;
-  }).join(", ");
+  const label = group.orders.map((o) => `${orderLineName(state, o)} ×${o.qty}`).join(", ");
   confirmDialog(`Remove order "${label}"?`,
     () => {
       const ids = new Set(group.orders.map((o) => o.id));

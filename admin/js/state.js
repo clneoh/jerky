@@ -523,3 +523,44 @@ export function round2(n) {
 export function fmtRM(n, currency = "RM") {
   return `${currency} ${round2(n).toFixed(2)}`;
 }
+
+// ── An order is a record of a sale ─────────────────────────────────────────
+// Every order row keeps what it was sold as and what it was sold for
+// (`productName` / `unitPrice`), frozen at the moment the order is taken. That
+// is what stops renaming or repricing a product from rewriting last month's
+// orders — including the amount a customer sees on their own tracking page —
+// and it means a product deleted later still shows what it was that someone
+// bought. Orders saved before v70 carry no snapshot; the live product is the
+// best guess available for those.
+
+// The product name to print for an order line: the frozen one, else the live
+// product's, else the placeholder for a product that is truly gone.
+export function orderLineName(state, o) {
+  const frozen = String((o && o.productName) || "").trim();
+  if (frozen) return frozen;
+  const p = byId((state && state.products) || [], o && o.productId);
+  return String((p && p.name) || "").trim() || "(deleted product)";
+}
+
+// The unit price the line was sold at — the frozen one, else the live product's.
+// null when there is nothing to price it from (no snapshot and no price set),
+// so the caller can tell "free" from "we don't know".
+export function orderLinePrice(state, o) {
+  const frozen = o && o.unitPrice;
+  if (frozen != null && frozen !== "" && Number.isFinite(Number(frozen))) return Number(frozen);
+  const p = byId((state && state.products) || [], o && o.productId);
+  return p && p.price != null && p.price !== "" ? Number(p.price) : null;
+}
+
+// Freeze the sold name and price onto an order row from a product — or from a
+// storefront order line, which carries the same two fields ({ name, price }).
+// Never invents a value: a product with no price set leaves the line unpriced
+// so it keeps following the live product.
+export function stampOrderLine(o, product) {
+  if (!o || !product) return o;
+  const name = String(product.name || "").trim();
+  if (name) o.productName = name;
+  const price = product.price;
+  if (price != null && price !== "" && Number.isFinite(Number(price))) o.unitPrice = Number(price);
+  return o;
+}

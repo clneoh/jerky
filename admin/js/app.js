@@ -1,6 +1,6 @@
 // app.js — bootstrap, hash router, bottom-nav wiring, shared-data sync gate.
 
-import { loadState, save, setSaveHook, updateOrderBadge, ensureSupabase } from "./state.js";
+import { byId, loadState, save, setSaveHook, stampOrderLine, updateOrderBadge, ensureSupabase } from "./state.js";
 import { el, button } from "./ui.js";
 import * as sync from "./sync.js";
 import { maybeAutoBackup } from "./backups.js";
@@ -74,6 +74,17 @@ setSaveHook((s) => {
 if (!state.settings.migratedV68) {
   reconcileContacts(state);
   state.settings.migratedV68 = true;
+  save(state);
+}
+
+// One-time catch-up (v70). Orders taken before this version carry no record of
+// the price or the name they were sold at, so they still move when the menu is
+// repriced or renamed. Stamp them with today's values — which is exactly what
+// they are showing right now — so they stop moving from here on. A line whose
+// product is gone, or has no price, is left as it is rather than guessed at.
+if (!state.settings.migratedV70) {
+  for (const o of state.orders || []) stampOrderLine(o, byId(state.products || [], o.productId));
+  state.settings.migratedV70 = true;
   save(state);
 }
 
