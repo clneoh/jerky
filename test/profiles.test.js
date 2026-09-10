@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { customerList } from "../admin/js/customers.js";
-import { attachProfiles, customerMatches, profileFor, profileForOrder, upsertProfile } from "../admin/js/profiles.js";
+import { attachProfiles, customerMatches, customerRowName, profileFor, profileForOrder, upsertProfile } from "../admin/js/profiles.js";
 
 // A tiny app-password hash constant unused here — kept to match sibling files.
 
@@ -81,6 +81,22 @@ test("attachProfiles copies each saved profile onto its matching derived row", (
   const lim = rows.find((r) => r._key === "6013-222");
   assert.equal(bee.profile && bee.profile.dogName, "Coco");
   assert.equal(lim.profile, null, "no saved profile stays null");
+});
+
+test("customerRowName names a no-name customer from their saved profile", () => {
+  // The order carried no name (so the derived row reads "(no name)"), but the
+  // baker named the person in their profile — the row must show that name.
+  const anonymous = { _key: "6012-111", name: "(no name)", whatsapp: "6012-111", profile: { name: "Aunty Bee" } };
+  assert.equal(customerRowName(anonymous), "Aunty Bee");
+
+  // The order's own name still wins when there is one.
+  assert.equal(customerRowName({ name: "Mr Lim", profile: { name: "Aunty Bee" } }), "Mr Lim");
+  // No name anywhere falls back to the derived label.
+  assert.equal(customerRowName({ name: "(no name)", profile: null }), "(no name)");
+  // A profile with a blank name does not invent one.
+  assert.equal(customerRowName({ name: "(no name)", profile: { name: "  " } }), "(no name)");
+  // A blank derived name with a saved profile name still resolves (older rows).
+  assert.equal(customerRowName({ name: "", profile: { name: "Nurul" } }), "Nurul");
 });
 
 test("customerMatches searches the person, their dog, likes, avoids, notes and favourite", () => {

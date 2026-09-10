@@ -85,6 +85,19 @@ export function attachProfiles(state, rows) {
   return out;
 }
 
+// The name to show for a derived customer row (one from customerList, with its
+// profile attached). What their orders say wins when they carried a name; when
+// the order had none the row's own name reads "(no name)", and a name saved on
+// the profile still names them — the profile joins the person by key, so it is
+// the source of truth for someone recorded anonymously. Falls back to the
+// derived label when neither has a name.
+export function customerRowName(row) {
+  const derived = String((row && row.name) || "").trim();
+  if (derived && derived !== "(no name)") return derived;
+  const saved = row && row.profile && String(row.profile.name || "").trim();
+  return saved || derived || "(no name)";
+}
+
 // A person matches the query when any of their fields contains it — the finder
 // looks across name, whatsapp number, dog name, what they like/avoid, notes and
 // their favourite product. Case- and space-insensitive on both sides. A number

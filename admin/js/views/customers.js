@@ -7,7 +7,7 @@
 
 import { navigate } from "../app.js";
 import { customerList, ordersForCustomer } from "../customers.js";
-import { attachProfiles, customerMatches, profileFor, upsertProfile } from "../profiles.js";
+import { attachProfiles, customerMatches, customerRowName, profileFor, upsertProfile } from "../profiles.js";
 import { readPhoto } from "../photo.js";
 import { el, button, select, emptyState, showPopup, copyText, toast, confirmDialog } from "../ui.js";
 import { byId, fmtRM, save, waNumber } from "../state.js";
@@ -58,8 +58,8 @@ const recentProduct = (state, blocks) => {
 function openChat(r) {
   const w = waNumber(r.whatsapp);
   if (!w) return;
-  const name = r.name && r.name !== "(no name)" ? r.name : "";
-  const text = name ? `Hi ${name}!` : "Hi!";
+  const name = customerRowName(r);
+  const text = name && name !== "(no name)" ? `Hi ${name}!` : "Hi!";
   window.open(`https://wa.me/${w}?text=${encodeURIComponent(text)}`, "_blank");
 }
 
@@ -155,7 +155,7 @@ export function renderCustomers(root, state, params) {
     };
     row.onclick = pick
       ? () => { picked.has(r._key) ? picked.delete(r._key) : picked.add(r._key); setVisual(); }
-      : () => openHistory(state, r);
+      : () => openHistory(state, r, drawList);
 
     const subs = [
       r.whatsapp ? `📱 ${r.whatsapp}` : "No number saved",
@@ -175,7 +175,7 @@ export function renderCustomers(root, state, params) {
 
     row.append(
       el("div", { class: "li-main" },
-        el("div", { class: "li-title" }, avatarEl(r.profile, "sm"), el("span", {}, r.name)),
+        el("div", { class: "li-title" }, avatarEl(r.profile, "sm"), el("span", {}, customerRowName(r))),
         ...subs.map((s) => el("div", { class: "li-sub" }, s))),
       el("div", { class: "li-right" },
         r.whatsapp ? button("💬 Chat", (ev) => { ev.stopPropagation(); openChat(r); }, "ghost small") : null,
@@ -301,7 +301,7 @@ function editablePerson(r) {
 
 // The profile block inside a customer's history pop-up — shows what's saved and
 // opens the edit form. An empty profile still shows, inviting the first entry.
-function profileBlockEl(state, r, refresh) {
+function profileBlockEl(state, r, refresh, onSaved) {
   const p = profileFor(state, r._key) || {};
   const facts = [
     p.dogName ? el("p", { class: "card-sub", style: "margin:2px 0 0" }, `🐾 ${p.dogName}`) : null,
@@ -323,7 +323,7 @@ function profileBlockEl(state, r, refresh) {
       el("div", { class: "profile-edit" },
         editablePerson(r)
           ? button(empty ? "✎ Add details" : "✎ Edit",
-              () => editProfilePopup(state, r, refresh), "ghost small")
+              () => editProfilePopup(state, r, () => { refresh(); if (onSaved) onSaved(); }), "ghost small")
           : null)));
 }
 
@@ -404,10 +404,10 @@ function editProfilePopup(state, r, afterSave) {
 
 // ---- history pop-up for one customer ----
 
-function openHistory(state, r) {
+function openHistory(state, r, onSaved) {
   const blocks = ordersForCustomer(state, r);
   const ui = { editingCredit: null, addingCredit: false }; // survives refresh()
-  showPopup(r.name, (refresh, close) =>
+  showPopup(customerRowName(r), (refresh, close) =>
     el("div", {},
       r.whatsapp ? el("div", { class: "li-row", style: "margin:0 0 8px" },
         el("p", { class: "card-sub", style: "margin:0" }, `📱 ${r.whatsapp}`),
@@ -419,7 +419,7 @@ function openHistory(state, r) {
           ? el("span", { class: "qty-chip", style: "background:var(--brown-soft)" }, `about ${money(state, r.totalSpend)}`)
           : null),
       r.fav ? el("p", { class: "card-sub", style: "margin:8px 0 0" }, `⭐ Favourite: ${r.fav}`) : null,
-      profileBlockEl(state, r, refresh),
+      profileBlockEl(state, r, refresh, onSaved),
       referralSection(state, r, ui, refresh, recentProduct(state, blocks)),
       !blocks.length
         ? emptyState("No order history", "This customer's orders were removed.")

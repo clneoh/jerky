@@ -67,6 +67,12 @@ export function renderGuide(root, state) {
 
     el("h2", { class: "section" }, "Newest in the engine"),
     el("div", { class: "card" },
+      el("p", { class: "card-title" }, "A “No name” customer keeps the name you save (Engine v67)"),
+      el("p", { class: "card-sub" },
+        "When a customer reaches you without a name — a storefront order that carried none — their row in the customer book now takes the name you save on their profile. Open the person, tap “Add details”, type their name (and the pet's name, likes and so on) and save: the row, the finder and the “Hi {name}!” WhatsApp greeting all use it from then on. Before, the row only ever read the order, so an unnamed customer stayed “No name” no matter what you typed."),
+      el("p", { class: "hint" },
+        "Your order's own name still wins when there is one — the saved profile name only fills in for someone recorded anonymously.")),
+    el("div", { class: "card" },
       el("p", { class: "card-title" }, "Product text that translates itself into 中文 & Bahasa Malaysia (Engine v66)"),
       el("p", { class: "card-sub" },
         "When you save or publish a product, the app quietly fills the Chinese and Malay versions of its name, description, selling unit and feeding tip — machine-made from your English, free, whenever you're online. Each translated box is tagged “auto”. Type over any box and it becomes yours: your own wording is never overwritten. In Products → Edit you can also tap “Fill all 中文” or “Fill all Bahasa Malaysia”, or fill one line at a time with ↻. Blank English means no translation, and if you later change an English line, that box is re-filled to match."),

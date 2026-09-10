@@ -244,7 +244,7 @@ test("backupNow posts one manual copy without the per-device settings", async ()
     assert.equal(r.ok, true);
     assert.equal(seen.kind, "manual");
     assert.ok(seen.label.startsWith("Manual · "));
-    assert.equal(seen.engine, "66");
+    assert.equal(seen.engine, "67");
     assert.equal(seen.summary, "1 orders · 1 products · 1 ingredients");
     const data = JSON.parse(seen.data);
     assert.equal(data.settings.supabase, undefined);
