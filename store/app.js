@@ -27,8 +27,8 @@ function t(key) { return pick(STORE, loadLang(), key); }
 // render()'s closures own the cart, the chosen day and the fetched availability,
 // so this is a hook rather than a second call to render() — re-rendering from
 // outside would throw the customer's basket away, and reloading the page would
-// re-fetch the menu, the slots and the product photos from Supabase (the pause
-// you feel on a phone). Null until render() has run.
+// re-fetch the menu, the slots and the storefront settings from Supabase (the
+// pause you feel on a phone). Null until render() has run.
 let repaintForLang = null;
 
 // Fill %1, %2, … placeholders left-to-right.
@@ -1037,9 +1037,9 @@ export function setLang(next) {
 }
 
 // Switching repaints the page in place (see setLang) instead of reloading it:
-// a reload would re-fetch the menu, the slots-left numbers and the product
-// photos from Supabase, which is the pause a customer feels on a phone. Only a
-// real browser reaches this block (Node tests have no documentElement).
+// a reload would re-fetch the menu, the slots-left numbers and the storefront
+// settings from Supabase, which is the pause a customer feels on a phone. Only
+// a real browser reaches this block (Node tests have no documentElement).
 if (typeof document !== "undefined" && document.documentElement) {
   const pills = Array.from(document.querySelectorAll("#lang-switch .lang-pill"));
   paintPillsHook = (l) => pills.forEach((b) => b.classList.toggle("is-on", b.dataset.lang === l));

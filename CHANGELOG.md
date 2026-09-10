@@ -4,12 +4,30 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**10 Sep 2026 — review photos load one at a time on the homepage (no new engine;
+the phones did not change).** The **What customers say** section on your homepage
+used to fetch **every published review photo up front** — including the reviews a
+visitor never waited around to see. A photo is now fetched **as its review comes
+around**, one step ahead of time so it is ready before it slides in, and the
+reviews a visitor never reaches are never downloaded at all. On a phone that
+means less data and a quicker page, and it changes nothing about how the section
+looks or behaves.
+
+A review photo is also shrunk a little harder before it is stored — to 1000
+pixels across instead of 1600. The card on the homepage shows a picture no more
+than 340 pixels high, so the smaller copy looks just as sharp while being about
+**a third of the size**, which is kinder to the customer's mobile data and keeps
+your stored photos light. This applies to photos left from now on; the reviews
+already on your page keep the picture they were stored with. (Your homepage
+itself already loads its pictures as separate files — its page is only about
+29 KB — so nothing needed changing there.)
+
 ## v71 — The order page's 中文 / BM buttons answer instantly (10 Sep 2026)
 On your order page, tapping **EN / 中文 / BM** used to reload the whole page. That
-re-downloaded the page and fetched the menu, the "only N left" numbers and every
-product photo all over again, so each tap sat there for a moment before anything
-changed — and the slower the customer's connection, the longer the wait. A reload
-could also wipe a basket that was already half filled.
+re-downloaded the page and fetched the menu, the "only N left" numbers and your
+saved order-page settings all over again, so each tap sat there for a moment
+before anything changed — and the slower the customer's connection, the longer
+the wait. A reload could also wipe a basket that was already half filled.
 
 Now the order page switches **in place**, exactly like your homepage already did:
 the words change the moment they tap, and nothing is downloaded again. Whatever

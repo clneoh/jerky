@@ -2,8 +2,8 @@
 // switch the page IN PLACE. Nothing reloads, nothing re-fetches, and the
 // customer's basket is never thrown away. Before v71 each pill press called
 // window.location.reload(), so every tap re-downloaded the page and re-fetched
-// the menu, the slots-left numbers and the product photos from Supabase — the
-// pause a customer feels on a phone.
+// the menu, the slots-left numbers and the storefront settings from Supabase —
+// the pause a customer feels on a phone.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";

@@ -44,9 +44,11 @@ const LANG_BY_CODE = Object.fromEntries(REVIEW_LANGS.map((l) => [l.code, l.label
 // shrinkReviewPhoto), so real phone photos are never turned away on size.
 // Only a truly huge file is refused.
 export const MAX_INPUT_BYTES = 25 * 1024 * 1024; // 25 MB
-// Shrink target: the longest side after downscaling. Crisp on the homepage and
-// app cards, light enough that uploads and storage stay small.
-const PHOTO_MAX_SIDE = 1600;
+// Shrink target: the longest side after downscaling. The homepage card shows a
+// photo at most 340px tall and the app's moderator card no bigger, so 1000px
+// still has detail to spare at 2x screens — while keeping uploads small on
+// mobile data and the public bucket light.
+const PHOTO_MAX_SIDE = 1000;
 // Photos already this small (and not wider than the target) go up unchanged —
 // re-encoding them would only waste the customer's battery and the cloud.
 const SMALL_PHOTO_KEEP = 500 * 1024;
@@ -259,7 +261,9 @@ function drawGrid() {
     return;
   }
   if (rows.length === 1) {
-    grid.appendChild(reviewCard(rows[0]));
+    const card = reviewCard(rows[0]);
+    loadPhoto(card); // the only review is always on screen, so fetch it now
+    grid.appendChild(card);
     return;
   }
   const ctl = buildCarousel(rows);
@@ -274,14 +278,30 @@ function emptyNote(text) {
   return p;
 }
 
+// Fetch a review photo that has been waiting in data-src. Idempotent: the
+// attribute is removed as the real src is set, so a repeat call does nothing.
+function loadPhoto(node) {
+  const img = node && node.querySelector && node.querySelector("img[data-src]");
+  if (!img) return;
+  const src = img.dataset.src;
+  img.removeAttribute("data-src");
+  img.src = src;
+}
+
 function reviewCard(row) {
   const card = document.createElement("div");
   card.className = "review-card";
   if (row.photo) {
     const img = document.createElement("img");
-    img.src = String(row.photo);
+    // The carousel shows one review at a time, so the photo is NOT fetched here.
+    // The URL waits on data-src until this slide is the one being shown (or the
+    // one after it) and loadPhoto promotes it. Fetching every published photo up
+    // front downloaded megabytes the visitor never saw, one 6-second slide at a
+    // time.
+    img.dataset.src = String(row.photo);
     img.alt = "";
     img.className = "review-card-photo";
+    img.decoding = "async";
     img.addEventListener("error", () => img.remove()); // broken link never leaves a hole
     card.appendChild(img);
   }
@@ -322,12 +342,14 @@ function buildCarousel(rows) {
   stage.className = "r-stage";
   const track = document.createElement("div");
   track.className = "r-track";
+  const slides = [];
   rows.forEach((row) => {
     const slide = document.createElement("div");
     slide.className = "r-slide";
     slide.setAttribute("aria-roledescription", "slide");
     slide.appendChild(reviewCard(row));
     track.appendChild(slide);
+    slides.push(slide);
   });
   stage.appendChild(track);
 
@@ -370,6 +392,11 @@ function buildCarousel(rows) {
   let hovered = false;
 
   function move() {
+    // Stay one photo ahead: fetch the slide being shown and the next one, so a
+    // 6 s auto-advance never reveals a blank frame — but the slides after that
+    // are not downloaded until their turn comes.
+    loadPhoto(slides[i]);
+    loadPhoto(slides[carouselStep(n, i, 1)]);
     track.style.transform = `translateX(-${i * 100}%)`;
     dotEls.forEach((d, j) => d.classList.toggle("is-on", j === i));
     live.textContent = `${i + 1} / ${n}`;

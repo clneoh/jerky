@@ -170,7 +170,14 @@ only on the homepage, never the order page.
   backoffice → **More → Reviews** lists new ones under *Waiting for you* with
   the name, stars, message, language, date and photo; **Publish** shows it on
   the homepage, **Take down** hides it again, **Delete** removes it for good.
-- Photos upload to the public `review-photos` Storage bucket via the anon key.
+- Photos upload to the public `review-photos` Storage bucket via the anon key,
+  shrunk to **1000 px** on the longest side first (down from 1600 — the card
+  renders at most 340 px tall, so this is ~a third of the bytes at no visible
+  cost). Photos already stored keep the size they went up at.
+- The carousel does not fetch every published photo up front: a slide's photo
+  waits in `data-src` and is promoted by `loadPhoto()` when that slide is shown
+  (or the one after, so a 6 s advance never reveals a blank frame). Slides a
+  visitor never reaches are never downloaded.
 
 **One-time setup:** run `supabase/reviews.sql` in the SQL editor (adds the
 `reviews` table + RLS and the `review-photos` Storage bucket + policies).
@@ -383,7 +390,7 @@ EN / 中文 / BM choice (`followup-lang.js`, `i18n.js` `descFor`/`servingFor`/
 
 **Engine v71** made the order page's language switch **in place**: tapping
 English / 中文 / BM repaints the page instead of reloading it, so nothing is
-re-fetched (the menu, the "only N left" numbers, the product photos) and the
+re-fetched (the menu, the "only N left" numbers, the saved order-page settings) and the
 customer's basket, chosen posting day and typed details survive. `render()`
 assigns a `repaintForLang` hook (tagged static HTML + title via `applyTo`,
 `renderStatic`, `rerender`, `renderBar`, and the track card from its cached
