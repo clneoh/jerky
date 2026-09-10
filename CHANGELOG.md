@@ -4,6 +4,16 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**10 Sep 2026 — the homepage's contact details now follow your Storefront
+settings (no new engine; the phones did not change).** The WhatsApp number,
+Instagram and Facebook links in your homepage footer were typed into the page
+itself, so changing them under **Settings → Storefront** moved your order page
+and left the homepage still showing the old ones. The homepage now reads the
+same published settings as the order page, so the two always quote the same
+number and the same handles. Leave a box blank and the homepage keeps the link
+it already has, so an empty box never breaks a working link. (The homepage's
+contact **email** has no Settings box behind it — tell me if you want one.)
+
 **10 Sep 2026 — review photos load one at a time on the homepage (no new engine;
 the phones did not change).** The **What customers say** section on your homepage
 used to fetch **every published review photo up front** — including the reviews a

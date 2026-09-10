@@ -1,5 +1,7 @@
-// home.js — the homepage's site language switch (EN / 中文 / BM) and the small
-// "developer" credit line in the footer. Runs alongside reviews.js.
+// home.js — the homepage's site language switch (EN / 中文 / BM), its footer
+// contact rows (WhatsApp / Instagram / Facebook, read from the published
+// storefront settings) and the small "developer" credit line. Runs alongside
+// reviews.js.
 //
 // Applying a language rewrites the tagged static text from home-lang.js in
 // place; the visitor's choice is remembered on their device. Reviews.js listens
@@ -49,11 +51,53 @@ function waDigits(n) {
   return digits.startsWith("0") ? `60${digits.slice(1)}` : digits;
 }
 
-// The developer credit uses the same published storefront data as the store,
-// so the baker sets the name (+ email(s) and/or a WhatsApp number) once in the
-// app and the homepage footer shows them after the next "publish". Until then
-// the line stays hidden.
-async function loadDevConfig() {
+// A WhatsApp number as it is written under the link, e.g. 601891336389 →
+// "+60 18-913 36389". Anything that is not the usual 60 + 10 digits is shown
+// plainly as "+<digits>" rather than mis-grouped.
+function prettyWa(digits) {
+  if (/^60\d{10}$/.test(digits)) {
+    return `+60 ${digits.slice(2, 4)}-${digits.slice(4, 7)} ${digits.slice(7)}`;
+  }
+  return `+${digits}`;
+}
+
+function text(v) {
+  return typeof v === "string" ? v.trim() : "";
+}
+
+// The footer's own contact rows read the same published settings the order page
+// reads, so the number and handles there agree with the app: change them in
+// Settings → Storefront, publish, and this page follows. Anything left blank in
+// the app leaves the value typed into the page alone (blank never wipes it).
+function applyContacts(cfg) {
+  const wa = waDigits(cfg.whatsapp);
+  if (wa) {
+    const link = byId("f-wa");
+    if (link) link.href = `https://wa.me/${wa}`;
+    const num = byId("f-wa-num");
+    if (num) num.textContent = prettyWa(wa);
+  }
+  const ig = text(cfg.instagram);
+  if (ig) {
+    const link = byId("f-ig");
+    if (link) {
+      link.href = `https://www.instagram.com/${ig}/`;
+      link.textContent = `Instagram — @${ig}`;
+    }
+  }
+  const fb = text(cfg.facebook);
+  if (fb) {
+    const link = byId("f-fb");
+    if (link) {
+      link.href = `https://www.facebook.com/${fb}/`;
+      link.textContent = `Facebook — ${fb}`;
+    }
+  }
+}
+
+// One read of the published storefront row feeds both the footer contacts above
+// and the developer credit below, so the homepage agrees with the store.
+async function loadPublished() {
   if (devLoaded) return;
   devLoaded = true;
   try {
@@ -66,13 +110,14 @@ async function loadDevConfig() {
     if (!raw) return;
     const cfg = typeof raw === "string" ? JSON.parse(raw) : raw;
     if (!cfg || typeof cfg !== "object") return;
-    const name = typeof cfg.developerName === "string" ? cfg.developerName.trim() : "";
+    applyContacts(cfg);
+    const name = text(cfg.developerName);
     const emails = Array.isArray(cfg.developerEmails)
       ? cfg.developerEmails.map((e) => String(e).trim()).filter(Boolean)
       : [];
-    const wa = typeof cfg.developerWhatsapp === "string" ? cfg.developerWhatsapp.trim() : "";
+    const wa = text(cfg.developerWhatsapp);
     devConfig = { name, emails, wa };
-  } catch { /* offline — the credit line simply stays hidden */ }
+  } catch { /* offline — the page keeps what it shipped with */ }
 }
 
 function mailHref(emails) {
@@ -117,7 +162,7 @@ function renderDevLine() {
 async function init() {
   initSwitch();
   render();
-  await loadDevConfig();
+  await loadPublished();
   renderDevLine();
 }
 

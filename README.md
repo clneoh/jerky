@@ -93,7 +93,12 @@ Preview it locally at http://localhost:8000/store/.
 
 With live Supabase configured, what customers see is edited in the backoffice —
 **More → Settings → Storefront** — and published automatically (no redeploy).
-That covers the business name, tagline, WhatsApp number and social links. The
+That covers the business name, tagline, WhatsApp number and social links — and
+the homepage's own footer rows (WhatsApp, Instagram, Facebook) read those same
+published settings, so the two pages always quote the same number and handles.
+A field left blank in Settings leaves the value typed into `index.html` alone,
+so a half-filled Storefront card never blanks a working link. (The homepage's
+contact **email** has no Settings field; it stays as typed in `index.html`.) The
 **menu is the backoffice product list** (More → Products): add, price or hide a
 product there and it updates on the customer page after a publish — there's no
 separate storefront menu to keep in sync. `store/config.js` is only the starting
