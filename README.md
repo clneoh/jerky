@@ -63,6 +63,16 @@ Then open http://localhost:8000 (homepage), http://localhost:8000/admin/
 4. Live at `https://munchies.com.my` — homepage at the root, storefront at
    `/store/`, backoffice at `/admin/`.
 
+**How publishing works:** after this, every push to `main` republishes the site
+on its own — nothing is uploaded by hand. GitHub runs a "pages build and
+deployment" workflow per push (`build`, then `deploy`), normally done in well
+under a minute. If the live site still serves an old file, read that file on the
+live origin (e.g. `/home.js`) before suspecting the code — if it is current, only
+the newest commit is missing. The run is listed under Actions → "pages build and
+deployment" (a `deploy` job stuck in progress is cleared by **Cancel workflow**,
+then **Re-run all jobs**), and Pages caches HTML for ~10 minutes, so a private
+window or a `?v=2` URL is the way to be sure.
+
 **Netlify (even quicker):** drag this folder into https://app.netlify.com/drop.
 
 Relative paths + `#/` hash routing mean the subpath URL just works.
