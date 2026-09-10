@@ -4,6 +4,17 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**10 Sep 2026 — the back-office link is off the homepage (no new engine; the
+phones did not change).** The homepage footer carried a small "Back-office
+login" line — the only public link to your app anywhere on the site — and it has
+been removed, so nothing on your public pages now points at `/admin/`. You open
+the app exactly as before: the **Home Screen icon** on your phone (open
+`munchies.com.my/admin/` once in Safari, Share → Add to Home Screen), and the
+login itself is unchanged — it still asks for your 4-digit PIN and your sign-in.
+The WhatsApp number under the footer link now also writes itself the Malaysian
+way (**+60 18-913 6389**) whatever you type in Settings, and it still follows
+**Settings → Storefront** like the rest of the footer.
+
 **10 Sep 2026 — the app can no longer be handed a web page where it asked for a
 script (no new engine; the phones did not change).** So the app can open without
 a connection, it keeps a background copy of itself. Whenever a file failed to

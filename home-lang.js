@@ -136,7 +136,6 @@ const en = {
   fWhatsappTitle: "WHATSAPP / ORDER",
   fWaSmall: "Ordering via our store page is fastest.",
   fFollowTitle: "FOLLOW US",
-  fAdmin: "Back-office login",
   devBy: "Website by",
   devWa: "WhatsApp the developer",
 };
@@ -261,7 +260,6 @@ const zh = {
   fWhatsappTitle: "WHATSAPP / 下单",
   fWaSmall: "通过我们的订购页下单最快。",
   fFollowTitle: "关注我们",
-  fAdmin: "后台登录",
   devBy: "网站制作：",
   devWa: "用 WhatsApp 联系开发者",
 };
@@ -386,7 +384,6 @@ const ms = {
   fWhatsappTitle: "WHATSAPP / TEMPAH",
   fWaSmall: "Paling cepat dengan menempah melalui halaman kedai kami.",
   fFollowTitle: "IKUTI KAMI",
-  fAdmin: "Log masuk pejabat belakang",
   devBy: "Laman web oleh",
   devWa: "WhatsApp pembangun",
 };

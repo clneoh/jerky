@@ -51,11 +51,13 @@ function waDigits(n) {
   return digits.startsWith("0") ? `60${digits.slice(1)}` : digits;
 }
 
-// A WhatsApp number as it is written under the link, e.g. 601891336389 →
-// "+60 18-913 36389". Anything that is not the usual 60 + 10 digits is shown
-// plainly as "+<digits>" rather than mis-grouped.
+// A WhatsApp number as it is written under the link, e.g. 60189136389 →
+// "+60 18-913 6389" (Malaysian grouping: the 2-digit mobile prefix, then 3, then
+// the rest). A 12-digit number groups the same way. Anything else — a
+// landline, a foreign number — is shown plainly as "+<digits>", never
+// mis-grouped.
 function prettyWa(digits) {
-  if (/^60\d{10}$/.test(digits)) {
+  if (/^60\d{9,10}$/.test(digits)) {
     return `+60 ${digits.slice(2, 4)}-${digits.slice(4, 7)} ${digits.slice(7)}`;
   }
   return `+${digits}`;
