@@ -40,7 +40,17 @@ self.addEventListener("fetch", (event) => {
         return res;
       })
       .catch(() =>
-        caches.match(req).then((hit) => hit || caches.match("./index.html"))
+        caches.match(req).then((hit) => {
+          if (hit) return hit;
+          // Only a page navigation may fall back to the cached shell. Anything
+          // else — a script, a stylesheet, an image — has to fail as itself:
+          // answering a .js request with HTML makes the browser run a web page
+          // as JavaScript, which silently kills that file and everything it was
+          // supposed to wire up.
+          return req.mode === "navigate"
+            ? caches.match("./index.html")
+            : Response.error();
+        })
       )
   );
 });

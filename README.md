@@ -187,6 +187,32 @@ only on the homepage, never the order page.
 **One-time setup:** run `supabase/reviews.sql` in the SQL editor (adds the
 `reviews` table + RLS and the `review-photos` Storage bucket + policies).
 
+## The service worker
+
+There is exactly one worker here: **`admin/sw.js`**, the backoffice's offline app
+shell, with scope `/admin/`. It is network-first, so a phone gets fresh code when
+it is online and falls back to its own cache when it isn't. Nothing else on the
+site registers a worker — in particular the homepage must never register a
+root-scoped one, because a root worker covers the store and `/admin/` as well.
+
+Its fallback is guarded: only a page navigation (`req.mode === "navigate"`) may
+fall back to the cached `./index.html`. Everything else — a script, a stylesheet,
+an image — is left to fail as itself. The earlier rule answered *any* failed
+request with `caches.match(req) || caches.match("./index.html")`, which hands a
+request for a `.js` file the homepage **HTML**; a browser that receives a web page
+where it asked for a script silently does nothing with it, so the module never
+runs and whatever it wired up goes quiet with no visible symptom. (On the bakery
+that showed up as a homepage stuck in English whose EN / 中文 / BM buttons were
+dead, since `home.js` never ran. munchies.com.my never had that — it has always
+served its app from `/admin/`, and a service worker is scoped per origin, so the
+bakery's old root worker never reached this domain.)
+
+`test/service-worker.test.js` runs the real worker script in a stand-in worker
+scope and drives its fetch handler, asserting the response to a failure as a
+response rather than as a string in the source: a failed script/stylesheet/image
+must come back as an error, a navigation offline must still get the cached shell,
+and a genuinely cached file must still be served.
+
 ## An order is a record of a sale (price + name snapshot)
 
 An order row is not a pointer to a product — it is a record of what was sold and
@@ -485,7 +511,8 @@ admin/ — backoffice app (/admin/):
   js/photo.js         shrinks a picked photo to a small thumb (browser only)
   js/app.js           hash router + bootstrap + shared-data gate
   js/views/*          one module per screen (login.js is the sign-in gate)
-  sw.js               service worker — offline app shell (/admin/ scope)
+  sw.js               service worker — offline app shell (/admin/ scope);
+                      only a navigation falls back to the cached index.html
   manifest.webmanifest PWA manifest for the backoffice
 
 supabase/availability.sql   run once in Supabase SQL editor (public slots)

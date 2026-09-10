@@ -4,6 +4,20 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**10 Sep 2026 — the app can no longer be handed a web page where it asked for a
+script (no new engine; the phones did not change).** So the app can open without
+a connection, it keeps a background copy of itself. Whenever a file failed to
+download, that copy used to answer with the app's own **web page** — even when
+what had failed was a **script** or a **picture**. A browser handed a web page
+where it asked for a script cannot run the script, so whatever that script was
+meant to set up would quietly stop working, with nothing on screen to explain
+why. Now only a real page — opening or refreshing the app — may fall back to the
+stored copy; a script, a stylesheet or an image that fails simply fails, so a
+fault shows itself as a fault instead of hiding behind a page. Opening the app
+offline still works exactly as before. Your website has always run its app from
+`/admin/`, so it never had the leftover copy that caused the visible version of
+this fault elsewhere; the guard is in for good anyway, so it cannot start here.
+
 **10 Sep 2026 — the homepage's contact details now follow your Storefront
 settings (no new engine; the phones did not change).** The WhatsApp number,
 Instagram and Facebook links in your homepage footer were typed into the page
