@@ -370,7 +370,11 @@ test("storefront payload publishes the set's component and its per-product date 
     { id: "prd_1", name: "Focaccia", price: 15, unit: "loaf", active: true, limit: 12 },
     { id: "prd_2", name: "Focaccia Value Pack (4)", price: 54, unit: "set", active: true,
       recipe: [{ productId: "prd_1", qty: 4 }], closeDays: 3, cancelDays: 2,
-      validFrom: "2026-12-01", validTo: "2026-12-24" },
+      validFrom: "2026-12-01", validTo: "2026-12-24",
+      // The calendar's marks, plus one entry the whitelist must not carry: a span
+      // whose ends are not dates at all.
+      sellRules: [{ days: [6, 0], from: "2027-01-01", to: "2027-01-31" },
+        { days: [], from: "nope", to: "also nope" }] },
   ];
   const calls = [];
   globalThis.fetch = async (url, opts) => {
@@ -385,12 +389,34 @@ test("storefront payload publishes the set's component and its per-product date 
     const payload = JSON.parse(JSON.parse(upsert.opts.body)[0].data);
     assert.deepEqual(payload.products.find((p) => p.name === "Focaccia Value Pack (4)"),
       { name: "Focaccia Value Pack (4)", price: 54, unit: "set", component: { name: "Focaccia", qty: 4 },
-        closeDays: 3, cancelDays: 2, validFrom: "2026-12-01", validTo: "2026-12-24" });
+        closeDays: 3, cancelDays: 2, validFrom: "2026-12-01", validTo: "2026-12-24",
+        sellRules: [{ days: [0, 6], from: "2027-01-01", to: "2027-01-31" }] });
     // A product without rules publishes no date keys at all — the storefront's
     // pack default (14) is applied on its side.
     const base = payload.products.find((p) => p.name === "Focaccia");
     assert.ok(!("closeDays" in base) && !("validFrom" in base) && !("validTo" in base)
-      && !("cancelDays" in base), "a blank window publishes no cancelDays key");
+      && !("cancelDays" in base) && !("sellRules" in base), "no marks publishes no sellRules key");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("storefront payload keeps a product's marks to the sane length the shop will read", async () => {
+  const state = makeState();
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
+  state.products = [{ id: "prd_1", name: "Focaccia", price: 15, unit: "loaf", active: true,
+    sellRules: Array.from({ length: 45 }, (_, i) => ({ days: [i % 7], from: "2026-01-01", to: "2026-01-31" })) }];
+  const calls = [];
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ url, opts });
+    if (url.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    return { ok: true, text: async () => "" };
+  };
+  try {
+    await syncStorefront(state);
+    const upsert = calls.find((c) => c.url.includes("/rest/v1/storefront_config"));
+    const payload = JSON.parse(JSON.parse(upsert.opts.body)[0].data);
+    assert.equal(payload.products[0].sellRules.length, 40, "capped, so one product cannot bloat the shop config");
   } finally {
     globalThis.fetch = realFetch;
   }

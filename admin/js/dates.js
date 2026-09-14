@@ -79,8 +79,8 @@ export function longDate(dateStr) {
   return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-// Compact "Wed, 9 Sep" — same style as the storefront's date pills, so the two
-// pages show dates the same way.
+// Compact "Wed, 9 Sep" — same style as the storefront's chosen delivery day, so
+// the two pages show dates the same way.
 export function shortDate(dateStr) {
   const d = new Date(`${dateStr}T00:00:00`);
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",

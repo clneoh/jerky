@@ -31,7 +31,8 @@ globalThis.window = { open() {} };
 
 // Freeze "now" so the storefront's upcoming-dates + cutoff logic is
 // deterministic: Tue 1 Sep 2026, 10:00 AM — before Wednesday's 6pm cutoff, so
-// all three delivery days (Wed/Fri/Mon) render as pills.
+// all three delivery days (Wed 2, Fri 4, Mon 7 Sep) render as marked cells on
+// the September calendar.
 const RealDate = globalThis.Date;
 class MockDate extends RealDate {
   constructor(...args) {
@@ -78,7 +79,7 @@ globalThis.fetch = async (url) => ({
   json: async () => (String(url).includes("product_availability") ? prodRows : agg),
 });
 
-const { pillSpecs, fmtDay, resolveDates, dateKey: appDateKey } = await import("../store/app.js");
+const { daySpecs, fmtDay, resolveDates, dateKey: appDateKey } = await import("../store/app.js");
 
 test("resolveDates uses the published dates, including one outside the weekday pattern", () => {
   const today = new Date();
@@ -90,7 +91,7 @@ test("resolveDates uses the published dates, including one outside the weekday p
   const rows = gen.concat([thu]).map((d) => ({ date: dateKey(d), slots_left: 5 }));
   const out = resolveDates(gen, rows, dateKey(today));
   assert.equal(out.length, 4);
-  assert.ok(out.some((d) => appDateKey(d) === thuKey), "the added Thursday shows up as a pill date");
+  assert.ok(out.some((d) => appDateKey(d) === thuKey), "the added Thursday shows up as a markable day");
   const keys = out.map(appDateKey);
   assert.deepEqual(keys, [...keys].sort(), "published dates stay sorted ascending");
 });
@@ -103,43 +104,70 @@ test("resolveDates falls back to the generated list when nothing is published", 
   assert.deepEqual(resolveDates(gen, [{ date: "2020-01-01", slots_left: 0 }], today), gen);
 });
 
-test("pillSpecs flags sold-out days and leaves open days plain", () => {
-  const specs = pillSpecs(dates, Object.fromEntries(agg.map((r) => [r.date, r.slots_left])));
-  assert.equal(specs[0].soldOut, true);
-  assert.equal(specs[0].avail, "Sold out");
-  assert.equal(specs[0].label, `${fmtDay(dates[0])} Sold out`);
-  assert.equal(specs[1].soldOut, false);
-  assert.equal(specs[1].label, fmtDay(dates[1]));
-  assert.equal(specs[2].soldOut, false);
-  assert.equal(specs[2].label, fmtDay(dates[2]));
+test("daySpecs flags sold-out days and leaves open days plain", () => {
+  const specs = daySpecs(dates, Object.fromEntries(agg.map((r) => [r.date, r.slots_left])));
+  assert.deepEqual(specs.map((s) => s.soldOut), [true, false, false]);
+  assert.deepEqual(specs.map((s) => appDateKey(s.date)), dates.map(appDateKey));
 });
 
-test("live availability renders: sold-out pill greyed, first open selected, per-product stamps", async () => {
-  // Let the availability fetches' promise chains settle so pills + menu re-render.
+// The calendar as rendered, pulled apart for the two tests below. `cells` drops
+// the seven weekday headings, so it starts at the padding before the 1st.
+function calendar() {
+  const cal = registry["dates"].children[0];
+  const grid = cal.children.find((c) => c.className === "cal-grid");
+  return {
+    cal,
+    head: cal.children.find((c) => c.className === "cal-head"),
+    cells: grid.children.filter((c) => !c.className.includes("cal-dow")),
+    chosen: cal.children.find((c) => c.className === "cal-chosen"),
+    notes: cal.children.filter((c) => c.className === "cal-note"),
+  };
+}
+
+// The cell holding day N of the September 2026 grid — the 1st is a Tuesday, so
+// two null padding cells sit in front of it.
+function cell(day) {
+  const c = calendar().cells[2 + (day - 1)];
+  assert.ok(c, `the grid holds a cell for ${day} Sep`);
+  return c;
+}
+
+test("live availability renders: full day struck out, first open day chosen, per-product stamps", async () => {
+  // Let the availability fetches' promise chains settle so the calendar + menu re-render.
   await new Promise((r) => setTimeout(r, 0));
   await new Promise((r) => setTimeout(r, 0));
 
-  const pills = registry["dates"].children;
-  assert.equal(pills.length, 3);
+  const c = calendar();
+  assert.equal(c.head.children.length, 3, "an arrow, the month title, an arrow");
+  assert.equal(c.head.children[1].children[0].text, "September 2026");
+  assert.equal(c.cells.length, 35, "September 2026 pads out to five whole weeks");
+  assert.ok(c.cells[0].className.includes("blank") && c.cells[1].className.includes("blank"),
+    "the grid opens with the two days before the 1st left empty");
+  assert.equal(c.cells[2].children[0].children[0].text, "1", "…then the 1st sits in the Tuesday column");
 
-  const p0 = pills[0];
-  assert.ok(p0.className.includes("soldout"), "sold-out pill is greyed");
-  assert.ok(!p0.className.includes("active"), "sold-out pill is not selected");
-  assert.equal(p0.attrs.disabled, "true", "sold-out pill is disabled");
-  assert.equal(p0.children.length, 2, "sold-out pill = date line + red badge line");
-  assert.equal(p0.children[0].children[0].text, fmtDay(dates[0]), "the date is still readable, never covered");
-  assert.equal(p0.children[1].children[0].text, "Sold out", "clear Sold out badge sits under the date");
+  // Wed 2 Sep is full: not a button, plainly struck through, and not offered.
+  const d2 = cell(2);
+  assert.equal(d2.tagName, "SPAN", "a full day is not tappable");
+  assert.ok(d2.className.includes("full") && !d2.className.includes("avail"));
+  assert.ok(!d2._listeners.click, "and carries no click handler");
+  assert.equal(d2.children[0].children[0].text, "2", "the number is still drawn");
 
-  const p1 = pills[1];
-  assert.ok(p1.className.includes("active"), "first open day is auto-selected");
-  assert.ok(!p1.attrs.disabled, "open pill stays clickable");
-  assert.equal(p1.children.length, 2, "open pill keeps the reserved line so all pills match in height");
-  assert.equal(p1.children[0].children[0].text, fmtDay(dates[1]));
-  assert.equal(p1.children[1].children[0].text, "", "no badge on an open day");
+  // Fri 4 Sep is the first day with room, so the customer is given it.
+  const d4 = cell(4);
+  assert.equal(d4.tagName, "BUTTON", "an open delivery day is tappable");
+  assert.ok(d4.className.includes("avail") && d4.className.includes("sel"));
+  assert.equal(d4.children[0].children[0].text, "4");
 
-  const p2 = pills[2];
-  assert.ok(!p2.className.includes("soldout") && !p2.className.includes("active"));
-  assert.equal(p2.children[0].children[0].text, fmtDay(dates[2]));
+  // Mon 7 Sep is open too, but not the chosen one.
+  const d7 = cell(7);
+  assert.equal(d7.tagName, "BUTTON");
+  assert.ok(d7.className.includes("avail") && !d7.className.includes("sel"));
+
+  // One line under the grid names the day they are getting, and one names the
+  // full day in this month rather than leaving them to spot the strikethrough.
+  assert.equal(c.chosen.children[0].text, `Your posting day: ${fmtDay(dates[1])}`);
+  assert.equal(c.notes.length, 1);
+  assert.equal(c.notes[0].children[0].text, "Sold out: 2 Sep");
 
   // Menu reflects the selected day (dates[1]): Chicken Jerky 2 left, Duck Jerky sold out.
   const cards = registry["menu"].children;
@@ -156,7 +184,7 @@ test("live availability renders: sold-out pill greyed, first open selected, per-
   assert.equal(sStamp.children[0].text, "Sold out");
   assert.equal(s.children[1].children[2].disabled, true, "sold-out product's + button is disabled");
 
-  // Stepper caps at the remaining count: Focaccia has 2 left.
+  // Stepper caps at the remaining count: Chicken Jerky has 2 left.
   const fStep = f.children[1];
   const fQty = fStep.children[1];
   const fDec = fStep.children[0];
@@ -170,9 +198,13 @@ test("live availability renders: sold-out pill greyed, first open selected, per-
   assert.equal(fQty.textContent, "1", "− still works");
 });
 
-test("selecting another open day swaps the product stamps", async () => {
-  const p2 = registry["dates"].children[2];
-  p2._listeners.click[0]({ currentTarget: p2 });
+test("tapping another open day moves the marker and swaps the product stamps", () => {
+  cell(7)._listeners.click[0]();
+
+  const c = calendar();
+  assert.ok(cell(7).className.includes("sel"), "the tapped day is now the chosen one");
+  assert.ok(cell(4).className.includes("avail") && !cell(4).className.includes("sel"), "the previous day is released");
+  assert.equal(c.chosen.children[0].text, `Your posting day: ${fmtDay(dates[2])}`);
 
   const cards = registry["menu"].children;
   assert.equal(cards[0].children[0].children[1].children[0].text, "Only 9 left");

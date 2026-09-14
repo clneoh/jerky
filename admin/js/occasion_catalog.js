@@ -108,3 +108,37 @@ export const OCCASION_CATALOG =
 export function importOccColour(entry) {
   return entry.pub ? "red" : "orange";
 }
+
+const OCC_COLOUR_SET = ["red", "orange", "yellow", "green", "blue", "purple", "pink", "grey"];
+
+// The bakery's own calendar marks to hand to the customer page — the ones behind
+// the tinted days on the shop's delivery calendar, and nothing else.
+//
+// A mark is published ONLY when it is a built-in standard day: its `label|from`
+// must appear in OCCASION_CATALOG. That key is the app's own notion of "this mark
+// is this standard day" — occImportAdd and the import picker's already-set both
+// use it. An imported mark carries no provenance field, so this match is the only
+// signal there is, and it is enough: anything the baker types herself (a birthday,
+// "Kids' exams", a one-off promo) has no catalogue row to match and is dropped
+// here, before it can reach the shop. Marks already past are left out too, exactly
+// as they are never offered for import.
+export function publishOccasions(occasions, todayISO) {
+  const standard = new Set(OCCASION_CATALOG.map((e) => `${e.label}|${e.from}`));
+  const today = String(todayISO || "");
+  const out = [];
+  for (const occ of occasions || []) {
+    if (!occ || !occ.label || !occ.from || !occ.to) continue;
+    if (!standard.has(`${occ.label}|${occ.from}`)) continue;
+    if (occ.to < today) continue;
+    out.push({
+      label: occ.label,
+      from: occ.from,
+      to: occ.to,
+      // Her own colour, so the wash on the shop looks like the same mark in her
+      // app; an unrecognised one falls back to the plain grey wash.
+      colour: OCC_COLOUR_SET.includes(occ.colour) ? occ.colour : "grey",
+    });
+  }
+  return out;
+}
+

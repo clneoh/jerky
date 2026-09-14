@@ -1,6 +1,10 @@
 // pool.js — shared availability pool + per-product delivery-date rules for the
 // customer page. Pure module: no DOM, no network — runs under Node for tests.
 //
+// The rules themselves (a product's SELL DAYS, marked on its own calendar) live in
+// the shared root availability.js, which the backoffice's card reads too — one copy,
+// so the day the baker marks and the day the customer may order can never drift.
+//
 // A value pack (e.g. "Focaccia Family (4 pcs)") draws from the SAME daily pool
 // as its base product (the single Focaccia). The backoffice publishes the pool
 // in two pieces: an availability row for the base keyed by its own name (the
@@ -8,6 +12,8 @@
 // menu entry. This module turns those into honest caps so one cart can never
 // order more pieces of a base than remain — 3 packs + 3 singles on a 12-piece
 // pool is clamped, never sent.
+
+import { sellReason } from "../availability.js";
 
 const DAY_MS = 86400000;
 
@@ -17,10 +23,6 @@ export function addDaysKey(key, days) {
   const [y, m, d] = String(key || "").split("-").map(Number);
   if (!y || !m || !d) return "";
   return new Date(Date.UTC(y, m - 1, d) + days * DAY_MS).toISOString().slice(0, 10);
-}
-
-function isDayKey(k) {
-  return typeof k === "string" && /^\d{4}-\d{2}-\d{2}$/.test(k);
 }
 
 // How many days before delivery a product's orders close. Entirely the
@@ -61,25 +63,29 @@ export function strictestCancelDays(products) {
 }
 
 // Why this product can't be ordered for this delivery date — null when it is
-// open. The rules are optional and per product: a fixed from–to window of
-// delivery dates, and/or orders closing N days before delivery. Blank products
-// (value packs included) are open on any date. Unknown dates never lock a
-// product.
+// open. Two independent rules, both optional and per product: the days the baker
+// MARKED as sell days (availability.js), and orders closing N days before
+// delivery. A product with no marks at all is open on any date, so nothing that
+// existed before the marking card changes. Unknown dates never lock a product.
 //
 // The RULE comes back as data, never as a sentence: the customer page writes it
 // in the visitor's language, and formats the date itself — an English weekday
 // baked in here would leak into the Chinese and Malay pages.
 //
-//   { kind: "from",  date: "YYYY-MM-DD" }  earlier than the window opens
-//   { kind: "to",    date: "YYYY-MM-DD" }  later than the window closes
-//   { kind: "close", days: N }             inside the window, but too near
+//   { kind: "days", days: [..] }           inside a marked span, not a marked weekday
+//   { kind: "from",  date: "YYYY-MM-DD" }  earlier than every mark starts
+//   { kind: "to",    date: "YYYY-MM-DD" }  later than every mark ends
+//   { kind: "unmarked" }                   in the gap between two marks
+//   { kind: "close", days: N }             a sell day, but too near to order
+//
+// The marked-day rules are asked FIRST: a date the baker never marked as a sell
+// day is closed whatever its lead time, and "not sold that day" is the truer
+// answer than "order earlier".
 export function closedReason(product, dateKey, todayKey) {
   if (!dateKey || !todayKey) return null;
   const p = product || {};
-  const from = isDayKey(p.validFrom) ? p.validFrom : "";
-  const to = isDayKey(p.validTo) ? p.validTo : "";
-  if (from && dateKey < from) return { kind: "from", date: from };
-  if (to && dateKey > to) return { kind: "to", date: to };
+  const marked = sellReason(p, dateKey);
+  if (marked) return marked;
   const close = closeDaysFor(p);
   if (close > 0 && dateKey < addDaysKey(todayKey, close)) return { kind: "close", days: close };
   return null;

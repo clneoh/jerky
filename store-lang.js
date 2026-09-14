@@ -44,6 +44,9 @@ const en = {
   onlyLeft: "Only %1 left",
   noDates: "No upcoming posting days right now — check back soon.",
   noOpenDates: "All upcoming posting days are full right now — check back soon.",
+  calChosen: "Your posting day: %1",
+  calPrev: "Previous month",
+  calNext: "Next month",
 
   // Why a product reads "Sold out" on a date it can't be ordered for, and the
   // notes above the menu when a refresh changes the basket. The rule comes from
@@ -54,7 +57,15 @@ const en = {
   closedTo: "Only available for posting up to %1",
   closedClose: "Orders close %1 days before the posting day",
   closedCloseAdvice: " — pick a later date",
+  // The owner's marked sell days, when the chosen posting day is not one of
+  // them. %1 is a weekday list the page joins in this language ("Mon, Wed and
+  // Fri"), so the names are built by the page, not here.
+  closedWeekday: "Only sold on %1",
+  closedUnmarked: "Not sold on this day",
   sentenceEnd: ".",
+  // Shown where the menu would be when every product is marked off today's
+  // posting day — an empty space reads like a broken page.
+  noMenuToday: "Nothing is on the menu for this day. Please pick another posting day.",
   fixSoldOut: "%1 just sold out — removed from your order.",
   fixPoolClamp: "%1: only %2 can fit with the rest of your order now — we changed your %3 to %2.",
   fixClamp: "%1: only %2 left now — we changed your %3 to %2.",
@@ -144,12 +155,18 @@ const zh = {
   onlyLeft: "仅剩 %1 份",
   noDates: "目前没有可预订的发货日 — 请稍后再来。",
   noOpenDates: "近期发货日均已满 — 请稍后再来。",
+  calChosen: "你的发货日：%1",
+  calPrev: "上个月",
+  calNext: "下个月",
 
   closedFrom: "只接受 %1 起的发货日订单",
   closedTo: "只接受 %1 或之前的发货日订单",
   closedClose: "需在发货日前 %1 天下单",
   closedCloseAdvice: " — 请另选较后的日期",
+  closedWeekday: "只限 %1 出售",
+  closedUnmarked: "这一天没有出售",
   sentenceEnd: "。",
+  noMenuToday: "这一天没有商品在菜单上，请另选一个发货日。",
   fixSoldOut: "%1 刚刚售完 — 已从你的订单中移除。",
   fixPoolClamp: "%1：现在配合订单其余部分只装得下 %2 份 — 已把你的 %3 改为 %2。",
   fixClamp: "%1：现在只剩 %2 份 — 已把你的 %3 改为 %2。",
@@ -235,12 +252,18 @@ const ms = {
   onlyLeft: "Tinggal %1 sahaja",
   noDates: "Tiada tarikh pos buat masa ini — sila datang lagi nanti.",
   noOpenDates: "Semua hari pos akan datang penuh buat masa ini — sila datang lagi nanti.",
+  calChosen: "Hari pos anda: %1",
+  calPrev: "Bulan sebelumnya",
+  calNext: "Bulan seterusnya",
 
   closedFrom: "Hanya tersedia untuk pos dari %1",
   closedTo: "Hanya tersedia untuk pos sehingga %1",
   closedClose: "Tempahan ditutup %1 hari sebelum hari pos",
   closedCloseAdvice: " — sila pilih tarikh yang lebih lewat",
+  closedWeekday: "Hanya dijual pada %1",
+  closedUnmarked: "Tidak dijual pada hari ini",
   sentenceEnd: ".",
+  noMenuToday: "Tiada apa-apa pada menu untuk hari ini. Sila pilih hari pos yang lain.",
   fixSoldOut: "%1 baru sahaja habis — dikeluarkan dari tempahan anda.",
   fixPoolClamp: "%1: hanya %2 boleh dimuatkan bersama baki tempahan anda — kami telah tukar %3 anda kepada %2.",
   fixClamp: "%1: tinggal %2 sahaja sekarang — kami telah tukar %3 anda kepada %2.",

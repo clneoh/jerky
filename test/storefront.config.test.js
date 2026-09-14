@@ -132,6 +132,23 @@ test("mergeStorefront ignores null and malformed values", () => {
   assert.deepEqual(messy, base, "malformed fields fall back to the local values");
 });
 
+test("mergeStorefront adopts a product's marks, dropping anything malformed", () => {
+  const base = { name: "A", products: [{ name: "X", price: 1, unit: "u" }] };
+  const out = mergeStorefront(base, {
+    products: [
+      { name: "Y", price: 2, unit: "u",
+        sellRules: [{ days: [6, 0], from: "2026-12-01", to: "2026-12-24" },
+          { days: [], from: "nope", to: "nope" }] },
+      { name: "Z", price: 3, unit: "u", sellRules: [] },
+      { name: "W", price: 4, unit: "u", sellRules: "nonsense" },
+    ],
+  });
+  assert.deepEqual(out.products[0].sellRules, [{ days: [0, 6], from: "2026-12-01", to: "2026-12-24" }],
+    "the good mark is adopted; the one whose ends are not dates is dropped");
+  assert.ok(!("sellRules" in out.products[1]), "an empty list publishes no key, which reads as every day");
+  assert.ok(!("sellRules" in out.products[2]), "nonsense is not adopted at all");
+});
+
 test("placeOrder posts the order to incoming_orders", async () => {
   CONFIG.supabase = { url: "https://x.supabase.co", anonKey: "anon" };
   let call = null;

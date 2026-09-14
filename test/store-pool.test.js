@@ -194,6 +194,109 @@ test("close and window combine: inside the window but too near still closes", ()
   assert.equal(closedReason(both, "2026-12-08", today), null);
 });
 
+// ── sellRules — the days the baker marked as sell days ──────────────────────
+// 2026-12-01 is a Tuesday; 5 Dec is a Saturday, 6 Dec a Sunday, 7 Dec a Monday.
+
+test("no marks at all leaves the product open on every date", () => {
+  const today = "2026-09-04";
+  const plain = { name: "Focaccia" };
+  for (const d of ["2026-09-27", "2026-12-01", "2027-06-15"]) {
+    assert.equal(closedReason(plain, d, today), null, `${d} stays open with nothing marked`);
+  }
+  assert.equal(closedReason({ name: "X", sellRules: [] }, "2026-09-27", today), null,
+    "an empty mark list reads as nothing marked");
+});
+
+test("a weekend mark sells Sat and Sun only, and says which weekdays it does sell", () => {
+  const today = "2026-09-04";
+  const weekend = { name: "Weekend loaf", sellRules: [{ days: [6, 0] }] };
+  assert.equal(closedReason(weekend, "2026-12-05", today), null, "Saturday sells");
+  assert.equal(closedReason(weekend, "2026-12-06", today), null, "Sunday sells");
+  assert.deepEqual(closedReason(weekend, "2026-12-07", today), { kind: "days", days: [0, 6] },
+    "a Monday inside no mark names the weekdays that do sell");
+  assert.deepEqual(closedReason(weekend, "2026-12-01", today), { kind: "days", days: [0, 6] },
+    "before any span, the weekday list still applies — the mark never ends");
+});
+
+test("a marked span sells every day in it, and the days outside say why", () => {
+  const today = "2026-12-01";
+  const xmas = { name: "Xmas set", sellRules: [{ days: [], from: "2026-12-10", to: "2026-12-16" }] };
+  assert.equal(closedReason(xmas, "2026-12-10", today), null, "the first day is in");
+  assert.equal(closedReason(xmas, "2026-12-13", today), null, "a Sunday inside the span sells too");
+  assert.equal(closedReason(xmas, "2026-12-16", today), null, "the last day is in");
+  assert.deepEqual(closedReason(xmas, "2026-12-09", today), { kind: "from", date: "2026-12-10" },
+    "the day before names when it opens");
+  assert.deepEqual(closedReason(xmas, "2026-12-17", today), { kind: "to", date: "2026-12-16" },
+    "the day after names when it closed");
+});
+
+test("two marks OR together, and a day in the gap between them is unmarked", () => {
+  const today = "2026-11-01";
+  const two = { name: "Two runs", sellRules: [
+    { days: [], from: "2026-12-01", to: "2026-12-05" },
+    { days: [], from: "2026-12-20", to: "2026-12-24" },
+  ] };
+  assert.equal(closedReason(two, "2026-12-01", today), null, "the first run sells");
+  assert.equal(closedReason(two, "2026-12-22", today), null, "the second run sells");
+  assert.deepEqual(closedReason(two, "2026-12-12", today), { kind: "unmarked" },
+    "the gap between the two runs is not sold");
+});
+
+test("a weekday inside a span sells on that weekday only, and is open-ended either way", () => {
+  const today = "2026-11-01";
+  const weekendsInDec = { name: "Dec weekends", sellRules: [{ days: [6, 0], from: "2026-12-01", to: "2026-12-31" }] };
+  assert.equal(closedReason(weekendsInDec, "2026-12-05", today), null, "a Saturday in December sells");
+  assert.equal(closedReason(weekendsInDec, "2026-12-26", today), null, "a Saturday later that month sells");
+  assert.deepEqual(closedReason(weekendsInDec, "2026-12-07", today), { kind: "days", days: [0, 6] },
+    "a Monday inside December is closed, and the weekdays that sell are named");
+  assert.deepEqual(closedReason(weekendsInDec, "2027-01-04", today), { kind: "to", date: "2026-12-31" },
+    "past the span, the mark has ended");
+
+  // Open ends: "from here on" and "up to here".
+  const fromHere = { name: "F", sellRules: [{ days: [6], from: "2026-12-05" }] };
+  assert.equal(closedReason(fromHere, "2027-06-05", today), null, "an open end never closes");
+  assert.deepEqual(closedReason(fromHere, "2026-12-04", today), { kind: "from", date: "2026-12-05" });
+  const upToHere = { name: "U", sellRules: [{ days: [6], to: "2026-12-05" }] };
+  assert.deepEqual(closedReason(upToHere, "2026-12-12", today), { kind: "to", date: "2026-12-05" });
+});
+
+test("a marked-off day beats the advance-notice rule — the truer answer comes first", () => {
+  const today = "2026-12-01";
+  // A cake that needs 14 days' notice, sold on Saturdays only. 2026-12-05 is a
+  // Saturday but only 4 days out: it is a sell day, so the notice note is right.
+  // 2026-12-07 is a Monday and too near: "not sold that day" is the truer answer.
+  const cake = { name: "Cake", closeDays: 14, sellRules: [{ days: [6], from: "2026-12-01", to: "2026-12-31" }] };
+  assert.deepEqual(closedReason(cake, "2026-12-05", today), { kind: "close", days: 14 },
+    "a marked sell day that is too near reports the notice, not the weekday");
+  assert.deepEqual(closedReason(cake, "2026-12-07", today), { kind: "days", days: [6] },
+    "a day it is not sold reports that, even though it is also too near");
+});
+
+test("a legacy from–to window and a mark stating the same span never count twice", () => {
+  const today = "2026-11-01";
+  const both = { name: "B", validFrom: "2026-12-01", validTo: "2026-12-24",
+    sellRules: [{ days: [], from: "2026-12-01", to: "2026-12-24" }] };
+  // A save writes both out for one release; the same period must not double up.
+  assert.equal(closedReason(both, "2026-12-10", today), null);
+  assert.deepEqual(closedReason(both, "2026-11-30", today), { kind: "from", date: "2026-12-01" });
+  assert.deepEqual(closedReason(both, "2026-12-25", today), { kind: "to", date: "2026-12-24" });
+});
+
+test("junk marks are dropped rather than locking a product", () => {
+  const today = "2026-09-04";
+  const messy = { name: "M", sellRules: [
+    null, "nonsense", { days: [6] },             // valid: every Saturday, always
+    { days: [9, -1, "x"] },                      // weekday junk with no ends → says nothing
+    { from: "not-a-date", to: "2026-11-30" },    // bad start → an open-start "until 30 Nov"
+  ] };
+  assert.equal(closedReason(messy, "2026-12-05", today), null, "the Saturday mark holds");
+  assert.equal(closedReason(messy, "2026-11-30", today), null, "the surviving end-only mark holds");
+  assert.deepEqual(closedReason(messy, "2026-12-07", today), { kind: "days", days: [6] },
+    "the junk entries added nothing — only the Saturday mark remains on a Monday");
+  assert.equal(closedReason(messy, "2026-11-25", today), null,
+    "a Wednesday inside the end-only mark sells too — that mark covers every day");
+});
+
 test("cancelDaysFor: blank is not stated, 0 is a stated zero, junk is not stated", () => {
   assert.equal(cancelDaysFor({ name: "A" }), null);          // no box at all
   assert.equal(cancelDaysFor({ cancelDays: "" }), null);     // blank

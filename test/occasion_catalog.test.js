@@ -5,11 +5,15 @@
 // the general fun days (pet / baking & sweet / people & kindness), date-sorted.
 // The Malaysian rows must keep their shape: state days are gazetted public
 // holidays that name who observes them.
+//
+// The second half covers publishOccasions — which of the baker's own calendar
+// marks the customer page is allowed to show. The rule there is a privacy one,
+// so it is asserted in its own terms: only a built-in standard day goes out.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { OCCASION_CATALOG, importOccColour } =
+const { OCCASION_CATALOG, importOccColour, publishOccasions } =
   await import("../admin/js/occasion_catalog.js");
 const { OCC_COLOURS } = await import("../admin/js/calendar.js");
 
@@ -96,4 +100,64 @@ test("key dates the baker asked for are present", () => {
   assert.equal(rows.get("Christmas|2027-12-25").pub, true, "Christmas is a public holiday");
   assert.equal(rows.get("Mid-Autumn Festival|2027-09-15").pub, false, "Mid-Autumn is not gazetted");
   assert.equal(rows.get("Year-end school holidays|2026-12-04").to, "2027-01-03");
+});
+
+// ── what the customer page is allowed to see ─────────────────────────────────
+// The shop's delivery calendar shows the standard days the baker has marked, and
+// nothing else. These tests are the guarantee: her own typed marks (a birthday,
+// a promo, a school run) must never leave the app, and an already-passed day is
+// never published however it was created.
+
+const mark = (over = {}) => ({
+  id: "occ1", label: "Malaysia Day", from: "2026-09-16", to: "2026-09-16",
+  colour: "red", ...over,
+});
+
+test("a marked standard day is published with its own colour", () => {
+  const out = publishOccasions([mark()], "2026-09-14");
+  assert.deepEqual(out, [{ label: "Malaysia Day", from: "2026-09-16", to: "2026-09-16", colour: "red" }]);
+});
+
+test("a mark the baker typed herself is never published", () => {
+  const typed = [
+    mark({ id: "occA", label: "Kids' exams", from: "2026-09-21", to: "2026-09-25", colour: "blue" }),
+    mark({ id: "occB", label: "Promo week", from: "2026-10-01", to: "2026-10-07", colour: "pink" }),
+    mark({ id: "occC", label: "Aunty Bee's birthday", from: "2026-11-02", to: "2026-11-02", colour: "yellow" }),
+    mark(), // the one imported standard day, which does go out
+  ];
+  assert.deepEqual(publishOccasions(typed, "2026-09-14").map((o) => o.label), ["Malaysia Day"]);
+});
+
+test("a standard day's name on the wrong date is not published", () => {
+  // She renamed a mark, or moved one by hand: the label alone is not enough.
+  const moved = mark({ from: "2026-09-17", to: "2026-09-17" });
+  assert.deepEqual(publishOccasions([moved], "2026-09-14"), []);
+  const renamed = mark({ label: "Merdeka" });
+  assert.deepEqual(publishOccasions([renamed], "2026-09-14"), []);
+});
+
+test("past marks stay out of the payload, and an odd colour falls back to grey", () => {
+  const past = mark({ from: "2026-09-16", to: "2026-09-16" });
+  assert.deepEqual(publishOccasions([past], "2026-09-17"), [], "a finished day is dropped");
+  const today = publishOccasions([past], "2026-09-16");
+  assert.equal(today.length, 1, "a day still running is kept");
+
+  const odd = publishOccasions([mark({ colour: "chartreuse" })], "2026-09-14");
+  assert.equal(odd[0].colour, "grey", "an unrecognised colour is not passed through");
+  const none = publishOccasions([mark({ colour: undefined })], "2026-09-14");
+  assert.equal(none[0].colour, "grey", "a mark with no colour reads grey, as it does in the app");
+
+  // Malformed rows are skipped rather than published half-formed.
+  assert.deepEqual(publishOccasions([mark({ to: undefined }), null, {}], "2026-09-14"), []);
+  assert.deepEqual(publishOccasions(undefined, "2026-09-14"), [], "no marks, no payload");
+});
+
+test("the imported fun days publish too — they are standard days as well", () => {
+  const cat = OCCASION_CATALOG.find((e) => e.label === "World Animal Day");
+  const out = publishOccasions(
+    [{ id: "occ1", label: cat.label, from: cat.from, to: cat.to, colour: importOccColour(cat) }],
+    "2026-09-14");
+  assert.equal(out.length, 1);
+  assert.equal(out[0].label, "World Animal Day");
+  assert.equal(out[0].colour, "orange", "not a gazetted holiday, so the orange wash");
 });

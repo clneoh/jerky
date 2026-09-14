@@ -132,10 +132,23 @@ function tap(card, which) {
   stepperOf(card).children[which]._listeners.click[0]();
 }
 
+// The September 2026 grid, with the seven weekday headings dropped — so the two
+// padding cells before the 1st (a Tuesday) come first, and day N sits at
+// index 2 + N - 1. Both published dates fall in this month.
+function cells() {
+  return registry["dates"].children[0]
+    .children.find((c) => c.className === "cal-grid").children
+    .filter((c) => !c.className.includes("cal-dow"));
+}
+const cell = (day) => cells()[2 + (day - 1)];
+const markedDays = () => cells()
+  .filter((c) => c.className.includes("avail"))
+  .map((c) => c.children[0].children[0].text);
+
 test("value pack is gated on a near delivery date and freed on a far one", async () => {
-  // Two published dates become the pills; the near day is auto-selected.
-  const pills = registry["dates"].children;
-  assert.equal(pills.length, 2);
+  // Only the two published dates are offered; the near one is chosen for them.
+  assert.deepEqual(markedDays(), ["2", "17"]);
+  assert.ok(cell(2).className.includes("sel"), "the near day is auto-selected");
 
   // Near day: the pack reads Sold out, stepper disabled, with the note under it.
   const nearPack = cardOf("Focaccia Family (4 pcs)");
@@ -150,8 +163,7 @@ test("value pack is gated on a near delivery date and freed on a far one", async
   assert.equal(stampOf(cardOf("Focaccia")), "Only 12 left");
 
   // Pick the far day (+16): the pack is orderable at floor(12 ÷ 4) = 3.
-  const farPill = pills[1];
-  farPill._listeners.click[0]({ currentTarget: farPill });
+  cell(17)._listeners.click[0]();
   const farPack = cardOf("Focaccia Family (4 pcs)");
   assert.equal(stampOf(farPack), "Only 3 left");
   assert.equal(stepperOf(farPack).children[2].disabled, false);
@@ -237,8 +249,7 @@ test("the advance-order note reads in the visitor's own language", async () => {
     removeItem(k) { delete this._v[k]; },
   };
   const app = await import("../store/app.js");
-  const nearPill = registry["dates"].children[0];
-  nearPill._listeners.click[0]({ currentTarget: nearPill }); // back to the gated near day
+  cell(2)._listeners.click[0](); // back to the gated near day
   const note = () => {
     const c = cardOf("Focaccia Family (4 pcs)");
     return c.children[2] && c.children[2].children[0] ? c.children[2].children[0].text : "";

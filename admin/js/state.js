@@ -2,6 +2,8 @@
 // Kept thin and DOM-free (except localStorage) so the data layer can later
 // be swapped for a backend without touching views or BOM logic.
 
+import { normRules } from "../../availability.js";
+
 export const LS_KEY = "bakeadmin.v1";
 
 export function defaultState() {
@@ -460,6 +462,10 @@ function cleanStorefront(sf) {
             const v = p && p[k];
             if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) out[k] = v;
           }
+          // The days the product sells (marked on its own calendar) survive a
+          // stored draft exactly as the publish whitelist keeps them.
+          const marked = normRules(p.sellRules).slice(0, 40);
+          if (marked.length) out.sellRules = marked;
           // The change/cancel window the baker states for this product — shown
           // to the customer, never enforced. Blank stays absent (no window).
           const cancel = Number(p.cancelDays);

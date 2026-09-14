@@ -9,11 +9,12 @@ import { deliveryStatus, longDate, todayISO, weekdayName } from "../dates.js";
 import { effectiveCapacity, totalUnitsOnDate } from "../bom.js";
 import { el, button, emptyState, confirmDialog, showPopup, toast } from "../ui.js";
 import { newId, save } from "../state.js";
-import { maybeSync } from "../supabase.js";
+import { maybeSync, maybeSyncStorefront } from "../supabase.js";
 import {
   DOW, OCC_COLOURS, addMonth, monthLabel, monthWeeks,
-  occColour, occDays, occForDateAll, occRange, occSingleDay, occStrength,
+  occColour, occForDateAll, occRange,
 } from "../calendar.js";
+import { boxClass, nameDay, occBox, occPapers, tipEl } from "../occgrid.js";
 import { OCCASION_CATALOG, importOccColour } from "../occasion_catalog.js";
 
 // Local picker state (survives re-renders while this screen is open): which
@@ -71,6 +72,18 @@ function deleteDate(state, date) {
   }, { danger: true, yesLabel: "Delete" });
 }
 
+// Marking or clearing a holiday changes what the CUSTOMER's calendar draws, so
+// the storefront snapshot goes with it — the same two things a product edit
+// does. Only maybeSync() here would send the shared-data sync and leave the shop
+// wearing an old set of marks until a product or a setting happened to be saved:
+// on 14 Sep 2026 Malaysia Day sat on her calendar and the shop had never been
+// told about it.
+export function saveMarks(state) {
+  save(state);
+  maybeSync(state);
+  maybeSyncStorefront(state);
+}
+
 function addSelected(state) {
   const picks = [...picked].sort();
   if (!picks.length) return toast("Pick a date on the calendar first");
@@ -86,41 +99,6 @@ function addSelected(state) {
   toast(added ? `Added ${added} delivery date${added === 1 ? "" : "s"}`
     : "Those dates were already added");
   renderAll(view(), state);
-}
-
-// Occasion marks stack as same-tall sheets, back to front. The lowest layer is
-// drawn here: a MULTI-day occasion (a school-holiday week) becomes translucent
-// bands — one rounded band per week row it crosses. Longer marks come first so
-// the CSS paints them behind shorter ones. A SINGLE-day occasion is not drawn
-// here: its own day cell draws a solid box on top of these bands (see
-// .cal-cell.sol), and a chosen delivery date draws the small green pill above
-// everything (see .cal-cell.added). Bands only cover today and the future;
-// past days keep their muted look.
-function occOverlays(state, weeks, today) {
-  const papers = [];
-  const marks = (state.occasions || [])
-    .filter((occ) => occ && occ.from && occ.to && occDays(occ) >= 2)
-    .sort((a, b) => occDays(b) - occDays(a)); // long first → painted behind
-  for (const occ of marks) {
-    weeks.forEach((row, r) => {
-      let first = -1, last = -1;
-      row.forEach((d, c) => {
-        if (d && d >= today && occ.from <= d && d <= occ.to) {
-          if (first === -1) first = c;
-          last = c;
-        }
-      });
-      if (first === -1) return;
-      // Grid row 1 is the day-of-week header, so week r sits on grid row r + 2.
-      // Papers are absolutely placed against that area (see .occ-paper), which
-      // lets them overlay the row without disturbing the day cells' layout.
-      papers.push(el("div", {
-        class: `occ-paper occ-${occColour(occ)} occ-${occStrength(occ)}`,
-        style: `--gr:${r + 2};--gc1:${first + 1};--gc2:${last + 2};`,
-      }));
-    });
-  }
-  return papers;
 }
 
 function buildAddCard(state) {
@@ -176,6 +154,12 @@ function buildAddCard(state) {
 }
 
 // ── add-dates grid (mode 1) ───────────────────────────────────────────────
+// Occasion marks stack as same-tall sheets, back to front. occPapers() draws the
+// lowest layer — the translucent bands of every MULTI-day mark, under the day
+// cells; a SINGLE-day mark is the wash box its own cell draws on top (see
+// .cal-cell.sol), and a chosen delivery date the small green pill above
+// everything (see .cal-cell.added). The same two shapes come from the same
+// module on every calendar in the app.
 
 function buildAddGrid(state, weeks) {
   const today = todayISO();
@@ -184,21 +168,12 @@ function buildAddGrid(state, weeks) {
   return el("div", { class: "cal-grid" },
     ...DOW.map((d) => el("span", { class: "cal-dow" }, d)),
     ...cells,
-    ...occOverlays(state, weeks, today));
-}
-
-// The single-day occasion covering `date` (if any). A 1-day mark is the solid
-// second sheet under a chosen delivery date — drawn as a box in this day's own
-// cell. Longer marks are the translucent lowest sheet (the .occ-paper bands),
-// so they are not returned here. Past days never sit above a mark.
-function singleDayMark(state, date, past) {
-  if (past) return null;
-  return occSingleDay(state.occasions, date);
+    ...occPapers(state.occasions, weeks, today));
 }
 
 // The contents of a day that carries a sheet: the small green delivery pill
 // (the highest sheet — date number and tick sit on it), and/or a number sitting
-// on a solid single-day box. Plain days stay a bare number.
+// on a see-through single-day box. Plain days stay a bare number.
 function cellInner(layerOn, added, dayNum) {
   if (!layerOn) return [dayNum];
   const kids = [];
@@ -214,19 +189,31 @@ function dayCell(state, date, today, addedSet) {
   const past = date < today;
   const selected = picked.has(date);
   const isToday = date === today;
-  const sol = singleDayMark(state, date, past);
+  const sol = occBox(state.occasions, date, past);
   let cls = "cal-cell";
   if (added) cls += " added";
   else if (past) cls += " past";
-  if (sol) cls += ` sol occ-${occColour(sol)}`;
+  cls += boxClass(sol);
   if (isToday) cls += " today";
   const inner = cellInner(added || sol, added, dayNum);
+  // Naming a day and ticking it are separate jobs on this grid: a day that is
+  // already a delivery date is unticked from the list below, never by tapping its
+  // square, so its tap is free to be the one that says what the day is. Without
+  // that, a public holiday she also delivers on would be the only marked day here
+  // that could not be read.
+  const tip = tipEl(state.occasions, date, past);
+  if (tip) inner.push(tip);
+  if (added && tip) {
+    return el("button", { class: `${cls} tippable`,
+      onclick: () => { nameDay(state.occasions, date, past); renderAll(view(), state); } }, ...inner);
+  }
   if (added || past) {
     return el("span", { class: cls }, ...inner);
   }
   return el("button", {
     class: `${cls} tappable${selected ? " sel" : ""}`,
     onclick: () => {
+      nameDay(state.occasions, date, past);
       if (selected) picked.delete(date);
       else picked.add(date);
       renderAll(view(), state);
@@ -267,8 +254,7 @@ function deleteOccasion(state, occ) {
     + " Your delivery dates are untouched.",
     () => {
       state.occasions = state.occasions.filter((o) => o.id !== occ.id);
-      save(state);
-      maybeSync(state);
+      saveMarks(state);
       toast("Removed from the calendar");
       resetOcc();
       renderAll(view(), state);
@@ -422,8 +408,7 @@ function occImportAdd(state, picks, close) {
         label: e.label, colour: importOccColour(e),
       });
     }
-    save(state);
-    maybeSync(state);
+    saveMarks(state);
   }
   toast(fresh.length
     ? `Added ${fresh.length} occasion${fresh.length === 1 ? "" : "s"}`
@@ -457,8 +442,7 @@ function addOccasion(state, from, to, label, colour, close) {
     colour: OCC_COLOURS.includes(colour) ? colour : "grey",
   });
   rememberOccName(state, clean);
-  save(state);
-  maybeSync(state);
+  saveMarks(state);
   toast(`Marked "${clean}" on the calendar`);
   close();
   resetOcc();
@@ -492,8 +476,7 @@ function occLabelPicker(state, from, to, occ = null) {
         occ.label = name;
         occ.colour = ui.colour;
         rememberOccName(state, name);
-        save(state);
-        maybeSync(state);
+        saveMarks(state);
         toast(`Updated "${name}"`);
         close();
         renderAll(view(), state);
@@ -582,16 +565,18 @@ function buildOccGrid(state, weeks) {
     const isToday = d === today;
     const added = !past && addedSet.has(d);
     // Same stacking as the add-date grid: a delivery date is the small green
-    // pill on top; a single-day holiday its solid box beneath it.
-    const sol = singleDayMark(state, d, past);
+    // pill on top; a single-day holiday its wash box beneath it.
+    const sol = occBox(state.occasions, d, past);
     let base = `cal-cell${past ? " past" : " occ-cell"}`;
     if (added) base += " added";
-    if (sol) base += ` sol occ-${occColour(sol)}`;
+    base += boxClass(sol);
     if (isToday && !past) base += " today";
     if (past) {
       cells.push(el("span", { class: base }, dayNum));
     } else {
       const inner = cellInner(added || sol, added, dayNum);
+      const tip = tipEl(state.occasions, d, past);
+      if (tip) inner.push(tip);
       const cell = el("button", { class: base, dataset: { date: d } }, ...inner);
       byDate.set(d, cell);
       cells.push(cell);
@@ -601,7 +586,7 @@ function buildOccGrid(state, weeks) {
   const grid = el("div", { class: "cal-grid", style: "touch-action:none" },
     ...DOW.map((d) => el("span", { class: "cal-dow" }, d)),
     ...cells,
-    ...occOverlays(state, weeks, today));
+    ...occPapers(state.occasions, weeks, today));
   attachOccDrag(grid, byDate, state);
   return grid;
 }
@@ -658,9 +643,13 @@ function attachOccDrag(grid, byDate, state) {
       occLabelPicker(state, lo, hi);
       return;
     }
-    // First plain tap: hold it as the range's start day.
+    // First plain tap: hold it as the range's start day. It also names the day
+    // when the day carries a mark — this grid paints its own cells and does not
+    // rebuild itself, so the bubbles are shown from the cells it already holds
+    // rather than by a repaint that would drop the ring just painted.
     occAnchor = g.start;
     paint(g.start, g.start);
+    nameDay(state.occasions, g.start, false, byDate);
   };
   grid.addEventListener("pointerup", finish);
   grid.addEventListener("pointercancel", () => { gesture = null; });

@@ -1,8 +1,376 @@
-# Munchies Furkidz — change history (v54 → v78)
+# Munchies Furkidz — change history (v54 → v88)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**14 Sep 2026 — engine v88 (no database setup needed). The holiday tint sits on
+the dates at Orders, and a mouse resting on a marked day names it.** Two small
+things, both about the Orders screen and the bubble.
+
+**The tint now sits on the line of dates.** On the Orders calendar each posting
+day carries its booking count, and that count sat *under* the date number, which
+pushed the number 5.5px above the middle of its row. The occasion wash is centred
+on the row, so on this one screen the tint sat lower than the numbers it was meant
+to be washing — and the dates themselves did not line up with each other. The count
+now sits at the foot of the day, every date number sits on one line, and the tint
+runs through that line. Nothing else about the calendar moved: the green ring, the
+chosen day's fill, and the counts all read exactly as before.
+
+**On a computer the name comes up on hover.** v87's bubble needed a tap. With a
+mouse, resting the pointer on a marked day now shows its name on its own, exactly
+as the customer's page does. This is deliberately only for a pointer that can
+hover: a phone keeps the tap, so a finger sweeping a run of days across the
+Availability or Delivery Dates calendars never drags a bubble along with it.
+
+**14 Sep 2026 — engine v87 (no database setup needed). Tap a marked day and it
+tells you its name — on every calendar in the app.** v85 drew your marks on all
+five of the app's month calendars, but only as colour: a wash and a band, with
+nothing to say which holiday it was. The customer's own page has answered this
+since its calendar arrived — tap a marked day and a small dark bubble above it
+says the name — so the app now does the same thing, with the same look.
+
+**A tap names the day and still does that day's usual job.** The bubble appears
+above the day ("Malaysia Day") and goes away as soon as you tap anywhere else.
+Nothing else about the tap changed: on the Orders calendar it still opens the day,
+on a product's Availability calendar it still marks or unmarks the sell day, on
+Delivery Dates it still starts the range you are about to mark. A day that sits
+inside two marks takes the name of the shorter one — the same rule the colours
+already follow, so the name and the colour always belong to the same mark. A day
+already gone is never named, because no mark is drawn on a past day either.
+
+**Two kinds of day could not be read at all before, and now can.** On the Orders
+calendar a marked day you do not post for was a quiet number with nothing to tap,
+and on the Delivery Dates calendar a marked day that is *already* one of your
+posting dates could not be tapped either — its tick is removed from the list
+below the calendar, never by tapping its square, so its tap was free. Both now
+say their name when tapped, and nothing else about them moved: a Delivery Dates
+square still never ticks or unticks a date.
+
+**The Order date boxes name their day above the date, not above a day of the
+month.** Those two fields fold their calendar the moment a day is picked, so a
+bubble drawn on the day would vanish with it. The name sits above the date the
+box is showing instead, which also means an order recorded on a public holiday
+says so for as long as that date is on the field.
+
+Nothing was added, moved or removed, and the shop is not touched: this is the
+same bubble the shop's calendar has been showing, arriving on your own calendars.
+
+**14 Sep 2026 — engine v86 (no database setup needed). On the Orders screen your
+marked days now sit on their days, at the same depth as everywhere else.** v85
+put your marks on every calendar in the app. On the Orders screen the wash did
+not line up with the days underneath it. Two things were behind that, and both
+came from the same fact: the days on that one screen are taller than the days
+anywhere else, because a posting day there carries its booking count ("3/12")
+under its number.
+
+**A holiday band was stretched to fill its week row.** Where every day is the
+app's usual height, a band came out the same depth a single-day box is, so the two
+shapes matched — which is how the rest of the app has always drawn them. On the
+Orders screen the rows are taller, so the band there came out deeper than a
+single-day box, and deeper in the weeks that held a posting day than in the weeks
+that did not, so one holiday's own band changed depth from row to row inside the
+same month. **A band is now a sheet of one depth, centred on its row** — the same
+depth a single-day box has, on every calendar, whatever height the days around it
+happen to be.
+
+**A plain day kept the app's usual height inside a taller row**, so it sat at the
+top of the row rather than on its middle. A single-day mark was therefore drawn
+6px higher on a day you do not post for than on a day you do: the same holiday, on
+a different line, decided by whether you post that day. **Every day of the Orders
+month is now drawn at one height**, posting day or not, so a mark sits on the same
+line as the day it covers, beside the booking counts.
+
+One more thing fell out of that. Today's soft glow is drawn around a whole day on
+the app's shorter calendars, and around a taller day it would have become a box
+again — the very thing that glow replaced. **Today on the Orders screen now glows
+around its number**, the same round glow a posting day's number carries, so today
+reads the same whether or not you post that day.
+
+Nothing else changed. The shop's calendar and your Delivery Dates calendar look
+exactly as before (their days are all one height, so they never had this), and no
+mark was added, moved or removed: this is the drawing only.
+
+**14 Sep 2026 — engine v85 (no database setup needed). Your marked days are now
+drawn on every calendar in the app, not just the one you marked them on.** Until
+now a holiday only appeared on the customer's calendar and on the Delivery Dates
+screen you marked it on. Every other calendar in the app drew a plain month: the
+month calendar at the top of the Orders screen, the little **Order date**
+calendars in the new-order form and in the Edit-order pop-up, the posting-day
+picker inside that pop-up, and a product's **Availability** calendar where you
+mark the days it sells. So a holiday you were planning around was invisible on
+every screen you actually plan on.
+
+**Now all of them draw your marks, in the same two shapes and the same colours as
+the Delivery Dates calendar** — a see-through band across a run of days, deeper
+the shorter the run, and a box for a single day. A mark on a day you do not post
+for is drawn too, on a dimmed day, since that is the only way a holiday on a quiet
+day can be seen at all. Nothing about the marks themselves changed: they are still
+only ever something to see, and a mark still never adds or removes a posting day
+or changes what a product sells. Two small pieces of the drawing were tidied while
+moving it: the green tint on a day a product sells is now a see-through wash
+rather than a flat fill, so a holiday band running behind it still shows through
+instead of the mark disappearing on exactly the days you sell (the tint itself
+looks the same as before); and a marked day that happens to be today now keeps the
+soft glow that says "this is today", the way the shop's calendar has always drawn
+it.
+
+**14 Sep 2026 — engine v84 (no database setup needed). A day you marked is now
+the same gentle wash everywhere, whichever calendar you are looking at.** A
+marked day was drawn one of two ways, decided by a single question: is this a day
+you post for? On a day you post for the mark went pale, so the green "you can
+order" ring stayed the first thing the eye read. On a day you do not, the mark was
+drawn at full colour, as a solid block with the number turned white. September's
+Malaysia Day sat on a posting day and read as a quiet tint; October's World Animal
+Day fell past the posting days published so far and read as a loud solid block —
+so the same kind of holiday looked like two different things, and a mark quietly
+changed its own appearance as the posting window moved towards it.
+
+**Now a mark is only ever a see-through wash of its own colour, and its depth
+follows how long the mark runs: a one-day holiday the deepest, a long school break
+the palest.** The customer's calendar and your own Delivery Dates calendar read
+that depth from the same place, so a day wears exactly the same mark on both sides
+of the shop and in every month. Nothing is ever a solid block of colour any more,
+which also means the date number and the green posting pill always read on top of
+a mark, whether or not you post that day. Only the look changed: marking,
+removing, renaming and loading standard occasions all work exactly as before, and
+a mark still never adds or removes a posting day.
+
+**14 Sep 2026 — engine v83 (no database setup needed). Marking a holiday now
+tells the shop straight away.** A day you mark on the Delivery Dates calendar is
+drawn on the customer's own calendar (engine v79 to v81). But saving a mark only
+ever sent your posting days to the cloud — it never sent the customer's page
+anything — so the marks reached the shop only by accident, whenever you next
+happened to save a product or a setting. Mark the holiday, open the shop, and
+nothing had changed. Found while you were looking for a holiday on the shop and
+finding none.
+
+**Now the same save does both.** Marking a day, removing a mark, loading a set
+from the standard list, or renaming or recolouring one all republish the
+customer's page within a couple of seconds, exactly the way editing a product
+does. Nothing else about a mark changed: it is still only ever something to see
+while planning, it still never adds or removes a posting day, and a name you
+typed yourself still never leaves your phone.
+
+**One tap to catch up the marks you already have.** The fix sends the marks from
+now on; the ones already on your calendar have never been sent at all, so open
+More → Settings → Storefront and tap **Publish now** once. After that the shop's
+calendar follows your marks by itself. Nothing to run in Supabase.
+
+**14 Sep 2026 — engine v82 (no database setup needed). A product's selling days
+are now marked on a little calendar inside the product's own screen — weekend,
+certain days, a season, or any mix of them.** Until today a product could say
+only two things about *when*: a notice period, and one from-date and to-date for
+a season. You asked to set it freely instead, so the two date boxes have become a
+card you mark.
+
+**Open a product and tap the Availability card.** It sits under Daily limit and
+stays folded until you tap its title, exactly like the product-text card you
+already know. Folded, its title tells you what is marked — "Every day", or "Sat
+& Sun", or "1-24 Dec 2026" — so the Products screen alone tells you a product's
+selling days without opening anything.
+
+**Inside, it is a month calendar and four gestures.** Tap a weekday letter (M, T,
+W...) and every one of that weekday **in the month shown** is marked: tap S twice
+and the product sells on Saturdays and Sundays. Tap one day to mark just that
+day. Slide your finger across several days and the whole run is marked. Tapping
+or sliding over a day that is already marked takes it back. Everything you mark
+is added together — mark Saturday and Sunday, then a week in the middle, and the
+product sells on all of them.
+
+**Nothing carries over into the next month**, which is the point of it: marks
+belong to the days you marked and no others, so a December-only set stays
+December-only and January starts with nothing marked. Page to another month with
+the arrows and mark that one too if you want to sell then. And a product whose
+card you have never opened sells on every posting day exactly as before, so
+nothing on your live shop moves until you mark it.
+
+**A period that crosses a month or a year is one mark with two ends you can
+stretch.** The card lists your marks under the calendar; tap one and its
+**Starts** and **Ends** dates appear above it, and you can push either end as far
+as you like — a Sat & Sun run from 1 Dec to 4 Jan is one line, not two marks.
+Leave an end empty and the mark simply has no bound on that side ("from here
+on", or "up to here"). Type the two dates the wrong way round and they are put
+in order for you. A small x on a listed mark removes it whole.
+
+**On the order page, a day a product is not sold for is not a note — the product
+is simply not there.** No card, nothing to want and not have. If a customer
+already had it in their basket and then switches to a day it is not sold for, it
+leaves the basket and a short line says why. The one rule that keeps its note is
+the notice period: a product needing 14 days IS sold that day, it only has to be
+ordered earlier, so it stays on the menu reading "Orders close 14 days before the
+posting day — pick a later date" — the two are different questions, and only the
+second one hides anything.
+
+**Two things worth saying plainly.** The old From/To season boxes are gone; a
+product that had them opens with that period already sitting in the card as one
+mark, so nothing you set before is lost. And a product whose selling days have
+all gone by keeps them, on purpose: your own rule is "if I have not indicated a
+selling date, it is not selling", so a mark you leave on says exactly that, and
+the way to put a product back on sale every day is to take its marks off with the
+x. No database setup, and posting days, capacity, value packs, ingredients,
+suppliers and everything else are untouched.
+
+**14 Sep 2026 — engine v81 (no database setup needed). A holiday you marked is
+now drawn on the shop's calendar exactly the way your own calendar draws it: a
+pale band across a run of days, a solid box for a single day.** The marks were
+already reaching the shop; it was only their shape that differed, and a mark
+that looks different on the customer's page than on yours is a mark your
+customer has to learn twice.
+
+**On the shop, a marked day now wears the mark your own calendar gives it.** The
+shop had been drawing each marked day as its own flat pale square, so a holiday
+running over a week read as a row of separate blocks where your own calendar
+shows one continuous shape. Now a holiday running over **several days** is a
+**pale see-through band** across those days — one unbroken rounded band per week
+row it crosses, in its own colour, and **deeper the shorter the run**, so a
+one-day holiday still stands out inside a long school break. A **single-day**
+holiday is a **solid box** in its full colour on its one day, a touch narrower
+than the band so a longer band still peeks out at its sides. The eight colours
+are your own calendar's eight, and the strength steps are the same three, so a
+marked day reads the same to your customer as it does to you.
+
+**The one place it gives way: a day you post for.** Green is the colour the
+posting ring uses, and a solid box would swallow that ring — so on a day you post
+for, the day a customer can actually order, the box goes pale there and the
+**green ring stays the first thing the eye reads**. The mark is still there on
+that day, and the day is still named on a tap. This is the one guard on the
+shop's calendar, and it covers every mark colour rather than green alone, so no
+colour can ever hide the days that can be ordered for.
+
+**Nothing else moves.** Tap a marked day — or, on a computer, rest the mouse
+pointer on it — and the same small bubble names it, e.g. "Malaysia Day"; tapping
+anywhere else puts the bubble away, and still nothing is listed under the grid.
+Today still breathes its soft glow. A run still stops at today rather than
+colouring days already gone, exactly as your own calendar leaves past days
+alone. And your own typed-in days still never reach the shop: only a day that is,
+by name and date, one of the built-in standard days can be published, exactly as
+before. No SQL, no schema change. The calendar the shop draws with is still a
+copy of your app's own, and a test now pins the two copies' mark rules together
+as well as their month grids, so a day can never again look like one thing here
+and something else there.
+
+**14 Sep 2026 — engine v80 (no database setup needed). Today glows instead of
+wearing a box, a holiday you marked is a soft tint you can tap to name, and the
+Orders screen's sideways date strip becomes the same month calendar the shop
+shows.** Three small things, all pulling the same way: a calendar should read the
+same on both sides of the shop, and nothing drawn on it should look like
+something it is not.
+
+**On the shop, today no longer wears a little red rectangle.** It always meant
+to be a ring around the date, but on a day you do not post for the app had no
+circle to draw that ring on, so it traced the day's number as a box instead —
+which is why it looked like a red square on the quiet days and only looked
+right on the days you post for. Today is now a **gentle glow** that breathes
+around the number, with no box at all, and it sits happily on a day you post
+for too: the **green ring** says you can order for this day, the soft brown
+glow says it is today. Under **prefers-reduced-motion** (a phone set to calm
+its animations) the glow holds steady instead of pulsing, so it is still there
+to find. The same fix reaches the app: the today marker on the Delivery Dates
+calendar, and inside every date picker, was a hard outline and is now the same
+soft glow.
+
+**A holiday you marked is now a soft wash, and its name comes out on a tap.**
+The shop's calendar used to mark a standard day with a small coloured dot and
+then list the month's names in a "Holidays" line under the grid — which crowded
+the very line that line was there to keep clear, and made a holiday compete
+with the days a customer can actually order for. A marked day now wears a
+**pale wash** of its own colour over the whole day. The wash is deliberately
+neither a ring nor a filled dot, because a ring is what "you can order for this
+day" looks like, and the two must never be read for each other. Tap a tinted
+day — or, on a computer, rest the mouse pointer on it — and a small dark
+**bubble** above it names the day, e.g. "Malaysia Day". Tapping anywhere else
+puts the bubble away. The "Holidays" line under the grid is gone. Your own
+typed-in days still never reach the shop: only a day that is, by name and date,
+one of the built-in standard days can be published, exactly as before.
+
+In the app the same holiday is named **beside the day** instead of in a list:
+open a posting day and, if it carries a mark, its name sits under the date in
+the mark's own colour. Nothing at all is drawn on a day you have not marked.
+
+**The Orders screen's date strip is now a month calendar.** The row of date
+chips at the top of Orders grew a little longer every week. It is now the same
+**month calendar** the customer sees — one month at a time, with left and right
+arrow buttons either side of the month's name. The days you post for are
+ringed in **green**, and under each one is **how booked it is**: the same
+"3/12" the Home dials show, or **FULL** when the day has no room left. A day
+whose orders have already closed shows its count in **red**; a day already gone
+is dimmed but still opens, because you backfill and look back at old days.
+Every other day of the month is plain and cannot be tapped. Tap a green day and
+the app's view moves to it — that day is filled in on the calendar and its
+orders appear below — and tapping a day in the list below moves the calendar
+with it, so the two always agree. The arrows reach only the months your
+posting days fall in, so paging never strands you on an empty month.
+
+**The ＋ New order card arrives folded, and leads with the calendar.** It used
+to sit open on every posting day, which is not what that screen is for day to
+day. It now starts **shut**, showing just its title, "＋ New order" — tap the
+title to open it, and tap the title again (or tap anywhere else on the screen)
+to fold it away. Opened, it reads in the order you think in: **the month
+calendar first**, the same one the shop shows, already sitting on the day you
+are looking at, so tapping another green day moves the whole screen before you
+have typed anything; **then the customer's details** — name, WhatsApp number,
+post or collect, a note; **then the items**, with "＋ Add another item"
+and "＋ Add order" at the end. It stays open after you add an order, so you can
+type the next one straight away, and coming back to the screen later starts it
+folded again.
+
+**The Edit pop-up now reads the same way.** Its **Delivery day** control was a
+button you had to tap to reveal a calendar; the calendar is simply there now,
+already open on the order's current day. The pop-up then reads the day, then
+the customer's details, then the items — the same order as the card. Every day
+still to come is tappable, plus the order's own day even if it has passed, so
+an old order always shows where it is, and the soft notes re-read underneath
+the moment you pick a different day. Moving an order is unchanged in every way
+that matters: still one posting day per order, and capacity, the confirmation
+and the payment reminder, the track page and the WhatsApp messages are all
+exactly as they were. The button-style day picker the app used in these two
+places has been deleted along with its tests, because nothing calls it any
+more.
+
+**14 Sep 2026 — engine v79 (no database setup needed). The customer picks a
+posting day on a calendar, and so do you in the app.** The shop used to show
+its posting days as a row of date chips laid out sideways. Now, under **Pick a
+posting day**, the customer sees a **month calendar** — one month at a time,
+with the arrow buttons either side of the month's name to look ahead or back.
+The days you are taking orders for are picked out in **green**; every other day
+of the month is plain and cannot be tapped. They tap a green day, and the day
+they chose is written out in words just underneath — **"Your posting day: Wed,
+16 Sep"**. That is the one line of text below the calendar, exactly as asked:
+no dates floating outside the grid, and still **one posting day per order**.
+The first open day is already chosen for them when the page opens, so ordering
+can never be blocked by forgetting to tap. Nothing else about taking orders
+changed: a day you have cut off is still not shown at all, and a day that is
+full still greys out with a red **Sold out** badge and cannot be tapped.
+
+**Only the standard days you have marked reach the customer.** If you have
+loaded days from the built-in list onto your own Delivery Dates calendar, those
+days now wear a small coloured dot on the customer's calendar, and a short
+**Holidays** line under the grid names the month's ones (e.g. "16 Sep ·
+Malaysia Day"). They follow the colour you gave them. A day **you typed
+yourself** — a birthday, a promo, a school break — never appears: only a day
+that is, by name and date, one of the built-in standard days can be published,
+so your own notes stay private to your phone. Mark nothing in the app and the
+shop's calendar simply carries no dots and no caption.
+
+**In the app, the same little calendar now stands wherever you name a date.**
+Three places changed. In the **Edit** pop-up, **Delivery day** is no longer a
+drop-down list: it names the order's current day, and tapping it opens a small
+month calendar beneath it — every day still to come is tappable, plus the
+order's own day even if it has passed, so an old order always shows where it
+is. The **Order date** box in that pop-up is a calendar too, with a **Today**
+shortcut for an order you are typing in right now. And the **＋ New order**
+card has gained a **Delivery day** picker at its top: tap another green day and
+the whole screen moves to that day, so the product list you are choosing from
+is always the one that is actually sellable for the day you picked. The soft
+notes that help you decide — the change/cancel window, a warning, a closed day,
+too little left — all still sit under the calendar, and none of them stop you.
+
+The calendar expands in place under the button rather than opening in its own
+window, because the app's pop-ups share one layer and a calendar opened inside
+one would wipe out the Edit pop-up it was opened from; expanding in place also
+reads better on a phone. No database setup needed — nothing about how orders
+are stored, counted, bought for or messaged changed.
 
 **14 Sep 2026 — tapping a New Orders row now takes you all the way to the order
 (no new engine; the phones did not change).** Tapping a row in the **New Orders**

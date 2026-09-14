@@ -359,10 +359,13 @@ textarea.input { min-height: 64px; resize: vertical; }
 }
 textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12px; }
 
-/* ---------- The product screen's translated lines ---------- */
-/* The card is shut until its title is tapped and shuts again on a tap outside;
-   the title IS the header, so it is a button with nothing of .btn about it. */
-.trans-head {
+/* ---------- Folded cards ---------- */
+/* The product screen's translated lines, and the Orders screen's ＋ New order
+   card: each is shut until its own title is tapped and shuts again on a tap
+   outside. The title IS the header, so it is a button with nothing of .btn about
+   it. One pair of rules serves both so the two never drift apart. */
+.trans-head,
+.fold-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -380,8 +383,13 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.trans-caret { color: var(--muted); font-size: 13px; }
-.trans-body[hidden] { display: none; }
+/* The New-order title sits above a body rather than inside its own card, so it
+   needs the gap the translated-lines title gets from its surrounding layout. */
+.fold-head { margin-bottom: 10px; }
+.trans-caret,
+.fold-caret { color: var(--muted); font-size: 13px; }
+.trans-body[hidden],
+.fold-body[hidden] { display: none; }
 
 /* One translated line: the field, with a ↻ that translates it again sitting
    where the suggestion arrow sits while the field is empty. The two never
@@ -668,30 +676,6 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
   color: var(--muted);
 }
 .avail-line.warn { color: var(--red); }
-
-/* ---------- Tabs strip (dates) ---------- */
-.date-tabs {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 4px 2px 10px;
-  -webkit-overflow-scrolling: touch;
-}
-.date-tab {
-  flex: 0 0 auto;
-  padding: 8px 13px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-  text-decoration: none;
-  white-space: nowrap;
-}
-.date-tab.active { background: var(--brown); color: #fff; border-color: var(--brown); }
-.date-tab .dot { color: var(--green); }
-.date-tab .dot.closed { color: var(--red); }
 
 /* ---------- PO table ---------- */
 .po-table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -1414,16 +1398,144 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
 .cal-cell.tappable:active { background: var(--gray-bg); }
 .cal-cell.sel { background: var(--brown); color: #fff; font-weight: 700; }
 .cal-cell.past { color: var(--muted); opacity: .5; }
-.cal-cell.today:not(.added):not(.sel):not(.sol) { box-shadow: inset 0 0 0 1.5px var(--brown); }
+/* Today is not a box. A hard 1.5px outline read as a second, smaller square inside
+   the cell, so today breathes instead — a soft halo in the brand colour. A day
+   with its own fill (a delivery pill, a chosen day) keeps that fill instead; an
+   occasion mark does NOT take the halo away, since a mark is a see-through wash
+   now and today must stay findable under it — the shop rings today through a mark
+   the same way. */
+.cal-cell.today:not(.added):not(.sel):not(.stacked) {
+  animation: day-glow 2.6s ease-in-out infinite;
+  color: var(--brown);
+  font-weight: 700;
+}
+@keyframes day-glow {
+  0%, 100% { box-shadow: 0 0 5px 1px rgba(196, 85, 47, .28); }
+  50% { box-shadow: 0 0 11px 4px rgba(196, 85, 47, .45); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cal-cell.today:not(.added):not(.sel):not(.stacked) {
+    animation: none;
+    box-shadow: 0 0 8px 3px rgba(196, 85, 47, .38);
+  }
+}
 .cal-cell.blank { visibility: hidden; }
 
-/* Occasion marks — reminder periods painted on the delivery calendar. Purely
-   visual: an occasion never adds or blocks a delivery date. Everything reads
-   as same-tall "sheets" stacked back to front:
+/* The Orders screen's delivery calendar (js/views/orders.js): one month at a time,
+   the days you deliver wearing the same green ring the shop rings a day with, and
+   each day's booking written under its number. Green says "you deliver that day";
+   the brown fill says "this is the day currently on screen", exactly as .sel means
+   everywhere else in the app. */
+.cal-wrap {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 8px 8px 6px;
+  margin: 0 0 10px;
+}
+.cal-cell.off { color: var(--muted); opacity: .6; }
+/* Every day here is one height. A delivery day is taller because its booking count
+   sits under the number, and a plain day left at the app's usual 34px held its
+   number — and any mark washed behind it — 6px higher than the delivery days beside
+   it in the very same row, so a single-day holiday was drawn on a different line
+   depending on whether she delivers that day. */
+.cal-wrap .cal-cell { height: auto; min-height: 52px; }
+/* The booking count is taken OUT of the flow and pinned to the foot of the cell, so
+   the number stays centred like every other calendar's day. Stacked under the number
+   instead, it pushed the number 5.5px above the row's centre — and the occasion wash
+   is centred on the row, so on this one screen the tint sat below the day numbers it
+   was meant to be washing. */
+.cal-cell.stacked {
+  height: auto;
+  min-height: 52px;
+  border-radius: var(--radius-sm);
+}
+.cal-cell.stacked .cal-count {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 2px;
+  text-align: center;
+}
+.cal-cell.deliv .cal-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--green);
+  color: var(--green);
+  font-weight: 700;
+}
+.cal-cell.deliv.sel .cal-num { box-shadow: none; color: #fff; }
+/* A day here is a row tall, so a halo around the cell itself would be a box again
+   — and a bigger one than on the app's shorter calendars. Today's number glows
+   instead, in the same round 26px the delivery days use, so today looks the same
+   whether or not she delivers that day. Drawn on a pseudo-element, because an
+   animated box-shadow beats a normal one and would erase the green ring on a day
+   that is both today and a delivery day. */
+/* :not(.stacked) keeps this above the rule below that haloes a whole cell, and
+   above its reduced-motion twin — the two are equally specific to the plain cell. */
+.cal-wrap .cal-cell.today:not(.sel):not(.stacked) { animation: none; box-shadow: none; }
+.cal-wrap .cal-cell.today:not(.sel) .cal-num {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+}
+.cal-wrap .cal-cell.today:not(.sel) .cal-num::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: day-glow 2.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cal-wrap .cal-cell.today:not(.sel) .cal-num::before {
+    animation: none;
+    box-shadow: 0 0 8px 3px rgba(196, 85, 47, .38);
+  }
+}
+.cal-cell.sel .cal-count { color: rgba(255, 255, 255, .85); }
+.cal-cell.full .cal-count,
+.cal-cell.closed .cal-count { color: var(--red); }
+.cal-count { font-size: 10px; font-weight: 700; line-height: 1; color: var(--muted); }
+
+/* Inline date picker (js/datepicker.js): a button naming the chosen date with
+   the month grid expanding right under it. Deliberately in place, not in a
+   pop-up — showPopup() owns one shared #popup-layer, so a calendar opened in a
+   pop-up would wipe the Edit-order pop-up it was opened from. The grid reuses
+   the .cal-* rules above, so a day looks the same here as on Delivery Dates. */
+.datepick-btn { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* The date field names a marked day too, and its bubble hangs off the DATE rather
+   than off a grid cell: the field is rebuilt every time a day is picked (a
+   product's Starts/Ends boxes are), so a bubble built into the grid would be
+   thrown away by the very tap that asked for it. */
+.datepick-val { position: relative; font-weight: 600; }
+.datepick-ico { font-size: 14px; opacity: .7; }
+.datepick-panel {
+  margin-top: 8px;
+  padding: 8px 8px 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.datepick-foot { display: flex; justify-content: flex-end; margin-top: 6px; }
+
+/* Occasion marks — reminder periods painted on every month calendar in the app
+   (Delivery Dates, the Orders screen, a product's Availability card and the free
+   date fields all read them from occgrid.js). Purely visual: an occasion never
+   adds or blocks a delivery date. Everything reads as same-tall "sheets" stacked
+   back to front:
      • a holiday spanning MORE days sits LOWEST — a translucent band over its
        days (the longer it runs, the paler it is);
      • a holiday spanning FEWER days (a single-day public holiday) sits ABOVE
-       it as a SOLID box in its strong colour;
+       it as a see-through box of the same depth;
      • a date chosen as a delivery day sits HIGHEST — a smaller, solid
        light-green pill carrying the date number and its tick.
    Longer marks are laid first so shorter ones paint on top of them. */
@@ -1431,10 +1543,10 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
 .cal-modes .btn { flex: 1; font-size: 13px; padding: 9px 0; }
 .btn.cal-mode-on { background: var(--brown); border-color: var(--brown); color: #fff; box-shadow: none; }
 
-/* The eight mark colours. --occ-solid is the strong colour used for a mark's
-   solid box, tag and swatch; the translucent band wash is mixed from it at low
-   alpha, so no per-colour tints are needed. --occ-ink overrides the white text
-   a colour is too light to carry (only yellow). */
+/* The eight mark colours. --occ-solid is a mark's own colour, used solid for its
+   tag and swatch; the band and the single-day box are it mixed down at low alpha
+   (--occ-wash), so no per-colour tints are needed. --occ-ink overrides the white
+   text a colour is too light to carry (only yellow). */
 .occ-red    { --occ-solid: #c04538; }
 .occ-orange { --occ-solid: #d1641a; }
 .occ-yellow { --occ-solid: #e0a80c; --occ-ink: #5c4a00; }
@@ -1449,28 +1561,75 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
    child: grid-column/grid-row (set in JS) pick its week-row area — without
    disturbing the auto-placed day cells — and it sits UNDER the day cells
    (z-index 0 vs the cells' 1), with pointer-events off so taps and drags pass
-   through to the dates. The 2px top/bottom margin makes it the same height as
-   the sheets that can sit on top of it. */
+   through to the dates. It is centred in its row and 30px deep, the same as a
+   single-day box, so a sheet sitting on top of it is the same height as it; the
+   1px side inset leaves the band showing around that sheet's edges. */
 .occ-paper {
   position: absolute;
   grid-area: var(--gr) / var(--gc1) / var(--gr) / var(--gc2);
-  inset: 2px 1px; /* 2px top/bottom margin = a 30px-tall sheet; 1px side inset so
-                     a sheet sitting on top still shows around its edges */
+  /* One depth for every week, whatever height its row happens to be: a band is the
+     same 30px sheet a single-day box is, centred in the row, 1px off each side so a
+     sheet sitting on top of it still shows around its edges. It used to fill its row
+     instead, which made one holiday's band deeper than another's wherever the rows
+     differ in height — on the Orders calendar, where a delivery day carries its
+     booking count and so is taller than a plain day. */
+  left: 1px;
+  right: 1px;
+  top: 50%;
+  height: 30px;
+  transform: translateY(-50%);
   z-index: 0;
   pointer-events: none;
   border-radius: 9px;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--occ-solid, #8a7a6b) 22%, transparent);
 }
-/* Translucent fills, one per strength: each mark's own solid colour mixed
-   down to a wash, so the stronger the mark (shorter run) the deeper its band. */
-.occ-paper { background: color-mix(in srgb, var(--occ-solid, #8a7a6b) 22%, transparent); }
-.occ-paper.occ-strong { background: color-mix(in srgb, var(--occ-solid, #8a7a6b) 32%, transparent); }
-.occ-paper.occ-mid    { background: color-mix(in srgb, var(--occ-solid, #8a7a6b) 22%, transparent); }
-.occ-paper.occ-soft   { background: color-mix(in srgb, var(--occ-solid, #8a7a6b) 14%, transparent); }
+/* One wash per strength, a mark's own colour mixed down, so the stronger the mark
+   (the shorter the run) the deeper its wash. Both the multi-day band and the
+   single-day box read their depth from here, so the two shapes cannot drift. */
+.occ-strong { --occ-wash: 32%; }
+.occ-mid    { --occ-wash: 22%; }
+.occ-soft   { --occ-wash: 14%; }
+.occ-paper { background: color-mix(in srgb, var(--occ-solid, #8a7a6b) var(--occ-wash, 22%), transparent); }
 
-/* Second sheet: a single-day holiday is a SOLID box in its strong colour, nearly
-   the whole day wide, so a longer band underneath peeks out at the sides. */
+/* Second sheet: a single-day holiday is that same see-through wash, drawn as a
+   box nearly the whole day wide so a longer band underneath still peeks out at
+   its sides. A mark is never a solid block - a solid block would bury the green
+   pill that marks a delivery date, and a holiday has to look the same whether or
+   not it lands on a day you deliver. */
 .cal-cell.sol { font-weight: 700; }
+/* The name of a marked day, on request: a tap says what the day is. The same
+   bubble the customer's shop page shows (v80), so one holiday reads the same on
+   both sides of the sign-in. It sits above the day, outside the flow — it can
+   never shift the grid or cover a number. */
+.cal-tip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% - 5px);
+  transform: translateX(-50%);
+  z-index: 3;
+  pointer-events: none;
+  white-space: nowrap;
+  background: var(--ink);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 4px 8px;
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+/* A day whose only job is to say its name — a holiday that IS one of the days she
+   delivers, so its tap must not untick anything. */
+.cal-cell.tippable { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+/* A mouse resting on a marked day names it too — that is what a tooltip means with a
+   cursor. Scoped to a pointer that can actually hover: a touch screen reports
+   (hover: none), so on a phone the name still takes a tap and a finger sweeping a run
+   across the Availability or Delivery Dates grids never drags a bubble along with it.
+   `display: block` is what beats the browser's own [hidden] rule, exactly as on the
+   customer's page. */
+@media (hover: hover) {
+  .cal-cell:hover .cal-tip { display: block; }
+}
 .cal-cell.sol::before {
   content: "";
   position: absolute;
@@ -1481,9 +1640,8 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
   height: 30px;
   border-radius: 9px;
   transform: translate(-50%, -50%);
-  background: var(--occ-solid, var(--brown));
+  background: color-mix(in srgb, var(--occ-solid, #8a7a6b) var(--occ-wash, 32%), transparent);
 }
-.cal-cell.sol:not(.added) .num { color: var(--occ-ink, #fff); }
 
 /* Top sheet: a chosen delivery date is a smaller, SOLID light-green pill with
    the date number and its tick sitting on it — always the front of the stack,
@@ -1549,6 +1707,89 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
 .occ-row .occ-tag { margin-right: auto; }
 .occ-row-dates { font-size: 12px; color: var(--muted); }
 .occ-row .btn { flex: none; min-height: 34px; padding: 6px 11px; font-size: 12px; }
+
+/* ── Availability — the days a product sells, marked on its own calendar ─────
+   The product form's second folded card. It reuses the .fold-head / .fold-body
+   rules above and the .cal-* grid rules below, so a day looks the same here as
+   it does on Delivery Dates; only what "on" means is new: a green tint over the
+   days that sell, and a green heading for a weekday marked right across the
+   month. A day you do not deliver is dimmed (.cal-cell.off) but stays
+   visible — a mark there is allowed, it just never becomes an order. */
+.avail-head { min-width: 0; }
+.avail-head-end { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.avail-sum {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 42vw;
+}
+.avail-body { margin-top: 2px; }
+
+/* The weekday letters are buttons — tapping one marks every one of it in the
+   month shown. .cal-dow already sets the type; a button needs the reset. */
+.cal-dow.avail-dow {
+  appearance: none;
+  border: none;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: 7px;
+  -webkit-tap-highlight-color: transparent;
+}
+.cal-dow.avail-dow:active { background: var(--gray-bg); }
+/* The whole weekday is marked across this month / only part of it is. */
+.cal-dow.avail-dow-on { background: var(--green-bg); color: var(--green); }
+.cal-dow.avail-dow-part {
+  background: color-mix(in srgb, var(--green-bg) 55%, transparent);
+  color: var(--green);
+}
+
+/* A day this product is sold on. The tint is the whole answer; the inset ring
+   keeps the edge readable on a phone where the wash is faint. The tint is mixed
+   rather than the flat --green-bg it looks like (the two are the same colour over
+   white), so a holiday BAND drawn behind the day still shows through it — with an
+   opaque fill the mark vanished on exactly the days you sell, and a 3-day
+   holiday came out as one odd day. */
+.cal-cell.avail-on {
+  background: color-mix(in srgb, var(--green) 13%, transparent);
+  color: var(--green);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--green) 40%, transparent);
+}
+/* Marked, but you do not deliver that day — shown, kept dim. */
+.cal-cell.avail-on.off { opacity: .55; }
+
+/* The two ends of the mark last touched, and the list of marks. */
+.avail-ends { margin-top: 10px; }
+.avail-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px dashed var(--line);
+}
+.avail-row:last-child { border-bottom: none; }
+.avail-row-sel { background: var(--gray-bg); border-radius: var(--radius-sm); padding-left: 8px; padding-right: 8px; }
+.avail-row-lab {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.avail-row .btn { flex: none; min-height: 34px; padding: 6px 11px; font-size: 12px; }
 
 /* The "Engine vNN" label on More — a small olive pill so the build number reads
    at a glance without shouting. */

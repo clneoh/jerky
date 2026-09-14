@@ -131,61 +131,236 @@ html, body {
 }
 .info-val { font-weight: 600; }
 
-/* ---------- Date pills ---------- */
-.pills {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 2px 2px 8px;
-  -webkit-overflow-scrolling: touch;
+/* ---------- Delivery-day calendar ---------- */
+/* The month grid the customer picks their delivery day from. A day the bakery
+   delivers, with room left, is a green circle (the same green the app's own
+   calendar uses for a delivery date); today breathes a soft halo; a full day is
+   struck through; a standard day the bakery marked carries that mark in the
+   bakery's own calendar's language — a translucent band across a run of days, a
+   solid box for a single one — and its name comes out in a bubble when the day is
+   tapped. */
+.cal {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 10px 10px;
+  box-shadow: var(--shadow);
 }
-.pill {
-  flex: 0 0 auto;
+.cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+.cal-title {
+  font-family: var(--serif);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--ink);
+}
+.cal-nav {
   appearance: none;
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  padding: 8px 16px 9px;
-  border-radius: 16px;
-  cursor: pointer;
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  -webkit-tap-highlight-color: transparent;
-}
-.pill-date {
-  line-height: 1.25;
-  white-space: nowrap;
-}
-/* Always-present second line keeps every pill the same height: open days
-   leave it empty, a full day fills it with a red "Sold out" badge below the
-   date. The date is never covered up. */
-.pill-sub {
-  min-height: 18px;
-  display: inline-flex;
-  align-items: center;
-  font-size: 10px;
-  font-weight: 800;
+  font-size: 17px;
   line-height: 1;
-  letter-spacing: .4px;
-  text-transform: uppercase;
-  color: transparent;
-  padding: 3px 8px;
-  border-radius: 999px;
+  min-width: 36px;
+  padding: 6px 0;
+  border-radius: 9px;
+  cursor: pointer;
 }
-.pill.active { background: var(--brown); color: #fff; border-color: var(--brown); }
-.pill.soldout {
-  background: #e6e0d8;
-  border: 1px dashed #cfc5b8;
+.cal-nav:disabled { opacity: .35; cursor: default; }
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  position: relative; /* anchor for the absolutely-placed occasion bands */
+}
+.cal-dow {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
   color: var(--muted);
-  cursor: default;
+  padding: 2px 0 4px;
 }
-.pill.soldout .pill-date { color: #7a6c5d; }
-.pill.soldout .pill-sub { color: #fff; background: #c0392b; }
+.cal-cell {
+  position: relative;
+  /* Above the occasion bands (see .occ-paper) so the numbers and the delivery ring
+     stay legible on top of a mark. The cell's own background is transparent, so a
+     band behind still shows through around the number. */
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 15px;
+  color: var(--ink);
+  border-radius: 50%;
+  padding: 0;
+  appearance: none;
+}
+.cal-cell.blank { visibility: hidden; }
+.cal-cell.past { color: #b8afa4; }
+.cal-cell.avail { font-weight: 700; }
+.cal-cell.avail.tappable { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cal-cell.avail.tappable:active { background: var(--brown-soft); }
+/* The number always sits on its own 32px circle; on a plain day the circle is
+   invisible. It used to be drawn only for a delivery day, which is why today's
+   ring hugged the bare text and read as a small box. */
+.cal-num {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+}
+/* A day the bakery delivers still has room: a green ring (or a solid green disc
+   once chosen). The ring draws on the number, not the whole cell, so a day the
+   bakery also marked keeps its band or its box around the ring. */
+.cal-cell.avail .cal-num {
+  box-shadow: inset 0 0 0 2px var(--green, #6b8f4e);
+  color: var(--green, #6b8f4e);
+}
+.cal-cell.avail.tappable:active .cal-num { background: var(--brown-soft); }
+.cal-cell.avail.sel .cal-num {
+  background: var(--green, #6b8f4e);
+  color: #fff;
+  box-shadow: none;
+}
+/* Today is not a box — today breathes. The halo lives on a pseudo-element so it
+   can never overwrite the number's own shadow: a box-shadow animation would erase
+   the green ring on a day that is both today and a day the bakery delivers. */
+.cal-cell.today:not(.sel) .cal-num::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: today-glow 2.6s ease-in-out infinite;
+}
+.cal-cell.today:not(.sel):not(.avail) .cal-num { color: var(--brown); font-weight: 700; }
+@keyframes today-glow {
+  0%, 100% { box-shadow: 0 0 5px 2px rgba(196, 85, 47, .16); }
+  50% { box-shadow: 0 0 11px 5px rgba(196, 85, 47, .30); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cal-cell.today:not(.sel) .cal-num::before {
+    animation: none;
+    box-shadow: 0 0 8px 3px rgba(196, 85, 47, .24);
+  }
+}
+/* A delivery day with no room left: struck through and plainly not tappable. */
+.cal-cell.full .cal-num { color: #a99e91; text-decoration: line-through; }
+/* A standard day the bakery marked is drawn exactly as it is in the bakery's own
+   calendar: a see-through wash in the mark's own colour, so the date number and
+   the green ring stay readable on top of it. A mark running over several days is
+   one rounded band across those days; a single-day mark is a box nearly the whole
+   day wide, a touch narrower than a band so a longer band still shows around its
+   edges. Neither is ever a dot, a bar or a ring — a ring or a filled disc is what
+   "a day you can order" looks like, so the mark sits BEHIND the number and the
+   delivery ring always reads first.
+
+   The eight colours are the office's own, so a day looks the same on both sides
+   of the shop. --occ-solid is the mark's own colour; the bands and the box are it
+   mixed down (--occ-wash), so there are no per-colour tints to keep in step. */
+.occ-red    { --occ-solid: #c04538; }
+.occ-orange { --occ-solid: #d1641a; }
+.occ-yellow { --occ-solid: #e0a80c; }
+.occ-green  { --occ-solid: #1f7a47; }
+.occ-blue   { --occ-solid: #2a63a6; }
+.occ-purple { --occ-solid: #73408f; }
+.occ-pink   { --occ-solid: #b23a6e; }
+.occ-grey   { --occ-solid: #6b6f76; }
+
+/* One multi-day mark = one rounded band per week row it crosses, an absolutely-
+   placed grid child: grid-column/grid-row (set in JS) pick its week-row area
+   without disturbing the auto-placed day cells, and it sits UNDER the day cells
+   (z-index 0 against the cells' 1). The 1px side inset keeps neighbouring bands
+   visually continuous while letting a single-day box on top still show around
+   its edges. Bands only ever cover today and the future. */
+.occ-paper {
+  position: absolute;
+  grid-area: var(--gr) / var(--gc1) / var(--gr) / var(--gc2);
+  inset: 2px 1px;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: 9px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--occ-solid, #8a7a6b) 22%, transparent);
+}
+/* One wash per strength: the shorter the run, the deeper the wash, so a short
+   holiday still stands out inside a long school break. The band and the box both
+   read their depth from here, so the two shapes cannot drift apart. */
+.occ-strong { --occ-wash: 32%; }
+.occ-mid    { --occ-wash: 22%; }
+.occ-soft   { --occ-wash: 14%; }
+.occ-paper { background: color-mix(in srgb, var(--occ-solid, #8a7a6b) var(--occ-wash, 22%), transparent); }
+
+/* A single-day mark is that same see-through wash, drawn as a box nearly the whole
+   day wide so a longer band underneath still peeks out at its sides. It is never a
+   solid block, whatever the day holds: a solid block would swallow the green ring,
+   and a holiday must look the same whether or not the bakery delivers that day. */
+.cal-cell.sol { font-weight: 700; }
+.cal-cell.sol::before {
+  content: "";
+  position: absolute;
+  z-index: -1; /* in the cell's own stacking context → above the bands, under the number */
+  left: 50%;
+  top: 50%;
+  width: calc(100% - 8px);
+  height: 30px;
+  border-radius: 9px;
+  transform: translate(-50%, -50%);
+  background: color-mix(in srgb, var(--occ-solid, #8a7a6b) var(--occ-wash, 32%), transparent);
+}
+.cal-cell.tippable { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+/* The marked day's name, only on request: a small bubble above the day. A tap (or a
+   mouse resting on it) shows it; a tap anywhere else puts it away. It is out of flow,
+   so it can never shift the grid. */
+.cal-tip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% - 5px);
+  transform: translateX(-50%);
+  z-index: 3;
+  pointer-events: none;
+  white-space: nowrap;
+  background: var(--ink);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 4px 8px;
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+/* Beats the browser's own [hidden] rule; a mouse is a desktop pointer, and a tap
+   goes through the handler above. */
+.cal-cell:hover .cal-tip { display: block; }
+/* The chosen day in words, and the one short note under the grid. */
+.cal-chosen {
+  margin: 10px 2px 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.cal-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  margin: 4px 2px 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
 
 /* ---------- Menu ---------- */
 .menu-item {

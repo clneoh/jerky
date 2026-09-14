@@ -5,18 +5,34 @@
 // config.js fallback at runtime.
 import { CONFIG } from "./config.js";
 import { poolCaps, poolGroups, clampPool, groupFor, poolPieces, closedReason, cancelDaysFor, strictestCancelDays } from "./pool.js";
+import { monthWeeks, addMonth, occColour, occDays, occStrength, occForDate, occSingleDay } from "./calendar.js";
+import { normRules } from "../availability.js";
 import { isLang, loadLang, pick, rememberLang, nameFor, descFor, unitFor, policyFor, applyTo } from "../i18n.js";
 import { STORE } from "../store-lang.js";
 
 // Day/month short names per site language. English is today's authoring default;
 // fmtDay and the "Posting days" info card read by the visitor's language so a
-// date pill or that row shows in 中文/BM too.
+// calendar cell or that row shows in 中文/BM too.
 const DAYS_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DAYS_ZH = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 const MONTHS_ZH = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"];
 const DAYS_MS = ["Ahad", "Isnin", "Selasa", "Rabu", "Khamis", "Jumaat", "Sabtu"];
 const MONTHS_MS = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"];
+
+// Single-letter column headings for the calendar's top row. Kept separate from
+// DAYS_* because those are three-letter names ("Mon") and the Chinese ones are
+// whole words (周一) that cannot be sliced down to a column heading.
+const DOW_EN = ["S", "M", "T", "W", "T", "F", "S"];
+const DOW_ZH = ["日", "一", "二", "三", "四", "五", "六"];
+const DOW_MS = ["A", "I", "S", "R", "K", "J", "S"];
+
+// Full month names, for the calendar's title line only (MONTHS_* above are the
+// short forms a date reads in). Chinese titles are built from the year instead.
+const FULL_MONTHS_EN = ["January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"];
+const FULL_MONTHS_MS = ["Januari", "Februari", "Mac", "April", "Mei", "Jun",
+  "Julai", "Ogos", "September", "Oktober", "November", "Disember"];
 
 // Every lookup reads the saved choice fresh, so a language switch only has to
 // repaint — no text is cached in a variable. These helpers stay DOM-free, so
@@ -39,18 +55,36 @@ function sub(s) {
   return out;
 }
 
+// "Mon, Wed and Fri" — the visitor's own way of listing things, so a closed
+// product's sentence does not read like a translation.
+function listJoin(items) {
+  if (!items.length) return "";
+  if (items.length === 1) return items[0];
+  const lang = loadLang();
+  if (lang === "zh") return `${items.slice(0, -1).join("、")}和${items[items.length - 1]}`;
+  const and = lang === "ms" ? "dan" : "and";
+  return `${items.slice(0, -1).join(", ")} ${and} ${items[items.length - 1]}`;
+}
+
 // A closedReason() rule as a bare clause, in the visitor's language and with
 // the date written by fmtDay — so a Chinese or Malay visitor never reads an
-// English weekday. Used on the product card and quoted inside the basket notes.
+// English weekday. Used on the product card (the advance-notice note) and quoted
+// inside the basket notes.
 function closedReasonClause(reason) {
   if (!reason) return "";
   if (reason.kind === "close") return sub(t("closedClose"), reason.days);
+  if (reason.kind === "days") {
+    return sub(t("closedWeekday"), listJoin((reason.days || []).map(dayName)));
+  }
+  if (reason.kind === "unmarked") return t("closedUnmarked");
   const day = fmtDay(new Date(`${reason.date}T00:00:00`));
   return sub(t(reason.kind === "from" ? "closedFrom" : "closedTo"), day);
 }
 
 // The card's own sentence: the clause, the advice when the rule has one, then
-// the sentence-ending punctuation that language uses.
+// the sentence-ending punctuation that language uses. Now only the advance-notice
+// rule is ever worded on a card — a product that is not sold on the chosen day is
+// not on the menu at all (see renderMenu).
 function closedReasonText(reason) {
   if (!reason) return "";
   const advice = reason.kind === "close" ? t("closedCloseAdvice") : "";
@@ -62,6 +96,32 @@ function dayName(n) {
   if (lang === "zh") return DAYS_ZH[n] || "";
   if (lang === "ms") return DAYS_MS[n] || "";
   return DAYS_EN[n] || "";
+}
+
+function dowNames() {
+  const lang = loadLang();
+  if (lang === "zh") return DOW_ZH;
+  if (lang === "ms") return DOW_MS;
+  return DOW_EN;
+}
+
+// The calendar's title for a month — "September 2026", "2026年9月", "September
+// 2026". Chinese puts the year first, so it cannot be built by concatenation.
+function monthTitle(year, month) {
+  const lang = loadLang();
+  if (lang === "zh") return `${year}年${month + 1}月`;
+  const names = lang === "ms" ? FULL_MONTHS_MS : FULL_MONTHS_EN;
+  return `${names[month]} ${year}`;
+}
+
+// "16 Sep" — a date without the weekday, for the Sold out note under the grid.
+// fmtDay is the full "Wed, 16 Sep" and too long to sit in a line.
+function shortDay(iso) {
+  const d = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return String(iso || "");
+  const lang = loadLang();
+  const m = (lang === "zh" ? MONTHS_ZH : lang === "ms" ? MONTHS_MS : MONTHS_EN)[d.getMonth()];
+  return lang === "zh" ? `${m}${d.getDate()}日` : `${d.getDate()} ${m}`;
 }
 
 // Normalize a customer's WhatsApp number to the digits-only international form
@@ -139,7 +199,7 @@ export function dateKey(d) {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
-// Which dates the pills show. When the backoffice has published real delivery
+// Which dates the calendar offers. When the backoffice has published real delivery
 // dates (rows dated today or later), those win — including dates that don't
 // match the configured weekday pattern (e.g. an extra Thursday the baker added
 // in the app). Falls back to the generated weekday list only when nothing is
@@ -154,16 +214,15 @@ export function resolveDates(generated, dayRows, today = dateKey(new Date())) {
   return published.map((d) => new Date(`${d}T00:00:00`));
 }
 
-// Map upcoming dates → what each day pill should say, given the live
-// day-level availability map ({ 'YYYY-MM-DD': slots_left }). Open days show
-// just the date; only a fully-booked day is flagged "Sold out" (greyed + a
-// watermark stamp via CSS). Per-product counts live on the product cards.
-export function pillSpecs(dates, availMap = {}) {
+// One entry per delivery date, given the live day-level availability map
+// ({ 'YYYY-MM-DD': slots_left }): the day itself and whether it is already
+// fully booked. The calendar draws from this and the product cards carry the
+// per-product counts. Language-free on purpose — every label the customer reads
+// is built at paint time so it follows the language switch.
+export function daySpecs(dates, availMap = {}) {
   return dates.map((d) => {
-    const day = fmtDay(d);
     const left = availMap[dateKey(d)];
-    const soldOut = left != null && left <= 0;
-    return { date: d, day, left, soldOut, avail: soldOut ? t("soldOut") : "", label: soldOut ? `${day} ${t("soldOut")}` : day };
+    return { date: d, soldOut: left != null && left <= 0 };
   });
 }
 
@@ -202,6 +261,27 @@ export function mergeStorefront(base, remote) {
   if (Array.isArray(remote.deliveryDays)) {
     const days = remote.deliveryDays.map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
     if (days.length) out.deliveryDays = days;
+  }
+  // The standard days the bakery markets around, for the bands and boxes on the
+  // customer's calendar and the bubble that names one when it is tapped. The app
+  // publishes only marks that ARE built-in standard days, but the shop validates
+  // every row again on its own terms: anything half-formed or unrecognised is
+  // dropped here rather than drawn, so a malformed row can never reach the page.
+  //
+  // Replaced wholesale, unlike deliveryDays above: the app publishes a complete
+  // snapshot, so an empty list is a real instruction — "she has no standard days
+  // marked" — and has to clear the marks an already-open page is still showing.
+  // An empty list draws nothing at all, so it can never break the shop.
+  if (Array.isArray(remote.occasions)) {
+    const ISO = /^\d{4}-\d{2}-\d{2}$/;
+    const COLOURS = ["red", "orange", "yellow", "green", "blue", "purple", "pink", "grey"];
+    out.occasions = remote.occasions
+      .filter((o) => o && typeof o === "object"
+        && typeof o.label === "string" && o.label.trim()
+        && ISO.test(String(o.from || "")) && ISO.test(String(o.to || ""))
+        && o.to >= o.from && COLOURS.includes(o.colour))
+      .map((o) => ({ label: o.label.trim(), from: o.from, to: o.to, colour: o.colour }))
+      .sort((a, b) => a.from.localeCompare(b.from));
   }
   if (Array.isArray(remote.products)) {
     const products = remote.products
@@ -242,6 +322,14 @@ export function mergeStorefront(base, remote) {
           const v = p && p[k];
           if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) out[k] = v;
         }
+        // The days this product SELLS, marked on its own calendar: spans, each with
+        // the weekdays it covers (none = every day of the span, either end may be
+        // open). Validated here on the shop's own terms — availability.js drops a
+        // malformed span rather than trusting it — because this list is the only
+        // thing that decides whether the customer sees the product at all. An empty
+        // list is dropped, which reads as "no marks" and so keeps every day open.
+        const marked = normRules(p.sellRules).slice(0, 40);
+        if (marked.length) out.sellRules = marked;
         // The change/cancel window the baker states for this product. Blank
         // stays absent, so it never counts in a mixed order's strictest window.
         const cancel = Number(p.cancelDays);
@@ -405,7 +493,7 @@ export function render() {
   const menu = document.getElementById("menu");
   const cart = new Map();
   let selected = null;
-  let avail = null;      // { 'YYYY-MM-DD': slots_left } — day-level, for the pills
+  let avail = null;      // { 'YYYY-MM-DD': slots_left } — day-level, for the calendar
   let prodAvail = null;  // { 'YYYY-MM-DD': { product: slots_left } } — for the item stamps
   let dayRows = null;    // published delivery-date rows — the real dates win
   let dates = upcomingDates(CONFIG);
@@ -416,16 +504,22 @@ export function render() {
   const renderMenu = () => {
     const byProduct = prodAvail && selected ? prodAvail[selected] || {} : {};
     const groups = poolGroups(CONFIG.products);
-    menu.replaceChildren(...CONFIG.products.map((p) => {
+    const cards = [];
+    for (const p of CONFIG.products) {
       const lang = loadLang();
       const group = groupFor(groups, p);
       const baseLeft = group && byProduct[group.baseName] != null
         ? Number(byProduct[group.baseName]) : undefined;
       const caps = group && Number.isFinite(baseLeft) ? poolCaps(group, baseLeft, cart) : null;
-      // A product's own date rules can make it unorderable on this date — it
-      // reads sold out with the reason under it. A blank product (value pack
-      // included) has no early close, so it sells on any open date.
-      const reason = closedReasonText(closedReason(p, selected, todayKey));
+      // A product's own date rules decide whether it is on TODAY's menu at all.
+      // Not sold on the chosen delivery day → it is simply not there: the customer
+      // does not see a thing they cannot have. The one exception is the baker's
+      // advance notice: that product IS sold on the day, it only has to be ordered
+      // earlier, so it stays and says so (closedReasonText below). A product with
+      // no marks at all (value packs included) sells on any open date.
+      const closed = closedReason(p, selected, todayKey);
+      if (closed && closed.kind !== "close") continue;
+      const reason = closedReasonText(closed);
 
       // `left` drives the stamp + stepper cap. A live pool member is capped by
       // the shared pool (its pieces compete with every other pack/single in the
@@ -469,7 +563,7 @@ export function render() {
       // The card reads in the visitor's language: translated name/description/
       // unit when the product has them, else the English text.
       const desc = p && descFor(p, lang);
-      return el("div", { class: `card menu-item${soldOut ? " soldout" : ""}` },
+      cards.push(el("div", { class: `card menu-item${soldOut ? " soldout" : ""}` },
         el("div", { class: "card-head" },
           el("div", {},
             el("p", { class: "card-title" }, nameFor(p, lang)),
@@ -478,8 +572,12 @@ export function render() {
           stamp),
         el("div", { class: "stepper" }, dec, qtyLabel, inc),
         note,
-        cancelNote);
-    }));
+        cancelNote));
+    }
+    // Every product marked off today leaves nothing at all — say so rather than
+    // showing a blank space where the menu should be.
+    menu.replaceChildren(...(cards.length ? cards : [el("p", { class: "card-sub" },
+      t("noMenuToday"))]));
   };
 
   // Live slots left for `name` on the day currently shown. undefined (no live
@@ -564,55 +662,211 @@ export function render() {
     return notes;
   }
 
-  const buildPills = () => {
-    const specs = pillSpecs(dates, avail || {});
+  // ── the delivery-day calendar ──────────────────────────────────────────────
+  // The customer picks their day from a month grid instead of a row of chips, so
+  // the days her bakery actually delivers stand out in the month at a glance and
+  // the chosen one is read in words underneath. Only the standard days the baker
+  // has marked are drawn — the shop is never told about her own private marks.
+
+  // The month on screen. Kept across repaints (a 30-second refresh must not fling
+  // the customer back to this month) and clamped to the months that hold a
+  // delivery day whenever the data changes.
+  let calMonth = null;
+
+  // The marked day whose name is showing, as a YYYY-MM-DD key, or null. A tap sets
+  // it; any tap elsewhere clears it. It is read while the grid is rebuilt, so the
+  // bubble survives the rerender the tap itself triggers.
+  let tipIso = null;
+  let tipInstalled = false;
+
+  // The marks the bakery let the shop see. Nothing decides privacy here — the
+  // published list is already only the standard days, never a mark she typed
+  // herself — so this is a shape guard and nothing more.
+  const marks = () => (Array.isArray(CONFIG.occasions) ? CONFIG.occasions : [])
+    .filter((o) => o && o.label && o.from && o.to);
+
+  // A mark running over several days is drawn the way the baker's own calendar
+  // draws it: one translucent rounded band across the days it covers in each
+  // week row, in her own colour, deeper the shorter the run. The bands are
+  // absolutely-placed grid children (see .occ-paper), so they span a row without
+  // disturbing the day cells, and they sit behind the numbers. A single-day mark
+  // is not a band — its own day draws a same-depth wash as a box (see
+  // .cal-cell.sol). Neither ever covers a past day, exactly as the office leaves
+  // them alone.
+  const occBands = (weeks, today) => {
+    const out = [];
+    const long = marks().filter((o) => occDays(o) >= 2)
+      .sort((a, b) => occDays(b) - occDays(a)); // longest first → painted behind
+    for (const occ of long) {
+      weeks.forEach((row, r) => {
+        let first = -1;
+        let last = -1;
+        row.forEach((iso, c) => {
+          if (iso && iso >= today && occ.from <= iso && iso <= occ.to) {
+            if (first === -1) first = c;
+            last = c;
+          }
+        });
+        if (first === -1) return;
+        // Grid row 1 is the day-of-week heading, so week r sits on grid row r + 2.
+        out.push(el("div", {
+          class: `occ-paper occ-${occColour(occ)} occ-${occStrength(occ)}`,
+          style: `--gr:${r + 2};--gc1:${first + 1};--gc2:${last + 2};`,
+        }));
+      });
+    }
+    return out;
+  };
+
+  // The marked days are never listed, so the name is read only on request: a tap
+  // anywhere outside a bubble puts it away. One listener serves the whole page, and
+  // it clears the key as well as hiding the live nodes — a later refresh rebuilds
+  // the grid from the key and would otherwise bring the bubble straight back.
+  if (!tipInstalled && typeof document !== "undefined"
+      && typeof document.addEventListener === "function") {
+    tipInstalled = true;
+    document.addEventListener("pointerdown", () => {
+      tipIso = null;
+      for (const n of document.querySelectorAll(".cal-tip")) n.hidden = true;
+    });
+  }
+
+  const buildCalendar = () => {
+    const specs = daySpecs(dates, avail || {});
+    const open = specs.filter((s) => !s.soldOut);
+    // `selected` is a YYYY-MM-DD key so it survives a rerender that rebuilds the
+    // Date objects (availability/config can arrive after the customer taps). The
+    // first open day is chosen for them, as it always has been — ordering can
+    // never be blocked by forgetting to tap, and the line below says which day
+    // that is instead of leaving it to a highlight alone.
+    if (selected && !specs.some((s) => dateKey(s.date) === selected && !s.soldOut)) selected = null;
+    if (!selected) selected = open.length ? dateKey(open[0].date) : null;
+
     if (!specs.length) {
       dateWrap.replaceChildren(el("p", { class: "muted" }, t("noDates")));
       return;
     }
-    const open = specs.filter((s) => !s.soldOut);
-    // `selected` is a YYYY-MM-DD key so it survives a rerender that rebuilds
-    // the Date objects (availability/config can arrive after the user taps).
-    if (selected && !specs.some((s) => dateKey(s.date) === selected && !s.soldOut)) selected = null;
-    if (!selected) selected = open.length ? dateKey(open[0].date) : null;
-
     if (!open.length) {
       dateWrap.replaceChildren(el("p", { class: "muted" }, t("noOpenDates")));
       return;
     }
-    dateWrap.replaceChildren(...specs.map((s) => {
-      const attrs = {
-        class: `pill${dateKey(s.date) === selected ? " active" : ""}${s.soldOut ? " soldout" : ""}`,
-        onclick: () => {
-          if (s.soldOut) return;
-          selected = dateKey(s.date);
-          // Rebuild pills + menu together so the active pill and the quantities
-          // the customer chose are re-checked against this day's availability.
-          rerender();
-        },
-      };
-      if (s.soldOut) attrs.disabled = "true";
-      return el("button", attrs,
-        el("span", { class: "pill-date" }, s.day),
-        el("span", { class: "pill-sub" }, s.soldOut ? t("soldOut") : ""));
-    }));
+
+    const byKey = new Map(specs.map((s) => [dateKey(s.date), s]));
+    const todayK = dateKey(new Date());
+
+    // The arrows page between the months that actually hold a delivery day, so a
+    // customer can never wander into an empty month.
+    const monthOf = (d) => ({ year: d.getFullYear(), month: d.getMonth() });
+    const lo = monthOf(specs[0].date);
+    const hi = monthOf(specs[specs.length - 1].date);
+    const before = (a, b) => a.year < b.year || (a.year === b.year && a.month < b.month);
+    if (!calMonth || before(calMonth, lo) || before(hi, calMonth)) calMonth = { ...lo };
+    const canPrev = before(lo, calMonth);
+    const canNext = before(calMonth, hi);
+
+    const nav = (delta) => {
+      calMonth = addMonth(calMonth.year, calMonth.month, delta);
+      rerender();
+    };
+    // A disabled:false would still set the attribute (and grey the arrow out), so
+    // the flag is only added when the arrow really is unavailable.
+    const arrow = (label, delta, enabled) => {
+      const attrs = { class: "cal-nav", "aria-label": label, onclick: () => nav(delta) };
+      if (!enabled) attrs.disabled = "true";
+      return el("button", attrs, delta < 0 ? "‹" : "›");
+    };
+    const head = el("div", { class: "cal-head" },
+      arrow(t("calPrev"), -1, canPrev),
+      el("span", { class: "cal-title" }, monthTitle(calMonth.year, calMonth.month)),
+      arrow(t("calNext"), 1, canNext));
+
+    const weeks = monthWeeks(calMonth.year, calMonth.month);
+    const all = marks();
+    const cells = weeks.flat().map((iso) => {
+      if (!iso) return el("span", { class: "cal-cell blank" });
+      const spec = byKey.get(iso);
+      const isSel = iso === selected;
+      const past = iso < todayK;
+      const full = !!spec && spec.soldOut;
+      const open = !!spec && !full && !past;
+      // The mark this day is NAMED by — the shortest one covering it, the app's own
+      // "the more specific mark wins" rule, so a day inside a long break is still
+      // named by a short holiday sitting on it.
+      const named = past ? null : occForDate(all, iso);
+      // A single-day mark draws the box; a longer one is a band behind it. Both
+      // carry their strength class, so the box is exactly as deep as a band of
+      // the same length — one mark, one look, whichever day it lands on.
+      const sol = past ? null : occSingleDay(all, iso);
+      let cls = "cal-cell";
+      if (spec && !full) cls += " avail";
+      if (full) cls += " full";
+      if (isSel) cls += " sel";
+      if (iso === todayK) cls += " today";
+      if (past) cls += " past";
+      if (sol) cls += ` sol occ-${occColour(sol)} occ-${occStrength(sol)}`;
+      const kids = [el("span", { class: "cal-num" }, String(Number(iso.slice(8, 10))))];
+      // The name waits in its own bubble and is never listed in advance. `hidden`
+      // is set on the node itself, not through el(): the shop's el() skips only
+      // null, so `hidden: false` would still set the attribute and hide it.
+      if (named) {
+        const tip = el("span", { class: "cal-tip" }, named.label);
+        tip.hidden = iso !== tipIso;
+        kids.push(tip);
+      }
+      // A day she delivers with room left is tapped to choose it; a marked day is
+      // tapped to read its name — and the one day can be both.
+      if (open || named) {
+        return el("button", {
+          class: cls + (open ? " tappable" : "") + (named ? " tippable" : ""),
+          onclick: () => {
+            if (named) tipIso = iso;
+            if (open) selected = iso;
+            // Rebuild the grid + menu together so the chosen day and the quantities
+            // the customer chose are re-checked against this day's availability.
+            rerender();
+          },
+        }, ...kids);
+      }
+      return el("span", { class: cls }, ...kids);
+    });
+
+    dateWrap.replaceChildren(
+      el("div", { class: "cal" },
+        head,
+        el("div", { class: "cal-grid" },
+          ...dowNames().map((d) => el("span", { class: "cal-dow" }, d)),
+          ...cells,
+          // The bands go in last and sit behind the cells (see .occ-paper).
+          ...occBands(weeks, todayK)),
+        // The day they picked, in words — the one line under the grid.
+        el("p", { class: "cal-chosen" },
+          sub(t("calChosen"), fmtDay(new Date(`${selected}T00:00:00`)))),
+        // Any day in this month with no room left, named rather than guessed at.
+        soldOutLine(specs, calMonth)));
   };
 
-  // Recompute the dates + rebuild pills and menu. Called on first paint and
-  // again when the availability data or the published storefront config
+  // "Sold out: 18 Sep, 25 Sep" — the days in the shown month that are already
+  // full. Empty when the month has none, so the line takes no space.
+  function soldOutLine(specs, month) {
+    const names = specs
+      .filter((s) => s.soldOut
+        && s.date.getFullYear() === month.year && s.date.getMonth() === month.month)
+      .map((s) => shortDay(dateKey(s.date)));
+    if (!names.length) return null;
+    return el("p", { class: "cal-note" }, `${t("soldOut")}: ${names.join(", ")}`);
+  }
+
+  // Recompute the dates + rebuild the calendar and menu. Called on first paint
+  // and again when the availability data or the published storefront config
   // arrives — arrival order doesn't matter because both funnel through here.
   const rerender = () => {
     dates = resolveDates(upcomingDates(CONFIG), dayRows, dateKey(new Date()))
       .filter((d) => isOpen(CONFIG, d));
-    // Fix the cart first so the pills/menu repaint with honest quantities: an
+    // Fix the cart first so the calendar/menu repaint with honest quantities: an
     // item the customer chose may have sold out (or dropped to fewer than they
     // asked for) since the last refresh or since they picked this day.
     reconcileCart();
-    // Keep the date-pill row's sideways scroll where the customer had it — the
-    // refresh rebuilds the chips but must not fling the row back to the start.
-    const sx = dateWrap.scrollLeft;
-    buildPills();
-    if (dateWrap.scrollLeft !== sx) dateWrap.scrollLeft = sx;
+    buildCalendar();
     renderMenu();
   };
 
@@ -627,7 +881,7 @@ export function render() {
     // Fetch the live day/product availability and the published storefront
     // config, then repaint only when something actually changed (or a delivery
     // day crossed its cut-off while the page was open). A repaint rebuilds the
-    // date pills and the product cards only — the customer's typed details
+    // delivery calendar and the product cards only — the customer's typed details
     // (name, WhatsApp, address, note) and the items they chose are not part of
     // those, so a refresh never touches them.
     const refresh = async () => {
@@ -886,7 +1140,7 @@ export function render() {
 
   // What a language switch repaints, in place. Nothing here re-reads the
   // network: the tagged static HTML and the title (applyTo), the header + info
-  // cards + footer credit (renderStatic), the date pills and the menu cards
+  // cards + footer credit (renderStatic), the delivery calendar and the menu cards
   // with their translated product names/descriptions/units (rerender), the
   // order bar, and the track card if the customer is looking one up. The cart
   // and the chosen day are the same objects they were — switching language

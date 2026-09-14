@@ -85,13 +85,26 @@ globalThis.localStorage = {
   removeItem: (k) => store.delete(k),
 };
 
+// Freeze "now" so the Availability card's calendar is deterministic: Tue
+// 1 September 2026. September 2026 opens with two blank cells, its Mondays are
+// the 7th, 14th, 21st and 28th, and its Saturdays are the 5th, 12th, 19th, 26th.
+const RealDate = globalThis.Date;
+class MockDate extends RealDate {
+  constructor(...args) {
+    if (args.length) super(...args);
+    else super(2026, 8, 1, 10, 0, 0);
+  }
+  static now() { return new MockDate().getTime(); }
+}
+globalThis.Date = MockDate;
+
 import { renderProducts } from "../admin/js/views/products.js";
 
 // A state with just enough to render the editor: a count unit to pick, and no
 // products yet (the always-visible New product card).
 function freshState() {
   return {
-    settings: { currency: "RM", supabase: {} },
+    settings: { currency: "RM", supabase: {}, deliveryDays: [1, 3, 5] },
     uoms: [
       { id: "u_loaf", name: "loaf", family: "count" },
       { id: "u_g", name: "g", family: "weight" },
@@ -122,15 +135,12 @@ function render(state) {
 function formHandles(root) {
   const nodes = walk(root.children[0]);
   const byPlaceholder = (ph) => nodes.find((n) => n.tagName === "INPUT" && n.attrs.placeholder === ph);
-  const dates = nodes.filter((n) => n.tagName === "INPUT" && n.attrs.type === "date");
   return {
     name: byPlaceholder("e.g. Chicken Jerky"),
     unit: nodes.find((n) => n.tagName === "SELECT"),
     desc: nodes.find((n) => n.tagName === "TEXTAREA"),
     closeDays: byPlaceholder("e.g. 14"),
     cancelDays: byPlaceholder("e.g. 2"),
-    validFrom: dates[0],
-    validTo: dates[1],
     add: nodes.find((n) => n.tagName === "BUTTON"
       && (n.children || []).some((c) => c.text === "Add product")),
   };
@@ -138,26 +148,29 @@ function formHandles(root) {
 
 const fire = (node) => (node._listeners.click || []).forEach((f) => f());
 
-test("saving a product keeps its two date rules (close days + from–to window)", () => {
+test("saving a product keeps its two date rules (close days + marked sell days)", () => {
+  doc.body.replaceChildren();
   const state = freshState();
   const root = render(state);
   const f = formHandles(root);
   assert.ok(f.closeDays, "new-product card shows the Orders-close box");
-  assert.ok(f.validFrom && f.validTo, "new-product card shows From and To date pickers");
 
   f.name.value = "CNY Gift Set";
   f.unit.value = "u_loaf";
   f.closeDays.value = "14";
-  f.validFrom.value = "2026-12-01";
-  f.validTo.value = "2026-12-24";
+  openAvail(root);
+  fire(dowBtn(root, 6)); // the Saturday heading
+  fire(dowBtn(root, 0)); // the Sunday heading
   fire(f.add);
 
   assert.equal(state.products.length, 1);
   const saved = state.products[0];
   assert.equal(saved.name, "CNY Gift Set");
   assert.equal(saved.closeDays, 14, "typed close days round-trip onto the product");
-  assert.equal(saved.validFrom, "2026-12-01");
-  assert.equal(saved.validTo, "2026-12-24");
+  assert.deepEqual(byDow(saved.sellRules), [
+    { days: [0], from: "2026-09-01", to: "2026-09-30" },
+    { days: [6], from: "2026-09-01", to: "2026-09-30" },
+  ], "each heading marks that weekday for the month shown, and nothing beyond it");
 });
 
 test("the change/cancel window saves as a number and is absent when left blank", () => {
@@ -181,6 +194,7 @@ test("the change/cancel window saves as a number and is absent when left blank",
 });
 
 test("leaving both boxes blank saves a product that is open any day", () => {
+  doc.body.replaceChildren();
   const state = freshState();
   const root = render(state);
   const f = formHandles(root);
@@ -191,8 +205,7 @@ test("leaving both boxes blank saves a product that is open any day", () => {
   assert.equal(state.products.length, 1);
   const saved = state.products[0];
   assert.equal(saved.closeDays, undefined, "blank close box = no early close");
-  assert.equal(saved.validFrom, undefined, "blank window = every open day");
-  assert.equal(saved.validTo, undefined);
+  assert.equal(saved.sellRules, undefined, "no marks at all = every delivery day");
   assert.equal(saved.description, undefined, "blank description shows nothing on the shop");
 });
 
@@ -216,20 +229,44 @@ test("typing a description saves it for customers to read (multiline kept)", () 
     "what she typed reads back on the card");
 });
 
-test("a from-date after the to-date is refused and nothing is saved", () => {
+test("an older product's from–to window opens in the card as one mark, and a save writes it back as one", () => {
+  doc.body.replaceChildren();
+  resetLayers();
+  const state = freshState();
+  state.products = [{ id: "p1", name: "CNY Gift Set", unit: "u_loaf", active: true,
+    validFrom: "2026-12-01", validTo: "2026-12-24" }];
+  const root = render(state);
+  fire(buttonByText(root, "Edit"));
+  const pop = layers["popup-layer"];
+
+  const a = availHandles(pop);
+  assert.equal(a.summary.textContent, "1-24 Dec 2026",
+    "the header reads the old window without the card ever being opened");
+
+  walk(pop).find((n) => n.tagName === "SELECT").value = "u_loaf";
+  fire(buttonByText(pop, "Update product"));
+
+  const saved = state.products[0];
+  assert.deepEqual(saved.sellRules, [{ days: [], from: "2026-12-01", to: "2026-12-24" }]);
+  assert.equal(saved.validFrom, undefined, "the old pair is dropped — its period survives as a mark");
+  assert.equal(saved.validTo, undefined);
+});
+
+test("a backwards pair is swapped rather than refused — a drag may go either way", () => {
   doc.body.replaceChildren();
   const state = freshState();
   const root = render(state);
   const f = formHandles(root);
   f.name.value = "Backwards Window";
   f.unit.value = "u_loaf";
-  f.validFrom.value = "2026-12-24";
-  f.validTo.value = "2026-12-01";
+  openAvail(root);
+  tapCell(root, 5);                       // one-day mark, 5 Sep 2026
+  pickDate(root, "Ends", "1");            // stretch its end back before its start
   fire(f.add);
 
-  assert.equal(state.products.length, 0, "the bad product is not added");
-  const toastNode = doc.body.children.at(-1);
-  assert.ok(toastNode && /from.*to|swap/i.test(toastNode.textContent), "the owner is told to swap the dates");
+  assert.equal(state.products.length, 1, "the product is saved, not refused");
+  assert.deepEqual(state.products[0].sellRules, [{ days: [], from: "2026-09-01", to: "2026-09-05" }],
+    "the two ends are read the way round they actually are");
 });
 
 test("each recipe line shows its working, the header adds them up, and the list below lands on the same total", () => {
@@ -766,4 +803,308 @@ test("a tap outside the card folds it away; a tap on a line leaves it open", () 
 
   fireDoc("pointerdown", { target: doc.body });
   assert.equal(transBody(root).hidden, true, "a tap anywhere outside folds it shut");
+});
+
+// ── Engine v82: the Availability card — a product's sell days, marked on a calendar ──
+//
+// The clock is frozen to Tue 1 September 2026 (see MockDate above), so the calendar
+// opens on a month whose Mondays are the 7th/14th/21st/28th and whose Saturdays are
+// the 5th/12th/19th/26th, and every day from the 1st on is tappable.
+
+// The card itself: header button, body, header summary. `open` is separate because
+// the body is only built once the header is tapped.
+const availHead = (root) => walk(root).find((n) => n.className === "fold-head"
+  && walk(n).some((c) => c.className === "avail-sum"));
+const availHandles = (root) => ({
+  head: availHead(root),
+  summary: walk(availHead(root)).find((n) => n.className === "avail-sum"),
+  body: walk(root).find((n) => n.className === "fold-body avail-body"),
+});
+const openAvail = (root) => { const a = availHandles(root); fire(a.head); return a; };
+
+// The month grid, re-read every time: every gesture repaints the card from scratch,
+// so a handle kept across a gesture would be pointing at a detached node.
+const availGrid = (root) => walk(root).find((n) => n.className === "cal-grid");
+const dowBtn = (root, dow) => availGrid(root).children
+  .filter((c) => (c.className || "").includes("avail-dow"))[dow];
+const cellBtn = (root, dayNum) => availGrid(root).children
+  .find((c) => (c.className || "").includes("cal-cell") && (c.children[0] || {}).text === String(dayNum));
+// The "Marked periods" rows: the label button and its ✕.
+const markRows = (root) => walk(root)
+  .filter((n) => (n.className || "").split(" ").includes("avail-row"));
+const markLabels = (root) => markRows(root).map((r) => r.children[0].children[0].text);
+
+// The shim's elementFromPoint stand-in: whatever cell the next gesture is over.
+let hitCell = null;
+doc.elementFromPoint = () => (hitCell
+  ? { closest: (sel) => (sel === ".cal-cell.tappable" ? hitCell : null) }
+  : null);
+
+function gesture(root, fromDay, toDay) {
+  const grid = availGrid(root);
+  const down = grid._listeners.pointerdown[0];
+  const move = grid._listeners.pointermove[0];
+  const up = grid._listeners.pointerup[0];
+  hitCell = cellBtn(root, fromDay);
+  down({ target: { closest: () => null }, clientX: 0, clientY: 0, pointerId: 1, preventDefault() {} });
+  if (toDay != null) {
+    hitCell = cellBtn(root, toDay);
+    move({ clientX: 0, clientY: 0, pointerId: 1 });
+  }
+  up({ clientX: 0, clientY: 0, pointerId: 1 });
+  hitCell = null;
+}
+const tapCell = (root, dayNum) => gesture(root, dayNum, null);
+
+// The Ends date field, opened by its button and answered by tapping a day number
+// (the datepicker's cells carry no date of their own — this is the free-date field,
+// where every day of the month is offered).
+function pickDate(root, label, dayNum) {
+  const field = walk(root).find((n) => n.className === "field"
+    && (n.children[0] || {}).tagName === "LABEL"
+    && (n.children[0].children[0] || {}).text === label);
+  assert.ok(field, `the card offers a ${label} field`);
+  fire(walk(field).find((n) => (n.className || "").includes("datepick-btn")));
+  const panel = walk(field).find((n) => n.className === "datepick-panel");
+  const cell = walk(panel).find((n) => n.tagName === "BUTTON"
+    && (n.className || "").includes("cal-cell")
+    && (n.children[0] || {}).text === String(dayNum));
+  assert.ok(cell, `the ${label} calendar offers day ${dayNum}`);
+  fire(cell);
+}
+
+// Marks compared by weekday first, so the order tidy() settled on never matters.
+const byDow = (rules) => (rules || []).slice()
+  .sort((a, b) => (a.days[0] ?? 9) - (b.days[0] ?? 9) || (a.from || "").localeCompare(b.from || ""));
+
+test("the Availability card folds away, and an untouched product reads Every day", () => {
+  doc.body.replaceChildren();
+  resetLayers();
+  const root = render(freshState());
+  const a = availHandles(root);
+
+  assert.ok(a.head, "the card has a fold-away header");
+  assert.equal(a.head.children[0].children[0].text, "Availability");
+  assert.equal(a.summary.textContent, "Every day", "nothing marked is the honest answer");
+  assert.equal(a.body.hidden, true, "it starts closed — this is setup, not daily use");
+
+  fire(a.head);
+  assert.equal(a.body.hidden, false, "the header is a button and opens it");
+  assert.ok(availGrid(root), "and the calendar is drawn");
+  assert.equal(dowBtn(root, 1).children[0].text, "M", "the weekday headings are buttons");
+  assert.equal(cellBtn(root, 28).dataset.date, "2026-09-28", "each day cell knows its own date");
+
+  fire(a.head);
+  assert.equal(a.body.hidden, true, "a second tap closes it again");
+});
+
+test("a tap outside the card folds it away; a tap on the calendar leaves it open", () => {
+  doc.body.replaceChildren();
+  resetLayers();
+  const root = render(freshState());
+  fire(availHead(root));
+  assert.equal(availHandles(root).body.hidden, false, "open");
+
+  fireDoc("pointerdown", { target: cellBtn(root, 10) });
+  assert.equal(availHandles(root).body.hidden, false, "a tap on the calendar keeps it open");
+
+  fireDoc("pointerdown", { target: doc.body });
+  assert.equal(availHandles(root).body.hidden, true, "a tap anywhere outside folds it shut");
+});
+
+test("a weekday heading marks every one of that weekday in the month shown, and takes it back", () => {
+  doc.body.replaceChildren();
+  const root = render(freshState());
+  openAvail(root);
+
+  fire(dowBtn(root, 1)); // M
+  assert.deepEqual(markLabels(root), ["Mon · 1-30 Sep 2026"], "one mark, bounded by the month");
+  assert.ok((dowBtn(root, 1).className || "").includes("avail-dow-on"), "the M heading shows it is marked");
+  assert.ok((cellBtn(root, 7).className || "").includes("avail-on"), "and so does the Monday itself");
+  assert.equal(cellBtn(root, 8).className.includes("avail-on"), false, "a Tuesday is untouched");
+
+  fire(dowBtn(root, 1)); // M again
+  assert.deepEqual(markLabels(root), [], "a second tap on the same heading takes it back");
+  assert.equal(cellBtn(root, 7).className.includes("avail-on"), false);
+});
+
+test("tapping one day marks just that day", () => {
+  doc.body.replaceChildren();
+  const root = render(freshState());
+  openAvail(root);
+  tapCell(root, 12);
+
+  assert.deepEqual(markLabels(root), ["12 Sep 2026"], "a one-day mark, not the month");
+  assert.ok((cellBtn(root, 12).className || "").includes("avail-on"));
+  assert.equal(cellBtn(root, 19).className.includes("avail-on"), false, "the same weekday is not caught");
+});
+
+test("the sell-day calendar draws the baker's occasion marks too", () => {
+  doc.body.replaceChildren();
+  const state = freshState();
+  state.occasions = [
+    { id: "x", label: "Malaysia Day", from: "2026-09-16", to: "2026-09-16", colour: "red" },
+    { id: "y", label: "School break", from: "2026-09-21", to: "2026-09-30", colour: "blue" },
+  ];
+  const root = render(state);
+  openAvail(root);
+
+  const day = cellBtn(root, 16);
+  assert.ok(day.className.includes("sol"), "a one-day holiday is a wash box on its own day");
+  assert.ok(day.className.includes("occ-red"), "in the mark's own colour");
+  assert.ok(day.className.includes("occ-strong"), "at the depth a mark that short gets");
+  assert.equal(cellBtn(root, 15).className.includes("sol"), false, "an unmarked day stays plain");
+
+  const bands = availGrid(root).children
+    .filter((c) => (c.className || "").includes("occ-paper"));
+  assert.equal(bands.length, 2, "the 10-day mark bands the two week rows it crosses");
+  assert.ok(bands.every((b) => (b.className || "").includes("occ-blue")),
+    "in the mark's own colour");
+  assert.ok(bands.every((b) => (b.className || "").includes("occ-mid")),
+    "at the depth a mark that long gets");
+});
+
+// Her ask: a marked day says its own name when tapped, on every calendar in the
+// app. Here the tap does its usual job as well — marking the sell day — which is
+// exactly the shop page's rule ("a day is tapped to read its name AND to choose
+// it"), and the bubble is built into the cell so the card's repaint redraws it.
+test("tapping a marked day on the availability calendar names it as well as marking it", () => {
+  doc.body.replaceChildren();
+  const state = freshState();
+  state.occasions = [
+    { id: "x", label: "Malaysia Day", from: "2026-09-16", to: "2026-09-16", colour: "red" },
+  ];
+  const root = render(state);
+  openAvail(root);
+
+  const tipOf = (dayNum) => (cellBtn(root, dayNum).children || [])
+    .find((c) => c.className === "cal-tip");
+  assert.ok(tipOf(16), "a marked day carries its name, waiting to be asked for");
+  assert.equal(tipOf(16).hidden, true, "and says nothing until it is tapped");
+  assert.equal(tipOf(16).children[0].text, "Malaysia Day");
+  assert.equal(tipOf(15), undefined, "an unmarked day has no name to give");
+
+  tapCell(root, 16);
+  assert.ok((cellBtn(root, 16).className || "").includes("avail-on"), "the tap still marks the day");
+  assert.equal(tipOf(16).hidden, false, "and now it says what the day is");
+
+  tapCell(root, 20); // an unmarked day: nothing to say
+  assert.equal(tipOf(16).hidden, true, "tapping another day puts the name away again");
+  assert.equal(tipOf(20), undefined);
+});
+
+test("sliding across days marks the run", () => {
+  doc.body.replaceChildren();
+  const root = render(freshState());
+  openAvail(root);
+  gesture(root, 7, 11);
+
+  assert.deepEqual(markLabels(root), ["7-11 Sep 2026"]);
+  assert.ok((cellBtn(root, 9).className || "").includes("avail-on"), "every day of the run sells");
+  assert.equal(cellBtn(root, 12).className.includes("avail-on"), false, "the day after the run does not");
+});
+
+test("tapping a marked day takes back only that day, leaving the rest of the run", () => {
+  doc.body.replaceChildren();
+  const root = render(freshState());
+  openAvail(root);
+  gesture(root, 7, 11);
+  tapCell(root, 9); // middle of the run
+
+  assert.deepEqual(byDow([
+    { days: [], from: "2026-09-07", to: "2026-09-08" },
+    { days: [], from: "2026-09-10", to: "2026-09-11" },
+  ]), byDow([
+    { days: [], from: "2026-09-07", to: "2026-09-08" },
+    { days: [], from: "2026-09-10", to: "2026-09-11" },
+  ]));
+  assert.deepEqual(markLabels(root), ["7-8 Sep 2026", "10-11 Sep 2026"],
+    "the run is split around the day she took back");
+  assert.equal(cellBtn(root, 9).className.includes("avail-on"), false);
+});
+
+test("a weekday heading and a single day write different rules", () => {
+  doc.body.replaceChildren();
+  const root = render(freshState());
+  openAvail(root);
+  fire(dowBtn(root, 1)); // every Monday in September
+  tapCell(root, 15);     // then a single Tuesday
+
+  assert.deepEqual(markLabels(root).slice().sort(),
+    ["15 Sep 2026", "Mon · 1-30 Sep 2026"].sort(),
+    "the heading writes a month-long weekday mark; the day writes just that day");
+  assert.equal(cellBtn(root, 15).className.includes("avail-on"), true);
+  assert.equal(cellBtn(root, 1).className.includes("avail-on"), false, "the 1st is a Tuesday, not the 15th");
+});
+
+test("a mark's two ends can be cleared, making it run on from here or up to here", () => {
+  doc.body.replaceChildren();
+  const state = freshState();
+  const root = render(state);
+  const f = formHandles(root);
+  f.name.value = "Focaccia";
+  f.unit.value = "u_loaf";
+  openAvail(root);
+  tapCell(root, 12);
+  fire(buttonByText(root, "Clear end"));
+  fire(f.add);
+
+  assert.deepEqual(state.products[0].sellRules, [{ days: [], from: "2026-09-12", to: "" }],
+    "an open end is how a mark says 'from here on' without naming a second date");
+});
+
+test("the ✕ takes a mark out of the list", () => {
+  doc.body.replaceChildren();
+  const root = render(freshState());
+  openAvail(root);
+  fire(dowBtn(root, 1));
+  fire(dowBtn(root, 6));
+  assert.equal(markLabels(root).length, 2);
+
+  fire(markRows(root)[0].children[1]); // the first row's ✕
+  assert.equal(markLabels(root).length, 1, "only the mark that was tapped goes");
+});
+
+test("a mark that has already ended is kept — a dated special stays dated", () => {
+  doc.body.replaceChildren();
+  resetLayers();
+  const state = freshState();
+  state.products = [{ id: "p1", name: "CNY Gift Set", unit: "u_loaf", active: true,
+    validFrom: "2026-08-01", validTo: "2026-08-15" }]; // a finished window, before today
+  const root = render(state);
+  fire(buttonByText(root, "Edit"));
+  const pop = layers["popup-layer"];
+  assert.equal(availHandles(pop).summary.textContent, "1-15 Aug 2026", "the finished mark is what the product holds");
+
+  fire(availHead(pop));
+  tapCell(pop, 20);
+  walk(pop).find((n) => n.tagName === "SELECT").value = "u_loaf";
+  fire(buttonByText(pop, "Update product"));
+
+  assert.deepEqual(byDow(state.products[0].sellRules), [
+    { days: [], from: "2026-08-01", to: "2026-08-15" },
+    { days: [], from: "2026-09-20", to: "2026-09-20" },
+  ], "the finished mark is kept: dropping it would leave no marks, and no marks means every day");
+});
+
+test("taking the last mark off is the one way back to selling every delivery day", () => {
+  doc.body.replaceChildren();
+  resetLayers();
+  const state = freshState();
+  state.products = [{ id: "p1", name: "CNY Gift Set", unit: "u_loaf", active: true,
+    sellRules: [{ days: [], from: "2026-09-10", to: "2026-09-20" }] }];
+  const root = render(state);
+  fire(buttonByText(root, "Edit"));
+  const pop = layers["popup-layer"];
+  fire(availHead(pop));
+  assert.equal(markLabels(pop).length, 1);
+
+  fire(markRows(pop)[0].children[1]); // the ✕
+  assert.deepEqual(markLabels(pop), [], "the card says so plainly");
+  assert.equal(availHandles(pop).summary.textContent, "Every day");
+
+  walk(pop).find((n) => n.tagName === "SELECT").value = "u_loaf";
+  fire(buttonByText(pop, "Update product"));
+  assert.equal(state.products[0].sellRules, undefined,
+    "and the saved product carries no marks at all, which the shop reads as every delivery day");
 });

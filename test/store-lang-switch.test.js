@@ -87,7 +87,11 @@ const barTotal = () => registry["bar-total"].textContent;
 const litPill = () => pills.find((p) => p.classList.contains("is-on"));
 const firstCardStepper = () =>
   registry["menu"].children[0].children.find((c) => c.className === "stepper");
-const pillDateText = () => registry["dates"].children[0].children[0].children[0].text;
+// The line under the delivery calendar naming the chosen day — the one piece of
+// date text outside the grid, and so the one to read for a language switch.
+const chosenDayText = () =>
+  registry["dates"].children[0]
+    .children.find((c) => c.className === "cal-chosen").children[0].text;
 
 test("the shop starts in English and the EN pill is lit", () => {
   assert.equal(document.documentElement.lang, "en");
@@ -111,8 +115,9 @@ test("switching to 中文 repaints in place and keeps the basket", () => {
   assert.equal(litPill(), pills[1], "the 中文 pill is now lit");
   assert.equal(document.documentElement.lang, "zh", "the page declares its language");
   assert.equal(localStorage.getItem("siteLang"), "zh", "the choice is remembered on the device");
-  assert.match(pillDateText(), /月/, "the date pills read in Chinese (month name)");
-  assert.match(pillDateText(), /日/, "…and the day");
+  assert.match(chosenDayText(), /月/, "the chosen posting day reads in Chinese (month name)");
+  assert.match(chosenDayText(), /日/, "…and the day");
+  assert.ok(chosenDayText().startsWith("你的发货日："), "…under a Chinese label");
   assert.equal(fetchCount, before, "the switch re-reads nothing over the network");
 });
 

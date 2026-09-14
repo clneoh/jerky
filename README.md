@@ -331,6 +331,61 @@ hint reads "…if blank, it will be filled with English" (v77).
   and the in-window **"Add"** → **"Add my own day"** (v78), so the only plain Add
   in that window is the one that files the ticked days.
 
+## Calendars: picking a day, a product's sell days, published holidays (v79–v88)
+
+The shop and the app now speak one calendar language. A day is picked from a
+**month grid** — one month at a time, arrows either side of the month name — not
+a row of date chips, and a marked day wears the same shape on both sides.
+
+- **The customer picks a posting day on a month calendar** (v79) — under *Pick a
+  posting day*, open days are ringed green, every other day is plain and not
+  tappable, and the chosen day is written out under the grid
+  (*"Your posting day: Wed, 16 Sep"*). The first open day is pre-chosen, so
+  ordering can never be blocked by forgetting to tap. Cut-off and full days
+  behave exactly as before. The same calendar stands behind the app's date
+  controls — the **＋ New order** card's posting-day picker, the Edit pop-up's
+  **Delivery day**, and the **Order date** boxes — via `admin/js/datepicker.js`
+  (it expands in place rather than opening a window, because the app's pop-ups
+  share one layer). The Orders screen's own date strip is the same month
+  calendar, ringed green with **booking counts** (`3/12`, or **FULL**) and a red
+  count once a day has closed (v80).
+- **A product's sell days are marked on its own calendar** (v82) — the
+  **Availability** card in a product's editor (folded by default; its title says
+  what is marked, e.g. *"Sat & Sun"* or *"1-24 Dec 2026"*). Tap a weekday letter
+  to mark every one of that weekday **in the month shown**; tap a day; drag a
+  run; tap or drag again to unmark. Marks never carry into another month, and a
+  listed mark's **Starts**/**Ends** can be stretched across months or years (a
+  blank end means "from here on" / "up to here"). A product with no marks sells
+  on every posting day. On the shop, a day a product is not sold for **does not
+  show the product at all** (no card, nothing to want and not have) — the one
+  exception is the notice period (`closeDays`), which is a *different* question:
+  the product IS sold that day, only ordered earlier, so it stays with its note.
+  The old *From/To* season boxes became one such mark on first open, so nothing
+  set before is lost.
+- **Holidays are drawn, and publishing one is part of the same save** (v79,
+  v81, v83) — days loaded from the standard occasion list (Delivery Dates →
+  **Load standard occasions**) are published with the storefront, so the shop's
+  calendar tints them (v79/v81) and marking one **republishes within a couple of
+  seconds** (v83) rather than waiting for some later save. Only a day that is,
+  by name and date, one of the built-in standard days is ever published: a day
+  the owner typed herself stays private to her phone. A mark never adds or
+  removes a posting day and never changes what a product sells. (Existing marks
+  need one **Publish now** tap in Settings → Storefront to catch up.)
+- **One shared drawing module, one wash everywhere** (v84–v88) —
+  `admin/js/occgrid.js` draws a marked day on every app calendar (Orders, the
+  date pickers, Delivery Dates, a product's Availability), and `store/calendar.js`
+  is the shop's own copy of the grid helpers with a **drift guard** in
+  `test/store-cal.test.js` pinning the two copies' mark rules together. A mark is
+  only ever a **see-through wash** (depth = how long the run is, one-day deepest),
+  never a solid block, so a date number and the green posting pill always read on
+  top; on the Orders screen the tint sits on the line of dates (v88). Tapping a
+  marked day **names it** with the same bubble the shop shows (v87); on a computer
+  resting the pointer names it too, while a phone keeps the tap (v88).
+
+The one shared root module is `availability.js` — the pure sell-day rules
+(`sellOpen`, `ruleOpen`, `normRules`, …) imported by both trees (`admin/js/state.js`,
+`admin/js/supabase.js`, `admin/js/views/products.js`, `store/app.js`, `store/pool.js`).
+
 ## Order tracking & confirmation (Supabase)
 
 Customers choose **Post (nationwide)** / **Collect (local)** when ordering (a
@@ -580,9 +635,11 @@ password are stored in the app's local storage on her phone.
 node --test test/*.test.js
 ```
 
-Tests cover the pure modules (`admin/js/bom.js`, `admin/js/dates.js`), the sync
-engine (`admin/js/sync.js`), the app bootstrap + sign-in gate
-(`admin/js/app.js`), and the storefront (`store/app.js`).
+Tests cover the pure modules (`admin/js/bom.js`, `admin/js/dates.js`,
+`availability.js`), the sync engine (`admin/js/sync.js`), the app bootstrap +
+sign-in gate (`admin/js/app.js`), the storefront (`store/app.js`), and the
+shop's calendar copy (`store/calendar.js`, pinned against the app's own by
+`test/store-cal.test.js`).
 
 ## Files
 
@@ -593,11 +650,13 @@ home.js             homepage logic: i18n apply + carousel + reviews boot (module
 home-lang.js        homepage dictionary (en / zh / ms)
 i18n.js             shared language loader (LANGS, loadLang/rememberLang, applyTo)
 reviews.js          homepage reviews fetch + carousel + review form (root module)
+availability.js     sell-day rules for a product — shared by the app and the shop (pure)
 store/index.html    customer order page (/store/)
 store/app.css       storefront styling
 store/app.js        storefront logic + order intake + availability + published config
+store/calendar.js   the shop's own month-grid + mark helpers (a copy of the app's)
 store/config.js     fallback name, WhatsApp, menu, days, supabase (overridden by Settings → Storefront)
-store/pool.js       shared-pool rules: pack components, cancel windows (pure)
+store/pool.js       shared-pool rules: pack components, cancel windows, sell days (pure)
 store-lang.js       order-page dictionary (en / zh / ms)
 
 admin/ — backoffice app (/admin/):
@@ -618,6 +677,9 @@ admin/ — backoffice app (/admin/):
   js/profiles.js      customer profiles (join to the customer rows, pure)
   js/photo.js         shrinks a picked photo to a small thumb (browser only)
   js/suggest.js       right-arrow / tap-to-accept for a greyed suggestion (data-suggest)
+  js/calendar.js      month-grid + occasion helpers (shared by every calendar)
+  js/occgrid.js       draws a marked day on every app calendar (one shared look)
+  js/datepicker.js    the date control behind the app's three date fields (expands in place)
   js/app.js           hash router + bootstrap + shared-data gate
   js/views/*          one module per screen (login.js is the sign-in gate)
   sw.js               service worker — offline app shell (/admin/ scope);

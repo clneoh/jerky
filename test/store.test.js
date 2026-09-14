@@ -33,7 +33,7 @@ globalThis.window = { open() {} };
 // so the module-level render() hits no network.
 globalThis.fetch = async () => ({ ok: true, json: async () => [] });
 
-const { buildMessage, mergeStorefront, upcomingDates, pillSpecs, dateKey, fmtDay, trackOrder, isOpen, waNumber, parseVia } = await import("../store/app.js");
+const { buildMessage, mergeStorefront, upcomingDates, daySpecs, dateKey, fmtDay, trackOrder, isOpen, waNumber, parseVia } = await import("../store/app.js");
 const { CONFIG } = await import("../store/config.js");
 
 // The receipt's own lines, as plain strings, from the confirm box.
@@ -101,10 +101,22 @@ test("store render() fills the page without crashing", () => {
   assert.ok(registry["name"]);
   assert.equal(registry["name"].textContent, "Munchies Furkidz");
   assert.ok(registry["menu"].children.length >= 2); // one card per product
-  assert.ok(registry["dates"].children.length >= 1); // date pills
-  // feature off (empty supabase config) → first day selected by default
-  assert.equal(registry["dates"].children[0].className, "pill active");
-  assert.equal(registry["dates"].children.every((p) => p.className.includes("soldout")), false);
+  assert.equal(registry["dates"].children.length, 1); // just the calendar
+
+  // Feature off (no availability) → every delivery day is open, so the calendar
+  // draws and the first one is chosen for the customer — the line under the grid
+  // names it, so the auto-choice is visible rather than a silent highlight.
+  const cal = registry["dates"].children[0];
+  assert.equal(cal.className, "cal");
+  const grid = cal.children.find((c) => c.className === "cal-grid");
+  assert.equal(grid.children.filter((c) => c.className === "cal-dow").length, 7, "a Sun→Sat heading row");
+  assert.ok(grid.children.some((c) => c.className.includes("cal-cell avail")), "real delivery days are marked");
+  assert.ok(!grid.children.some((c) => c.className.includes("cal-cell avail") && c.className.includes("full")),
+    "nothing is sold out with availability off");
+  const chosen = cal.children.find((c) => c.className === "cal-chosen");
+  assert.ok(chosen.children[0].text.startsWith("Your posting day: "));
+  assert.ok(chosen.children[0].text.endsWith(fmtDay(upcomingDates(CONFIG)[0])), "the first open day is the one named");
+
   assert.equal(registry["order-btn"].disabled, true); // empty cart
 });
 
@@ -113,33 +125,23 @@ test("dateKey formats a local YYYY-MM-DD key", () => {
   assert.equal(dateKey(new Date(2026, 0, 7)), "2026-01-07");
 });
 
-test("pillSpecs flags sold-out days and leaves open days plain", () => {
+test("daySpecs flags sold-out days and leaves open days plain", () => {
   const d1 = new Date(2026, 8, 2);
   const d2 = new Date(2026, 8, 4);
   const d3 = new Date(2026, 8, 7);
   const avail = { [dateKey(d1)]: 0, [dateKey(d2)]: 2, [dateKey(d3)]: 9 };
-  const specs = pillSpecs([d1, d2, d3], avail);
+  const specs = daySpecs([d1, d2, d3], avail);
 
-  assert.equal(specs[0].label, `${fmtDay(d1)} Sold out`);
-  assert.equal(specs[0].soldOut, true);
-  assert.equal(specs[0].day, fmtDay(d1));
-  assert.equal(specs[0].avail, "Sold out");
-
-  assert.equal(specs[1].label, fmtDay(d2));
-  assert.equal(specs[1].soldOut, false);
-
-  assert.equal(specs[2].label, fmtDay(d3));
-  assert.equal(specs[2].soldOut, false);
+  assert.deepEqual(specs.map((s) => dateKey(s.date)), [dateKey(d1), dateKey(d2), dateKey(d3)]);
+  assert.deepEqual(specs.map((s) => s.soldOut), [true, false, false]);
 });
 
-test("pillSpecs leaves days plain when availability is off or unknown", () => {
+test("daySpecs leaves days plain when availability is off or unknown", () => {
   const d = new Date(2026, 8, 2);
-  const off = pillSpecs([d], {});
-  assert.equal(off[0].label, fmtDay(d));
+  const off = daySpecs([d], {});
   assert.equal(off[0].soldOut, false);
 
-  const unknown = pillSpecs([d], { "2099-01-01": 5 }, 3); // row for another date
-  assert.equal(unknown[0].label, fmtDay(d));
+  const unknown = daySpecs([d], { "2099-01-01": 5 }); // a row for another date
   assert.equal(unknown[0].soldOut, false);
 });
 
@@ -365,6 +367,41 @@ test("mergeStorefront never carries the TNG QR — the shop shows no payment cod
   const out = mergeStorefront({}, { tngQr: "https://img/tng.png", name: "Munchies Furkidz" });
   assert.equal(out.tngQr, undefined);
   assert.equal(out.name, "Munchies Furkidz", "other keys still merge");
+});
+
+// The standard days behind the tinted days on the customer's calendar. The app
+// publishes only built-in standard days, but the shop checks every row again on
+// its own terms, so a half-formed row is dropped rather than drawn.
+test("mergeStorefront keeps well-formed occasions and drops the rest", () => {
+  const good = { label: "Malaysia Day", from: "2026-09-16", to: "2026-09-16", colour: "red" };
+  const out = mergeStorefront({}, { occasions: [good, { ...good, label: "Sibling Day" }] });
+  assert.deepEqual(out.occasions, [good, { ...good, label: "Sibling Day" }]);
+
+  const dropped = [
+    mergeStorefront({}, { occasions: [{ ...good, colour: "chartreuse" }] }),
+    mergeStorefront({}, { occasions: [{ ...good, label: "   " }] }),
+    mergeStorefront({}, { occasions: [{ ...good, from: "16 Sep" }] }),
+    mergeStorefront({}, { occasions: [{ ...good, to: "2026-09-01", from: "2026-09-16" }] }),
+    mergeStorefront({}, { occasions: [null, 7, {}] }),
+  ];
+  for (const o of dropped) assert.deepEqual(o.occasions, [], "a row that does not hold up is not published");
+
+  // A published snapshot is complete, so an empty list is a real instruction:
+  // there are no standard days marked, and the tints an open page is showing go.
+  assert.deepEqual(mergeStorefront({ occasions: [good] }, { occasions: [] }).occasions, []);
+  // A payload that says nothing about occasions leaves the key alone.
+  assert.deepEqual(mergeStorefront({ occasions: [good] }, { name: "X" }).occasions, [good]);
+});
+
+test("mergeStorefront sorts occasions by start date and trims the label", () => {
+  const out = mergeStorefront({}, {
+    occasions: [
+      { label: " Halloween ", from: "2026-10-31", to: "2026-10-31", colour: "orange" },
+      { label: "Malaysia Day", from: "2026-09-16", to: "2026-09-16", colour: "red" },
+    ],
+  });
+  assert.deepEqual(out.occasions.map((o) => o.label), ["Malaysia Day", "Halloween"]);
+  assert.deepEqual(out.occasions.map((o) => o.from), ["2026-09-16", "2026-10-31"]);
 });
 
 test("trackOrder re-fetches and re-renders every lookup (never stale)", async () => {

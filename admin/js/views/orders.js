@@ -3,6 +3,9 @@
 import { addDays, deliveryStatus, fmtPlaced, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
 import { capacityStatus, dayRuleRows, parseDayDelta, productRemaining, saveDayAdjustments } from "../bom.js";
 import { el, button, select, fillMeter, emptyState, confirmDialog, toast, showPopup } from "../ui.js";
+import { dateField } from "../datepicker.js";
+import { DOW, addMonth, monthLabel, monthWeeks, occColour, occForDate } from "../calendar.js";
+import { boxClass, nameDay, occBox, occPapers, tipEl } from "../occgrid.js";
 import { byId, fmtRM, groupOrders, moveOrderGroup, newId, orderCode, orderLineName, save, stampOrderLine, updateOrderBadge, waNumber } from "../state.js";
 import { strictestCancelDays } from "../../../store/pool.js";
 import { buildConfirmation } from "../confirm.js";
@@ -23,6 +26,15 @@ let orderQuery = "";
 // current screen spot across the rebuild — the row the baker is touching must
 // never move, no matter how the New-orders box or the form above change size.
 let anchorRowId = null;
+// The month the Orders screen's calendar is showing, as { year, month } — null
+// until the first render settles it on the day that opens. It lives out here, not
+// inside the render, so paging forward to look at a later week survives a rebuild
+// the baker did not ask for (a sync pull, a status change).
+let ordersCalMonth = null;
+// Whether the ＋ New order card is open. Also module scope, because the card is
+// rebuilt whenever anything around it changes — including when a day is tapped in
+// its own calendar — and folding under her finger at that moment would be mad.
+let newFormOpen = false;
 
 const STATUSES = [
   ["new", "New"],
@@ -210,10 +222,37 @@ export function packingLabelData(state, group, style = "full") {
   return { style, rows };
 }
 
+// ── The ＋ New order card folds away ─────────────────────────────────────────
+// It sits on every delivery day and is not what the screen is for day to day, so
+// it starts shut. One document listener serves it, and a card taken off the page
+// is simply dropped from the list on the next tap — nothing has to be unhooked
+// when a rebuild replaces it. Installed from renderOrders rather than at module
+// scope, since the test shim's document has no addEventListener.
+const openOrderCards = new Set();
+let orderCollapseInstalled = false;
+
+function installOrderCollapseOutside() {
+  if (orderCollapseInstalled || typeof document === "undefined"
+      || typeof document.addEventListener !== "function") return;
+  orderCollapseInstalled = true;
+  document.addEventListener("pointerdown", (ev) => {
+    for (const ctl of [...openOrderCards]) {
+      if (ctl.card.isConnected === false) { openOrderCards.delete(ctl); continue; }
+      if (!ctl.card.contains(ev.target)) ctl.close();
+    }
+  });
+}
+
 export function renderOrders(root, state, params) {
   orderStatusFilter = "";
   orderQuery = ""; // a fresh visit to Orders starts with an empty finder box
+  newFormOpen = false;  // …and with the New-order card shut
+  ordersCalMonth = null; // …and on the month of the day that opens
+  installOrderCollapseOutside();
   renderAll(root, state, params);
+  // Everything built above goes away with this screen — forget the open cards so
+  // a later tap cannot reach into one that is no longer on the page.
+  return () => openOrderCards.clear();
 }
 
 // ---- Finder: search every order (any date, any status) ----
@@ -267,36 +306,111 @@ export function matchingGroups(state, query) {
     .localeCompare(String(a.orders[0].createdAt || "")));
 }
 
-// The date strip scrolls horizontally, so a far date's pill hides off its
-// right edge. When a New-Orders tap lands on such a date, slide the strip so
-// the pill appears — gliding to center it. An already-visible pill never moves
-// (plain taps on a visible date stay put). Falls back to an instant jump when
-// there is no animation loop (tests) or no real geometry.
-function revealDatePill(strip, pill) {
-  if (!strip || !pill
-      || typeof strip.getBoundingClientRect !== "function"
-      || typeof pill.getBoundingClientRect !== "function") return;
-  const s = strip.getBoundingClientRect();
-  const p = pill.getBoundingClientRect();
-  if (p.left >= s.left && p.right <= s.right) return; // fully visible already
-  const max = Math.max(0, strip.scrollWidth - strip.clientWidth);
-  const end = Math.max(0, Math.min(
-    strip.scrollLeft + (p.left - s.left) - (s.width - p.width) / 2,
-    max));
-  const start = strip.scrollLeft;
-  if (Math.abs(end - start) < 1) return;
-  const raf = globalThis.requestAnimationFrame;
-  if (typeof raf !== "function") { strip.scrollLeft = end; return; }
-  const t0 = globalThis.performance && typeof globalThis.performance.now === "function"
-    ? globalThis.performance.now() : Date.now();
-  const dur = 260;
-  const step = (now) => {
-    const k = Math.min(1, (now - t0) / dur);
-    const ease = 1 - Math.pow(1 - k, 3); // ease-out: glide in, settle softly
-    strip.scrollLeft = start + (end - start) * ease;
-    if (k < 1) raf(step);
-  };
-  raf(step);
+// ── The delivery-day calendar ────────────────────────────────────────────────
+// What the Orders screen shows at the top instead of the old sideways strip of
+// date pills: the same month grid the shop shows its customers, with each day the
+// bakery delivers carrying how booked it is. A strip could only ever show a
+// handful of days and made a distant date something to hunt for.
+//
+// `days` is deliveryDayList(state) on this screen (the Edit pop-up passes its own
+// shorter list); a day in it is tapped to open it, and a day of the month with no
+// delivery record is drawn quietly and does nothing. `getActiveId()` is read on
+// every paint rather than captured, so a rebuild marks the day actually on screen,
+// and `month` is the caller's own { year, month }, paged in place so the month she
+// is looking at survives that rebuild.
+function monthOf(iso) {
+  const d = new Date(`${iso}T00:00:00`);
+  return { year: d.getFullYear(), month: d.getMonth() };
+}
+
+function before(a, b) {
+  return a.year < b.year || (a.year === b.year && a.month < b.month);
+}
+
+export function deliveryCal({ state, days, getActiveId, month, onPick }) {
+  const list = (days || []).filter((d) => d && d.id && d.date);
+  const today = todayISO();
+  const byDate = new Map(list.map((d) => [d.date, d.id]));
+  // The arrows reach only the months a delivery day falls in: a month with
+  // nothing to deliver has nothing to show, so paging into it is a dead end.
+  let lo = null;
+  let hi = null;
+  for (const d of list) {
+    const m = monthOf(d.date);
+    if (!lo || before(m, lo)) lo = m;
+    if (!hi || before(hi, m)) hi = m;
+  }
+  if (!lo) { lo = monthOf(today); hi = lo; }
+
+  const wrap = el("div", { class: "cal-wrap" });
+
+  function paint() {
+    const active = getActiveId();
+    const go = (delta) => {
+      const next = addMonth(month.year, month.month, delta);
+      month.year = next.year;
+      month.month = next.month;
+      paint();
+    };
+    const prev = button("‹", () => go(-1), "ghost small cal-nav");
+    const next = button("›", () => go(1), "ghost small cal-nav");
+    if (!before(lo, month)) prev.disabled = true;
+    if (!before(month, hi)) next.disabled = true;
+
+    const weeks = monthWeeks(month.year, month.month);
+    const cells = weeks.flat().map((iso) => {
+      if (!iso) return el("span", { class: "cal-cell blank" });
+      // The baker's own occasion marks are drawn here too — a holiday she marked
+      // is worth seeing while she is deciding which day to open, and a day the
+      // bakery does not deliver has no other way of saying so.
+      const past = iso < today;
+      const box = boxClass(occBox(state.occasions, iso, past));
+      const num = el("span", { class: "cal-num" }, String(Number(iso.slice(8, 10))));
+      const tip = tipEl(state.occasions, iso, past);
+      const dateId = byDate.get(iso);
+      // A day the bakery does not deliver: a quiet number, nothing to open — but a
+      // marked day still says its name when tapped, or a holiday falling on a day
+      // she does not deliver would be the one day of the month with no way to be
+      // read (the customer's shop page names that day too).
+      if (!dateId) {
+        const cls = `cal-cell off${iso === today ? " today" : ""}${box}`;
+        if (!tip) return el("span", { class: cls }, num);
+        return el("button", { class: `${cls} tippable`, onclick: () => { nameDay(state.occasions, iso, past); paint(); } }, num, tip);
+      }
+      const cap = capacityStatus(state, dateId);
+      const st = deliveryStatus(iso, state.settings);
+      const full = cap.capacity > 0 && cap.total >= cap.capacity;
+      let cls = "cal-cell deliv stacked";
+      // A day already gone still opens — she backfills and reviews old days — so
+      // it is dimmed rather than disabled, and a day at capacity still opens too.
+      if (dateId === active) cls += " sel";
+      else if (st.past) cls += " past";
+      if (iso === today) cls += " today";
+      if (st.closed && !st.past) cls += " closed";
+      if (full) cls += " full";
+      cls += box;
+      // Naming the day comes BEFORE opening it: the pick usually re-renders the
+      // whole screen, calendar included, and the rebuilt grid draws its bubbles
+      // from the day this module was just told about.
+      return el("button", {
+        class: `${cls} tappable`,
+        onclick: () => { nameDay(state.occasions, iso, past); onPick(dateId); },
+      }, num, el("span", { class: "cal-count" }, full ? "FULL" : `${cap.total}/${cap.capacity}`), tip);
+    });
+
+    wrap.replaceChildren(
+      el("div", { class: "cal-head" },
+        prev,
+        el("span", { class: "cal-title" }, monthLabel(month.year, month.month)),
+        next),
+      el("div", { class: "cal-grid" },
+        ...DOW.map((d) => el("span", { class: "cal-dow" }, d)),
+        ...cells,
+        ...occPapers(state.occasions, weeks, today)));
+  }
+
+  paint();
+  return { el: wrap, repaint: paint };
 }
 
 function renderAll(root, state, params) {
@@ -307,8 +421,8 @@ function renderAll(root, state, params) {
     return;
   }
   // In-place rebuilds (status change, add, edit, remove) must not let the
-  // screen jump under the baker's finger: the New-orders inbox above the date
-  // strip grows/shrinks as orders are handled, and the New/Edit form changes
+  // screen jump under the baker's finger: the New-orders inbox above the
+  // calendar grows/shrinks as orders are handled, and the New/Edit form changes
   // height, so everything below would otherwise snap up or down. Pin the row
   // the baker is acting on (set via anchorRowId) back to its screen spot; when
   // that row is gone (e.g. removed, or filtered out) pin the Orders list top
@@ -329,7 +443,15 @@ function renderAll(root, state, params) {
     ? requested
     : (dates.find((d) => d.date >= todayISO())?.id || dates[dates.length - 1].id);
 
-  const strip = el("div", { class: "date-tabs" });
+  const activeDate = byId(state.deliveryDates, activeId);
+  if (!ordersCalMonth) ordersCalMonth = monthOf(activeDate.date);
+  const topCal = deliveryCal({
+    state,
+    days: deliveryDayList(state),
+    getActiveId: () => activeId,
+    month: ordersCalMonth,
+    onPick: (id) => selectDate(id),
+  });
   const content = el("div", {});
 
   const renderContent = () => {
@@ -339,56 +461,37 @@ function renderAll(root, state, params) {
         "This order's delivery date was deleted. Remove it from the New Orders box."));
       return;
     }
-    content.replaceChildren(dateContent(state, date, root));
+    content.replaceChildren(dateContent(state, date, root, selectDate));
   };
 
-  // Switch dates in place instead of navigating: the strip keeps its scroll and
-  // only the order area below is rebuilt. The URL still updates (without
-  // firing the router) so the current date stays shareable.
+  // Switch dates in place instead of navigating: only the order area below the
+  // calendar is rebuilt, so the calendar keeps the month she paged it to. The URL
+  // still updates (without firing the router) so the current date stays shareable.
   const selectDate = (id) => {
     activeId = id;
-    for (const t of strip.querySelectorAll(".date-tab")) {
-      t.classList.toggle("active", t.dataset.dateId === id);
+    // Opening a day in another month brings the grid with it — a New-orders row a
+    // season away must not leave the calendar showing a month it isn't on.
+    const dest = byId(state.deliveryDates, id);
+    if (dest) {
+      const m = monthOf(dest.date);
+      ordersCalMonth.year = m.year;
+      ordersCalMonth.month = m.month;
     }
+    topCal.repaint();
     renderContent();
     if (history && history.replaceState) {
       history.replaceState(null, "", `#/orders?date=${id}`);
     }
-    // The tapped order may sit on a far delivery date whose pill is hidden off
-    // the strip's edge (New-Orders rows jump across dates). Slide it into view.
-    const pill = strip.querySelector(`.date-tab[data-date-id="${id}"]`);
-    if (pill) revealDatePill(strip, pill);
   };
-
-  for (const d of dates) {
-    const { closed, past } = deliveryStatus(d.date, state.settings);
-    strip.appendChild(el("a", {
-      class: `date-tab${d.id === activeId ? " active" : ""}`,
-      href: `#/orders?date=${d.id}`,
-      dataset: { dateId: d.id },
-      onclick: (ev) => { ev.preventDefault(); selectDate(d.id); },
-    },
-      el("span", { class: `dot${closed || past ? " closed" : ""}` }, "● "),
-      shortDate(d.date)));
-  }
-
-  // The strip is rebuilt on a full render (e.g. arriving via the router, or
-  // after an order is saved). Reveal the active tab so a later date isn't
-  // hidden off the strip's edge — the same slide the inbox taps use.
-  const raf = globalThis.requestAnimationFrame || ((fn) => fn());
-  raf(() => {
-    const active = strip.querySelector(".date-tab.active");
-    if (active) revealDatePill(strip, active);
-  });
 
   renderContent();
   const inbox = newOrdersInbox(state, selectDate, root);
   // The screen is two stacked parts: the finder card up top, then everything
-  // else (New-orders inbox, date strip, that date's orders) in one container.
-  // While a search is active the container hides so only matches are shown.
+  // else (New-orders inbox, the delivery calendar, that date's orders) in one
+  // container. While a search is active the container hides so only matches show.
   const body = el("div", {});
   if (inbox) body.append(inbox);
-  body.append(strip, content);
+  body.append(topCal.el, content);
   const finder = orderFinderEl(state, root, selectDate, body);
   root.replaceChildren(finder, body);
   let delta = null;
@@ -482,8 +585,8 @@ export function newOrdersInbox(state, selectDate, root) {
       : el("a", {
           class: "inbox-main",
           href: `#/orders?date=${first.deliveryDateId}`,
-          // Switch dates in place like the date tabs (not native hash navigation,
-          // which is flaky on iOS) so the tap reliably opens the order's date.
+          // Switch dates in place (not native hash navigation, which is flaky on
+          // iOS) so the tap reliably opens the order's date.
           onclick: (ev) => {
             ev.preventDefault();
             // A status filter could hide the row on its own date — clear it, the
@@ -614,13 +717,18 @@ function orderFinderEl(state, root, selectDate, body) {
     resultsEl);
 }
 
-function dateContent(state, date, root) {
+function dateContent(state, date, root, selectDate) {
   const st = deliveryStatus(date.date, state.settings);
   const cap = capacityStatus(state, date.id);
   const dateLabel = `${weekdayName(date.date)}, ${longDate(date.date)}`;
   const rules = dayRuleRows(state, date.date);
   const adjusted = rules.rows.filter((r) => r.delta !== 0).length;
 
+  // A day the bakery has marked names itself beside the date, in the mark's own
+  // colour. On a calendar the name is asked for (the shop's bubble, the day
+  // tapped); here the day is already the one on screen, so the name just sits
+  // next to it. Nothing is drawn on an unmarked day.
+  const occ = occForDate(state.occasions, date.date);
   const header = el("div", { class: "card" },
     el("div", { class: "card-row" },
       el("div", {},
@@ -628,7 +736,9 @@ function dateContent(state, date, root) {
         el("p", { class: "card-sub" },
           st.past ? "Past delivery"
             : st.closed ? `Orders closed at ${state.settings.cutoff} yesterday`
-              : `Open · cut-off in ${st.countdown}`)),
+              : `Open · cut-off in ${st.countdown}`),
+        occ ? el("span", { class: `occ-tag occ-${occColour(occ)}`, style: "margin-top:6px" },
+          occ.label) : null),
       el("span", { class: "qty-chip" }, `${cap.total}/${cap.capacity}`)),
     fillMeter(cap.total, cap.capacity),
     cap.exceeded ? el("div", { class: "danger-banner" },
@@ -637,7 +747,7 @@ function dateContent(state, date, root) {
       button(adjusted ? `Set day's availability · ${adjusted} adjusted` : "Set day's availability", () =>
         openDayAdjustPopup(state, date, () => renderAll(root, state, new URLSearchParams({ date: date.id }))), "soft")) : null);
 
-  const form = orderForm(state, date.id, root);
+  const form = orderForm(state, date.id, root, selectDate);
   const list = orderList(state, date.id, root);
 
   return el("div", {}, header, form, list);
@@ -747,7 +857,7 @@ function referredTag(order) {
 // same shape a multi-item storefront order arrives as, so the list/inbox/confirm
 // all treat it as a single order. Editing an order never replaces this card:
 // Edit opens a pop-up over the screen instead.
-function orderForm(state, dateId, root) {
+function orderForm(state, dateId, root, selectDate) {
   const date = byId(state.deliveryDates, dateId);
   const products = productOptions(state, dateId);
   if (!products.length) {
@@ -771,8 +881,21 @@ function orderForm(state, dateId, root) {
     value: draft.address, oninput: function () { draft.address = this.value; } });
   const note = el("input", { class: "input", placeholder: "Note (optional)",
     value: draft.note, oninput: function () { draft.note = this.value; } });
-  const orderDate = el("input", { class: "input", type: "date",
-    value: draft.orderDate, oninput: function () { draft.orderDate = this.value; } });
+  const orderDate = dateField(draft.orderDate, (iso) => { draft.orderDate = iso; },
+    { occasions: state.occasions });
+
+  // "Which day am I adding to?" — the same calendar the top of the screen shows,
+  // so the two can never disagree about which days exist. Choosing a day switches
+  // the screen instead of filling a draft: the product list and each day's limits
+  // are built for the date on screen, so a day held only in the draft would offer
+  // items that are not sellable on it.
+  const dayCal = deliveryCal({
+    state,
+    days: deliveryDayList(state),
+    getActiveId: () => dateId,
+    month: monthOf(date.date),
+    onPick: selectDate,
+  });
 
   const rowsEl = el("div", {});
   const items = [{ productId: "", qty: 1 }];
@@ -801,7 +924,7 @@ function orderForm(state, dateId, root) {
     const fulfillment = fulfillmentSel.value;
     const addressText = address.value.trim();
     const noteText = note.value.trim();
-    const placed = orderDate.value;
+    const placed = draft.orderDate;
     if (picked.length === 1) {
       addNew(state, date, picked[0].productId, picked[0].qty, customerName, phone, fulfillment, addressText, noteText, placed, root);
     } else {
@@ -809,14 +932,13 @@ function orderForm(state, dateId, root) {
     }
   };
 
-  return el("div", { class: "card" },
-    el("h3", { style: "margin:0 0 10px" }, "＋ New order"),
-    el("div", { class: "field" },
-      el("label", {}, "Items"),
-      rowsEl,
-      button("＋ Add another item", () => { items.push({ productId: "", qty: 1 }); renderRows(); }, "ghost")),
-    el("div", { class: "card-sub", style: "margin:0 0 10px" },
-      "Everything in the Items list becomes one customer order — add every item, then press Add order."),
+  // Shut until its title is tapped: the card stands on every delivery day and is
+  // not what the screen is for day to day. Inside, the day calendar comes first
+  // (the same month grid the shop shows), then the customer, then the items.
+  const body = el("div", { class: "fold-body", hidden: !newFormOpen },
+    el("div", { class: "field", style: "margin-bottom:10px" },
+      el("label", {}, "Delivery day"),
+      dayCal.el),
     el("div", { class: "form-grid" },
       el("div", {}, el("label", {}, "Customer"), customer),
       el("div", {}, el("label", {}, "Order date"), orderDate),
@@ -825,19 +947,64 @@ function orderForm(state, dateId, root) {
       el("div", {}, el("label", {}, "Delivery address (if courier)"), address)),
     el("div", { class: "card-sub", style: "margin:0 0 10px" },
       "Order date = when it was placed (defaults to today). WhatsApp is kept in your delivery history for marketing follow-ups."),
-    el("div", { class: "field", style: "margin-top:10px" }, note),
+    el("div", { class: "field" },
+      el("label", {}, "Items"),
+      rowsEl,
+      button("＋ Add another item", () => { items.push({ productId: "", qty: 1 }); renderRows(); }, "ghost")),
+    el("div", { class: "card-sub", style: "margin:0 0 10px" },
+      "Everything in the Items list becomes one customer order — add every item, then press Add order."),
+    el("div", { class: "field" }, note),
     button("＋ Add order", submit, "block primary"));
+
+  const caret = el("span", { class: "fold-caret" }, newFormOpen ? "▾" : "▸");
+  const controller = { card: null, open: false, close: null };
+  const shutCard = () => {
+    newFormOpen = false; // the card is rebuilt often — the module flag is the truth
+    body.hidden = true;
+    caret.textContent = "▸";
+    controller.open = false;
+    openOrderCards.delete(controller);
+  };
+  const head = el("button", { class: "fold-head", type: "button" },
+    el("span", {}, "＋ New order"),
+    caret);
+  head.addEventListener("click", () => {
+    if (controller.open) { shutCard(); return; }
+    newFormOpen = true;
+    controller.open = true;
+    controller.close = shutCard;
+    body.hidden = false;
+    caret.textContent = "▾";
+    openOrderCards.add(controller);
+  });
+  const card = el("div", { class: "card" }, head, body);
+  controller.card = card;
+  // A rebuild while she was working in the card (a sync pull, a status change,
+  // the day calendar inside it being tapped): come back open, and register the
+  // new element with the outside-tap rule.
+  if (newFormOpen) {
+    controller.open = true;
+    controller.close = shutCard;
+    openOrderCards.add(controller);
+  }
+  return card;
 }
 
-// The delivery days the Edit-order pop-up's "Delivery day" select offers: every
-// day still to come, plus the order's own day even if that has passed (so an
-// order left on an old date still shows where it is). Sorted soonest first.
+// Every delivery day, soonest first — the one list behind the screen's calendar
+// and the New-order card's, so the two can never disagree about which days exist
+// or what order they come in.
+function deliveryDayList(state) {
+  return [...state.deliveryDates]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((d) => ({ id: d.id, date: d.date }));
+}
+
+// The days the Edit-order pop-up's "Delivery day" calendar offers: every day
+// still to come, plus the order's own day even if that has passed (so an order
+// left on an old date still shows where it is).
 function deliveryDayOptions(state, curId) {
   const today = todayISO();
-  return state.deliveryDates
-    .filter((d) => d.date >= today || d.id === curId)
-    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
-    .map((d) => ({ value: d.id, label: `${weekdayName(d.date)}, ${longDate(d.date)}` }));
+  return deliveryDayList(state).filter((d) => d.date >= today || d.id === curId);
 }
 
 // Soft notes under the "Delivery day" select: the window the customer was told,
@@ -883,7 +1050,7 @@ function openEditPopup(state, group, dateId, root) {
   const date = byId(state.deliveryDates, dateId) ||
     (first.deliveryDateId ? byId(state.deliveryDates, first.deliveryDateId) : null);
   // A missing date record no longer stops the pop-up opening: the "Delivery day"
-  // select is exactly what puts an orphaned order back onto a real day.
+  // calendar is exactly what puts an orphaned order back onto a real day.
 
   const lines = group.orders.map((o) => ({ id: o.id, productId: o.productId || "", qty: o.qty }));
   const draft = {
@@ -917,10 +1084,20 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     value: draft.address, oninput: function () { draft.address = this.value; } });
   const note = el("input", { class: "input", placeholder: "Note (optional)",
     value: draft.note, oninput: function () { draft.note = this.value; } });
-  const orderDate = el("input", { class: "input", type: "date",
-    value: draft.orderDate, oninput: function () { draft.orderDate = this.value; } });
-  const deliverySel = select(deliveryDayOptions(state, curId), curId,
-    function () { draft.deliveryDateId = this.value; refresh(); }, "Choose a delivery day…");
+  const orderDate = dateField(draft.orderDate, (iso) => { draft.orderDate = iso; },
+    { occasions: state.occasions });
+  // Picking a day writes the draft and repaints the pop-up, so the soft notes
+  // below re-read against the new day — the move itself is unchanged. The
+  // calendar is always open here: a pop-up the baker opened on purpose has no
+  // room for another thing to unfold.
+  const curDate = byId(state.deliveryDates, curId);
+  const deliveryPick = deliveryCal({
+    state,
+    days: deliveryDayOptions(state, curId),
+    getActiveId: () => draft.deliveryDateId || curId,
+    month: monthOf(curDate ? curDate.date : todayISO()),
+    onPick: (id) => { draft.deliveryDateId = id; refresh(); },
+  }).el;
   const deliveryNotes = el("div", { class: "card-sub", style: "margin:6px 0 0" },
     ...moveNoteLines(state, group, curId).map((t) => el("p", { style: "margin:2px 0" }, t)));
 
@@ -951,21 +1128,16 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       fulfillment: fulfillmentSel.value,
       address: address.value.trim(),
       note: note.value.trim(),
-      orderDate: orderDate.value,
+      orderDate: draft.orderDate,
       deliveryDateId: destId,
     }, close, root);
   };
 
+  // Same order as the New-order card: which day, then who, then what.
   return el("div", {},
-    el("div", { class: "field" },
-      el("label", {}, "Items"),
-      rowsEl,
-      button("＋ Add another item", () => { lines.push({ productId: "", qty: 1 }); refresh(); }, "ghost")),
-    el("div", { class: "card-sub", style: "margin:0 0 10px" },
-      "Hidden products are listed as \"(hidden)\" — you can still add or keep one."),
     el("div", { class: "field", style: "margin-bottom:10px" },
       el("label", {}, "Delivery day"),
-      deliverySel,
+      deliveryPick,
       deliveryNotes),
     el("div", { class: "form-grid" },
       el("div", {}, el("label", {}, "Customer"), customer),
@@ -973,7 +1145,13 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       el("div", {}, el("label", {}, "WhatsApp (optional)"), whatsapp),
       el("div", {}, el("label", {}, "Fulfillment"), fulfillmentSel),
       el("div", {}, el("label", {}, "Delivery address (if courier)"), address)),
-    el("div", { class: "field", style: "margin-top:10px" }, note),
+    el("div", { class: "field" }, note),
+    el("div", { class: "field", style: "margin-top:10px" },
+      el("label", {}, "Items"),
+      rowsEl,
+      button("＋ Add another item", () => { lines.push({ productId: "", qty: 1 }); refresh(); }, "ghost")),
+    el("div", { class: "card-sub", style: "margin:0 0 10px" },
+      "Hidden products are listed as \"(hidden)\" — you can still add or keep one."),
     button("Save changes", save, "block primary"),
     el("div", { style: "margin-top:8px" }, button("Cancel", close, "ghost block")));
 }

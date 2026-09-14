@@ -1,7 +1,7 @@
 // test/store.live.test.js — the storefront's live auto-refresh: while the page
 // is on screen it re-checks availability every 30s (or when the tab regains
-// focus) and repaints the date pills + product stamps, WITHOUT touching what the
-// customer has already typed or chosen.
+// focus) and repaints the delivery calendar + product stamps, WITHOUT touching
+// what the customer has already typed or chosen.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -37,7 +37,7 @@ globalThis.document = {
 };
 globalThis.window = { open() {}, addEventListener: (t, f) => { (winListeners[t] ||= []).push(f); } };
 
-// Freeze "now" so the pill dates are deterministic: Tue 1 Sep 2026, 10:00 AM.
+// Freeze "now" so the calendar dates are deterministic: Tue 1 Sep 2026, 10:00 AM.
 const RealDate = globalThis.Date;
 class MockDate extends RealDate {
   constructor(...args) {
@@ -91,19 +91,31 @@ const settle = () => new Promise((r) => setTimeout(r, 0));
 
 const { fmtDay } = await import("../store/app.js");
 
-test("live refresh updates sold-out pills but never clears what the customer typed", async () => {
+// The calendar as painted: the grid's cells with the weekday headings dropped,
+// and the one line under the grid naming the chosen day. September 2026 starts
+// on a Tuesday, so two padding cells sit in front of the 1st.
+const cells = () =>
+  registry["dates"].children[0]
+    .children.find((c) => c.className === "cal-grid").children
+    .filter((c) => !c.className.includes("cal-dow"));
+const cell = (day) => cells()[2 + (day - 1)];
+const chosenText = () =>
+  registry["dates"].children[0]
+    .children.find((c) => c.className === "cal-chosen").children[0].text;
+
+test("live refresh updates sold-out days but never clears what the customer typed", async () => {
   await settle(); await settle(); await settle(); // boot + first live refresh
 
-  const pills = registry["dates"].children;
-  assert.ok(pills[0].className.includes("soldout"), "Wed stays sold out");
-  assert.ok(pills[1].className.includes("active") && !pills[1].className.includes("soldout"),
+  assert.ok(cell(2).className.includes("full"), "Wed stays sold out");
+  assert.ok(cell(4).className.includes("avail") && !cell(4).className.includes("full"),
     "Fri is the auto-selected open day");
+  assert.ok(cell(4).className.includes("sel"));
 
   // The customer has started filling the order form…
   document.getElementById("name-input").value = "Aunty Bee";
   document.getElementById("whatsapp-input").value = "60123456789";
   document.getElementById("note-input").value = "no onions please";
-  const before = pills[1];
+  const before = cell(4);
 
   // …then Fri sells out while the page is open. The next poll repaints.
   dayData = [
@@ -115,11 +127,10 @@ test("live refresh updates sold-out pills but never clears what the customer typ
   await intervalCb();
   await settle(); await settle(); await settle();
 
-  const pills2 = registry["dates"].children;
-  assert.ok(pills2[1].className.includes("soldout"), "Fri now shows sold out after the refresh");
-  assert.ok(pills2[2].className.includes("active") && !pills2[2].className.includes("soldout"),
+  assert.ok(cell(4).className.includes("full"), "Fri now shows sold out after the refresh");
+  assert.ok(cell(7).className.includes("sel") && !cell(7).className.includes("full"),
     "selection moves to Mon, the next open day");
-  assert.notEqual(pills2[1], before, "the sold-out pill was repainted");
+  assert.notEqual(cell(4), before, "the sold-out day was repainted");
   assert.ok(fetchCalls > callsBefore, "the poll really did re-check the live data");
 
   // The form the customer typed into is untouched by any of that.
@@ -131,14 +142,13 @@ test("live refresh updates sold-out pills but never clears what the customer typ
 test("no data change means no repaint — and a hidden tab stops polling", async () => {
   await settle(); await settle(); await settle();
 
-  const pills = registry["dates"].children;
-  const before = pills[1];
+  const before = cell(4);
   const callsBefore = fetchCalls;
 
   // Identical data on the next poll → nothing rebuilds.
   await intervalCb();
   await settle(); await settle(); await settle();
-  assert.equal(registry["dates"].children[1], before, "no DOM churn when nothing changed");
+  assert.equal(cell(4), before, "no DOM churn when nothing changed");
 
   // Background the tab → the poll no longer fetches.
   document.visibilityState = "hidden";
@@ -149,11 +159,11 @@ test("no data change means no repaint — and a hidden tab stops polling", async
   document.visibilityState = "visible";
 });
 
-test("live storefront still renders on day text for every pill", () => {
-  const pills = registry["dates"].children;
-  assert.equal(pills[0].children[0].children[0].text, fmtDay(dates[0]));
-  assert.equal(pills[1].children[0].children[0].text, fmtDay(dates[1]));
-  assert.equal(pills[2].children[0].children[0].text, fmtDay(dates[2]));
+test("the calendar draws every posting day and names the chosen one", () => {
+  assert.equal(cell(2).children[0].children[0].text, "2");
+  assert.equal(cell(4).children[0].children[0].text, "4");
+  assert.equal(cell(7).children[0].children[0].text, "7");
+  assert.equal(chosenText(), `Your posting day: ${fmtDay(dates[2])}`);
 });
 
 test("a refresh that depletes an ordered item fixes the cart, bar and tells the customer", async () => {
@@ -167,8 +177,8 @@ test("a refresh that depletes an ordered item fixes the cart, bar and tells the 
   prodData = [];
   await intervalCb();
   await settle(); await settle(); await settle();
-  registry["dates"].children[1]._listeners.click[0](); // select Fri
-  assert.ok(registry["dates"].children[1].className.includes("active"), "Fri is the selected day");
+  cell(4)._listeners.click[0](); // select Fri
+  assert.ok(cell(4).className.includes("sel"), "Fri is the selected day");
 
   const cards = registry["menu"].children;
   // The shim renders text as a child node (el() sets .text, not .textContent);
