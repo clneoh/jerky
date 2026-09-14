@@ -244,7 +244,7 @@ function occBody(state) {
       "Slide from the first day to the last — or tap the first, then the last."
       + " Tap the same day twice to mark just one day."),
     el("div", { class: "occ-importrow" },
-      button("＋ Add occasion",
+      button("＋ Load standard occasions",
         () => occImportPicker(state), "soft small")),
     el("p", { class: "occ-sublabel" }, "Marked periods"),
     occs.length
@@ -275,7 +275,7 @@ function deleteOccasion(state, occ) {
     }, { danger: true, yesLabel: "Remove" });
 }
 
-// The "Add occasion" button's checkbox list — every future, not-yet-added
+// The "Load standard occasions" button's checkbox list — every future, not-yet-added
 // entry grouped under the eight category headings below. Rows are ticked by
 // default; the count on the Add button follows the ticks live.
 const OCC_IMPORT_GROUPS = [
@@ -299,7 +299,7 @@ function occImportPicker(state) {
   const entries = OCCASION_CATALOG.filter((e) =>
     e.to >= today && !already.has(`${e.label}|${e.from}`));
   if (!entries.length) {
-    showPopup("Add occasion", (refresh, close) => el("div", {},
+    showPopup("Load standard occasions", (refresh, close) => el("div", {},
       el("p", { class: "card-sub" },
         "Every date in the list is already on your calendar — nothing new to add."),
       el("div", { class: "popup-actions", style: "margin-top:12px;display:flex;gap:8px;justify-content:flex-end" },
@@ -307,7 +307,7 @@ function occImportPicker(state) {
     return;
   }
 
-  showPopup("Add occasion", (refresh, close) => {
+  showPopup("Load standard occasions", (refresh, close) => {
     const on = entries.map(() => true);
     const groupData = []; // { master, boxes: [{ el, i }] } per visible heading
 
@@ -383,10 +383,12 @@ function occImportPicker(state) {
   });
 }
 
-// "My own day" — a one-off mark (any name, any date) straight from the Add
-// occasion popup, so a birthday or a promo day lands in two taps without
-// drawing on the calendar. Adds a single-day mark in orange (Edit it later to
-// re-colour, like any mark) and remembers the name for the one-tap chips.
+// "My own day" — a one-off mark (any name, any date) straight from the Load
+// standard occasions popup, so a birthday or a promo day lands in two taps
+// without drawing on the calendar. Adds a single-day mark in orange (Edit it
+// later to re-colour, like any mark) and remembers the name for the one-tap
+// chips. Its button is spelled out as "Add my own day" so it cannot be confused
+// with the popup's own Add, which is the one that files the ticked days.
 function myOwnDay(state, close) {
   const ui = { name: "", date: todayISO() };
   const finish = () => {
@@ -396,7 +398,7 @@ function myOwnDay(state, close) {
     addOccasion(state, ui.date, ui.date, name, "orange", close);
   };
   const nameInp = el("input", {
-    class: "input", placeholder: "e.g. Pet-treat promo day", maxlength: "40",
+    class: "input", placeholder: "e.g. Pet-treat promo day", "data-suggest": "Pet-treat promo day", maxlength: "40",
   });
   nameInp.addEventListener("input", () => { ui.name = nameInp.value; });
   nameInp.addEventListener("keydown", (e) => { if (e.key === "Enter") finish(); });
@@ -407,7 +409,7 @@ function myOwnDay(state, close) {
     el("p", { class: "occ-edit-note", style: "margin:0 0 2px" },
       "Any name, any date — a birthday or a one-off promo."),
     el("div", { class: "mycal-own-row" }, nameInp, dateInp,
-      button("Add", finish, "soft")));
+      button("Add my own day", finish, "soft")));
 }
 
 function occImportAdd(state, picks, close) {
@@ -502,6 +504,7 @@ function occLabelPicker(state, from, to, occ = null) {
 
     const nameInput = el("input", {
       class: "input", placeholder: "Type a name — e.g. \"Malaysia Day\"",
+      "data-suggest": "Malaysia Day",
       maxlength: "40", value: ui.name,
     });
     nameInput.addEventListener("input", () => { ui.name = nameInput.value; });

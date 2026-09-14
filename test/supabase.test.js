@@ -369,7 +369,8 @@ test("storefront payload publishes the set's component and its per-product date 
   state.products = [
     { id: "prd_1", name: "Focaccia", price: 15, unit: "loaf", active: true, limit: 12 },
     { id: "prd_2", name: "Focaccia Value Pack (4)", price: 54, unit: "set", active: true,
-      recipe: [{ productId: "prd_1", qty: 4 }], closeDays: 3, validFrom: "2026-12-01", validTo: "2026-12-24" },
+      recipe: [{ productId: "prd_1", qty: 4 }], closeDays: 3, cancelDays: 2,
+      validFrom: "2026-12-01", validTo: "2026-12-24" },
   ];
   const calls = [];
   globalThis.fetch = async (url, opts) => {
@@ -384,11 +385,12 @@ test("storefront payload publishes the set's component and its per-product date 
     const payload = JSON.parse(JSON.parse(upsert.opts.body)[0].data);
     assert.deepEqual(payload.products.find((p) => p.name === "Focaccia Value Pack (4)"),
       { name: "Focaccia Value Pack (4)", price: 54, unit: "set", component: { name: "Focaccia", qty: 4 },
-        closeDays: 3, validFrom: "2026-12-01", validTo: "2026-12-24" });
+        closeDays: 3, cancelDays: 2, validFrom: "2026-12-01", validTo: "2026-12-24" });
     // A product without rules publishes no date keys at all — the storefront's
     // pack default (14) is applied on its side.
     const base = payload.products.find((p) => p.name === "Focaccia");
-    assert.ok(!("closeDays" in base) && !("validFrom" in base) && !("validTo" in base));
+    assert.ok(!("closeDays" in base) && !("validFrom" in base) && !("validTo" in base)
+      && !("cancelDays" in base), "a blank window publishes no cancelDays key");
   } finally {
     globalThis.fetch = realFetch;
   }

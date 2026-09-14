@@ -14,8 +14,32 @@ const LANG_VARIANTS = { zh: ["nameZh", "descZh", "unitZh", "servingZh"], ms: ["n
 const LANG_LABEL = { zh: "Chinese (中文)", ms: "Bahasa Malaysia" };
 const FIELD_LABEL = { name: "Name", description: "Description", unit: "Selling unit", servingTip: "Feeding tip" };
 
+// ── The translation card folds away ─────────────────────────────────────────
+// It starts closed, opens on a tap of its own title, and closes again on a tap
+// anywhere outside it. One document listener serves every card on the page (the
+// New product form and the Edit pop-up can both show one), and a card that has
+// been taken off the page is simply dropped from the list on the next tap — so
+// nothing has to be unhooked when a pop-up is cancelled without re-rendering.
+const openCards = new Set();
+let collapseInstalled = false;
+
+function installCollapseOutside() {
+  if (collapseInstalled || typeof document === "undefined" || typeof document.addEventListener !== "function") return;
+  collapseInstalled = true;
+  document.addEventListener("pointerdown", (ev) => {
+    for (const ctl of [...openCards]) {
+      if (ctl.card.isConnected === false) { openCards.delete(ctl); continue; }
+      if (!ctl.card.contains(ev.target)) ctl.close();
+    }
+  });
+}
+
 export function renderProducts(root, state) {
+  installCollapseOutside();
   renderAll(root, state);
+  // Whatever was built above goes away with this screen — forget the cards so a
+  // later tap cannot reach into one that is no longer on the page.
+  return () => openCards.clear();
 }
 
 function renderAll(root, state) {
@@ -54,13 +78,13 @@ function renderAll(root, state) {
 function buildEditor(state, product) {
   const recipeDraft = (product && product.recipe ? product.recipe : []).map((l) => ({ ...l }));
 
-  const name = el("input", { class: "input", placeholder: "e.g. Chicken Jerky", value: product?.name || "" });
+  const name = el("input", { class: "input", placeholder: "e.g. Chicken Jerky", "data-suggest": "Chicken Jerky", value: product?.name || "" });
   const unitChoices = productUnitOptions(state, product);
   const unit = select(unitChoices.options, unitChoices.value, null, "Pick a unit…");
   const price = el("input", { class: "input", type: "number", inputmode: "decimal", step: "0.01",
     placeholder: "sell price (RM, optional)", value: product?.price ?? "" });
   const limit = el("input", { class: "input", type: "number", inputmode: "numeric", min: "1",
-    placeholder: "e.g. 12", value: product?.limit ?? "",
+    placeholder: "e.g. 12", "data-suggest": "12", value: product?.limit ?? "",
     title: "Max pouches of this product per batch/posting day. Limits are added together for the day's availability (e.g. 12 chicken + 12 duck = 24). Leave blank for no limit." });
 
   // Optional per-product date rules — customers can't order this product for a
@@ -68,16 +92,24 @@ function buildEditor(state, product) {
   // or a fixed from–to window of delivery dates. Both optional and per product:
   // blank means the product sells on any open date.
   const closeDays = el("input", { class: "input", type: "number", inputmode: "numeric", min: "0",
-    placeholder: "e.g. 14", value: product?.closeDays ?? "",
+    placeholder: "e.g. 14", "data-suggest": "14", value: product?.closeDays ?? "",
     title: "Customers must pick a delivery date at least this many days away. Blank = any open day. 0 = no early close." });
   const validFrom = el("input", { class: "input", type: "date", value: product?.validFrom || "" });
   const validTo = el("input", { class: "input", type: "date", value: product?.validTo || "" });
+
+  // How long the customer may still change or cancel this product's order — the
+  // window is stated on the shop card and in a mixed order's strictest window.
+  // Purely informational: it never blocks the baker from moving an order by hand.
+  const cancelDays = el("input", { class: "input", type: "number", inputmode: "numeric", min: "0",
+    placeholder: "e.g. 2", "data-suggest": "2", value: product?.cancelDays ?? "",
+    title: "How many days before delivery a customer may still change or cancel this product's order. This only tells the customer — it never blocks you. Blank or 0 = no window shown." });
 
   // A sentence or two customers read on the shop page to know what this is.
   // Optional — blank shows nothing. Kept on the product and published with the
   // storefront menu, so it is written once here, not on the shop.
   const desc = el("textarea", { class: "input", rows: 2,
     placeholder: "e.g. Chicken jerky — soft, chewy strips, no additives",
+    "data-suggest": "Chicken jerky — soft, chewy strips, no additives",
     value: product?.description || "" });
 
   // A quick how-to-serve line the owner sends with the bring-a-friend follow-up
@@ -85,36 +117,51 @@ function buildEditor(state, product) {
   // Optional — blank keeps the follow-up message to the referral ask only.
   const serving = el("textarea", { class: "input", rows: 2,
     placeholder: "e.g. Tear into small pieces, store sealed in a cool, dry place",
+    "data-suggest": "Tear into small pieces, store sealed in a cool, dry place",
     value: product?.servingTip || "" });
 
-  // ── Auto-translated 中文 / Bahasa Malaysia text ───────────────────────────
-  // English is written once above; these lines are machine-filled from it when
-  // the product is saved or published online. The "auto" tag marks machine text;
-  // typing in any box makes that line hers (never overwritten again), and the ↻
-  // buttons fill a single line now. Good translations are simply left alone.
-  const manualSet = new Set(); // boxes the baker decided by typing or clearing
+  // ── Translated 中文 / Bahasa Malaysia text ────────────────────────────────
+  // English is written once above; each line here is translated from it and
+  // offered as an ordinary grey suggestion — the → at the box's right edge takes
+  // the words, the same gesture as every other suggested field (admin/js/
+  // suggest.js). Once a line has words the → gives way to a ↻ that re-translates
+  // it on demand. Typing your own words makes that line yours, and it is never
+  // overwritten again.
+  const manualSet = new Set(); // boxes the baker decided by typing
   const regen = new Set();     // boxes machine-filled during THIS edit
   const regenSrc = {};         // variant → the English each regen box was made from
 
   const isText = (src) => src === "description" || src === "servingTip";
   const boxes = {};
-  const tags = {};
-  const tagFor = (variant) => {
-    const tag = el("span", { class: "trans-tag", dataset: { variant } });
-    tags[variant] = tag;
-    return tag;
-  };
+  const wraps = {};
+  const regenBtns = {};
+  const suggests = {};       // variant → the translation currently on offer, "" for none
+  const pending = new Set(); // variants whose translation is still being fetched
+  const cache = {};          // `${lang}|${english}` → translation, so one open never retranslates
   for (const variant of ALL_VARIANTS) {
     const src = SRC_OF[variant];
     const node = el(isText(src) ? "textarea" : "input", {
       class: "input",
       rows: isText(src) ? 2 : undefined,
-      placeholder: `Auto-translated ${LANG_LABEL[LANG_OF[variant]]} — blank keeps English`,
       dataset: { variant },
       value: product ? String(product[variant] ?? "") : "",
     });
-    node.addEventListener("input", () => { manualSet.add(variant); refreshTags(); });
+    node.addEventListener("input", (ev) => {
+      if (ev && ev.suggested) {
+        // Took the recommendation: machine text, not hers. (The event is marked
+        // as a suggestion, so this never counts as typing.)
+        regen.add(variant);
+        regenSrc[variant] = englishSource(variant);
+      } else {
+        manualSet.add(variant); // her own words — never overwritten again
+      }
+      refreshRow(variant);
+    });
     boxes[variant] = node;
+    wraps[variant] = el("div", { class: "tr-wrap" },
+      node,
+      regenBtns[variant] = el("button", { class: "tr-regen", type: "button",
+        title: "Translate this line again", onclick: () => regenOne(variant) }, "↻"));
   }
   if (product) {
     for (const variant of ALL_VARIANTS) {
@@ -134,53 +181,77 @@ function buildEditor(state, product) {
     return "";
   }
 
-  function machineNow(variant) {
-    return !manualSet.has(variant) && String(boxes[variant].value ?? "").trim() !== ""
-      && (regen.has(variant) || !!(product && product.trSrc && product.trSrc[variant]));
-  }
-  function refreshTags() {
-    for (const variant of ALL_VARIANTS) {
-      const tag = tags[variant];
-      if (!tag) continue;
-      tag.textContent = machineNow(variant) ? "auto" : "";
-    }
-  }
+  // The greyed hint on a line with no words of its own: the translation on
+  // offer, then what happens if she leaves it alone. Says "filled with English"
+  // rather than naming the English, because that is what the customer gets —
+  // the English goes in where the translation is missing.
+  const hintFor = (t) => `e.g. ${t}……if blank, it will be filled with English`;
 
-  async function fillLanguage(lang) {
-    if (!translateAllowed()) { toast("No connection — translations fill when you're back online"); return; }
-    let filled = 0;
-    for (const variant of LANG_VARIANTS[lang]) {
-      if (manualSet.has(variant)) continue;
-      const src = englishSource(variant);
-      const node = boxes[variant];
-      if (!src) {
-        if (String(node.value ?? "").trim()) node.value = ""; // English removed → drop a stale line
-        continue;
-      }
-      const t = await translateTo(fetch, src, lang);
-      if (t) { node.value = t; regen.add(variant); regenSrc[variant] = src; filled++; }
-    }
-    refreshTags();
-    if (filled) toast(`Filled ${filled} ${LANG_LABEL[lang]} line${filled === 1 ? "" : "s"} — tap Update to keep them`);
-  }
-
-  async function fillOne(variant) {
-    if (manualSet.has(variant)) { toast("You typed this one — your words stay"); return; }
-    if (!translateAllowed()) { toast("No connection — translations fill when you're back online"); return; }
-    const src = englishSource(variant);
+  // What the right edge of one line offers. An empty line shows the greyed
+  // recommendation with the → the app draws on any suggested field; once it has
+  // words, → gives way to ↻ — except on a line the baker typed, which is hers.
+  // An empty line with nothing on offer still gets ↻, so it is never a dead end.
+  function refreshRow(variant) {
     const node = boxes[variant];
-    if (!src) {
-      if (String(node.value ?? "").trim()) node.value = "";
-      toast("Type the English for it above first, then tap ↻");
-      return;
+    // Emptiness is the box's own value being "", exactly what the CSS arrow keys
+    // off, so the arrow and ↻ can never both show or both hide.
+    const empty = node.value === "";
+    if (!empty) { suggests[variant] = ""; delete node.dataset.suggest; }
+    const show = !pending.has(variant) && !!englishSource(variant)
+      && (empty ? !suggests[variant] : !manualSet.has(variant));
+    regenBtns[variant].hidden = !show;
+    wraps[variant].className = "tr-wrap" + (show ? " has-regen" : "")
+      + (isText(SRC_OF[variant]) ? " tr-wrap--text" : "");
+  }
+
+  // Work out an empty line's translation and leave it on offer as the greyed
+  // suggestion the → takes. Runs when the card is opened. A translation already
+  // fetched for this English in this editor is reused rather than asked for
+  // again. Offline the line keeps ↻ as its way in and says nothing.
+  async function loadSuggestion(variant) {
+    const node = boxes[variant];
+    suggests[variant] = "";
+    delete node.dataset.suggest;
+    if (node.value !== "") { refreshRow(variant); return; }
+    const src = englishSource(variant);
+    if (!src) { node.placeholder = "Needs the English above first"; refreshRow(variant); return; }
+    if (!translateAllowed()) { refreshRow(variant); return; }
+    const key = `${LANG_OF[variant]}|${src}`;
+    if (cache[key] === undefined) {
+      pending.add(variant);
+      node.placeholder = "Translating…";
+      refreshRow(variant);
+      const got = await translateTo(fetch, src, LANG_OF[variant]);
+      pending.delete(variant);
+      if (got) cache[key] = got; // a blip is not remembered — the next open asks again
     }
+    const t = cache[key] || "";
+    node.placeholder = t ? hintFor(t) : "Couldn't translate — tap ↻ to try again";
+    if (t) { suggests[variant] = t; node.dataset.suggest = t; }
+    refreshRow(variant);
+  }
+
+  // The ↻: translate this one line again, now. The new wording is machine text,
+  // so a line the baker had typed over becomes translatable again.
+  async function regenOne(variant) {
+    const node = boxes[variant];
+    const src = englishSource(variant);
+    if (!src) { toast("Type the English for it above first, then tap ↻"); return; }
+    if (!translateAllowed()) { toast("No connection — translations fill when you're back online"); return; }
+    const key = `${LANG_OF[variant]}|${src}`;
+    pending.add(variant);
+    refreshRow(variant);
     const t = await translateTo(fetch, src, LANG_OF[variant]);
-    if (t) {
-      node.value = t; regen.add(variant); regenSrc[variant] = src; refreshTags();
-      toast("Translated — tap Update to keep it");
-    } else {
-      toast("Couldn't translate just now — try again in a moment");
-    }
+    pending.delete(variant);
+    if (!t) { refreshRow(variant); toast("Couldn't translate just now — try again in a moment"); return; }
+    cache[key] = t;
+    manualSet.delete(variant); // she asked for a translation — the line is machine again
+    regen.add(variant);
+    regenSrc[variant] = src;
+    node.value = t;
+    node.placeholder = hintFor(t);
+    refreshRow(variant);
+    toast("Translated — tap Update to keep it");
   }
 
   function oneRow(variant) {
@@ -188,10 +259,7 @@ function buildEditor(state, product) {
     const lang = LANG_OF[variant];
     return el("div", { class: "field", style: "margin-bottom:8px", dataset: { variant } },
       el("label", {}, `${field} — ${LANG_LABEL[lang]}`),
-      boxes[variant],
-      el("div", { class: "btn-row", style: "margin:5px 0 0" },
-        tagFor(variant),
-        button("↻ Translate this one", () => fillOne(variant), "ghost small")));
+      wraps[variant]);
   }
 
   function langSection(lang) {
@@ -200,17 +268,39 @@ function buildEditor(state, product) {
       ...LANG_VARIANTS[lang].map(oneRow));
   }
 
-  const translations = el("div", { class: "card" },
-    el("h3", { style: "margin:0 0 4px" }, "Product text for your customers"),
-    el("p", { class: "card-sub", style: "margin:0 0 8px" },
-      "These 中文 and Bahasa Malaysia lines are filled automatically from the English above the first time you save or publish. The \"auto\" tag marks a machine translation; type over any box to make that line yours — it is never overwritten again. Tap a button to fill every line of one language now."),
-    el("div", { class: "btn-row", style: "margin:0 0 4px" },
-      button("Fill all 中文", () => fillLanguage("zh"), "soft small"),
-      button("Fill all Bahasa Malaysia", () => fillLanguage("ms"), "soft small")),
+  // Closed until its title is tapped, and shut again the moment the baker taps
+  // anywhere outside it — see openCards at the top of this module.
+  const transBody = el("div", { class: "trans-body", hidden: true },
+    el("p", { class: "card-sub", style: "margin:8px 0 0" },
+      "The same text in 中文 and Bahasa Malaysia, worked out for you. Tap the → in a line to take the suggested words, or type your own. A line that already has words shows ↻ instead — tap it for fresh wording. If you leave a line blank, it will be filled with English."),
     langSection("zh"),
     langSection("ms"));
+  const caret = el("span", { class: "trans-caret" }, "▸");
+  // The card owns whether it is open rather than reading it back off the DOM,
+  // and hands the same close() to the outside-tap rule.
+  const controller = { card: null, open: false, close: null };
+  const shutCard = () => {
+    transBody.hidden = true;
+    caret.textContent = "▸";
+    controller.open = false;
+    openCards.delete(controller);
+  };
+  const transHead = el("button", { class: "trans-head", type: "button" },
+    el("span", {}, "Product text for your customers (中文 / Bahasa Malaysia)"),
+    caret);
+  transHead.addEventListener("click", () => {
+    if (controller.open) { shutCard(); return; }
+    controller.open = true;
+    controller.close = shutCard;
+    transBody.hidden = false;
+    caret.textContent = "▾";
+    openCards.add(controller);
+    for (const variant of ALL_VARIANTS) loadSuggestion(variant);
+  });
+  const translations = el("div", { class: "card" }, transHead, transBody);
+  controller.card = translations;
 
-  refreshTags();
+  for (const variant of ALL_VARIANTS) refreshRow(variant);
 
   const costEl = el("p", { class: "card-sub", style: "margin:0 0 10px" });
   const sumEl = el("div"); // "How it adds up:" breakdown under the lines, empty until a line is filled
@@ -305,6 +395,13 @@ function buildEditor(state, product) {
       closeVal = Math.floor(raw);
       if (closeVal < 0) return { error: "Closes days must be 0 or more" };
     }
+    let cancelVal;
+    if (cancelDays.value !== "") {
+      const raw = Number(cancelDays.value);
+      if (!Number.isFinite(raw)) return { error: "Change/cancel days must be a number" };
+      cancelVal = Math.floor(raw);
+      if (cancelVal < 0) return { error: "Change/cancel days must be 0 or more" };
+    }
     const vf = validFrom.value || undefined;
     const vt = validTo.value || undefined;
     if (vf && vt && vf > vt) return { error: "The \"from\" date is after the \"to\" date — swap them" };
@@ -318,6 +415,7 @@ function buildEditor(state, product) {
         price: price.value === "" ? undefined : Number(price.value),
         limit: limitVal,
         closeDays: closeVal,
+        cancelDays: cancelVal,
         validFrom: vf,
         validTo: vt,
         description: descVal || undefined,
@@ -328,7 +426,7 @@ function buildEditor(state, product) {
     };
   }
 
-  return { name, unit, price, limit, closeDays, validFrom, validTo, desc, serving, translations, recipeCard, renderRecipeLines, collect };
+  return { name, unit, price, limit, closeDays, cancelDays, validFrom, validTo, desc, serving, translations, recipeCard, renderRecipeLines, collect };
 }
 
 // Fold the translated boxes + their provenance onto a saved product row.
@@ -418,6 +516,10 @@ function editorFields(state, editor) {
       el("p", { class: "card-sub", style: "margin:0 0 5px" },
         "Customers must pick a delivery date at least this many days away. Blank or 0 = any open day."),
       editor.closeDays),
+    el("div", { class: "field" }, el("label", {}, "Changes or cancellations (days before delivery)"),
+      el("p", { class: "card-sub", style: "margin:0 0 5px" },
+        "How long a customer may still change or cancel this product's order — shown on the shop with the product. This only tells the customer; it never blocks you, you always move orders by hand. Blank or 0 = nothing shown."),
+      editor.cancelDays),
     el("div", { class: "field" }, el("label", {}, "Available for delivery dates"),
       el("p", { class: "card-sub", style: "margin:0 0 5px" },
         "Only sell this product on delivery dates inside this range (e.g. a seasonal item). Leave both empty for every open day."),

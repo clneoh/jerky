@@ -59,7 +59,7 @@ function cookingFamilyOf(list, uomId) {
 // them (pack units must stay in the same family) without losing typed values.
 function buildIngredientEditor(state, ingredient) {
   const list = state.uoms || [];
-  const name = el("input", { class: "input", placeholder: "e.g. Strong flour", value: ingredient?.name || "" });
+  const name = el("input", { class: "input", placeholder: "e.g. Strong flour", "data-suggest": "Strong flour", value: ingredient?.name || "" });
   const costHint = el("p", { class: "hint" });
   const unitSel = select((state.uoms || []).map((u) => ({ value: u.id, label: u.name })),
     currentUomId(state, ingredient), () => { syncDrafts(); renderPriceRows(); });

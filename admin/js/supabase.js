@@ -295,6 +295,12 @@ function storefrontPayload(state) {
         const v = p && p[k];
         if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) out[k] = v;
       }
+      // How long the customer may still change or cancel this product's order —
+      // shown on the card and in a mixed order's strictest window. Published
+      // only when set; blank means the product states no window.
+      const cancel = Number(p.cancelDays);
+      const cancelSet = p.cancelDays != null && !(typeof p.cancelDays === "string" && p.cancelDays.trim() === "");
+      if (cancelSet && Number.isInteger(cancel) && cancel >= 0) out.cancelDays = cancel;
       // Optional translated names for 中文 / BM shoppers. Published only when
       // written — blank falls back to the English name on the shop (nameFor).
       for (const k of ["nameZh", "nameMs"]) {
@@ -325,6 +331,9 @@ function storefrontPayload(state) {
     instagram: String(sf.instagram || ""),
     facebook: String(sf.facebook || ""),
     tngQr: String(sf.tngQr || ""),
+    policy: String(sf.policy || ""),
+    policyZh: String(sf.policyZh || ""),
+    policyMs: String(sf.policyMs || ""),
     deliveryDays: (state.settings && state.settings.deliveryDays) || [],
     cutoff: (state.settings && state.settings.cutoff) || "",
     capacity: (state.settings && state.settings.defaultCapacity) || 0,

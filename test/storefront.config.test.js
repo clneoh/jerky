@@ -44,6 +44,7 @@ const remote = {
   deliveryDays: [2, 4],
   cutoff: "15:00",
   capacity: 20,
+  policy: "Orders are not refundable; they may be moved to another day.",
   products: [
     { name: "Chocolate Cake", price: 55, unit: "whole", description: "Rich dark ganache, 3 layers" },
     { name: "Brownies", price: 10, unit: "box" },
@@ -88,6 +89,12 @@ test("published config overrides the header and menu at runtime", async () => {
   const bInner = cards[1].children[0].children[0];
   assert.equal(bInner.children[0].children[0].text, "Brownies");
   assert.equal(bInner.children.length, 2, "no description → no extra line under the name/price");
+});
+
+test("the published Policies wording is shown on the page, and hidden when blank", async () => {
+  await settle();
+  assert.equal(registry["policy-text"].textContent, "Orders are not refundable; they may be moved to another day.");
+  assert.equal(registry["policy-box"].hidden, false, "a written policy shows its box");
 });
 
 test("mergeStorefront replaces arrays wholesale and never touches supabase", () => {
@@ -206,4 +213,34 @@ test("mergeStorefront keeps the auto-translated description + selling unit (中�
   assert.equal(foc.unitZh, "条");
   assert.equal("unitMs" in foc, false, "a blank BM unit word is dropped — the card reads '/ loaf'");
   assert.equal("descZh" in base.products[0], false, "base is not mutated");
+});
+
+test("mergeStorefront keeps the change/cancel window and the Policies wording", () => {
+  const base = {
+    name: "A",
+    products: [{ name: "Focaccia", price: 15, unit: "loaf" }],
+    policy: "",
+  };
+  const out = mergeStorefront(base, {
+    products: [
+      { name: "Focaccia", price: 15, unit: "loaf", cancelDays: 2 },
+      { name: "Brownie", price: 6, unit: "piece" },
+    ],
+    policy: "  Orders are not refundable; they may be moved to another day.  ",
+    policyZh: "  款项不退还。  ",
+    policyMs: "",
+  });
+  assert.equal(out.products.find((p) => p.name === "Focaccia").cancelDays, 2);
+  assert.equal("cancelDays" in out.products.find((p) => p.name === "Brownie"), false,
+    "a blank window keeps the product without a cancelDays key");
+  assert.equal(out.policy, "Orders are not refundable; they may be moved to another day.",
+    "the policy text is adopted and trimmed");
+  assert.equal(out.policyZh, "款项不退还。", "a non-empty 中文 policy is kept");
+  assert.equal("policyMs" in out, false,
+    "a blank BM policy is dropped — policyFor falls back to the English wording");
+
+  // A remote that says nothing about the policy leaves the base's own value be.
+  const keep = mergeStorefront({ name: "A", policy: "My own words" }, { name: "B" });
+  assert.equal(keep.policy, "My own words");
+  assert.equal("policy" in base.products[0], false, "base products are not mutated");
 });

@@ -1,5 +1,5 @@
 // test/occasion_catalog.test.js — the curated special-days catalogue behind the
-// "Add occasion" button (admin/js/occasion_catalog.js): well-formed rows that
+// "Load standard occasions" button (admin/js/occasion_catalog.js): well-formed rows that
 // obey the baker's colour rule (public holiday = red, anything else = orange),
 // with no accidental duplicates. The catalogue is Malaysia's dates first, then
 // the general fun days (pet / baking & sweet / people & kindness), date-sorted.

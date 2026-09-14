@@ -346,6 +346,71 @@ h2.section:first-child { margin-top: 0; }
 .input:focus { outline: 2px solid var(--brown); outline-offset: -1px; border-color: transparent; }
 textarea.input { min-height: 64px; resize: vertical; }
 
+/* A field with a suggestion (data-suggest) shows a small arrow at its right
+   edge while it is empty — the greyed text is the suggestion, and pressing →
+   (or tapping that arrow, for a phone with no arrow key) accepts it. See
+   js/suggest.js. The padding keeps the greyed text clear of the arrow. */
+[data-suggest]:placeholder-shown {
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a3907c' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h13M13 6l6 6-6 6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  background-size: 15px 15px;
+}
+textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12px; }
+
+/* ---------- The product screen's translated lines ---------- */
+/* The card is shut until its title is tapped and shuts again on a tap outside;
+   the title IS the header, so it is a button with nothing of .btn about it. */
+.trans-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.trans-caret { color: var(--muted); font-size: 13px; }
+.trans-body[hidden] { display: none; }
+
+/* One translated line: the field, with a ↻ that translates it again sitting
+   where the suggestion arrow sits while the field is empty. The two never
+   appear together — the arrow's CSS only draws on an empty field, and ↻ only
+   shows once a line has words (or when there is nothing to offer it). */
+.tr-wrap { position: relative; }
+.tr-regen {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--brown-dark);
+  font-size: 15px;
+  line-height: 1;
+  padding: 6px 8px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.tr-regen:active { background: var(--brown-soft); }
+.tr-regen[hidden] { display: none; }
+.tr-wrap--text .tr-regen { top: 12px; transform: none; }
+/* The arrow's gap in the padding only exists while a field is EMPTY, so a line
+   that already has words needs one of its own or ↻ would sit over the text. */
+.tr-wrap.has-regen .input { padding-right: 40px; }
+
 .stepper {
   display: inline-flex;
   align-items: center;
@@ -1028,10 +1093,17 @@ textarea.input { min-height: 64px; resize: vertical; }
 
 /* An order row just landed on via the finder briefly glows so the baker can
    see exactly where the search took her, then fades back. */
-.list-item.hit { animation: hit-glow 1.8s ease; }
+/* The "here it is" glow on an order row. It keeps pulsing until the baker
+   reaches the row (views/orders.js settles it when the pointer arrives) rather
+   than for a fixed moment, which can pass while her eye is still travelling
+   down a long day. */
+.list-item.hit { animation: hit-glow 1.4s ease-in-out infinite; }
 @keyframes hit-glow {
   0%, 100% { box-shadow: none; background: transparent; }
-  15%, 40% { box-shadow: 0 0 0 3px rgba(62, 142, 90, .55); background: rgba(62, 142, 90, .10); }
+  50% { box-shadow: 0 0 0 3px rgba(62, 142, 90, .55); background: rgba(62, 142, 90, .10); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .list-item.hit { animation: none; box-shadow: 0 0 0 3px rgba(62, 142, 90, .55); background: rgba(62, 142, 90, .10); }
 }
 
 /* ---------- Packing label (Packed orders) ---------- */
@@ -1573,7 +1645,7 @@ textarea.input { min-height: 64px; resize: vertical; }
 }
 .occ-edit-note { font-size: 12px; color: var(--muted); margin: -2px 0 0; }
 
-/* "Add occasion" import (Delivery calendar → Mark an occasion) */
+/* "Load standard occasions" import (Delivery calendar → Mark an occasion) */
 .occ-importrow { margin: 10px 0 2px; }
 .occ-importrow .btn { font-size: 13px; }
 .mycal-legend {

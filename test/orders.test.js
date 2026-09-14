@@ -173,6 +173,104 @@ test("newOrdersInbox lists every new order with a ✕ remove button, orphans inc
   }
 });
 
+// A row stub shaped like the date view's order row: a live classList, a
+// scrollIntoView and listeners, all recording what the reveal did to it.
+function fakeRow() {
+  const cls = [];
+  const listeners = {};
+  return {
+    cls,
+    listeners,
+    scrolled: null,
+    classList: { add: (c) => cls.push(c), remove: (c) => cls.push(`-${c}`) },
+    scrollIntoView(opts) { this.scrolled = opts; },
+    addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
+    removeEventListener(type, fn) {
+      listeners[type] = (listeners[type] || []).filter((f) => f !== fn);
+    },
+    // The baker reaching the row — whichever of the settle events fires first.
+    settle(type = "pointerenter") { for (const fn of (listeners[type] || []).slice()) fn({ type }); },
+  };
+}
+
+// A stand-in for the view element, answering the two lookups the reveal makes.
+function fakeRoot(byOrder = {}, byGroup = {}) {
+  return {
+    querySelector(sel) {
+      let m = /^\[data-order="(.+)"\]$/.exec(sel);
+      if (m) return byOrder[m[1]] || null;
+      m = /^\[data-group="(.+)"\]$/.exec(sel);
+      return (m && byGroup[m[1]]) || null;
+    },
+  };
+}
+
+// Tap an inbox row (its click handler), which runs the whole reveal.
+function tapRow(rowEl) {
+  rowEl._listeners.click[0]({ preventDefault() {} });
+}
+
+test("a tap in the New-orders inbox opens the date, then flashes and centres the order's row", () => {
+  const row = fakeRow();
+  const root = fakeRoot({ o2: row });
+  let opened = null;
+  const inbox = newOrdersInbox(inboxState, (id) => { opened = id; }, root);
+  const rows = inbox.children[2].children; // .inbox-list
+  assert.equal(opened, null, "nothing opens before the tap");
+
+  tapRow(rows[1].children[0]); // o2 → d2
+
+  assert.equal(opened, "d2", "the tap opens that order's delivery date");
+  assert.deepEqual(row.cls, ["hit"], "the row starts flashing and stays lit until the baker arrives");
+  assert.equal(row.scrolled.block, "center", "the row is brought to the middle of the screen");
+  assert.equal(row.scrolled.behavior, "smooth");
+
+  // Reaching the row is what ends the glow — not a clock.
+  row.settle();
+  assert.deepEqual(row.cls, ["hit", "-hit"], "the flash clears when the pointer lands on the row");
+  assert.equal(row.listeners.pointerenter.length, 0, "the settle listeners take themselves off");
+  assert.equal(row.listeners.pointermove.length, 0, "every settle event is removed, not just the one that fired");
+});
+
+test("the glow survives a long hunt, and any of the settle events ends it", () => {
+  // The reported problem: a fixed flash expires while the eye is still
+  // travelling, and the baker is left hunting for a row that is no longer lit.
+  const row = fakeRow();
+  const root = fakeRoot({ o2: row });
+  tapRow(newOrdersInbox(inboxState, () => {}, root).children[2].children[1].children[0]);
+
+  assert.deepEqual(row.cls, ["hit"], "still lit an hour later — nothing on a timer takes it off");
+  row.settle("pointerdown"); // the tap that opens the order
+  assert.deepEqual(row.cls, ["hit", "-hit"], "the tap on the row ends the glow too");
+});
+
+test("the reveal finds the row through the group id when it is tagged with a different item", () => {
+  // The date view draws ONE row per customer order, tagged with whichever item
+  // it lists first — which a group left with mixed statuses may not be the item
+  // the inbox holds. The row carries its group id too, and that is the fallback.
+  const row = fakeRow();
+  const root = fakeRoot({}, { g2: row });
+  let opened = null;
+  const inbox = newOrdersInbox(inboxState, (id) => { opened = id; }, root);
+  const rows = inbox.children[2].children; // .inbox-list
+
+  tapRow(rows[1].children[0]); // o2 → d2, but only [data-group="g2"] answers
+
+  assert.equal(opened, "d2");
+  assert.deepEqual(row.cls, ["hit"], "the row was found through its group id");
+  assert.equal(row.scrolled.block, "center");
+});
+
+test("an orphaned inbox row offers no tap, and an unfound row is left alone", () => {
+  // The orphan has no date to open, so it renders as a plain span with no click.
+  const inbox = newOrdersInbox(inboxState, () => {}, fakeRoot());
+  const rows = inbox.children[2].children; // .inbox-list
+  assert.equal(rows[0].children[0]._listeners.click, undefined, "an orphan row cannot be tapped");
+
+  // A row that the date view did not render (e.g. filtered away) must not throw.
+  assert.doesNotThrow(() => tapRow(rows[1].children[0]));
+});
+
 test("newOrdersInbox tags an order that arrived through a referral link", () => {
   const referredState = {
     products: [{ id: "p1", name: "Focaccia", active: true }],

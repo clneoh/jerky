@@ -4,8 +4,8 @@
 // published by the backoffice (Settings → Storefront) and override the static
 // config.js fallback at runtime.
 import { CONFIG } from "./config.js";
-import { poolCaps, poolGroups, clampPool, groupFor, poolPieces, closedReason } from "./pool.js";
-import { isLang, loadLang, pick, rememberLang, nameFor, descFor, unitFor, applyTo } from "../i18n.js";
+import { poolCaps, poolGroups, clampPool, groupFor, poolPieces, closedReason, cancelDaysFor, strictestCancelDays } from "./pool.js";
+import { isLang, loadLang, pick, rememberLang, nameFor, descFor, unitFor, policyFor, applyTo } from "../i18n.js";
 import { STORE } from "../store-lang.js";
 
 // Day/month short names per site language. English is today's authoring default;
@@ -192,7 +192,7 @@ export function buildMessage(cfg, order) {
 export function mergeStorefront(base, remote) {
   if (!remote || typeof remote !== "object") return { ...base };
   const out = { ...base };
-  for (const key of ["whatsapp", "name", "tagline", "instagram", "facebook", "cutoff", "tngQr"]) {
+  for (const key of ["whatsapp", "name", "tagline", "instagram", "facebook", "cutoff", "policy", "policyZh", "policyMs"]) {
     if (typeof remote[key] === "string" && remote[key].trim()) out[key] = remote[key].trim();
   }
   for (const key of ["capacity", "upcomingCount"]) {
@@ -242,6 +242,11 @@ export function mergeStorefront(base, remote) {
           const v = p && p[k];
           if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) out[k] = v;
         }
+        // The change/cancel window the baker states for this product. Blank
+        // stays absent, so it never counts in a mixed order's strictest window.
+        const cancel = Number(p.cancelDays);
+        const cancelSet = p.cancelDays != null && !(typeof p.cancelDays === "string" && p.cancelDays.trim() === "");
+        if (cancelSet && Number.isInteger(cancel) && cancel >= 0) out.cancelDays = cancel;
         return out;
       });
     if (products.length) out.products = products;
@@ -371,6 +376,17 @@ export function renderStatic(cfg) {
   if (cfg.facebook) links.push(el("a", { href: `https://facebook.com/${cfg.facebook}`, target: "_blank", rel: "noopener" }, "📘 Facebook"));
   social.replaceChildren(...links);
 
+  // The baker's policies text (cancellation, refunds) — English until she adds a
+  // translation in the app, hidden entirely while the box is empty. Written as
+  // text, never HTML; the CSS keeps the line breaks she typed.
+  const policyBox = document.getElementById("policy-box");
+  if (policyBox) {
+    const value = policyFor(cfg, loadLang());
+    const policyText = document.getElementById("policy-text");
+    if (policyText) policyText.textContent = value;
+    policyBox.hidden = !value;
+  }
+
   renderDevFoot(cfg);
 }
 
@@ -442,6 +458,14 @@ export function render() {
         ? el("span", { class: soldOut ? "prod-stamp soldout" : "prod-stamp" }, soldOut ? t("soldOut") : sub(t("onlyLeft"), left))
         : null;
       const note = reason ? el("p", { class: "prod-note" }, reason) : null;
+      // The baker's change/cancel window for this product, when one is stated
+      // (blank, and the "no advance limit" 0, hide it). Purely informational:
+      // it tells the customer when to ask, and never blocks anything.
+      const cancelDays = cancelDaysFor(p);
+      const cancelNote = cancelDays != null && cancelDays >= 1
+        ? el("p", { class: "prod-note prod-cancel" },
+            sub(t(cancelDays === 1 ? "cancelNoteOne" : "cancelNote"), cancelDays))
+        : null;
       // The card reads in the visitor's language: translated name/description/
       // unit when the product has them, else the English text.
       const desc = p && descFor(p, lang);
@@ -453,7 +477,8 @@ export function render() {
             desc ? el("p", { class: "prod-desc" }, desc) : null),
           stamp),
         el("div", { class: "stepper" }, dec, qtyLabel, inc),
-        note);
+        note,
+        cancelNote);
     }));
   };
 
@@ -818,11 +843,22 @@ export function render() {
       if (addrField) addrField.hidden = false;
       renderBar();
       // order-btn label was reset by renderBar — the cart is now empty.
+      // The strictest change/cancel window across what was just ordered — the
+      // receipt is the moment the customer most needs the no-refund rule, so the
+      // window travels with it. Nothing is snapshotted: this is read now, and
+      // the track card deliberately says nothing about it later.
+      const winDays = strictestCancelDays(
+        lines.map((l) => CONFIG.products.find((x) => x.name === l.name)).filter(Boolean));
+      const cancelLine = winDays != null && winDays >= 1
+        ? el("p", { class: "confirm-body" },
+            sub(t(winDays === 1 ? "orderCancelNoteOne" : "orderCancelNote"), winDays))
+        : null;
       showConfirm([
         el("p", { class: "confirm-title" }, t("orderRecvTitle")),
         el("p", { class: "confirm-body" },
           order.customer ? sub(t("orderRecvThanksBody"), order.customer, CONFIG.name) : sub(t("orderRecvBody"), CONFIG.name)),
         el("p", { class: "confirm-body" }, sub(t("orderRecvLine"), dayLabel, items, total.toFixed(2))),
+        cancelLine,
         el("p", { class: "confirm-sub" }, t("orderRecvSub")),
       ], "ok");
     } else {

@@ -33,6 +33,33 @@ export function closeDaysFor(product) {
   return 0;
 }
 
+// How many days before delivery a customer may still change or cancel this
+// product's order — the baker's stated window, nothing enforced. Blank (or a
+// product that isn't ours) has no window: it returns null and never drags a
+// mixed order's window down. 0 is a stated value ("no advance limit"), and only
+// participates as the most generous end of a mixed order.
+export function cancelDaysFor(product) {
+  const p = product || {};
+  const n = p.cancelDays;
+  // An empty or whitespace-only box is blank, not a zero: Number("") is 0, so
+  // guard the string case before the numeric test below.
+  if (n == null || (typeof n === "string" && n.trim() === "")) return null;
+  if (Number.isInteger(Number(n)) && Number(n) >= 0) return Number(n);
+  return null;
+}
+
+// The single window a mixed order states: the STRICTEST (largest day count)
+// among the products that state one — a customer with a 3-day product in the
+// basket must ask at least 3 days ahead. null when no product states a window.
+export function strictestCancelDays(products) {
+  let out = null;
+  for (const p of products || []) {
+    const n = cancelDaysFor(p);
+    if (n != null && (out == null || n > out)) out = n;
+  }
+  return out;
+}
+
 // Why this product can't be ordered for this delivery date — null when it is
 // open. The rules are optional and per product: a fixed from–to window of
 // delivery dates, and/or orders closing N days before delivery. Blank products

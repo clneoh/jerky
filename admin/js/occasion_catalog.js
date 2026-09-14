@@ -1,5 +1,5 @@
-// The special-days catalogue behind the Delivery-calendar "Add occasion"
-// import button (in "Mark an occasion" mode). It starts with the dates
+// The special-days catalogue behind the Delivery-calendar "Load standard
+// occasions" button (in "Mark an occasion" mode). It starts with the dates
 // Malaysians across the Peninsular actually celebrate — nationwide public
 // holidays + big cultural/family days + the year-end school break + the extra
 // public holidays each state or territory observes on top of the nationwide

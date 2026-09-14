@@ -9,6 +9,7 @@ import { syncAvailability, cachedToken, signOut, syncStorefront, maybeSyncStoref
 import * as backups from "../backups.js";
 import * as sync from "../sync.js";
 import { refreshShareWarn } from "../sharewarn.js";
+import { translateTo, translateAllowed } from "../translate.js";
 import { openSnapshotView } from "./snapshot.js";
 import { CONFIG } from "../../../store/config.js";
 
@@ -107,20 +108,53 @@ export function renderSettings(root, state) {
   // page picks them up automatically (no redeploy). Prefilled once from
   // store/config.js so the current menu isn't re-typed.
   const sf = cur.storefront;
-  const sfName = el("input", { class: "input", value: sf.name, placeholder: "Munchies Furkidz",
+  const sfName = el("input", { class: "input", value: sf.name, placeholder: "Munchies Furkidz", "data-suggest": "Munchies Furkidz",
     onchange: () => { sf.name = sfName.value.trim(); save(state); maybeSyncStorefront(state); } });
   const sfWhatsapp = el("input", { class: "input", type: "tel", inputmode: "tel", value: sf.whatsapp,
-    placeholder: "e.g. 60123456789",
+    placeholder: "e.g. 60123456789", "data-suggest": "60123456789",
     onchange: () => { sf.whatsapp = sfWhatsapp.value.trim(); save(state); maybeSyncStorefront(state); } });
-  const sfTagline = el("input", { class: "input", value: sf.tagline, placeholder: "Handmade dehydrated pet treats",
+  const sfTagline = el("input", { class: "input", value: sf.tagline, placeholder: "Handmade dehydrated pet treats", "data-suggest": "Handmade dehydrated pet treats",
     onchange: () => { sf.tagline = sfTagline.value.trim(); save(state); maybeSyncStorefront(state); } });
-  const sfInsta = el("input", { class: "input", value: sf.instagram, placeholder: "e.g. munchiesfurkidz",
+  const sfInsta = el("input", { class: "input", value: sf.instagram, placeholder: "e.g. munchiesfurkidz", "data-suggest": "munchiesfurkidz",
     onchange: () => { sf.instagram = sfInsta.value.trim(); save(state); maybeSyncStorefront(state); } });
-  const sfFacebook = el("input", { class: "input", value: sf.facebook, placeholder: "e.g. munchiesfurkidz",
+  const sfFacebook = el("input", { class: "input", value: sf.facebook, placeholder: "e.g. munchiesfurkidz", "data-suggest": "munchiesfurkidz",
     onchange: () => { sf.facebook = sfFacebook.value.trim(); save(state); maybeSyncStorefront(state); } });
   const sfTngQr = el("input", { class: "input", type: "text", inputmode: "url", value: sf.tngQr,
     placeholder: "https://…/tng-qr.png",
     onchange: () => { sf.tngQr = sfTngQr.value.trim(); save(state); maybeSyncStorefront(state); } });
+
+  // Policies shown on the shop (cancellation / refunds). Written once in English;
+  // the 中文 and Bahasa Malaysia boxes are machine-filled from it, and typing in
+  // one makes that language hers (never overwritten again). Blank hides the
+  // section on the customer page entirely.
+  const sfPolicy = el("textarea", { class: "input", rows: 3, value: sf.policy || "",
+    placeholder: "e.g. Orders are not refundable, but you may move your order to another posting day up to 2 days before it is due.",
+    onchange: () => { sf.policy = sfPolicy.value.trim(); save(state); maybeSyncStorefront(state); } });
+  const sfPolicyZh = el("textarea", { class: "input", rows: 2, value: sf.policyZh || "",
+    placeholder: "Auto-translated 中文 — blank keeps English",
+    onchange: () => { sf.policyZh = sfPolicyZh.value.trim(); save(state); maybeSyncStorefront(state); } });
+  const sfPolicyMs = el("textarea", { class: "input", rows: 2, value: sf.policyMs || "",
+    placeholder: "Auto-translated Bahasa Malaysia — blank keeps English",
+    onchange: () => { sf.policyMs = sfPolicyMs.value.trim(); save(state); maybeSyncStorefront(state); } });
+
+  async function translatePolicy() {
+    const src = sfPolicy.value.trim();
+    if (!src) return toast("Write the policy in English first");
+    if (!translateAllowed()) return toast("No connection — translations fill when you're back online");
+    const boxes = [["zh", sfPolicyZh], ["ms", sfPolicyMs]];
+    let filled = 0;
+    for (const [lang, box] of boxes) {
+      if (box.value.trim()) continue; // hand-typed → hers, leave it alone
+      try {
+        const out = await translateTo((url) => fetch(url), src, lang);
+        if (out && out.trim()) { box.value = out.trim(); filled++; }
+      } catch { /* leave it blank and try the rest */ }
+    }
+    sf.policyZh = sfPolicyZh.value.trim();
+    sf.policyMs = sfPolicyMs.value.trim();
+    save(state); maybeSyncStorefront(state);
+    toast(filled ? "Translated — edit it if you like" : "Nothing to translate");
+  }
 
   // If another phone has published a storefront config, use it as the editor's
   // starting point instead of this phone's older local copy — so the WhatsApp
@@ -144,6 +178,9 @@ export function renderSettings(root, state) {
         sf.instagram = typeof remote.instagram === "string" ? remote.instagram : sf.instagram;
         sf.facebook = typeof remote.facebook === "string" ? remote.facebook : sf.facebook;
         sf.tngQr = typeof remote.tngQr === "string" ? remote.tngQr : sf.tngQr;
+        sf.policy = typeof remote.policy === "string" ? remote.policy : sf.policy;
+        sf.policyZh = typeof remote.policyZh === "string" ? remote.policyZh : sf.policyZh;
+        sf.policyMs = typeof remote.policyMs === "string" ? remote.policyMs : sf.policyMs;
         // Same adoption for the developer credit: the published values win so
         // every phone's Settings shows what customers actually see.
         if (typeof remote.developerName === "string" && remote.developerName.trim()) {
@@ -163,6 +200,9 @@ export function renderSettings(root, state) {
         sfInsta.value = sf.instagram;
         sfFacebook.value = sf.facebook;
         sfTngQr.value = sf.tngQr;
+        sfPolicy.value = sf.policy || "";
+        sfPolicyZh.value = sf.policyZh || "";
+        sfPolicyMs.value = sf.policyMs || "";
         devName.value = dev.name;
         devWa.value = dev.whatsapp || "";
         renderDevEmails();
@@ -197,7 +237,16 @@ export function renderSettings(root, state) {
       el("label", {}, "TNG QR code (image URL)"),
       sfTngQr,
       el("p", { class: "card-sub", style: "margin:4px 0 0" },
-        "Shown on the customer's track page so they can pay by TNG. Paste a hosted image URL (e.g. an imgur / Google Drive link to a photo of your QR).")),
+        "Sent to the customer inside your WhatsApp confirmation and payment reminder, so they can pay by TNG. It is never shown on the order page. Paste a hosted image URL (e.g. an imgur / Google Drive link to a photo of your QR).")),
+    el("div", { class: "field", style: "margin-top:10px" },
+      el("label", {}, "Policies (shown on the shop)"),
+      el("p", { class: "card-sub", style: "margin:0 0 5px" },
+        "Cancellation and refund wording customers read on the order page, under Track your order. Write it in English — tap Translate for 中文 and Bahasa Malaysia, then edit either if you like. Blank hides the section."),
+      sfPolicy,
+      el("div", { class: "btn-row", style: "margin-top:6px" }, button("Translate", translatePolicy, "soft")),
+      el("div", { class: "form-grid", style: "margin-top:8px" },
+        el("div", {}, el("label", {}, "中文"), sfPolicyZh),
+        el("div", {}, el("label", {}, "Bahasa Malaysia"), sfPolicyMs))),
     el("h4", { style: "margin:14px 0 0" }, "Menu"),
     el("p", { class: "card-sub", style: "margin:4px 0 0" },
       "Your menu comes from More → Products — add or hide a product there and it updates here after you publish. WhatsApp is digits only with country code — 012-345 6789 → 60123456789."),
@@ -251,7 +300,7 @@ export function renderSettings(root, state) {
   const dev = cur.developer ??= { name: "", emails: [], whatsapp: "" };
   if (!Array.isArray(dev.emails)) dev.emails = [];
   if (typeof dev.whatsapp !== "string") dev.whatsapp = "";
-  const devName = el("input", { class: "input", placeholder: "e.g. Clara's Web Studio",
+  const devName = el("input", { class: "input", placeholder: "e.g. Clara's Web Studio", "data-suggest": "Clara's Web Studio",
     value: dev.name || "",
     onchange: () => { dev.name = devName.value.trim(); save(state); maybeSyncStorefront(state); toast("Saved"); } });
   const devEmailBox = el("div", { style: "margin-top:2px" });
@@ -264,7 +313,7 @@ export function renderSettings(root, state) {
     if (last) last.focus();
   }, "soft");
   const devWa = el("input", { class: "input", type: "tel", inputmode: "tel",
-    placeholder: "e.g. 60123456789 (digits, country code)",
+    placeholder: "e.g. 60123456789 (digits, country code)", "data-suggest": "60123456789",
     value: dev.whatsapp || "",
     onchange: () => { dev.whatsapp = devWa.value.trim(); save(state); maybeSyncStorefront(state); toast("Saved"); } });
   function renderDevEmails() {
@@ -670,7 +719,9 @@ function seedStorefront(state) {
     tagline: CONFIG.tagline || "",
     instagram: CONFIG.instagram || "",
     facebook: CONFIG.facebook || "",
-    tngQr: CONFIG.tngQr || "",
+    policy: CONFIG.policy || "",
+    policyZh: CONFIG.policyZh || "",
+    policyMs: CONFIG.policyMs || "",
   });
   save(state);
 }

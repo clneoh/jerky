@@ -345,8 +345,8 @@ function editProfilePopup(state, r, afterSave) {
   const name = el("input", { class: "input", value: p.name != null ? p.name : (r.name && r.name !== "(no name)" ? r.name : "") });
   const whatsapp = el("input", { class: "input", type: "tel", value: p.whatsapp != null ? p.whatsapp : (r.whatsapp || "") });
   const dogName = el("input", { class: "input", value: p.dogName || "" });
-  const likes = el("input", { class: "input", value: p.likes || "", placeholder: "e.g. chicken, fish, sweet potato" });
-  const avoid = el("input", { class: "input", value: p.avoid || "", placeholder: "e.g. onion, grapes — not safe" });
+  const likes = el("input", { class: "input", value: p.likes || "", placeholder: "e.g. chicken, fish, sweet potato", "data-suggest": "chicken, fish, sweet potato" });
+  const avoid = el("input", { class: "input", value: p.avoid || "", placeholder: "e.g. onion, grapes — not safe", "data-suggest": "onion, grapes — not safe" });
   const notes = el("input", { class: "input", value: p.notes || "", placeholder: "Anything to remember" });
 
   const file = el("input", { type: "file", accept: "image/*", style: "display:none" });

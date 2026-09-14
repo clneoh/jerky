@@ -34,6 +34,12 @@ globalThis.window = { open() {} };
 globalThis.fetch = async () => ({ ok: true, json: async () => [] });
 
 const { buildMessage, mergeStorefront, upcomingDates, pillSpecs, dateKey, fmtDay, trackOrder, isOpen, waNumber, parseVia } = await import("../store/app.js");
+const { CONFIG } = await import("../store/config.js");
+
+// The receipt's own lines, as plain strings, from the confirm box.
+function confirmLines() {
+  return registry["confirm-msg"].children.map((n) => (n.children[0] ? n.children[0].text : n.textContent));
+}
 
 test("buildMessage produces a tidy WhatsApp order", () => {
   const cfg = { name: "Munchies Furkidz", products: [{ name: "Chicken Jerky", price: 12 }] };
@@ -167,6 +173,37 @@ test("order click sends one order and shows the success card (regression: no thr
     const title = registry["confirm-msg"].children[0].children[0]; // .text, not textContent, in the shim
     assert.equal(title.text, "🎉 Order received!");
   } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("the receipt carries the strictest change/cancel window of the whole basket", async () => {
+  const card = registry["menu"].children[0];
+  card.children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => (opts && opts.method === "POST" ? { ok: true } : { ok: true, json: async () => [] });
+  const saved = CONFIG.products.map((p) => p.cancelDays);
+  try {
+    // Two products, two different windows: the customer reads the strictest (3).
+    CONFIG.products.forEach((p) => { p.cancelDays = p.name === "Chicken Jerky" ? 3 : 1; });
+    document.getElementById("whatsapp-input").value = "60123456789";
+    document.getElementById("fulfillment")._value = "collect"; // avoid the postal-address requirement
+    await registry["order-btn"].onclick();
+    const line = confirmLines().find((t) => /change or cancel/i.test(t));
+    assert.ok(line, "the receipt states a change/cancel window");
+    assert.match(line, /up to 3 days before the posting day/, "the strictest window wins");
+    assert.match(line, /not refundable/i, "and the no-refund rule that goes with it");
+
+    // Nothing stated anywhere → no window line at all.
+    CONFIG.products.forEach((p) => { delete p.cancelDays; });
+    card.children.find((c) => c.className === "stepper").children[2]._listeners.click[0](); // basket refilled
+    document.getElementById("fulfillment")._value = "collect"; // the success path reset it to Post
+    await registry["order-btn"].onclick();
+    assert.ok(!confirmLines().some((t) => /change or cancel/i.test(t)),
+      "no product states a window → the receipt says nothing");
+  } finally {
+    CONFIG.products.forEach((p, i) => { if (saved[i] === undefined) delete p.cancelDays; else p.cancelDays = saved[i]; });
     globalThis.fetch = realFetch;
   }
 });
@@ -321,9 +358,13 @@ test("buildMessage appends the delivery method and courier address", () => {
   assert.ok(msg.includes("📍 12 Jalan Bunga, Penang"));
 });
 
-test("mergeStorefront carries the TNG QR image URL", () => {
-  const out = mergeStorefront({ tngQr: "" }, { tngQr: "https://img/tng.png" });
-  assert.equal(out.tngQr, "https://img/tng.png");
+// The TNG QR is sent to the customer in the WhatsApp confirmation and payment
+// reminder; it is deliberately not part of the shop's config, and the shop
+// draws no payment code anywhere. This fails if the key is ever added back.
+test("mergeStorefront never carries the TNG QR — the shop shows no payment code", () => {
+  const out = mergeStorefront({}, { tngQr: "https://img/tng.png", name: "Munchies Furkidz" });
+  assert.equal(out.tngQr, undefined);
+  assert.equal(out.name, "Munchies Furkidz", "other keys still merge");
 });
 
 test("trackOrder re-fetches and re-renders every lookup (never stale)", async () => {

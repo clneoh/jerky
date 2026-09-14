@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { HOME } from "../home-lang.js";
-import { LANGS, nameFor, descFor, unitFor, servingFor } from "../i18n.js";
+import { LANGS, nameFor, descFor, unitFor, servingFor, policyFor } from "../i18n.js";
 import { carouselStep } from "../reviews.js";
 
 const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
@@ -107,4 +107,16 @@ test("a missing translation keeps the English text (or 'piece'), never a blank o
   assert.equal(servingFor(undefined, "ms"), "");
   const blankZh = { name: "Focaccia", description: "Crispy", descZh: "   " };
   assert.equal(descFor(blankZh, "zh"), "Crispy", "whitespace-only translation reads as absent");
+});
+
+// ── policyFor (Engine v73 Policies box) ─────────────────────────────────────
+
+test("policyFor picks the language's wording, English until a translation is written", () => {
+  const cfg = { policy: "  Not refundable — may be moved.  ", policyZh: "款项不退还。", policyMs: "   " };
+  assert.equal(policyFor(cfg, "en"), "Not refundable — may be moved.", "the English text is trimmed");
+  assert.equal(policyFor(cfg, "zh"), "款项不退还。");
+  assert.equal(policyFor(cfg, "ms"), "Not refundable — may be moved.", "a blank BM box falls back to English");
+  assert.equal(policyFor({ policy: "" }, "en"), "", "a blank box shows nothing at all");
+  assert.equal(policyFor(null, "zh"), "");
+  assert.equal(policyFor(undefined, "en"), "");
 });

@@ -62,7 +62,7 @@ const FAR = "2026-09-17";  // +16 → packs orderable, shared pool live
 const published = {
   products: [
     { name: "Focaccia", price: 15, unit: "loaf" },
-    { name: "Sandwich", price: 8, unit: "piece" },
+    { name: "Sandwich", price: 8, unit: "piece", cancelDays: 2 },
     { name: "Focaccia Family (4 pcs)", price: 54, unit: "box", component: { name: "Focaccia", qty: 4 }, closeDays: 14 },
   ],
 };
@@ -156,6 +156,18 @@ test("value pack is gated on a near delivery date and freed on a far one", async
   assert.equal(stampOf(farPack), "Only 3 left");
   assert.equal(stepperOf(farPack).children[2].disabled, false);
   assert.equal(farPack.children.length, 2, "no advance-order note on an allowed date");
+});
+
+test("a product's change/cancel window is drawn on its card, and absent when blank", () => {
+  // The Sandwich states a 2-day window; the note is appended AFTER the close
+  // reason, so the close-reason assertion above (children[2]) is untouched.
+  const cancelNote = (card) => card.children.find((c) => c.className.includes("prod-cancel"));
+  const sandwich = cardOf("Sandwich");
+  const note = cancelNote(sandwich);
+  assert.ok(note, "a product stating a window carries the cancel note");
+  assert.match(note.children[0].text, /Change or cancel up to 2 days before the posting day/);
+  // A product that states no window shows nothing.
+  assert.equal(cancelNote(cardOf("Focaccia")), undefined, "no window stated → no cancel note");
 });
 
 test("on the far date, packs and singles share one budget in the same cart", () => {

@@ -10,7 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   addDaysKey,
-  closeDaysFor, closedReason,
+  cancelDaysFor, closeDaysFor, closedReason, strictestCancelDays,
   poolGroups, groupFor, poolCaps, clampPool, poolPieces,
 } from "../store/pool.js";
 
@@ -192,6 +192,38 @@ test("close and window combine: inside the window but too near still closes", ()
   assert.deepEqual(closedReason(both, "2026-12-03", today), { kind: "close", days: 7 });
   // 8 Dec (7 days out) and beyond are open.
   assert.equal(closedReason(both, "2026-12-08", today), null);
+});
+
+test("cancelDaysFor: blank is not stated, 0 is a stated zero, junk is not stated", () => {
+  assert.equal(cancelDaysFor({ name: "A" }), null);          // no box at all
+  assert.equal(cancelDaysFor({ cancelDays: "" }), null);     // blank
+  assert.equal(cancelDaysFor({ cancelDays: null }), null);
+  assert.equal(cancelDaysFor({ cancelDays: undefined }), null);
+  assert.equal(cancelDaysFor({ cancelDays: 0 }), 0);         // a stated zero, not blank
+  assert.equal(cancelDaysFor({ cancelDays: 2 }), 2);
+  assert.equal(cancelDaysFor({ cancelDays: "3" }), 3);       // a numeric string round-trips
+  assert.equal(cancelDaysFor({ cancelDays: -1 }), null);     // negative is junk
+  assert.equal(cancelDaysFor({ cancelDays: 1.5 }), null);    // not a whole day
+  assert.equal(cancelDaysFor({ cancelDays: "soon" }), null);
+  assert.equal(cancelDaysFor(null), null);
+});
+
+test("strictestCancelDays: the largest stated window wins, and blank never drags one down", () => {
+  assert.equal(strictestCancelDays([
+    { cancelDays: 2 }, { cancelDays: 5 }, { cancelDays: 0 },
+  ]), 5);
+  // A blank product neither wins nor cancels a stated one.
+  assert.equal(strictestCancelDays([
+    { cancelDays: 2 }, { name: "blank" }, { cancelDays: 0 },
+  ]), 2);
+  // Nothing stated anywhere → null (no note shown at all).
+  assert.equal(strictestCancelDays([{ name: "a" }, { name: "b" }]), null);
+  assert.equal(strictestCancelDays([{ cancelDays: "" }, { cancelDays: null }]), null);
+  assert.equal(strictestCancelDays([]), null);
+  assert.equal(strictestCancelDays(null), null);
+  // An explicit 0 counts as stated (it is a real value), so a lone 0 reads 0 — the
+  // shop decides not to draw a note for anything below 1.
+  assert.equal(strictestCancelDays([{ cancelDays: 0 }, { name: "blank" }]), 0);
 });
 
 test("addDaysKey shifts whole days and survives month/year boundaries", () => {

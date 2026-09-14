@@ -251,6 +251,86 @@ drifting. A line whose product is gone, or has no price, is left alone rather
 than guessed at. No SQL — the fields live on order rows and sync/export/import
 wholesale.
 
+## Change & cancel windows, and moving an order (v73)
+
+A product can state how much notice a customer must give to change or cancel:
+**Products → Edit → "Changes or cancellations (days before delivery)"**
+(`cancelDays`). It is **advisory only** — it never blocks the owner, who moves
+every order by hand. The storefront reads it as data through `store/pool.js`
+(`cancelDaysFor` per product, `strictestCancelDays` for a whole basket, which
+returns the **largest** window so a mixed basket gives one clear figure) and
+writes the sentence in EN / 中文 / BM on the product card and again on the green
+order-received card. The track card deliberately stays silent: it is read days
+later, when the window may already have changed. Blank = no window stated; an
+explicit `0` = no advance limit. No SQL — the value rides on the product row and
+the sentence is composed on the page.
+
+An order's posting day is **changed, not deleted and re-typed** (a deletion reads
+as a cancellation). The Edit-order pop-up carries a **"Delivery day"** select
+(`editDayOptions`) of every day still to come plus the order's own day, and saving
+calls the pure `moveOrderGroup(group, dest)` (`state.js`), which writes
+`deliveryDateId` and the `deliveryDate` snapshot together and therefore heals a
+group whose rows were split across dates. It re-bases the capacity guard on the
+destination day (capacity derives from `deliveryDateId`, so the source frees
+itself), republishes the track card — which bakes the delivery-date string — and
+leaves the emptied source day for the Deliveries screen's **Del**. Soft notes
+report the order's own window, warn when the new day falls inside it, say when
+that day has already closed and when it is short an item; none of them block.
+
+## Policies on the shop (v73)
+
+**Settings → Storefront → Policies** holds the owner's own cancellation and
+refund wording (`policy`, `policyZh`, `policyMs`). English is the source; the
+Chinese and Malay boxes are filled by the v66 `translate.js` machinery on demand
+and are hand-editable, and typing over a box makes it the owner's for good. The
+shop renders it under **Track your order** in the visitor's language, preserving
+the line breaks as typed — `textContent` plus `white-space: pre-line`, never
+HTML. Blank hides the section. It rides inside the existing `storefront_config`
+data, so there is no SQL and no schema change.
+
+## Suggesting a value (`suggest.js`, v73–v77)
+
+Wherever an empty field shows the app's greyed recommendation, the **right
+arrow** — or a tap on the small arrow drawn at the field's right edge, for a
+phone with no arrow key — accepts it as real text, the same gesture as an AI-chat
+prompt. A field opts in with `data-suggest="<value>"`; `installSuggestionAccept()`
+is called once on `document` in `app.js`, because pop-ups and dialogs live outside
+`#view`. It is deliberately opt-in: the Supabase email / key / password and
+sign-in fields carry no `data-suggest`, pinned by `test/suggest.test.js`, so a
+made-up credential can never be arrow-accepted.
+
+`acceptSuggestion` fires bubbling `input` + `change` so the view's own handlers
+run exactly as if typed, and marks the event `suggested = true` so the v66
+translation-provenance rules do not freeze the line as hand-written. It does
+**not** focus the field (v74): focusing opened the phone's keyboard, which shrank
+and panned the page and left the drawn arrow somewhere other than where the thumb
+landed, so the second tap of a session died. The tap strip is
+`clamp(30, width*0.28, 52)` px, and a tap counts if it lands in the strip by
+**either** the field's own `offsetX`/`clientWidth` reading or the page's
+`clientX`/rect reading — a deliberate OR, so the rule can only accept a tap the
+old one refused, never refuse one it took. A delegated `click` sits beside
+`pointerdown` as a second path for browsers without pointer events.
+
+On a product, the translated-text card (v76) now starts shut and folds on a tap
+outside; each empty line shows its translation as an ordinary greyed suggestion
+whose → swaps to a **↻** that re-translates just that one line, and the card's
+hint reads "…if blank, it will be filled with English" (v77).
+
+## Order-screen & calendar polish (v75, v78)
+
+- The green **hit glow** on an order jumped to from the New Orders inbox (or from
+  Find an order) used to fade on a short timer. It now loops
+  (`hit-glow 1.4s ease-in-out infinite`) and is cleared only when the pointer
+  reaches the row — `pointerenter` / `pointermove` / `pointerdown` / `mouseenter`
+  / `touchstart`, each a self-removing listener. Under `prefers-reduced-motion`
+  the ring holds steady instead of pulsing, so it still waits for you.
+- The inbox tap itself uses the shared `revealOrderRow(root, group)` in
+  `views/orders.js`: open the day, flash the row and **centre it on screen**,
+  clearing any status filter on the way so a narrowed list cannot hide it.
+- Delivery Dates relabels **"＋ Add occasion"** → **"＋ Load standard occasions"**
+  and the in-window **"Add"** → **"Add my own day"** (v78), so the only plain Add
+  in that window is the one that files the ticked days.
+
 ## Order tracking & confirmation (Supabase)
 
 Customers choose **Post (nationwide)** / **Collect (local)** when ordering (a
@@ -267,8 +347,12 @@ order's number (e.g. `#A3F9C2`) so it can always be matched back to the order:
 - Move an order to **Confirmed** → tap **Send confirmation** — WhatsApp opens
   with the order number, delivery details, items + total (posted orders include
   the **flat postage** on the To-pay line), a **TNG QR** payment request, and a
-  **track link**. The customer opens that link and sees the live status, their
-  method/address, and the TNG QR to pay.
+  **track link**. The customer opens that link and sees the live status and their
+  method/address. The **TNG QR travels in the WhatsApp messages only** — the
+  confirmation and the payment reminder — never on the shop: the order page tells
+  customers the QR arrives over WhatsApp, and nothing on it draws a payment code.
+  (The setting still publishes and adopts through Supabase — that row is how it
+  syncs between phones, not a shop surface.)
 - Move it to **Paid** → **Send payment reminder** (a WhatsApp nudge with the
   order number + QR) and **Paid** — tap **Paid** only once the TNG receipt has
   really come back.
@@ -513,6 +597,7 @@ store/index.html    customer order page (/store/)
 store/app.css       storefront styling
 store/app.js        storefront logic + order intake + availability + published config
 store/config.js     fallback name, WhatsApp, menu, days, supabase (overridden by Settings → Storefront)
+store/pool.js       shared-pool rules: pack components, cancel windows (pure)
 store-lang.js       order-page dictionary (en / zh / ms)
 
 admin/ — backoffice app (/admin/):
@@ -532,6 +617,7 @@ admin/ — backoffice app (/admin/):
   js/devmail.js       builds the wish-list email + developer contact links (pure, sends via wish-mail)
   js/profiles.js      customer profiles (join to the customer rows, pure)
   js/photo.js         shrinks a picked photo to a small thumb (browser only)
+  js/suggest.js       right-arrow / tap-to-accept for a greyed suggestion (data-suggest)
   js/app.js           hash router + bootstrap + shared-data gate
   js/views/*          one module per screen (login.js is the sign-in gate)
   sw.js               service worker — offline app shell (/admin/ scope);

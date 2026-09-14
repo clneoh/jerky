@@ -103,6 +103,23 @@ export function unitFor(product, lang) {
   return fieldFor(product, lang, "unit", "piece");
 }
 
+// The shop's policies text (cancellation, refunds), typed once by the baker in
+// Settings → Storefront and auto-translated there. It is a page-level string,
+// not a per-product one, so it reads the config directly: the English text shows
+// until a 中文/BM translation exists. Never HTML — the page sets it as text.
+export function policyFor(cfg, lang) {
+  const c = cfg && typeof cfg === "object" ? cfg : {};
+  if (lang === "zh") {
+    const z = c.policyZh;
+    if (typeof z === "string" && z.trim()) return z.trim();
+  }
+  if (lang === "ms") {
+    const m = c.policyMs;
+    if (typeof m === "string" && m.trim()) return m.trim();
+  }
+  return typeof c.policy === "string" ? c.policy.trim() : "";
+}
+
 // Apply `dict[lang]` to a tagged subtree: sets text, placeholders, inner HTML
 // and aria-labels from their keys. Nodes missing from the dictionary keep what
 // the HTML already says (an English authoring default).

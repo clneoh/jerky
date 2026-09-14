@@ -231,13 +231,23 @@ html, body {
 .menu-item.soldout .card-title { color: #b6a892; }
 .menu-item.soldout .step-btn { background: #f1e9de; color: #c9b8a5; cursor: default; }
 
-/* Small note under a value pack's stepper explaining the advance-order window
-   when its delivery date is too near (value packs need a date X+ days ahead). */
+/* Small notes under a product's stepper: why the card is unavailable on this
+   date (a value pack's advance window, a from–to window, orders closed), and
+   the baker's change/cancel window for the product when one is stated. */
 .prod-note {
   margin: -2px 0 0;
   font-size: 12px;
   color: var(--muted);
   line-height: 1.4;
+}
+
+/* The baker's policies text on the shop — line breaks preserved exactly as
+   typed in the app (white-space: pre-line collapses spaces but keeps newlines). */
+.policy-text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink, #3b2a1f);
+  white-space: pre-line;
 }
 
 /* Notice shown when a live refresh had to fix the customer's order — e.g. an

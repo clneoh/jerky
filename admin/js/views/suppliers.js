@@ -20,9 +20,9 @@ function renderAll(root, state) {
 }
 
 function buildSupplierEditor(state, sup) {
-  const name = el("input", { class: "input", placeholder: "e.g. Mydin", value: sup?.name || "" });
+  const name = el("input", { class: "input", placeholder: "e.g. Mydin", "data-suggest": "Mydin", value: sup?.name || "" });
   const whatsapp = el("input", { class: "input", inputmode: "tel",
-    placeholder: "WhatsApp, e.g. 012-345 6789", value: sup?.whatsapp || "" });
+    placeholder: "WhatsApp, e.g. 012-345 6789", "data-suggest": "012-345 6789", value: sup?.whatsapp || "" });
 
   function collect() {
     const n = name.value.trim();

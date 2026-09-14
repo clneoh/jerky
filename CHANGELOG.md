@@ -1,8 +1,30 @@
-# Munchies Furkidz — change history (v54 → v72)
+# Munchies Furkidz — change history (v54 → v78)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**14 Sep 2026 — tapping a New Orders row now takes you all the way to the order
+(no new engine; the phones did not change).** Tapping a row in the **New Orders**
+inbox opened that order's delivery date and stopped there. On a day holding a
+long list that is as good as landing on the wrong order: you then had to scan
+down the list to find the very order you had just tapped, and could easily open
+a neighbour instead. A tap now **scrolls the order to the middle of the screen
+and flashes it**, and it clears any status filter on the way so a narrowed list
+cannot hide it. The inbox's own hint line now reads "Tap a row to jump to that
+order on its delivery date and confirm it." Finding an order with the search box
+already did this — the two now share the same reveal.
+
+**14 Sep 2026 — the TNG QR is a WhatsApp payment code, and Settings now says so
+(no new engine; the phones did not change).** The box in **Settings →
+Storefront** that holds your TNG QR image link promised it was "shown on the
+customer's track page". It never was — and it should not be. Your QR reaches the
+customer **inside the WhatsApp confirmation and the payment reminder**, and your
+order page has always told customers you send it over WhatsApp; nothing on the
+shop has ever drawn a payment code. Only the wording was wrong. The box, the link
+it holds and the way you take payment are all unchanged, and the value still
+syncs between your phones through the storefront settings row — that row is how
+it travels, not a shop surface.
 
 **10 Sep 2026 — the back-office link is off the homepage (no new engine; the
 phones did not change).** The homepage footer carried a small "Back-office
@@ -56,6 +78,119 @@ your stored photos light. This applies to photos left from now on; the reviews
 already on your page keep the picture they were stored with. (Your homepage
 itself already loads its pictures as separate files — its page is only about
 29 KB — so nothing needed changing there.)
+
+## v78 — The calendar's Add buttons now say what they do (14 Sep 2026)
+On the **Delivery Dates** screen, **Mark an occasion** carried a small button
+reading "＋ Add occasion". The name did not tell you it opens a ready-made list of
+Malaysia's holidays and fun days, all ticked and waiting — so you had to open it
+to find out. It now reads **"＋ Load standard occasions"**, and the window it opens
+is titled the same.
+
+Inside that window there were two buttons both called "Add": the big one at the
+bottom that files the days you ticked, and a smaller one in the "My own day" strip
+just above it, which files a day you name yourself (a birthday, a one-off promo).
+Reaching for "Add" and hitting the wrong one gave you "Type a name first", for a
+day you never meant to name. The smaller one is now spelled out as **"Add my own
+day"**, so the only plain Add in the window is the one that adds the days you
+ticked. Nothing else moved — the import picker, the Untick all / Tick all buttons,
+the heading tick boxes, the "My own day" box and the way a day is marked on the
+calendar are all unchanged. Engine v78, guide v78.
+
+## v77 — The translated-text card says what a blank line means (14 Sep 2026)
+A wording fix on top of the fold-away card that arrived in v76. The greyed line in
+a product's translated-text card used to end "blank keeps English"; it now
+finishes **"if blank, it will be filled with English"** — stating what the customer
+gets, rather than what the line does. The card's own sub-line ends the same way.
+
+Nothing else moves. Delete what is in a line and the greyed suggestion and its
+arrow come back exactly as before; the card still folds on a tap outside, the
+right arrow still takes the words, and the ↻ still re-translates that one line.
+Engine v77, guide v77.
+
+## v76 — The translated text is one quiet card that folds away (14 Sep 2026)
+Every product's translated-text corner was the busiest part of the screen: always
+open, eight lines each with its own "Translate this one" button, two "Fill all"
+buttons above them, and an "auto" tag in a word you had to decode. It is now **one
+quiet card that starts shut and stays shut** — it is setup, not daily use. Tap the
+title to open it; tap anywhere outside to fold it back.
+
+Opened, each empty line shows its translation **already worked out** as the app's
+standard greyed suggestion, with the → at its right edge — the same gesture as
+every other suggested box in the app. Taking it replaces the arrow with a **↻**
+that re-translates just that one line, in place. Typing your own words hides the ↻
+(the line is yours); a blank line keeps the English. The two "Fill all" buttons,
+the eight "Translate this one" buttons and the "auto" tag are gone.
+
+A product you never open the card for still reads in all three languages on the
+shop — the automatic translation still runs after every save and publish. Engine
+v76, guide v76.
+
+## v75 — The green glow on a jumped-to order waits for you (14 Sep 2026)
+Tapping a row in the **New Orders** inbox (or a result in **Find an order**) takes
+you to that order's delivery day and lights the order up green. That glow used to
+fade after under two seconds — no time at all while your eye is still travelling
+down a long day, so you were left hunting for a row that was no longer lit. The
+glow now **keeps pulsing until your finger arrives on the row**, and ends the
+moment you reach it.
+
+If your phone is set to reduce motion, the same green ring holds steady instead of
+pulsing, so it still stays until you reach the row. Engine v75, guide v75.
+
+## v74 — The little arrow in an empty box keeps working (14 Sep 2026)
+Engine v73 added the small right-arrow at the right edge of a box showing a greyed
+example: press **→** on a keyboard, or tap the arrow, and the example drops in as
+real text. On a phone the tap worked the first time and then stopped — once you had
+tapped into any box, tapping the arrow on the next one did nothing.
+
+Two things caused it, both about the box moving under your thumb. Taking a
+suggestion focused the box, which opened the phone's keyboard and shrank and panned
+the page, so the arrow was no longer where the finger landed; and the strip that
+counted the tap was narrow and measured only as a position on the page. Taking a
+suggestion **no longer opens the keyboard**, the strip is about **half again as
+wide**, and a tap is judged against the box's own edge as well as its place on the
+page — either reading can take the tap, so the rule can only accept a tap the old
+one refused, never refuse one it took.
+
+The drawn arrow is kept exactly as it was — same size, same place — a tap on the
+greyed example itself is still an ordinary tap that puts the cursor there, and the
+sign-in and cloud boxes still carry no arrow. Engine v74, guide v74.
+
+## v73 — Change windows, moving an order, Policies, and a one-tap suggestion (14 Sep 2026)
+An order is not refundable, but it can be moved to another posting day — and a
+customer may ask until a set number of days before the day it is due. That number
+is now **per product**: a new **"Changes or cancellations (days before delivery)"**
+box sits beside the other date rules when you edit a product. It only ever tells
+the customer — **blank** means no window is stated, an explicit **0** states no
+advance limit, and neither ever blocks you, who move every order by hand. The
+customer reads the sentence on the product's card and again on their green **"Order
+received!"** card, and when one order holds products with different windows they
+see the strictest (largest) figure, so a mixed basket gives one clear number. The
+sentence is written in **English / 中文 / BM** with the rest of the page. The
+order's own track card stays silent — it is read days later, when the window may
+have changed.
+
+An order's posting day can now be **changed in the app** instead of deleted and
+re-typed — a deletion reads as a cancellation. The **Edit order** pop-up gains a
+**"Delivery day"** select of every day still to come; saving moves the whole order
+across in one step, and heals an order whose rows had somehow ended up on different
+days. Soft notes under the select tell you the order's own window, warn when the
+new day falls inside it, say when that day has already closed, and say when it is
+short an item — none of them block you. The destination day's availability is
+checked, and the customer's tracking page is republished so it shows the new day.
+The old date is left for the **Del** button on the Deliveries screen to clear.
+
+A **Policies** box in **Settings → Storefront** holds your own cancellation and
+refund wording: type it once in English, translate it to Chinese and Bahasa
+Malaysia with the same free machine translation the product text uses, and it is
+drawn on your shop under **Track your order**, in the visitor's language, with the
+line breaks you typed. Blank hides the section.
+
+And app-wide: wherever an empty box shows the app's greyed recommendation, the
+**right arrow** — or a tap on the small arrow drawn at the box's right edge, for a
+phone with no arrow key — **accepts it as real text**, the same gesture as an AI
+chat prompt. It is offered only where the grey text really is a value: the Supabase
+email, key and password boxes and the sign-in fields carry no arrow, so a made-up
+login can never be accepted by accident. Engine v73, guide v73.
 
 ## v72 — A sold-out note reads in the customer's language (10 Sep 2026)
 Your order page switches language the moment a customer taps it, but two corners
@@ -275,7 +410,7 @@ the app password. Setup: run `supabase/backups.sql` once.
 ## v60 — Homepage customer reviews (8 Sep 2026)
 Customers can leave a **What customers say** review on the homepage — name,
 1–5 stars, a message in English / 中文 / Bahasa Malaysia, and an optional
-photo. Every review lands *unpublished* in More → Reviews, where **Publish**
+photo. Every review lands __unpublished__ in More → Reviews, where **Publish**
 shows it on the homepage, **Take down** hides it, and **Delete** removes it —
 nothing becomes public until you tap Publish. Reviews appear on the homepage
 only. Setup: run `supabase/reviews.sql` once.
@@ -289,8 +424,9 @@ A one-tap **＋ Add occasion** import of Malaysia's days plus fun days (pet,
 people & kindness days, and more), and a **My own day** quick-add.
 
 ## v57 — Private notes per product ingredient (8 Sep 2026)
-Each ingredient line in a product can carry a short private description *for
-that product only* (e.g. which cut or brand of chicken that product uses).
+Each ingredient line in a product can carry a short private description
+__for that product only__ (e.g. which cut or brand of chicken that product
+uses).
 Typed and seen on the Products screens only — never on the shop, a label, or
 the product cards.
 
@@ -314,6 +450,6 @@ once, and marking an order **Preparing** (the engine step the bakery calls
 
 ---
 
-*This history covers the two-phone cloud era (v54+). Earlier versions
+__This history covers the two-phone cloud era (v54+). Earlier versions
 (pre-v54) were never recorded version by version, so they are not listed here
-rather than invented. Each new version is added here as it ships.*
+rather than invented. Each new version is added here as it ships.__

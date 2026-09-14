@@ -1,9 +1,10 @@
 // views/orders.js — per-delivery-date order intake (manual, warn-not-block).
 
-import { deliveryStatus, fmtPlaced, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
+import { addDays, deliveryStatus, fmtPlaced, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
 import { capacityStatus, dayRuleRows, parseDayDelta, productRemaining, saveDayAdjustments } from "../bom.js";
 import { el, button, select, fillMeter, emptyState, confirmDialog, toast, showPopup } from "../ui.js";
-import { byId, fmtRM, groupOrders, newId, orderCode, orderLineName, save, stampOrderLine, updateOrderBadge, waNumber } from "../state.js";
+import { byId, fmtRM, groupOrders, moveOrderGroup, newId, orderCode, orderLineName, save, stampOrderLine, updateOrderBadge, waNumber } from "../state.js";
+import { strictestCancelDays } from "../../../store/pool.js";
 import { buildConfirmation } from "../confirm.js";
 import { buildPaymentReminder, buildPickupReminder } from "../messages.js";
 import { maybeSync, publishTracking } from "../supabase.js";
@@ -403,12 +404,54 @@ function renderAll(root, state, params) {
   anchorRowId = null;
 }
 
+// What ends a revealed row's glow: the baker getting to the row.
+const SETTLE_ON = ["pointerenter", "pointermove", "pointerdown", "mouseenter", "touchstart"];
+
+// Put an order's row under the baker's eye on the date view just shown: flash
+// it and slide the page until it sits mid-screen. Landing on the right delivery
+// date is not enough on a busy day — the row can be far down a long list, and
+// the baker should not have to hunt for the order they just tapped. The list
+// draws one row per customer order, tagged with its first item's id, so try
+// every id in the group; a group whose items were somehow left with different
+// statuses is tagged with whichever item the date view lists first, so fall
+// back to the group id the row also carries.
+function revealOrderRow(root, group) {
+  const orders = (group && group.orders) || [];
+  if (!root || typeof root.querySelector !== "function" || !orders.length) return;
+  let row = null;
+  for (const o of orders) {
+    row = root.querySelector(`[data-order="${o.id}"]`);
+    if (row) break;
+  }
+  if (!row) {
+    const gid = orders.find((o) => o.groupId)?.groupId;
+    if (gid) row = root.querySelector(`[data-group="${gid}"]`);
+  }
+  if (!row) return;
+  row.classList.add("hit");
+  // The glow stays lit until the baker reaches the row. A fixed moment can pass
+  // while her eye is still travelling down a long day, and the whole point of the
+  // flash is to be found — so it is the pointer arriving on the row that ends it,
+  // not the clock. "pointerenter"/"pointermove" cover a mouse or a finger coming
+  // to the row (and a cursor already sitting where the row lands); "pointerdown"
+  // covers the tap that opens it; the mouse/touch pair is for a browser without
+  // pointer events at all.
+  const settle = () => {
+    row.classList.remove("hit");
+    for (const type of SETTLE_ON) row.removeEventListener(type, settle);
+  };
+  for (const type of SETTLE_ON) row.addEventListener(type, settle);
+  if (typeof row.scrollIntoView === "function") {
+    row.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+}
+
 // Inbox card at the top of the Orders screen: every order still waiting to be
 // handled (status New), across all delivery dates, oldest first. Tap a row to
-// jump to that delivery date and confirm it. The red tab badge counts the same
-// set, so a new storefront order surfaces here without digging through dates.
-// A storefront order with several items is one row ("Focaccia + Sandwich"),
-// not one row per item.
+// jump to that delivery date, scroll the order into view and flash it. The red
+// tab badge counts the same set, so a new storefront order surfaces here without
+// digging through dates. A storefront order with several items is one row
+// ("Focaccia + Sandwich"), not one row per item.
 export function newOrdersInbox(state, selectDate, root) {
   const unread = (state.orders || [])
     .filter((o) => (o.status || "new") === "new")
@@ -441,7 +484,14 @@ export function newOrdersInbox(state, selectDate, root) {
           href: `#/orders?date=${first.deliveryDateId}`,
           // Switch dates in place like the date tabs (not native hash navigation,
           // which is flaky on iOS) so the tap reliably opens the order's date.
-          onclick: (ev) => { ev.preventDefault(); selectDate(first.deliveryDateId); },
+          onclick: (ev) => {
+            ev.preventDefault();
+            // A status filter could hide the row on its own date — clear it, the
+            // same way the finder does, so the flash has something to land on.
+            orderStatusFilter = "";
+            selectDate(first.deliveryDateId);
+            revealOrderRow(root, g);
+          },
         }, main, meta);
     return el("div", { class: "inbox-item" },
       nav,
@@ -456,7 +506,7 @@ export function newOrdersInbox(state, selectDate, root) {
     el("h3", { style: "margin:0 0 2px" },
       `📥 ${rows.length} new order${rows.length === 1 ? "" : "s"}`),
     el("p", { class: "card-sub", style: "margin:0 0 6px" },
-      "Tap a row to open the delivery date and confirm."),
+      "Tap a row to jump to that order on its delivery date and confirm it."),
     el("div", { class: "inbox-list" }, ...rows));
 }
 
@@ -553,13 +603,7 @@ function orderFinderEl(state, root, selectDate, body) {
     }
     orderStatusFilter = "";
     selectDate(date.id); // renderContent already put the order's row in the DOM
-    const row = root.querySelector(`[data-order="${first.id}"]`);
-    if (!row) return;
-    row.classList.add("hit");
-    setTimeout(() => row.classList.remove("hit"), 1800);
-    if (typeof row.scrollIntoView === "function") {
-      row.scrollIntoView({ block: "center", behavior: "smooth" });
-    }
+    revealOrderRow(root, group);
   };
 
   if (orderQuery.trim()) { showResults(); paint(orderQuery); } // a rebuild while searching
@@ -718,7 +762,7 @@ function orderForm(state, dateId, root) {
   const customer = el("input", { class: "input", placeholder: "Customer name (optional)",
     value: draft.customerName, oninput: function () { draft.customerName = this.value; } });
   const whatsapp = el("input", { class: "input", type: "tel", inputmode: "tel",
-    placeholder: "e.g. 012-345 6789",
+    placeholder: "e.g. 012-345 6789", "data-suggest": "012-345 6789",
     value: draft.whatsapp, oninput: function () { draft.whatsapp = this.value; } });
   const fulfillmentSel = select(
     [{ value: "collect", label: "Collect (local)" }, { value: "courier", label: "Post (nationwide)" }],
@@ -785,6 +829,49 @@ function orderForm(state, dateId, root) {
     button("＋ Add order", submit, "block primary"));
 }
 
+// The delivery days the Edit-order pop-up's "Delivery day" select offers: every
+// day still to come, plus the order's own day even if that has passed (so an
+// order left on an old date still shows where it is). Sorted soonest first.
+function deliveryDayOptions(state, curId) {
+  const today = todayISO();
+  return state.deliveryDates
+    .filter((d) => d.date >= today || d.id === curId)
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+    .map((d) => ({ value: d.id, label: `${weekdayName(d.date)}, ${longDate(d.date)}` }));
+}
+
+// Soft notes under the "Delivery day" select: the window the customer was told,
+// whether the new day falls inside it, and anything the new day cannot take.
+// Nothing here blocks the move — the baker always overrides by hand.
+function moveNoteLines(state, group, destId) {
+  const dest = byId(state.deliveryDates, destId);
+  if (!dest) return [];
+  const out = [];
+  const products = group.orders.map((o) => byId(state.products, o.productId)).filter(Boolean);
+  const win = strictestCancelDays(products);
+  if (win != null && win >= 1) {
+    out.push(`This order's change/cancel window: ${win} day${win === 1 ? "" : "s"} before delivery.`);
+  }
+  const moved = group.orders.some((o) => o.deliveryDateId !== dest.id);
+  if (!moved) return out;
+  if (win != null && win >= 1 && dest.date < addDays(todayISO(), win)) {
+    out.push(`Moving this inside the ${win}-day window — the customer may not expect the change.`);
+  }
+  const st = deliveryStatus(dest.date, state.settings);
+  if (st.past) out.push("That delivery day is already past.");
+  else if (st.closed) out.push("Orders for that delivery day have already closed.");
+  const short = [];
+  for (const o of group.orders) {
+    const pr = productRemaining(state, dest.id, o.productId, o.id);
+    if (pr && pr.remaining < o.qty) {
+      const p = byId(state.products, o.productId);
+      short.push(`${p ? p.name : "An item"}: ${Math.max(0, pr.remaining)} left, need ${o.qty}`);
+    }
+  }
+  if (short.length) out.push(`That day is short — ${short.join("; ")}.`);
+  return out;
+}
+
 // Edit opens this pop-up over the Orders screen (the New-order card above stays
 // put). It shows the order's own line items — each with a product picker that
 // includes hidden products — plus quantity steppers and the shared customer
@@ -795,7 +882,8 @@ function openEditPopup(state, group, dateId, root) {
   if (!first) return;
   const date = byId(state.deliveryDates, dateId) ||
     (first.deliveryDateId ? byId(state.deliveryDates, first.deliveryDateId) : null);
-  if (!date) return toast("This order's delivery date is missing.");
+  // A missing date record no longer stops the pop-up opening: the "Delivery day"
+  // select is exactly what puts an orphaned order back onto a real day.
 
   const lines = group.orders.map((o) => ({ id: o.id, productId: o.productId || "", qty: o.qty }));
   const draft = {
@@ -805,6 +893,7 @@ function openEditPopup(state, group, dateId, root) {
     address: first.address || "",
     note: first.note || "",
     orderDate: first.orderDate || String(first.createdAt || "").slice(0, 10) || todayISO(),
+    deliveryDateId: (date && date.id) || "",
   };
 
   const title = el("div", { class: "popup-title-row" },
@@ -814,11 +903,12 @@ function openEditPopup(state, group, dateId, root) {
 }
 
 function popupEditBody(state, date, group, first, lines, draft, refresh, close, root) {
-  const products = productOptions(state, date.id);
+  const curId = draft.deliveryDateId || (date && date.id) || "";
+  const products = productOptions(state, curId);
   const customer = el("input", { class: "input", placeholder: "Customer name (optional)",
     value: draft.customerName, oninput: function () { draft.customerName = this.value; } });
   const whatsapp = el("input", { class: "input", type: "tel", inputmode: "tel",
-    placeholder: "e.g. 012-345 6789",
+    placeholder: "e.g. 012-345 6789", "data-suggest": "012-345 6789",
     value: draft.whatsapp, oninput: function () { draft.whatsapp = this.value; } });
   const fulfillmentSel = select(
     [{ value: "collect", label: "Collect (local)" }, { value: "courier", label: "Post (nationwide)" }],
@@ -829,6 +919,10 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     value: draft.note, oninput: function () { draft.note = this.value; } });
   const orderDate = el("input", { class: "input", type: "date",
     value: draft.orderDate, oninput: function () { draft.orderDate = this.value; } });
+  const deliverySel = select(deliveryDayOptions(state, curId), curId,
+    function () { draft.deliveryDateId = this.value; refresh(); }, "Choose a delivery day…");
+  const deliveryNotes = el("div", { class: "card-sub", style: "margin:6px 0 0" },
+    ...moveNoteLines(state, group, curId).map((t) => el("p", { style: "margin:2px 0" }, t)));
 
   const rowFor = (line, i) => {
     const prodSel = select(products, line.productId,
@@ -849,6 +943,8 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
   const save = () => {
     const chosen = lines.filter((l) => l.productId);
     if (!chosen.length) return toast("Choose a product");
+    const destId = draft.deliveryDateId || curId;
+    if (!destId || !byId(state.deliveryDates, destId)) return toast("Choose a delivery day");
     applyPopupEdits(state, date, group, first, chosen, {
       customerName: customer.value.trim(),
       whatsapp: waNumber(whatsapp.value.trim()),
@@ -856,6 +952,7 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       address: address.value.trim(),
       note: note.value.trim(),
       orderDate: orderDate.value,
+      deliveryDateId: destId,
     }, close, root);
   };
 
@@ -866,6 +963,10 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       button("＋ Add another item", () => { lines.push({ productId: "", qty: 1 }); refresh(); }, "ghost")),
     el("div", { class: "card-sub", style: "margin:0 0 10px" },
       "Hidden products are listed as \"(hidden)\" — you can still add or keep one."),
+    el("div", { class: "field", style: "margin-bottom:10px" },
+      el("label", {}, "Delivery day"),
+      deliverySel,
+      deliveryNotes),
     el("div", { class: "form-grid" },
       el("div", {}, el("label", {}, "Customer"), customer),
       el("div", {}, el("label", {}, "Order date"), orderDate),
@@ -883,8 +984,14 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
 // as one customer order). Removed lines' orders are deleted. Guards against
 // pushing the day over capacity.
 function applyPopupEdits(state, date, group, first, chosen, shared, close, root) {
-  const cap = capacityStatus(state, date.id);
-  const qtyNow = group.orders.reduce((s, o) => s + o.qty, 0);
+  const dest = byId(state.deliveryDates, shared.deliveryDateId) || date;
+  if (!dest) return toast("Choose a delivery day");
+  // The capacity guard follows the order to its destination. Capacity is derived
+  // from deliveryDateId, so the source day frees itself with no bookkeeping, and
+  // the destination already counts this order only when it IS the source day.
+  const sameDay = !date || dest.id === date.id;
+  const cap = capacityStatus(state, dest.id);
+  const qtyNow = sameDay ? group.orders.reduce((s, o) => s + o.qty, 0) : 0;
   const qtyAfter = chosen.reduce((s, l) => s + (Number(l.qty) || 1), 0);
   const totalAfter = cap.total - qtyNow + qtyAfter;
 
@@ -913,8 +1020,8 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
       } else {
         const row = {
           id: newId("ord"),
-          deliveryDateId: date.id,
-          deliveryDate: date.date,
+          deliveryDateId: dest.id,
+          deliveryDate: dest.date,
           orderDate: shared.orderDate || todayISO(),
           productId: l.productId,
           qty: Number(l.qty) || 1,
@@ -931,16 +1038,22 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
         state.orders.push(row);
       }
     }
+    // Every kept row now sits on the destination day, with deliveryDateId and
+    // the deliveryDate snapshot written together (self-heals a split group).
+    moveOrderGroup(group, dest);
     save(state);
     maybeSync(state);
     updateOrderBadge(state);
-    toast("Order updated");
+    // The track card bakes the delivery-date string, so a move must republish
+    // it. An in-place edit leaves it as it was.
+    if (!sameDay) publishTracking(state, group);
+    toast(sameDay ? "Order updated" : "Order moved");
     close();
-    renderAll(root, state, new URLSearchParams({ date: date.id }));
+    renderAll(root, state, new URLSearchParams({ date: dest.id }));
   };
 
   if (totalAfter > cap.capacity) {
-    confirmDialog(`Save? This makes ${totalAfter}/${cap.capacity} — over today's capacity.`,
+    confirmDialog(`Save? This makes ${totalAfter}/${cap.capacity} — over that day's capacity.`,
       commit, { danger: true, yesLabel: "Save anyway" });
   } else {
     commit();
@@ -1247,7 +1360,13 @@ function orderGroupRow(state, group, root, dateId) {
     ? el("div", { class: "li-sub muted" }, "Add the customer's WhatsApp (tap Edit) to send this order's messages.")
     : null;
 
-  return el("div", { class: "list-item", dataset: { order: first.id } },
+  // The row is tagged with its first item's id; the group id rides along so the
+  // inbox tap can still find this row when its own item is not the first one.
+  const rowAttrs = { class: "list-item", dataset: { order: first.id } };
+  const groupId = orders.find((o) => o.groupId)?.groupId;
+  if (groupId) rowAttrs.dataset.group = groupId;
+
+  return el("div", rowAttrs,
     el("div", { class: "li-main" },
       el("div", { class: "li-title" }, title, orderCodeTag(first),
         orders.some((o) => o.source === "storefront") ? el("span", { class: "src-tag" }, "storefront") : null),

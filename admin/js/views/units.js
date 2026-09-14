@@ -29,7 +29,7 @@ function renderAll(root, state) {
 }
 
 function buildUnitEditor(state, uom) {
-  const name = el("input", { class: "input", placeholder: "e.g. kg", value: uom?.name || "" });
+  const name = el("input", { class: "input", placeholder: "e.g. kg", "data-suggest": "kg", value: uom?.name || "" });
   const familySel = select(FAMILIES, uom?.family || "weight", null);
   const factorLabel = el("label", {}, factorCaption(familySel.value));
   const factor = el("input", {

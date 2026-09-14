@@ -68,6 +68,10 @@ test("the closed-product reason and the basket notes are keyed in all three lang
     fixPoolClamp: ["%1", "%2", "%3"],
     fixClamp: ["%1", "%2", "%3"],
     fixClosed: ["%1", "%2"],
+    cancelNote: ["%1"],
+    cancelNoteOne: [],
+    orderCancelNote: ["%1"],
+    orderCancelNoteOne: [],
   };
   for (const [key, phs] of Object.entries(holders)) {
     for (const l of LANGS) {

@@ -25,8 +25,14 @@ import { renderLogin } from "./views/login.js";
 import { renderLock } from "./views/lock.js";
 import { refreshShareWarn } from "./sharewarn.js";
 import { lockEnabled } from "./pin.js";
+import { installSuggestionAccept } from "./suggest.js";
 
 const state = loadState();
+
+// An empty field showing a greyed suggestion takes it on → (or on a tap of the
+// arrow the app draws at its right edge, for a phone with no arrow key). Bound
+// to the document because pop-ups and dialogs live outside #view.
+installSuggestionAccept();
 
 const routes = {
   "/dashboard": { title: "Munchies Furkidz", tab: "dashboard", render: renderDashboard },
