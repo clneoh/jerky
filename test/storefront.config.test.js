@@ -240,7 +240,7 @@ test("mergeStorefront keeps the change/cancel window and the Policies wording", 
   };
   const out = mergeStorefront(base, {
     products: [
-      { name: "Focaccia", price: 15, unit: "loaf", cancelDays: 2 },
+      { name: "Focaccia", price: 15, unit: "loaf", cancelDays: 2, alwaysListed: true },
       { name: "Brownie", price: 6, unit: "piece" },
     ],
     policy: "  Orders are not refundable; they may be moved to another day.  ",
@@ -250,6 +250,10 @@ test("mergeStorefront keeps the change/cancel window and the Policies wording", 
   assert.equal(out.products.find((p) => p.name === "Focaccia").cancelDays, 2);
   assert.equal("cancelDays" in out.products.find((p) => p.name === "Brownie"), false,
     "a blank window keeps the product without a cancelDays key");
+  assert.equal(out.products.find((p) => p.name === "Focaccia").alwaysListed, true,
+    "the keep-listed switch reaches the shop");
+  assert.equal("alwaysListed" in out.products.find((p) => p.name === "Brownie"), false,
+    "a product that never had the switch on gains no key — the shop reads that as off");
   assert.equal(out.policy, "Orders are not refundable; they may be moved to another day.",
     "the policy text is adopted and trimmed");
   assert.equal(out.policyZh, "款项不退还。", "a non-empty 中文 policy is kept");

@@ -327,9 +327,17 @@ function before(a, b) {
   return a.year < b.year || (a.year === b.year && a.month < b.month);
 }
 
-export function deliveryCal({ state, days, getActiveId, month, onPick }) {
+// `noteMisses` turns on one extra thing: tapping a day the bakery does not deliver
+// is ANSWERED instead of swallowed — the calendar says the day is not a delivery
+// day, and where it gets added. The baker is on these screens to put an order
+// somewhere, so a tap that does nothing is a dead end she has to guess her way out
+// of (15 Sep 2026: she tapped a marked 16 Sep, read "Malaysia Day", and had no way
+// of knowing why no order could go on it). The state is this calendar's own, in
+// its closure: nothing outside the grid answers for it.
+export function deliveryCal({ state, days, getActiveId, month, onPick, noteMisses = false }) {
   const list = (days || []).filter((d) => d && d.id && d.date);
   const today = todayISO();
+  let missedIso = null; // the day she asked about and the bakery does not deliver
   const byDate = new Map(list.map((d) => [d.date, d.id]));
   // The arrows reach only the months a delivery day falls in: a month with
   // nothing to deliver has nothing to show, so paging into it is a dead end.
@@ -343,6 +351,16 @@ export function deliveryCal({ state, days, getActiveId, month, onPick }) {
   if (!lo) { lo = monthOf(today); hi = lo; }
 
   const wrap = el("div", { class: "cal-wrap" });
+
+  // The answer to a tap the calendar cannot act on: the day she asked about, said
+  // plainly, and where it is added. It is a line under the grid and not a bubble
+  // over the day — a bubble is where a marked day names itself, but this sentence
+  // is a whole line long and would run off the side of a phone.
+  function missNote() {
+    if (!missedIso) return null;
+    return el("p", { class: "cal-miss" },
+      `${shortDate(missedIso)} is not a delivery day. Add it in More → Delivery Dates.`);
+  }
 
   function paint() {
     const active = getActiveId();
@@ -374,8 +392,18 @@ export function deliveryCal({ state, days, getActiveId, month, onPick }) {
       // read (the customer's shop page names that day too).
       if (!dateId) {
         const cls = `cal-cell off${iso === today ? " today" : ""}${box}`;
-        if (!tip) return el("span", { class: cls }, num);
-        return el("button", { class: `${cls} tippable`, onclick: () => { nameDay(state.occasions, iso, past); paint(); } }, num, tip);
+        // A day already gone is asked nothing: there is nothing left to add to it,
+        // and the past is reviewed in the list below, not on the grid.
+        const askable = noteMisses && !past;
+        if (!tip && !askable) return el("span", { class: cls }, num);
+        return el("button", {
+          class: `${cls} ${tip ? "tippable" : "tappable"}`,
+          onclick: () => {
+            nameDay(state.occasions, iso, past); // names a marked day, exactly as everywhere else
+            if (askable) missedIso = iso;
+            paint();
+          },
+        }, num, tip);
       }
       const cap = capacityStatus(state, dateId);
       const st = deliveryStatus(iso, state.settings);
@@ -394,10 +422,19 @@ export function deliveryCal({ state, days, getActiveId, month, onPick }) {
       // from the day this module was just told about.
       return el("button", {
         class: `${cls} tappable`,
-        onclick: () => { nameDay(state.occasions, iso, past); onPick(dateId); },
+        // Naming the day comes BEFORE opening it, as it always has; the repaint
+        // before handing over is what takes the "not a delivery day" answer away,
+        // so the grid never relies on the caller to tidy up after it.
+        onclick: () => {
+          missedIso = null;
+          nameDay(state.occasions, iso, past);
+          paint();
+          onPick(dateId);
+        },
       }, num, el("span", { class: "cal-count" }, full ? "FULL" : `${cap.total}/${cap.capacity}`), tip);
     });
 
+    const note = missNote();
     wrap.replaceChildren(
       el("div", { class: "cal-head" },
         prev,
@@ -406,7 +443,8 @@ export function deliveryCal({ state, days, getActiveId, month, onPick }) {
       el("div", { class: "cal-grid" },
         ...DOW.map((d) => el("span", { class: "cal-dow" }, d)),
         ...cells,
-        ...occPapers(state.occasions, weeks, today)));
+        ...occPapers(state.occasions, weeks, today)),
+      ...(note ? [note] : []));
   }
 
   paint();
@@ -451,6 +489,7 @@ function renderAll(root, state, params) {
     getActiveId: () => activeId,
     month: ordersCalMonth,
     onPick: (id) => selectDate(id),
+    noteMisses: true,
   });
   const content = el("div", {});
 
@@ -895,6 +934,7 @@ function orderForm(state, dateId, root, selectDate) {
     getActiveId: () => dateId,
     month: monthOf(date.date),
     onPick: selectDate,
+    noteMisses: true,
   });
 
   const rowsEl = el("div", {});
@@ -1097,6 +1137,7 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     getActiveId: () => draft.deliveryDateId || curId,
     month: monthOf(curDate ? curDate.date : todayISO()),
     onPick: (id) => { draft.deliveryDateId = id; refresh(); },
+    noteMisses: true,
   }).el;
   const deliveryNotes = el("div", { class: "card-sub", style: "margin:6px 0 0" },
     ...moveNoteLines(state, group, curId).map((t) => el("p", { style: "margin:2px 0" }, t)));

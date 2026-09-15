@@ -407,13 +407,40 @@ html, body {
 .menu-item.soldout .step-btn { background: #f1e9de; color: #c9b8a5; cursor: default; }
 
 /* Small notes under a product's stepper: why the card is unavailable on this
-   date (a value pack's advance window, a from–to window, orders closed), and
-   the baker's change/cancel window for the product when one is stated. */
+   date (a value pack's advance window, a from–to window, orders closed, or a day
+   the baker doesn't sell it), and the baker's change/cancel window for the
+   product when one is stated. */
 .prod-note {
   margin: -2px 0 0;
   font-size: 12px;
   color: var(--muted);
   line-height: 1.4;
+}
+
+/* On a greyed card, the one line that says what to do: the next date this
+   product can be ordered, and how many are left that day. It wears the brand
+   colour and pulses, so it reads through the dimming and draws the eye on a
+   card that is otherwise telling the customer "not today". A slow brighten and
+   dim, not a hard blink — a fast on/off is hard to read and a seizure risk.
+   Reduced-motion gets the same chip, lit steadily. */
+.prod-next {
+  /* The card is a flex column, so a plain block would stretch the chip across the
+     full width; hugging its own text keeps it reading as a label, not a bar. */
+  align-self: flex-start;
+  display: inline-block;
+  color: var(--brown-dark);
+  font-weight: 600;
+  background: var(--brown-soft);
+  border-radius: 8px;
+  padding: 3px 9px;
+  animation: next-pulse 1.8s ease-in-out infinite;
+}
+@keyframes next-pulse {
+  0%, 100% { background: var(--brown-soft); box-shadow: 0 0 0 0 rgba(196, 85, 47, 0); }
+  50% { background: #f6d3c0; box-shadow: 0 0 0 4px rgba(196, 85, 47, .20); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .prod-next { animation: none; box-shadow: 0 0 0 3px rgba(196, 85, 47, .16); }
 }
 
 /* The baker's policies text on the shop — line breaks preserved exactly as

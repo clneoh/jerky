@@ -1108,3 +1108,149 @@ test("taking the last mark off is the one way back to selling every delivery day
   assert.equal(state.products[0].sellRules, undefined,
     "and the saved product carries no marks at all, which the shop reads as every delivery day");
 });
+
+// ── Engine v90: the "keep it on the shop" switch ─────────────────────────────
+
+// The switch's real <input>, under `.avail-listed`. Every gesture rebuilds the
+// body, so read it fresh — never hold a handle across a repaint.
+const listedSwitch = (root) => {
+  const row = walk(root).find((n) => n.className === "avail-listed");
+  assert.ok(row, "the Availability card carries the keep-it-listed switch");
+  const box = walk(row).find((n) => n.tagName === "INPUT");
+  assert.equal(box.attrs.type, "checkbox", "a real checkbox underneath, like every other boolean");
+  return box;
+};
+// The shim does not flip .checked on a tap, so a tick is set and then announced.
+const setSwitch = (root, on) => {
+  const box = listedSwitch(root);
+  box.checked = on;
+  (box._listeners.change || []).forEach((f) => f({ target: box }));
+};
+
+test("a new product's switch sits above the sell-day calendar, off, and writes nothing", () => {
+  doc.body.replaceChildren();
+  resetLayers();
+  const state = freshState();
+  const root = render(state);
+  const f = formHandles(root);
+  f.name.value = "Signature Focaccia";
+  f.unit.value = "u_loaf";
+  const a = openAvail(root);
+
+  assert.equal(listedSwitch(root).checked, false, "absent on the product means off — today's behaviour");
+  // It reads above the marks: the switch decides whether the card survives a day
+  // it cannot be ordered on, the calendar decides which days those are.
+  assert.equal(a.body.children[0].className, "avail-listed", "the switch is the first thing in the card");
+  assert.ok(a.body.children.findIndex((c) => c.className === "cal-grid") > 0, "…and above the calendar");
+
+  fire(f.add);
+  assert.equal("alwaysListed" in state.products[0], false,
+    "an untouched switch writes no key at all — no product she never opens changes");
+});
+
+test("ticking the switch saves it, and the folded header reads the state", () => {
+  doc.body.replaceChildren();
+  resetLayers();
+  const state = freshState();
+  const root = render(state);
+  const f = formHandles(root);
+  f.name.value = "Signature Focaccia";
+  f.unit.value = "u_loaf";
+  const a = openAvail(root);
+
+  setSwitch(root, true);
+  assert.equal(a.summary.textContent, "Every day · kept on the shop",
+    "the header says it without opening the card again");
+  fire(f.add);
+  assert.equal(state.products[0].alwaysListed, true, "and it is saved on the product");
+});
+
+test("a kept product opens with the switch on, survives a repaint, and saves off again", () => {
+  doc.body.replaceChildren();
+  resetLayers();
+  const state = freshState();
+  state.products = [{ id: "p1", name: "Signature Focaccia", unit: "u_loaf", active: true, alwaysListed: true }];
+  const root = render(state);
+  fire(buttonByText(root, "Edit"));
+  const pop = layers["popup-layer"];
+  openAvail(pop);
+
+  assert.equal(listedSwitch(pop).checked, true, "the saved choice comes back on");
+  assert.equal(availHandles(pop).summary.textContent, "Every day · kept on the shop");
+
+  // A repaint rebuilds the whole body from the closure — the switch must come
+  // back still on, not reset to a fresh, unchecked node.
+  fire(dowBtn(pop, 6));
+  assert.equal(listedSwitch(pop).checked, true, "marking a day neither loses nor flips the switch");
+  assert.match(availHandles(pop).summary.textContent, /· kept on the shop$/,
+    "and the header keeps saying so beside the new mark");
+
+  walk(pop).find((n) => n.tagName === "SELECT").value = "u_loaf";
+  fire(buttonByText(pop, "Update product"));
+  assert.equal(state.products[0].alwaysListed, true, "kept, alongside the mark it just gained");
+
+  // Now take it off. The key goes entirely, so an absent key reads as off — the
+  // product returns to byte-for-byte today's behaviour.
+  fire(buttonByText(root, "Edit"));
+  const pop2 = layers["popup-layer"];
+  openAvail(pop2);
+  setSwitch(pop2, false);
+  assert.equal(availHandles(pop2).summary.textContent.includes("kept on the shop"), false,
+    "the header drops the suffix with the switch");
+  walk(pop2).find((n) => n.tagName === "SELECT").value = "u_loaf";
+  fire(buttonByText(pop2, "Update product"));
+  assert.equal("alwaysListed" in state.products[0], false, "the key is deleted, not set to false");
+});
+
+// ── the New product card folds away (v91) ────────────────────────────────────
+// The card is the screen's setup part, and left open it pushed the three product
+// lists she came to read off the bottom of the page. It now arrives as one line
+// ("＋ New product") and opens on its own title, exactly like the ＋ New order
+// card on Orders.
+const newCard = (root) => root.children[0];
+const newHead = (root) => newCard(root).children[0];
+const newBody = (root) => newCard(root).children[1];
+const newCaret = (root) => newHead(root).children[1];
+
+test("the New product card arrives folded, and its own title opens it", () => {
+  const root = render(freshState());
+  assert.equal(newHead(root).tagName, "BUTTON", "the title is the control, as everywhere else");
+  assert.equal(newHead(root).children[0].children[0].text, "＋ New product");
+  assert.equal(newBody(root).hidden, true, "and the add form is folded away to begin with");
+  assert.equal(newCaret(root).children[0].text, "▸", "the caret points right, as on every folded card");
+
+  fire(newHead(root));
+  assert.equal(newBody(root).hidden, false, "tapping the title opens it");
+  assert.equal(newCaret(root).textContent, "▾");
+
+  fire(newHead(root));
+  assert.equal(newBody(root).hidden, true, "tapping it again folds it back");
+  assert.equal(newCaret(root).textContent, "▸", "and the caret turns back with it");
+});
+
+test("a tap outside folds it, a tap inside does not, and adding a product leaves it open", () => {
+  const state = freshState();
+  const root = render(state);
+  fire(newHead(root));
+
+  fireDoc("pointerdown", { target: walk(root.children[0]).find((n) => n.tagName === "INPUT") });
+  assert.equal(newBody(root).hidden, false, "a tap inside the form does not fold it under her");
+
+  fireDoc("pointerdown", { target: doc.body });
+  assert.equal(newBody(root).hidden, true, "a tap anywhere else folds it away");
+
+  // Adding a product re-renders the card around her: it must not slam shut
+  // mid-flow, so the next one can be typed straight away.
+  fire(newHead(root));
+  const f = formHandles(root);
+  f.name.value = "Focaccia";
+  f.unit.value = "u_loaf";
+  fire(f.add);
+  assert.equal(state.products.length, 1);
+  assert.equal(newBody(root).hidden, false, "the card stays open after a product is saved");
+
+  // …and coming back to the screen later starts it folded again.
+  const fresh = doc.createElement("div");
+  renderProducts(fresh, state);
+  assert.equal(newBody(fresh).hidden, true, "a fresh visit folds it away");
+});

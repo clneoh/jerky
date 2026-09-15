@@ -139,6 +139,57 @@ test("an item already in the basket leaves it when the day changes, and says why
   assert.match(said, /Only sold on Mon/, "and says which day it is sold on");
 });
 
+// ── the "keep it on the shop" switch (v90) ───────────────────────────────────
+
+test("a product she keeps listed stays on a day it isn't sold, stamped Unavailable", async () => {
+  CONFIG.products.find((p) => p.name === "Focaccia").alwaysListed = true;
+  render();
+  await settle();
+
+  assert.deepEqual(menuNames(), ["Focaccia", "Sandwich", "Brownie Box"],
+    "the kept product stays where it would otherwise vanish");
+  const card = cardFor("Focaccia");
+  const stamp = walk(card).find((n) => (n.className || "").includes("prod-stamp"));
+  assert.ok(stamp.className.includes("soldout"), "greyed exactly like a sold-out card");
+  assert.equal(stamp.children[0].text, "Unavailable",
+    "…but its own word — a day it is never sold is not the same as a day it ran out");
+  assert.equal(card.children[1].children[2].disabled, true, "and there is nothing to order");
+
+  const notes = cardNotes("Focaccia");
+  assert.equal(notes.length, 2, "the reason, then the date to come back for");
+  assert.match(notes[0], /Only sold on Mon/, "the sentence the marking card has always carried");
+  assert.equal(notes[1], "Next available: Mon, 7 Sep",
+    "nothing is published for these dates, so the date comes with no count");
+});
+
+test("switching it off puts the shop back exactly as it was", async () => {
+  CONFIG.products.find((p) => p.name === "Focaccia").alwaysListed = false;
+  render();
+  await settle();
+
+  assert.deepEqual(menuNames(), ["Sandwich", "Brownie Box"],
+    "an absent flag is today's behaviour — gone from the menu, no card, no note");
+});
+
+test("a kept product that cannot be ordered today keeps its Sold out stamp and gains the date", async () => {
+  CONFIG.products.find((p) => p.name === "Brownie Box").alwaysListed = true;
+  render();
+  await settle();
+
+  const card = cardFor("Brownie Box");
+  const stamp = walk(card).find((n) => (n.className || "").includes("prod-stamp"));
+  assert.equal(stamp.children[0].text, "Sold out",
+    "the switch only ever ADDS — a sold-out stamp stays exactly as it reads today");
+  assert.ok(stamp.className.includes("soldout"));
+
+  const notes = cardNotes("Brownie Box");
+  assert.equal(notes.length, 2);
+  assert.match(notes[0], /5 days before the posting day/, "the notice it already carried");
+  assert.match(notes[0], /later/, "…and its advice");
+  assert.equal(notes[1], "Next available: Mon, 7 Sep",
+    "the one line the switch buys: the next day the notice is met");
+});
+
 test("a day where nothing at all is sold says so instead of showing a blank space", async () => {
   // A shop with nothing that sells on Wednesday. Re-rendered from the top, so
   // this runs last: it replaces the fixture the tests above were reading.

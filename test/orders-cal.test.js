@@ -80,6 +80,7 @@ function build() {
     getActiveId: () => activeId,
     month: { year: 2026, month: 8 }, // September 2026; paging mutates this in place
     onPick: (id) => picked.push(id),
+    noteMisses: true, // what the Orders screen itself passes
   });
 }
 
@@ -96,6 +97,7 @@ function cell(cal, day) {
   return list[first + (day - 1)];
 }
 const countOf = (c) => (c.children.find((x) => String(x.className) === "cal-count") || {}).children?.[0]?.text;
+const fire = (node) => (node._listeners.click || []).forEach((f) => f());
 
 test("a delivery day is tappable and carries its booking under the number", () => {
   const cal = build();
@@ -115,11 +117,14 @@ test("the day on screen is marked, and an ordinary day of the month is quiet", (
   const cal = build();
   assert.ok(cell(cal, 7).className.includes("sel"), "the day being looked at is marked");
 
-  const plain = cell(cal, 3);
-  assert.equal(plain.tagName, "SPAN", "a day the bakery does not deliver cannot be tapped");
+  const plain = cell(cal, 20);
+  assert.equal(plain.tagName, "BUTTON", "a day the bakery does not deliver can still be asked about");
   assert.ok(plain.className.includes("off"), "and is drawn quietly");
   assert.equal(countOf(plain), undefined, "with nothing said about it");
-  assert.equal(plain.children[0].children[0].text, "3", "though its number is still there");
+  assert.equal(plain.children[0].children[0].text, "20", "though its number is still there");
+
+  // A day already gone has nothing to add to it, so it is asked nothing at all.
+  assert.equal(cell(cal, 3).tagName, "SPAN", "a past day that is not delivered cannot be tapped");
 });
 
 test("a day at capacity says FULL and is still opened", () => {
@@ -144,6 +149,39 @@ test("a day already gone is dimmed but still opens, and a closed day is flagged"
   assert.ok(!d10.className.includes("past"), "a day whose orders closed is not also 'past'");
 });
 
+test("a day the bakery does not deliver answers the tap: the date, and where to add it", () => {
+  const cal = build();
+  const noteIn = () => cal.el.children.find((c) => c.className === "cal-miss");
+
+  fire(cell(cal, 20)); // Sunday 20 Sep — not one of the bakery's delivery days
+  assert.ok(noteIn(), "the calendar answers a tap it cannot act on");
+  assert.equal(noteIn().children[0].text,
+    "Sun, 20 Sep is not a delivery day. Add it in More → Delivery Dates.");
+  assert.deepEqual(picked, [], "nothing is opened — there is no day there to open");
+
+  // A day that IS delivered is what she meant, so the answer to the other tap goes
+  // on the tap itself — the grid does not wait for the screen around it to repaint.
+  fire(cell(cal, 10));
+  assert.deepEqual(picked, ["d10"]);
+  assert.equal(noteIn(), undefined, "opening a real day takes the note away");
+});
+
+test("a marked day off the delivery week names itself AND says why no order goes on it", () => {
+  // 15 Sep 2026: she had marked Malaysia Day, tapped it, was told the holiday's
+  // name and nothing else — with no way of knowing why no order could go on it.
+  STATE.occasions = [{ id: "x", label: "Malaysia Day", from: "2026-09-16", to: "2026-09-16", colour: "red" }];
+  const cal = build();
+
+  fire(cell(cal, 16));
+  const tip = cell(cal, 16).children.find((c) => c.className === "cal-tip");
+  assert.equal(tip.hidden, false, "the day still says its name");
+  assert.equal(tip.children[0].text, "Malaysia Day");
+  assert.equal(cal.el.children.find((c) => c.className === "cal-miss").children[0].text,
+    "Wed, 16 Sep is not a delivery day. Add it in More → Delivery Dates.",
+    "and the calendar says what the name alone left her guessing at");
+  STATE.occasions = [];
+});
+
 test("the arrows reach only the months the delivery days span", () => {
   const cal = build();
   assert.equal(arrows(cal)[0].disabled, true, "September is the earliest month anything sits in");
@@ -151,8 +189,10 @@ test("the arrows reach only the months the delivery days span", () => {
 
   arrows(cal)[1]._listeners.click[0]();
   assert.equal(title(cal), "October 2026", "one month forward");
-  assert.equal(cell(cal, 3).tagName, "SPAN", "a month with no delivery day offers nothing");
-  assert.equal(cell(cal, 3).children[0].children[0].text, "3", "…but is still drawn");
+  assert.equal(cell(cal, 3).tagName, "BUTTON",
+    "a month with no delivery day opens nothing, but a tap in it is still answered");
+  assert.ok(cell(cal, 3).className.includes("off"), "…and every day of it is drawn quietly");
+  assert.equal(cell(cal, 3).children[0].children[0].text, "3", "…with its number");
 
   // Each page builds fresh arrows, so the ones to read are the new ones.
   arrows(cal)[1]._listeners.click[0]();

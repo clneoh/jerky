@@ -311,6 +311,11 @@ function storefrontPayload(state) {
       const cancel = Number(p.cancelDays);
       const cancelSet = p.cancelDays != null && !(typeof p.cancelDays === "string" && p.cancelDays.trim() === "");
       if (cancelSet && Number.isInteger(cancel) && cancel >= 0) out.cancelDays = cancel;
+      // Keep this product on the shop when it cannot be ordered, instead of
+      // dropping it from the menu — the few hot items a customer comes back
+      // looking for. Published only while switched on, so an absent key leaves
+      // the storefront reading every product exactly as it does today.
+      if (p.alwaysListed === true) out.alwaysListed = true;
       // Optional translated names for 中文 / BM shoppers. Published only when
       // written — blank falls back to the English name on the shop (nameFor).
       for (const k of ["nameZh", "nameMs"]) {

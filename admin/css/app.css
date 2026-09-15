@@ -390,6 +390,31 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
 .fold-caret { color: var(--muted); font-size: 13px; }
 .trans-body[hidden],
 .fold-body[hidden] { display: none; }
+/* The Delivery Dates screen's past dates, folded away: the .fold-head chrome
+   wearing the type of the h2.section heading it replaces (18px serif bold) so it
+   reads as the section head it is, not as a card title. */
+.past-head { font-size: 18px; margin: 20px 2px 10px; }
+
+/* The Availability card's "keep it on the shop" switch. A real <input
+   type="checkbox"> underneath — every other boolean in the app is one, and it
+   keeps the value readable the same way — dressed as a switch because this one
+   is a prominent show/hide control for a product rather than a form field. */
+.avail-listed { display: flex; align-items: flex-start; gap: 10px; margin: 12px 0 2px; }
+.avail-listed-text { font-size: 13px; color: var(--muted); line-height: 1.35; }
+.switch { flex: none; position: relative; display: inline-block; width: 44px; height: 25px; margin-top: 1px; }
+.switch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.switch-track {
+  position: absolute; inset: 0; border-radius: 999px;
+  background: var(--line); transition: background .15s;
+}
+.switch-knob {
+  position: absolute; top: 2px; left: 2px; width: 21px; height: 21px;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(120, 66, 32, .25);
+  transition: transform .15s;
+}
+.switch input:checked ~ .switch-track { background: var(--green); }
+.switch input:checked ~ .switch-track .switch-knob { transform: translateX(19px); }
+.switch input:focus-visible ~ .switch-track { outline: 2px solid var(--green); outline-offset: 2px; }
 
 /* One translated line: the field, with a ↻ that translates it again sitting
    where the suggestion arrow sits while the field is empty. The two never
@@ -1420,6 +1445,22 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
   }
 }
 .cal-cell.blank { visibility: hidden; }
+/* The calendar answering a tap it cannot act on: she tapped a day you do
+   not deliver, so the grid says so and says where the day gets added. It sits in
+   the calendar card under the grid rather than in a bubble over the day (the way a
+   marked day names itself) — a bubble is a word or two wide and this is a whole
+   sentence, which at the left or right edge of a phone would run off the screen.
+   The warm fill is the brand answering her, not another piece of the calendar. */
+.cal-miss {
+  margin: 8px 0 0;
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: var(--brown-soft);
+  color: var(--brown-dark);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+}
 
 /* The Orders screen's delivery calendar (js/views/orders.js): one month at a time,
    the days you deliver wearing the same green ring the shop rings a day with, and

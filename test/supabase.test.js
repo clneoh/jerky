@@ -370,7 +370,7 @@ test("storefront payload publishes the set's component and its per-product date 
     { id: "prd_1", name: "Focaccia", price: 15, unit: "loaf", active: true, limit: 12 },
     { id: "prd_2", name: "Focaccia Value Pack (4)", price: 54, unit: "set", active: true,
       recipe: [{ productId: "prd_1", qty: 4 }], closeDays: 3, cancelDays: 2,
-      validFrom: "2026-12-01", validTo: "2026-12-24",
+      validFrom: "2026-12-01", validTo: "2026-12-24", alwaysListed: true,
       // The calendar's marks, plus one entry the whitelist must not carry: a span
       // whose ends are not dates at all.
       sellRules: [{ days: [6, 0], from: "2027-01-01", to: "2027-01-31" },
@@ -390,12 +390,16 @@ test("storefront payload publishes the set's component and its per-product date 
     assert.deepEqual(payload.products.find((p) => p.name === "Focaccia Value Pack (4)"),
       { name: "Focaccia Value Pack (4)", price: 54, unit: "set", component: { name: "Focaccia", qty: 4 },
         closeDays: 3, cancelDays: 2, validFrom: "2026-12-01", validTo: "2026-12-24",
+        alwaysListed: true,
         sellRules: [{ days: [0, 6], from: "2027-01-01", to: "2027-01-31" }] });
     // A product without rules publishes no date keys at all — the storefront's
-    // pack default (14) is applied on its side.
+    // pack default (14) is applied on its side. The keep-listed switch is absent
+    // too: switched off is today's behaviour, and the shop reads an absent key
+    // as off, so a product she never opened publishes byte-for-byte as before.
     const base = payload.products.find((p) => p.name === "Focaccia");
     assert.ok(!("closeDays" in base) && !("validFrom" in base) && !("validTo" in base)
-      && !("cancelDays" in base) && !("sellRules" in base), "no marks publishes no sellRules key");
+      && !("cancelDays" in base) && !("sellRules" in base) && !("alwaysListed" in base),
+      "no marks publishes no sellRules key");
   } finally {
     globalThis.fetch = realFetch;
   }

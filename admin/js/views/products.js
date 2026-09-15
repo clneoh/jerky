@@ -1,6 +1,6 @@
 // views/products.js — products + recipe (BOM) editor. New products go in the
-// always-visible card at the top; tapping Edit opens the same form in a pop-up
-// over the screen, exactly like editing an order.
+// folded card at the top; tapping Edit opens the same form in a pop-up over the
+// screen, exactly like editing an order.
 
 import { el, button, select, emptyState, confirmDialog, showPopup, toast } from "../ui.js";
 import { byId, productUnitOptions, fmtRM, round2, newId, save } from "../state.js";
@@ -29,6 +29,12 @@ const FIELD_LABEL = { name: "Name", description: "Description", unit: "Selling u
 // nothing has to be unhooked when a pop-up is cancelled without re-rendering.
 const openCards = new Set();
 let collapseInstalled = false;
+// Whether the New product card is open. Module scope, not a node's: the card is
+// rebuilt whenever anything around it changes (a product added, published or
+// hidden), and the screen would otherwise fold itself shut under her hands. A
+// fresh visit to Products starts it folded — the lists are what the screen is
+// for, and an open add-form pushed them all down the page.
+let newFormOpen = false;
 
 function installCollapseOutside() {
   if (collapseInstalled || typeof document === "undefined" || typeof document.addEventListener !== "function") return;
@@ -43,6 +49,7 @@ function installCollapseOutside() {
 
 export function renderProducts(root, state) {
   installCollapseOutside();
+  newFormOpen = false; // a fresh visit starts with the add form folded away
   renderAll(root, state);
   // Whatever was built above goes away with this screen — forget the cards so a
   // later tap cannot reach into one that is no longer on the page.
@@ -153,6 +160,12 @@ function availabilityCard(state, product) {
   let rules = tidyRules(availRules(product));
   let sel = rules.length ? 0 : -1; // which mark the From / To pair edits
   const keyOf = (r) => `${r.days.join("-")}|${r.from}|${r.to}`;
+  // Keep this product on the shop when it cannot be ordered — for the few hot
+  // items a customer comes back looking for. Held in the closure, never on the
+  // switch node, because paint() rebuilds the whole body on every gesture and
+  // would take a retained node down with it. Absent on the product = off, so a
+  // product she never opens keeps exactly today's behaviour.
+  let listed = product && product.alwaysListed === true;
   // Re-normalise and re-sort the marks after every change, so the list and the
   // header can never disagree with what the calendar is drawing.
   const tidy = () => { rules = tidyRules(rules); };
@@ -160,6 +173,9 @@ function availabilityCard(state, product) {
   const summary = el("span", { class: "avail-sum" });
   const caret = el("span", { class: "fold-caret" }, "▸");
   const body = el("div", { class: "fold-body avail-body", hidden: true });
+  // The folded header carries the switch too, so its state reads without opening
+  // the card ("Every day · kept on the shop").
+  const summaryText = () => rulesSummary(rules) + (listed ? " · kept on the shop" : "");
 
   const controller = { card: null, open: false, close: null };
   const shut = () => {
@@ -384,14 +400,21 @@ function availabilityCard(state, product) {
   }
 
   function paint() {
-    summary.textContent = rulesSummary(rules);
+    summary.textContent = summaryText();
     if (body.hidden) return; // folded: the header is all there is to draw
     const mb = monthBounds(month.year, month.month);
     const prev = button("‹", () => { month = addMonth(month.year, month.month, -1); paint(); }, "ghost small cal-nav");
     const next = button("›", () => { month = addMonth(month.year, month.month, 1); paint(); }, "ghost small cal-nav");
     if (!before(thisMonth, month)) prev.disabled = true;
     if (!before(month, lastMonth)) next.disabled = true;
+    const box = el("input", { type: "checkbox", checked: listed,
+      onchange: (ev) => { listed = ev.target.checked; summary.textContent = summaryText(); } });
     body.replaceChildren(
+      el("div", { class: "avail-listed" },
+        el("label", { class: "switch" }, box, el("span", { class: "switch-track" },
+          el("span", { class: "switch-knob" }))),
+        el("span", { class: "avail-listed-text" },
+          "Keep it on the shop when it can't be ordered — for the few items customers come back looking for. It shows as Sold out or Unavailable with the next date you can take it.")),
       el("p", { class: "card-sub", style: "margin:8px 0 0" },
         rules.length
           ? "Only the days you mark are sold. Nothing carries over to the next month — open a month and mark it if you want to sell then."
@@ -417,7 +440,13 @@ function availabilityCard(state, product) {
 
   // An ended mark is kept, not dropped: with no marks at all the product would go
   // back to selling every delivery day, which is not what a dated special means.
-  return { card, collect: () => { const kept = tidyRules(rules); return kept.length ? kept : undefined; } };
+  return {
+    card,
+    collect: () => { const kept = tidyRules(rules); return kept.length ? kept : undefined; },
+    // A getter over the closure, so the product's collect() sees the switch even
+    // if the card was never opened (paint() draws nothing while folded).
+    listed: () => listed,
+  };
 }
 
 // Builds the fields + recipe lines once and hands back the nodes plus `collect()`
@@ -760,8 +789,12 @@ function buildEditor(state, product) {
     // The sell days, and the old from–to pair they replace: its period was read in
     // as a mark when the card opened, so dropping the pair loses nothing.
     const sellRules = availability.collect();
+    const listed = availability.listed();
     const drop = ["validFrom", "validTo"];
     if (!sellRules) drop.push("sellRules");
+    // Written only while on, and forgotten when switched off — so an absent key
+    // reads as off and a product she never opened is byte-for-byte unchanged.
+    if (!listed) drop.push("alwaysListed");
     const values = {
       name: pname,
       unit: chosenUom ? chosenUom.name : unitVal,
@@ -775,6 +808,7 @@ function buildEditor(state, product) {
       recipe,
     };
     if (sellRules) values.sellRules = sellRules;
+    if (listed) values.alwaysListed = true;
     return { values, tr: trCollect(), drop };
   }
 
@@ -876,12 +910,16 @@ function editorFields(state, editor) {
     editor.recipeCard);
 }
 
-// The always-visible "New product" card at the top (the add form stays put even
-// while an Edit pop-up is open, like "+ New order" does under the order pop-up).
+// The "New product" card at the top. It is folded to a single line until she
+// taps it — the add form is the setup part of this screen, and left open it
+// pushed every list she actually came to read off the bottom of the page. Opened,
+// it behaves like the ＋ New order card on Orders: tap the title again, or tap
+// anywhere else on the screen, to fold it away. It stays open after a product is
+// added, so the next one can be typed straight away, and it is still on the page
+// (only folded) while an Edit pop-up is open over the screen.
 function newProductCard(state, root) {
   const editor = buildEditor(state, null);
-  const card = el("div", { class: "card" },
-    el("h3", { style: "margin:0 0 10px" }, "New product"),
+  const body = el("div", { class: "fold-body", hidden: !newFormOpen },
     editorFields(state, editor),
     button("Add product", () => {
       const { error, values, tr } = editor.collect();
@@ -898,6 +936,33 @@ function newProductCard(state, root) {
       kickoffAutoTranslate(state, row); // fill the 中文/BM boxes online, if any
     }, "block primary"));
 
+  const caret = el("span", { class: "fold-caret" }, newFormOpen ? "▾" : "▸");
+  const controller = { card: null, open: false, close: null };
+  const shut = () => {
+    newFormOpen = false; // the card is rebuilt often — the module flag is the truth
+    body.hidden = true;
+    caret.textContent = "▸";
+    controller.open = false;
+    openCards.delete(controller);
+  };
+  const head = el("button", { class: "fold-head", type: "button" },
+    el("span", {}, "＋ New product"),
+    caret);
+  head.addEventListener("click", () => {
+    if (controller.open) { shut(); return; }
+    newFormOpen = true;
+    controller.open = true;
+    controller.close = shut;
+    body.hidden = false;
+    caret.textContent = "▾";
+    openCards.add(controller);
+  });
+  // A repaint while it is open rebuilds the card around her, so the rebuilt one
+  // has to re-register for the outside tap that folds it.
+  if (newFormOpen) { controller.open = true; controller.close = shut; openCards.add(controller); }
+
+  const card = el("div", { class: "card" }, head, body);
+  controller.card = card;
   editor.renderRecipeLines();
   return card;
 }

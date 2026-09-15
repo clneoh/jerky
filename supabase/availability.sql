@@ -1,4 +1,4 @@
--- Bakester live availability tables.
+-- Munchies Furkidz live availability tables.
 -- Run this once in the Supabase SQL editor (Dashboard → SQL → New query → Run).
 -- Safe to re-run: tables are created only if missing, policies are dropped
 -- and recreated.

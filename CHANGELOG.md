@@ -1,8 +1,108 @@
-# Munchies Furkidz — change history (v54 → v88)
+# Munchies Furkidz — change history (v54 → v92)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**15 Sep 2026 — engine v92 (no database setup needed). The New product card on
+Products folds away.** One change, on one screen.
+
+**Why.** The card that adds a product sat open at the top of the Products screen,
+and open it is a long form — it pushed your three lists (On the shop, Draft,
+Hidden) right off the bottom, so every look at what you sell began with a scroll
+past a form you were not filling in.
+
+**What it does now.** The card arrives folded to a single line reading **＋ New
+product**. Tap it and the form opens; tap the title again, or tap anywhere else on
+the screen, to fold it away. It stays open after you add a product — the toast
+still says it was saved as a draft — so you can type the next one straight away,
+and it starts folded again the next time you come to the screen. Nothing about
+adding a product changed: the form inside is exactly as it was, and it is still
+the same card that stays on the page while an Edit pop-up is open over it.
+
+**15 Sep 2026 — engine v91 (no database setup needed). The Orders calendar now
+answers a tap it cannot act on.** One change, on one screen.
+
+**Tapping a day you do not post on.** The month calendar at the top of Orders
+rings your posting days in green with how booked each one is, and draws every
+other day of the month plain. A plain day never did anything before — tapping it
+was silent, which left you guessing at the reason. Now the calendar answers: a
+warm line appears under the grid naming the day and saying it is not a posting
+day, and that posting days are added in More → Delivery dates. A marked day says
+its usual name above the day at the same time, so a holiday that is not a posting
+date now tells you both what it is and why no order can go on it. Opening a real
+day, or tapping another plain one, replaces the line. Nothing can be ordered on a
+plain day, and nothing is created by the tap — the calendar simply says so now
+instead of staying quiet. A plain day already gone stays silent: there is nothing
+left to add to it.
+
+**Where it appears.** The month calendar at the top of Orders, the day picker
+inside the ＋ New order card, and the Delivery day picker in an order's Edit
+pop-up — every calendar in the app that offers only your posting days.
+
+**Nothing else changed.** Posting dates are still made in exactly one place, More
+→ Delivery dates (or **Generate next posting dates** on Home). Tapping a calendar
+elsewhere in the app does not create one, and a tap that could open a day before
+still opens it.
+
+**15 Sep 2026 — engine v90 (no database setup needed). A product can stay on the
+shop on a day it cannot be ordered, with the date a customer can next have it.**
+One new switch, off unless you turn it on.
+
+**Keep it on the shop.** A product's Availability card now opens with a switch at
+the very top, above the sell-day calendar. It is for the two or three hot items
+customers come back looking for — if it is not listed they wonder whether you
+still make it — but leave it on for everything and the menu fills up, so it is a
+decision you make one product at a time. The card's own title carries the state
+too, so you can read it while the card is still closed.
+
+**What the shop shows with it on.** On a posting day the product is not sold on,
+the card stays instead of vanishing: greyed, stamped **Unavailable** (a day you
+never sell it is not the same as a day it ran out), with the reason it already
+writes ("Only sold on Mon") and one more line — the next date it can be ordered.
+On a day it has sold out the card is exactly what it was, **Sold out** stamp and
+all, and gains that same line. The line reads **Next available: Sat, 19 Sep**, and
+names how many are left that day when a daily limit is set; it pulses gently so
+it reads through the dimming, and sits still — simply lit — if your phone asks for
+reduced motion. Nothing on a greyed card can be ordered: the + and − do nothing,
+it never enters a basket, and a line already in a basket still leaves with a note
+when the day changes. The switch never overrides **Draft** or **Hidden** — those
+still take a product off the shop entirely.
+
+**With the switch off, nothing at all changes.** Off is the default and no product
+you already have carries the setting, so every product behaves exactly as it does
+today until you switch one on. One consequence worth knowing: on a day where
+every product is unavailable, a shop with kept items shows those greyed cards
+instead of the "nothing is on the menu" line.
+
+**15 Sep 2026 — engine v89 (no database setup needed). The Delivery dates screen
+trades its list for the calendar: a ticked day comes off when you tap it again,
+and the past dates fold away into one group.** Three small changes, all on one
+screen.
+
+**Tapping a ticked day takes it back off.** A posting date that was already on the
+calendar used to come off only from the list underneath it. Now tapping that
+green day takes it off on the spot — the same tap that put it there undoes it, so
+the calendar is the one place you both add and remove dates. If that day already
+has an order on it the app asks first ("2026-09-16 has 2 order(s) on it. Delete
+the date? The orders are kept in your delivery history."), because that is the one
+removal worth a second look; a day with nothing on it just goes, with a small
+"Delivery date removed" note. The date is all that is ever removed — the orders
+stay in your history either way.
+
+**The list of dates still to come is gone.** The calendar already draws every
+posting date as a green tick, and now it lets you take any one of them back, so
+the list below was repeating what was already in front of you. That is most of
+why this screen reads so much lighter. Nothing else moved: the green tick, the
+coloured holiday tags and the "N ordered · N left" line are all as they were.
+
+**The past dates are one group, folded away.** Dates already gone keep their
+green tick but cannot be tapped, so nothing on a past day can be changed by a
+stray touch. They now sit together under a **Past dates (12)** heading that starts
+folded — tap the heading to open the list, tap it again to fold it back. Every
+past date is in there now: the old list showed only the ten most recent and left
+the rest out of reach. Each one still opens its orders or can be deleted exactly
+as before, with the same "Del" button and the same question when orders sit on it.
 
 **14 Sep 2026 — engine v88 (no database setup needed). The holiday tint sits on
 the dates at Orders, and a mouse resting on a marked day names it.** Two small

@@ -10,7 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   addDaysKey,
-  cancelDaysFor, closeDaysFor, closedReason, strictestCancelDays,
+  cancelDaysFor, closeDaysFor, closedReason, strictestCancelDays, nextOrderable,
   poolGroups, groupFor, poolCaps, clampPool, poolPieces,
 } from "../store/pool.js";
 
@@ -335,4 +335,115 @@ test("addDaysKey shifts whole days and survives month/year boundaries", () => {
   assert.equal(addDaysKey("2026-12-31", 1), "2027-01-01");
   assert.equal(addDaysKey("", 3), "");
   assert.equal(addDaysKey("garbage", 3), "");
+});
+
+// nextOrderable — the date a kept-but-unavailable card points at. Every case
+// below is one the shop can really reach; the ones that return null are the
+// "say nothing rather than guess" half of the design.
+const HORIZON = ["2026-09-18", "2026-09-20", "2026-09-22", "2026-09-24"];
+
+test("nextOrderable walks strictly forward from the chosen day", () => {
+  const plain = { name: "Focaccia" };
+  const found = nextOrderable({
+    product: plain, dates: HORIZON, after: "2026-09-18",
+    prodAvail: null, groups: new Map(), today: "2026-09-01",
+  });
+  // The chosen day itself is skipped — sending the customer back would read as a bug.
+  assert.deepEqual(found, { key: "2026-09-20", left: undefined });
+
+  // A day between two horizon dates also lands on the next one after it.
+  assert.equal(nextOrderable({
+    product: plain, dates: HORIZON, after: "2026-09-19",
+    prodAvail: null, groups: new Map(), today: "2026-09-01",
+  }).key, "2026-09-20");
+});
+
+test("nextOrderable: no published row means unlimited, so the date comes with no count", () => {
+  const plain = { name: "Focaccia" };
+  const found = nextOrderable({
+    product: plain, dates: HORIZON, after: "2026-09-01",
+    prodAvail: { "2026-09-18": {} }, groups: new Map(), today: "2026-09-01",
+  });
+  assert.deepEqual(found, { key: "2026-09-18", left: undefined });
+});
+
+test("nextOrderable skips a day with nothing left and reports the count it found", () => {
+  const plain = { name: "Focaccia" };
+  const found = nextOrderable({
+    product: plain, dates: HORIZON, after: "2026-09-01", groups: new Map(),
+    prodAvail: { "2026-09-18": { Focaccia: 0 }, "2026-09-20": { Focaccia: 6 } },
+    today: "2026-09-01",
+  });
+  assert.deepEqual(found, { key: "2026-09-20", left: 6 });
+});
+
+test("nextOrderable skips a date the rules close, both a marked-off day and one too near", () => {
+  const today = "2026-12-01";
+  const satOnly = { name: "Cake", sellRules: [{ days: [6], from: "2026-12-01", to: "2026-12-31" }] };
+  // 2026-12-05 is a Saturday; 12-06 a Sunday; 12-12 the next Saturday.
+  assert.equal(nextOrderable({
+    product: satOnly, dates: ["2026-12-05", "2026-12-06", "2026-12-12"],
+    after: "2026-12-01", prodAvail: null, groups: new Map(), today,
+  }).key, "2026-12-05");
+
+  const needsNotice = { name: "Notice", closeDays: 5 };
+  // From 09-15 the notice reaches 09-20: 09-18 is closed, 09-20 is the first open.
+  assert.equal(nextOrderable({
+    product: needsNotice, dates: ["2026-09-18", "2026-09-20"],
+    after: "2026-09-01", prodAvail: null, groups: new Map(), today: "2026-09-15",
+  }).key, "2026-09-20");
+});
+
+test("nextOrderable counts a pool member against its base's row, exactly like the stamp", () => {
+  const groups = poolGroups(products);
+  const pack = products[1];
+  // 10 pieces left: 2 whole packs fit (the pack's own cap), not 10.
+  assert.deepEqual(nextOrderable({
+    product: pack, dates: HORIZON, after: "2026-09-01", groups,
+    prodAvail: { "2026-09-18": { Focaccia: 10 } }, today: "2026-09-01",
+  }), { key: "2026-09-18", left: 2 });
+  // Only 2 pieces left: the pack cannot be made at all, so the date is skipped.
+  assert.equal(nextOrderable({
+    product: pack, dates: HORIZON, after: "2026-09-01", groups,
+    prodAvail: { "2026-09-18": { Focaccia: 2 }, "2026-09-20": { Focaccia: 8 } },
+    today: "2026-09-01",
+  }).key, "2026-09-20");
+  // A pool member with no base row that day is unlimited — a date, no count.
+  assert.deepEqual(nextOrderable({
+    product: pack, dates: HORIZON, after: "2026-09-01", groups,
+    prodAvail: { "2026-09-18": {} }, today: "2026-09-01",
+  }), { key: "2026-09-18", left: undefined });
+});
+
+test("nextOrderable says nothing when the horizon offers no orderable day", () => {
+  const plain = { name: "Focaccia" };
+  // The chosen day is the last published one.
+  assert.equal(nextOrderable({
+    product: plain, dates: HORIZON, after: "2026-09-24",
+    prodAvail: null, groups: new Map(), today: "2026-09-01",
+  }), null);
+  // Sold out on every published date.
+  assert.equal(nextOrderable({
+    product: plain, dates: HORIZON, after: "2026-09-01", groups: new Map(),
+    prodAvail: Object.fromEntries(HORIZON.map((d) => [d, { Focaccia: 0 }])),
+    today: "2026-09-01",
+  }), null);
+  // Every date excluded by the advance-notice window.
+  assert.equal(nextOrderable({
+    product: { name: "Notice", closeDays: 30 }, dates: HORIZON, after: "2026-09-01",
+    prodAvail: null, groups: new Map(), today: "2026-09-01",
+  }), null);
+  // No dates at all, and junk entries in the list.
+  assert.equal(nextOrderable({
+    product: plain, dates: [], after: "2026-09-01",
+    prodAvail: null, groups: new Map(), today: "2026-09-01",
+  }), null);
+  assert.equal(nextOrderable({
+    product: plain, dates: [null, "", undefined], after: "2026-09-01",
+    prodAvail: null, groups: new Map(), today: "2026-09-01",
+  }), null);
+  assert.equal(nextOrderable({
+    product: plain, dates: null, after: "2026-09-01",
+    prodAvail: null, groups: new Map(), today: "2026-09-01",
+  }), null);
 });

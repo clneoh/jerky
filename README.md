@@ -386,6 +386,39 @@ The one shared root module is `availability.js` — the pure sell-day rules
 (`sellOpen`, `ruleOpen`, `normRules`, …) imported by both trees (`admin/js/state.js`,
 `admin/js/supabase.js`, `admin/js/views/products.js`, `store/app.js`, `store/pool.js`).
 
+## Delivery dates, the keep-listed switch, and folding cards (v89–v92)
+
+- **The Delivery dates screen is the calendar alone** (v89) — the "dates still to
+  come" list is gone, because the grid already draws every one of them as a green
+  tick and now lets the owner take any of them back: **tapping a ticked day
+  removes it**, asking first (`confirmDialog`) only when orders sit on that date
+  (the orders are kept; only the date goes). Dates already past keep their tick
+  but are not tappable, and gather into one folded **Past dates (N)** group — all
+  of them, where the old list showed only the ten most recent.
+- **A product can stay on the shop when it cannot be ordered** (v90) — the
+  **Availability** card opens with a keep-listed switch (`alwaysListed`, a real
+  `<input type="checkbox">` dressed as a switch). Off is the default and an
+  absent key is off, so a product the owner never opens publishes byte-for-byte
+  as before. On, the card stays on a day the product is not sold instead of being
+  dropped by `renderMenu`, stamped **Unavailable** (`t("unavailable")`) with its
+  existing reason and a new line naming the **next date it can be ordered** —
+  `nextOrderable()` in `store/pool.js`, which also reports how many are left that
+  day when a daily limit publishes a count. A sold-out card keeps its **Sold out**
+  stamp and gains the same line. The folded card title carries `· kept on the
+  shop` so the state reads while the card is shut.
+- **The Orders calendar answers a tap it cannot act on** (v91) — `deliveryCal`
+  takes `noteMisses` (on at the Orders screen, the ＋ New order card and the Edit
+  pop-up's day picker). A plain day now renders as a `<button class="… tappable">`
+  and writes a `.cal-miss` line under the grid: *"Sun, 20 Sep is not a delivery
+  day. Add it in More → Delivery Dates."* A day already gone stays a silent
+  `<span>`, and opening a real day clears the line — the grid repaints before
+  handing off to `onPick`, so it never relies on the caller to tidy up.
+- **The New product card folds** (v92) — a module-level `newFormOpen` flag (a
+  node cannot hold it: the card is rebuilt on every change around it) keeps the
+  form open across a repaint and after a product is added, while a fresh visit to
+  Products starts it folded to **＋ New product**. Same fold-head/fold-body/outside-tap
+  wiring as the ＋ New order card.
+
 ## Order tracking & confirmation (Supabase)
 
 Customers choose **Post (nationwide)** / **Collect (local)** when ordering (a

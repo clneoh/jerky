@@ -115,7 +115,13 @@ test("store render() fills the page without crashing", () => {
     "nothing is sold out with availability off");
   const chosen = cal.children.find((c) => c.className === "cal-chosen");
   assert.ok(chosen.children[0].text.startsWith("Your posting day: "));
-  assert.ok(chosen.children[0].text.endsWith(fmtDay(upcomingDates(CONFIG)[0])), "the first open day is the one named");
+  // "First OPEN", not simply "first": a posting day whose cutoff has gone by is
+  // dropped from the customer's calendar entirely, so the day named is the first
+  // one still orderable. Asking isOpen the same question the shop asks keeps this
+  // true whatever hour the suite happens to run at — at 21:17 on the day before a
+  // 18:00 cutoff, tomorrow is already shut.
+  const firstOpen = upcomingDates(CONFIG).find((d) => isOpen(CONFIG, d));
+  assert.ok(chosen.children[0].text.endsWith(fmtDay(firstOpen)), "the first open day is the one named");
 
   assert.equal(registry["order-btn"].disabled, true); // empty cart
 });

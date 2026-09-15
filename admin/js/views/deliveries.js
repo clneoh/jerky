@@ -7,7 +7,7 @@
 import { navigate } from "../app.js";
 import { deliveryStatus, longDate, todayISO, weekdayName } from "../dates.js";
 import { effectiveCapacity, totalUnitsOnDate } from "../bom.js";
-import { el, button, emptyState, confirmDialog, showPopup, toast } from "../ui.js";
+import { el, button, confirmDialog, showPopup, toast } from "../ui.js";
 import { newId, save } from "../state.js";
 import { maybeSync, maybeSyncStorefront } from "../supabase.js";
 import {
@@ -22,6 +22,7 @@ import { OCCASION_CATALOG, importOccColour } from "../occasion_catalog.js";
 // occasion-marking mode with any start day awaiting a second tap.
 let viewMonth = null;
 const picked = new Set();
+let pastOpen = false; // the past-dates group starts folded
 let occMode = false;
 let occAnchor = null; // first day of a two-tap mark, waiting for the last day
 let occColourChosen = "red"; // mark colour she picked last (one of OCC_COLOURS)
@@ -38,38 +39,48 @@ function renderAll(root, state) {
   }
 
   const dates = [...state.deliveryDates].sort((a, b) => a.date.localeCompare(b.date));
-  const upcoming = dates.filter((d) => d.date >= today);
   const past = dates.filter((d) => d.date < today);
 
-  const addCard = buildAddCard(state);
-  const list = upcoming.map((d) => dateCard(state, d));
-  // Spread conditionally: replaceChildren would render a bare null as text.
+  // No list of the dates still to come: the calendar above IS the list — every
+  // delivery date wears its green pill there, a tap adds one, a tap on a ticked day
+  // takes it back. The past dates are the one thing the calendar cannot manage (a
+  // day gone is never tappable), so they stay, folded away and holding every one of
+  // them: the group used to show the last 10 with the rest unreachable.
   const pastSection = past.length ? el("div", {},
-    el("h2", { class: "section" }, "Past"),
-    ...past.slice(0, 10).map((d) => dateCard(state, d))) : null;
+    el("button", { class: "fold-head past-head", type: "button",
+      onclick: () => { pastOpen = !pastOpen; renderAll(root, state); } },
+      el("span", {}, `Past dates (${past.length})`),
+      el("span", { class: "fold-caret" }, pastOpen ? "▾" : "▸")),
+    el("div", { class: "fold-body", hidden: !pastOpen },
+      ...past.map((d) => dateCard(state, d)))) : null;
 
   root.replaceChildren(
-    addCard,
-    el("h2", { class: "section" }, `Upcoming (${upcoming.length})`),
-    ...(list.length ? list : [emptyState("No upcoming dates", "Tap dates on the calendar above to add them.")]),
+    buildAddCard(state),
     ...(pastSection ? [pastSection] : []));
 }
 
-function deleteDate(state, date) {
+// `ask` is for the calendar's own untick: taking back a date she just added is
+// the reverse of the tap that added it, so it happens on the spot — but a date
+// that already has orders on it is a different matter and still asks (as the
+// Del button always has).
+function deleteDate(state, date, ask = true) {
   const count = state.orders.filter((o) => o.deliveryDateId === date.id).length;
+  if (!ask) return removeDate(state, date, count);
   const msg = count
     ? `${date.date} has ${count} order(s) on it. Delete the date? The orders are kept in your delivery history.`
     : `Delete delivery date ${date.date}?`;
-  confirmDialog(msg, () => {
-    state.deliveryDates = state.deliveryDates.filter((d) => d.id !== date.id);
-    for (const o of state.orders) {
-      if (o.deliveryDateId === date.id) o.deliveryDate = o.deliveryDate || date.date;
-    }
-    save(state);
-    maybeSync(state);
-    toast("Delivery date deleted — orders kept in history");
-    renderAll(view(), state);
-  }, { danger: true, yesLabel: "Delete" });
+  confirmDialog(msg, () => removeDate(state, date, count), { danger: true, yesLabel: "Delete" });
+}
+
+function removeDate(state, date, count) {
+  state.deliveryDates = state.deliveryDates.filter((d) => d.id !== date.id);
+  for (const o of state.orders) {
+    if (o.deliveryDateId === date.id) o.deliveryDate = o.deliveryDate || date.date;
+  }
+  save(state);
+  maybeSync(state);
+  toast(count ? "Delivery date deleted — orders kept in history" : "Delivery date removed");
+  renderAll(view(), state);
 }
 
 // Marking or clearing a holiday changes what the CUSTOMER's calendar draws, so
@@ -141,7 +152,7 @@ function buildAddCard(state) {
     ? el("p", { class: "card-sub", style: "margin:0 0 8px" },
       "A reminder on the calendar — it never adds or changes delivery dates.")
     : el("p", { class: "card-sub", style: "margin:0 0 8px" },
-      "Tap one or more dates, then Add — already-added dates are ticked.");
+      "Tap one or more dates, then Add. Tap an added date again to take it off.");
 
   return el("div", { class: "card" },
     modes,
@@ -163,8 +174,8 @@ function buildAddCard(state) {
 
 function buildAddGrid(state, weeks) {
   const today = todayISO();
-  const addedSet = new Set(state.deliveryDates.map((d) => d.date));
-  const cells = weeks.flat().map((d) => dayCell(state, d, today, addedSet));
+  const addedMap = new Map(state.deliveryDates.map((d) => [d.date, d]));
+  const cells = weeks.flat().map((d) => dayCell(state, d, today, addedMap));
   return el("div", { class: "cal-grid" },
     ...DOW.map((d) => el("span", { class: "cal-dow" }, d)),
     ...cells,
@@ -182,10 +193,11 @@ function cellInner(layerOn, added, dayNum) {
   return kids;
 }
 
-function dayCell(state, date, today, addedSet) {
+function dayCell(state, date, today, addedMap) {
   if (!date) return el("span", { class: "cal-cell blank" });
   const dayNum = String(Number(date.slice(8, 10)));
-  const added = addedSet.has(date);
+  const addedTo = addedMap.get(date);
+  const added = !!addedTo;
   const past = date < today;
   const selected = picked.has(date);
   const isToday = date === today;
@@ -196,16 +208,19 @@ function dayCell(state, date, today, addedSet) {
   cls += boxClass(sol);
   if (isToday) cls += " today";
   const inner = cellInner(added || sol, added, dayNum);
-  // Naming a day and ticking it are separate jobs on this grid: a day that is
-  // already a delivery date is unticked from the list below, never by tapping its
-  // square, so its tap is free to be the one that says what the day is. Without
-  // that, a public holiday she also delivers on would be the only marked day here
-  // that could not be read.
   const tip = tipEl(state.occasions, date, past);
   if (tip) inner.push(tip);
-  if (added && tip) {
-    return el("button", { class: `${cls} tippable`,
-      onclick: () => { nameDay(state.occasions, date, past); renderAll(view(), state); } }, ...inner);
+  // A day already one of her delivery dates: tapping it takes it back off, the same
+  // gesture that put it on — the calendar is the one place she both adds and removes
+  // them, so the Upcoming list below no longer has to exist. A day that also carries
+  // an occasion mark still names itself on the way out: this tap names the day AND
+  // does its usual job, exactly as a tap does on the Orders calendar. A date already
+  // gone keeps its green pill but is not tappable — past dates are managed in the
+  // Past dates group, where nothing on the calendar can be changed by accident.
+  if (added && !past) {
+    const onIt = state.orders.some((o) => o.deliveryDateId === addedTo.id);
+    return el("button", { class: `${cls} tappable`,
+      onclick: () => { nameDay(state.occasions, date, past); deleteDate(state, addedTo, onIt); } }, ...inner);
   }
   if (added || past) {
     return el("span", { class: cls }, ...inner);

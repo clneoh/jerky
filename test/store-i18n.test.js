@@ -54,15 +54,23 @@ test("English dictionary values match the authored English copy", () => {
   assert.ok(checked > 10, "the check actually walked the store page tags");
 });
 
-// The reason on a product card that can't be ordered for the chosen day, and
-// the notes a refresh writes above the menu, are built in JS rather than tagged
-// in the HTML — so nothing else would notice them missing or half-translated.
+// The reason on a product card that can't be ordered for the chosen day, the
+// line naming the next date it can be had (v90), and the notes a refresh writes
+// above the menu, are built in JS rather than tagged in the HTML — so nothing
+// else would notice them missing or half-translated.
 test("the closed-product reason and the basket notes are keyed in all three languages", () => {
   const holders = {
     closedFrom: ["%1"],
     closedTo: ["%1"],
     closedClose: ["%1"],
     closedCloseAdvice: [],
+    // The marked-day reasons. They only became reachable in v90: until a product
+    // could be kept on the shop they were written for, then dropped before render.
+    closedWeekday: ["%1"],
+    closedUnmarked: [],
+    unavailable: [],
+    nextAvailable: ["%1"],
+    nextAvailableLeft: ["%1", "%2"],
     sentenceEnd: [],
     fixSoldOut: ["%1"],
     fixPoolClamp: ["%1", "%2", "%3"],

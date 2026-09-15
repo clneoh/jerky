@@ -62,6 +62,14 @@ const en = {
   // Fri"), so the names are built by the page, not here.
   closedWeekday: "Only sold on %1",
   closedUnmarked: "Not sold on this day",
+  // A product you keep on the shop when it cannot be ordered (the switch in its
+  // Availability card): the stamp it wears on a day that is not one of its sell
+  // days, and the line naming the next date it CAN be ordered — with how many are
+  // left that day, when a daily limit publishes a count. %1 is the date (fmtDay),
+  // %2 the count.
+  unavailable: "Unavailable",
+  nextAvailable: "Next available: %1",
+  nextAvailableLeft: "Next available: %1 · %2 left",
   sentenceEnd: ".",
   // Shown where the menu would be when every product is marked off today's
   // posting day — an empty space reads like a broken page.
@@ -165,6 +173,9 @@ const zh = {
   closedCloseAdvice: " — 请另选较后的日期",
   closedWeekday: "只限 %1 出售",
   closedUnmarked: "这一天没有出售",
+  unavailable: "暂无供应",
+  nextAvailable: "下次可预订：%1",
+  nextAvailableLeft: "下次可预订：%1 · 剩 %2 份",
   sentenceEnd: "。",
   noMenuToday: "这一天没有商品在菜单上，请另选一个发货日。",
   fixSoldOut: "%1 刚刚售完 — 已从你的订单中移除。",
@@ -262,6 +273,9 @@ const ms = {
   closedCloseAdvice: " — sila pilih tarikh yang lebih lewat",
   closedWeekday: "Hanya dijual pada %1",
   closedUnmarked: "Tidak dijual pada hari ini",
+  unavailable: "Tidak tersedia",
+  nextAvailable: "Seterusnya tersedia: %1",
+  nextAvailableLeft: "Seterusnya tersedia: %1 · tinggal %2",
   sentenceEnd: ".",
   noMenuToday: "Tiada apa-apa pada menu untuk hari ini. Sila pilih hari pos yang lain.",
   fixSoldOut: "%1 baru sahaja habis — dikeluarkan dari tempahan anda.",

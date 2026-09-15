@@ -4,7 +4,7 @@
 // published by the backoffice (Settings → Storefront) and override the static
 // config.js fallback at runtime.
 import { CONFIG } from "./config.js";
-import { poolCaps, poolGroups, clampPool, groupFor, poolPieces, closedReason, cancelDaysFor, strictestCancelDays } from "./pool.js";
+import { poolCaps, poolGroups, clampPool, groupFor, poolPieces, closedReason, cancelDaysFor, strictestCancelDays, nextOrderable } from "./pool.js";
 import { monthWeeks, addMonth, occColour, occDays, occStrength, occForDate, occSingleDay } from "./calendar.js";
 import { normRules } from "../availability.js";
 import { isLang, loadLang, pick, rememberLang, nameFor, descFor, unitFor, policyFor, applyTo } from "../i18n.js";
@@ -82,9 +82,10 @@ function closedReasonClause(reason) {
 }
 
 // The card's own sentence: the clause, the advice when the rule has one, then
-// the sentence-ending punctuation that language uses. Now only the advance-notice
-// rule is ever worded on a card — a product that is not sold on the chosen day is
-// not on the menu at all (see renderMenu).
+// the sentence-ending punctuation that language uses. Only two things reach a
+// card: the advance-notice window, and — on a product the baker keeps listed —
+// a day that is not one of its sell days ("Only sold on Mon."). Every other
+// closed product is off the menu altogether (see renderMenu).
 function closedReasonText(reason) {
   if (!reason) return "";
   const advice = reason.kind === "close" ? t("closedCloseAdvice") : "";
@@ -335,6 +336,10 @@ export function mergeStorefront(base, remote) {
         const cancel = Number(p.cancelDays);
         const cancelSet = p.cancelDays != null && !(typeof p.cancelDays === "string" && p.cancelDays.trim() === "");
         if (cancelSet && Number.isInteger(cancel) && cancel >= 0) out.cancelDays = cancel;
+        // Keep this product on the menu when it cannot be ordered, instead of
+        // dropping it — the few hot items a customer comes back looking for.
+        // Absent (the default) leaves this page reading every product as today.
+        if (p.alwaysListed === true) out.alwaysListed = true;
         return out;
       });
     if (products.length) out.products = products;
@@ -513,13 +518,20 @@ export function render() {
       const caps = group && Number.isFinite(baseLeft) ? poolCaps(group, baseLeft, cart) : null;
       // A product's own date rules decide whether it is on TODAY's menu at all.
       // Not sold on the chosen delivery day → it is simply not there: the customer
-      // does not see a thing they cannot have. The one exception is the baker's
-      // advance notice: that product IS sold on the day, it only has to be ordered
-      // earlier, so it stays and says so (closedReasonText below). A product with
+      // does not see a thing they cannot have. Two exceptions keep the card and
+      // say so instead: the baker's advance notice (that product IS sold on the
+      // day, it only has to be ordered earlier), and a product she has switched to
+      // stay listed — the few hot items a customer comes back looking for, whose
+      // absence would otherwise read as "they stopped making it". A product with
       // no marks at all (value packs included) sells on any open date.
       const closed = closedReason(p, selected, todayKey);
-      if (closed && closed.kind !== "close") continue;
+      const kept = closed && closed.kind !== "close" && p.alwaysListed === true;
+      if (closed && closed.kind !== "close" && !kept) continue;
       const reason = closedReasonText(closed);
+      // A day this product is not sold on at all, as opposed to a sold-out day
+      // (a sell day with nothing left). The two wear different stamps, and a kept
+      // product computes as zero left, so this has to be decided first.
+      const unavailable = kept;
 
       // `left` drives the stamp + stepper cap. A live pool member is capped by
       // the shared pool (its pieces compete with every other pack/single in the
@@ -549,9 +561,30 @@ export function render() {
       } }, "+");
       if (soldOut) { dec.disabled = true; inc.disabled = true; }
       const stamp = left != null
-        ? el("span", { class: soldOut ? "prod-stamp soldout" : "prod-stamp" }, soldOut ? t("soldOut") : sub(t("onlyLeft"), left))
+        ? el("span", { class: (unavailable || soldOut) ? "prod-stamp soldout" : "prod-stamp" },
+            unavailable ? t("unavailable") : soldOut ? t("soldOut") : sub(t("onlyLeft"), left))
         : null;
       const note = reason ? el("p", { class: "prod-note" }, reason) : null;
+      // A product the baker keeps listed names the next date a customer can
+      // actually have it, and how many are left that day when a daily limit
+      // publishes a count. No date in the published window → no line, rather
+      // than a guess.
+      const next = (unavailable || soldOut) && p.alwaysListed === true
+        ? nextOrderable({
+            product: p,
+            dates: dates.map(dateKey),
+            after: selected,
+            prodAvail,
+            groups,
+            today: todayKey,
+          })
+        : null;
+      const nextNote = next
+        ? el("p", { class: "prod-note prod-next" },
+            next.left != null
+              ? sub(t("nextAvailableLeft"), fmtDay(new Date(`${next.key}T00:00:00`)), next.left)
+              : sub(t("nextAvailable"), fmtDay(new Date(`${next.key}T00:00:00`))))
+        : null;
       // The baker's change/cancel window for this product, when one is stated
       // (blank, and the "no advance limit" 0, hide it). Purely informational:
       // it tells the customer when to ask, and never blocks anything.
@@ -572,6 +605,7 @@ export function render() {
           stamp),
         el("div", { class: "stepper" }, dec, qtyLabel, inc),
         note,
+        nextNote,
         cancelNote));
     }
     // Every product marked off today leaves nothing at all — say so rather than

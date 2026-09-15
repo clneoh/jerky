@@ -127,6 +127,7 @@ function build() {
     getActiveId: () => "d7",
     month: { year: 2026, month: 8 },
     onPick: (id) => picked.push(id),
+    noteMisses: true, // what the Orders screen itself passes
   });
 }
 const grid = (cal) => cal.el.children.find((c) => c.className === "cal-grid");
@@ -146,8 +147,9 @@ test("a marked day the bakery does not deliver still says its name when tapped",
   assert.ok(day.className.includes("off"), "though it is not a day she delivers");
   assert.equal(tipIn(day).children[0].text, "Malaysia Day");
   assert.equal(tipIn(day).hidden, true, "and it says nothing until she asks");
-  assert.equal(cell(cal, 15).tagName, "SPAN", "an unmarked non-delivery day stays untappable");
-  assert.equal(tipIn(cell(cal, 15)), undefined, "with nothing to say");
+  assert.equal(cell(cal, 15).tagName, "BUTTON",
+    "the unmarked day beside it is tappable — the calendar answers that tap with a note, not a name");
+  assert.equal(tipIn(cell(cal, 15)), undefined, "but it has no name to give: a name needs a mark");
 
   fire(day);
   assert.deepEqual(picked, [], "naming a day is not opening it — there is no day there to open");
@@ -273,22 +275,82 @@ function quiet() {
   fireDoc("pointerdown", {});
 }
 
-test("a holiday that IS a delivery date still says its name, and its tap untickes nothing", () => {
+test("a holiday that IS a delivery date is named AND taken back off by the same tap", () => {
+  quiet();
   const root = createEl("div");
   const state = DSTATE();
   renderDeliveries(root, state);
 
   const day = gridCell(root, 16);
-  assert.equal(day.tagName, "BUTTON", "a marked delivery day can be tapped for its name");
-  assert.ok(day.className.includes("added"), "and is still drawn as one of her delivery dates");
-  assert.ok(day.className.includes("tippable"));
+  assert.equal(day.tagName, "BUTTON", "a delivery day can be tapped");
+  assert.ok(day.className.includes("added"), "and is drawn as one of her delivery dates");
   fire(day);
   redraw(root, state);
-  assert.equal(tipIn(gridCell(root, 16)).hidden, false, "the name shows");
+  assert.deepEqual(state.deliveryDates.map((d) => d.id), ["d20"],
+    "the tap takes the date back off — the calendar is where she both adds and removes");
+  assert.equal(tipIn(gridCell(root, 16)).hidden, false,
+    "and a marked day still names itself on the way out");
+  assert.ok(gridCell(root, 20).className.includes("tappable"),
+    "a delivery day is removable whether or not it carries a mark");
+  // A date already gone keeps its pill but is not removable from the calendar: past
+  // dates are managed in the Past dates group.
+  state.deliveryDates = [{ id: "d01", date: "2026-09-01" }];
+  redraw(root, state);
+  assert.equal(gridCell(root, 1).tagName, "SPAN", "a past delivery date is not tappable here");
+});
+
+test("taking a date off asks first when that day already holds orders", () => {
+  quiet();
+  const root = createEl("div");
+  const state = DSTATE();
+  state.orders = [{ id: "o1", deliveryDateId: "d16", lines: [] }];
+  renderDeliveries(root, state);
+
+  fire(gridCell(root, 16));
+  const layer = registry["confirm-layer"];
+  assert.ok(layer.children.length, "a question is put to her rather than a silent removal");
   assert.deepEqual(state.deliveryDates.map((d) => d.id), ["d16", "d20"],
-    "and ticking the day off is still done from the list below, never from its square");
-  assert.equal(gridCell(root, 20).className.includes("tippable"), false,
-    "a delivery day with no mark has nothing to say");
+    "and nothing is removed while she is being asked");
+
+  const yes = walk(layer).find((n) => n.tagName === "BUTTON" && (n.children[0] || {}).text === "Delete");
+  fire(yes);
+  redraw(root, state);
+  assert.deepEqual(state.deliveryDates.map((d) => d.id), ["d20"], "confirming takes it off");
+});
+
+test("the past dates are one folded group, holding every one of them", () => {
+  quiet();
+  const root = createEl("div");
+  const state = DSTATE();
+  // Twelve, so "all of them" cannot be mistaken for the last ten.
+  const PAST = Array.from({ length: 12 }, (_, i) => ({
+    id: `p${i}`, date: `2026-08-${String(i + 1).padStart(2, "0")}`,
+  }));
+  state.deliveryDates = [...PAST, { id: "d20", date: "2026-09-20" }];
+  renderDeliveries(root, state);
+
+  const head = () => walk(root).find((n) => String(n.className).includes("past-head"));
+  const body = () => walk(root).find((n) => String(n.className).includes("fold-body"));
+  const cards = () => walk(body()).filter((n) => String(n.className).split(" ").includes("card"));
+  const words = walk(root).map((n) => (n.nodeType === 3 ? n.text : "")).join(" | ");
+  assert.equal(head().children[0].children[0].text, "Past dates (12)", "every past date is counted");
+
+  // The fold is remembered while the screen is open, so put it back to how she
+  // finds it before asserting that it starts folded.
+  if (body().attrs.hidden !== "true") { fire(head()); redraw(root, state); }
+  assert.equal(body().attrs.hidden, "true", "she arrives with the group folded away");
+  assert.equal(cards().length, 12, "though every one of the 12 is already inside");
+
+  fire(head());
+  redraw(root, state);
+  assert.equal(body().attrs.hidden, undefined, "and one tap unfolds them");
+  assert.equal(cards().length, 12);
+
+  // The calendar is the whole list of what is still to come: nothing below it
+  // repeats the dates she can see (and untick) on it.
+  assert.equal(words.includes("Upcoming"), false, "no Upcoming heading");
+  assert.equal(gridCell(root, 20).className.includes("added"), true,
+    "the one date still to come is on the calendar, where she can take it off");
 });
 
 test("a marked day she has not added yet is named and ticked by the same tap", () => {

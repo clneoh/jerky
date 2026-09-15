@@ -91,6 +91,37 @@ export function closedReason(product, dateKey, todayKey) {
   return null;
 }
 
+// The next date after `after` on which a fresh customer could order this product
+// — the day a kept-but-unavailable card points at. Walks the delivery dates the
+// page is already showing and only ever forward: the customer picked a day, and
+// sending them BACK to an earlier one would read as a bug.
+//
+// A date counts when the rules allow it (closedReason null, so a date too near
+// for the advance-notice window is skipped too) AND there is room for a fresh
+// order. `left` mirrors renderMenu's own count exactly, with an empty cart
+// ("could a new customer order this"), so the line can never disagree with the
+// stamp above it: a pool member is capped by its base's published row, anything
+// else by its own. `undefined` means no count is published — unlimited, or just
+// unknown — and is NOT sold out.
+//
+// Returns { key, left } or null. The publisher only covers a short horizon, so
+// null (name no date) is the honest answer rather than guessing one.
+export function nextOrderable({ product, dates, after, prodAvail, groups, today }) {
+  for (const key of dates || []) {
+    if (!key || key <= after) continue;
+    if (closedReason(product, key, today)) continue;
+    const group = groupFor(groups, product);
+    const row = (prodAvail && prodAvail[key]) || {};
+    const baseLeft = group && row[group.baseName] != null ? Number(row[group.baseName]) : undefined;
+    const caps = group && Number.isFinite(baseLeft) ? poolCaps(group, baseLeft, new Map()) : null;
+    const left = caps ? caps.get(product.name)
+      : (row[product.name] != null ? Number(row[product.name]) : undefined);
+    if (left != null && left <= 0) continue;
+    return { key, left };
+  }
+  return null;
+}
+
 // Group the storefront products that share one pool. A value pack carries
 // component: {name, qty} (published only when its recipe is exactly qty × an
 // active, limited base). The base product itself joins as a member with n = 1,
