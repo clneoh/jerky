@@ -419,6 +419,77 @@ The one shared root module is `availability.js` — the pure sell-day rules
   Products starts it folded to **＋ New product**. Same fold-head/fold-body/outside-tap
   wiring as the ＋ New order card.
 
+## The books: money out, profit and loss, and your own money (v103–v113)
+
+Eleven versions that turn the app from a takings ledger into double-entry-ish
+bookkeeping: money out, the two lists the books are built from, a profit & loss
+account, and a journal behind every figure. All code-only — no SQL.
+
+- **Money out** (v103) — a saved purchase order asks what it cost. `askWhatYouPaid(state, po)`
+  (`admin/js/views/history.js`, using `methodPills` from `money.js`) opens on the list's own
+  total with **Cash** / **TNG** pills and a **Skip the money** that records nothing. Rows land
+  in `state.expenses` (`{ id, date, category, method, note, amount, poId? }`); everything else
+  goes in by hand through the new **Add an expense** form on `admin/js/views/money.js`. The
+  Money screen adds up Cash in / TNG in / Cash out / TNG out / **Net**. The same version fixed
+  a midnight bug: the date was being read off the UTC stamp, so a payment taken just after
+  midnight counted on the day before — it is read in the owner's own zone now.
+- **Money you put in** (v104) — `state.deposits` and the **Put money in** form, counted into
+  Cash in / TNG in (it really is in the purse) with a line saying how much of the money in was
+  the owner's own. A new `drawing`-classed category, **My own withdrawal**, is how it goes back
+  out, through the same money-out list.
+- **Profit & Loss** (v105) — new pure `admin/js/profit.js` (`orderDay`, `lineCost`,
+  `profitBetween`, `monthSpan`; `expenseRows` arrives in v111) behind a new screen
+  `admin/js/views/profit.js` (*More → 📈 Profit*, route `#/profit`). Sales are counted by
+  **delivery day**; cost of sales comes from the **recipes** (`costOf`), not the packs bought;
+  running costs are grouped by category; capital and drawings are reported separately and are
+  in neither figure. `profitBetween` also returns `uncosted` — the lines whose recipe prices to
+  nothing — so the screen can say so instead of reporting a flattering profit.
+- **The two lists the books read** (v106, v108) — new pure `admin/js/accounts.js`:
+  `DEFAULT_CATEGORIES` (each carrying a `cls` of `stock` / `expense` / `drawing`),
+  `DEFAULT_METHODS` (`["Cash", "TNG", "Loan"]`), and readers `categoriesOf`, `methodsOf`,
+  `classOfCategory`, `methodLabel`, `isCash`, `isTng`, `isOther`, `purseMethods`, `pocketMethods`,
+  `drawingLabel`, `methodRank`. They live in `settings.categories` / `settings.payMethods` and
+  fall back to the built-ins when untouched, so a phone that never edits them behaves exactly as
+  before. They are edited **in place** by `admin/js/views/accountsEditor.js` (`entryForm`,
+  `newEntryChip`) from the Money screen's *Categories & ways to pay* line — an inline form, never
+  a pop-up of its own, because `showPopup()` owns a single shared layer. Renaming rewrites the
+  label on the rows already recorded under it (`rewrite`); deleting deliberately leaves them, and
+  they still count, printed at the end of the statement's cost list. A method that is neither cash
+  nor TNG is kept **out of the net** and named on its own line, one per method.
+- **A note on every transaction** (v106) — the note the Put-money-in form already had is now on
+  Add an expense too, and both Money lists show it beside the amount.
+- **The order item line** (v107) — the v101 price box had crushed the product dropdown to 2 px at
+  phone width; the `.add-item-ctl` row is two lines now, the product full width on top and its
+  quantity / price / ✕ controls under it.
+- **A journal behind every figure** (v109, v111) — a Money figure (Cash in / TNG in / Cash out /
+  TNG out, a loan line) and a Profit & Loss running-cost line are tappable and open their journal
+  for the stretch: the rows the Money screen wrote, in date order, each with what it was for and
+  how it was paid. v109 also fixed a real bug — the TNG column matched the old lower-case `"tng"`
+  while the paid buttons write the list's own label `"TNG"`, so every TNG payment since v106 fell
+  into *Paid, no method*. `accounts.js` `methodLabel()` is the normaliser that keeps them together.
+- **Ingredients you never buy** (v110) — `ingredient.notPurchased === true` marks labour,
+  electricity, gas and the owner's own time. `admin/js/purchasing.js` `priceItems` drops those
+  rows at the one door every shopping list goes through (and `.filter(Boolean)`s them), while
+  `notPurchasedNames(state, bomItems)` lets a list say *"Not on this list: …"* rather than look as
+  if it forgot. The recipe cost is untouched — the cost still runs into the P&L cost of sales. The
+  switch and the *Not bought* card line live in `admin/js/views/ingredients.js`.
+- **A book for every way you pay** (v113) — a new **Books** line on the Money screen lists *every*
+  method, including a pocket that moved nothing in the stretch on screen and so never got a row
+  on the money card. Each book opens under the line that was tapped.
+- **Pay back a pocket** (v112) — a pocket that paid for something shows a negative line (the till
+  owes it). **Pay back a pocket** writes both halves in one go: money out of the till *and* the
+  pocket's line cleared. The till's side is recorded as a withdrawal, so it never counts as a cost
+  and profit does not move. The same version fixed the category pills, which were laid out on one
+  line and ran 744 px wide inside a 343 px box on a 375 px phone — they wrap now, and so do the
+  ways-to-pay row and the pay-back form.
+
+**Sync.** `expenses` and `deposits` join `LISTS` in `admin/js/sync.js`, so money out and money in
+travel between the owner's phones like every other list. **One upstream gap, ported faithfully and
+flagged rather than papered over:** `state.js`'s comment on `categories` / `payMethods` says both
+lists are shared between phones, but `sync.js`'s `recordPayload("settings", …)` whitelist names
+neither — so today they are **phone-local**. Do not "fix" this in jerky alone; it wants a change on
+the bakery first, then a sync.
+
 ## The till, a tappable Next-available line, and picking dates fast (v99–v102)
 
 Four versions, three of them about doing a small job with fewer taps.
@@ -865,6 +936,8 @@ admin/ — backoffice app (/admin/):
   js/state.js         schema, localStorage load/save, ids, formatting, order-line snapshot
   js/dates.js         posting dates, cut-off, countdown (pure)
   js/money.js         what came in — cash / TNG / still to collect (pure)
+  js/profit.js        the books — sales, cost of sales, running costs, capital / drawings (pure)
+  js/accounts.js      the categories and ways to pay the books read, and their built-in defaults (pure)
   js/bom.js           BOM explosion, costs, capacity (pure)
   js/supabase.js      live availability + storefront config publish, order intake
   js/sync.js          shared-data sync engine (queue, pull-then-flush, conflict)

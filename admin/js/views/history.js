@@ -3,12 +3,19 @@
 // location.hash directly, which keeps this view DOM-testable under Node (po.js
 // uses the same trick).
 
-import { longDate, weekdayName } from "../dates.js";
-import { el, button, emptyState, toast, confirmDialog } from "../ui.js";
-import { byId, fmtRM, save } from "../state.js";
+import { longDate, todayISO, weekdayName } from "../dates.js";
+import { el, button, emptyState, showPopup, toast, confirmDialog } from "../ui.js";
+import { byId, fmtRM, newId, save } from "../state.js";
+import { maybeSync } from "../supabase.js";
 import { poTableEl } from "./poTable.js";
 import { fmtStockAmount } from "../purchasing.js";
 import { applyBought } from "../stock.js";
+import { methodsOf } from "../accounts.js";
+// The Paid-by pills, one list for the whole app (js/accounts.js) — a shopping run can
+// go on the loan or the bank overdraft, which is what the third choice is for. The
+// same row of pills the money forms use, with the same ＋ chip, so a way she needs
+// only once can still be recorded.
+import { methodPills } from "./money.js";
 
 // Navigate by hash so app.js isn't needed at import time.
 const navigate = (hash) => { location.hash = hash; };
@@ -141,6 +148,51 @@ function markBought(state, po, root) {
     .join(", ");
   toast(`Added to stock: ${names}`);
   renderDetail(root, state, po);
+  askWhatYouPaid(state, po);
+}
+
+// "What did you pay?" — asked the moment the packs go on the shelf, because that is
+// when the receipt is still in her hand (16 Sep 2026). The stock side is already
+// done by the time this opens. It is pre-filled with the purchase order's own
+// whole-pack estimate, so accepting the guess is one tap; what she types becomes
+// money out on the Money screen. "Skip the money" leaves the stock added and nothing
+// recorded — exactly how the app behaved before this existed.
+function askWhatYouPaid(state, po) {
+  const estimate = Number(po.buyTotal != null ? po.buyTotal : po.totalEstCost) || 0;
+  const amount = el("input", { class: "input", type: "number", inputmode: "decimal",
+    min: "0", step: "0.01", placeholder: "RM", "aria-label": "What you paid",
+    value: estimate ? String(estimate) : "" });
+  let method = methodsOf(state)[0] || "Cash";
+
+  showPopup(el("div", { class: "popup-title-row" }, "What did you pay?"), (refresh, close) => el("div", {},
+    el("p", { class: "card-sub", style: "margin:0 0 10px" },
+      `The packs are on your stock. What did this shop cost${estimate ? ` — the list came to ${fmtRM(estimate, state.settings.currency)}` : ""}?`),
+    el("div", { class: "field" }, amount),
+    el("div", { class: "field" }, el("label", {}, "Paid by"),
+      methodPills(state, method, (m) => { method = m; }, refresh)),
+    el("div", { class: "popup-actions" },
+      button("Skip the money", close, "ghost"),
+      button("Save", () => {
+        const value = Number(amount.value);
+        if (!amount.value.trim() || !Number.isFinite(value) || value < 0) {
+          return toast("Type what you paid, or press Skip the money");
+        }
+        // A phone whose saved state predates the expense list has none yet.
+        if (!Array.isArray(state.expenses)) state.expenses = [];
+        state.expenses.push({
+          id: newId("exp"),
+          date: todayISO(),
+          amount: value,
+          category: "Ingredients & shopping",
+          method,
+          poId: po.id,
+          note: "",
+        });
+        save(state);
+        maybeSync(state);
+        toast(`Money out: ${fmtRM(value, state.settings.currency)}`);
+        close();
+      }, "primary"))));
 }
 
 function fmtTime(iso) {

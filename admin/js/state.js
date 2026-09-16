@@ -48,6 +48,11 @@ export function defaultState() {
         validDays: 90, // "" (blank) = never expires
       },
       developer: { name: "", emails: [], whatsapp: "" }, // site credit + wish-list recipient; shown only once set
+      // The two lists the books are built from (16 Sep 2026). Empty means "the
+      // built-in ones" — see js/accounts.js — so a phone that never edits them
+      // behaves exactly as before, and both lists are shared between phones.
+      categories: [], // what an expense was for: [{ label, cls }]
+      payMethods: [], // how money moved: ["Cash", "TNG", "Loan", ...]
     },
     ingredients: [],
     suppliers: [],     // who you buy from (each has a WhatsApp number)
@@ -57,6 +62,15 @@ export function defaultState() {
     orders: [],
     customers: [], // customer profiles (pet name/photo, likes, notes) keyed to orders
     purchaseOrders: [],
+    // Money out: what you spent, and how. Written by a shopping run marked Bought
+    // (which is why a row may carry a poId) and by the Add an expense form — one
+    // list, so the Money screen has a single side to subtract from money in.
+    expenses: [],
+    // Money you put in yourself — a sudden packet of meat paid from your own purse,
+    // a float for change. Kept apart from orders so the Money screen can say how much
+    // of the till is your own money, and taken back out later through Add an expense
+    // (category "My own withdrawal"), which is the same money-out list.
+    deposits: [],
     credits: [], // bring-a-friend ledger: {holder, amountRM, role, expiresAt, ...}
     occasions: [], // delivery-calendar reminder marks: {from, to, label}
   };
@@ -242,6 +256,8 @@ function normalize(s) {
       lock: { ...d.settings.lock, ...(((s.settings || {}).lock) || {}) },
       storefront: cleanStorefront((s.settings || {}).storefront),
       referrals: { ...d.settings.referrals, ...(((s.settings || {}).referrals) || {}) },
+      categories: Array.isArray(((s.settings || {}).categories)) ? s.settings.categories : [],
+      payMethods: Array.isArray(((s.settings || {}).payMethods)) ? s.settings.payMethods : [],
       developer: cleanDeveloper(((s.settings || {}).developer)),
     },
     ingredients: Array.isArray(s.ingredients) ? s.ingredients : [],
@@ -253,6 +269,8 @@ function normalize(s) {
       ? s.orders.map((o) => (o && typeof o === "object" ? { ...o, status: o.status || "new" } : o))
       : [],
     purchaseOrders: Array.isArray(s.purchaseOrders) ? s.purchaseOrders : [],
+    expenses: Array.isArray(s.expenses) ? s.expenses : [],
+    deposits: Array.isArray(s.deposits) ? s.deposits : [],
     customers: Array.isArray(s.customers) ? s.customers : [],
     credits: Array.isArray(s.credits) ? s.credits : [],
     occasions: Array.isArray(s.occasions) ? s.occasions : [],

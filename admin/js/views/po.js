@@ -15,7 +15,7 @@ import { longDate, todayISO, weekdayName, shortDate } from "../dates.js";
 import { explodeBomDates, ordersFingerprint, effectiveCapacity, dayChangeInfo, restockOnlyItems } from "../bom.js";
 import { el, button, emptyState, toast } from "../ui.js";
 import { save, newId } from "../state.js";
-import { priceItems, fmtQtyText } from "../purchasing.js";
+import { priceItems, notPurchasedNames, fmtQtyText } from "../purchasing.js";
 import { poTableEl, totalOf } from "./poTable.js";
 
 export function renderPO(root, state, params) {
@@ -320,8 +320,12 @@ function previewCard(state, chosen, bom, needsReview) {
   // so the whole-pack top-up is already in the snapshot's addBase when she
   // later taps Bought.
   const restock = restockOnlyItems(state, bom.items.map((i) => i.ingredientId));
-  const items = priceItems(state, [...bom.items, ...restock].sort((a, b) =>
-    String(a.ingredientName).localeCompare(String(b.ingredientName))));
+  const buyable = [...bom.items, ...restock].sort((a, b) =>
+    String(a.ingredientName).localeCompare(String(b.ingredientName)));
+  const items = priceItems(state, buyable);
+  // The ingredients left off because she never buys them (labour, electricity): said
+  // plainly under the table, so their absence reads as deliberate rather than missed.
+  const notBought = notPurchasedNames(state, buyable);
   const total = totalOf(items);
   const multi = bom.multi === true;
   const cap = multi ? 0 : effectiveCapacity(state, chosen[0].date);
@@ -347,6 +351,8 @@ function previewCard(state, chosen, bom, needsReview) {
     overCap ? el("div", { class: "danger-banner" }, "Over capacity — check the order list.") : null,
     bom.warnings.length ? el("div", { class: "warn" }, bom.warnings.join(" ")) : null,
     table,
+    notBought.length ? el("p", { class: "po-snapshot-note" },
+      `Not on this list: ${notBought.join(", ")} — marked as not something you buy. Their cost still counts in the products that use them.`) : null,
     el("div", { class: "btn-row" },
       button("💾 Generate & Save", () => generate(state, chosen, bom, items, total), "primary"),
       button("Print", () => window.print(), "soft")),

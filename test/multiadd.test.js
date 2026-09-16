@@ -102,9 +102,13 @@ test("several manual items for one customer land as a single order group", () =>
   // Pick product + quantity on row 1.
   let rows = byClass(root, "add-item");
   assert.equal(rows.length, 1, "starts with one item row");
+  // The row is two lines: the product, then its controls (stepper, price, remove) —
+  // found by class, so a row that grows another control cannot break the read.
+  const stepperOf = (row) => byClass(row, "stepper")[0];
+  assert.equal(byClass(rows[0], "line-price").length, 1, "and the row carries its selling price");
   change(rows[0].children[0], "p1"); // product select
-  click(rows[0].children[1].children[2]); // stepper "+" → qty 2
-  assert.equal(rows[0].children[1].children[1].textContent, "2");
+  click(stepperOf(rows[0]).children[2]); // stepper "+" → qty 2
+  assert.equal(stepperOf(rows[0]).children[1].textContent, "2");
 
   // Add a second item and pick it.
   const addAnother = byText(root, "＋ Add another item")[0];
@@ -113,9 +117,9 @@ test("several manual items for one customer land as a single order group", () =>
   rows = byClass(root, "add-item");
   assert.equal(rows.length, 2);
   change(rows[1].children[0], "p2");
-  click(rows[1].children[1].children[2]);
-  click(rows[1].children[1].children[2]); // qty 3
-  assert.equal(rows[1].children[1].children[1].textContent, "3");
+  click(stepperOf(rows[1]).children[2]);
+  click(stepperOf(rows[1]).children[2]); // qty 3
+  assert.equal(stepperOf(rows[1]).children[1].textContent, "3");
 
   // Customer details apply to the whole order.
   byPlaceholder(root, "Customer name (optional)")[0].value = "Ain";

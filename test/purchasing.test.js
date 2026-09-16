@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import {
   toBaseQty, chosenSupplier, priceItems, groupItemsBySupplier,
   priceEntryLabels, buildSupplierOrderText, fmtStockAmount, belowReserve,
+  notPurchasedNames,
 } from "../admin/js/purchasing.js";
 
 const UOMS = [
@@ -359,4 +360,31 @@ test("WhatsApp text keeps low reserve rows and drops covered rows", () => {
   assert.ok(!text.includes("Butter"), "healthy Butter is nothing to buy");
   assert.ok(text.includes("1. Strong flour: 2 × 4000g (need 3000g, keep 5 kg on hand)"), text);
   assert.ok(text.endsWith("Est. RM 50.00"));
+});
+
+// ── v110: an ingredient she never buys ───────────────────────────────────────
+test("a not-bought ingredient never lands on a shopping list, though it still costs", () => {
+  const state = makeState();
+  state.ingredients.push({ id: "ing_labour", name: "Labour", unit: "hr", costPerUnit: 8, notPurchased: true });
+  const bom = [
+    { ingredientId: "ing_flour", ingredientName: "Flour", unit: "g", totalQty: 1000, costPerUnit: 0.01 },
+    { ingredientId: "ing_labour", ingredientName: "Labour", unit: "hr", totalQty: 2, costPerUnit: 8 },
+  ];
+  const priced = priceItems(state, bom);
+  assert.deepEqual(priced.map((i) => i.ingredientName), ["Flour"], "labour is not something to buy");
+  assert.deepEqual(notPurchasedNames(state, bom), ["Labour"],
+    "and the list can say what it left out, rather than looking forgetful");
+
+  // The switch OFF leaves the list exactly as it was.
+  state.ingredients.find((i) => i.id === "ing_labour").notPurchased = false;
+  assert.equal(priceItems(state, bom).length, 2, "an unticked switch changes nothing");
+});
+
+test("its cost still prices the products it goes into", async () => {
+  const { costOf } = await import("../admin/js/bom.js");
+  const state = makeState();
+  state.ingredients.push({ id: "ing_labour", name: "Labour", unit: "hr", costPerUnit: 8, notPurchased: true });
+  const product = { id: "prd_l", name: "Loaf", price: 20, active: true,
+    recipe: [{ ingredientId: "ing_labour", qty: 0.25 }] };   // a quarter hour a loaf
+  assert.equal(costOf(state, product), 2, "RM8 an hour, a quarter hour a loaf");
 });

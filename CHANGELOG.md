@@ -1,8 +1,295 @@
-# Munchies Furkidz — change history (v54 → v102)
+# Munchies Furkidz — change history (v54 → v113)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**17 Sep 2026 — engine v113 (no database setup needed). Every way you pay now has
+a book you can always open — including a pocket that has been quiet — behind a new
+Books line on the Money screen.**
+
+**What was wrong.** The journal rows live on the money card, and that card only shows
+a pocket's row **when that pocket moved money in the stretch you are looking at**.
+The card opens on **Today**, so a pocket that paid for something last week had no row
+today — and no way into its book at all. Cash and TNG never had the problem: their
+four rows (Cash in, Cash out, TNG in, TNG out) are always there. The pockets were the
+only books that could go missing.
+
+**The Books line.** Under the two money cards there is now a second line beside
+*Categories & ways to pay*:
+
+> **Books**
+> Every way you pay · each opening into its own rows
+
+**Open** lists **every** way you pay — Cash, TNG, Loan, a personal pocket you have
+added, and anything you add later — each with what moved by it in the stretch on
+screen, each opening into its own book **under the line you tapped**, so the list
+stays in front of you and you can step from one book to the next. The first method
+with anything in it opens ready; a quiet pocket says so plainly — *"Nothing moved this
+way in this stretch"* — with its In / Out / Net at zero.
+
+Two things this keeps honest: a method you have since **renamed or deleted** still
+gets a line, because its money is still in the books and a figure you cannot open is a
+figure you have to take on faith; and every figure in the list comes off the Money
+screen's own rows, so the list and those totals cannot drift apart.
+
+**17 Sep 2026 — engine v112 (no database setup needed). You can pay a personal pocket
+back out of the till in one go, and the category list on the expense form is no longer
+cut off.**
+
+**Pay back a pocket.** On **More → Money**, beside **＋ Put money in**, there is now
+**＋ Pay back a pocket**. It is for the case where a pocket of yours — a personal
+pocket you added, a loan — paid for something, so the money left you rather than the
+till; that pocket's line on the Money screen then reads **−RM 40.00**, which means
+*the till owes it 40*. Open the form and it comes up **already on the pocket that is
+owed**, with the amount filled in, and a line saying so. Say whether the money came out
+of **Cash** or **TNG**, check the day, and press **Pay back**.
+
+It writes both halves at once, which is the whole point: the **till goes down** by that
+amount (it shows in Cash out and in the Net, and in the Cash journal with your note),
+and the **pocket's line comes back to zero**. One pocket can be paid back without
+touching another. Because it is your own money going back to you, the till's side is
+recorded as a withdrawal — so it never counts as a cost and your **profit does not
+move**. On the pocket's own list it reads *"Paid back by the till"*, not *"From my
+pocket"* — the two are different things and now say so. Paying it back in part is fine:
+pay RM 25 of the RM 40 and the pocket reads −15 after.
+
+**The category list was being cut off — fixed.** Thank you for catching this. On the
+expense form, the row of categories ran off the side of the screen: it was laid out as
+one single line, so at phone width everything past about the sixth category — *Salary
+(you)*, *EPF / SOCSO*, *Marketing*, *Equipment & tools*, *Other*, *My own withdrawal*,
+and the **＋ New category** chip — was off the screen and impossible to reach. Measured
+on a 375-pixel phone, the row was 744 pixels wide inside a 343-pixel box. The pills now
+**wrap onto as many lines as they need**, the same fix applies to the ways-to-pay row
+and to the new pay-back form, and the whole list is visible and tappable. Nothing about
+the categories themselves changed.
+
+**17 Sep 2026 — engine v111 (no database setup needed). Every figure on the books is
+now a door: a journal behind each line of spending in Profit & Loss, and a book for
+every way you pay.**
+
+**Profit & Loss — tap a spending line and see what made it up.** On **More → Profit**,
+the running-cost lines (Packaging, Utilities, Delivery & fuel…) are now tappable, and
+so is **Total expenses**. Tapping one opens its journal for the month on screen: every
+expense behind that figure, oldest first, each reading *"<day> · <what it was for> ·
+<how it was paid>"* and ending on the total the statement itself shows. So *"Packaging
+RM -58.00"* opens two lines — the boxes paid from a pocket and the bags paid in cash. A
+line with nothing in it that month is not tappable; there is nothing behind it. The
+header now says **Running costs · tap a line to see the spending behind it**.
+
+**Money — one line and one book per way of paying.** The single *"Paid by loan / other"*
+row is gone. In its place, every way of paying that is not cash or TNG gets **its own
+line** with what moved by it, and its own journal behind it: **Paid by Loan**, **Paid by
+Personal Pocket …** — whatever you have called them. Money of your own you put in that
+way reads as a plus on that line; what was paid out of it reads as a minus. Cash in, TNG
+in, Cash out, TNG out and the Net are exactly as they were, and none of these other ways
+is in the net — it never came out of your purse.
+
+**Why they appear by themselves.** The lines are read off your own transactions, not off
+a fixed list, so a method you add tomorrow needs nothing from me: record one payment
+with it and it has a line and a book. And a method you have since **renamed** keeps a
+line for the name its older rows were written with — those rows are still in the books,
+and a figure you cannot open is a figure you have to take on faith. Each book ends on
+**In / Out / Net** for that method.
+
+**One small correction while here:** the note at the foot of the Profit screen now
+matches v110 — either pay yourself a **Salary (you)** expense (with EPF / SOCSO as their
+own category), or mark Labour as a not-bought ingredient and put the hours into the
+recipes. Count them one way, never both.
+
+**17 Sep 2026 — engine v110 (no database setup needed). An ingredient you never buy —
+your own labour, electricity, gas — can be marked as a cost, and it then never appears
+on a shopping list again.**
+
+**What it does.** Open **More → Ingredients** and tap **Edit** on the ingredient (or
+fill in the New ingredient card at the top). Above the cost there is now a switch: **Not
+something I buy — it only ever costs. It still counts in a recipe's cost, but it never
+appears on a shopping list or a purchase order.** Turn it on for Labour, Electricity,
+Gas, your own time.
+
+**Where you see it.**
+- The ingredient's **card** stops showing an On hand and a Keep-at-least line, and says
+  instead: *Not bought — a cost in your recipes, never on a shopping list*. Nothing else
+  about the card changes, and the cost you typed is untouched.
+- Every **shopping list** (the preview, the list you save, and an "orders changed"
+  follow-up) leaves that ingredient out — and says so at the foot of the list: *Not on
+  this list: Labour, Electricity — marked as not something you buy. Their cost still
+  counts in the products that use them.* So it reads as deliberate, not as something the
+  app forgot.
+- The **recipe cost** is unchanged: a recipe using Labour at RM 8 an hour for 15 minutes
+  still adds RM 2.00 to that product's cost, and that runs on into the Profit screen's
+  cost of sales.
+
+**Switching it OFF restores the ingredient exactly as it was** — the app removes the
+mark rather than storing a "No", so nothing that exists today changes unless you turn
+this on.
+
+**And a word on the books, since this touches Profit:** if you mark Labour as
+not-for-purchase because it is your own unpaid time, it is already inside each product's
+cost of sales through the recipe — so do **not** also record it as a Salary expense, or
+the same hours get counted twice. The **Salary (you)** category is for when you actually
+pay yourself money out of the till.
+
+**16 Sep 2026 — engine v109 (no database setup needed). A journal for each way the money
+moves — the cash book, the TNG book — and a bug that was hiding in the TNG column.**
+
+**A bug first, because it matters.** Every order you marked **Paid · TNG** since v106
+was landing in "Paid, no method" instead of the TNG column. The app was checking for the
+old way of writing it ("tng") while the paid buttons write the list's own label ("TNG") —
+so the TNG in figure read RM 0.00 with the money in your phone, and the same money showed
+as unaccounted for. Fixed, and there is now a test that would have caught it. If your TNG
+column has looked wrong since v106, that was it.
+
+**Tap a figure, see its journal.** On the Money screen, **Cash in / TNG in / Cash out /
+TNG out** (and the loan line) can be tapped. Each opens that method's book for the
+stretch: every order paid that way with its code and customer, everything you spent out
+of it with its note, anything of your own you put in — in date order, ending on In / Out
+/ **Net**, and a line saying what that is meant to be (your purse, your phone, or money
+that never went near either).
+
+**16 Sep 2026 — engine v108 (no database setup needed). Where the two lists live, and
+how to change one.**
+
+**Why.** v106 put them in a Settings card and you could not find it, and there was no way
+to change an entry once it existed — *"dont put the setting separately, it should be at
+where it suppose to be."*
+
+**They are on the Money screen now**, as a line under the money lists reading
+"Categories & ways to pay · 11 categories · Cash, TNG, Loan" with an **Edit** beside it.
+Tap Edit and the lists open: every category with its kind (ingredients / running cost /
+your own money) and every way to pay, each line saying "edit".
+
+**Tap a line and it turns into the form**: rename it, change what kind it is, or delete
+it — in place, with the rest of the list still in front of you. Renaming moves what you
+have already recorded with it, so a slip of the thumb does not split your history into
+"Packaging" and "Packing".
+
+**And the ＋ chips sit where you are working**: the Add an expense form and Put money in
+each end their pills with **＋ New category** / **＋ New way to pay**, which opens the
+same small form in place — the amount and the note you had already typed stay put.
+
+**No window inside a window.** These forms expand in place instead of opening a pop-up of
+their own, the same rule the date field follows: the app has one pop-up layer, so a
+second one would wipe out the form underneath it.
+
+**16 Sep 2026 — engine v107 (no database setup needed). The item line on an order reads
+properly again.**
+
+**What was wrong.** When the selling price joined the line (v101) it took most of the
+row. Measured on a 375px phone: the price box was 183 pixels wide and the product
+dropdown was squeezed to **2** — so the name of what you had picked was pushed onto a
+line of its own and unreadable, and the whole line looked broken.
+
+**What it does now.** Each item line is two clean lines: **the product across the top**,
+full width so its name reads, and its controls under it — how many, the selling price on
+the right, and the ✕ to remove. The same shape in the ＋ New order card and in the Edit
+pop-up, since both are the same row.
+
+**16 Sep 2026 — engine v106 (no database setup needed). A note on every transaction, and
+two lists you shape yourself.**
+
+**A note on each one.** Add an expense now takes a note ("Mydin run, 2 boxes") — the Put
+money in form already had one — and both lists on the Money screen show it beside the
+amount, so a row reads as what it was, not just a figure.
+
+**The categories are yours.** Every category shows what it means to the accounts
+(ingredients / running cost / your own money), each has a ✕ to delete it, and you can add
+your own — "Pet expo", "SSM licence" — choosing which of the three it is. Deleting one
+never touches what you have already recorded: those rows keep their label and still
+count, printed at the end of the statement's cost list rather than dropped.
+
+**And the ways to pay are yours too.** The list is Cash, TNG and **Loan** — the third
+choice you asked for — and you can add your own, a **Bank OD** or a cheque, so a shopping
+run nobody would pay for out of the till can still be recorded honestly. The same list
+appears on the Bought prompt (where the receipt is still in your hand) and on both money
+forms.
+
+**One thing that follows from it.** Money that never came out of your purse — a loan, an
+overdraft — no longer sits in the net. The Money screen leaves it out of the cash figures
+and names it on its own line, with a sentence saying why. Net now means exactly what it
+says: what should be in your purse and on your phone.
+
+**16 Sep 2026 — engine v105 (no database setup needed). The books: a profit and loss
+account, a month at a time.** One new screen, More → Profit.
+
+**Why.** Money told you what was in your purse. It could not tell you whether the making
+made money — a RM250 meat run makes one week look like a disaster while the treats it
+went into sell the week after.
+
+**What it shows.** More → Profit, month by month (arrows either side), reading down like
+a set of accounts: Sales, Cost of sales, Gross profit, the running costs one line each,
+Total expenses and Net profit — with the gross margin beside the order count. Then, kept
+apart from all of it, your own money: capital you put in, drawings you took out, and what
+is left in the business.
+
+**The one rule that makes it accounting rather than a cash total.** Ingredient cost is
+what the making cost, taken from your RECIPES as the treats sell — not the packs you
+bought. Buying and using sit in different places on purpose: a shopping run is money out
+on the Money screen and stock on your shelf, and it becomes a cost of sales here as the
+treats made from it go out. Nothing is counted twice, and a big stock-up week stops
+looking like a loss.
+
+**Your own money is neither income nor a cost.** What you put in is capital; what you
+take out is drawings (including the "My own withdrawal" category). Both move cash — Money
+counts them — and neither changes profit. If you pay yourself a proper salary, record it
+as **Salary (you)**, with **EPF / SOCSO** as its own category, and those DO count as
+running costs.
+
+**The category list is now a chart of accounts:** Ingredients & shopping (stock),
+Packaging, Rent, Utilities, Delivery & fuel, Salary (you), EPF / SOCSO, Marketing,
+Equipment & tools, My own withdrawal, Other — the same list the Add an expense form
+offers, so every row lands on the right line of the statement.
+
+**Two things it will not pretend to know.** Your own unpaid hours are not a cost — if
+your time is worth paying, pay yourself a salary and it becomes one. And a product whose
+recipe prices to nothing is counted as costing nothing; the screen says how many lines
+that was, so it is visible rather than flattering.
+
+**16 Sep 2026 — engine v104 (no database setup needed). Money you put in yourself, and
+taking it back out.** One change, on More → Money.
+
+**Why.** Some spending happens before any order money arrives — a packet of meat paid
+from your own purse, a float of change for the day — and there was nowhere to put it. The
+Money screen only counted what customers paid.
+
+**Put money in.** More → Money now has a **Put money in** button beside Add an expense:
+how much, the day you put it in, cash or TNG, and a short line saying what it was for. It
+counts into the Cash in / TNG in rows, because your own money really is in your purse and
+those rows are what you check the purse against — and one line underneath says how much
+of the money in was yours: "of the money in, RM 100.00 was your own". The entry is listed
+in its own **Money in** card, so you can see where it came from, and take it off again.
+
+**Taking it out again.** Add an expense has a new category, **My own withdrawal** — money
+you take back for yourself rather than a cost of making. It leaves through the same
+money-out list as everything else, so the net, the day lines and your backups count it
+with no new machinery.
+
+**16 Sep 2026 — engine v103 (no database setup needed). Money out: what you spend, beside
+what you take in.** One change, on the shopping side of the app.
+
+**Why.** v101 gave you the money coming in. Spending had nowhere to go: a purchase order
+worked out what a shopping run should cost, and tapping Bought put the packs on your
+shelf, but nothing recorded what you actually paid.
+
+**A shopping run now asks.** Tap **Bought** on a saved list and, once the packs are on
+your stock, a small box opens: **What did you pay?** — pre-filled with the list's own
+total, with **Cash** or **TNG** beside it. Accept the guess with one tap, or type what the
+receipt really said. **Skip the money** leaves the stock added and records nothing,
+exactly as the app behaved before.
+
+**Everything else goes in by hand.** More → Money now carries an **Add an expense** form
+for what a purchase order never sees — packaging, delivery and fuel, utilities, equipment,
+or a market top-up — each with the day you paid it, so a receipt found in your bag later
+still counts on the right day.
+
+**The Money screen adds it up both ways.** Cash in, TNG in, Cash out, TNG out and **Net**
+— what should be in your purse and on your phone for Today / This week / This month —
+with that stretch's spending listed underneath, each line showing what it was for and how
+you paid. What is still to collect stays out of the net: it is money owed, not money held.
+
+**One fix along the way.** A payment taken just after midnight was being counted as the
+day before, because the app read the date off the stamp in UTC. It counts on your own day
+now.
 
 **16 Sep 2026 — engine v102 (no database setup needed). Swipe across the calendar
 to pick a run of delivery dates.** One small change, on More → Delivery dates.

@@ -285,3 +285,78 @@ test("a legacy snapshot saved before stock carries no buy amounts, so no Bought 
   assert.equal(findBtn(root, "Bought ✓ — add to stock"), undefined,
     "no addBase anywhere means there is nothing to add, exactly as before the feature");
 });
+
+// --- v103: the Bought tap now asks what she paid, and records it ---------------
+test("Bought asks what she paid, pre-filled with the list's own total", () => {
+  const state = freshState();
+  const po = addPO(state, "p1", ["del_a"]);
+  po.items = [boughtItem()];
+  po.buyTotal = 52.5;
+
+  const root = mountHistory(state, "po=p1");
+  fireClick(findBtn(root, "Bought ✓ — add to stock"));
+
+  const pop = registry["popup-layer"];
+  const box = walk(pop).find((n) => n.tagName === "INPUT" && n.attrs["aria-label"] === "What you paid");
+  assert.ok(box, "the money question opens over the page");
+  assert.equal(String(box.value), "52.5", "pre-filled with what the list came to");
+  assert.equal((state.expenses || []).length, 0, "and nothing is recorded until she says so");
+});
+
+test("saving records money out, with the day and how she paid", () => {
+  const state = freshState();
+  const po = addPO(state, "p1", ["del_a"]);
+  po.items = [boughtItem()];
+  po.buyTotal = 52.5;
+
+  const root = mountHistory(state, "po=p1");
+  fireClick(findBtn(root, "Bought ✓ — add to stock"));
+  const pop = registry["popup-layer"];
+  const box = walk(pop).find((n) => n.tagName === "INPUT" && n.attrs["aria-label"] === "What you paid");
+  box.value = "48.90"; // what she really paid
+  fireClick(walk(pop).find((n) => n.tagName === "BUTTON" && textOf(n).trim() === "TNG"));
+  fireClick(walk(pop).find((n) => n.tagName === "BUTTON" && textOf(n).trim() === "Save"));
+
+  assert.equal(state.expenses.length, 1);
+  assert.equal(state.expenses[0].amount, 48.9);
+  assert.equal(state.expenses[0].method, "TNG", "stored as the label she picked — the same string old rows read back as");
+  assert.equal(state.expenses[0].poId, "p1", "linked to the shopping run it came from");
+  assert.equal(state.expenses[0].category, "Ingredients & shopping");
+  assert.match(state.expenses[0].date, /^\d{4}-\d{2}-\d{2}$/, "stamped with the day she paid it");
+});
+
+test("Skip the money adds the stock and records nothing, as the app always did", () => {
+  const state = freshState();
+  const po = addPO(state, "p1", ["del_a"]);
+  po.items = [boughtItem()];
+  po.buyTotal = 52.5;
+
+  const root = mountHistory(state, "po=p1");
+  fireClick(findBtn(root, "Bought ✓ — add to stock"));
+  const pop = registry["popup-layer"];
+  fireClick(walk(pop).find((n) => n.tagName === "BUTTON" && textOf(n).trim() === "Skip the money"));
+
+  assert.equal(state.ingredients[0].onHand, 3000, "the packs are still on the shelf");
+  assert.equal((state.expenses || []).length, 0, "and no money was written down");
+});
+
+test("what she paid with comes from her own list, loan included (v106)", () => {
+  const state = freshState();
+  const po = addPO(state, "p1", ["del_a"]);
+  po.items = [boughtItem()];
+  po.buyTotal = 52.5;
+
+  const root = mountHistory(state, "po=p1");
+  fireClick(findBtn(root, "Bought ✓ — add to stock"));
+  const pop = registry["popup-layer"];
+  const pills = walk(pop).filter((n) => n.tagName === "BUTTON").map((b) => textOf(b).trim());
+  assert.ok(pills.includes("Cash") && pills.includes("TNG"), "the two a customer uses");
+  assert.ok(pills.includes("Loan"),
+    "and the third she asked for — a flour run can go on the loan or the overdraft");
+
+  const box = walk(pop).find((n) => n.tagName === "INPUT" && n.attrs["aria-label"] === "What you paid");
+  box.value = "250";
+  fireClick(walk(pop).find((n) => n.tagName === "BUTTON" && textOf(n).trim() === "Loan"));
+  fireClick(walk(pop).find((n) => n.tagName === "BUTTON" && textOf(n).trim() === "Save"));
+  assert.equal(state.expenses[0].method, "Loan", "recorded as she chose");
+});

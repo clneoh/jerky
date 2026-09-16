@@ -255,6 +255,8 @@ export function snapshotViewData(data) {
       suppliers: list("suppliers").length,
       uoms: list("uoms").length,
       purchaseOrders: list("purchaseOrders").length,
+      expenses: list("expenses").length,
+      deposits: list("deposits").length,
       credits: credits.length,
       occasions: list("occasions").length,
       customers: list("customers").length,

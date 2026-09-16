@@ -68,6 +68,17 @@ function buildIngredientEditor(state, ingredient) {
   const note = el("input", { class: "input",
     placeholder: "e.g. brand or grade, or where you buy it (optional)",
     value: ingredient?.purchaseNote || "" });
+  // Labour, electricity, your own time: real costs inside a recipe that she never
+  // buys. The switch keeps them off every shopping list while their cost still
+  // prices the products they go into (16 Sep 2026 — her words: "certain ingredient we
+  // dont purchase ... like labour and electricity").
+  const box = el("input", { type: "checkbox", checked: ingredient?.notPurchased === true,
+    onchange: () => { notPurchased = box.checked; } });
+  let notPurchased = ingredient?.notPurchased === true;
+  const notBought = el("div", { class: "avail-listed" },
+    el("label", { class: "switch" }, box, el("span", { class: "switch-track" }, el("span", { class: "switch-knob" }))),
+    el("span", { class: "avail-listed-text" },
+      "Not something I buy — it only ever costs. It still counts in a recipe's cost, but it never appears on a shopping list or a purchase order."));
 
   // Draft of the supplier price rows — as many as the ingredient already has,
   // or a blank one when it has none. Stored here (not on the ingredient) so an
@@ -190,13 +201,17 @@ function buildIngredientEditor(state, ingredient) {
         costPerUnit: Number(cost.value) || 0,
         purchaseNote: note.value.trim() || undefined,
         supplierPrices: supplierPrices.length ? supplierPrices : undefined,
+        // Only ever written when on; the edit path deletes the key when it is off, so
+        // an unticked switch leaves an ingredient exactly as it was.
+        notPurchased: notPurchased ? true : undefined,
       },
+      drop: notPurchased ? [] : ["notPurchased"],
     };
   }
 
   costHint.textContent = costHintText();
   renderPriceRows();
-  return { name, unitSel, cost, note, costHint, priceBox, collect };
+  return { name, unitSel, cost, note, notBought, costHint, priceBox, collect };
 }
 
 function editorFields(editor) {
@@ -204,6 +219,9 @@ function editorFields(editor) {
     el("div", { class: "form-grid" },
       el("div", {}, el("label", {}, "Name"), editor.name),
       el("div", {}, el("label", {}, "Cooking unit"), editor.unitSel)),
+    // The switch sits above the cost, because it changes what the cost is FOR: a
+    // price per unit of something she buys, or a cost of something she never will.
+    editor.notBought,
     el("div", { class: "field" },
       el("label", {}, "Fallback cost"),
       editor.cost,
@@ -242,9 +260,10 @@ function openEditIngredientPopup(state, ing, root) {
       el("div", { class: "popup-actions" },
         button("Cancel", close, "ghost"),
         button("Update ingredient", () => {
-          const { error, values } = editor.collect();
+          const { error, values, drop } = editor.collect();
           if (error) return toast(error);
           Object.assign(ing, values);
+          for (const k of drop || []) delete ing[k];
           toast("Ingredient updated");
           save(state);
           close();
@@ -275,16 +294,20 @@ function ingredientCard(state, ing, root) {
       el("div", { style: "min-width:0" },
         el("p", { class: "card-title" }, ing.name),
         el("p", { class: "card-sub" }, mainSub),
-        el("div", {
-          class: "stockline" + (onHand > 0 ? " has-stock" : " empty") + (below ? " low" : ""),
-          role: "button",
-          onclick: () => openAmountPopup(state, ing, root, "stock"),
-        },
+        // A not-bought ingredient has nothing on a shelf, so it wears the fact instead
+        // of a stock line reading zero.
+        ing.notPurchased === true
+          ? el("p", { class: "card-sub" }, "Not bought — a cost in your recipes, never on a shopping list")
+          : el("div", {
+            class: "stockline" + (onHand > 0 ? " has-stock" : " empty") + (below ? " low" : ""),
+            role: "button",
+            onclick: () => openAmountPopup(state, ing, root, "stock"),
+          },
           el("span", { class: "stockline-label" }, "On hand"),
           el("span", { class: "stockline-qty" },
             `${onHand > 0 ? fmtStockAmount(state, ing, onHand) : "0"}${below ? " · low" : ""}`),
           el("span", { class: "stockline-edit" }, "Adjust")),
-        el("div", {
+        ing.notPurchased === true ? null : el("div", {
           class: "keepline",
           role: "button",
           onclick: () => openAmountPopup(state, ing, root, "keep"),

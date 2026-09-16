@@ -30,6 +30,8 @@ const LISTS = {
   uoms: "uoms", // units of measure — a unit added on one phone has to exist on the other
   deliveryDates: "deliveryDates",
   purchaseOrders: "purchaseOrders",
+  expenses: "expenses", // money out — what one phone spends, the other should see
+  deposits: "deposits", // money in from your own pocket — same on every phone
   credits: "credits", // bring-a-friend ledger rows
   occasions: "occasions", // delivery-calendar reminder marks
   customers: "customers", // customer profiles (pet name/photo, likes, notes)

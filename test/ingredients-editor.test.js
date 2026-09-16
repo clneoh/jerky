@@ -201,3 +201,62 @@ test("typing 1.5 kg in the popup stores 1500 base grams and the card rereads it"
   const strip2 = walk(root).find((n) => n.nodeType === 1 && String(n.className).includes("stockline"));
   assert.ok(String(strip2.className).includes("has-stock"), "the strip flips to the has-stock style");
 });
+
+// --- "Not something I buy" (v110) -------------------------------------------
+// "certain ingredient we dont purchase, in ingredient we can set that as a non purchase
+// item, like labour and electricity" (16 Sep 2026). The flag is written ONLY when on and
+// DELETED when off, so an unticked switch leaves the ingredient exactly as it was.
+
+const change = (node) => (node._listeners.change || []).forEach((f) => f({ target: node }));
+function switchBox(state, root) {
+  return walk(root.children[0]).find((n) => n.tagName === "INPUT" && n.attrs.type === "checkbox");
+}
+
+test("ticking Not something I buy saves the flag, and the card wears it instead of stock", () => {
+  const state = freshState();
+  const root = render(state);
+  const f = formHandles(root);
+
+  const box = switchBox(state, root);
+  assert.ok(box, "the new-ingredient form offers the switch");
+  assert.equal(box.checked, false, "and it starts off — every existing ingredient is still bought");
+
+  f.name.value = "Labour";
+  box.checked = true;
+  change(box);
+  fire(f.add);
+
+  assert.equal(state.ingredients[0].notPurchased, true, "saved as a cost that is never bought");
+  const card = walk(root).find((n) => String(n.className).includes("card")
+    && textOf(n).includes("Labour") && textOf(n).includes("Not bought"));
+  assert.ok(card, "the card says so");
+  assert.ok(textOf(card).includes("never on a shopping list"));
+  assert.ok(!textOf(card).includes("On hand"), "and shows no shelf it will never have");
+});
+
+test("an ingredient saved without the switch carries no key at all", () => {
+  const state = freshState();
+  const root = render(state);
+  const f = formHandles(root);
+  f.name.value = "Sea salt";
+  fire(f.add);
+  assert.equal(state.ingredients[0].notPurchased, undefined,
+    "absent — nothing that exists changes until she ticks it");
+});
+
+test("unticking the switch on an edit takes the flag back off the ingredient", () => {
+  const state = freshState();
+  state.ingredients.push({ id: "ing_labour", name: "Labour", unit: "hr", costPerUnit: 8, notPurchased: true });
+  const root = render(state);
+
+  const card = walk(root).find((n) => String(n.className).includes("card") && textOf(n).includes("Labour"));
+  fire(walk(card).find((n) => n.tagName === "BUTTON" && textOf(n).trim() === "Edit"));
+  const layer = registry["popup-layer"];
+  const box = walk(layer).find((n) => n.tagName === "INPUT" && n.attrs.type === "checkbox");
+  assert.equal(box.checked, true, "opened on the fact that it is not bought");
+  box.checked = false;
+  change(box);
+  fire(walk(layer).find((n) => n.tagName === "BUTTON" && textOf(n).trim() === "Update ingredient"));
+
+  assert.equal(state.ingredients[0].notPurchased, undefined, "the key goes, rather than being saved as false");
+});

@@ -789,7 +789,7 @@ function dateContent(state, date, root, selectDate) {
     fillMeter(cap.total, cap.capacity),
     moneyLine(state, date.id),
     cap.exceeded ? el("div", { class: "danger-banner" },
-      `Over capacity by ${cap.total - cap.capacity}. Add more only if she can bake extra.`) : null,
+      `Over capacity by ${cap.total - cap.capacity}. Add more only if you can make extra.`) : null,
     !st.past && rules.rows.length ? el("div", { class: "btn-row", style: "margin-top:10px" },
       button(adjusted ? `Set day's availability · ${adjusted} adjusted` : "Set day's availability", () =>
         openDayAdjustPopup(state, date, () => renderAll(root, state, new URLSearchParams({ date: date.id }))), "soft")) : null);
@@ -1066,15 +1066,19 @@ function orderForm(state, dateId, root, selectDate) {
           renderRows();
         }, "Product…");
       const qtySpan = el("span", { class: "stepper-val" }, String(it.qty));
+      // Two lines, built as two: the product across the top so its name is readable,
+      // then its controls — how many, the price, remove. Letting flexbox wrap them
+      // instead left the dropdown 2px wide with the price box eating the row.
       return el("div", { class: "add-item" },
         prodSel,
-        el("div", { class: "stepper" },
-          el("button", { onclick: () => { it.qty = Math.max(1, it.qty - 1); qtySpan.textContent = String(it.qty); paintTotal(); } }, "−"),
-          qtySpan,
-          el("button", { onclick: () => { it.qty = it.qty + 1; qtySpan.textContent = String(it.qty); paintTotal(); } }, "＋")),
-        linePriceBox(it, paintTotal),
-        el("button", { class: "inbox-del", "aria-label": "Remove item",
-          onclick: () => { items.splice(i, 1); renderRows(); } }, "✕"));
+        el("div", { class: "add-item-ctl" },
+          el("div", { class: "stepper" },
+            el("button", { onclick: () => { it.qty = Math.max(1, it.qty - 1); qtySpan.textContent = String(it.qty); paintTotal(); } }, "−"),
+            qtySpan,
+            el("button", { onclick: () => { it.qty = it.qty + 1; qtySpan.textContent = String(it.qty); paintTotal(); } }, "＋")),
+          linePriceBox(it, paintTotal),
+          el("button", { class: "inbox-del", "aria-label": "Remove item",
+            onclick: () => { items.splice(i, 1); renderRows(); } }, "✕")));
     }));
     paintTotal();
   };
@@ -1300,13 +1304,14 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     const qtySpan = el("span", { class: "stepper-val" }, String(line.qty));
     return el("div", { class: "add-item" },
       prodSel,
-      el("div", { class: "stepper" },
-        el("button", { onclick: () => { line.qty = Math.max(1, line.qty - 1); qtySpan.textContent = String(line.qty); paintTotal(); } }, "−"),
-        qtySpan,
-        el("button", { onclick: () => { line.qty = line.qty + 1; qtySpan.textContent = String(line.qty); paintTotal(); } }, "＋")),
-      linePriceBox(line, paintTotal),
-      el("button", { class: "inbox-del", "aria-label": "Remove item",
-        onclick: () => { lines.splice(i, 1); refresh(); } }, "✕"));
+      el("div", { class: "add-item-ctl" },
+        el("div", { class: "stepper" },
+          el("button", { onclick: () => { line.qty = Math.max(1, line.qty - 1); qtySpan.textContent = String(line.qty); paintTotal(); } }, "−"),
+          qtySpan,
+          el("button", { onclick: () => { line.qty = line.qty + 1; qtySpan.textContent = String(line.qty); paintTotal(); } }, "＋")),
+        linePriceBox(line, paintTotal),
+        el("button", { class: "inbox-del", "aria-label": "Remove item",
+          onclick: () => { lines.splice(i, 1); refresh(); } }, "✕")));
   };
 
   const rowsEl = el("div", {}, ...lines.map(rowFor));

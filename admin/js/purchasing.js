@@ -107,6 +107,12 @@ export function belowReserve(safety, onHand) {
 export function priceItems(state, bomItems, { reserve = true } = {}) {
   return (bomItems || []).map((item) => {
     const ingredient = byId(state.ingredients || [], item.ingredientId);
+    // An ingredient marked "not a purchase" — labour, electricity, your own time — is
+    // a cost inside a recipe and never a thing to buy (16 Sep 2026). Dropped HERE
+    // because this is the one door every shopping list goes through: the preview, the
+    // list she saves, and an extra-only follow-up all pass here, so it cannot reach a
+    // list by another route.
+    if (ingredient && ingredient.notPurchased === true) return null;
     const out = { ...item, buyText: null };
     const cook = cookingUnit(state.uoms || [], ingredient);
     const cookBase = cook ? Number(cook.toBase) || 1 : 1;
@@ -155,7 +161,16 @@ export function priceItems(state, bomItems, { reserve = true } = {}) {
     out.addBase = packs * packBase;
     out.estCost = round2(packs * c.price);
     return out;
-  });
+  }).filter(Boolean); // the not-a-purchase rows, dropped above
+}
+
+// The ingredients a list left out because they are not bought — so the list can say
+// so, rather than looking as if they were forgotten.
+export function notPurchasedNames(state, bomItems) {
+  return (bomItems || [])
+    .map((item) => byId(state.ingredients || [], item.ingredientId))
+    .filter((ing) => ing && ing.notPurchased === true)
+    .map((ing) => ing.name);
 }
 
 // Order the priced items into supplier sections (alphabetical, "no supplier"

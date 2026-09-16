@@ -383,3 +383,20 @@ test("regenerating a full list after an Ignore clears the stale ack, so the new 
   assert.ok(nodeTexts(root3).includes("+1 Sourdough"), "reveals against the regenerated snapshot, not the old ignore");
   assert.ok(!nodeTexts(root3).includes("+2 Sourdough"));
 });
+
+test("an ingredient she never buys is left off the list, and the list says so", () => {
+  // "certain ingredient we dont purchase, in ingredient we can set that as a non
+  // purchase item, like labour and electricity" (16 Sep 2026). Flour is still bought;
+  // Labour is a cost inside the recipe and nothing to shop for.
+  const state = freshState();
+  state.ingredients.push({ id: "ing_labour", name: "Labour", unit: "hr", uomId: "u_g",
+    costPerUnit: 8, notPurchased: true });
+  state.products[0].recipe.push({ ingredientId: "ing_labour", qty: 0.25, unit: "hr" });
+
+  const root = render(state);
+  const table = findClass(root, "po-table");
+  assert.ok(!textOf(table).includes("Labour"), "a not-bought ingredient never reaches the buy table");
+  assert.ok(textOf(table).includes("Strong flour"), "while the one she does buy is untouched");
+  assert.ok(nodeTexts(root).includes("Not on this list: Labour"),
+    "and the list names it rather than looking as if it forgot");
+});

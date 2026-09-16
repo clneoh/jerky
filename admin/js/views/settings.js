@@ -5,7 +5,7 @@ import { LS_KEY, newId, save } from "../state.js";
 import { hashPin, isPin, hasStoredPin } from "../pin.js";
 import { parseImport } from "../validate.js";
 import { generateUpcomingDates, todayISO } from "../dates.js";
-import { syncAvailability, cachedToken, signOut, syncStorefront, maybeSyncStorefront } from "../supabase.js";
+import { syncAvailability, cachedToken, signOut, syncStorefront, maybeSync, maybeSyncStorefront } from "../supabase.js";
 import * as backups from "../backups.js";
 import * as sync from "../sync.js";
 import { refreshShareWarn } from "../sharewarn.js";

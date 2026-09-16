@@ -478,13 +478,24 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
   gap: 10px;
   padding: 6px 0;
 }
+/* One line of an order: the product, how many, its selling price, and remove. It
+   wraps rather than squeezing: an <input> with no width of its own takes most of the
+   row, which left the product dropdown 2px wide and pushed it onto its own line
+   (16 Sep 2026 — you could not read what you had picked). On a phone the
+   product takes the first line and the controls sit under it; on a wide screen it
+   all fits on one. */
 .add-item {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 6px 0;
 }
-.add-item select { flex: 1; min-width: 0; }
+.add-item select { width: 100%; }
+/* Its own line under the product: how many, the selling price (v101), remove — with
+   the price pushed to the right of them and kept small, because it is a figure. */
+.add-item-ctl { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.add-item-ctl .line-price { flex: 0 0 84px; width: 84px; text-align: right; margin-left: auto; }
 
 /* Order-status flow map above the Orders list */
 .status-flow {
@@ -978,7 +989,7 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
 
 /* ---------- Order status / source ---------- */
 /* The order's shareable code (#A3F9C2) shown on every order row, inbox row and
-   the edit pop-up, so the baker can match a WhatsApp message to its order. */
+   the edit pop-up, so you can match a WhatsApp message to its order. */
 .ord-code {
   display: inline-block;
   margin-left: 6px;
@@ -1041,6 +1052,39 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
   border-radius: 999px;
 }
 .paid-tag.tng { color: var(--brown-dark); background: var(--brown-soft); }
+/* The Money screen's two sums worth stopping on: the net (what should be in her
+   hand and on her phone) and the line below it where what is still owed starts. */
+/* The profit statement reads like a set of accounts: figures aligned, a rule under
+   the subtotals, and the bottom line standing out (v105). */
+.info-row.pl-row { margin: 2px 0; }
+.info-row.pl-row .info-val { font-variant-numeric: tabular-nums; }
+.info-row.pl-total { border-top: 1px dashed var(--line); padding-top: 5px; margin-top: 4px; font-weight: 600; }
+.info-row.pl-net { border-top: 2px solid var(--line); padding-top: 6px; margin-top: 4px; }
+.info-row.pl-net .info-val { font-size: 16px; font-weight: 700; }
+/* A label-and-figure row: the words on the left, the money on the right, with a gap
+   that never closes. The admin's own screens use these (the Money screen and its
+   journals, the Profit statement, the lists); the store page has its own stylesheet.
+   Without this the two spans ran together as plain text — "Cash inRM 30.00". */
+.info-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 4px 0; font-size: 14px; }
+.info-row > span:first-child { min-width: 0; }
+/* A ✕ sitting inside one of these rows stays a small chip, not a full-size button. */
+.info-row .btn.small { padding: 2px 8px; min-height: 0; line-height: 1.3; }
+.info-val { font-variant-numeric: tabular-nums; }
+/* A journal line: the words take the room they need, the figure never shrinks. */
+.journal-line .j-what { flex: 1 1 auto; min-width: 0; }
+.journal-line .info-val { flex: 0 0 auto; white-space: nowrap; padding-left: 10px; }
+/* A settings row that opens an editor when tapped (the two money lists, v108). */
+.info-row.tappable { cursor: pointer; border-radius: 8px; }
+.info-row.tappable:active { background: var(--gray-bg); }
+
+/* The Books list: the line she tapped stays marked, and its book opens UNDER it behind a
+   rule, so it is obvious which line the rows belong to (the app has one shared pop-up
+   layer, so a book cannot be a window of its own from in here). */
+.info-row.book-open { background: var(--gray-bg); }
+.book-page { border-left: 2px solid var(--line); padding: 6px 0 10px 12px; margin: 2px 0 6px; }
+.info-row.net-row { border-top: 1px dashed var(--line); padding-top: 6px; margin-top: 2px; }
+.info-row.net-row .info-val { font-size: 16px; }
+.info-row.recv-row { border-top: 1px dashed var(--line); padding-top: 6px; margin-top: 6px; }
 .fulfill-sub {
   display: block;
   margin-top: 2px;
@@ -1616,6 +1660,16 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
    Longer marks are laid first so shorter ones paint on top of them. */
 .cal-modes { display: flex; gap: 8px; margin: 0 0 12px; }
 .cal-modes .btn { flex: 1; font-size: 13px; padding: 9px 0; }
+
+/* A row of pills whose LENGTH SHE CONTROLS — the categories, the ways to pay, the
+   pockets. `.cal-modes` above is for a fixed two or three buttons sharing the width;
+   these grow with her list, so they must WRAP. Without this, eleven categories sat on
+   one line 744px wide inside a 343px box and everything past "Utilities" — including
+   the ＋ New category chip — was off-screen and unreachable (17 Sep 2026: "category
+   complete list are not fully shown"). Pills take their own width and flow onto the
+   next line. */
+.pill-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+.pill-row .btn { flex: 0 0 auto; font-size: 13px; padding: 8px 13px; min-height: 36px; }
 .btn.cal-mode-on { background: var(--brown); border-color: var(--brown); color: #fff; box-shadow: none; }
 
 /* The eight mark colours. --occ-solid is a mark's own colour, used solid for its
