@@ -74,17 +74,19 @@
       </div>
     </div>
 
-    <h2 class="section" data-i18n="sTrack">Track your order</h2>
-    <div class="card">
-      <p class="card-sub" style="margin:0 0 10px" data-i18n-html="trackHint">
-        Placed an order? Enter the order number from your confirmation (it starts with <strong>#</strong>, e.g. #A3F9C2).
-      </p>
-      <div class="track-row">
-        <input id="track-input" class="input" type="text" data-i18n-ph="trackPh" placeholder="e.g. A3F9C2" autocomplete="off">
-        <button id="track-btn" class="track-btn" data-i18n="trackBtn">Track</button>
+    <section id="track-section">
+      <h2 class="section" data-i18n="sTrack">Track your order</h2>
+      <div class="card">
+        <p class="card-sub" style="margin:0 0 10px" data-i18n-html="trackHint">
+          Placed an order? Enter the order number from your confirmation (it starts with <strong>#</strong>, e.g. #A3F9C2).
+        </p>
+        <div class="track-row">
+          <input id="track-input" class="input" type="text" data-i18n-ph="trackPh" placeholder="e.g. A3F9C2" autocomplete="off">
+          <button id="track-btn" class="track-btn" data-i18n="trackBtn">Track</button>
+        </div>
+        <div id="track-result" class="track-result" hidden></div>
       </div>
-      <div id="track-result" class="track-result" hidden></div>
-    </div>
+    </section>
 
     <section id="policy-box" hidden>
       <h2 class="section" data-i18n="sPolicies">Policies</h2>

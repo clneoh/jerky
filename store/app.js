@@ -965,6 +965,11 @@ export function render() {
       const daysChanged = next.length !== dates.length
         || next.some((d, i) => dateKey(d) !== dateKey(dates[i]));
       if (changed || daysChanged) rerender();
+      // The card was aimed at before this data arrived, and the page is taller
+      // now — aim once more with the layout final. Only for a page opened by the
+      // track link, and only this first pass: the 30s poll must never pull a
+      // customer back to the card.
+      if (trackAimPending && trackLit) { trackAimPending = false; aimAtTrack(); }
     };
     refresh();
 
@@ -1336,6 +1341,46 @@ function wireFulfillment() {
   apply("courier"); // reflect the static HTML's default active button
 }
 
+// What ends the track card's glow: the customer getting to it. The same rule the
+// backoffice uses when it jumps to an order (admin/js/views/orders.js), so the two
+// sides of one WhatsApp message behave alike.
+const TRACK_SETTLE_ON = ["pointerenter", "pointermove", "pointerdown", "mouseenter", "touchstart"];
+let trackLit = false;         // the deep link's glow is on
+let trackAimPending = false;  // …and the page has still to finish growing beneath it
+
+// Put the track card at the top of the screen. Called once when the page opens on
+// the link, and once more when the shop's own data has landed — the published
+// config and the day's counts arrive a moment later and make the page taller, so
+// the first scroll aims at where the document ends at that instant and stops
+// short (measured at 375px: it landed 113px up the page from the card).
+function aimAtTrack() {
+  const section = document.getElementById("track-section");
+  if (section && typeof section.scrollIntoView === "function") {
+    section.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+}
+
+// The confirmation message carries the link /store/?track=CODE, and until v93 that
+// page simply opened at the top with the card somewhere below the fold: the customer
+// had to hunt for the very thing they had just tapped. Now the card is scrolled to
+// and lit. The glow is ended by the pointer ARRIVING, not by the clock — a fixed
+// moment can pass while the eye is still travelling down the page.
+function revealTrack() {
+  const section = document.getElementById("track-section");
+  if (!section) return;
+  trackLit = true;
+  trackAimPending = true;
+  section.classList.add("hit");
+  const settle = () => {
+    trackLit = false;
+    trackAimPending = false;
+    section.classList.remove("hit");
+    for (const type of TRACK_SETTLE_ON) section.removeEventListener(type, settle);
+  };
+  for (const type of TRACK_SETTLE_ON) section.addEventListener(type, settle);
+  aimAtTrack();
+}
+
 function wireTrack() {
   const input = document.getElementById("track-input");
   const btn = document.getElementById("track-btn");
@@ -1350,6 +1395,7 @@ function wireTrack() {
     if (code) {
       input.value = code.replace(/^#/, "").toUpperCase();
       trackOrder(code);
+      revealTrack(); // the link she tapped IS the card she should land on
     }
   }
 }

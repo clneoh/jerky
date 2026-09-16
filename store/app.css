@@ -644,6 +644,19 @@ html, body {
 .track-code { margin: 0 0 4px; font-weight: 700; }
 .track-result p { margin: 2px 0; }
 .track-note { color: var(--muted); font-size: 13px; }
+/* The customer arrived by tapping "Track your order" in their WhatsApp message:
+   the card is lit so it cannot be missed on a page they may not know, and the
+   glow only goes when their pointer reaches it (revealTrack, store/app.js) — the
+   same rule the backoffice uses when it jumps to an order. Reduced-motion gets the
+   same lit card, held steady. */
+#track-section.hit .card { animation: track-glow 1.4s ease-in-out infinite; }
+@keyframes track-glow {
+  0%, 100% { box-shadow: var(--shadow); }
+  50% { box-shadow: 0 0 0 3px rgba(196, 85, 47, .45), var(--shadow); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #track-section.hit .card { animation: none; box-shadow: 0 0 0 3px rgba(196, 85, 47, .45), var(--shadow); }
+}
 
 /* ---------- Social ---------- */
 .social {

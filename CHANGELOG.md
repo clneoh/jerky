@@ -1,8 +1,29 @@
-# Munchies Furkidz — change history (v54 → v92)
+# Munchies Furkidz — change history (v54 → v93)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**16 Sep 2026 — engine v93 (no database setup needed). The track link now lands
+on the track card, lit.** One change, on the customer's side of the shop.
+
+**Why.** Your WhatsApp confirmation ends with a Track your order link. Tapping it
+opened the order page at the very top, with the tracking card somewhere below the
+fold — the customer had to scroll and hunt for the very thing they had just
+tapped, on a page they had never seen before.
+
+**What it does now.** The page comes up with the Track your order card already in
+view **and gently glowing**, so it cannot be missed. The glow does not fade on a
+timer: it goes when their finger (or mouse) actually reaches the card, so it is
+still burning while they are looking around for it. That is the same rule your own
+app already uses when you tap an order in New Orders and its row flashes — the
+flash stays until you arrive. On a phone with Reduce Motion on, the card is lit
+steadily instead of pulsing.
+
+**Nothing else changed.** Typing a code into the box on the page behaves exactly as
+before (the card is already in front of them, so nothing moves), and a customer who
+simply opens the shop gets no glow at all — the link is the only thing that lights
+it.
 
 **15 Sep 2026 — engine v92 (no database setup needed). The New product card on
 Products folds away.** One change, on one screen.

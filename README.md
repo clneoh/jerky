@@ -419,6 +419,32 @@ The one shared root module is `availability.js` — the pure sell-day rules
   Products starts it folded to **＋ New product**. Same fold-head/fold-body/outside-tap
   wiring as the ＋ New order card.
 
+## The track link lands on the card, lit (v93)
+
+The WhatsApp confirmation carries `/store/?track=CODE`. Until v93 that page opened
+at the top with the track card below the fold, so the customer had to hunt for the
+thing they had just tapped.
+
+- `store/index.html` wraps the heading + card + result in a **`<section
+  id="track-section">`** so it can be aimed at and lit as one unit.
+- `revealTrack()` (`store/app.js`) runs only when the page was opened with a
+  `?track=` code. It adds `.hit` to the section and calls `aimAtTrack()`
+  (`scrollIntoView({ block: "start", behavior: "smooth" })`).
+- The glow ends on **the pointer arriving** — `TRACK_SETTLE_ON` (`pointerenter`,
+  `pointermove`, `pointerdown`, `mouseenter`, `touchstart`), self-removing once it
+  fires. Never a timer: a fixed moment can pass while the eye is still travelling.
+  This is the same rule the backoffice uses when it jumps to an order
+  (`admin/js/views/orders.js`).
+- It aims **twice**: once on open, and once more from the first data refresh
+  (`trackAimPending && trackLit`) — the published config and the day's counts
+  land a moment later and make the page taller, so the first scroll stops short
+  (measured at 375px: 113px up the page from the card). Only this first pass: the
+  30 s poll must never pull a customer back.
+- `store/app.css` carries the `track-glow` keyframes, with a steady lit card under
+  `prefers-reduced-motion`.
+
+A customer who simply opens the shop gets no glow and nothing moves.
+
 ## Order tracking & confirmation (Supabase)
 
 Customers choose **Post (nationwide)** / **Collect (local)** when ordering (a
