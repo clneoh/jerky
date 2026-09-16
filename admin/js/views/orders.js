@@ -1,11 +1,14 @@
 // views/orders.js — per-delivery-date order intake (manual, warn-not-block).
 
 import { addDays, deliveryStatus, fmtPlaced, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
-import { capacityStatus, dayRuleRows, parseDayDelta, productRemaining, saveDayAdjustments } from "../bom.js";
+import { capacityStatus, dayCapacityParts, dayRuleRows, parseDayDelta, productRemaining, saveDayAdjustments } from "../bom.js";
 import { el, button, select, fillMeter, emptyState, confirmDialog, toast, showPopup } from "../ui.js";
 import { dateField } from "../datepicker.js";
 import { DOW, addMonth, monthLabel, monthWeeks, occColour, occForDate } from "../calendar.js";
 import { boxClass, nameDay, occBox, occPapers, tipEl } from "../occgrid.js";
+// A product's sell days — the shared root copy the shop reads, so the day this
+// pop-up counts a product on is exactly the day the shop offers it.
+import { sellOpen } from "../../../availability.js";
 import { byId, fmtRM, groupOrders, moveOrderGroup, newId, orderCode, orderLineName, save, stampOrderLine, updateOrderBadge, waNumber } from "../state.js";
 import { strictestCancelDays } from "../../../store/pool.js";
 import { buildConfirmation } from "../confirm.js";
@@ -815,12 +818,69 @@ export function openDayAdjustPopup(state, date, refresh) {
     const today = todayOf(rule, inp);
     return today === 0 ? "(sold out)" : `Today: ${today}`;
   };
+  // Is this product on sale on this date at all? A product that is not sold that
+  // day can never have an order put on it, so its limit is not the day's capacity
+  // (see effectiveCapacity in bom.js — the same rule, so this sum and the number
+  // the store uses are the one number).
+  const counts = (rule) => sellOpen(byId(state.products, rule.productId), date.date);
+
+  // "How the day adds up", under the rows the owner is editing: which product
+  // contributes what to the day, ending on the same number the order page uses for
+  // it (effectiveCapacity in bom.js — one rule, so the two can never disagree).
+  // She asked for this on 15 Sep 2026: the Orders chip said "1/42" and there was
+  // no way to see where the 42 came from, or why a product she does not sell that
+  // day was in it.
+  const sumEl = el("div", {});
+  const paintSum = () => {
+    // What she has typed, as the limit each product would have today — handed to
+    // the same function the day's capacity itself comes from, so the sum on screen
+    // and the number the order page uses are one computation.
+    const typed = {};
+    for (const { rule, inp } of inputs) typed[rule.productId] = todayOf(rule, inp);
+    const { counted, off, total, fallback } = dayCapacityParts(state, date.date, typed);
+
+    const grid = el("div", { class: "cost-grid" });
+    const row = (op, val, name, isTotal) =>
+      el("div", { class: `cost-row${isTotal ? " cost-total-row" : ""}` },
+        el("div", { class: "cost-op" }, op),
+        el("div", { class: "cost-val" }, String(val)),
+        el("div", { class: "cost-name" }, name));
+    if (fallback) {
+      // Nothing on sale that day has a daily limit: the day uses the Settings
+      // default. Say so rather than show an empty sum, which would read as 0 —
+      // and 0 would mean Sold out.
+      grid.append(row("=", total,
+        "the day's default capacity (Settings) — nothing on sale this day has a daily limit", true));
+    } else {
+      counted.forEach((p, k) => {
+        grid.append(row(k === 0 ? "·" : "+", p.limit, p.name + (p.limit === 0 ? "  (sold out)" : "")));
+      });
+      grid.append(row("=", total, "what the order page can take that day", true));
+    }
+
+    const cap = capacityStatus(state, date.id);
+    // replaceChildren() stringifies a null argument into the text "null" (unlike
+    // el(), which drops it) — so the optional line has to be filtered out, not
+    // passed as null.
+    sumEl.replaceChildren(
+      ...[
+        el("div", { class: "cost-sum" },
+          el("p", { class: "cost-sum-title" }, "How the day adds up:"),
+          grid),
+        off.length ? el("p", { class: "card-sub", style: "margin:8px 0 0" },
+          `Not counted: ${off.map((p) => p.name).join(", ")} — not sold on this day, so no order can go on them here.`) : null,
+        el("p", { class: "card-sub", style: "margin:6px 0 0" },
+          cap.total >= total
+            ? `Booked so far: ${cap.total} — the order page shows this day full.`
+            : `Booked so far: ${cap.total}. The order page can still take ${total - cap.total}.`),
+      ].filter(Boolean));
+  };
 
   showPopup(el("div", { class: "popup-title-row" }, "Availability for this day"), (refreshBody, close) => {
     const rows = el("div", { class: "day-adj-rows" },
       ...inputs.map(({ rule, inp }) => {
         const todayEl = el("span", { class: "day-adj-preview" }, preview(rule, inp));
-        inp.addEventListener("input", () => { todayEl.textContent = preview(rule, inp); });
+        inp.addEventListener("input", () => { todayEl.textContent = preview(rule, inp); paintSum(); });
         return el("div", { class: "day-adjust-row" },
           el("div", { style: "min-width:0" },
             el("p", { style: "margin:0" }, rule.name),
@@ -829,11 +889,13 @@ export function openDayAdjustPopup(state, date, refresh) {
             todayEl,
             inp));
       }));
+    paintSum(); // the sum as the day stands, before she types anything
 
     return el("div", {},
       el("p", { class: "card-sub", style: "margin:0 0 12px" },
         `For ${weekdayName(date.date)}, ${longDate(date.date)} only: how many more (+) or fewer (−) than usual to make. 0 = Sold out that day. Other dates are untouched.`),
       rows,
+      sumEl,
       rules.packs.length ? el("p", { class: "card-sub", style: "margin:10px 0 0" },
         `Value packs — ${rules.packs.join(", ")} — share their base product, so they follow the numbers above.`) : null,
       el("div", { class: "popup-actions" },

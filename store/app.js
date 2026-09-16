@@ -84,7 +84,7 @@ function closedReasonClause(reason) {
 // The card's own sentence: the clause, the advice when the rule has one, then
 // the sentence-ending punctuation that language uses. Only two things reach a
 // card: the advance-notice window, and — on a product the baker keeps listed —
-// a day that is not one of its sell days ("Only sold on Mon."). Every other
+// a day that is not one of its sell days ("Only available on Mon."). Every other
 // closed product is off the menu altogether (see renderMenu).
 function closedReasonText(reason) {
   if (!reason) return "";

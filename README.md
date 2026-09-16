@@ -419,6 +419,57 @@ The one shared root module is `availability.js` — the pure sell-day rules
   Products starts it folded to **＋ New product**. Same fold-head/fold-body/outside-tap
   wiring as the ＋ New order card.
 
+## A day's capacity counts what you sell that day (v94–v96)
+
+- **One sentence, reworded** (v94) — the greyed line on a card the owner keeps
+  listed now reads *"Only available on %1"* where it read "Only sold on %1"
+  (`store-lang.js` `closedWeekday`, en/zh/ms — the Chinese and Malay already said
+  the equivalent). Wording only; no behaviour change.
+- **Capacity counts sellable products only** (v95) — `effectiveCapacity()` is now
+  a thin wrapper over the new **`dayCapacityParts(state, dateStr, overrides)`** in
+  `admin/js/bom.js`, which returns `{ parts, counted, off, total, fallback }`. Only
+  products `sellOpen(p, dateStr)` are summed (`sellOpen` from the shared root
+  `availability.js`, the same copy the shop reads), so a product not sold that day
+  adds nothing. A product with no sell marks answers true and therefore counts as
+  before; a date that is not a real day key also answers true, so no existing
+  caller changes. When nothing limited is on sale the day falls back to
+  `settings.defaultCapacity` — never 0, which would read as Sold out. **Knock-on:**
+  the same total is what the shop is told, so a day reaches FULL once every
+  sellable unit is booked rather than once a padded menu-wide number is.
+- **The pop-up shows its working** (v96) — `openDayAdjustPopup` (`views/orders.js`)
+  gained a `paintSum()` block: it feeds what the owner is typing into
+  `dayCapacityParts` as `overrides` and draws a `.cost-grid` — one `+`/`·` row per
+  counted product, then a `=` total row naming what the order page can take. Below
+  it, a "Not counted: …" line for the `off` products and a "Booked so far" line.
+  Repaints on every `input`. No CSS was needed: the `.cost-*` classes already exist
+  for the product cost recipe.
+
+### A `null` child is not a skipped child
+
+Found while verifying v96 and fixed in the same pass: `replaceChildren()` does not
+behave like `el()` — a `null` argument is **stringified into a literal `"null"`
+text node**, not dropped. So `replaceChildren(a, cond ? b : null, c)` prints the
+word **null** on the page whenever `cond` is false, and the same is true of
+`append()`. Two places were reachable: the v96 day pop-up (printed "null" between
+the total row and the "Booked so far" line whenever every product on sale that day
+was counted — the usual case, because the optional "Not counted" line was absent)
+and `renderSettings` (printed "null" at the bottom of the screen under *Delete all
+data* whenever `sampleCard` is null, i.e. once there is any product or ingredient).
+A third, latent one sits in `admin/js/datepicker.js`: the optional Today button
+(`todayShortcut` is `true` for every current caller, so it is unreachable today).
+Both reachable ones exist identically on the bakery — flag them upstream.
+
+The fixes wrap the optional child: `...[a, cond ? b : null, c].filter(Boolean)` or
+`...(x ? [x] : [])`. Because the engine sync re-copies these files wholesale, those
+edits have to be re-applied on the next copy of `views/orders.js`,
+`views/settings.js` and `datepicker.js`.
+
+`test/no-null-text.test.js` guards the class: it renders the day pop-up (both
+branches) and the Settings screen through a **strict** `replaceChildren` shim and
+fails on any `"null"`/`"undefined"` text node. The other test shims filter null
+children (matching `el()`), which is exactly why the defect survived here — the
+real browser does not.
+
 ## The track link lands on the card, lit (v93)
 
 The WhatsApp confirmation carries `/store/?track=CODE`. Until v93 that page opened

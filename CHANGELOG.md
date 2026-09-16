@@ -1,8 +1,87 @@
-# Munchies Furkidz — change history (v54 → v93)
+# Munchies Furkidz — change history (v54 → v96)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**16 Sep 2026 — a stray "null" removed from two screens (no engine change; the
+phones did not change behaviour otherwise).** Found while checking the new v96
+pop-up, and fixed in the same pass.
+
+**What was wrong.** The word **null** could be printed on the page under the day's
+total, and at the very bottom of Settings under "Delete all data". Nothing was
+broken behind it — no order, price or setting was ever wrong — but a stray line
+reading "null" is alarming to read, so it is gone.
+
+**Why it happened.** The app builds its screens from pieces, and a piece that is
+only sometimes needed was being handed over empty in a way the browser prints as
+the word rather than skipping. The two places that could show it were the day
+pop-up (when every product on sale that day was counted, which is the usual case)
+and the Settings screen (whenever you have any product or ingredient — that is to
+say, always, once you are set up).
+
+**The guard.** A new automatic check builds both screens and fails if the word
+"null" can appear on either, so a future update cannot quietly bring it back.
+
+**16 Sep 2026 — engine v96 (no database setup needed). "Set day's availability"
+now shows how the day adds up.** One change, on the pop-up you already use.
+
+**Why.** v95 made a day's total count only the products you sell that day, but the
+pop-up that sets those numbers still showed nothing about where the total came
+from — and a product you do not sell that day sat in the list looking as if it were
+part of it.
+
+**What it does now.** Under the product rows, the pop-up ends with **How the day
+adds up:** one line per product on sale that day with what it contributes, and a
+final line with the total — **the same number the order page uses for that day**.
+Type a + or a − and the lines and the total move as you type. Underneath, the
+pop-up names what it left out ("Not counted: Duck Jerky — not sold on this day,
+so no order can go on them here") and says what is already booked, so you can read
+how much the order page can still take. A product not sold that day keeps its row
+so you can still set its numbers; it simply does not enter the total.
+
+**One number, one place.** That sum and the day's capacity are worked out by the
+same code the shop's own numbers come from, so what you read on screen and what
+your customers get cannot drift apart.
+
+**16 Sep 2026 — engine v95 (no database setup needed). A day's total now counts
+only the products you actually sell that day.** One change, on your side of the
+app, with one knock-on for customers.
+
+**What it was doing.** The "x/y" on a day — the chip beside the date on Orders, the
+same number on the day in the month calendar, and the dials on Home — was adding up
+the daily limit of every product on your menu, whether or not that product can be
+ordered on the day you were looking at. So a day with one product on it (a limit of
+12, say) still read **1/42**: thirty of those units were limits belonging to
+products that could never take an order that day.
+
+**What it does now.** Only the products on sale that day count. A Saturday-only item
+adds nothing to a Wednesday, and a product kept on the shop as **Unavailable** adds
+nothing to a day it is not sold on. The same day now reads **1/12** — what that day
+can really take. Products with no sell marks are unchanged (they sell every day, so
+they always count), and a day where nothing on sale has a daily limit falls back to
+the **default capacity** in Settings, exactly as before — it does not drop to 0,
+which would make the app call the day Sold out.
+
+**The knock-on worth knowing.** This same number is what the app tells the order
+page about a day, so a day now turns FULL at the moment every unit you are actually
+selling that day is booked, rather than at some larger number padded out by products
+that were never on sale. Past every real slot being taken, the order page stops
+offering that day — which was always the intent, and now happens at the right moment
+rather than late.
+
+**Nothing else moved.** Your over-capacity warning, the "N ordered · N left" line on
+a delivery date, the shopping list and each product's own "N left" stamp all read the
+same number they always did for products that are on sale.
+
+**16 Sep 2026 — engine v94 (no database setup needed). One sentence on the
+customer's greyed card, reworded.** Wording only — nothing behaves differently.
+
+On a product you keep on the shop, the line saying why it cannot be ordered today
+now reads **Only available on Mon.** where it read "Only sold on Mon." The old
+wording was the seller's voice on a customer's card, and "available" is what the
+rest of that same card already says ("Only available for posting from 19 Sep"). The
+Chinese and Bahasa Malaysia say the same thing as before, in their own words.
 
 **16 Sep 2026 — engine v93 (no database setup needed). The track link now lands
 on the track card, lit.** One change, on the customer's side of the shop.

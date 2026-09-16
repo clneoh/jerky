@@ -429,6 +429,34 @@ test("effectiveCapacity sums adjusted limits, isolates per date, falls back when
   assert.equal(effectiveCapacity(st2, "2026-09-07"), 12, "defaultCapacity when nothing is limited");
 });
 
+// v95: the day's total counts only what is ON SALE that day. It used to sum the
+// whole menu, so a day with one product on it read "1/42" — the limits of products
+// that could never take an order that day, padding the total.
+test("only the products on sale that day count toward its capacity", () => {
+  const st = fixtureState();
+  st.products.find((p) => p.id === "prd_f").sellRules = [{ days: [6] }]; // Saturdays only
+  st.products.find((p) => p.id === "prd_s").limit = 8;                   // and a second limited product
+
+  assert.equal(effectiveCapacity(st, "2026-09-05"), 20, "Saturday: both are on sale → 12 + 8");
+  assert.equal(effectiveCapacity(st, "2026-09-07"), 8, "Monday: only the Sandwich is on sale");
+
+  // Kept on the shop as Unavailable (v90) is still not on sale — the card is
+  // there to be looked at, and no order for it can be put on this day.
+  st.products.find((p) => p.id === "prd_f").alwaysListed = true;
+  assert.equal(effectiveCapacity(st, "2026-09-07"), 8, "kept listed is not the same as on sale");
+
+  // A product with no marks at all sells every day, exactly as before.
+  delete st.products.find((p) => p.id === "prd_f").sellRules;
+  assert.equal(effectiveCapacity(st, "2026-09-07"), 20, "no marks = every day = always capacity");
+});
+
+test("a day with nothing on sale keeps the day-capacity fallback rather than reading Sold out", () => {
+  const st = fixtureState();
+  st.products.find((p) => p.id === "prd_f").sellRules = [{ days: [6] }]; // the only limited product
+  assert.equal(effectiveCapacity(st, "2026-09-07"), 12,
+    "no limited product on sale that day → the day's own capacity, not 0 (0 would close the day)");
+});
+
 test("dayRuleRows lists active limited products (menu order) and finds poolable packs", () => {
   const st = fixtureState();
   st.deliveryDates[0].dayAdj = { prd_f: 3 };

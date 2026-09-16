@@ -542,7 +542,10 @@ export function renderSettings(root, state) {
           button("Load sample data", () => loadSample(state), "soft")))
     : null;
 
-  root.replaceChildren(daysCard, lockCard, storefrontCard, postageCard, devCard, referralsCard, mailingCard, supabaseCard, sharedCard, backupCard, dangerCard, sampleCard);
+  // sampleCard is null once there is any product or ingredient — and
+  // replaceChildren() would turn that null into a stray "null" text node at the
+  // bottom of the screen, so it is spread from an array instead.
+  root.replaceChildren(daysCard, lockCard, storefrontCard, postageCard, devCard, referralsCard, mailingCard, supabaseCard, sharedCard, backupCard, dangerCard, ...(sampleCard ? [sampleCard] : []));
 
   function doImport(e) {
     const file = e.target.files && e.target.files[0];

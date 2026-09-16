@@ -60,7 +60,7 @@ const en = {
   // The owner's marked sell days, when the chosen posting day is not one of
   // them. %1 is a weekday list the page joins in this language ("Mon, Wed and
   // Fri"), so the names are built by the page, not here.
-  closedWeekday: "Only sold on %1",
+  closedWeekday: "Only available on %1",
   closedUnmarked: "Not sold on this day",
   // A product you keep on the shop when it cannot be ordered (the switch in its
   // Availability card): the stamp it wears on a day that is not one of its sell
@@ -171,7 +171,7 @@ const zh = {
   closedTo: "只接受 %1 或之前的发货日订单",
   closedClose: "需在发货日前 %1 天下单",
   closedCloseAdvice: " — 请另选较后的日期",
-  closedWeekday: "只限 %1 出售",
+  closedWeekday: "只限 %1 供应",
   closedUnmarked: "这一天没有出售",
   unavailable: "暂无供应",
   nextAvailable: "下次可预订：%1",
@@ -271,7 +271,7 @@ const ms = {
   closedTo: "Hanya tersedia untuk pos sehingga %1",
   closedClose: "Tempahan ditutup %1 hari sebelum hari pos",
   closedCloseAdvice: " — sila pilih tarikh yang lebih lewat",
-  closedWeekday: "Hanya dijual pada %1",
+  closedWeekday: "Hanya tersedia pada %1",
   closedUnmarked: "Tidak dijual pada hari ini",
   unavailable: "Tidak tersedia",
   nextAvailable: "Seterusnya tersedia: %1",

@@ -136,7 +136,7 @@ test("an item already in the basket leaves it when the day changes, and says why
   assert.equal(menuNote().hidden, false, "the shop tells the customer rather than silently dropping it");
   const said = walk(menuNote()).map((n) => n.children[0].text).join("");
   assert.match(said, /Focaccia/);
-  assert.match(said, /Only sold on Mon/, "and says which day it is sold on");
+  assert.match(said, /Only available on Mon/, "and says which day it is sold on");
 });
 
 // ── the "keep it on the shop" switch (v90) ───────────────────────────────────
@@ -157,7 +157,7 @@ test("a product she keeps listed stays on a day it isn't sold, stamped Unavailab
 
   const notes = cardNotes("Focaccia");
   assert.equal(notes.length, 2, "the reason, then the date to come back for");
-  assert.match(notes[0], /Only sold on Mon/, "the sentence the marking card has always carried");
+  assert.match(notes[0], /Only available on Mon/, "the sentence the marking card carries");
   assert.equal(notes[1], "Next available: Mon, 7 Sep",
     "nothing is published for these dates, so the date comes with no count");
 });
