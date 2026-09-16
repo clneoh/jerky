@@ -498,8 +498,8 @@ test("a Paid order lights up Paid on the journey, between Confirmed and Preparin
         walk(c);
       }
     })(journey);
-    assert.deepEqual(labels, ["New", "Confirmed", "Paid", "Preparing", "Packed", "Delivered"],
-      "journey reads New → Confirmed → Paid → Preparing → Packed → Delivered");
+    assert.deepEqual(labels, ["New", "Confirmed", "Paid", "Preparing", "Packed", "Collected / Posted"],
+      "journey reads New → Confirmed → Paid → Preparing → Packed → Collected / Posted");
     assert.equal(steps.length, 6, "all six stages present");
     assert.equal(steps.filter((s) => String(s.className || "").includes("done")).length, 2,
       "New and Confirmed are done before Paid");
@@ -512,7 +512,7 @@ test("a Paid order lights up Paid on the journey, between Confirmed and Preparin
   }
 });
 
-test("a Packed order (status ready) shows the preparation steps done with only Delivered pulsing", async () => {
+test("a Packed order (status ready) shows the preparation steps done with only the last step pulsing", async () => {
   const box = document.getElementById("track-result");
   globalThis.fetch = async () => ({ ok: true, json: async () => [{
     status: "Ready", delivery: "4 Sep · Post (nationwide)", items: "Chicken Jerky ×1", total: "RM15.00", customer: "Ain",
@@ -532,8 +532,8 @@ test("a Packed order (status ready) shows the preparation steps done with only D
         walk(c);
       }
     })(journey);
-    assert.deepEqual(labels, ["New", "Confirmed", "Paid", "Preparing", "Packed", "Delivered"],
-      "journey reads New → Confirmed → Paid → Preparing → Packed → Delivered");
+    assert.deepEqual(labels, ["New", "Confirmed", "Paid", "Preparing", "Packed", "Collected / Posted"],
+      "journey reads New → Confirmed → Paid → Preparing → Packed → Collected / Posted");
     assert.equal(steps.length, 6, "all six stages present");
     assert.equal(steps.filter((s) => String(s.className || "").includes("done")).length, 5,
       "everything before the delivery is green once the order is Packed");
@@ -541,14 +541,14 @@ test("a Packed order (status ready) shows the preparation steps done with only D
       "no stage stays grey — the delivery is the only one left");
     const now = steps.find((s) => String(s.className || "").includes("now"));
     const nowLabel = (now.children || []).find((c) => String(c.className || "").includes("tj-label"));
-    assert.ok(nowLabel && String(nowLabel.children[0].text || "").includes("Delivered"),
-      "Delivered is the flashing (current) stage while the order is Packed");
+    assert.ok(nowLabel && String(nowLabel.children[0].text || "").includes("Collected / Posted"),
+      "the last stage is the flashing (current) one while the order is Packed");
   } finally {
     globalThis.fetch = async () => ({ ok: true, json: async () => [] });
   }
 });
 
-test("a Delivered order shows the whole journey green — nothing flashes", async () => {
+test("an order at the last stage shows the whole journey green — nothing flashes", async () => {
   const box = document.getElementById("track-result");
   globalThis.fetch = async () => ({ ok: true, json: async () => [{
     status: "Delivered", delivery: "4 Sep · Post (nationwide)", items: "Chicken Jerky ×1", total: "RM15.00", customer: "Ain",
@@ -566,7 +566,7 @@ test("a Delivered order shows the whole journey green — nothing flashes", asyn
     })(journey);
     assert.equal(steps.length, 6, "all six stages present");
     assert.equal(steps.filter((s) => String(s.className || "").includes("done")).length, 6,
-      "every stage is green on a delivered order");
+      "every stage is green on a finished order");
     assert.equal(steps.filter((s) => String(s.className || "").includes("now")).length, 0,
       "nothing flashes once the order is delivered");
     assert.equal(steps.filter((s) => String(s.className || "").includes("todo")).length, 0,
@@ -636,5 +636,59 @@ test("WhatsApp only opens as a fallback when the order could NOT reach the app",
   } finally {
     globalThis.fetch = realFetch;
     window.open = realOpen;
+  }
+});
+
+// ── v97: how the order left, on the customer's own card ──────────────────────
+const cardLabels = (box) => {
+  const out = [];
+  (function walk(n) {
+    for (const c of n.children || []) {
+      if (String(c.className || "").split(/\s+/).includes("tj-label")) out.push(c.children[0].text);
+      walk(c);
+    }
+  })(box);
+  return out;
+};
+const byExactClass = (box, name) =>
+  box.children.find((c) => String(c.className || "").split(/\s+/).includes(name));
+
+test("a posted order shows the courier's tracking number", async () => {
+  const box = document.getElementById("track-result");
+  let asked = "";
+  globalThis.fetch = async (url) => {
+    asked = String(url);
+    return { ok: true, json: async () => [{
+      status: "delivered", delivery: "9 Sep · Post (nationwide) · 12 Jalan Bunga", items: "Chicken Jerky ×1",
+      total: "RM15.00", customer: "Ain", tracking_no: "JT123456789",
+    }] };
+  };
+  try {
+    await trackOrder("A3F9C2");
+    // PostgREST returns only the columns named in `select`, so a lookup that
+    // forgets tracking_no would draw nothing however good the rest is.
+    assert.ok(asked.includes("tracking_no"), "the lookup actually asks for the tracking number");
+    const no = byExactClass(box, "track-no");
+    assert.ok(no, "the card carries the tracking number on its own line");
+    assert.equal(no.children[0].text, "Tracking number: JT123456789");
+    assert.equal(cardLabels(box)[5], "Collected / Posted", "the last step wears the pair");
+  } finally {
+    globalThis.fetch = async () => ({ ok: true, json: async () => [] });
+  }
+});
+
+test("a self-collect order shows no tracking line", async () => {
+  const box = document.getElementById("track-result");
+  globalThis.fetch = async () => ({ ok: true, json: async () => [{
+    status: "delivered", delivery: "9 Sep · Collect (local)", items: "Chicken Jerky ×1",
+    total: "RM15.00", customer: "Ain",
+  }] });
+  try {
+    await trackOrder("A3F9C2");
+    assert.equal(byExactClass(box, "track-no"), undefined,
+      "nothing was posted, so there is no number to show");
+    assert.equal(cardLabels(box)[5], "Collected / Posted", "the label is the same pair");
+  } finally {
+    globalThis.fetch = async () => ({ ok: true, json: async () => [] });
   }
 });

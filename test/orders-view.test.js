@@ -159,3 +159,53 @@ test("a rebuild around an open card leaves it open, and a fresh visit folds it",
   renderOrders(root, STATE, PARAMS());
   assert.equal(isHidden(byClass(root, "fold-body")), true);
 });
+
+// ── v97/v98: the last stage, and the courier's tracking number ───────────────
+test("the last stage wears one label — Collected / Posted — on every order", () => {
+  const order = (extra) => ({
+    id: "o1", deliveryDateId: "d7", productId: "p1", qty: 1, customerName: "Ain",
+    whatsapp: "60123456789", status: "ready", ...extra,
+  });
+  const labelsFor = (extra) => {
+    const root = createEl("div");
+    renderOrders(root, { ...STATE, orders: [order(extra)] }, PARAMS());
+    return all(root).filter((n) => String(n.className) === "oj-label").map((n) => n.children[0].text);
+  };
+
+  // v97 named this stage per order (Collected here, Shipped there). She asked for
+  // the pair itself instead, so both endings read the same label (v98).
+  assert.equal(labelsFor({ fulfillment: "courier" })[5], "Collected / Posted",
+    "a posted order");
+  assert.equal(labelsFor({ fulfillment: "collect" })[5], "Collected / Posted",
+    "one the customer fetches");
+
+  // The dropdown and the filter offer the same word, so nothing says Delivered.
+  const root = createEl("div");
+  renderOrders(root, { ...STATE, orders: [order({ fulfillment: "courier" })] }, PARAMS());
+  const opts = all(root).filter((n) => n.tagName === "OPTION").map((n) => n.children[0].text);
+  assert.ok(opts.includes("Collected / Posted"), "the status list offers the pair");
+  assert.ok(!opts.includes("Delivered"), "and nothing still offers Delivered");
+  assert.ok(!opts.includes("Shipped"), "nor a bare Shipped on its own");
+});
+
+test("every order offers Note / tracking beside Edit, and the message for how it leaves", () => {
+  const root = createEl("div");
+  renderOrders(root, { ...STATE, orders: [{
+    id: "o1", deliveryDateId: "d7", productId: "p1", qty: 1, customerName: "Ain",
+    whatsapp: "60123456789", status: "ready", fulfillment: "courier", trackingNo: "JT123",
+  }] }, PARAMS());
+  const labels = all(root).filter((n) => n.tagName === "BUTTON").map((n) => n.textContent);
+  assert.ok(labels.includes("Note / tracking"),
+    "the two fields she reaches for most have their own way in, without the whole Edit form");
+  assert.ok(labels.includes("Edit"), "Edit stays for everything else");
+  assert.ok(labels.includes("Send posted message"), "and the message that carries the number");
+
+  const collect = createEl("div");
+  renderOrders(collect, { ...STATE, orders: [{
+    id: "o1", deliveryDateId: "d7", productId: "p1", qty: 1, customerName: "Ain",
+    whatsapp: "60123456789", status: "ready", fulfillment: "collect",
+  }] }, PARAMS());
+  const collectLabels = all(collect).filter((n) => n.tagName === "BUTTON").map((n) => n.textContent);
+  assert.ok(collectLabels.includes("Note / tracking"), "the same button on a self-collect order");
+  assert.ok(collectLabels.includes("Send pickup reminder"), "which keeps the pickup reminder instead");
+});

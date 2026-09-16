@@ -12,7 +12,7 @@ import { sellOpen } from "../../../availability.js";
 import { byId, fmtRM, groupOrders, moveOrderGroup, newId, orderCode, orderLineName, save, stampOrderLine, updateOrderBadge, waNumber } from "../state.js";
 import { strictestCancelDays } from "../../../store/pool.js";
 import { buildConfirmation } from "../confirm.js";
-import { buildPaymentReminder, buildPickupReminder } from "../messages.js";
+import { buildPaymentReminder, buildPickupReminder, buildShippedMessage } from "../messages.js";
 import { maybeSync, publishTracking } from "../supabase.js";
 import { schemeOf, referralFlag, giveCredits, validCredits, markOneUsed, referrerName } from "../referrals.js";
 import { adjustForStatus } from "../stock.js";
@@ -45,12 +45,15 @@ const STATUSES = [
   ["paid", "Paid"],           // TNG payment received, right after Confirmed
   ["baking", "Preparing"],    // internal id unchanged — no schema migration
   ["ready", "Packed"],
-  ["delivered", "Delivered"],
+  // The last stage is one label covering both endings. v97 named it per order
+  // (Collected here, Shipped there); she asked for the pair itself instead, so the
+  // stage reads the same on every row and in every list (16 Sep 2026).
+  ["delivered", "Collected / Posted"],
 ];
 
 // A small route map shown when a delivery date has no orders yet, so the screen
 // still explains the journey: New → Confirmed → Paid → Preparing → Packed →
-// Delivered. Real rows carry their own mini journey below them instead.
+// Collected / Posted. Real rows carry their own mini journey below them instead.
 function statusFlowEl() {
   const kids = [];
   STATUSES.forEach(([, label], i) => {
@@ -81,7 +84,7 @@ export function journeyMarks(order) {
     else if (i === at) done = i === 0 ? true          // New: done on arrival
       : i === 1 ? confirmedDone                       // Confirmed: after Send confirmation
       : i === 2 ? paidDone                            // Paid: after the Paid button
-      : true;                                         // Preparing/Packed/Delivered: on selection
+      : true;                                         // Preparing/Packed/Collected-Posted: on selection
     else done = false;
     if (!done) break;
     end = i + 1;
@@ -94,7 +97,7 @@ export function journeyMarks(order) {
 // pulsing amber dot, later steps stay grey. The baker sees at a glance, under
 // each row, where every order is on the route — and watches the dot move as the
 // status changes and the Send confirmation / Paid / pickup-reminder actions are
-// done. A Delivered order shows the whole line green, matching what the
+// done. An order at the last stage shows the whole line green, matching what the
 // customer sees.
 function orderJourneyEl(order) {
   const root = el("div", { class: "oj", "aria-label": "Order status journey" });
@@ -1161,6 +1164,7 @@ function openEditPopup(state, group, dateId, root) {
     fulfillment: first.fulfillment || "collect",
     address: first.address || "",
     note: first.note || "",
+    trackingNo: first.trackingNo || "",
     orderDate: first.orderDate || String(first.createdAt || "").slice(0, 10) || todayISO(),
     deliveryDateId: (date && date.id) || "",
   };
@@ -1186,6 +1190,10 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     value: draft.address, oninput: function () { draft.address = this.value; } });
   const note = el("input", { class: "input", placeholder: "Note (optional)",
     value: draft.note, oninput: function () { draft.note = this.value; } });
+  // The courier's tracking number, editable here as well as on the row: a number
+  // read back over the phone, or one typed wrong, gets fixed in the pop-up.
+  const tracking = el("input", { class: "input", placeholder: "e.g. JT123456789",
+    value: draft.trackingNo, oninput: function () { draft.trackingNo = this.value; } });
   const orderDate = dateField(draft.orderDate, (iso) => { draft.orderDate = iso; },
     { occasions: state.occasions });
   // Picking a day writes the draft and repaints the pop-up, so the soft notes
@@ -1231,6 +1239,7 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       fulfillment: fulfillmentSel.value,
       address: address.value.trim(),
       note: note.value.trim(),
+      trackingNo: tracking.value.trim(),
       orderDate: draft.orderDate,
       deliveryDateId: destId,
     }, close, root);
@@ -1249,6 +1258,9 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       el("div", {}, el("label", {}, "Fulfillment"), fulfillmentSel),
       el("div", {}, el("label", {}, "Delivery address (if courier)"), address)),
     el("div", { class: "field" }, note),
+    el("div", { class: "field" },
+      el("label", {}, "Courier tracking number (optional)"),
+      tracking),
     el("div", { class: "field", style: "margin-top:10px" },
       el("label", {}, "Items"),
       rowsEl,
@@ -1266,6 +1278,9 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
 // pushing the day over capacity.
 function applyPopupEdits(state, date, group, first, chosen, shared, close, root) {
   const dest = byId(state.deliveryDates, shared.deliveryDateId) || date;
+  // Read before the write-back below: a new tracking number has to reach the
+  // customer's card, and an edit that did not touch it should not republish.
+  const trackingBefore = String(first.trackingNo || "");
   if (!dest) return toast("Choose a delivery day");
   // The capacity guard follows the order to its destination. Capacity is derived
   // from deliveryDateId, so the source day frees itself with no bookkeeping, and
@@ -1311,6 +1326,7 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
           fulfillment: shared.fulfillment,
           address: shared.address,
           note: shared.note,
+          trackingNo: shared.trackingNo,
           status: first.status || "new",
           groupId: gid,
           createdAt: new Date().toISOString(),
@@ -1327,7 +1343,9 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
     updateOrderBadge(state);
     // The track card bakes the delivery-date string, so a move must republish
     // it. An in-place edit leaves it as it was.
-    if (!sameDay) publishTracking(state, group);
+    if (!sameDay || trackingBefore !== String(shared.trackingNo || "")) {
+      publishTracking(state, group);
+    }
     toast(sameDay ? "Order updated" : "Order moved");
     close();
     renderAll(root, state, new URLSearchParams({ date: dest.id }));
@@ -1477,6 +1495,59 @@ function orderList(state, dateId, root) {
   return listEl;
 }
 
+// The two things she most often needs to change once an order is placed: its note,
+// and the courier's tracking number (16 Sep 2026). They get their own small pop-up
+// behind their own button, so a one-line change never means scrolling the whole
+// Edit form — and Edit keeps the rest (the delivery day, the customer, the
+// address, the items). v97 had the tracking box sitting on the row itself; she
+// asked for one simplified entry field with a button to reach it instead, which is
+// also the only version that works for an order that is not a courier's.
+function openNoteTrackingPopup(state, group, first, dateId, root) {
+  const note = el("input", { class: "input", placeholder: "Note (optional)",
+    value: first.note || "" });
+  const tracking = el("input", { class: "input", placeholder: "e.g. JT123456789",
+    autocomplete: "off", value: first.trackingNo || "" });
+  showPopup(el("div", { class: "popup-title-row" }, "Note / tracking number", orderCodeTag(first)),
+    (refresh, close) => el("div", {},
+      el("div", { class: "field" }, el("label", {}, "Note (optional)"), note),
+      el("div", { class: "field" },
+        el("label", {}, "Courier tracking number (optional)"), tracking),
+      el("p", { class: "card-sub", style: "margin:0 0 10px" },
+        "This goes on the order and, for the tracking number, onto the customer's track card and into the posted message. Anything else - the delivery day, the customer, the address, the items - is under Edit."),
+      el("div", { class: "popup-actions" },
+        button("Cancel", close, "ghost"),
+        button("Save", () => {
+          // The whole order shares these, exactly as the Edit pop-up writes them.
+          const before = String(first.trackingNo || "").trim();
+          const number = tracking.value.trim();
+          for (const o of group.orders) {
+            o.note = note.value.trim();
+            o.trackingNo = number;
+          }
+          save(state);
+          maybeSync(state);
+          if (before !== number) publishTracking(state, group); // the card carries it
+          toast("Order updated");
+          close();
+          renderAll(root, state, new URLSearchParams({ date: dateId }));
+        }, "primary"))));
+}
+
+// "Send posted message" — a post order that has gone out, carrying the tracking
+// number she typed. Offered at Packed and again at Collected / Posted, since
+// either order of doing things is natural. Disabled without a WhatsApp number,
+// like every other message button on a row.
+function shippedMsgButton(state, group, first, root, dateId) {
+  const btn = button("Send posted message", () =>
+    sendOrderWhatsApp(state, group, {
+      builder: buildShippedMessage,
+      doneMsg: "Posted message drafted — press Send in WhatsApp",
+      root, dateId,
+    }), "soft small");
+  if (!first.whatsapp) btn.disabled = true;
+  return btn;
+}
+
 // One row per order (or per storefront order group). A group shows its items
 // joined ("Focaccia + Sandwich"), its total quantity, its order code, and a
 // single status select that advances the whole customer order. Edit opens a
@@ -1484,8 +1555,11 @@ function orderList(state, dateId, root) {
 // journey map shows which step is done (green ✓) and which step is waiting on
 // the baker (pulsing amber), and the buttons under the status match the stage:
 // Confirmed offers "Send confirmation", Paid offers "Send payment reminder" +
-// "Paid", Baked offers "Print label" (to kit the order as it is packed),
-// Packed offers "Send pickup reminder".
+// "Paid", Preparing offers "Print label" (to kit the order as it is packed), and
+// Packed offers the message for how the order leaves: a post order gets "Send
+// posted message" (with its tracking number), a collect one "Send pickup
+// reminder". The last stage's NAME is the pair Collected / Posted for both — only
+// which message it offers depends on the method.
 
 // Courier orders also get a "Mailing" pill (first): FROM = the bakery address
 // typed in Settings → Mailing labels, TO = the customer, ORDER = code/date/items.
@@ -1597,12 +1671,19 @@ function orderGroupRow(state, group, root, dateId) {
   stSel.className = "sel-small";
 
   const status = first.status || "new";
+  const courier = first.fulfillment === "courier";
   const actions = [];
   // Edit is available on every order — single items and multi-item groups alike —
   // and opens a pop-up over the screen (the New-order card stays put).
   actions.push(button("Edit", () => {
     anchorRowId = first.id; // keep the row where the baker tapped it
     openEditPopup(state, group, dateId, root);
+  }, "ghost small"));
+  // The quick way in for the two fields she reaches for most: one tap here instead
+  // of opening the whole Edit form.
+  actions.push(button("Note / tracking", () => {
+    anchorRowId = first.id;
+    openNoteTrackingPopup(state, group, first, dateId, root);
   }, "ghost small"));
 
   // The stage's WhatsApp action(s). Each message carries the order code, and the
@@ -1624,20 +1705,30 @@ function orderGroupRow(state, group, root, dateId) {
     // (stick it on the pouch/box as the items go in), before it is marked Packed.
     actions.push(button("Print label", () => openLabelPrint(state, group), "ghost small"));
   } else if (status === "ready") {
-    const readyBtn = button(first.fulfillment === "courier" ? "Send posting reminder" : "Send pickup reminder", () =>
-      sendOrderWhatsApp(state, group, { builder: buildPickupReminder, doneMsg: "Reminder drafted — press Send in WhatsApp", root, dateId }),
-      "soft small");
-    if (!first.whatsapp) readyBtn.disabled = true;
-    actions.push(readyBtn);
+    // How this order leaves decides what she tells the customer: a parcel goes on
+    // its way (with its tracking number), a collect order is ready to fetch.
+    if (courier) {
+      actions.push(shippedMsgButton(state, group, first, root, dateId));
+    } else {
+      const pickupBtn = button("Send pickup reminder", () =>
+        sendOrderWhatsApp(state, group, { builder: buildPickupReminder, doneMsg: "Pickup reminder drafted — press Send in WhatsApp", root, dateId }),
+        "soft small");
+      if (!first.whatsapp) pickupBtn.disabled = true;
+      actions.push(pickupBtn);
+    }
+  } else if (status === "delivered" && courier) {
+    // Already marked Posted: the message is still offered, because she may have
+    // moved the status first and typed the tracking number afterwards.
+    actions.push(shippedMsgButton(state, group, first, root, dateId));
   }
   actions.push(button("✕", () => removeOrder(state, group, root, dateId), "ghost small"));
 
-  const courier = first.fulfillment === "courier";
   const placedLine = el("div", { class: "li-sub" },
     `Placed ${fmtPlaced(first.createdAt, first.orderDate)}`,
     el("span", { class: `fulfill-tag${courier ? " courier" : ""}` }, courier ? "Post (nationwide)" : "Collect (local)"),
     courier && String(first.address || "").trim() ? el("span", { class: "fulfill-sub" }, String(first.address).trim()) : null);
-  const noWaHint = !first.whatsapp && ["confirmed", "paid", "ready"].includes(status)
+  const noWaHint = !first.whatsapp
+    && (["confirmed", "paid", "ready"].includes(status) || (status === "delivered" && courier))
     ? el("div", { class: "li-sub muted" }, "Add the customer's WhatsApp (tap Edit) to send this order's messages.")
     : null;
 

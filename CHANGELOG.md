@@ -1,8 +1,62 @@
-# Munchies Furkidz — change history (v54 → v96)
+# Munchies Furkidz — change history (v54 → v98)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**16 Sep 2026 — engine v98 (no database setup needed). The last status reads
+Collected / Posted, and a placed order gains a Note / tracking button.** Two
+small changes on the Orders screen.
+
+**One label for the last stage.** v97 named it per order — Collected on one the
+customer fetches, Posted on one you mail. You asked for the pair itself instead,
+so the stage now reads **Collected / Posted** everywhere it is named: the row's
+status list, the row's own journey map, the day's status filter, and the map on
+the customer's track page (in all three languages). Which message the row offers
+is still decided by how the order leaves — a post order shows **Send posted
+message**, a Collect one **Send pickup reminder**.
+
+**A way in for the two fields you reach for most.** Beside Edit, every order now
+carries a **Note / tracking** button. It opens a small box with exactly two fields
+— the order's **Note** and the courier's **Courier tracking number** — and a Save.
+Send, and the note lands on the order, while the tracking number also goes onto
+the customer's track card and into the posted message. Nothing else moved:
+**Edit** still opens the full form (the posting day, the customer, the address,
+the items, the quantities) whenever you need it. The tracking box that sat on the
+row itself in v97 is gone — the button is the quicker, tidier way to the same
+field, and it works on any order rather than only a posted one.
+
+**16 Sep 2026 — engine v97 (one database line to run once). The last status is
+named for how the order leaves, and a posted order can carry its courier's
+tracking number.** One change, across the order row, the WhatsApp messages and
+the customer's track page.
+
+**The last status is Collected or Posted.** The final step used to say
+"Delivered" for everything. It now reads **Collected** on an order the customer
+fetches from you and **Posted** on one you mail — the same step in the journey,
+named for what actually happened. That is true everywhere the status is named:
+the row's status list, the row's own journey map, the day's status filter, and the
+map the customer sees on their track page (in all three languages). Nothing about
+the step's behaviour changed, and every order already sitting at that step keeps
+its place — only the word is different.
+
+**A tracking number, typed where you post the parcel.** A posted order shows a
+**Courier tracking number** box under its details from Packed onwards, and a
+**Send posted message** button beside the status. Type the number the courier gave
+you, press the button, and WhatsApp opens with the message already drafted: the
+order code, what was sent, and the tracking number. The box is in the Edit pop-up
+too, for a number you need to fix or read back over the phone.
+
+**The customer sees it.** The number is published with the order, so a posted
+order's track page shows it on its own line under the delivery details — they can
+read it to the courier without messaging you. Collect orders show no such line.
+The posted message is only offered on post orders: a Collect order keeps its
+**Send pickup reminder**, which is the message that fits that hand-over.
+
+**What you need to run once.** The tracking number needs one column added to the
+tracking table — `supabase/track_no.sql` (a single ALTER, safe to re-run). Until
+that runs, everything else works; the number just reaches the message and not yet
+the customer's page.
 
 **16 Sep 2026 — a stray "null" removed from two screens (no engine change; the
 phones did not change behaviour otherwise).** Found while checking the new v96

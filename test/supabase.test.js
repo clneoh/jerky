@@ -1185,3 +1185,19 @@ test("pendingReviewCount returns null when the network throws", async () => {
     globalThis.fetch = realFetch;
   }
 });
+
+test("trackingSnapshot publishes the courier's tracking number, or null for none", () => {
+  const state = makeState();
+  state.products = [{ id: "prd_1", name: "Focaccia", price: 15, active: true }];
+  const date = state.deliveryDates[0];
+  const order = (extra) => ({ orders: [{
+    id: "ord_1", deliveryDateId: date.id, productId: "prd_1", qty: 1,
+    fulfillment: "courier", status: "ready", createdAt: "2026-09-01T14:32:00", ...extra,
+  }] });
+
+  assert.equal(trackingSnapshot(state, order({ trackingNo: "JT123456789" })).tracking_no, "JT123456789");
+  assert.equal(trackingSnapshot(state, order({ trackingNo: "  " })).tracking_no, null,
+    "blank publishes null, so the customer's card leaves the line out");
+  assert.equal(trackingSnapshot(state, order({})).tracking_no, null,
+    "an order the baker never typed one on publishes null too");
+});

@@ -644,6 +644,15 @@ html, body {
 .track-code { margin: 0 0 4px; font-weight: 700; }
 .track-result p { margin: 2px 0; }
 .track-note { color: var(--muted); font-size: 13px; }
+/* The courier's tracking number, on its own line on the customer's card: the
+   number face, spaced so it reads digit by digit when they are comparing it with
+   a courier's site. Specific enough to beat .track-result p's tight margin. */
+.track-result .track-no {
+  margin: 8px 0 0;
+  font-weight: 600;
+  letter-spacing: .3px;
+  font-variant-numeric: tabular-nums;
+}
 /* The customer arrived by tapping "Track your order" in their WhatsApp message:
    the card is lit so it cannot be missed on a page they may not know, and the
    glow only goes when their pointer reaches it (revealTrack, store/app.js) — the

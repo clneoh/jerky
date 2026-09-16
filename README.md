@@ -419,6 +419,53 @@ The one shared root module is `availability.js` — the pure sell-day rules
   Products starts it folded to **＋ New product**. Same fold-head/fold-body/outside-tap
   wiring as the ＋ New order card.
 
+## The last status, and a posted order's tracking number (v97–v98)
+
+The final step of the journey and the two fields the owner reaches for most.
+
+- **One label covers both endings** (v97, revised v98) — the last `STATUSES` entry
+  is a single `["delivered", "Collected / Posted"]` (the `delivered` id is kept;
+  only the label changed). v97 named it per order — *Collected* on a `collect`
+  order, *Shipped/Posted* on a `courier` one — and v98 collapsed that back to the
+  pair, which is what the owner asked for. So every place the step is named reads
+  the same: the row's status list, `journeyMarks`, the day's status filter and the
+  customer's `JOURNEY` map in `store/app.js` (last entry `["delivered", "trkFinal"]`,
+  keyed `trkFinal` in `store-lang.js` — 已取货 / 已寄出, Telah diambil / Telah dipos).
+  Which message the row offers is still decided by `fulfillment`, not the label.
+- **A tracking number on the order** (v97) — `first.trackingNo`, trimmed at the
+  ends and otherwise kept as typed (a pasted number may carry spaces or dashes and
+  the courier's site is fussy about it). It is written by the Edit pop-up's
+  *Courier tracking number (optional)* box and by the v98 **Note / tracking**
+  button (`openNoteTrackingPopup`, `views/orders.js`), which carries exactly the
+  Note and the tracking number and publishes the card when the number changed
+  (`applyPopupEdits` compares `trackingBefore` with the saved value).
+- **A posted message** (v97) — `buildShippedMessage` (`admin/js/messages.js`) is
+  the third later-stage message, beside the payment and pickup reminders. It runs
+  through the same `basics()` (so it carries the order code, the frozen sold names
+  and prices, and the postage line), adds the tracking number only when there is
+  one, and returns `null` without a WhatsApp number. Offered only on a `courier`
+  order, from `shippedMsgButton`; a `collect` order keeps the pickup reminder.
+- **The customer sees it** (v97) — `trackingSnapshot` (`admin/js/supabase.js`)
+  publishes `tracking_no` (the trimmed number, or `null`), and `paintTrack()`
+  (`store/app.js`) draws `.track-no` under the delivery details from the
+  `trackingNo` i18n key when the row carries one. A self-collect order never has
+  one, so it never shows the line.
+
+  **The lookup has to ask for it.** The track box builds its own PostgREST URL
+  and PostgREST returns **only the columns named in `select`** — v97 added
+  `tracking_no` to the row and to `paintTrack()` but not to that `select`, so
+  `row.tracking_no` was always `undefined` and the line could never draw (the
+  bakery's `store/app.js:1308` has the identical omission — fixed in jerky, worth
+  flagging upstream). Any future column added to the card must be added to that
+  query too; `test/store.test.js`'s tracking-number test asserts the request URL
+  names `tracking_no`.
+- **SQL** — `supabase/track_no.sql` (`alter table order_tracking add column if not
+  exists tracking_no text;`) is the **one** database line this pair of versions
+  needs; it is folded into `supabase/tracking.sql` for a fresh setup. Until it is
+  run, the number still reaches the WhatsApp message and the app; it simply does
+  not land on the customer's page yet. Unlike every sync since v62 this one is
+  **not** code-only.
+
 ## A day's capacity counts what you sell that day (v94–v96)
 
 - **One sentence, reworded** (v94) — the greyed line on a card the owner keeps
@@ -802,6 +849,7 @@ supabase/backups.sql        run once in Supabase SQL editor (cloud backup snapsh
 supabase/storefront.sql     run once in Supabase SQL editor (storefront config + order intake)
 supabase/reviews.sql        run once in Supabase SQL editor (homepage reviews + photo bucket)
 supabase/tracking.sql       run once in Supabase SQL editor (order tracking)
+supabase/track_no.sql       run once — adds order_tracking.tracking_no (v97; folded into tracking.sql)
 supabase/functions/wish-mail  optional edge function: emails the wish list to the developer
 test/               node --test suites (import from admin/js and store/)
 marketing/          social-media marketing guide generator (gitignored)

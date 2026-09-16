@@ -487,6 +487,10 @@ export function trackingSnapshot(state, group) {
   return {
     code: orderCode(first),
     status: first.status || "new",
+    // The courier's tracking number, as she typed it on the order. Null when there
+    // is none (a self-collect order, or one not posted yet) — the customer's card
+    // leaves the line out entirely rather than printing an empty label.
+    tracking_no: String(first.trackingNo || "").trim() || null,
     delivery: `${date ? shortDate(date) : ""} · ${fulfillment}${address}`,
     items,
     total,

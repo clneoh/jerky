@@ -12,14 +12,15 @@
 
 create table if not exists order_tracking (
   code            text primary key,      -- 6-char order code, e.g. 'A3F9C2'
-  status          text not null,         -- one of: new / confirmed / paid / baking / ready / delivered
+  status          text not null,         -- one of: new / confirmed / paid / baking / ready / delivered (Posted/Collected to the customer)
   delivery        text not null,         -- "9 Sep · Self collect" or "… · Courier · 12 Jalan Bunga"
   items           text not null,         -- "Focaccia ×2, Sandwich ×1"
   total           text not null,         -- "RM 46.00"
   customer        text not null,         -- customer name shown on the track page
   updated_at      timestamptz not null default now(),
   confirmed_sent  boolean,               -- NULL/true: "Send confirmation" pressed (Confirmed green on the map)
-  paid_received   boolean                -- NULL/true: "Paid" pressed (Paid green on the map)
+  paid_received   boolean,               -- NULL/true: "Paid" pressed (Paid green on the map)
+  tracking_no     text                   -- the courier's tracking number, shown on the customer's card; NULL = none
 );
 
 -- Anyone can read (the storefront shows tracking to every visitor).

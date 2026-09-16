@@ -1,10 +1,11 @@
 // test/messages.test.js — the later-stage WhatsApp messages: the payment
-// reminder (order waiting on Paid) and the pickup reminder (order packed).
-// Pure modules, no DOM shim needed. Both must carry the order code.
+// reminder (order waiting on Paid), the pickup reminder (order packed) and the
+// shipped message (courier order on its way, with its tracking number).
+// Pure modules, no DOM shim needed. All must carry the order code.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildPaymentReminder, buildPickupReminder } from "../admin/js/messages.js";
+import { buildPaymentReminder, buildPickupReminder, buildShippedMessage } from "../admin/js/messages.js";
 
 function state(overrides = {}) {
   return {
@@ -69,4 +70,35 @@ test("payment reminder for a posted order carries the flat postage on the to-pay
 test("a group with no WhatsApp number returns null", () => {
   assert.equal(buildPaymentReminder(state(), group({ whatsapp: "" }), "https://bake.app/store/?track=445566"), null);
   assert.equal(buildPickupReminder(state(), group({ whatsapp: "" }), "https://bake.app/store/?track=445566"), null);
+});
+
+test("shipped message says the order is on its way and carries the tracking number", () => {
+  const built = buildShippedMessage(state(),
+    group({ fulfillment: "courier", trackingNo: "JT123456789" }),
+    "https://bake.app/store/?track=445566");
+  assert.equal(built.recipient, "60123456789");
+  assert.ok(built.message.includes("is on its way"), "the shipped wording");
+  assert.ok(built.message.includes("Order #445566"), "order code in the message");
+  assert.ok(built.message.includes("Delivery: Mon, 7 Sep - Post (nationwide)"), "date + how it left");
+  assert.ok(built.message.includes("Items: Chicken Jerky x2"), "what was sent");
+  assert.ok(built.message.includes("Tracking number: JT123456789"), "the number she typed");
+  assert.ok(built.message.includes("Track your order: https://bake.app/store/?track=445566"));
+  const nonAscii = [...built.message].filter((ch) => ch.codePointAt(0) > 0x7f);
+  assert.deepEqual(nonAscii, [], "message is plain ASCII");
+});
+
+test("with no tracking number the line is left out, not printed empty", () => {
+  const built = buildShippedMessage(state(), group({ fulfillment: "courier" }), "https://x");
+  assert.ok(built.message.includes("is on its way"), "the message still goes without a number");
+  assert.ok(!built.message.includes("Tracking number"), "no empty label");
+});
+
+test("the shipped message needs a WhatsApp number, like the other two", () => {
+  assert.equal(buildShippedMessage(state(), group({ whatsapp: "" }), "https://x"), null);
+});
+
+test("a tracking number is sent exactly as typed — spaces and dashes kept", () => {
+  const built = buildShippedMessage(state(), group({ trackingNo: "  JT 123-456  " }), "https://x");
+  assert.ok(built.message.includes("Tracking number: JT 123-456"),
+    "trimmed at the ends, untouched inside — the courier's site is fussy about it");
 });

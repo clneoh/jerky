@@ -1,6 +1,7 @@
 // messages.js — the WhatsApp messages the baker sends from later stages of the
-// journey: the payment reminder (while an order is waiting on Paid) and the
-// pickup reminder (when an order is packed). Pure (no DOM, no fetch) so they run
+// journey: the payment reminder (while an order is waiting on Paid), the pickup
+// reminder (when an order is packed) and the posted message (when a post order
+// goes out, carrying its tracking number). Pure (no DOM, no fetch) so they run
 // under Node for tests. Like the confirmation, every message leads with the
 // order code so the customer can always match it back to their order, and stays
 // plain ASCII - emoji have come back as broken boxes on some phones.
@@ -34,7 +35,10 @@ function basics(state, group, trackUrl) {
   const postage = courier ? Math.max(0, Number(sf.postageRM) || 0) : 0;
   const postageRM = postage > 0 ? fmtRM(postage, state.settings.currency) : "";
   const toPay = fmtRM(subtotal + postage, state.settings.currency);
-  return { first, recipient, items, total, date, courier, fulfillment, postageRM, toPay, bakery, qr, trackUrl };
+  // The courier's tracking number she typed on the order. Kept as typed (a
+  // pasted number may carry spaces or dashes) — it goes to the customer verbatim.
+  const trackingNo = String(first.trackingNo || "").trim();
+  return { first, recipient, items, total, date, courier, fulfillment, postageRM, toPay, bakery, qr, trackUrl, trackingNo };
 }
 
 export function buildPaymentReminder(state, group, trackUrl) {
@@ -59,6 +63,22 @@ export function buildPaymentReminder(state, group, trackUrl) {
   }
   msg += `Already paid? Please ignore this message.\n`;
   msg += `Track your order: ${b.trackUrl}`;
+  return { recipient: b.recipient, message: msg };
+}
+
+// "It's on its way" — sent when a post order goes out, carrying the tracking number
+// she typed. Post orders only: a collect order is not posted, and its "ready" moment
+// is the pickup reminder below. Without a number the line is left out rather than
+// printed empty — the message still tells the customer their order has gone.
+export function buildShippedMessage(state, group, trackUrl) {
+  const b = basics(state, group, trackUrl);
+  if (!b || !b.recipient) return null;
+  let msg = `Hi ${b.first.customerName || ""}! Your order from ${b.bakery} is on its way.\n`;
+  msg += `Order #${orderCode(b.first)}\n`;
+  msg += `Delivery: ${b.date} - ${b.fulfillment}\n`;
+  msg += `Items: ${b.items}\n`;
+  if (b.trackingNo) msg += `Tracking number: ${b.trackingNo}\n`;
+  msg += `\nTrack your order: ${b.trackUrl}`;
   return { recipient: b.recipient, message: msg };
 }
 

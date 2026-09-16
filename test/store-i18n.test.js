@@ -80,6 +80,11 @@ test("the closed-product reason and the basket notes are keyed in all three lang
     cancelNoteOne: [],
     orderCancelNote: ["%1"],
     orderCancelNoteOne: [],
+    // The journey's last step and the courier's tracking number (v97). The step is
+    // not one word — it covers both endings, Collected / Posted — and the number
+    // line is built in JS, so nothing else would catch either going missing.
+    trkFinal: [],
+    trackingNo: ["%1"],
   };
   for (const [key, phs] of Object.entries(holders)) {
     for (const l of LANGS) {

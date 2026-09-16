@@ -1207,7 +1207,9 @@ const JOURNEY = [
   ["paid", "trkPaid"],        // TNG payment received, right after Confirmed
   ["baking", "trkBaking"],
   ["ready", "trkReady"],
-  ["delivered", "trkDelivered"],
+  // One label covering both endings ("Collected / Posted"), the same one the
+  // backoffice shows, so the two maps read alike.
+  ["delivered", "trkFinal"],
 ];
 
 // A progress line for the track card, like an online-shop parcel tracker: each
@@ -1288,6 +1290,10 @@ function paintTrack() {
     codeLine,
     journey,
     details,
+    // The courier's tracking number, when the order was posted and the baker typed
+    // one. Its own line, in the number face, so it is easy to read back to a
+    // courier or paste into their site.
+    row.tracking_no ? el("p", { class: "track-no" }, sub(t("trackingNo"), row.tracking_no)) : null,
     row.customer ? el("p", { class: "track-note" }, sub(t("forCustomer"), row.customer)) : null,
   ];
   box.replaceChildren(...kids.filter(Boolean));
@@ -1313,7 +1319,11 @@ export async function trackOrder(code) {
     // after the baker updates it) always gets the current status, never a
     // cached one from the phone's HTTP cache.
     const res = await fetch(
-      `${base}/rest/v1/order_tracking?select=status,confirmed_sent,paid_received,delivery,items,total,updated_at&code=eq.${clean}&limit=1`,
+      // tracking_no must be named here: PostgREST returns only the columns
+      // listed, so without it the row never carries the number and the line
+      // below can never draw. (The bakery's own copy of this select is missing
+      // it — flag that upstream.)
+      `${base}/rest/v1/order_tracking?select=status,confirmed_sent,paid_received,delivery,items,total,tracking_no,updated_at&code=eq.${clean}&limit=1`,
       { headers: { apikey: sb.anonKey }, cache: "no-store" });
     const rows = res.ok ? await res.json() : null;
     const row = Array.isArray(rows) && rows[0];

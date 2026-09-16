@@ -155,3 +155,47 @@ test("nothing on sale that day has a limit → the Settings default, never 0", (
     "= 12 the day's default capacity (Settings) — nothing on sale this day has a daily limit",
   ]);
 });
+
+// ── v97: the tracking number lives in the Edit pop-up too ────────────────────
+test("the Edit pop-up shows the tracking number and writes a new one back", () => {
+  const st = state();
+  st.orders[0].fulfillment = "courier";
+  st.orders[0].trackingNo = "JT123";
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+
+  buttonByText(root, "Edit")._listeners.click[0]();
+  const pop = layers["popup-layer"];
+  const box = all(pop).find((n) => n.tagName === "INPUT" && n.attrs.placeholder === "e.g. JT123456789");
+  assert.ok(box, "the pop-up carries a box for the courier's number");
+  assert.equal(box.value, "JT123", "opened on the number already saved");
+
+  box.value = "JT999 888";
+  box._listeners.input[0](); // the draft follows as she types
+  buttonByText(pop, "Save changes")._listeners.click[0]();
+  assert.equal(st.orders[0].trackingNo, "JT999 888", "and it reaches the order on save");
+});
+
+// ── v98: Note / tracking — the short way in, without the whole Edit form ─────
+test("Note / tracking opens the two fields and save writes both onto the order", () => {
+  const st = state();
+  st.orders[0].fulfillment = "courier";
+  st.orders[0].note = "no nuts";
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+
+  buttonByText(root, "Note / tracking")._listeners.click[0]();
+  const pop = layers["popup-layer"];
+  assert.match(all(pop).find((n) => String(n.className).includes("popup-title-row")).textContent,
+    /^Note \/ tracking number/, "a pop-up of its own, not the whole Edit form (with the order code beside it)");
+  const inputs = all(pop).filter((n) => n.tagName === "INPUT");
+  assert.equal(inputs.length, 2, "exactly the two fields — nothing else to scroll past");
+  assert.equal(inputs[0].value, "no nuts", "the note as it stands");
+  assert.equal(inputs[1].attrs.placeholder, "e.g. JT123456789", "and the courier's number");
+
+  inputs[0].value = "extra sauce";
+  inputs[1].value = " JT999 888 ";
+  buttonByText(pop, "Save")._listeners.click[0]();
+  assert.equal(st.orders[0].note, "extra sauce", "the note reaches the order");
+  assert.equal(st.orders[0].trackingNo, "JT999 888", "and so does the number, trimmed at the ends");
+});
