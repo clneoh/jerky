@@ -2,7 +2,7 @@
 // and the next delivery dates shown one week at a time as small fuel dials.
 
 import { navigate } from "../app.js";
-import { generateUpcomingDates, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
+import { dayListLabel, generateUpcomingDates, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
 import { capacityStatus } from "../bom.js";
 import { occColour, upcomingOccasions } from "../calendar.js";
 import { el, button, emptyState, confirmDialog } from "../ui.js";
@@ -445,8 +445,10 @@ function renderInner(root, state) {
       ? upcomingSection(root, state, fc, upcoming.length)
       : [
           el("h2", { class: "section" }, "Upcoming deliveries"),
+          // The days named here are hers, read from Settings — the app used to say
+          // "the next Mon/Wed/Fri dates" whatever her pattern was (16 Sep 2026).
           emptyState("No delivery dates yet",
-            "Add the next Mon/Wed/Fri dates to start taking orders."),
+            `Add the next ${dayListLabel(state.settings.deliveryDays) || "delivery"} dates to start taking orders.`),
           el("div", {}, button("Generate next delivery dates",
             () => generateWeek(state), "block primary")),
         ]),

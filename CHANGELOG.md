@@ -1,8 +1,97 @@
-# Munchies Furkidz — change history (v54 → v98)
+# Munchies Furkidz — change history (v54 → v102)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**16 Sep 2026 — engine v102 (no database setup needed). Swipe across the calendar
+to pick a run of delivery dates.** One small change, on More → Delivery dates.
+
+The delivery-date calendar now works the way a product's availability calendar does:
+**drag across days and the whole run fills in under your finger**, then **Add
+selected** puts them on the calendar. It is the same gesture as dragging a sell
+period on a product. A single tap still picks one day (or puts it back), and a day
+that is already a delivery date is left alone by a drag — it comes off by tapping
+it, the way it went on.
+
+That makes four ways in: tap dates, swipe a run, tap a weekday letter for every one
+of that day in the month, or **Generate the next dates** on your Settings pattern.
+
+**What I deliberately did NOT copy: the From / To boxes.** On a product's
+availability card those two boxes are how a SEASON is said — a sell period genuinely
+has two ends. A delivery date is one day, not a stretch, so a From/To here would only
+ever have been a slower way to do what swiping now does.
+
+**16 Sep 2026 — engine v101 (no database setup needed). A price you can change on
+an order, and the money recorded as cash or TNG.** Three things, all about money.
+
+**A price you can change on an order.** Every item line on the ＋ New order form and
+in the Edit pop-up now carries its selling price. It opens on what the product costs;
+type over it and THAT order is sold at your price — the confirmation, the payment and
+pickup reminders, the receipt, the customer's own track page and every money number in
+the app follow it. Your menu price is untouched, and a menu price you change next week
+never rewrites a sale already made. Blank keeps "whatever the product costs", which is
+how an unpriced product has always behaved. Both forms also show the items total as
+you go.
+
+**Cash or TNG, written down when the money lands.** The Paid button is now **Paid ·
+Cash** and **Paid · TNG** — one tap each. The order remembers which, and when, and
+shows it beside its status. The Note / tracking box (now **Note / tracking /
+payment**) carries a **Paid by** box as well, for an order you marked paid before you
+could tell, or one to correct later. None of this reaches the customer: their page
+just shows Paid.
+
+**Two places to check it against.** The delivery day's own header on Orders now
+carries a short till — "Cash RM 95 · TNG RM 120 · 1 to collect". And More → **Money**
+is a screen of its own, with **Today / This week / This month**: cash collected, TNG
+collected, paid but no method recorded, and what is still to collect with the number
+of orders. Collected money is counted by the day it LANDED, so a transfer that comes
+in today counts today even when the order goes out on Friday; what is still to
+collect is counted by the delivery day, because that is the day you hand it over. An
+order paid before any of this existed shows under "Paid, no method" rather than being
+guessed at.
+
+**16 Sep 2026 — engine v100 (no database setup needed). Making delivery dates for
+a weekday is one tap again.** One change, on More → Delivery dates.
+
+**Why.** You found the function missing: adding your delivery dates for, say, every
+Monday meant tapping each Monday by hand. Nothing had been removed — the app's only
+"do the dates for me" button lived on Home, inside the "No delivery dates yet"
+message. That message shows only while you have no upcoming dates, and pressing the
+button creates the very dates that hide it: it was a one-shot button that took
+itself off the page the moment it worked. So once you had dates, which is every day
+since your first week, it was never there again.
+
+**Three ways in now.** On More → Delivery dates: tap dates and **Add selected**, as
+before; or **tap a weekday letter** — tap **M** and every Monday in the month shown
+is picked for you, tap it again to put them back, and the letter underlines solid
+once that whole weekday is picked; or press **Generate the next dates**, which is
+always there, follows the delivery days in your Settings, and adds the next six
+dates that are not on the calendar yet. Generate moves the calendar to the month the
+new dates start in, so you can see what it just did.
+
+**One wrong line fixed with it.** Home's "no dates yet" message used to say "the next
+Mon/Wed/Fri dates" whatever your delivery days really were. It names your own days
+now (and so does the line under Generate).
+
+**15 Sep 2026 — engine v99 (no database setup needed). The customer can tap the
+"Next available" line and be given that day.** One change, on the order page.
+
+**Why.** A product you keep on the shop, on a day it cannot be ordered, tells the
+customer when it can be had — "Next available: Sat 19 Sep". Until now they had to
+go and find that date on the calendar themselves.
+
+**What it does now.** The line is a control: tapping it takes that posting day, so
+the product in front of them can be ordered straight away, and the page moves up to
+the calendar, where the chosen day is written out in words. It keeps its gentle
+pulse, and wears a small arrow so it reads as something to tap.
+
+**The one time it does not take the day.** If the customer already has something in
+their basket, the line stays a plain label and tapping it answers instead: "Your
+basket is for Fri, 18 Sep. To order for another day, choose it on the calendar
+above." Taking a day then would silently move their whole order to a new date — and
+drop anything that does not fit there — which is not something a tap on a product
+line should ever do. Changing the day is what the calendar is for.
 
 **16 Sep 2026 — engine v98 (no database setup needed). The last status reads
 Collected / Posted, and a placed order gains a Note / tracking button.** Two

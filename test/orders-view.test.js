@@ -209,3 +209,48 @@ test("every order offers Note / tracking beside Edit, and the message for how it
   assert.ok(collectLabels.includes("Note / tracking"), "the same button on a self-collect order");
   assert.ok(collectLabels.includes("Send pickup reminder"), "which keeps the pickup reminder instead");
 });
+
+// ── v101: which way the money came in ────────────────────────────────────────
+test("Paid · Cash and Paid · TNG each mark it paid and record which, and when", () => {
+  const state = { ...STATE, orders: [{
+    id: "o1", deliveryDateId: "d7", productId: "p1", qty: 1, customerName: "Ain",
+    whatsapp: "60123456789", status: "paid",
+  }] };
+  const root = createEl("div");
+  renderOrders(root, state, PARAMS());
+
+  const labels = all(root).filter((n) => n.tagName === "BUTTON").map((n) => n.textContent);
+  assert.ok(labels.includes("Paid · Cash") && labels.includes("Paid · TNG"),
+    "one tap each — no pop-up for something she does twenty times a week");
+
+  all(root).find((n) => n.tagName === "BUTTON" && n.textContent === "Paid · TNG")._listeners.click[0]();
+  assert.equal(state.orders[0].paidReceived, true, "the order is paid");
+  assert.equal(state.orders[0].paidMethod, "tng", "and the row remembers how");
+  assert.ok(state.orders[0].paidAt, "stamped when the money landed, which is what the Money screen counts");
+
+  const again = createEl("div");
+  renderOrders(again, state, PARAMS());
+  const tag = all(again).find((n) => String(n.className).split(/\s+/).includes("paid-tag"));
+  assert.equal(tag.children[0].text, "TNG", "and the row says so beside its status");
+});
+
+test("the day header carries its own till — cash, TNG, still to collect", () => {
+  const state = { ...STATE, orders: [
+    { id: "a", deliveryDateId: "d7", productId: "p1", qty: 1, unitPrice: 15,
+      status: "ready", paidReceived: true, paidMethod: "cash" },
+    { id: "b", deliveryDateId: "d7", productId: "p1", qty: 2, unitPrice: 15,
+      status: "confirmed", paidReceived: false },
+  ] };
+  const root = createEl("div");
+  renderOrders(root, state, PARAMS());
+  const line = all(root).find((n) => String(n.className).split(/\s+/).includes("money-line"));
+  assert.ok(line, "the day shows what came in");
+  assert.equal(line.children[0].text, "Cash RM 15.00 · 1 to collect",
+    "what is collected, and how many orders are still to pay — nothing invented for the rest");
+
+  // A day with nothing on it has no till to show.
+  const empty = createEl("div");
+  renderOrders(empty, { ...STATE }, PARAMS());
+  assert.equal(all(empty).find((n) => String(n.className).split(/\s+/).includes("money-line")),
+    undefined, "no orders, no money line");
+});

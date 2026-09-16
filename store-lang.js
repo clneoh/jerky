@@ -122,6 +122,7 @@ const en = {
   trkReady: "Packed",
   trkFinal: "Collected / Posted",
   trackingNo: "Tracking number: %1",
+  nextBlockedBasket: "Your basket is for %1. To order for another day, choose it on the calendar above.",
 
   devBy: "Website by",
   devWa: "WhatsApp the developer",
@@ -223,6 +224,7 @@ const zh = {
   trkReady: "已打包",
   trkFinal: "已取货 / 已寄出",
   trackingNo: "快递单号：%1",
+  nextBlockedBasket: "你的购物袋是 %1 的。想订另一天，请在上面的日历选择。",
 
   devBy: "网站制作：",
   devWa: "用 WhatsApp 联系开发者",
@@ -324,6 +326,7 @@ const ms = {
   trkReady: "Dibungkus",
   trkFinal: "Telah diambil / Telah dipos",
   trackingNo: "Nombor penjejakan: %1",
+  nextBlockedBasket: "Bakul anda untuk %1. Untuk hari lain, pilih pada kalendar di atas.",
 
   devBy: "Laman web oleh",
   devWa: "WhatsApp pembangun",

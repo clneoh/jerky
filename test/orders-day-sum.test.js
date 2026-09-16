@@ -62,6 +62,7 @@ globalThis.Date = MockDate;
 
 const { renderOrders } = await import("../admin/js/views/orders.js");
 const { effectiveCapacity } = await import("../admin/js/bom.js");
+const { orderLinePrice } = await import("../admin/js/state.js");
 
 // Focaccia sells every day; the Saturday loaf is marked Saturdays only, and the
 // day on screen (Thu 10 Sep) is not one of them. One order is already booked.
@@ -176,8 +177,8 @@ test("the Edit pop-up shows the tracking number and writes a new one back", () =
   assert.equal(st.orders[0].trackingNo, "JT999 888", "and it reaches the order on save");
 });
 
-// ── v98: Note / tracking — the short way in, without the whole Edit form ─────
-test("Note / tracking opens the two fields and save writes both onto the order", () => {
+// ── v98/v101: Note / tracking / payment — the short way in, without Edit ────
+test("Note / tracking opens just those fields, and save writes them onto the order", () => {
   const st = state();
   st.orders[0].fulfillment = "courier";
   st.orders[0].note = "no nuts";
@@ -187,15 +188,56 @@ test("Note / tracking opens the two fields and save writes both onto the order",
   buttonByText(root, "Note / tracking")._listeners.click[0]();
   const pop = layers["popup-layer"];
   assert.match(all(pop).find((n) => String(n.className).includes("popup-title-row")).textContent,
-    /^Note \/ tracking number/, "a pop-up of its own, not the whole Edit form (with the order code beside it)");
+    /^Note \/ tracking \/ payment/, "a pop-up of its own, not the whole Edit form (with the order code beside it)");
   const inputs = all(pop).filter((n) => n.tagName === "INPUT");
-  assert.equal(inputs.length, 2, "exactly the two fields — nothing else to scroll past");
+  assert.equal(inputs.length, 2, "the note and the number — nothing else to scroll past");
   assert.equal(inputs[0].value, "no nuts", "the note as it stands");
   assert.equal(inputs[1].attrs.placeholder, "e.g. JT123456789", "and the courier's number");
+  const paidSel = all(pop).find((n) => n.tagName === "SELECT");
+  assert.ok(paidSel, "with how it was paid");
+  assert.deepEqual(paidSel.children.map((o) => o.children[0].text),
+    ["Not recorded", "Cash", "TNG transfer"], "as a three-way choice, not recorded by default");
 
   inputs[0].value = "extra sauce";
   inputs[1].value = " JT999 888 ";
+  paidSel.value = "cash";
   buttonByText(pop, "Save")._listeners.click[0]();
   assert.equal(st.orders[0].note, "extra sauce", "the note reaches the order");
   assert.equal(st.orders[0].trackingNo, "JT999 888", "and so does the number, trimmed at the ends");
+  assert.equal(st.orders[0].paidMethod, "cash", "and how it was paid is recorded for reconciling");
+
+  // "Not recorded" is the absent key, not an empty string, so a row that never had
+  // a method reads exactly as it did before this existed.
+  const root2 = createEl("div");
+  renderOrders(root2, st, new URLSearchParams({ date: "d10" }));
+  buttonByText(root2, "Note / tracking")._listeners.click[0]();
+  const pop2 = layers["popup-layer"];
+  all(pop2).find((n) => n.tagName === "SELECT").value = "";
+  buttonByText(pop2, "Save")._listeners.click[0]();
+  assert.equal("paidMethod" in st.orders[0], false, "choosing Not recorded deletes the key");
+});
+
+// ── v101: the price she types on an order is what that order is sold at ─────
+test("a price changed in the Edit pop-up is frozen onto that order", () => {
+  const st = state();
+  st.products[0].price = 15; // Focaccia, RM15
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+
+  buttonByText(root, "Edit")._listeners.click[0]();
+  const pop = layers["popup-layer"];
+  const box = all(pop).find((n) => String(n.className).includes("line-price"));
+  assert.ok(box, "each item line carries its selling price");
+  assert.equal(String(box.value), "15", "and it opens on the price the order is sold at");
+
+  box.value = "12.50";
+  box._listeners.input.forEach((f) => f.call(box)); // the handler reads this.value
+  assert.match(all(pop).map((n) => n.textContent).join(" "), /Order total: RM 25.00/,
+    "2 × RM12.50 — the total follows the price she typed");
+
+  buttonByText(pop, "Save changes")._listeners.click[0]();
+  assert.equal(st.orders[0].unitPrice, 12.5, "the order is sold at the price she typed");
+  // A menu price changed later never rewrites the sale.
+  st.products[0].price = 22;
+  assert.equal(orderLinePrice(st, st.orders[0]), 12.5, "and it stays that price afterwards");
 });

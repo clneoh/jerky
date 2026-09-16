@@ -21,6 +21,7 @@ export function renderMore(root, state) {
     menuItem("#/guide", "📖 Guide", "How this app works — plain English"),
     menuItem("#/po", "🧾 Purchase Order", "Top up what to post or make"),
     menuItem("#/suppliers", "🏪 Suppliers", "Who you buy from, with their WhatsApp"),
+    menuItem("#/money", "💰 Money", "What came in — cash, TNG, still to collect"),
     menuItem("#/deliveries", "📅 Delivery dates", "Set and manage delivery dates"),
     menuItem("#/ingredients", "🧂 Ingredients", "Pouch units + supplier prices for the PO"),
     menuItem("#/history", "📚 PO history", "Saved purchase orders"),

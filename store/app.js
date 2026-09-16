@@ -134,6 +134,16 @@ export function waNumber(n) {
   return digits.startsWith("0") ? `60${digits.slice(1)}` : digits;
 }
 
+// Bring the customer to the day they have just been given: the delivery calendar
+// above the menu, where the chosen day is written out in words. The same idea as
+// the backoffice jumping to an order it was just told about.
+function revealCalendar() {
+  const cal = document.getElementById("dates");
+  if (cal && typeof cal.scrollIntoView === "function") {
+    cal.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+}
+
 // The `via` query string on a referral link (?via=60123456789) is the referrer's
 // WhatsApp digits. Read to clean digits (or "" when absent) so the order can be
 // stamped with who referred it. The shop never reads order history or discounts —
@@ -542,10 +552,11 @@ export function render() {
       const qty = cart.get(p.name) || 0;
       const soldOut = left != null && left <= 0;
       const qtyLabel = el("span", { class: "stepper-val" }, String(qty));
-      // A pool card repaints the whole menu when its stepper moves — every
-      // sibling's cap/stamp depends on this quantity. The bar must refresh
-      // either way (count/total/button), so it runs alongside the menu paint.
-      const redraw = () => { if (group) renderMenu(); renderBar(); };
+      // A stepper move repaints the whole menu: a pool card needs it (every
+      // sibling's cap/stamp depends on this quantity) and so does every
+      // Next-available line, which is a control only while the basket is empty.
+      // The bar refreshes either way (count/total/button).
+      const redraw = () => { renderMenu(); renderBar(); };
       const dec = el("button", { class: "step-btn", onclick: () => {
         const q = Math.max(0, (cart.get(p.name) || 0) - 1);
         if (q === 0) cart.delete(p.name); else cart.set(p.name, q);
@@ -579,8 +590,31 @@ export function render() {
             today: todayKey,
           })
         : null;
+      // The line is a control while the basket is empty (v99): tapping it orders
+      // for the day it names, instead of making the customer hunt for that date in
+      // the calendar. It reads the same either way; the arrow and the pulse say it
+      // can be tapped.
+      //
+      // With something already in the basket it is a plain label instead. Taking a
+      // day then would move the WHOLE order to a new date and drop whatever does
+      // not fit there — a rearrangement the customer never asked for, from a tap on
+      // a product line. To order for another day they pick it on the calendar, where
+      // moving the order is what they mean. (Cart changes repaint this menu, so the
+      // label and the control are always the right one for the basket in hand.)
       const nextNote = next
-        ? el("p", { class: "prod-note prod-next" },
+        ? el("button", {
+            class: `prod-note prod-next${cart.size ? " off" : ""}`,
+            type: "button",
+            onclick: () => {
+              if (cart.size) {
+                return menuNotice(sub(t("nextBlockedBasket"),
+                  fmtDay(new Date(`${selected}T00:00:00`))));
+              }
+              selected = next.key;   // the day they were just offered
+              rerender();            // the card in front of them becomes orderable
+              revealCalendar();      // and the calendar above names the chosen day
+            },
+          },
             next.left != null
               ? sub(t("nextAvailableLeft"), fmtDay(new Date(`${next.key}T00:00:00`)), next.left)
               : sub(t("nextAvailable"), fmtDay(new Date(`${next.key}T00:00:00`))))
@@ -628,6 +662,15 @@ export function render() {
   // pack no longer fits the shared pool next to the rest of their cart. Bring
   // the cart back in line with reality before the menu repaints, and return
   // what changed so the caller can tell the customer. Empty → nothing to fix.
+  // One line above the menu for something the customer has to be told that is not
+  // a cart fix — reconcileCart() owns those and clears them on its next pass.
+  function menuNotice(text) {
+    const box = document.getElementById("menu-note");
+    if (!box) return;
+    box.replaceChildren(el("p", {}, text));
+    box.hidden = false;
+  }
+
   function reconcileCart() {
     const notes = [];
     if (!selected) {

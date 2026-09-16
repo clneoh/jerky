@@ -1028,6 +1028,19 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
   vertical-align: 2px;
 }
 .fulfill-tag.courier { color: #7a4a2a; background: #f4e6da; }
+/* How an order was paid, beside its status (v101): her own record for reconciling
+   cash in hand against the TNG app. Cash is the quiet default; TNG wears the brand
+   tint so a transfer is tellable at a glance. */
+.paid-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--green-dark, #2f6b2f);
+  background: var(--green-soft, #eaf6ea);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.paid-tag.tng { color: var(--brown-dark); background: var(--brown-soft); }
 .fulfill-sub {
   display: block;
   margin-top: 2px;
@@ -1393,6 +1406,24 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
   margin-top: 6px;
   position: relative; /* anchor the absolutely-placed occasion papers */
 }
+/* The weekday letters on Delivery Dates' add grid are controls (v100): tap M and
+   every Monday in the month is picked. A button arrives with its own chrome, so the
+   letter's look is restated — and dotted underlines say it can be tapped, solid
+   once every day of that weekday is picked, dashed when some are. On every other
+   calendar these letters stay plain headings. */
+.cal-dow.dow-pick {
+  appearance: none;
+  border: none;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+  text-decoration: underline dotted;
+  -webkit-tap-highlight-color: transparent;
+}
+.cal-dow.dow-pick:active { background: var(--brown-soft); }
+.cal-dow.dow-pick.on { color: var(--brown); text-decoration: underline; }
+.cal-dow.dow-pick.part { color: var(--brown); text-decoration: underline dashed; }
 .cal-dow {
   text-align: center;
   font-size: 11px;
@@ -1445,6 +1476,9 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
   }
 }
 .cal-cell.blank { visibility: hidden; }
+/* While a finger sweeps across the add-dates calendar, the days it crosses show the
+   same fill a picked day wears, so the run is readable under the finger (v102). */
+.cal-cell.drag-sel { background: var(--brown); color: #fff; font-weight: 700; }
 /* The calendar answering a tap it cannot act on: she tapped a day you do
    not deliver, so the grid says so and says where the day gets added. It sits in
    the calendar card under the grid rather than in a bubble over the day (the way a

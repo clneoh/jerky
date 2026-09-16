@@ -22,6 +22,7 @@ function createEl(tag) {
     replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) this.children.push(c); },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener() {},
+    scrollIntoView(opts) { this.scrolled = opts; },
     setAttribute(k, v) { this.attrs[k] = String(v); if (k === "hidden") this.hidden = true; },
     getAttribute(k) { return this.attrs[k]; },
     focus() {}, click() {},
@@ -190,9 +191,62 @@ test("a kept product that cannot be ordered today keeps its Sold out stamp and g
     "the one line the switch buys: the next day the notice is met");
 });
 
+// ── v99: the line takes the day it names ─────────────────────────────────────
+test("tapping Next available orders for that day, and shows the customer where it took them", async () => {
+  CONFIG.products.find((p) => p.name === "Focaccia").alwaysListed = true;
+  registry["dates"].scrolled = undefined;
+  render();
+  await settle();
+
+  const chip = walk(cardFor("Focaccia")).find((n) => (n.className || "").includes("prod-next"));
+  assert.ok(chip, "the greyed card offers the next date it can be had");
+  assert.equal(chip.tagName, "BUTTON", "and the line is a control, not a label");
+  assert.equal(chip.children[0].text, "Next available: Mon, 7 Sep");
+
+  chip._listeners.click[0]();
+  await settle();
+
+  assert.deepEqual(menuNames(), ["Focaccia", "Sandwich", "Brownie Box"],
+    "the tap took the day — Wednesday for Monday — so the product is on the menu now");
+  assert.deepEqual(cardNotes("Focaccia"), [],
+    "and the card stops telling her to come back later");
+  assert.deepEqual(registry["dates"].scrolled, { block: "start", behavior: "smooth" },
+    "the calendar above is brought into view, where the chosen day is written out");
+});
+
+test("with something in the basket the Next available line is a label, not a control", async () => {
+  CONFIG.products.find((p) => p.name === "Focaccia").alwaysListed = true;
+  registry["dates"].scrolled = undefined;
+  render();
+  await settle();
+
+  // Something in the basket for the day already chosen (the Sandwich sells every
+  // delivery day, so Wednesday takes it).
+  const plus = walk(cardFor("Sandwich")).find((n) => n.tagName === "BUTTON" && n.children[0].text === "+");
+  plus._listeners.click[0]();
+  await settle();
+  assert.equal(registry["bar-count"].textContent, "1 item", "the basket has a day in hand");
+
+  const chip = walk(cardFor("Focaccia")).find((n) => (n.className || "").includes("prod-next"));
+  assert.ok(chip.className.includes("off"), "the line says it is not taking a day now");
+  assert.equal(registry["menu-note"].hidden, true, "and nothing is said until the customer tries");
+
+  chip._listeners.click[0]();
+  await settle();
+
+  assert.equal(registry["menu-note"].hidden, false, "the tap answers rather than staying quiet");
+  assert.match(registry["menu-note"].children[0].children[0].text, /Your basket is for Wed, 2 Sep/);
+  assert.equal(registry["dates"].scrolled, undefined, "nothing was taken, so nothing moved");
+  const chosen = registry["dates"].children[0].children.find((c) => c.className === "cal-chosen");
+  assert.match(chosen.children[0].text, /Wed, 2 Sep/, "the day in hand is still the day");
+  assert.deepEqual(cardNotes("Focaccia").length, 2, "and the card still offers the date, plainly");
+});
+
 test("a day where nothing at all is sold says so instead of showing a blank space", async () => {
   // A shop with nothing that sells on Wednesday. Re-rendered from the top, so
-  // this runs last: it replaces the fixture the tests above were reading.
+  
+
+// this runs last: it replaces the fixture the tests above were reading.
   CONFIG.products = [
     { name: "Focaccia", price: 15, unit: "loaf",
       sellRules: [{ days: [1], from: "2026-09-01", to: "2026-09-30" }] },
@@ -209,3 +263,4 @@ test("a day where nothing at all is sold says so instead of showing a blank spac
   tapDay(7); // Monday has the Focaccia, so the shop is not empty after all
   assert.deepEqual(menuNames(), ["Focaccia"]);
 });
+

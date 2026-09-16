@@ -2,6 +2,7 @@
 
 import { addDays, deliveryStatus, fmtPlaced, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
 import { capacityStatus, dayCapacityParts, dayRuleRows, parseDayDelta, productRemaining, saveDayAdjustments } from "../bom.js";
+import { dayMoney } from "../money.js";
 import { el, button, select, fillMeter, emptyState, confirmDialog, toast, showPopup } from "../ui.js";
 import { dateField } from "../datepicker.js";
 import { DOW, addMonth, monthLabel, monthWeeks, occColour, occForDate } from "../calendar.js";
@@ -9,7 +10,7 @@ import { boxClass, nameDay, occBox, occPapers, tipEl } from "../occgrid.js";
 // A product's sell days — the shared root copy the shop reads, so the day this
 // pop-up counts a product on is exactly the day the shop offers it.
 import { sellOpen } from "../../../availability.js";
-import { byId, fmtRM, groupOrders, moveOrderGroup, newId, orderCode, orderLineName, save, stampOrderLine, updateOrderBadge, waNumber } from "../state.js";
+import { byId, fmtRM, groupOrders, moveOrderGroup, newId, orderCode, orderLineName, orderLinePrice, save, stampOrderLine, updateOrderBadge, waNumber } from "../state.js";
 import { strictestCancelDays } from "../../../store/pool.js";
 import { buildConfirmation } from "../confirm.js";
 import { buildPaymentReminder, buildPickupReminder, buildShippedMessage } from "../messages.js";
@@ -786,6 +787,7 @@ function dateContent(state, date, root, selectDate) {
           occ.label) : null),
       el("span", { class: "qty-chip" }, `${cap.total}/${cap.capacity}`)),
     fillMeter(cap.total, cap.capacity),
+    moneyLine(state, date.id),
     cap.exceeded ? el("div", { class: "danger-banner" },
       `Over capacity by ${cap.total - cap.capacity}. Add more only if she can bake extra.`) : null,
     !st.past && rules.rows.length ? el("div", { class: "btn-row", style: "margin-top:10px" },
@@ -956,6 +958,47 @@ function referredTag(order) {
     : null;
 }
 
+// The price box on an order line, shared by the ＋ New order card and the Edit
+// pop-up (16 Sep 2026). It starts on what the product costs, and whatever she types
+// is frozen onto THAT order (o.unitPrice, state.js) — so the confirmation, the later
+// reminders, the receipt, her own money numbers and the customer's page all quote
+// the price she actually agreed, and a menu price changed tomorrow never rewrites a
+// sale already made. Blank means "whatever the product costs", which is how an
+// unpriced product has always behaved.
+function linePriceBox(line, on) {
+  return el("input", { class: "input line-price", type: "number", inputmode: "decimal",
+    min: "0", step: "0.01", placeholder: "RM", "aria-label": "Selling price",
+    value: line.price == null ? "" : String(line.price),
+    oninput: function () {
+      line.price = this.value === "" ? null : Number(this.value);
+      on();
+    } });
+}
+
+// What a line's price box should hold when a product is picked or swapped.
+function priceForProduct(state, productId) {
+  const p = byId(state.products, productId);
+  const price = p && p.price != null && p.price !== "" ? Number(p.price) : NaN;
+  return Number.isFinite(price) ? price : null;
+}
+
+// The day's till, under its capacity meter (16 Sep 2026): what came in as cash,
+// what came in by transfer, and how many orders are still to collect — the line she
+// checks her purse and her phone against at the end of a delivery day. Nothing shows
+// until the day has an order, and a day where nobody has paid yet shows only the
+// "to collect" count.
+function moneyLine(state, dateId) {
+  const m = dayMoney(state, dateId);
+  if (!m.count) return null;
+  const cur = state.settings.currency || "RM";
+  const bits = [];
+  if (m.cash) bits.push(`Cash ${fmtRM(m.cash, cur)}`);
+  if (m.tng) bits.push(`TNG ${fmtRM(m.tng, cur)}`);
+  if (m.unmarked) bits.push(`${fmtRM(m.unmarked, cur)} paid, no method`);
+  if (m.toCollectCount) bits.push(`${m.toCollectCount} to collect`);
+  return bits.length ? el("p", { class: "card-sub money-line" }, bits.join(" · ")) : null;
+}
+
 // The manual "＋ Add order" card, always at the top of a delivery date. Takes
 // several items at once — they become ONE customer order (a shared group), the
 // same shape a multi-item storefront order arrives as, so the list/inbox/confirm
@@ -1003,21 +1046,37 @@ function orderForm(state, dateId, root, selectDate) {
   });
 
   const rowsEl = el("div", {});
-  const items = [{ productId: "", qty: 1 }];
+  const totalEl = el("p", { class: "card-sub", style: "margin:8px 0 0" });
+  const items = [{ productId: "", qty: 1, price: null }];
+  const paintTotal = () => {
+    const priced = items.filter((it) => it.productId && it.price != null);
+    totalEl.textContent = priced.length
+      ? `Items total: ${fmtRM(priced.reduce((sum, it) => sum + it.qty * Number(it.price), 0),
+          state.settings.currency)}`
+      : "";
+  };
   const renderRows = () => {
     rowsEl.replaceChildren(...items.map((it, i) => {
       const prodSel = select(products, it.productId,
-        () => { it.productId = prodSel.value; }, "Product…");
+        () => {
+          it.productId = prodSel.value;
+          // Picking a product fills the price with what it costs, and swapping one
+          // re-fills it — a line must never keep the last product's price by accident.
+          it.price = priceForProduct(state, it.productId);
+          renderRows();
+        }, "Product…");
       const qtySpan = el("span", { class: "stepper-val" }, String(it.qty));
       return el("div", { class: "add-item" },
         prodSel,
         el("div", { class: "stepper" },
-          el("button", { onclick: () => { it.qty = Math.max(1, it.qty - 1); qtySpan.textContent = String(it.qty); } }, "−"),
+          el("button", { onclick: () => { it.qty = Math.max(1, it.qty - 1); qtySpan.textContent = String(it.qty); paintTotal(); } }, "−"),
           qtySpan,
-          el("button", { onclick: () => { it.qty = it.qty + 1; qtySpan.textContent = String(it.qty); } }, "＋")),
+          el("button", { onclick: () => { it.qty = it.qty + 1; qtySpan.textContent = String(it.qty); paintTotal(); } }, "＋")),
+        linePriceBox(it, paintTotal),
         el("button", { class: "inbox-del", "aria-label": "Remove item",
           onclick: () => { items.splice(i, 1); renderRows(); } }, "✕"));
     }));
+    paintTotal();
   };
   renderRows();
 
@@ -1031,7 +1090,8 @@ function orderForm(state, dateId, root, selectDate) {
     const noteText = note.value.trim();
     const placed = draft.orderDate;
     if (picked.length === 1) {
-      addNew(state, date, picked[0].productId, picked[0].qty, customerName, phone, fulfillment, addressText, noteText, placed, root);
+      addNew(state, date, picked[0].productId, picked[0].qty, picked[0].price ?? null,
+        customerName, phone, fulfillment, addressText, noteText, placed, root);
     } else {
       addGroupNew(state, date, picked, customerName, phone, fulfillment, addressText, noteText, placed, root);
     }
@@ -1055,7 +1115,8 @@ function orderForm(state, dateId, root, selectDate) {
     el("div", { class: "field" },
       el("label", {}, "Items"),
       rowsEl,
-      button("＋ Add another item", () => { items.push({ productId: "", qty: 1 }); renderRows(); }, "ghost")),
+      button("＋ Add another item", () => { items.push({ productId: "", qty: 1, price: null }); renderRows(); }, "ghost"),
+      totalEl),
     el("div", { class: "card-sub", style: "margin:0 0 10px" },
       "Everything in the Items list becomes one customer order — add every item, then press Add order."),
     el("div", { class: "field" }, note),
@@ -1157,7 +1218,14 @@ function openEditPopup(state, group, dateId, root) {
   // A missing date record no longer stops the pop-up opening: the "Delivery day"
   // calendar is exactly what puts an orphaned order back onto a real day.
 
-  const lines = group.orders.map((o) => ({ id: o.id, productId: o.productId || "", qty: o.qty }));
+  // Each line carries the price it is sold at, so the pop-up can show it and she can
+  // change it (16 Sep 2026). orderLinePrice gives the frozen price when there is one
+  // and the product's own price when there is not — the same number the confirmation
+  // would quote, so the box always opens on the truth.
+  const lines = group.orders.map((o) => ({
+    id: o.id, productId: o.productId || "", qty: o.qty,
+    price: orderLinePrice(state, o),
+  }));
   const draft = {
     customerName: first.customerName || "",
     whatsapp: waNumber(first.whatsapp || ""),
@@ -1212,21 +1280,37 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
   const deliveryNotes = el("div", { class: "card-sub", style: "margin:6px 0 0" },
     ...moveNoteLines(state, group, curId).map((t) => el("p", { style: "margin:2px 0" }, t)));
 
+  const totalEl = el("p", { class: "card-sub", style: "margin:8px 0 0" });
+  const paintTotal = () => {
+    const priced = lines.filter((l) => l.productId && l.price != null);
+    totalEl.textContent = priced.length
+      ? `Order total: ${fmtRM(priced.reduce((sum, l) => sum + l.qty * Number(l.price), 0),
+          state.settings.currency)}`
+      : "";
+  };
   const rowFor = (line, i) => {
     const prodSel = select(products, line.productId,
-      () => { line.productId = prodSel.value; }, "Product…");
+      () => {
+        line.productId = prodSel.value;
+        // A swapped line takes the new product's price — the old one's would be a
+        // price for something she is no longer selling.
+        line.price = priceForProduct(state, line.productId);
+        refresh();
+      }, "Product…");
     const qtySpan = el("span", { class: "stepper-val" }, String(line.qty));
     return el("div", { class: "add-item" },
       prodSel,
       el("div", { class: "stepper" },
-        el("button", { onclick: () => { line.qty = Math.max(1, line.qty - 1); qtySpan.textContent = String(line.qty); } }, "−"),
+        el("button", { onclick: () => { line.qty = Math.max(1, line.qty - 1); qtySpan.textContent = String(line.qty); paintTotal(); } }, "−"),
         qtySpan,
-        el("button", { onclick: () => { line.qty = line.qty + 1; qtySpan.textContent = String(line.qty); } }, "＋")),
+        el("button", { onclick: () => { line.qty = line.qty + 1; qtySpan.textContent = String(line.qty); paintTotal(); } }, "＋")),
+      linePriceBox(line, paintTotal),
       el("button", { class: "inbox-del", "aria-label": "Remove item",
         onclick: () => { lines.splice(i, 1); refresh(); } }, "✕"));
   };
 
   const rowsEl = el("div", {}, ...lines.map(rowFor));
+  paintTotal();
 
   const save = () => {
     const chosen = lines.filter((l) => l.productId);
@@ -1263,8 +1347,11 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       tracking),
     el("div", { class: "field", style: "margin-top:10px" },
       el("label", {}, "Items"),
+      el("p", { class: "card-sub", style: "margin:0 0 6px" },
+        "The price beside each item is what THIS order is sold at. Change it here and the confirmation, every later message and the customer's total follow it — your menu price is untouched."),
       rowsEl,
-      button("＋ Add another item", () => { lines.push({ productId: "", qty: 1 }); refresh(); }, "ghost")),
+      button("＋ Add another item", () => { lines.push({ productId: "", qty: 1, price: null }); refresh(); }, "ghost"),
+      totalEl),
     el("div", { class: "card-sub", style: "margin:0 0 10px" },
       "Hidden products are listed as \"(hidden)\" — you can still add or keep one."),
     button("Save changes", save, "block primary"),
@@ -1313,6 +1400,12 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
         // Only a line swapped to a different product re-prices; leaving a line
         // alone keeps the price it was sold at.
         if (before !== o.productId) stampOrderLine(o, byId(state.products, o.productId));
+        // …and the price box has the last word either way (16 Sep 2026): what she
+        // typed is what this order is sold at. A blank box leaves the line following
+        // the product, as an unpriced line always has.
+        const typed = l.price == null ? NaN : Number(l.price);
+        if (Number.isFinite(typed) && typed >= 0) o.unitPrice = typed;
+        else delete o.unitPrice;
       } else {
         const row = {
           id: newId("ord"),
@@ -1332,6 +1425,7 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
           createdAt: new Date().toISOString(),
         };
         stampOrderLine(row, byId(state.products, row.productId));
+        if (Number.isFinite(Number(l.price))) row.unitPrice = Number(l.price);
         state.orders.push(row);
       }
     }
@@ -1359,7 +1453,7 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
   }
 }
 
-function addNew(state, date, productId, qty, customerName, whatsapp, fulfillment, address, note, orderDate, root) {
+function addNew(state, date, productId, qty, price, customerName, whatsapp, fulfillment, address, note, orderDate, root) {
   const cap = capacityStatus(state, date.id);
   const newTotal = cap.total + qty;
   const st = deliveryStatus(date.date, state.settings);
@@ -1381,6 +1475,7 @@ function addNew(state, date, productId, qty, customerName, whatsapp, fulfillment
       createdAt: new Date().toISOString(),
     };
     stampOrderLine(row, byId(state.products, productId));
+    if (Number.isFinite(Number(price))) row.unitPrice = Number(price); // the typed price wins
     state.orders.push(row);
     save(state);
     maybeSync(state);
@@ -1431,6 +1526,7 @@ function addGroupNew(state, date, items, customerName, whatsapp, fulfillment, ad
         createdAt,
       };
       stampOrderLine(row, byId(state.products, it.productId));
+      if (Number.isFinite(Number(it.price))) row.unitPrice = Number(it.price);
       state.orders.push(row);
     }
     save(state);
@@ -1507,11 +1603,21 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
     value: first.note || "" });
   const tracking = el("input", { class: "input", placeholder: "e.g. JT123456789",
     autocomplete: "off", value: first.trackingNo || "" });
-  showPopup(el("div", { class: "popup-title-row" }, "Note / tracking number", orderCodeTag(first)),
+  // How it was paid. The Paid · Cash / Paid · TNG buttons are the fast way in at the
+  // moment the money lands (they also stamp WHEN); this is for fixing one later, or
+  // for an order she marked paid before she could tell. It is her own record only —
+  // nothing here reaches the customer.
+  const paidSel = select([
+    { value: "", label: "Not recorded" },
+    { value: "cash", label: "Cash" },
+    { value: "tng", label: "TNG transfer" },
+  ], first.paidMethod || "", () => {});
+  showPopup(el("div", { class: "popup-title-row" }, "Note / tracking / payment", orderCodeTag(first)),
     (refresh, close) => el("div", {},
       el("div", { class: "field" }, el("label", {}, "Note (optional)"), note),
       el("div", { class: "field" },
         el("label", {}, "Courier tracking number (optional)"), tracking),
+      el("div", { class: "field" }, el("label", {}, "Paid by"), paidSel),
       el("p", { class: "card-sub", style: "margin:0 0 10px" },
         "This goes on the order and, for the tracking number, onto the customer's track card and into the posted message. Anything else - the delivery day, the customer, the address, the items - is under Edit."),
       el("div", { class: "popup-actions" },
@@ -1520,9 +1626,12 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
           // The whole order shares these, exactly as the Edit pop-up writes them.
           const before = String(first.trackingNo || "").trim();
           const number = tracking.value.trim();
+          const method = paidSel.value;
           for (const o of group.orders) {
             o.note = note.value.trim();
             o.trackingNo = number;
+            if (method) o.paidMethod = method;
+            else delete o.paidMethod; // "Not recorded" is the absent key, as everywhere
           }
           save(state);
           maybeSync(state);
@@ -1650,6 +1759,8 @@ function orderGroupRow(state, group, root, dateId) {
         return;
       }
       if (stSel.value === (first.status || "new")) return;
+      // Preparing takes the orders' ingredients off your stock; stepping back to
+      // before Preparing (an undo) puts them back. Forward moves leave stock be.
       adjustForStatus(state, orders, stSel.value, STATUSES.map(([id]) => id));
       for (const o of orders) {
         o.status = stSel.value;
@@ -1699,7 +1810,9 @@ function orderGroupRow(state, group, root, dateId) {
       sendOrderWhatsApp(state, group, { builder: buildPaymentReminder, doneMsg: "Payment reminder drafted — press Send in WhatsApp", root, dateId }),
       "soft small");
     if (!first.whatsapp) remindBtn.disabled = true;
-    actions.push(remindBtn, button("Paid", () => markPaid(state, group, root, dateId), "small primary"));
+    actions.push(remindBtn,
+      button("Paid · Cash", () => markPaid(state, group, root, dateId, "cash"), "small primary"),
+      button("Paid · TNG", () => markPaid(state, group, root, dateId, "tng"), "small primary"));
   } else if (status === "baking") {
     // Print the label at Preparing — the baker needs it in hand to kit the order
     // (stick it on the pouch/box as the items go in), before it is marked Packed.
@@ -1748,6 +1861,10 @@ function orderGroupRow(state, group, root, dateId) {
       noWaHint),
     el("div", { class: "li-right" },
       el("span", { class: "qty-chip" }, `×${qtyTotal}`),
+      first.paidMethod
+        ? el("span", { class: `paid-tag${first.paidMethod === "tng" ? " tng" : ""}` },
+            first.paidMethod === "cash" ? "Cash" : "TNG")
+        : null,
       stSel,
       ...actions),
     orderJourneyEl(first),
@@ -1879,13 +1996,23 @@ function sendOrderWhatsApp(state, group, { builder, markSent = false, doneMsg, r
 // The customer's TNG receipt has come back — mark the order Paid for real. This
 // is what turns the Paid step green on the row's map (the Paid button, not just
 // picking Paid in the dropdown). No WhatsApp needed.
-function markPaid(state, group, root, dateId) {
-  for (const o of group.orders) o.paidReceived = true;
+// Money in — and HOW it came in (16 Sep 2026). Two buttons rather than one, because
+// cash in her hand and a TNG transfer in the app are reconciled against different
+// things: the row records which, and when. The stamp lands when the money actually
+// arrives, so an order can sit at Paid waiting on a transfer without being counted
+// as collected anywhere. The customer sees none of this — their card just goes green.
+function markPaid(state, group, root, dateId, method) {
+  const at = new Date().toISOString();
+  for (const o of group.orders) {
+    o.paidReceived = true;
+    o.paidMethod = method; // "cash" | "tng"
+    o.paidAt = at;
+  }
   anchorRowId = firstOf(group).id;
   save(state);
   maybeSync(state);
   publishTracking(state, group); // Paid now green on the customer's track card too
-  toast("Paid — payment received");
+  toast(method === "cash" ? "Paid — cash received" : "Paid — TNG received");
   renderAll(root, state, new URLSearchParams({ date: dateId }));
 }
 

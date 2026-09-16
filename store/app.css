@@ -442,6 +442,24 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   .prod-next { animation: none; box-shadow: 0 0 0 3px rgba(196, 85, 47, .16); }
 }
+/* The chip is a control now (v99) — it orders for the day it names. A button
+   arrives with the browser's own chrome, so the chip's look is restated for it,
+   and the arrow says out loud what the pulse was only hinting at. */
+button.prod-next {
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+button.prod-next::after { content: " →"; }
+button.prod-next:active { background: #f6d3c0; }
+/* With a basket already in hand the line is a label again (v99): it still names
+   the day, but tapping it would move the customer's whole order, so it wears no
+   arrow, takes no pointer, and sits still rather than pulsing at them. */
+button.prod-next.off { animation: none; cursor: default; box-shadow: 0 0 0 3px rgba(196, 85, 47, .16); }
+button.prod-next.off::after { content: ""; }
 
 /* The baker's policies text on the shop — line breaks preserved exactly as
    typed in the app (white-space: pre-line collapses spaces but keeps newlines). */

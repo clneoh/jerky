@@ -5,7 +5,7 @@
 // removes a delivery date — it is purely something to see while planning.
 
 import { navigate } from "../app.js";
-import { deliveryStatus, longDate, todayISO, weekdayName } from "../dates.js";
+import { dayListLabel, dayName, deliveryStatus, generateUpcomingDates, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
 import { effectiveCapacity, totalUnitsOnDate } from "../bom.js";
 import { el, button, confirmDialog, showPopup, toast } from "../ui.js";
 import { newId, save } from "../state.js";
@@ -152,7 +152,7 @@ function buildAddCard(state) {
     ? el("p", { class: "card-sub", style: "margin:0 0 8px" },
       "A reminder on the calendar — it never adds or changes delivery dates.")
     : el("p", { class: "card-sub", style: "margin:0 0 8px" },
-      "Tap one or more dates, then Add. Tap an added date again to take it off.");
+      "Tap one or more dates, then Add. Tap an added date again to take it off. Tap a weekday letter — M for Monday — to pick every one of that day in the month at once.");
 
   return el("div", { class: "card" },
     modes,
@@ -160,8 +160,13 @@ function buildAddCard(state) {
     sub,
     head,
     occMode ? buildOccGrid(state, weeks) : buildAddGrid(state, weeks),
-    occMode ? occBody(state) : el("div", { class: "btn-row", style: "margin-top:10px" },
-      button(`Add selected${picked.size ? ` (${picked.size})` : ""}`, () => addSelected(state), "primary")));
+    occMode ? occBody(state) : el("div", {},
+      el("div", { class: "btn-row", style: "margin-top:10px" },
+        button(`Add selected${picked.size ? ` (${picked.size})` : ""}`, () => addSelected(state), "primary")),
+      el("div", { class: "btn-row", style: "margin-top:8px" },
+        button("Generate the next dates", () => generateDates(state), "ghost")),
+      el("p", { class: "card-sub", style: "margin:6px 0 0" },
+        `Generate adds the next dates that follow your delivery days${dayListLabel(state.settings.deliveryDays) ? ` — ${dayListLabel(state.settings.deliveryDays)}` : ""}.`)));
 }
 
 // ── add-dates grid (mode 1) ───────────────────────────────────────────────
@@ -172,14 +177,118 @@ function buildAddCard(state) {
 // everything (see .cal-cell.added). The same two shapes come from the same
 // module on every calendar in the app.
 
+// Which days of the month on screen a weekday letter stands for: today or later,
+// and not already one of her delivery dates (an added day is taken off by tapping
+// the day itself, never by the letter).
+function weekdayTargets(days, col, today, addedMap) {
+  return days.filter((d, i) => d && i % 7 === col && d >= today && !addedMap.has(d));
+}
+
+// Tap M and every Monday in the month is picked, so a bake week is one tap instead
+// of four — the same gesture the Availability card uses to mark a product's sell
+// days. Tapping it again puts them back.
+function pickWeekday(state, days, col, today, addedMap) {
+  const targets = weekdayTargets(days, col, today, addedMap);
+  if (!targets.length) return toast(`No ${dayName(col)} left to add this month`);
+  const all = targets.every((d) => picked.has(d));
+  for (const d of targets) { if (all) picked.delete(d); else picked.add(d); }
+  renderAll(view(), state);
+}
+
 function buildAddGrid(state, weeks) {
   const today = todayISO();
   const addedMap = new Map(state.deliveryDates.map((d) => [d.date, d]));
-  const cells = weeks.flat().map((d) => dayCell(state, d, today, addedMap));
-  return el("div", { class: "cal-grid" },
-    ...DOW.map((d) => el("span", { class: "cal-dow" }, d)),
+  const days = weeks.flat();
+  const pickable = new Map(); // ISO date -> its cell, for the drag
+  const cells = days.map((d) => dayCell(state, d, today, addedMap, pickable));
+  const heads = DOW.map((label, col) => {
+    const targets = weekdayTargets(days, col, today, addedMap);
+    const mark = !targets.length ? ""
+      : targets.every((d) => picked.has(d)) ? " on"
+        : targets.some((d) => picked.has(d)) ? " part" : "";
+    return el("button", { class: `cal-dow dow-pick${mark}`, type: "button",
+      "aria-label": `Pick every ${dayName(col)} shown that is not a delivery date yet`,
+      onclick: () => pickWeekday(state, days, col, today, addedMap) }, label);
+  });
+  const grid = el("div", { class: "cal-grid", style: "touch-action:none" },
+    ...heads,
     ...cells,
     ...occPapers(state.occasions, weeks, today));
+  attachAddDrag(grid, pickable, state);
+  return grid;
+}
+
+// Swipe across the calendar to pick the whole run, exactly as a product's sell-day
+// calendar is dragged (16 Sep 2026). A tap still picks one day — or puts it back —
+// and a day that is already a delivery date is left alone by a drag: it is removed
+// by tapping it, the same way it was added.
+function attachAddDrag(grid, pickable, state) {
+  const order = (a, b) => (a <= b ? [a, b] : [b, a]);
+  const paint = (from, to) => {
+    const [lo, hi] = order(from, to);
+    for (const [d, cell] of pickable) cell.classList.toggle("drag-sel", d >= lo && d <= hi);
+  };
+  const clearPaint = () => { for (const cell of pickable.values()) cell.classList.remove("drag-sel"); };
+  const hitDate = (e) => {
+    const hit = document.elementFromPoint(e.clientX, e.clientY);
+    const cell = hit && hit.closest ? hit.closest(".pick-cell") : null;
+    return cell && cell.dataset.date ? cell.dataset.date : null;
+  };
+
+  let gesture = null; // { start, moved, last } while the finger is down
+  grid.addEventListener("pointerdown", (e) => {
+    const d = hitDate(e);
+    if (!d) return; // a weekday letter, an added day, or a day already gone
+    e.preventDefault();
+    gesture = { start: d, moved: false, last: d };
+    try { grid.setPointerCapture(e.pointerId); } catch (err) { /* older engine */ }
+    paint(d, d);
+  });
+  grid.addEventListener("pointermove", (e) => {
+    if (!gesture) return;
+    const d = hitDate(e);
+    if (!d) return;
+    if (d !== gesture.start) gesture.moved = true;
+    gesture.last = d;
+    paint(gesture.start, d);
+  });
+  const finish = (e) => {
+    if (!gesture) return;
+    const g = gesture;
+    gesture = null;
+    try { grid.releasePointerCapture(e.pointerId); } catch (err) { /* noop */ }
+    clearPaint();
+    if (g.moved) {
+      const [lo, hi] = order(g.start, hitDate(e) || g.last);
+      for (const d of pickable.keys()) if (d >= lo && d <= hi) picked.add(d);
+    } else {
+      nameDay(state.occasions, g.start, false);
+      if (picked.has(g.start)) picked.delete(g.start);
+      else picked.add(g.start);
+    }
+    renderAll(view(), state);
+  };
+  grid.addEventListener("pointerup", finish);
+  grid.addEventListener("pointercancel", () => { gesture = null; clearPaint(); });
+}
+
+// Bulk-add: the next dates following the delivery days in Settings — the same rule
+// and the same helper the Home screen's button uses, kept HERE, where she is
+// actually working on dates. Home's button only ever appeared on an empty calendar
+// (it is the thing that fills a bare one), so by the time she had dates the button
+// was gone and every Monday had to be tapped by hand (16 Sep 2026).
+function generateDates(state) {
+  const made = generateUpcomingDates(state.settings, 6, state.deliveryDates.map((d) => d.date));
+  if (!made.length) return toast("The next dates are already on the calendar");
+  for (const date of made) state.deliveryDates.push({ id: newId("del"), date, notes: "" });
+  // Show the month they landed in: the next six dates can run into the month after
+  // this one, and a screen that does not move reads as a button that did nothing.
+  const first = new Date(`${made[0]}T00:00:00`);
+  viewMonth = { year: first.getFullYear(), month: first.getMonth() };
+  save(state);
+  maybeSync(state);
+  toast(`Added ${made.length} delivery dates — ${shortDate(made[0])} onwards`);
+  renderAll(view(), state);
 }
 
 // The contents of a day that carries a sheet: the small green delivery pill
@@ -193,7 +302,7 @@ function cellInner(layerOn, added, dayNum) {
   return kids;
 }
 
-function dayCell(state, date, today, addedMap) {
+function dayCell(state, date, today, addedMap, pickable) {
   if (!date) return el("span", { class: "cal-cell blank" });
   const dayNum = String(Number(date.slice(8, 10)));
   const addedTo = addedMap.get(date);
@@ -225,15 +334,15 @@ function dayCell(state, date, today, addedMap) {
   if (added || past) {
     return el("span", { class: cls }, ...inner);
   }
-  return el("button", {
-    class: `${cls} tappable${selected ? " sel" : ""}`,
-    onclick: () => {
-      nameDay(state.occasions, date, past);
-      if (selected) picked.delete(date);
-      else picked.add(date);
-      renderAll(view(), state);
-    },
+  // A day she could still add. It carries no click handler of its own: the drag
+  // layer on the grid answers both the tap (one day) and the swipe (a run), so the
+  // two can never fight over the same gesture.
+  const cell = el("button", {
+    class: `${cls} tappable pick-cell${selected ? " sel" : ""}`,
+    dataset: { date },
   }, ...inner);
+  pickable.set(date, cell);
+  return cell;
 }
 
 // ── occasion mode (mode 2) ────────────────────────────────────────────────

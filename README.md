@@ -419,6 +419,48 @@ The one shared root module is `availability.js` — the pure sell-day rules
   Products starts it folded to **＋ New product**. Same fold-head/fold-body/outside-tap
   wiring as the ＋ New order card.
 
+## The till, a tappable Next-available line, and picking dates fast (v99–v102)
+
+Four versions, three of them about doing a small job with fewer taps.
+
+- **Money, recorded as it lands** (v101) — a new pure module `admin/js/money.js`
+  (`groupValue`, `isCollected`, `methodOf`, `deliveryOf`, `paidOf`, `dayMoney`,
+  `moneyBetween`) behind the day header's till line and the new
+  `admin/js/views/money.js` screen (*More → 💰 Money*, route `#/money`). Cash and
+  TNG each get their own `Paid · Cash` / `Paid · TNG` button on the row
+  (`markPaid(state, group, root, dateId, method)`), `paidMethod` + `paidAt` are
+  written on the order, and the Note / tracking pop-up gains a *Paid by* select
+  (`openNoteTrackingPopup` → `Paid by`). The counting rule is the point: **collected
+  money is bucketed by `paidAt`** (falling back to the delivery date for an order
+  paid before v101), **still-to-collect by the delivery date**. An order paid with no
+  method recorded lands under *Paid, no method* rather than being guessed at.
+- **A price on the order line** (v101) — every item line on the ＋ New order form and
+  in the Edit pop-up now carries its own price box. It seeds from the product's menu
+  price; typing over it sells *that* order at that price, and every reader
+  (`confirm.js`, `messages.js`, `customers.js` spend, the track card, the money
+  screens) already prefers the frozen `unitPrice` from v70, so nothing downstream
+  needed to change. Blank means "whatever the product costs".
+- **The Next-available line takes the day** (v99) — on the shop, a kept-listed
+  product's `Next available: Sat 19 Sep` line is a control: `store/app.js` gives it a
+  click handler that calls the same `pickDay(day, { scroll: true })` the calendar
+  uses, then scrolls the calendar into view (`registry["dates"].scrolled`). With
+  anything in the basket the line keeps `.off` and tapping it writes a note instead
+  — `nextBlockedBasket` in `store-lang.js` ("Your basket is for %1. To order for
+  another day, choose it on the calendar above." / 你的购物袋是 %1 的 / Bakul anda
+  untuk %1) — because taking a day would silently move the whole basket and drop
+  whatever no longer fits.
+- **Delivery dates, one tap or a swipe** (v100, v102) —
+  `admin/js/views/deliveries.js`: a **weekday letter** in the calendar header is a
+  button that picks (or unpicks) every one of that weekday in the month shown, and
+  `Generate the next dates` — which used to live only inside Home's "no dates yet"
+  message, and so disappeared the moment it worked — is now always on the screen,
+  following `settings.deliveryDays`. v102 adds **drag-to-select**: `drag-sel` cells
+  fill under the finger and `Add selected` commits the run, the same gesture a
+  product's sell days use. Deliberately **no From/To pair** here — a delivery date is
+  one day, where a sell period genuinely has two ends. `admin/js/dates.js` gained
+  `dayListLabel` so Home's empty state and the line under Generate name the owner's
+  own `deliveryDays` instead of a hard-coded "Mon/Wed/Fri".
+
 ## The last status, and a posted order's tracking number (v97–v98)
 
 The final step of the journey and the two fields the owner reaches for most.
@@ -822,6 +864,7 @@ admin/ — backoffice app (/admin/):
   css/print.css       prints only the PO card
   js/state.js         schema, localStorage load/save, ids, formatting, order-line snapshot
   js/dates.js         posting dates, cut-off, countdown (pure)
+  js/money.js         what came in — cash / TNG / still to collect (pure)
   js/bom.js           BOM explosion, costs, capacity (pure)
   js/supabase.js      live availability + storefront config publish, order intake
   js/sync.js          shared-data sync engine (queue, pull-then-flush, conflict)

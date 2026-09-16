@@ -67,9 +67,26 @@ export function generateUpcomingDates(settings, n = 8, existing = []) {
   return out;
 }
 
+const WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
 export function weekdayName(dateStr) {
-  const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  return names[new Date(`${dateStr}T00:00:00`).getDay()];
+  return WEEKDAY_NAMES[new Date(`${dateStr}T00:00:00`).getDay()];
+}
+
+// The same names the other way round: a weekday NUMBER (0 = Sunday) as a name, for
+// naming a weekday rule rather than a date — a delivery-day pattern, or "the next
+// Monday" on a calendar column.
+export function dayName(n) {
+  return WEEKDAY_NAMES[Number(n)] || "";
+}
+
+// "Mon, Wed and Fri" — a list of weekday numbers said the way a person would,
+// wherever the app names her pattern back to her.
+export function dayListLabel(days) {
+  const names = (days || []).map(dayName).filter(Boolean);
+  if (!names.length) return "";
+  if (names.length === 1) return names[0];
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
 export function longDate(dateStr) {

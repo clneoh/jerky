@@ -205,8 +205,10 @@ test("removing an item row drops it before submit", () => {
   click(byText(root, "＋ Add another item")[0]); // three rows total
   assert.equal(byClass(root, "add-item").length, 3);
 
-  // Remove the second row (its ✕ button is the row's last child).
-  click(byClass(root, "add-item")[1].children[2]);
+  // Remove the second row. The ✕ is found by its own class, not by counting the
+  // row's children: the row carries a price box too now, and counting would break
+  // every time the row grows a control.
+  click(byClass(byClass(root, "add-item")[1], "inbox-del")[0]);
   assert.equal(byClass(root, "add-item").length, 2, "row removed on ✕");
   assert.equal(selectedValue(byClass(root, "add-item")[0].children[0]), "p1", "kept row keeps its selection");
 
@@ -250,4 +252,35 @@ test("repricing or renaming a product afterwards does not rewrite the past order
   const block = byClass(root2, "list-item")[0];
   assert.equal(block.querySelectorAll(".li-title")[0].children[0].text, "Focaccia",
     "the row still names what was sold");
+});
+
+test("a price typed on the New order form is what that order is sold at", () => {
+  const state = baseState();
+  const root = createEl("div");
+  renderOrders(root, state, new URLSearchParams({ date: "d1" }));
+
+  const row = byClass(root, "add-item")[0];
+  change(row.children[0], "p1"); // Focaccia, RM15 — fills the price box
+  const priceBox = byClass(byClass(root, "add-item")[0], "line-price")[0];
+  assert.equal(String(priceBox.value), "15", "the box starts on the product's own price");
+  priceBox.value = "12.50"; // a walk-in price
+  (priceBox._listeners.input || []).forEach((f) => f.call(priceBox));
+
+  assert.match(byClass(root, "card-sub").map((n) => n.textContent).join(" | "),
+    /Items total: RM 12.50/, "and the row total follows what she typed");
+
+  byPlaceholder(root, "Customer name (optional)")[0].value = "Bee";
+  click(byText(root, "＋ Add order")[0]);
+  assert.equal(state.orders[0].unitPrice, 12.5, "the order is sold at the price she typed");
+  assert.equal(state.orders[0].productName, "Focaccia", "the name is still the product's");
+
+  // Swapping the product re-fills the box, so a line can never keep the old price.
+  const root2 = createEl("div");
+  renderOrders(root2, state, new URLSearchParams({ date: "d1" }));
+  const row2 = byClass(root2, "add-item")[0];
+  change(row2.children[0], "p1");
+  assert.equal(String(byClass(byClass(root2, "add-item")[0], "line-price")[0].value), "15");
+  change(row2.children[0], "p2"); // Sandwich, RM8
+  assert.equal(String(byClass(byClass(root2, "add-item")[0], "line-price")[0].value), "8",
+    "the box follows the product she picked");
 });
