@@ -681,3 +681,85 @@ test("a method she took off the list still has a book, because its money is stil
   assert.ok(kean, "the old label still gets a line — it would otherwise be money she cannot see");
   assert.match(kean.children[1].textContent, /RM -250\.00/);
 });
+
+// ── v116: Day one, the opening balance ───────────────────────────────────────
+// "we need to enter opening balance" (17 Sep 2026). One form for the three answers that
+// belong together — the tin, the phone, the shelf. The money boxes write ordinary money-in
+// rows, the stock boxes set each ingredient's On hand, and a blank box changes nothing.
+function dayOneState() {
+  const st = state();
+  st.settings.currency = "RM";
+  st.uoms = [
+    { id: "u_g", name: "g", family: "weight", toBase: 1 },
+    { id: "u_kg", name: "kg", family: "weight", toBase: 1000 },
+  ];
+  st.ingredients = [
+    { id: "i1", name: "Almonds", unit: "g", uomId: "u_g", costPerUnit: 0.05, active: true, onHand: 250 },
+    { id: "i2", name: "Strong flour", unit: "kg", uomId: "u_kg", costPerUnit: 4, active: true },
+    { id: "i3", name: "Labour", unit: "hr", uomId: "u_g", costPerUnit: 8, active: true, notPurchased: true },
+  ];
+  return st;
+}
+
+test("Day one writes the tin, the phone and the shelf in one go", (t) => {
+  globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+  const realTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (fn) => { fn(); return 1; };
+  t.after(() => { globalThis.setTimeout = realTimeout; });
+
+  const st = dayOneState();
+  const root = document.createElement("div");
+  renderMoney(root, st);
+  const press = (r, text) => allOf(r).find((n) => n.tagName === "BUTTON" && n.textContent.trim() === text)
+    ._listeners.click.forEach((f) => f());
+
+  press(root, "Set"); // the Day one line, beside Books
+  const form = screen["popup-layer"];
+  const box = (label) => allOf(form).find((n) => n.attrs && n.attrs["aria-label"] === label);
+  assert.ok(box("Cash in your tin") && box("Money on your phone (TNG)"),
+    "the tin and the phone are both asked for");
+  assert.ok(box("Strong flour on hand") && box("Almonds on hand"), "and every ingredient has a box");
+  assert.ok(!box("Labour on hand"),
+    "except the ones she never buys — labour has no shelf to count");
+
+  box("Cash in your tin").value = "500";
+  box("Money on your phone (TNG)").value = "120.50";
+  box("Strong flour on hand").value = "5";   // in its own unit: kg
+  box("Almonds on hand").value = "600";      // grams
+  press(form, "Save day one");
+
+  assert.equal(st.deposits.length, 2, "two money-in rows, one per way of paying");
+  assert.deepEqual(st.deposits.map((d) => `${d.method}=${d.amount}`), ["Cash=500", "TNG=120.5"]);
+  assert.equal(st.deposits[0].note, "Opening balance", "and each says what it is");
+  assert.equal(st.ingredients[0].onHand, 600, "grams are stored as grams");
+  assert.equal(st.ingredients[1].onHand, 5000, "and 5 kg is stored as 5000 base grams");
+  assert.equal(st.ingredients.find((i) => i.id === "i3").onHand, undefined,
+    "an ingredient with no box is left exactly as it was");
+});
+
+test("Day one leaves everything alone when the boxes are blank, and says so", (t) => {
+  globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+  const realTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (fn) => { fn(); return 1; };
+  t.after(() => { globalThis.setTimeout = realTimeout; });
+
+  const st = dayOneState();
+  const root = document.createElement("div");
+  renderMoney(root, st);
+  allOf(root).find((n) => n.tagName === "BUTTON" && n.textContent.trim() === "Set")
+    ._listeners.click.forEach((f) => f());
+  const form = screen["popup-layer"];
+  allOf(form).find((n) => n.tagName === "BUTTON" && n.textContent.trim() === "Save day one")
+    ._listeners.click.forEach((f) => f());
+
+  assert.equal((st.deposits || []).length, 0, "nothing saved from an empty form");
+  assert.equal(st.ingredients[0].onHand, 250, "and the stock she already had is untouched");
+
+  // A slip in one box must not save the rest half-way: it is checked before anything is written.
+  allOf(form).find((n) => n.attrs && n.attrs["aria-label"] === "Cash in your tin").value = "500";
+  allOf(form).find((n) => n.attrs && n.attrs["aria-label"] === "Almonds on hand").value = "abc";
+  allOf(form).find((n) => n.tagName === "BUTTON" && n.textContent.trim() === "Save day one")
+    ._listeners.click.forEach((f) => f());
+  assert.equal((st.deposits || []).length, 0, "one bad box holds the whole thing back");
+  assert.equal(st.ingredients[0].onHand, 250, "so nothing lands half-done");
+});

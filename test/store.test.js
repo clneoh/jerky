@@ -692,3 +692,69 @@ test("a self-collect order shows no tracking line", async () => {
     globalThis.fetch = async () => ({ ok: true, json: async () => [] });
   }
 });
+
+// ── v117: the customer's line for a pickup payment ───────────────────────────
+// The track card draws its own copy of the journey, so it has to agree with yours: a
+// regular who pays at the counter has no Paid step on either (17 Sep 2026).
+test("a bypassed order shows the customer five steps, with no Paid tick", async () => {
+  const box = document.getElementById("track-result");
+  globalThis.fetch = async () => ({ ok: true, json: async () => [{
+    status: "ready", confirmed_sent: true, paid_received: false,
+    delivery: "4 Sep · Post (nationwide)", items: "Chicken Jerky ×2", total: "RM36.00", customer: "Ain",
+  }] });
+  try {
+    await trackOrder("A3F9C2");
+    const journey = box.children.find((c) => c.tagName === "DIV" && String(c.className || "").includes("tj"));
+    const labels = [];
+    const steps = [];
+    (function walk(n) {
+      for (const c of n.children || []) {
+        if (String(c.className || "").split(/\s+/).includes("tj-step")) steps.push(c);
+        if (String(c.className || "").split(/\s+/).includes("tj-label")) {
+          labels.push((c.children[0] && c.children[0].text) || String(c.textContent || ""));
+        }
+        walk(c);
+      }
+    })(journey);
+    assert.deepEqual(labels, ["New", "Confirmed", "Paid", "Preparing", "Packed", "Collected / Posted"],
+      "every step keeps its place, so the customer's line reads like any other order's");
+    assert.equal(steps.length, 6, "six steps");
+    const paid = steps.find((s) => {
+      const l = (s.children || []).find((c) => String(c.className || "").includes("tj-label"));
+      return l && String(l.children[0].text || "").includes("Paid");
+    });
+    assert.ok(String(paid.className).includes("skipped"), "the Paid step is marked as gone past");
+    assert.ok(!String(paid.className).includes("done"), "and is not green while the money is owed");
+    assert.equal(steps.filter((s) => String(s.className || "").includes("now")).length, 1,
+      "and exactly one step still flashes");
+
+    // The same order with the money recorded: the step is back, green, where it belongs.
+    globalThis.fetch = async () => ({ ok: true, json: async () => [{
+      status: "ready", confirmed_sent: true, paid_received: true,
+      delivery: "4 Sep · Post (nationwide)", items: "Chicken Jerky ×2", total: "RM36.00", customer: "Ain",
+    }] });
+    await trackOrder("A3F9C2");
+    const paidLabels = [];
+    (function walk(n) {
+      for (const c of n.children || []) {
+        if (String(c.className || "").split(/\s+/).includes("tj-label")) {
+          paidLabels.push((c.children[0] && c.children[0].text) || "");
+        }
+        walk(c);
+      }
+    })(box.children.find((c) => c.tagName === "DIV" && String(c.className || "").includes("tj")));
+    assert.ok(paidLabels.includes("Paid"), "the Paid step is on the customer's line either way");
+    const after = box.children.find((c) => c.tagName === "DIV" && String(c.className || "").includes("tj"));
+    const allSteps = [];
+    (function walk(n) {
+      for (const c of n.children || []) {
+        if (String(c.className || "").split(/\s+/).includes("tj-step")) allSteps.push(c);
+        walk(c);
+      }
+    })(after);
+    assert.ok(!allSteps.some((s) => String(s.className || "").includes("skipped")),
+      "once the money is recorded the mark is gone");
+  } finally {
+    globalThis.fetch = async () => ({ ok: true, json: async () => [] });
+  }
+});

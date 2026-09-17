@@ -419,12 +419,14 @@ The one shared root module is `availability.js` — the pure sell-day rules
   Products starts it folded to **＋ New product**. Same fold-head/fold-body/outside-tap
   wiring as the ＋ New order card.
 
-## The books: money out, profit and loss, and your own money (v103–v115)
+## The books: money out, profit and loss, and your own money (v103–v118)
 
 Eleven versions that turn the app from a takings ledger into double-entry-ish
 bookkeeping: money out, the two lists the books are built from, a profit & loss
 account, and a journal behind every figure — then two follow-ups (v114, v115) that
-fix the Profit screen itself. All code-only — no SQL.
+fix the Profit screen itself, and three more (v116–v118) that open the books with a
+Day one balance and settle how the Paid step reads when a regular pays at pickup.
+All code-only — no SQL.
 
 - **Money out** (v103) — a saved purchase order asks what it cost. `askWhatYouPaid(state, po)`
   (`admin/js/views/history.js`, using `methodPills` from `money.js`) opens on the list's own
@@ -497,6 +499,29 @@ fix the Profit screen itself. All code-only — no SQL.
   ran, and `draw` then reused it, so stepping back a month left the forward arrow disabled at the
   state it had on the month the screen opened on. Both `now` and `canNext` are now computed inside
   `draw`, so the arrows move both ways (and the forward one disables again only on the current month).
+- **Day one — the opening balance** (v116) — `openDayOne(state, redraw)` in `admin/js/views/money.js`,
+  reached from the **Day one** line under **Books** on the Money screen. It asks for the cash in the
+  tin, the money on the phone, the date the books begin, and one box per ingredient for what is
+  already on the shelf. The tin and the phone are written as ordinary `state.deposits` rows (so the
+  Money screen's net is right from the first day and nothing new has to understand them); each stock
+  box sets `ingredient.onHand`, which the shopping lists already subtract. Boxes are typed in the
+  unit she keeps that ingredient in — two small helpers were exported from `views/ingredients.js` for
+  that, `currentUomId(state, ing)` and the already-exported `cookingFamilyOf(...)`, so the form
+  offers the units of the same family and converts with the ingredient's own `toBase`. Every box is
+  validated **before** anything is written, so a bad value half-way down saves nothing at all, and an
+  empty box is skipped entirely (reopening the form to fix one figure never wipes the rest).
+  Ingredients marked **not purchased** are left out — they have no shelf.
+- **The Paid step when a regular pays at pickup** (v117 → v118) — v117 dropped the Paid step from
+  the journey of an order that skipped it (`journeyMarks` returning one mark fewer) and kept the
+  Paid · Cash / Paid · TNG buttons on at every stage from Paid onwards. v118 replaced the dropped
+  step with a **skipped** one on the owner's instruction: the step keeps its place and wears an X
+  (`.oj-cross` / `.tj-cross`), so every order's map is six steps in the same places and a step
+  *deliberately gone past but not paid* is distinguishable from one not yet reached. The three
+  helpers are the ones to read: `PAID_AT` (`STATUSES.findIndex` / `JOURNEY.findIndex`), the
+  `paidSkipped` flag (`!paidDone && at > PAID_AT`), and the `done` array + `live` flag that walk the
+  marks. `store/app.js` mirrors it exactly, so the customer's track page draws the same six steps.
+  `STAGES_AT_OR_PAST_PAID` also gate the status dropdown: picking Paid **or any later stage** on an
+  order that has no recorded payment marks it as owing money.
 
 **Sync.** `expenses` and `deposits` join `LISTS` in `admin/js/sync.js`, so money out and money in
 travel between the owner's phones like every other list. **One upstream gap, ported faithfully and

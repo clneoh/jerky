@@ -1254,6 +1254,8 @@ const JOURNEY = [
   // backoffice shows, so the two maps read alike.
   ["delivered", "trkFinal"],
 ];
+// Where the money stage sits in that list — used to tell "past Paid" from "on Paid".
+const PAID_AT = JOURNEY.findIndex(([id]) => id === "paid");
 
 // A progress line for the track card, like an online-shop parcel tracker: each
 // step is a circle joined to the next by a line. Reached steps are green with a
@@ -1272,23 +1274,28 @@ function journeyEl(row) {
   const at = idx;
   const confirmedDone = row.confirmed_sent !== false;
   const paidDone = row.paid_received !== false;
-  let end = 0; // first index NOT done; steps before it are green
-  for (let i = 0; i < JOURNEY.length; i++) {
-    let done;
-    if (i < at) done = true;                          // already moved past
-    else if (i === at) done = i === 0 ? true          // New: done on arrival
-      : i === 1 ? confirmedDone                       // Confirmed: after Send confirmation
-      : i === 2 ? paidDone                            // Paid: after the Paid button
-      : true;                                         // Preparing/Packed/Delivered: on selection
-    else done = false;
-    if (!done) break;
-    end = i + 1;
-  }
+  // A regular who pays when you collect never passes through Paid: the step stays in its
+  // place and wears an X instead of a tick, never green, so the customer's line reads in the
+  // same places as yours and the one step still to settle is plain to see (17 Sep 2026).
+  // Once you record the money, the X becomes the green tick.
+  const paidSkipped = !paidDone && at > PAID_AT;
+  const done = JOURNEY.map((_, i) => {
+    if (i < at) return true;                     // already moved past
+    if (i > at) return false;
+    if (i === 0) return true;                    // New: done on arrival
+    if (i === 1) return confirmedDone;           // Confirmed: after Send confirmation
+    if (i === PAID_AT) return paidDone;          // Paid: after the Paid button
+    return true;                                 // Preparing/Packed/Delivered: on selection
+  });
   const root = el("div", { class: "tj", "aria-label": "Order status journey" });
+  let live = false; // the first step still to do is the one that flashes
   JOURNEY.forEach(([id, labelKey], i) => {
-    const state = i < end ? "done" : i === end ? "now" : "todo";
+    const skipped = i === PAID_AT && paidSkipped;
+    const state = skipped ? "skipped" : done[i] ? "done" : (!live ? "now" : "todo");
+    if (!skipped && !done[i]) live = true;
     const mark =
       state === "done" ? el("span", { class: "tj-check" }, "✓")
+      : state === "skipped" ? el("span", { class: "tj-cross" }, "✕")
       : state === "now" ? el("span", { class: "tj-dot" }) : null;
     root.append(el("div", { class: `tj-step ${state}` }, [
       el("div", { class: "tj-track" }, [el("div", { class: "tj-node" }, mark)]),

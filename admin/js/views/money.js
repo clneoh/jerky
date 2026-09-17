@@ -4,11 +4,14 @@
 // maths lives in js/money.js — the same module the Orders day header reads, so the
 // two can never disagree; this screen only draws it.
 
-import { el, button, showPopup, toast, confirmDialog } from "../ui.js";
-import { fmtRM, newId, save } from "../state.js";
+import { el, button, select, showPopup, toast, confirmDialog } from "../ui.js";
+import { byId, fmtRM, newId, round2, save } from "../state.js";
 import { depositsBetween, expensesBetween, journalFor, moneyBetween, otherMethods, pocketOwed } from "../money.js";
 import { categoriesOf, categoryLabels, drawingLabel, isCash, isTng, methodLabel, methodRank, methodsOf, pocketMethods, purseMethods } from "../accounts.js";
 import { entryForm, newEntryChip } from "./accountsEditor.js";
+// An ingredient's own unit, resolved exactly as the Ingredients screen resolves it, so a
+// stock count typed here lands as the same number of grams the On-hand line shows.
+import { currentUomId, cookingFamilyOf } from "./ingredients.js";
 import { dateField } from "../datepicker.js";
 import { longDate, todayISO, weekdayName } from "../dates.js";
 import { maybeSync } from "../supabase.js";
@@ -80,6 +83,112 @@ function openJournal(state, method, from, to, label) {
     () => el("div", {},
       el("p", { class: "card-sub", style: "margin:0 0 10px" }, label),
       journalBody(state, method, from, to, label)));
+}
+
+// Day one — where she stands when the books begin (17 Sep 2026: "we need to enter opening
+// balance"). An opening balance is four answers, and three of them belong on one screen: the
+// cash in the tin, the money on her phone, and what is on the shelf. The fourth — who still
+// owes her — needs no box: those orders simply stay unpaid and show under Still to collect,
+// so the form says so rather than asking for a figure.
+//
+// Nothing here is new machinery. The two money boxes write ordinary money-in rows (the same
+// rows section 3 of the manual tells her to write by hand), so from that day on the Net is
+// what she should really hold; the stock boxes set each ingredient's On hand, which is the
+// figure the shopping lists subtract. A box left empty changes nothing — she types only what
+// she is holding.
+function openDayOne(state, redraw) {
+  const cur = state.settings.currency || "RM";
+  const list = (state.ingredients || [])
+    .filter((i) => i && i.active !== false && i.notPurchased !== true)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+
+  const money = (label, hint) => {
+    const box = el("input", { class: "input", type: "number", inputmode: "decimal",
+      min: "0", step: "0.01", placeholder: "RM", "aria-label": label });
+    return { box, field: el("div", { class: "field" }, el("label", {}, label), box,
+      hint ? el("p", { class: "hint" }, hint) : null) };
+  };
+  const cash = money("Cash in your tin");
+  const tng = money("Money on your phone (TNG)");
+  let date = todayISO();
+  const datePick = dateField(date, (iso) => { date = iso; });
+
+  // One row per ingredient: a box in the unit she already thinks in, with the unit offered so
+  // "5" cannot quietly become five grams.
+  const rows = list.map((ing) => {
+    const family = cookingFamilyOf(state.uoms || [], currentUomId(state, ing));
+    const units = (state.uoms || []).filter((u) => u.family === family)
+      .sort((a, b) => Number(a.toBase) - Number(b.toBase));
+    const chosen = units.find((u) => u.id === currentUomId(state, ing)) || units[0] || { id: "", name: ing.unit || "unit" };
+    // The unit she settles on lives here, not on the node: reading it back off the <select>
+    // happens to work in a browser and does not everywhere else.
+    let chosenId = chosen.id;
+    const num = el("input", { class: "input", type: "number", inputmode: "decimal", min: "0",
+      step: "any", placeholder: "0", "aria-label": `${ing.name} on hand`, style: "flex:0 0 96px" });
+    const unitSel = units.length > 1
+      ? select(units.map((u) => ({ value: u.id, label: u.name })), chosenId, () => { chosenId = unitSel.value; })
+      : el("span", { class: "muted" }, chosen.name);
+    return {
+      ing, num, unitSel,
+      toBase: () => Number(byId(state.uoms || [], chosenId)?.toBase) || 1,
+      node: el("div", { class: "info-row", style: "gap:8px" },
+        el("span", {}, ing.name),
+        el("span", { style: "display:flex;gap:6px;align-items:center" }, num, unitSel)),
+    };
+  });
+
+  showPopup(el("div", { class: "popup-title-row" }, "Day one"), (refresh, close) => el("div", {},
+    el("p", { class: "card-sub", style: "margin:0 0 10px" },
+      "Where you stand the day your books begin. Fill in what you have and leave the rest blank — anything you leave empty is left exactly as it is."),
+    cash.field,
+    tng.field,
+    el("div", { class: "field" }, el("label", {}, "The day your books begin"), datePick,
+      el("p", { class: "hint" }, `The Money screen counts by the stretch on screen, so an opening balance dated outside it will not show in that stretch's Net.`)),
+    list.length
+      ? el("div", {},
+          el("p", { class: "card-sub", style: "margin:10px 0 2px" }, "What is on your shelf"),
+          el("p", { class: "hint", style: "margin:0 0 8px" },
+            "Your shopping lists subtract this, so your first list buys only what you are short of."),
+          ...rows.map((r) => r.node))
+      : el("p", { class: "card-sub" }, "No ingredients yet — add them under More → Ingredients and come back."),
+    el("p", { class: "card-sub", style: "margin:12px 0 0" },
+      "Customers who still owe you need nothing here: leave those orders unpaid and they show under Still to collect. Money you OWE — a loan you took out for equipment — has nowhere to go on purpose: the app keeps a loan as a way of paying, so record what it pays for as it happens."),
+    el("div", { class: "popup-actions" },
+      button("Cancel", close, "ghost"),
+      button("Save day one", () => {
+        const cashVal = cash.box.value.trim() === "" ? 0 : Number(cash.box.value);
+        const tngVal = tng.box.value.trim() === "" ? 0 : Number(tng.box.value);
+        const bad = [];
+        if (!Number.isFinite(cashVal) || cashVal < 0) bad.push("the cash in your tin");
+        if (!Number.isFinite(tngVal) || tngVal < 0) bad.push("the money on your phone");
+        // Type-check every stock box BEFORE writing anything, so a slip half way down does not
+        // leave half an opening balance saved.
+        const stock = [];
+        for (const r of rows) {
+          if (r.num.value.trim() === "") continue;
+          const v = Number(r.num.value);
+          if (!Number.isFinite(v) || v < 0) bad.push(r.ing.name);
+          else stock.push({ r, v });
+        }
+        if (bad.length) return toast(`Check these: ${bad.join(", ")}`);
+        if (!cashVal && !tngVal && !stock.length) {
+          return toast("Type what you are starting with, or tap Cancel");
+        }
+        const note = "Opening balance";
+        state.deposits = Array.isArray(state.deposits) ? state.deposits : [];
+        if (cashVal > 0) state.deposits.push({ id: newId("dep"), date, amount: cashVal, method: "Cash", note });
+        if (tngVal > 0) state.deposits.push({ id: newId("dep"), date, amount: tngVal, method: "TNG", note });
+        for (const { r, v } of stock) r.ing.onHand = round2(v * r.toBase());
+        save(state);
+        maybeSync(state);
+        const bits = [];
+        if (cashVal > 0) bits.push(`${fmtRM(cashVal, cur)} cash`);
+        if (tngVal > 0) bits.push(`${fmtRM(tngVal, cur)} TNG`);
+        if (stock.length) bits.push(`${stock.length} ingredient${stock.length === 1 ? "" : "s"}`);
+        toast(`Day one saved: ${bits.join(", ")}`);
+        close();
+        redraw();
+      }, "primary"))));
 }
 
 // Every way she pays, one book each — always reachable, however quiet the stretch. The
@@ -523,7 +632,13 @@ export function renderMoney(root, state) {
             el("p", { class: "card-title" }, "Books"),
             el("p", { class: "card-sub" },
               `Every way you pay · ${methodsOf(state).length} books, each opening into its own rows`)),
-          button("Open", () => openBooks(state, from, to, label), "ghost small"))),
+          button("Open", () => openBooks(state, from, to, label), "ghost small")),
+        el("div", { class: "card-row", style: "margin-top:12px" },
+          el("div", {},
+            el("p", { class: "card-title" }, "Day one"),
+            el("p", { class: "card-sub" },
+              "Where you stand when your books begin — the tin, the phone, the shelf")),
+          button("Set", () => openDayOne(state, () => draw()), "ghost small"))),
       el("p", { class: "card-sub", style: "margin:0 2px" },
         "Tap Cash, TNG or a loan row to see that method's journal - every movement that way in this stretch, in order, ending on what it should hold. Money in is counted by the day it landed - an order paid by transfer today counts today, even if it delivers on Friday. Money out is counted on the day you paid it: a shopping run records itself when you tap Bought on it, and everything else goes in by hand. Net is what should be in your purse and on your phone for this stretch; what is still to collect is counted by delivery day, because that is when you hand it over. The two lists this screen reads - what you spend ON, and HOW you paid - are edited right above, or added on the spot with the ＋ chip on either form."),
     );

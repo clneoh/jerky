@@ -648,6 +648,13 @@ button.prod-next.off::after { content: ""; }
 }
 .tj-check { color: #fff; font-size: 11px; font-weight: 800; line-height: 1; }
 .tj-dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; }
+
+/* A step the order went straight past — this customer pays when she collects, so Paid is
+   skipped. The step keeps its place so the line reads like every other order's, but it wears
+   an X and is never green while the money is outstanding (17 Sep 2026). */
+.tj-step.skipped .tj-node { background: #fbe7d8; box-shadow: inset 0 0 0 2px #c9641f; }
+.tj-cross { color: #c9641f; font-size: 11px; font-weight: 800; line-height: 1; }
+.tj-step.skipped .tj-label { color: #a86536; }
 .tj-label {
   margin-top: 6px;
   font-size: 9.5px;

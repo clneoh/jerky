@@ -76,6 +76,23 @@ test("journey marks: Paid completes only once payment is received", () => {
     ["done", "done", "now", "todo", "todo", "todo"], "payment received not yet marked");
 });
 
+test("journey marks: a regular who pays at the counter has no Paid step at all", () => {
+  // "Some close customer prefer to pay either by TnG or Cash when they puck up" (17 Sep 2026).
+  // Going Confirmed -> Preparing without the money recorded must never leave a tick on Paid.
+  assert.deepEqual(journeyMarks({ status: "baking", paidReceived: false }),
+    ["done", "done", "skipped", "done", "now", "todo"], "the step keeps its place, X not tick");
+  assert.deepEqual(journeyMarks({ status: "ready", paidReceived: false }),
+    ["done", "done", "skipped", "done", "done", "now"]);
+  assert.deepEqual(journeyMarks({ status: "delivered", paidReceived: false }),
+    ["done", "done", "skipped", "done", "done", "done"]);
+  // Paid in cash at the counter, then recorded: the money is real, so the step is back.
+  assert.deepEqual(journeyMarks({ status: "delivered", paidReceived: true }),
+    ["done", "done", "done", "done", "done", "done"]);
+  // And an order waiting ON the money stage keeps the step, because that is the work.
+  assert.deepEqual(journeyMarks({ status: "paid", paidReceived: false }),
+    ["done", "done", "now", "todo", "todo", "todo"]);
+});
+
 test("journey marks: later stages green on selection, Delivered ends all green", () => {
   assert.deepEqual(journeyMarks({ status: "baking" }),
     ["done", "done", "done", "done", "now", "todo"]);

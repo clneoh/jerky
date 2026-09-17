@@ -581,6 +581,14 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
 }
 .oj-check { color: #fff; font-size: 8px; font-weight: 800; line-height: 1; }
 .oj-dot { width: 5px; height: 5px; border-radius: 50%; background: #fff; }
+
+/* A step the order went straight past — a regular who pays when she collects skips Paid.
+   It keeps its place in the line so every order's route reads alike, but it wears an X on a
+   pale amber node and NEVER green, because the money has not been taken yet. Press
+   Paid · Cash / Paid · TNG and this becomes the ordinary green tick (17 Sep 2026). */
+.oj-step.skipped .oj-node { background: #fbe7d8; box-shadow: inset 0 0 0 1.5px #c9641f; }
+.oj-cross { color: #c9641f; font-size: 8px; font-weight: 800; line-height: 1; }
+.oj-step.skipped .oj-label { color: #a86536; }
 .oj-label {
   margin-top: 3px;
   font-size: 8.5px;

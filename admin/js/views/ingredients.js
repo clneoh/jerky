@@ -39,7 +39,9 @@ function renderAll(root, state) {
 }
 
 // The cooking unit an ingredient already uses (its uomId, else by unit name).
-function currentUomId(state, ing) {
+// Exported for the Money screen's Day one form, which takes a stock count in bulk and
+// must resolve an ingredient's unit the same way this screen does (17 Sep 2026).
+export function currentUomId(state, ing) {
   const list = state.uoms || [];
   if (ing && ing.uomId) return ing.uomId;
   if (ing && ing.unit) {
@@ -52,6 +54,7 @@ function currentUomId(state, ing) {
 function cookingFamilyOf(list, uomId) {
   return byId(list, uomId)?.family || "count";
 }
+export { cookingFamilyOf };
 
 // Shared fields + collect(). `ingredient` is null for a new ingredient, or the
 // real object when editing — so the add card and the Edit pop-up share it. The

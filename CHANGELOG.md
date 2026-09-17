@@ -1,8 +1,115 @@
-# Munchies Furkidz — change history (v54 → v115)
+# Munchies Furkidz — change history (v54 → v118)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**17 Sep 2026 — engine v118 (no database setup needed). The Paid step now stays in
+its place on every order, wearing an X until the money is in — and turns into a
+green tick when it is.** This replaces what v117 did, on your instruction.
+
+**Your reasoning, and you are right.** The customer's track page is the design:
+they must see the same steps in the same places every time, and your own app has
+to read the same way. v117 left the Paid step **off** an order that skipped it —
+five dots instead of six — which meant the two lines did not line up, and a
+missing step is itself a thing to puzzle over.
+
+**What happens now.** A regular who pays when you collect still never passes
+through Paid. But that step keeps its place in the line, and it wears an **X** —
+amber, deliberate — instead of a tick, and it never turns green while the money
+is outstanding:
+
+> New ✓  ·  Confirmed ✓  ·  **Paid ✕**  ·  Preparing ✓  ·  Packed ✓  ·  Collected / Posted ●
+
+Press **Paid · Cash** or **Paid · TNG** when the money is handed over — at
+whatever stage the order has reached — and **the X becomes the tick**: the
+ordinary green ✓, in the same spot, with the **Cash** or **TNG** tag beside the
+row. The order itself stays where it was: taking the money never drags it
+backwards.
+
+**Both lines change together.** Your row's map and the **customer's own track
+page** draw the same six steps, so the X is on their page too, and it turns green
+there the moment you record the money. A step that is *deliberately gone past but
+not paid* now looks different from a step that has not been reached (grey) and
+from a step that is done (green) — which is exactly the distinction that was
+missing.
+
+**17 Sep 2026 — engine v117 (no database setup needed). A regular who pays when
+you collect no longer has a Paid step on that order — and the Paid · Cash /
+Paid · TNG buttons stay on until the money is actually recorded, wherever the
+order has got to.** From your note about close customers paying by TNG or cash at
+pickup.
+
+**What was wrong.** Move an order from Confirmed straight to Preparing — no
+payment — and the row's map still showed **Paid with a green tick**. It was
+claiming money you had not taken. The app assumed "past Paid means paid", which
+is fine for your older orders but false for a regular who settles up at the
+counter.
+
+**What happens now.**
+- **A bypassed order has no Paid step.** That route reads New → Confirmed →
+  Preparing → Packed → Collected / Posted: **five dots instead of six**, and no
+  tick for a payment that never happened.
+- **The Paid · Cash / Paid · TNG buttons stay on** at every stage from Paid
+  onwards — Paid, Preparing, Packed, and Collected / Posted — until the money is
+  recorded. So the moment the cash is handed over at the counter, wherever the
+  order has got to, you press the button right there: **the order stays where it
+  is** (marking an order paid never drags it backwards) and the money is stamped
+  with the day it landed, which is the day the Money screen counts it.
+- **And the Paid step comes back once it is paid** — a green tick, in its proper
+  place in the line, with the **Cash** or **TNG** tag beside the row. So the map
+  ends up telling the truth about that order either way.
+- The buttons disappear the moment the payment is recorded, and they never appear
+  before the order reaches the Paid stage.
+- **The customer's own track page follows the same rule** — same five dots, no
+  Paid tick for a payment that has not happened, and the step appears there too
+  once it is recorded.
+
+One rule behind it, worth knowing: moving an order into Paid **or any later
+stage** without having pressed a Paid button is taken as *this order owes money*.
+That is what your older orders are protected from — nothing already in the app
+changes, because only orders you move now are marked.
+
+**17 Sep 2026 — engine v116 (no database setup needed). A Day one form: your
+opening balance — the cash in the tin, the money on your phone and what is on
+your shelf — entered once, in one place.** From you telling me *"we need to enter
+opening balance"*.
+
+**What an opening balance is here.** Four answers about the morning your books
+begin: what is in the tin, what is on your phone, what is on your shelf, and who
+still owes you. Until now the app could take all four, but in three different
+places and one ingredient at a time, which is a poor way to start.
+
+**The form.** More → Money → the new **Day one** line (under **Books**) → **Set**.
+It asks for:
+
+- **Cash in your tin** and **Money on your phone (TNG)** — two boxes, and the day
+  your books begin, which takes any date but should be the day you are starting
+  from.
+- **What is on your shelf** — your ingredients, one box each, already in the unit
+  you use for that ingredient (kg for the meat, g for the oil — no converting).
+  Ingredients you have marked as *not something I buy*, like labour, are left
+  out: they have no shelf to count.
+- **Who still owes you** needs no box — those orders stay unpaid and show under
+  **Still to collect**.
+
+**Nothing is half-saved.** Every box is checked before anything is written: if
+one has something that is not a number, nothing saves at all until you fix it.
+And **a box you leave empty is left exactly as it is** — so the form is safe to
+reopen later just to correct one figure, and safe to run again without wiping
+what you already had.
+
+**What it writes.** The tin and the phone become ordinary money-in rows dated
+that day (so from then on the Money screen's **Net** is what you should really
+hold, and the weekly check works from the first week), and the shelf becomes each
+ingredient's **On hand** — the figure your shopping lists subtract, so your first
+list buys only what you are genuinely short of.
+
+**What it deliberately does not do.** Money you **owe** — a loan you took out for
+equipment, a supplier you have not paid — has nowhere to go: the app keeps a loan
+as a way of paying, not as a debt, so record what it pays for as it happens. Your
+own money in shows under **Capital you put in** on Profit, never as income. And
+the tin must not be entered as a sale: a sale has a customer behind it.
 
 **17 Sep 2026 — engine v115 (no database setup needed). The month arrows on Profit
 work both ways again.** From you telling me *"the profit month can move earlier but
