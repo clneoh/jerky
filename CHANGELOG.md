@@ -1,8 +1,57 @@
-# Munchies Furkidz — change history (v54 → v113)
+# Munchies Furkidz — change history (v54 → v115)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**17 Sep 2026 — engine v115 (no database setup needed). The month arrows on Profit
+work both ways again.** From you telling me *"the profit month can move earlier but
+cannot move later"*.
+
+**What was wrong.** Open Profit — it starts on this month, where the **›** arrow is
+correctly switched off, because there are no numbers after today. Press **‹** to step
+back to August, and **›** stayed switched off too, so you could not get back to
+September. You could walk backwards through the months but never forwards again: to
+return you had to leave the screen and open it again. The arrow's state was worked out
+once, when you opened the screen, and then reused on every step — so it kept answering
+for the month you started on rather than the month you were looking at.
+
+**Fixed.** The arrows are worked out fresh on every step, so **‹** and **›** now move
+both ways between the months you have, and **›** switches off again only when you are
+back on this month. The same fault did not exist on the other calendars — Orders,
+Delivery dates and the date pickers all recompute their arrows each time they draw.
+
+**17 Sep 2026 — engine v114 (no database setup needed). Every spending line in Profit &
+Loss now opens — including the ones reading 0.00 — and the lines are twice as tall, so
+they are easy to tap.** From you asking *"in profit the expenses is not clickable, is
+that a bug?"*
+
+**You were right, and it was my mistake.** The lines that open their journal were the
+ones with money in them. A line showing **0.00** was deliberately left dead, because
+there is no journal to show — but I made it look **exactly** the same as a live one:
+same colour, same font, no hint. So if your month has most categories at 0.00, nearly
+every line you tapped did nothing, and "not clickable" was the only sensible conclusion.
+A line that looks alive and does nothing is worse than no line.
+
+**What it does now.** Every spending line opens: *Packaging*, *Utilities*, *Delivery &
+fuel*, the categories you have added, and **Total expenses**. A line with money in it
+shows its journal as before. An empty one opens and **says so in your own words** —
+*"Nothing recorded under Utilities in September 2026"*, In / Out / Net at zero, and a
+line telling you it will fill up on its own as you record spending under that category.
+The statement's own totals (**Sales**, **Cost of sales**, **Gross profit**, **Net
+profit**) stay figures rather than doors — they are not spending, and you did not ask
+for those.
+
+**Two more things found while fixing it.**
+
+- **The lines were only 17 pixels tall** — a small target for a finger, and easy to land
+  in the gap between two lines and hit nothing. Tappable rows everywhere (the Profit
+  statement, the Money screen's cash rows, the Books list) are now **36 pixels**,
+  comfortably thumb-sized.
+- **The Total expenses journal did not say which category a row belonged to.** It read
+  *"2 Sep · boxes · Cash"* with no way to tell what "boxes" was for. It now names it —
+  *"2 Sep · Packaging — boxes · Cash"* — while a single category's journal still reads
+  short, since its title already says which category it is.
 
 **17 Sep 2026 — engine v113 (no database setup needed). Every way you pay now has
 a book you can always open — including a pocket that has been quiet — behind a new

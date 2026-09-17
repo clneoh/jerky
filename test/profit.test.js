@@ -273,3 +273,109 @@ test("a category she deleted still opens, because its rows still count", () => {
   assert.deepEqual(expenseRows(st, "2026-09-01", "2026-09-30", "Packing").map((r) => r.id), ["e1"],
     "so the line she can see has a journal she can open");
 });
+
+// ── every spending line opens, empty or not (v114) ────────────────────────────
+// "in profit the expenses is not clickable, is that a bug?" (17 Sep 2026). A line reading
+// 0.00 was deliberately dead, but it looked EXACTLY like the live line above it — so a tap
+// that did nothing read as a broken screen. Now every spending line opens, and an empty one
+// says so in her own words.
+const screenOf = () => {
+  const walkAll = (n, out = []) => { for (const c of n.children || []) { out.push(c); walkAll(c, out); } return out; };
+  return walkAll;
+};
+
+test("every expense line on the statement can be opened, 0.00 included", () => {
+  const walkAll = screenOf();
+  const st = state();
+  const now = new Date();
+  const { from } = monthSpan(now.getFullYear(), now.getMonth());
+  st.deliveryDates = [{ id: "d1", date: from }];
+  st.orders = [order({ deliveryDate: from })];
+  st.expenses = [{ id: "e1", date: from, amount: 18, category: "Packaging", method: "Cash" }];
+
+  const root = document.createElement("div");
+  renderProfit(root, st);
+  const line = (label) => walkAll(root).find((n) => String(n.className).includes("pl-row")
+    && n.children[0].textContent === label);
+
+  assert.ok(String(line("Packaging").className).includes("tappable"), "a line with money in it opens");
+  assert.ok(String(line("Rent").className).includes("tappable"),
+    "and so does one reading 0.00 — the two must not look different");
+  assert.ok(String(line("Total expenses").className).includes("tappable"));
+  assert.ok(!String(line("Net profit").className).includes("tappable"),
+    "while the statement's own totals stay figures, not doors");
+
+  // Tapping the empty one says so, and names the category and the month.
+  line("Rent")._listeners.click.forEach((f) => f());
+  const text = walkAll(document.getElementById("popup-layer")).map((n) => n.textContent).join(" ");
+  assert.match(text, /Nothing recorded under Rent in /, "an empty line opens and explains itself");
+  assert.match(text, /It will fill up on its own/, "and says how it comes to have something in it");
+});
+
+test("the journal behind a line adds up to the figure on the statement", () => {
+  const walkAll = screenOf();
+  const st = state();
+  const now = new Date();
+  const { from } = monthSpan(now.getFullYear(), now.getMonth());
+  st.deliveryDates = [{ id: "d1", date: from }];
+  st.orders = [order({ deliveryDate: from })];
+  st.expenses = [
+    { id: "e1", date: from, amount: 18, category: "Packaging", method: "Cash", note: "bags" },
+    { id: "e2", date: from, amount: 12, category: "Packaging", method: "TNG", note: "boxes" },
+    { id: "e3", date: from, amount: 45, category: "Utilities", method: "Loan" },
+  ];
+
+  const root = document.createElement("div");
+  renderProfit(root, st);
+  const line = (label) => walkAll(root).find((n) => String(n.className).includes("pl-row")
+    && n.children[0].textContent === label);
+  assert.equal(line("Packaging").children[1].textContent, "RM -30.00");
+
+  line("Packaging")._listeners.click.forEach((f) => f());
+  const pop = walkAll(document.getElementById("popup-layer"));
+  const text = pop.map((n) => n.textContent).join(" ");
+  assert.match(text, /· bags · Cash/, "each row carries her note and how it was paid");
+  assert.match(text, /· boxes · TNG/);
+  assert.ok(text.includes("RM -30.00"), "and the journal lands on the line's own figure");
+  assert.ok(!text.includes("Utilities"), "with nothing from another category in it");
+
+  // The Total journal mixes categories, so there the category has to travel with the row —
+  // "1 Sep · boxes" alone is a line with nothing to attach it to.
+  document.getElementById("popup-layer").replaceChildren(); // close the first book
+  line("Total expenses")._listeners.click.forEach((f) => f());
+  const all = walkAll(document.getElementById("popup-layer")).map((n) => n.textContent).join(" ");
+  assert.match(all, /Packaging — bags/, "the total names the category each row belongs to");
+  assert.match(all, /Utilities/, "including one with no note of its own");
+  assert.ok(all.includes("RM -75.00"), "and ends on the month's whole spending: 18 + 12 + 45");
+});
+
+// ── the month arrows (v115) ──────────────────────────────────────────────────
+// "the profit month can move earlier but cannot move later" (17 Sep 2026). The arrows'
+// state was worked out once when the screen was opened and then reused on every redraw, so
+// after stepping back a month the "›" arrow was still disabled as it had been on the month
+// she started on — one-way traffic.
+test("the month arrows let her come back forward after stepping back", () => {
+  const walkAll = screenOf();
+  const arrows = (root) => walkAll(root).filter((n) => String(n.className).includes("cal-nav"));
+  const title = (root) => walkAll(root).find((n) => String(n.className).includes("cal-title")).textContent;
+  const press = (n) => n._listeners.click.forEach((f) => f());
+
+  const root = document.createElement("div");
+  renderProfit(root, state());
+  const now = new Date();
+  const MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"];
+  const thisMonth = `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`;
+  assert.equal(title(root), thisMonth, "it opens on this month");
+  assert.equal(arrows(root)[1].disabled, true, "and › is off: there are no numbers after today");
+
+  press(arrows(root)[0]); // ‹
+  assert.notEqual(title(root), thisMonth, "‹ steps back a month");
+  assert.equal(arrows(root)[1].disabled, false, "and › must come alive again, or she is stuck");
+
+  press(arrows(root)[1]); // ›
+  assert.equal(title(root), thisMonth, "› steps forward again");
+  assert.equal(arrows(root)[1].disabled, true, "and stops at this month, not a future one");
+  press(arrows(root)[1]);
+  assert.equal(title(root), thisMonth, "pressing it there does nothing at all");
+});

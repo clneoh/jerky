@@ -419,11 +419,12 @@ The one shared root module is `availability.js` — the pure sell-day rules
   Products starts it folded to **＋ New product**. Same fold-head/fold-body/outside-tap
   wiring as the ＋ New order card.
 
-## The books: money out, profit and loss, and your own money (v103–v113)
+## The books: money out, profit and loss, and your own money (v103–v115)
 
 Eleven versions that turn the app from a takings ledger into double-entry-ish
 bookkeeping: money out, the two lists the books are built from, a profit & loss
-account, and a journal behind every figure. All code-only — no SQL.
+account, and a journal behind every figure — then two follow-ups (v114, v115) that
+fix the Profit screen itself. All code-only — no SQL.
 
 - **Money out** (v103) — a saved purchase order asks what it cost. `askWhatYouPaid(state, po)`
   (`admin/js/views/history.js`, using `methodPills` from `money.js`) opens on the list's own
@@ -482,6 +483,20 @@ account, and a journal behind every figure. All code-only — no SQL.
   and profit does not move. The same version fixed the category pills, which were laid out on one
   line and ran 744 px wide inside a 343 px box on a 375 px phone — they wrap now, and so do the
   ways-to-pay row and the pay-back form.
+- **Every spending line opens; the rows are finger-sized** (v114) — `renderProfit` used to pass
+  `opens: null` for a line whose amount was `0.00`, on the reasoning that there were no rows behind
+  it. But the row was drawn identically to a live one, so a month of mostly-empty categories read as
+  a broken screen. Every spending line is now tappable, and `openExpenseJournal` handles the empty
+  case by naming the category and the month ("Nothing recorded under Utilities in September 2026")
+  with its In / Out / Net at zero and a footer explaining it fills itself. The statement's own totals
+  (Sales, Cost of sales, Gross profit, Net profit) stay figures, not doors. `.info-row.tappable` gains
+  `min-height: 36px` (measured 17 px), and the **Total expenses** journal — which mixes categories —
+  now prefixes each row with its category via `whatOf(r)`, while a single category's journal stays
+  short since its title already says which one.
+- **The Profit month arrows** (v115) — `canNext` was computed once in `renderProfit` before `draw`
+  ran, and `draw` then reused it, so stepping back a month left the forward arrow disabled at the
+  state it had on the month the screen opened on. Both `now` and `canNext` are now computed inside
+  `draw`, so the arrows move both ways (and the forward one disables again only on the current month).
 
 **Sync.** `expenses` and `deposits` join `LISTS` in `admin/js/sync.js`, so money out and money in
 travel between the owner's phones like every other list. **One upstream gap, ported faithfully and

@@ -1077,6 +1077,11 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
 .info-row.tappable { cursor: pointer; border-radius: 8px; }
 .info-row.tappable:active { background: var(--gray-bg); }
 
+/* A tappable row is a finger's target, not just a line of text: these measured 17px high,
+   which is easy to miss and easy to land beside — and a tap that does nothing reads as a
+   broken screen rather than a small target (17 Sep 2026). */
+.info-row.tappable { min-height: 36px; align-items: center; }
+
 /* The Books list: the line she tapped stays marked, and its book opens UNDER it behind a
    rule, so it is obvious which line the rows belong to (the app has one shared pop-up
    layer, so a book cannot be a window of its own from in here). */

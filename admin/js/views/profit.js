@@ -24,9 +24,13 @@ function openExpenseJournal(state, label, from, to, monthTitle) {
   const cur = state.settings.currency || "RM";
   const rows = expenseRows(state, from, to, label);
   const total = rows.reduce((s, r) => s + r.amount, 0);
+  // One category's journal has its name in the title, so a row only needs the day, her note
+  // and how it was paid. The Total journal mixes categories, so there the category travels
+  // with the row — otherwise "1 Sep · boxes" is a line with nothing to attach it to.
+  const whatOf = (r) => (label || r.what === r.category ? r.what : `${r.category} — ${r.what}`);
   const line = (r) => el("div", { class: "info-row journal-line" },
     el("span", { class: "j-what" },
-      `${dayMonth(r.date)} · ${r.what}${r.method ? ` · ${r.method}` : ""}`),
+      `${dayMonth(r.date)} · ${whatOf(r)}${r.method ? ` · ${r.method}` : ""}`),
     el("span", { class: "info-val" }, fmtRM(-r.amount, cur)));
 
   showPopup(el("div", { class: "popup-title-row" }, label ? `${label} journal` : "Expenses journal"), () => el("div", {},
@@ -34,11 +38,16 @@ function openExpenseJournal(state, label, from, to, monthTitle) {
       `${label || "Every running cost"} · ${monthTitle}`),
     rows.length
       ? el("div", {}, ...rows.map(line))
-      : el("p", { class: "card-sub" }, "Nothing recorded here this month."),
+      // An empty line opens and says so, in her own words and with the month named, rather
+      // than the line being dead and looking broken.
+      : el("p", { class: "card-sub" },
+          `Nothing recorded under ${label || "your running costs"} in ${monthTitle}.`),
     el("div", { class: "info-row pl-total" },
       el("span", {}, "Total"), el("span", { class: "info-val" }, fmtRM(-total, cur))),
     el("p", { class: "card-sub", style: "margin:10px 0 0" },
-      "These are the rows the line above is made of, each with what it was for and how it was paid. They are recorded on the Money screen (Add an expense), so a correction is made there — and both screens move together, because this is the same list.")));
+      rows.length
+        ? "These are the rows the line above is made of, each with what it was for and how it was paid. They are recorded on the Money screen (Add an expense), so a correction is made there — and both screens move together, because this is the same list."
+        : "It will fill up on its own as you record spending under this category on the Money screen (Add an expense).")));
 }
 
 // The month on screen, as { year, month } — module scope, like the other screens'
@@ -53,11 +62,12 @@ function currentMonth() {
 export function renderProfit(root, state) {
   const cur = state.settings.currency || "RM";
   if (!shown) shown = currentMonth();
-  const now = currentMonth();
-  const canNext = shown.year < now.year || (shown.year === now.year && shown.month < now.month);
 
-  // `opens` makes a line tappable — a spending line with nothing in it is not, since
-  // there would be no rows behind it to show.
+  // `opens` makes a line tappable. EVERY spending line has it, including one reading 0.00:
+  // a line that looks identical to the line above but does nothing when tapped reads as a
+  // broken screen, and a 0.00 figure is still a figure worth being able to look into
+  // (17 Sep 2026: "in profit the expenses is not clickable, is that a bug?"). An empty
+  // line opens and says so.
   const line = (label, amount, cls = "", opens = null) => el("div",
     { class: `info-row pl-row${cls}${opens ? " tappable" : ""}`, onclick: opens || undefined },
     el("span", {}, label),
@@ -65,6 +75,12 @@ export function renderProfit(root, state) {
 
   const draw = (year, month) => {
     shown = { year, month };
+    // Read fresh on every draw, NOT once per visit: these were computed before `draw` ran,
+    // so after stepping back a month the "›" arrow stayed disabled as it had been on the
+    // month she started on, and she could not come forward again — one way traffic
+    // (17 Sep 2026: "the profit month can move earlier but cannot move later").
+    const now = currentMonth();
+    const canNext = shown.year < now.year || (shown.year === now.year && shown.month < now.month);
     const { from, to } = monthSpan(shown.year, shown.month);
     const pl = profitBetween(state, from, to);
     const margin = pl.sales > 0 ? Math.round((pl.gross / pl.sales) * 100) : 0;
@@ -91,11 +107,11 @@ export function renderProfit(root, state) {
         el("p", { class: "card-sub", style: "margin:8px 0 2px" },
           pl.expensesTotal ? "Running costs · tap a line to see the spending behind it" : "Running costs"),
         ...pl.expenses.map((e) => line(e.label, -e.amount, "",
-          e.amount ? () => openExpenseJournal(state, e.label, from, to, monthTitle) : null)),
+          () => openExpenseJournal(state, e.label, from, to, monthTitle))),
         ...pl.otherExpenses.map((e) => line(e.label, -e.amount, "",
-          e.amount ? () => openExpenseJournal(state, e.label, from, to, monthTitle) : null)),
+          () => openExpenseJournal(state, e.label, from, to, monthTitle))),
         line("Total expenses", -pl.expensesTotal, " pl-total",
-          pl.expensesTotal ? () => openExpenseJournal(state, null, from, to, monthTitle) : null),
+          () => openExpenseJournal(state, null, from, to, monthTitle)),
         line("Net profit", pl.net, " pl-net"),
         el("p", { class: "card-sub", style: "margin:10px 0 0" },
           `${pl.lines} order line${pl.lines === 1 ? "" : "s"} in this month${pl.sales > 0 ? ` · gross margin ${margin}%` : ""}.`)),
