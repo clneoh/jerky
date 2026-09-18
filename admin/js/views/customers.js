@@ -6,8 +6,8 @@
 // send one note to many at once, so the copies are there to paste per chat.
 
 import { navigate } from "../app.js";
-import { customerList, ordersForCustomer } from "../customers.js";
-import { attachProfiles, customerMatches, customerRowName, profileFor, upsertProfile } from "../profiles.js";
+import { customerList, ordersForCustomer, phoneDigits } from "../customers.js";
+import { attachProfiles, customerMatches, customerRowName, mergeCustomers, profileFor, upsertProfile } from "../profiles.js";
 import { readPhoto } from "../photo.js";
 import { el, button, select, emptyState, showPopup, copyText, toast, confirmDialog } from "../ui.js";
 import { byId, fmtRM, orderLineName, save, waNumber } from "../state.js";
@@ -256,7 +256,9 @@ export function renderCustomers(root, state, params) {
 function copyList(list) {
   const ph = (list || []).filter((r) => r.whatsapp);
   if (!ph.length) return toast("No WhatsApp numbers in this list");
-  const nums = ph.map((r) => r.whatsapp.replace(/[^\d]/g, "")).join("\n");
+  // phoneDigits, not a bare digit-strip: the links use the 0 → 60 form, so the
+  // copied number must be the same one the chat opens with.
+  const nums = ph.map((r) => phoneDigits(r.whatsapp) || String(r.whatsapp).trim()).join("\n");
   copyText(nums, `${ph.length} number${ph.length === 1 ? "" : "s"} copied — paste into WhatsApp`);
 }
 
@@ -377,7 +379,9 @@ function editProfilePopup(state, r, afterSave) {
     const prof = upsertProfile(state, {
       id: p.id || "",
       name: name.value,
-      whatsapp: whatsapp.value,
+      // Stored in the digits form every link and label uses — a "+" or a space
+      // kept here would split this person into a second record in the list.
+      whatsapp: phoneDigits(whatsapp.value) || whatsapp.value,
       dogName: dogName.value,
       dogPhoto: photo,
       likes: likes.value,
@@ -410,6 +414,57 @@ function editProfilePopup(state, r, afterSave) {
   });
 }
 
+// ---- joining two records that are one person ----
+// You open the row you want to KEEP and pick the duplicate to absorb, so there
+// is never a "which one wins?" question. The absorbed person's orders move under
+// the kept name and number — that is the point, and it cannot be undone from
+// inside the app, so the confirm names both people before it acts.
+function joinCustomerPopup(state, keep, afterMerge) {
+  showPopup(`Join ${customerRowName(keep)} with…`, (refresh, closeFn) => {
+    const q = el("input", { class: "input", placeholder: "Search name or number" });
+    const results = el("div", { class: "list" });
+    const others = attachProfiles(state, customerList(state, "name", "all", todayISO()))
+      .filter((x) => x._key !== keep._key);
+
+    const draw = () => {
+      const query = String(q.value || "").trim();
+      const rows = others.filter((x) => customerMatches(x, query)).slice(0, 40);
+      results.replaceChildren(
+        !rows.length
+          ? el("p", { class: "muted" }, query ? "No one matches that." : "No other customers yet.")
+          : el("div", {}, ...rows.map((x) =>
+              el("button", { class: "list-item tappable", type: "button",
+                onclick: () => { closeFn(); confirmJoin(state, keep, x, afterMerge); } },
+                el("div", { class: "li-main" },
+                  el("div", { class: "li-title" }, customerRowName(x)),
+                  el("div", { class: "li-sub" },
+                    `${x.whatsapp || "No number saved"} · ${x.orders} order${x.orders === 1 ? "" : "s"}`))))));
+    };
+    q.addEventListener("input", draw);
+    draw();
+    return el("div", {},
+      el("p", { class: "card-sub", style: "margin:0 0 8px" },
+        `Pick the duplicate to fold into ${customerRowName(keep)}. Their orders will show under this name and number, and the duplicate entry goes.`),
+      el("div", { class: "field" }, q),
+      results);
+  }, { wide: true });
+}
+
+function confirmJoin(state, keep, absorb, afterMerge) {
+  const keepName = customerRowName(keep);
+  const absorbName = customerRowName(absorb);
+  const n = absorb.orders;
+  confirmDialog(
+    `Join "${absorbName}" into "${keepName}"? Their ${n} order${n === 1 ? "" : "s"} will show under ${keepName}, and the duplicate entry goes. This cannot be undone here — your cloud backup is the way back.`,
+    () => {
+      mergeCustomers(state, keep._key, absorb._key);
+      maybeSync(state);
+      toast(`${absorbName} joined into ${keepName}`);
+      afterMerge();
+    },
+    { danger: true, yesLabel: "Join them" });
+}
+
 // ---- history pop-up for one customer ----
 
 function openHistory(state, r, onSaved) {
@@ -420,6 +475,11 @@ function openHistory(state, r, onSaved) {
       r.whatsapp ? el("div", { class: "li-row", style: "margin:0 0 8px" },
         el("p", { class: "card-sub", style: "margin:0" }, `📱 ${r.whatsapp}`),
         button("💬 Chat", () => { close(); openChat(r); }, "primary small")) : null,
+      // Only when there is someone to join to — a lone customer has no duplicate.
+      customerList(state).length > 1
+        ? el("div", { class: "btn-row", style: "margin:0 0 8px" },
+            button("Join with another customer", () => { close(); joinCustomerPopup(state, r, onSaved); }, "soft small"))
+        : null,
       el("div", { class: "chip-row" },
         el("span", { class: "qty-chip" }, `${r.orders} order${r.orders === 1 ? "" : "s"}`),
         el("span", { class: "qty-chip" }, `${r.units} unit${r.units === 1 ? "" : "s"}`),

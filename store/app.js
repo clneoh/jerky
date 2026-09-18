@@ -1371,8 +1371,7 @@ export async function trackOrder(code) {
     const res = await fetch(
       // tracking_no must be named here: PostgREST returns only the columns
       // listed, so without it the row never carries the number and the line
-      // below can never draw. (The bakery's own copy of this select is missing
-      // it — flag that upstream.)
+      // below can never draw.
       `${base}/rest/v1/order_tracking?select=status,confirmed_sent,paid_received,delivery,items,total,tracking_no,updated_at&code=eq.${clean}&limit=1`,
       { headers: { apikey: sb.anonKey }, cache: "no-store" });
     const rows = res.ok ? await res.json() : null;

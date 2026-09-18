@@ -319,3 +319,34 @@ test("v70 catch-up stamps pre-existing orders with today's name and price once",
     assert.equal(o2.unitPrice, undefined);
   } finally { restore(); }
 });
+
+// ── Engine v120 — the one-time customer-identity catch-up ────────────────────
+
+test("v120 catch-up joins a customer who was split by a '+' on their number, once", async () => {
+  freshDOM();
+  const store = installStorage({ "bakeadmin.v1": stateJSON({
+    orders: [
+      { id: "o1", productId: "p1", qty: 1, status: "new", deliveryDateId: "d1",
+        customerName: "Neoh Choo Leong", whatsapp: "60123456789", createdAt: new Date().toISOString() },
+      { id: "o2", productId: "p1", qty: 2, status: "new", deliveryDateId: "d1",
+        customerName: "Neoh Choo Leong", whatsapp: "+60123456789", createdAt: new Date().toISOString() },
+    ],
+    customers: [
+      { id: "cus_a", key: "60123456789", name: "Neoh Choo Leong", whatsapp: "60123456789", dogName: "Coco" },
+      { id: "cus_b", key: "+60123456789", name: "Neoh Choo Leong", whatsapp: "+60123456789", notes: "allergic to nuts" },
+    ],
+  }) });
+  try {
+    await import("../admin/js/app.js?case=v120");
+
+    const saved = JSON.parse(store.get("bakeadmin.v1"));
+    assert.equal(saved.settings.migratedV120, true, "the catch-up is marked done, so it never runs twice");
+    assert.equal(saved.customers.length, 1, "the duplicate saved record is gone");
+    assert.equal(saved.customers[0].key, "60123456789");
+    assert.equal(saved.customers[0].dogName, "Coco", "what one side knew is kept");
+    assert.equal(saved.customers[0].notes, "allergic to nuts", "and so is what the other knew");
+    assert.equal(saved.orders.length, 2, "no order was removed or invented");
+    assert.equal(saved.orders.every((o) => o.whatsapp === "60123456789"), true,
+      "both orders now carry the one spelling, so she sees one row");
+  } finally { restore(); }
+});

@@ -492,6 +492,36 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
   padding: 6px 0;
 }
 .add-item select { width: 100%; }
+/* The product picker's three kinds — on the shop, sold out for that day, taken
+   down — tinted on the SECTION rather than row by row, so the menu reads as
+   three blocks instead of a rainbow (18 Sep 2026). The closed box wears the
+   colour of whatever it holds, which is the only part of a native list a page
+   can reach; the section tints below are for the browsers that let a page draw
+   the list itself. */
+select.tone-ok { background: var(--green-bg); color: var(--green); }
+select.tone-warn { background: var(--amber-bg); color: var(--amber); }
+select.tone-off { background: var(--gray-bg); color: var(--muted); }
+optgroup.tone-ok { background: var(--green-bg); color: var(--green); }
+optgroup.tone-warn { background: var(--amber-bg); color: var(--amber); }
+optgroup.tone-off { background: var(--gray-bg); color: var(--muted); }
+option.tone-warn { color: var(--amber); }
+option.tone-off { color: var(--muted); }
+
+/* Where the browser lets a page draw the picker itself — Customizable Select,
+   Safari 27 / Chrome 135 and later — the open list becomes ours, so the section
+   tints above finally show up INSIDE it and the menu can be given the app's own
+   card. Everywhere else the control quietly keeps the phone's own list, with the
+   section names still showing and the OS drawing the rest. */
+@supports (appearance: base-select) {
+  select.toned { appearance: base-select; padding: 10px 12px; border: 1px solid var(--line);
+    border-radius: var(--radius-sm); min-height: 46px; font-size: 16px; }
+  select.toned::picker-icon { content: "▾"; color: var(--muted); }
+  select.toned::picker(select) { appearance: base-select; background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-lg); padding: 4px; margin-top: 4px; }
+  select.toned option { padding: 8px 10px; border-radius: 8px; }
+  select.toned optgroup { font-weight: 600; }
+}
 /* Its own line under the product: how many, the selling price (v101), remove — with
    the price pushed to the right of them and kept small, because it is a figure. */
 .add-item-ctl { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
@@ -617,6 +647,47 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
 .list-item .li-title > span:last-child { overflow-wrap: anywhere; }
 .list-item .li-sub { font-size: 13px; color: var(--muted); }
 .list-item .li-right { display: flex; align-items: center; gap: 8px; row-gap: 6px; flex-wrap: wrap; }
+
+/* ---------- Customer suggestions under the name box ---------- */
+/* Typing a name in an order form offers the people you have already served (18 Sep
+   2026). The panel is an item of the form's own grid, sitting in the normal flow
+   under the name box and across both columns — never a floating overlay, because
+   the Edit pop-up's body scrolls and would clip one. `dense` is what keeps "Order
+   date" beside "Customer": without it, a full-width item after the first cell
+   leaves a hole and pushes the date down a row. Scoped to these two forms so no
+   other .form-grid in the app can shift; with the panel hidden it is not a grid
+   item at all, so dense has nothing to backfill. */
+.form-grid.order-sugg { grid-auto-flow: dense; }
+.sugg-panel {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow: hidden;
+}
+.sugg-panel[hidden] { display: none; }
+/* A row is a finger's target, not a line of text — 36px, like every other tappable
+   row in the app. Written here rather than inherited: .list-item carries the row's
+   inset and its own press state, which is why it also needs the padding and the
+   :active that .list-item.tappable does not give it. */
+.sugg-row {
+  width: 100%;
+  padding: 11px 12px;
+  min-height: 36px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  border-top: 0;
+  border-left: 0;
+  border-right: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.sugg-row:active { background: var(--brown-soft); }
 
 /* Customer profile avatar: a round photo thumb, or the paw mark standing in.
    sm = small (list rows); the default (no size) is the pop-up/profile size. */

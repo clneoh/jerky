@@ -5,7 +5,7 @@ import { el, button } from "./ui.js";
 import * as sync from "./sync.js";
 import { maybeAutoBackup } from "./backups.js";
 import { cachedToken, maybeSync, pullIncoming, refreshStorefront } from "./supabase.js";
-import { reconcileContacts } from "./profiles.js";
+import { canonicaliseCustomers, reconcileContacts } from "./profiles.js";
 
 import { renderDashboard } from "./views/dashboard.js";
 import { renderDeliveries } from "./views/deliveries.js";
@@ -95,6 +95,18 @@ if (!state.settings.migratedV68) {
 if (!state.settings.migratedV70) {
   for (const o of state.orders || []) stampOrderLine(o, byId(state.products || [], o.productId));
   state.settings.migratedV70 = true;
+  save(state);
+}
+
+// One-time catch-up (v120). A person used to be identified by their number's
+// exact spelling, so a record saved as "+60123456789" and one saved as
+// "60123456789" were two people — the Customers list showed the same customer
+// twice. Bring the whole book onto the digits rule once (see
+// canonicaliseCustomers), then never again. Runs after the v70 block and before
+// the first render, so the duplicate is gone before anything is drawn.
+if (!state.settings.migratedV120) {
+  canonicaliseCustomers(state);
+  state.settings.migratedV120 = true;
   save(state);
 }
 

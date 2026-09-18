@@ -419,6 +419,48 @@ The one shared root module is `availability.js` — the pure sell-day rules
   Products starts it folded to **＋ New product**. Same fold-head/fold-body/outside-tap
   wiring as the ＋ New order card.
 
+## The customer and the product list (v119–v123)
+
+Five versions about the two things an order form asks for: *who* the order is for,
+and *what* is on it. All code-only — no SQL.
+
+- **Customer autocomplete** (v119) — `customerSuggester(state, onPick)` in
+  `admin/js/views/orders.js` builds its list **once per visit** (`attachProfiles` over
+  `customerList(state, "recent", "all", todayISO())`) and paints up to five hits into a
+  `.sugg-panel` item of the form's own grid — in the normal flow, never a floating
+  overlay, because the Edit pop-up's body scrolls and would clip one. It opens on
+  **two** letters, like the shop's finders: one letter is not a search. A row reads
+  `number · N orders · usually <product>` (`suggestionSub`), and a tap writes both the
+  boxes and the draft (`newOrderContact`, module scope so a mid-edit re-render keeps
+  what was typed). `customerNameMatches(row, query)` is deliberately narrower than the
+  Customers finder: it matches the name *shown* for the person, or their number, so a
+  hit whose own title does not contain the query is never offered.
+- **One customer is one row** (v120) — the same person could be two rows because
+  `+60123456789` and `60123456789` keyed differently. `phoneDigits(v)` / `waKey(v)`
+  (`admin/js/profiles.js`) now read a number by its digits, used by both `keyOf` and
+  `admin/js/customers.js`. A one-time `canonicaliseCustomers(state)` (run from `app.js`
+  under `migratedV120`, idempotent — the sync layer depends on that) re-keys every saved
+  record, folds the ones that collapse together (`collapseByKey` → `foldProfileInto`,
+  keeping pet photos, likes and notes), and writes the canonical number onto the orders.
+  `mergeCustomers(state, keepKey, absorbKey)` backs the new **Join with another customer**
+  button on the customer card (`joinCustomerPopup` in `views/customers.js`) for duplicates
+  the tidy cannot guess at; `touchedAt(p)` picks which record survives.
+- **The product dropdown, sorted and toned** (v121) — `productOptions(state, dateId,
+  excludeOrderId)` returns `{ value, label, tone, group }` for every non-draft product,
+  ranked `TONE_RANK` and grouped `TONE_SECTION` (`ok` On the shop / `warn` Unavailable /
+  `off` Taken down). The closed box wears the tone (`select.tone-ok/-warn/-off`), so a
+  long order can be scanned without opening a list.
+- **Those three kinds get headings inside the list** (v122) — `ui.js` emits real
+  `<optgroup>`s, tinted by `optgroup.tone-*` / `option.tone-*` behind
+  `@supports (appearance: base-select)`; older phones that will not let a page colour the
+  native list still get the same three headings in the same order.
+- **Unavailable, and named by the days it IS sold** (v123) — the middle section groups
+  sold-out *with* not-sold-that-day, because to the owner they are one thing: an active
+  product still sellable by hand. A not-sold product reads `"<name> — only <days>"`
+  (`availSummary(product)` from the root `availability.js`) rather than being given a count
+  for a day it was never on. The shop's own order-by deadline (`closeDays`) is deliberately
+  *not* counted — it stops a stranger ordering, it says nothing about a walk-in sale.
+
 ## The books: money out, profit and loss, and your own money (v103–v118)
 
 Eleven versions that turn the app from a takings ledger into double-entry-ish
@@ -987,7 +1029,8 @@ admin/ — backoffice app (/admin/):
   js/ui.js            DOM builder + shared render helpers
   js/wishlist.js      software wish list on More (lazy settings.wishList CRUD)
   js/devmail.js       builds the wish-list email + developer contact links (pure, sends via wish-mail)
-  js/profiles.js      customer profiles (join to the customer rows, pure)
+  js/profiles.js      customer profiles (join to the customer rows, pure; digits-keyed
+                      identity, canonicalise/merge — v120)
   js/photo.js         shrinks a picked photo to a small thumb (browser only)
   js/suggest.js       right-arrow / tap-to-accept for a greyed suggestion (data-suggest)
   js/calendar.js      month-grid + occasion helpers (shared by every calendar)

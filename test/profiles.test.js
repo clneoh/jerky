@@ -4,8 +4,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { customerList } from "../admin/js/customers.js";
-import { attachProfiles, customerMatches, customerRowName, profileFor, profileForOrder, reconcileContacts, syncContactFromOrder, upsertProfile } from "../admin/js/profiles.js";
+import { customerList, keyOf } from "../admin/js/customers.js";
+import { attachProfiles, canonicaliseCustomers, customerMatches, customerNameMatches, customerRowName, mergeCustomers, profileFor, profileForOrder, reconcileContacts, syncContactFromOrder, upsertProfile } from "../admin/js/profiles.js";
 
 // A tiny app-password hash constant unused here — kept to match sibling files.
 
@@ -19,7 +19,7 @@ test("upsertProfile creates a profile and keys it like the orders do (whatsapp f
   ]);
   const p = upsertProfile(st, { name: "Aunty Bee", whatsapp: "6012-111", dogName: "Coco", likes: "banana" });
   assert.ok(p && p.id.startsWith("cus_"));
-  assert.equal(p.key, "6012-111"); // normed whatsapp, exactly keyOf's rule
+  assert.equal(p.key, "6012111"); // the number's digits, exactly keyOf's rule
   assert.equal(st.customers.length, 1);
 
   // The same person's derived row joins straight to that profile.
@@ -77,8 +77,8 @@ test("attachProfiles copies each saved profile onto its matching derived row", (
   ]);
   upsertProfile(st, { name: "Aunty Bee", whatsapp: "6012-111", dogName: "Coco" });
   const rows = attachProfiles(st, customerList(st));
-  const bee = rows.find((r) => r._key === "6012-111");
-  const lim = rows.find((r) => r._key === "6013-222");
+  const bee = rows.find((r) => r._key === "6012111");
+  const lim = rows.find((r) => r._key === "6013222");
   assert.equal(bee.profile && bee.profile.dogName, "Coco");
   assert.equal(lim.profile, null, "no saved profile stays null");
 });
@@ -137,6 +137,57 @@ test("customerMatches finds a number typed without its formatting or country cod
   assert.equal(customerMatches({ _key: "x", name: "Raj", fav: "Sourdough" }, "6016"), false, "no number on the row");
 });
 
+// ---- customerNameMatches: the order form's name box (18 Sep 2026) ----
+// A narrower cousin of customerMatches. The finder below answers "who has a dog
+// called Milo"; this box answers "who is this", so a hit whose own title does not
+// contain the query would read as a wrong answer rather than a clever one.
+
+test("customerNameMatches searches the name shown, not a stale one underneath", () => {
+  // The saved card was touched more recently than the orders, so the row is shown
+  // under the card's name. What she can see is what she can type.
+  const row = {
+    _key: "k", name: "Bob", whatsapp: "012-345 6789",
+    profile: { name: "Aisha", updatedAt: "2026-09-10T10:00:00Z", orderEditAt: "2026-09-01T00:00:00Z" },
+  };
+  assert.equal(customerRowName(row), "Aisha");
+  assert.equal(customerNameMatches(row, "aisha"), true);
+  assert.equal(customerNameMatches(row, "bob"), false, "a spelling she cannot see is not offered");
+});
+
+test("customerNameMatches finds the number, with or without its formatting", () => {
+  const row = { _key: "k", name: "Aunty Bee", whatsapp: "+60 12-345 6789" };
+  assert.equal(customerNameMatches(row, "bee"), true);
+  assert.equal(customerNameMatches(row, "  aunty   bee "), true, "spacing on either side is ignored");
+  assert.equal(customerNameMatches(row, "012-345"), true);
+  assert.equal(customerNameMatches(row, "60123456789"), true, "the digits alone still find them");
+  assert.equal(customerNameMatches(row, "6016"), false, "a wrong exchange is not a hit");
+  // A record saved before the two copies of a number were kept in step can hold
+  // the only one there is.
+  const cardOnly = { _key: "k", name: "Aunty Bee", whatsapp: "", profile: { whatsapp: "012-999 8888" } };
+  assert.equal(customerNameMatches(cardOnly, "012-999"), true);
+});
+
+test("customerNameMatches stays on the name and number — it is not the finder", () => {
+  const row = {
+    _key: "k", name: "Aunty Bee", whatsapp: "6012-111", fav: "Sourdough",
+    profile: { dogName: "Coco", likes: "banana", avoid: "coconut", notes: "collects Saturdays" },
+  };
+  assert.equal(customerNameMatches(row, "bee"), true);
+  assert.equal(customerNameMatches(row, "coco"), false, "the dog belongs to the finder, not this box");
+  assert.equal(customerNameMatches(row, "banana"), false);
+  assert.equal(customerNameMatches(row, "coconut"), false);
+  assert.equal(customerNameMatches(row, "saturdays"), false);
+  assert.equal(customerNameMatches(row, "sourdough"), false);
+});
+
+test("customerNameMatches never offers a person with no name, and has no answer for a blank box", () => {
+  const anon = { _key: "o1", name: "(no name)", whatsapp: "012-345 6789" };
+  assert.equal(customerNameMatches(anon, "012"), false, "she could not recognise the row");
+  const row = { _key: "k", name: "Aunty Bee", whatsapp: "6012-111" };
+  assert.equal(customerNameMatches(row, ""), false,
+    "unlike the finder, a blank box suggests nobody; the form does the length gate");
+});
+
 test("profileForOrder finds the profile from a raw order (same keyOf)", () => {
   const st = state([{ id: "o1", customerName: "Bee", whatsapp: "6012-111", qty: 1 }], []);
   upsertProfile(st, { name: "Bee", whatsapp: "6012-111", likes: "rosemary" });
@@ -179,25 +230,25 @@ test("renaming one customer writes through to all their orders and to nobody els
     { id: "o3", customerName: "Ah Girl", whatsapp: "6012-111", qty: 1 },
     { id: "o4", customerName: "Mr Lim", whatsapp: "6013-222", qty: 1 },
   ]);
-  const p = upsertProfile(st, { name: "Ah Girl", whatsapp: "6012-111" }, "6012-111");
+  const p = upsertProfile(st, { name: "Ah Girl", whatsapp: "6012-111" }, "6012111");
 
-  upsertProfile(st, { id: p.id, name: "Tan Siew Ling", whatsapp: "6012-111" }, "6012-111");
+  upsertProfile(st, { id: p.id, name: "Tan Siew Ling", whatsapp: "6012-111" }, "6012111");
 
   assert.deepEqual(st.orders.slice(0, 3).map((o) => o.customerName),
     ["Tan Siew Ling", "Tan Siew Ling", "Tan Siew Ling"]);
   assert.equal(st.orders[3].customerName, "Mr Lim", "another customer is untouched");
-  assert.equal(st.customers[0].key, "6012-111", "a number-first key doesn't move when only the name changes");
+  assert.equal(st.customers[0].key, "6012111", "a number-first key doesn't move when only the name changes");
 });
 
 test("emptying the WhatsApp box keeps the number the orders already have", () => {
   const st = state([{ id: "o1", customerName: "Ah Girl", whatsapp: "6012-111", qty: 1 }]);
-  const p = upsertProfile(st, { name: "Ah Girl", whatsapp: "6012-111" }, "6012-111");
+  const p = upsertProfile(st, { name: "Ah Girl", whatsapp: "6012-111" }, "6012111");
 
-  upsertProfile(st, { id: p.id, name: "Tan Siew Ling", whatsapp: "" }, "6012-111");
+  upsertProfile(st, { id: p.id, name: "Tan Siew Ling", whatsapp: "" }, "6012111");
 
   assert.equal(st.orders[0].whatsapp, "6012-111", "the number the confirmations need is never wiped by a blank box");
   assert.equal(st.customers[0].whatsapp, "6012-111", "the profile keeps the value too, so the two still agree");
-  assert.equal(st.customers[0].key, "6012-111", "and the person is not re-keyed off their orders");
+  assert.equal(st.customers[0].key, "6012111", "and the person is not re-keyed off their orders");
   assert.equal(st.orders[0].customerName, "Tan Siew Ling", "the name they did type still lands");
 });
 
@@ -226,16 +277,16 @@ test("fixing a name on one order carries to that person's other orders and their
     { id: "o1", customerName: "Ah Girl", whatsapp: "6012-111", qty: 1 },
     { id: "o2", customerName: "Ah Girl", whatsapp: "6012-111", qty: 1 },
   ]);
-  upsertProfile(st, { name: "Ah Girl", whatsapp: "6012-111", dogName: "Coco" }, "6012-111");
+  upsertProfile(st, { name: "Ah Girl", whatsapp: "6012-111", dogName: "Coco" }, "6012111");
 
-  syncContactFromOrder(st, "6012-111", { customerName: "Tan Siew Ling", whatsapp: "6012-111" });
+  syncContactFromOrder(st, "6012111", { customerName: "Tan Siew Ling", whatsapp: "6012-111" });
 
   assert.deepEqual(st.orders.map((o) => o.customerName), ["Tan Siew Ling", "Tan Siew Ling"]);
-  assert.equal(profileFor(st, "6012-111").name, "Tan Siew Ling", "the saved record keeps up");
-  assert.equal(profileFor(st, "6012-111").dogName, "Coco", "and its extra facts are left alone");
+  assert.equal(profileFor(st, "6012111").name, "Tan Siew Ling", "the saved record keeps up");
+  assert.equal(profileFor(st, "6012111").dogName, "Coco", "and its extra facts are left alone");
   // The order side was the last editor, so it is remembered as the newest — a
   // stale copy on either side would resolve to this name.
-  assert.ok(profileFor(st, "6012-111").orderEditAt, "the order edit is remembered as the newest");
+  assert.ok(profileFor(st, "6012111").orderEditAt, "the order edit is remembered as the newest");
   const [row] = attachProfiles(st, customerList(st));
   assert.equal(customerRowName(row), "Tan Siew Ling", "the corrected name is what the book shows");
   assert.equal(customerRowName({ name: "Ah Girl", profile: { ...row.profile, updatedAt: "2026-09-10T09:00:00Z", orderEditAt: "2026-09-10T10:00:00Z" } }), "Ah Girl", "…and a newer order edit beats an older card copy");
@@ -254,9 +305,9 @@ test("fixing details on an order never invents a customer record", () => {
 test("a customer's referral credits follow their number when it is corrected", () => {
   const st = state([{ id: "o1", customerName: "Ah Girl", whatsapp: "6012-111", qty: 1 }]);
   st.credits = [{ id: "c1", holder: "6012111", holderName: "Ah Girl", amountRM: 5, status: "valid" }];
-  const p = upsertProfile(st, { name: "Ah Girl", whatsapp: "6012-111" }, "6012-111");
+  const p = upsertProfile(st, { name: "Ah Girl", whatsapp: "6012-111" }, "6012111");
 
-  upsertProfile(st, { id: p.id, name: "Ah Girl", whatsapp: "6012-999" }, "6012-111");
+  upsertProfile(st, { id: p.id, name: "Ah Girl", whatsapp: "6012-999" }, "6012111");
 
   assert.equal(st.orders[0].whatsapp, "6012-999");
   assert.equal(st.credits[0].holder, "6012999", "the credit is not stranded on a number nobody owns");
@@ -266,9 +317,9 @@ test("a customer's referral credits follow their number when it is corrected", (
 test("credits stay put when the number is blanked rather than changed", () => {
   const st = state([{ id: "o1", customerName: "Ah Girl", whatsapp: "6012-111", qty: 1 }]);
   st.credits = [{ id: "c1", holder: "6012111", holderName: "Ah Girl", amountRM: 5, status: "valid" }];
-  const p = upsertProfile(st, { name: "Ah Girl", whatsapp: "6012-111" }, "6012-111");
+  const p = upsertProfile(st, { name: "Ah Girl", whatsapp: "6012-111" }, "6012111");
 
-  upsertProfile(st, { id: p.id, name: "Ah Girl", whatsapp: "" }, "6012-111");
+  upsertProfile(st, { id: p.id, name: "Ah Girl", whatsapp: "" }, "6012111");
 
   assert.equal(st.credits[0].holder, "6012111", "there is no new number to point them at");
   assert.equal(st.orders[0].whatsapp, "6012-111");
@@ -281,7 +332,7 @@ test("the one-time catch-up brings orders in line with a saved name, and leaves 
       { id: "o2", customerName: "Mr Lim", whatsapp: "6013-222", qty: 1 },
     ],
     [
-      { id: "cus_1", key: "6012-111", name: "Tan Siew Ling", whatsapp: "6012-111" },
+      { id: "cus_1", key: "6012111", name: "Tan Siew Ling", whatsapp: "6012-111" },
       { id: "cus_2", key: "orphan", name: "Nobody", whatsapp: "" },
     ]);
 
@@ -290,4 +341,148 @@ test("the one-time catch-up brings orders in line with a saved name, and leaves 
   assert.equal(moved, 1);
   assert.equal(st.orders[0].customerName, "Tan Siew Ling", "the renamed customer's order catches up");
   assert.equal(st.orders[1].customerName, "Mr Lim", "an unrelated order is left alone");
+});
+
+// ── Engine v120 — a person is identified by the digits of their number ───────
+// The reported bug: one real customer, "Neoh Choo Leong", shown as two rows
+// because one copy of the number was saved with a "+" in front of it.
+
+test("keyOf reads a number by its digits, so every spelling of one number is one person", () => {
+  const spellings = ["+60123456789", "60123456789", "012-345 6789", "60 12-345 6789", "+60 (12) 345 6789"];
+  for (const w of spellings) {
+    assert.equal(keyOf({ whatsapp: w }), "60123456789", `${w} keys as its digits`);
+  }
+  const st = state(spellings.map((w, i) => ({ id: `o${i}`, customerName: "Neoh Choo Leong", whatsapp: w, qty: 1 })));
+  assert.equal(customerList(st).length, 1, "five spellings are one customer — this is the duplicate she saw");
+});
+
+test("keyOf still keys a person by their name when there is no number", () => {
+  assert.equal(keyOf({ customerName: "  Aunty Bee " }), "aunty bee");
+  assert.equal(keyOf({ customerName: "Aunty Bee", whatsapp: "" }), "aunty bee");
+  assert.equal(keyOf({ customerName: "Aunty Bee", whatsapp: "   " }), "aunty bee");
+});
+
+test("keyOf falls back to the order id with neither a name nor a number", () => {
+  assert.equal(keyOf({ id: "ord_1" }), "ord_1");
+});
+
+test("keyOf never reduces a value that is not shaped like a number to a bare digit", () => {
+  assert.equal(keyOf({ whatsapp: "aunty1@gmail.com" }), "aunty1@gmail.com");
+  assert.notEqual(keyOf({ whatsapp: "a1@x" }), keyOf({ whatsapp: "b1@y" }),
+    "two different non-numbers must not collide on the digit they both contain");
+  // An object with no whatsapp/customerName/id at all — a per-product sell rule
+  // is passed through here — still yields undefined, exactly as it always has.
+  assert.equal(keyOf({ days: [1], from: "2026-09-01", to: "2026-09-30" }), undefined);
+});
+
+test("the v120 catch-up re-keys a plus-signed record and merges the duplicate it was hiding", () => {
+  const st = state(
+    [
+      { id: "o1", customerName: "Neoh Choo Leong", whatsapp: "60123456789", qty: 1 },
+      { id: "o2", customerName: "Neoh Choo Leong", whatsapp: "+60123456789", qty: 2 },
+    ],
+    [
+      { id: "cus_a", key: "60123456789", name: "Neoh Choo Leong", whatsapp: "60123456789", dogName: "Coco", updatedAt: "2026-09-01T00:00:00Z" },
+      { id: "cus_b", key: "+60123456789", name: "Neoh Choo Leong", whatsapp: "+60123456789", notes: "allergic to nuts", updatedAt: "2026-09-10T00:00:00Z" },
+    ]);
+
+  canonicaliseCustomers(st);
+
+  assert.equal(customerList(st).length, 1, "the two rows become one");
+  assert.equal(st.customers.length, 1, "and one saved record, not two");
+  assert.equal(st.customers[0].key, "60123456789");
+  assert.equal(st.customers[0].whatsapp, "60123456789", "the record's own number is canonical too, not just its key");
+  assert.equal(st.customers[0].dogName, "Coco", "what one side knew is kept");
+  assert.equal(st.customers[0].notes, "allergic to nuts", "and so is what the other knew");
+  assert.equal(st.orders.every((o) => o.whatsapp === "60123456789"), true,
+    "the orders are rewritten, so the row she looks at shows the number without the +");
+});
+
+test("the v120 catch-up folds a three-way collision completely, not just one pair", () => {
+  const st = state([], [
+    { id: "cus_1", key: "6012-111", name: "Aunty Bee", whatsapp: "6012-111", dogName: "Coco" },
+    { id: "cus_2", key: "+6012111", name: "Aunty Bee", whatsapp: "+6012111", likes: "banana" },
+    { id: "cus_3", key: "012-111", name: "Aunty Bee", whatsapp: "012-111", notes: "a third copy" },
+  ]);
+
+  canonicaliseCustomers(st);
+
+  assert.equal(st.customers.length, 1, "three records, one person");
+  assert.equal(st.customers[0].dogName, "Coco");
+  assert.equal(st.customers[0].likes, "banana");
+  assert.equal(st.customers[0].notes, "a third copy");
+});
+
+test("the v120 catch-up leaves a name-keyed person and a stranger's order alone", () => {
+  const st = state(
+    [
+      { id: "o1", customerName: "Walk-in regular", qty: 1 },
+      { id: "o2", customerName: "Mr Lim", whatsapp: "6013222", qty: 1 },
+    ],
+    [{ id: "cus_1", key: "walk-in regular", name: "Walk-in regular", whatsapp: "", dogName: "Milo" }]);
+
+  canonicaliseCustomers(st);
+
+  assert.equal(st.customers.length, 1);
+  assert.equal(st.customers[0].key, "walk-in regular", "someone with no number keeps their name key");
+  assert.equal(st.customers[0].dogName, "Milo");
+  assert.equal(st.orders[1].whatsapp, "6013222", "an unrelated order is untouched");
+});
+
+test("the v120 catch-up changes nothing on a second run", () => {
+  const st = state(
+    [{ id: "o1", customerName: "Neoh Choo Leong", whatsapp: "+60123456789", qty: 1 }],
+    [{ id: "cus_a", key: "+60123456789", name: "Neoh Choo Leong", whatsapp: "+60123456789" }]);
+
+  assert.ok(canonicaliseCustomers(st) > 0, "the first pass has work to do");
+  const after = JSON.parse(JSON.stringify(st));
+
+  // The sync layer diffs whole records and saves again on every pull, so a
+  // second pass that moved something would loop forever.
+  assert.equal(canonicaliseCustomers(st), 0, "a second pass has nothing left to move");
+  assert.deepEqual(JSON.parse(JSON.stringify(st)), after, "and the data is byte-identical");
+});
+
+test("mergeCustomers folds a duplicate into the row the baker kept", () => {
+  const st = state(
+    [
+      { id: "o1", customerName: "Neoh Choo Leong", whatsapp: "60123456789", qty: 1 },
+      { id: "o2", customerName: "Neoh Choo L.", whatsapp: "60111111111", qty: 3 },
+    ],
+    [
+      { id: "cus_a", key: "60123456789", name: "Neoh Choo Leong", whatsapp: "60123456789", dogName: "Coco" },
+      { id: "cus_b", key: "60111111111", name: "Neoh Choo L.", whatsapp: "60111111111", likes: "banana" },
+    ]);
+
+  mergeCustomers(st, "60123456789", "60111111111");
+
+  assert.equal(st.customers.length, 1, "one saved record survives");
+  assert.equal(st.customers[0].dogName, "Coco", "the kept record keeps its own facts");
+  assert.equal(st.customers[0].likes, "banana", "and takes in the ones only the other had");
+  assert.equal(st.orders.every((o) => keyOf(o) === "60123456789"), true,
+    "both orders now sit under the kept person");
+  assert.equal(customerList(st).length, 1, "so the customer book shows them once");
+});
+
+test("mergeCustomers gives a name-only keeper the other's number, so they really become one", () => {
+  const st = state(
+    [
+      { id: "o1", customerName: "Walk-in regular", qty: 1 },
+      { id: "o2", customerName: "Walk-in regular", whatsapp: "60123456789", qty: 2 },
+    ],
+    [{ id: "cus_a", key: "walk-in regular", name: "Walk-in regular", whatsapp: "" }]);
+
+  mergeCustomers(st, "walk-in regular", "60123456789");
+
+  assert.equal(st.orders.every((o) => keyOf(o) === "60123456789"), true,
+    "the kept person's own orders move under the number too, not just the duplicate's");
+  assert.equal(customerList(st).length, 1, "which is what makes them one row");
+  assert.equal(st.customers.length, 1, "and their own saved record is the one that survives");
+});
+
+test("mergeCustomers refuses to join a person to themselves", () => {
+  const st = state([{ id: "o1", customerName: "Aunty Bee", whatsapp: "6012111", qty: 1 }], []);
+  assert.equal(mergeCustomers(st, "6012111", "6012111"), null);
+  assert.equal(mergeCustomers(st, "6012111", ""), null);
+  assert.equal(customerList(st).length, 1, "and nothing moved");
 });

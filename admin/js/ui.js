@@ -29,13 +29,57 @@ export function button(text, onClick, cls = "") {
   return el("button", { class: `btn ${cls}`.trim(), onclick: onClick }, text);
 }
 
+// The class a picker wears for the value it now holds — "" when it holds
+// nothing, or when the choice carries no tone.
+function toneClass(options, value) {
+  const chosen = options.find((o) => String(o.value) === String(value));
+  return chosen && chosen.tone ? `tone-${chosen.tone}` : "";
+}
+
 export function select(options, value, onchange, placeholder = "") {
-  const s = el("select", { onchange });
+  const s = el("select", {});
   if (placeholder) s.appendChild(el("option", { value: "", disabled: true, selected: !value }, placeholder));
+
+  // Options may name a section (the product picker splits the menu into on the
+  // shop / sold out / taken down), and each run of them becomes an <optgroup>.
+  // Every platform draws those as their own headed block — the phone's wheel
+  // included, which is the one place a page cannot reach. A menu that comes out
+  // as a single section is left ungrouped: a lone heading is just noise.
+  const groups = new Set(options.map((o) => o.group || ""));
+  const sectioned = groups.size > 1;
+  let group = "";
+  let parent = s;
   for (const o of options) {
-    const opt = el("option", { value: o.value, selected: o.value === value }, o.label);
-    s.appendChild(opt);
+    const name = sectioned ? (o.group || "") : "";
+    if (name !== group) {
+      group = name;
+      if (name) {
+        parent = el("optgroup", { label: name, class: o.tone ? `tone-${o.tone}` : "" });
+        s.appendChild(parent);
+      } else {
+        parent = s;
+      }
+    }
+    parent.appendChild(el("option", {
+      value: o.value, selected: o.value === value, class: o.tone ? `tone-${o.tone}` : "",
+    }, o.label));
   }
+  // A toned menu is marked so the stylesheet can adopt it where the browser
+  // supports a picker a page may draw (see app.css) — and left alone everywhere
+  // else, where the native list takes over.
+  const toned = options.some((o) => o.tone);
+  // The current value is tracked rather than read back off the node, because the
+  // first paint happens before a browser has settled which option is selected.
+  let current = value;
+  const paint = () => {
+    // Rebuilt from the classes already there, so a caller's own class (the status
+    // filter sets "input") is never thrown away by a repaint.
+    const rest = String(s.className || "").split(/\s+/)
+      .filter((c) => c && !c.startsWith("tone-") && c !== "toned");
+    s.className = [...rest, toned ? "toned" : "", toneClass(options, current)].filter(Boolean).join(" ");
+  };
+  s.addEventListener("change", () => { current = s.value; paint(); if (onchange) onchange(); });
+  paint();
   return s;
 }
 

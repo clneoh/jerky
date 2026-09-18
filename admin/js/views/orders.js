@@ -9,7 +9,7 @@ import { DOW, addMonth, monthLabel, monthWeeks, occColour, occForDate } from "..
 import { boxClass, nameDay, occBox, occPapers, tipEl } from "../occgrid.js";
 // A product's sell days — the shared root copy the shop reads, so the day this
 // pop-up counts a product on is exactly the day the shop offers it.
-import { sellOpen } from "../../../availability.js";
+import { availSummary, sellOpen } from "../../../availability.js";
 import { byId, fmtRM, groupOrders, moveOrderGroup, newId, orderCode, orderLineName, orderLinePrice, save, stampOrderLine, updateOrderBadge, waNumber } from "../state.js";
 import { strictestCancelDays } from "../../../store/pool.js";
 import { buildConfirmation } from "../confirm.js";
@@ -17,8 +17,8 @@ import { buildPaymentReminder, buildPickupReminder, buildShippedMessage } from "
 import { maybeSync, publishTracking } from "../supabase.js";
 import { schemeOf, referralFlag, giveCredits, validCredits, markOneUsed, referrerName } from "../referrals.js";
 import { adjustForStatus } from "../stock.js";
-import { keyOf } from "../customers.js";
-import { syncContactFromOrder } from "../profiles.js";
+import { customerList, keyOf } from "../customers.js";
+import { attachProfiles, customerNameMatches, customerRowName, syncContactFromOrder } from "../profiles.js";
 
 let orderStatusFilter = "";
 // Text in the "Find an order" box at the top of the Orders screen (empty = box
@@ -39,6 +39,16 @@ let ordersCalMonth = null;
 // rebuilt whenever anything around it changes — including when a day is tapped in
 // its own calendar — and folding under her finger at that moment would be mad.
 let newFormOpen = false;
+// The customer's name and number as typed into the ＋ New order card. Module scope
+// for the same reason as the fold above, and one more: the draft inside orderForm
+// is built fresh on every rebuild, so a rebuild silently threw away what you had
+// put in the customer boxes — the comment down there claimed otherwise, but only
+// the item rows ever came back. Holding just these two fields out here makes the
+// claim true, which matters now that choosing from the suggestion list is a thing
+// you do in this card. Cleared on a fresh visit to the screen (with the fold)
+// and when an add actually completes — never when one is merely asked for, since
+// the capacity and closed-day warnings can still be cancelled.
+let newOrderContact = { customerName: "", whatsapp: "" };
 
 const STATUSES = [
   ["new", "New"],
@@ -275,6 +285,7 @@ export function renderOrders(root, state, params) {
   orderStatusFilter = "";
   orderQuery = ""; // a fresh visit to Orders starts with an empty finder box
   newFormOpen = false;  // …and with the New-order card shut
+  newOrderContact = { customerName: "", whatsapp: "" }; // …and with its customer boxes empty
   ordersCalMonth = null; // …and on the month of the day that opens
   installOrderCollapseOutside();
   renderAll(root, state, params);
@@ -683,8 +694,8 @@ export function newOrdersInbox(state, selectDate, root) {
 // The "Find an order" box pinned to the top of the Orders screen. Typing hides
 // the date view below and lists every matching order (any date, any status) as
 // tappable rows; picking one jumps to its delivery date, scrolls the order into
-// view and flashes it so the baker sees exactly where it is. Matches live-update
-// as she types — only the results list is rebuilt, never the input, so the
+// view and flashes it so you see exactly where it is. Matches live-update
+// as you type — only the results list is rebuilt, never the input, so the
 // keyboard stays open. (Result rows carry no controls, so nothing can trigger a
 // rebuild while the box is showing.)
 function orderFinderEl(state, root, selectDate, body) {
@@ -943,24 +954,64 @@ export function openDayAdjustPopup(state, date, refresh) {
   }, { wide: true });
 }
 
+// Where each kind of choice sits in the picker, and what its section is called —
+// see productOptions.
+const TONE_RANK = { ok: 0, warn: 1, off: 2 };
+const TONE_SECTION = { ok: "On the shop", warn: "Unavailable", off: "Taken down" };
+
 // Product choices for adding/editing an order. Unlike the customer menu, the
 // backoffice pickers show EVERY product — including hidden ones (marked
-// "(hidden)") — so the baker can still add or edit an order for a product she
-// has temporarily taken off the menu. Active products list first.
-function productOptions(state, dateId, excludeOrderId = null) {
+// "(hidden)") — so you can still add or edit an order for a product you
+// have temporarily taken off the menu. They come in three kinds, listed in that
+// order and grouped under those three names, each section carrying the tone it
+// is drawn in (18 Sep 2026).
+//
+// The three kinds answer one question — is the SHOP offering this product for
+// this delivery date? — because the picker is a guide while you sell, never a
+// gate: you make to a plan of your own, so a product the shop has no orders for
+// is still one you may sell from the fridge or to a walk-in. So a sold-out item
+// and a not-sold-this-day item are one bucket ("Unavailable"), not two: they are
+// both active products you can still choose.
+//
+// The shop's order-by deadline (a product's closeDays) is deliberately NOT
+// asked. That deadline stops a stranger ordering; it says nothing about what you
+// may sell by hand, and counting it would leave a near delivery date with an
+// empty "On the shop" section, which is the opposite of a guide.
+//
+// (You settled this on 18 Sep 2026 — "say everyday the kitchen will produce 12
+// packets, but day before 6pm order will closed but not necessarily the 12 will
+// be sell off... what I want is some guide when I sell the product.
+// Flexible but not too much.")
+export function productOptions(state, dateId, excludeOrderId = null) {
+  const dateStr = (state.deliveryDates || []).find((d) => d.id === dateId)?.date;
   // Drafts are never for sale yet, so they have no orders — keep them out of
   // the backoffice picker too. Hidden products stay (marked below) so an order
   // for something temporarily off the menu can still be added or edited.
   return state.products
     .filter((p) => p.draft !== true)
     .map((p) => {
-      const pr = productRemaining(state, dateId, p.id, excludeOrderId);
-      let label = pr ? `${p.name} — ${pr.remaining <= 0 ? "sold out" : `${pr.remaining} left`}` : p.name;
       const hidden = p.active === false;
-      if (hidden) label += " (hidden)";
-      return { value: p.id, label, hidden };
+      // Taken down outranks both others: a hidden product is off the menu
+      // whatever its sell days or its count for the day say.
+      if (hidden) {
+        const pr = productRemaining(state, dateId, p.id, excludeOrderId);
+        const count = pr ? ` — ${pr.remaining <= 0 ? "sold out" : `${pr.remaining} left`}` : "";
+        return { value: p.id, label: `${p.name}${count} (hidden)`, tone: "off", group: TONE_SECTION.off };
+      }
+      // A product the shop does not sell on this date is never offered for it,
+      // so its count for the day means nothing here — name the days it IS sold
+      // instead. Ask this BEFORE the count: an off-day product's remaining can
+      // read 0, which would mislabel it "sold out".
+      if (!sellOpen(p, dateStr)) {
+        return { value: p.id, label: `${p.name} — only ${availSummary(p)}`,
+          tone: "warn", group: TONE_SECTION.warn };
+      }
+      const pr = productRemaining(state, dateId, p.id, excludeOrderId);
+      const label = pr ? `${p.name} — ${pr.remaining <= 0 ? "sold out" : `${pr.remaining} left`}` : p.name;
+      const tone = pr && pr.remaining <= 0 ? "warn" : "ok";
+      return { value: p.id, label, tone, group: TONE_SECTION[tone] };
     })
-    .sort((a, b) => (a.hidden === b.hidden ? 0 : a.hidden ? 1 : -1));
+    .sort((a, b) => TONE_RANK[a.tone] - TONE_RANK[b.tone]);
 }
 
 // The order's shareable code as a small tag, e.g. "#A3F9C2". Shown on inbox
@@ -1020,6 +1071,67 @@ function moneyLine(state, dateId) {
   return bits.length ? el("p", { class: "card-sub money-line" }, bits.join(" · ")) : null;
 }
 
+// Typing a customer's name in either order form offers the people you have already
+// served, drawn from your own order history — the same list the Customers screen
+// shows. A tap fills the name and the number; the delivery day, the items and
+// collect/courier stay yours (18 Sep 2026).
+//
+// The panel sits in the form's own grid, under the name box and across both
+// columns — in the normal flow, like the date picker's panel, never a floating
+// overlay: the Edit pop-up's body scrolls, and a floating panel inside it would be
+// clipped at its edge. It is hidden rather than emptied when there is nothing to
+// show, because an empty grid item still takes the grid's row gap.
+function customerSuggester(state, onPick) {
+  // Your order history does not change while you type, so the list is built once
+  // on the first keystroke that could show anything — not on every render of the
+  // screen, where the card is rebuilt far more often than it is typed into.
+  let rows = null;
+  const people = () => {
+    if (!rows) rows = attachProfiles(state, customerList(state, "recent", "all", todayISO()));
+    return rows;
+  };
+
+  const panel = el("div", { class: "sugg-panel", hidden: true });
+  const hide = () => { panel.hidden = true; panel.replaceChildren(); };
+
+  const paint = (query) => {
+    const q = String(query || "").trim();
+    // Two letters, the same floor the shop's finders use: one letter matches half
+    // your customers, which is a wall of names rather than a suggestion.
+    if (q.length < 2) { hide(); return; }
+    const hits = people().filter((r) => customerNameMatches(r, q)).slice(0, 5);
+    if (!hits.length) { hide(); return; }
+    panel.replaceChildren(...hits.map((r) => el("button", {
+      class: "list-item sugg-row", type: "button", onclick: () => { hide(); onPick(r); },
+    },
+      el("div", { class: "li-main" },
+        el("div", { class: "li-title" }, el("span", {}, customerRowName(r))),
+        el("div", { class: "li-sub" }, suggestionSub(r))))));
+    panel.hidden = false;
+  };
+
+  return { panel, paint, hide };
+}
+
+// The number to use for a suggested person. Normally the one on their orders, but
+// a record saved before the two copies were kept in step can hold the only one.
+function suggestionNumber(row) {
+  return String((row && row.whatsapp) || ((row && row.profile && row.profile.whatsapp) || "")).trim();
+}
+
+// What sits under a suggested name: the number, how many orders you have taken from
+// them, and what they buy most — the three things that tell two similar names
+// apart at a glance. A part you have no answer for is left out rather than shown
+// as a blank.
+function suggestionSub(row) {
+  const orders = Number(row.orders) || 0;
+  return [
+    suggestionNumber(row) || "No number saved",
+    orders === 1 ? "1 order" : `${orders} orders`,
+    row.fav ? `usually ${row.fav}` : "",
+  ].filter(Boolean).join(" · ");
+}
+
 // The manual "＋ Add order" card, always at the top of a delivery date. Takes
 // several items at once — they become ONE customer order (a shared group), the
 // same shape a multi-item storefront order arrives as, so the list/inbox/confirm
@@ -1034,14 +1146,32 @@ function orderForm(state, dateId, root, selectDate) {
   }
 
   // The form edits a *draft*, not the orders directly, so a mid-edit re-render
-  // (a sync pull, a fresh storefront import) rebuilds this form with what she
-  // actually typed. Nothing is written until Add order is pressed.
-  const draft = { customerName: "", whatsapp: "", fulfillment: "collect", address: "", note: "", orderDate: todayISO() };
+  // (a sync pull, a fresh storefront import) rebuilds this form with what you
+  // actually typed. Nothing is written until Add order is pressed. The customer's
+  // name and number are the two the draft alone could not keep across a rebuild,
+  // so they are seeded from newOrderContact and written back to it as you type.
+  const draft = {
+    customerName: newOrderContact.customerName, whatsapp: newOrderContact.whatsapp,
+    fulfillment: "collect", address: "", note: "", orderDate: todayISO(),
+  };
+  // Filling in from a suggestion has to write both the boxes and the draft: the
+  // draft is what the other controls read, the boxes are what you see.
+  const suggester = customerSuggester(state, (r) => {
+    draft.customerName = newOrderContact.customerName = customerRowName(r);
+    draft.whatsapp = newOrderContact.whatsapp = suggestionNumber(r);
+    customer.value = draft.customerName;
+    whatsapp.value = draft.whatsapp;
+  });
   const customer = el("input", { class: "input", placeholder: "Customer name (optional)",
-    value: draft.customerName, oninput: function () { draft.customerName = this.value; } });
+    value: draft.customerName,
+    oninput: function () {
+      draft.customerName = newOrderContact.customerName = this.value;
+      suggester.paint(this.value);
+    } });
   const whatsapp = el("input", { class: "input", type: "tel", inputmode: "tel",
     placeholder: "e.g. 012-345 6789", "data-suggest": "012-345 6789",
-    value: draft.whatsapp, oninput: function () { draft.whatsapp = this.value; } });
+    value: draft.whatsapp,
+    oninput: function () { draft.whatsapp = newOrderContact.whatsapp = this.value; } });
   const fulfillmentSel = select(
     [{ value: "collect", label: "Collect (local)" }, { value: "courier", label: "Post (nationwide)" }],
     draft.fulfillment, function () { draft.fulfillment = this.value; });
@@ -1129,8 +1259,9 @@ function orderForm(state, dateId, root, selectDate) {
     el("div", { class: "field", style: "margin-bottom:10px" },
       el("label", {}, "Delivery day"),
       dayCal.el),
-    el("div", { class: "form-grid" },
+    el("div", { class: "form-grid order-sugg" },
       el("div", {}, el("label", {}, "Customer"), customer),
+      suggester.panel,
       el("div", {}, el("label", {}, "Order date"), orderDate),
       el("div", {}, el("label", {}, "WhatsApp (optional)"), whatsapp),
       el("div", {}, el("label", {}, "Fulfillment"), fulfillmentSel),
@@ -1271,8 +1402,19 @@ function openEditPopup(state, group, dateId, root) {
 function popupEditBody(state, date, group, first, lines, draft, refresh, close, root) {
   const curId = draft.deliveryDateId || (date && date.id) || "";
   const products = productOptions(state, curId);
+  // Filling in from a suggestion writes the draft and both boxes. Unlike the
+  // New-order card this draft already lives outside the body, so the values
+  // survive a repaint with no help; the number goes through waNumber because
+  // that is the form this box opens on.
+  const suggester = customerSuggester(state, (r) => {
+    draft.customerName = customerRowName(r);
+    draft.whatsapp = waNumber(suggestionNumber(r));
+    customer.value = draft.customerName;
+    whatsapp.value = draft.whatsapp;
+  });
   const customer = el("input", { class: "input", placeholder: "Customer name (optional)",
-    value: draft.customerName, oninput: function () { draft.customerName = this.value; } });
+    value: draft.customerName,
+    oninput: function () { draft.customerName = this.value; suggester.paint(this.value); } });
   const whatsapp = el("input", { class: "input", type: "tel", inputmode: "tel",
     placeholder: "e.g. 012-345 6789", "data-suggest": "012-345 6789",
     value: draft.whatsapp, oninput: function () { draft.whatsapp = this.value; } });
@@ -1361,8 +1503,9 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       el("label", {}, "Delivery day"),
       deliveryPick,
       deliveryNotes),
-    el("div", { class: "form-grid" },
+    el("div", { class: "form-grid order-sugg" },
       el("div", {}, el("label", {}, "Customer"), customer),
+      suggester.panel,
       el("div", {}, el("label", {}, "Order date"), orderDate),
       el("div", {}, el("label", {}, "WhatsApp (optional)"), whatsapp),
       el("div", {}, el("label", {}, "Fulfillment"), fulfillmentSel),
@@ -1485,6 +1628,9 @@ function addNew(state, date, productId, qty, price, customerName, whatsapp, fulf
   const st = deliveryStatus(date.date, state.settings);
 
   function commit() {
+    // The card keeps your customer across a rebuild, so a successful add has to
+    // clear it by hand or the next order would open on the person you just served.
+    newOrderContact = { customerName: "", whatsapp: "" };
     const row = {
       id: newId("ord"),
       deliveryDateId: date.id,
@@ -1532,6 +1678,8 @@ function addGroupNew(state, date, items, customerName, whatsapp, fulfillment, ad
   const st = deliveryStatus(date.date, state.settings);
 
   function commit() {
+    // See addNew: a completed add starts the card clean.
+    newOrderContact = { customerName: "", whatsapp: "" };
     const groupId = newId("ordg");
     const createdAt = new Date().toISOString();
     for (const it of items) {

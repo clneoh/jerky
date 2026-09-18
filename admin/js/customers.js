@@ -4,7 +4,7 @@
 // (orders/units/approx total spend), their favourite product, and when they
 // last ordered/delivered — enough for a history pop-up and a marketing list.
 
-import { byId, orderCode, orderLinePrice, round2 } from "./state.js";
+import { byId, orderCode, orderLinePrice, round2, waNumber } from "./state.js";
 
 // The delivery date for an order. New orders snapshot their delivery date, so
 // history survives a delivery date being deleted; older orders fall back to
@@ -27,12 +27,30 @@ function norm(s) {
   return String(s || "").trim().toLowerCase();
 }
 
+// The canonical digits of a phone number, or "" when the value is not shaped
+// like one. Shared with profiles.js so every writer stores the same form, and so
+// no caller can reduce an email or a note to a stray digit. The shape test is the
+// one the finder already uses (profiles.js) for the same reason.
+export function phoneDigits(v) {
+  const s = String(v || "").trim();
+  if (!/^[\d\s\-().+]+$/.test(s) || !/\d/.test(s)) return "";
+  return waNumber(s);
+}
+
+// A number is identified by its digits, so "+60 12-345 6789", "60123456789" and
+// "012-345 6789" are one person — the same reduction waNumber already does for
+// every wa.me link. Anything not shaped like a number keeps its plain trimmed
+// text, exactly as it always has.
+function waKey(v) {
+  return phoneDigits(v) || norm(v);
+}
+
 // The join key tying an order to a person and to a saved profile: WhatsApp
 // number when present, else name, else the single order id. Exported so
 // profiles.js keys a profile with the very same rule — a profile stored under a
 // slightly different spelling still joins its orders.
 export function keyOf(o) {
-  return norm(o.whatsapp) || norm(o.customerName) || o.id;
+  return waKey(o.whatsapp) || norm(o.customerName) || o.id;
 }
 
 // Aggregates orders into one row per customer. A customer is keyed by WhatsApp

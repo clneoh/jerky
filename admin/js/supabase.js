@@ -10,6 +10,7 @@ import { normRules } from "../../availability.js";
 import { publishOccasions } from "./occasion_catalog.js";
 import { effectiveCapacity, effectiveLimit, isPoolablePack, poolRemaining, totalUnitsOnDate } from "./bom.js";
 import { byId, fmtRM, newId, orderCode, orderLineName, orderLinePrice, save, stampOrderLine } from "./state.js";
+import { phoneDigits } from "./customers.js";
 
 const TOKEN_KEY = "bakeadmin.supabase";
 
@@ -644,7 +645,10 @@ function importIncoming(state, row) {
       productId: product.id,
       qty,
       customerName: String(data.customer || "").trim(),
-      whatsapp: String(data.whatsapp || "").trim(),
+      // The shop normalises this before sending, but a device running a stale
+      // cached copy of the shop's script would not — store the canonical digits
+      // either way, so a "+" can never split a customer in two.
+      whatsapp: phoneDigits(data.whatsapp) || String(data.whatsapp || "").trim(),
       referredBy: String(data.referredBy || "").trim(), // the ?via= link stamp
       fulfillment: data.fulfillment === "courier" ? "courier" : "collect",
       address: String(data.address || "").trim(),

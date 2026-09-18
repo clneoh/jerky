@@ -1,8 +1,145 @@
-# Munchies Furkidz — change history (v54 → v118)
+# Munchies Furkidz — change history (v54 → v123)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**18 Sep 2026 — engine v123 (no database setup needed). The product list's middle
+section now groups sold out and not-sold-that-day together, and a product the shop does
+not sell on a day is named by the days it IS sold instead of being given a count for a
+day it was never on.**
+
+**What was wrong.** The middle section was called **Sold out** and read its count for the day you
+were adding to. But a product the shop does not sell on that day at all — a weekend-only treat on a
+Wednesday — was sitting in **On the shop**, and worse, could be labelled "sold out" from a count for
+a day it was never on the menu. Neither told you anything true.
+
+**What it does now.** The middle section is **Unavailable**, and it holds both kinds together: a
+product that has **sold out** for the day you are adding to, and a product the shop **does not sell
+on that day**. The second kind is named by the days it IS sold — a weekend-only product on a
+Wednesday reads "Chicken Jerky 100g — only Sat & Sun". The three headings are now **On the shop**,
+**Unavailable**, **Taken down**.
+
+**Why they are one section, not two.** They are the same thing to you: an active product you can
+still choose. You make to a plan of your own, and as you put it — every day the kitchen may make 12
+pouches, ordering closes the day before at 6pm, and the 12 are not necessarily sold off, so some go
+to a walk-in or into the fridge. **The picker is a guide while you sell, never a gate**: nothing is
+blocked, and the order-by deadline you set on a product is deliberately not counted, because that
+deadline stops a stranger ordering — it says nothing about what you may sell by hand.
+
+**Where to see it.** Orders → **＋ New order** → Items, and Orders → open an order → **Edit**.
+
+Nothing else moved — your prices, customers, posting dates, the shop and the way messages are
+written are all exactly as they were.
+
+**18 Sep 2026 — engine v122 (no database setup needed). The product list now shows the three kinds
+inside the list itself: each kind sits under its own heading, and on a newer phone each section is
+tinted in its colour.**
+
+**What changed.** Adding items to an order — in **＋ New order** and in **Edit** — the product list
+now comes in three labelled sections instead of one long run of names: **On the shop** first, then
+the ones you cannot sell for that day, then **Taken down**. The headings appear on every phone,
+because they are part of the list itself.
+
+**The colour.** On a phone with the very latest system — a new iPhone or a recent Android — each
+section is also tinted inside the open list: **green** for on the shop, **amber** for unavailable,
+**grey** for taken down. The list then reads as three blocks you can tell apart without reading a
+word.
+
+**On an older phone.** The open list is drawn by your phone itself, and an older phone will not let
+a page colour it. You get the same three headings in the same order, and the closed box still wears
+the colour of whatever it holds — you lose the section tint and nothing else. Nothing is broken,
+and nothing has moved; only the colour is missing.
+
+**This replaces the v121 note below.** v121 put the colour on the closed box alone, because the
+open list could not be reached. Newer phones can be reached, so the list carries the colour too.
+
+**Where to see it.** Orders → **＋ New order** → Items, and Orders → open an order → **Edit**. The
+list is otherwise unchanged: the same products, the same "(hidden)" marker, the same "12 left"
+count.
+
+Nothing else moved — your prices, customers, posting dates, the shop and the way messages are
+written are all exactly as they were.
+
+**18 Sep 2026 — engine v121 (no database setup needed). The product list now shows you which kind
+of product each choice is, in colour, and lists them in the order you would look for them.**
+
+**What changed.** Adding items to an order — in **＋ New order** and in **Edit** — the product list
+is now sorted into the three kinds you already know, in the order you would reach for them: what is
+**On the shop** first, then anything that has **sold out** for the day you are adding to, then
+whatever you have **taken down** (still marked "(hidden)"). A product still in Draft stays out of
+these lists entirely, as it always has.
+
+**The colour.** The closed box wears the colour of whatever is picked — **green** for on the shop,
+**amber** for sold out, **grey** for taken down. On an order with several lines that means one
+glance down the list tells you which lines need a second look, without reading each one.
+
+**Why only the closed box.** The open list is drawn by your phone itself, and iOS does not let a
+page colour the rows inside it. So the colour sits on the box you see while the list is shut, which
+is where you read it anyway.
+
+**Where to see it.** Orders → **＋ New order** → Items, and Orders → open an order → **Edit**. The
+list itself is unchanged: the same products, the same "(hidden)" marker, the same "12 left" count.
+
+Nothing else moved — your prices, customers, posting dates, the shop and the way messages are
+written are all exactly as they were.
+
+**18 Sep 2026 — engine v120 (no database setup needed). One customer is one row. The app now
+recognises a phone number by its digits, so the same person can no longer appear twice just because
+their number was written with a + in front of it — and the duplicate already in your app joins
+itself into one the first time you open it after updating.**
+
+**What was wrong.** A customer used to be identified by their number written in exactly the same way
+every time. So **+60123456789** and **60123456789** looked like two different people, and the
+Customers list showed the same customer twice. Your messages always went to the right person — only
+the list disagreed. Numbers are now read by their digits, which means **012-345 6789**,
+**+60 12-345 6789** and **60123456789** are one person, the same way "012345" already found
+"012-345" in the finder.
+
+**It tidies itself once.** The first time you open the app after updating, it joins any customer who
+was split this way, carrying their pet's name and photo, what they like and avoid, and their note
+across to the one that remains. There is nothing to do — you will simply find one row where there
+were two. If you are the careful sort, take a cloud backup first from **More → Backups**: that is the
+way back if anything looks wrong, and it costs one tap.
+
+**New: "Join with another customer".** Open a customer's history and you will find the button under
+their number. Tap it, pick the duplicate from the list, and confirm. Reach for it when two rows are
+split for some other reason — a misspelt name with no number beside it, say — which the tidy above
+cannot guess at. It moves the other person's orders under the name and number of the customer you
+were looking at, so open the row you want to KEEP. This one cannot be undone inside the app; your
+cloud backup is the way back, and the confirm box says so before it acts.
+
+**Two things worth knowing.** Update both phones — a phone still on v119 can save a number the old
+way from its Profile card, and only the updated build does the tidy. And on the Profile card itself,
+the number you type is now stored in the one form every label, message and link already uses, so a
+"+" or a space can never split a customer again.
+
+Nothing else changed — your prices, your posting dates, the shop and the way messages are written
+are all exactly as they were.
+
+**18 Sep 2026 — engine v119 (no database setup needed). Start typing a customer's name in an
+order form and the people you have already served appear underneath — tap one and their name and
+WhatsApp number fill themselves in.**
+
+**How it works.** Type two letters — "aun" is plenty — and a short list appears right under the
+name box. Each row shows their number, how many orders they have placed, and the item they buy
+most, like **012-345 6789 · 5 orders · usually Chicken Jerky 100g**. Tap the right person and the
+name and the number both go in; the posting day, the items and collect-or-post stay yours to set.
+One letter on its own is not a search — it would offer you half your address book — and a name you
+have never served offers nothing at all. Typing a number without its dashes finds them too, so
+"012345" works the way "012-345" does.
+
+**Both order forms do it** — the **＋ New order** card and the **Edit** pop-up, the same way.
+
+**Two things worth knowing.** It draws on the orders already in the app, so on a brand-new setup it
+has nothing to offer until your first order is saved. And on the **Edit** form, saving a changed
+name has always carried that name to every other order belonging to the person it was — that is the
+one-saved-name rule from v68 and it has not changed, but picking a name is now much easier than
+typing one, so it is easier to do by accident. If you ever pick the wrong person while editing an
+order and save it, tell me and I will add a confirmation that asks first.
+
+Nothing else changed — the Customers screen, its finder, your prices and the shop are all exactly
+as they were.
 
 **18 Sep 2026 — your phone pings the moment an order lands (no new engine; the
 phones did not change).** Until now the app only found out about a customer's
