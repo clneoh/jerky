@@ -4,6 +4,37 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**18 Sep 2026 — your phone pings the moment an order lands (no new engine; the
+phones did not change).** Until now the app only found out about a customer's
+order when you opened it, so an order placed at night sat unseen until morning.
+Your database can now send the alert itself: **the instant a customer taps Place
+order, a notification arrives on your phone** — even with the app closed, the
+phone locked, and no computer switched on.
+
+**How it works.** A rule in your Supabase project watches the orders table. The
+moment a new order lands it writes a short summary — the customer's name and
+WhatsApp number, the items and quantities, the posting day, the total, and any
+note or address — and hands it to the free **ntfy** app, which pushes it to
+whichever phones have subscribed to your private channel. Orders you add by hand
+in the app stay silent; only orders customers place on the order page ping.
+
+**Your part, once per phone.** Install the free **ntfy** app, tap **+**, and type
+your own private topic (the 16 letters and numbers after 'furkidz-orders-' that
+your setup script showed you). Leave the server at the default **ntfy.sh**, then
+allow notifications. Every phone holding that topic pings at the same moment, so
+a helper's phone can hear it too.
+
+**The topic is a password.** Anyone who knows it can read your alerts — so it is
+stored in your own database and deliberately kept out of the app and out of
+GitHub. The app cannot leak it. If it ever does leak, one line in the SQL editor
+gives you a fresh topic and you re-subscribe the phones.
+
+**A failed ping can never block an order.** If the alert cannot be sent for any
+reason, the customer's order is still saved — and the reason is written down in
+`order_alert_errors` so you can read it later. The whole setup is one script,
+`supabase/order_alerts.sql`, which is safe to re-run. Since nothing on the phones
+changed, this is not a new engine version.
+
 **17 Sep 2026 — engine v118 (no database setup needed). The Paid step now stays in
 its place on every order, wearing an X until the money is in — and turns into a
 green tick when it is.** This replaces what v117 did, on your instruction.
