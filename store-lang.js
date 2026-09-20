@@ -10,6 +10,13 @@
 const en = {
   titleWord: "Order",
   referral: "🎁 You were referred — you have a welcome discount on your first order",
+  // The scanned-label banner. Its words mirror what the owner states on a label
+  // (offerLine in admin/js/codes.js) so the page and the card agree.
+  codeOff: "%1 off",
+  codeMin: "on %1 and above",
+  codeNew: "new customers only",
+  codeUntil: "valid until %1",
+  codeFrom: "from %1",
   deliveryDays: "Posting days",
   orderBy: "Order by",
   beforeVal: "%1 the day before",
@@ -131,6 +138,11 @@ const en = {
 const zh = {
   titleWord: "订购",
   referral: "🎁 经由好友推荐 — 首次下单即可享受专属优惠",
+  codeOff: "折扣 %1",
+  codeMin: "消费 %1 以上",
+  codeNew: "仅限新客户",
+  codeUntil: "有效期至 %1",
+  codeFrom: "来自 %1",
   deliveryDays: "发货日",
   orderBy: "下单截止",
   beforeVal: "发货日前一天 %1 前",
@@ -233,6 +245,11 @@ const zh = {
 const ms = {
   titleWord: "Tempahan",
   referral: "🎁 Anda dirujuk — anda ada diskaun sambutan untuk tempahan pertama",
+  codeOff: "Diskaun %1",
+  codeMin: "pembelian %1 ke atas",
+  codeNew: "pelanggan baharu sahaja",
+  codeUntil: "sah sehingga %1",
+  codeFrom: "daripada %1",
   deliveryDays: "Hari pos",
   orderBy: "Tempahan ditutup",
   beforeVal: "%1 sehari sebelumnya",

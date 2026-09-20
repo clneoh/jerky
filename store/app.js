@@ -157,6 +157,27 @@ function currentVia() {
     ? parseVia(location.search) : "";
 }
 
+// The `c` query string (?c=K3X9) is the code on the printed label the customer
+// scanned. Kept as typed (upper-cased) so it matches the code she created; the
+// page then looks it up in the published list. An unknown or retired code simply
+// matches nothing — the shop still works, it just says nothing about an offer.
+export function parseCode(search) {
+  const raw = new URLSearchParams(String(search || "")).get("c");
+  return String(raw || "").trim().toUpperCase();
+}
+
+function currentCode() {
+  return (typeof location !== "undefined" && location.search)
+    ? parseCode(location.search) : "";
+}
+
+// The published record for the code in the address bar, or null. Read from the
+// storefront config the app already fetched — the shop never invents a code.
+function codeInfo(cfg, code) {
+  const list = Array.isArray(cfg && cfg.codes) ? cfg.codes : [];
+  return list.find((c) => c && String(c.code || "").toUpperCase() === code) || null;
+}
+
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -364,6 +385,55 @@ export function mergeStorefront(base, remote) {
   if (typeof remote.developerWhatsapp === "string" && remote.developerWhatsapp.trim()) {
     out.developerWhatsapp = remote.developerWhatsapp.trim();
   }
+  // The printed QR labels. Published by the app, but every row is re-checked here
+  // on the shop's own terms rather than trusted: a malformed row is dropped, and
+  // an offer is only kept when it is a real type with a positive amount, so a
+  // half-written record can never put a wrong number in front of a customer.
+  // Replaced wholesale (like occasions) — the app publishes a complete snapshot,
+  // so retiring a code really does take it off a page that is already open.
+  if (Array.isArray(remote.codes)) {
+    const ISO = /^\d{4}-\d{2}-\d{2}$/;
+    const KINDS = ["shop", "promo", "intro", "plain"];
+    out.codes = remote.codes
+      .filter((c) => c && typeof c === "object" && String(c.code || "").trim())
+      .map((c) => {
+        const row = {
+          code: String(c.code).trim().toUpperCase(),
+          kind: KINDS.includes(String(c.kind || "")) ? String(c.kind) : "plain",
+        };
+        for (const k of ["headline", "partnerName", "productName"]) {
+          const v = c && typeof c[k] === "string" && c[k].trim();
+          if (v) row[k] = c[k].trim();
+        }
+        const o = c && c.offer;
+        const type = o && String(o.type || "");
+        const value = o && Number(o.value);
+        if (type && (type === "rm" || type === "pct") && value > 0) {
+          row.offer = {
+            type,
+            value,
+            minSpend: Math.max(0, Number(o.minSpend) || 0),
+            to: o && ISO.test(String(o.to || "")) ? String(o.to) : "",
+            newOnly: !!(o && o.newOnly === true),
+            cur: String((o && o.cur) || "").trim() || "RM",
+          };
+        }
+        return row;
+      });
+  }
+  // The landing page's own copy. Strings only, kept when non-empty, so a blank box
+  // in the app leaves this page's own fallback wording in place rather than
+  // blanking a line a customer is reading.
+  if (remote.taster && typeof remote.taster === "object") {
+    const t = {};
+    for (const k of ["heading", "headingZh", "headingMs", "body", "bodyZh", "bodyMs", "instagram", "shop"]) {
+      const v = remote.taster[k];
+      if (typeof v === "string" && v.trim()) t[k] = v.trim();
+    }
+    if (remote.taster.askPet === false) t.askPet = false;
+    if (remote.taster.follow === false) t.follow = false;
+    out.taster = t;
+  }
   return out;
 }
 
@@ -500,6 +570,39 @@ function renderReferralBanner() {
   const box = document.getElementById("referral-banner");
   if (!box) return;
   box.hidden = !currentVia();
+}
+
+// A visited label (?c=…) sees what that label offered, in words. It is stated,
+// never applied: the shop does not touch the total. The amount is hers to give
+// when she confirms on WhatsApp and can see the whole order — the same rule the
+// referral line above follows, so the customer is never told one thing by the
+// label and another by the sum. A retired code, or one whose offer has run out,
+// shows nothing at all: the link still opens, the shop just says nothing extra.
+function renderCodeBanner(cfg) {
+  const box = document.getElementById("code-banner");
+  if (!box) return;
+  const code = currentCode();
+  const info = code ? codeInfo(cfg, code) : null;
+  const parts = [];
+  if (info && info.offer) {
+    const cur = info.offer.cur || "RM";
+    const amount = info.offer.type === "pct"
+      ? `${info.offer.value}%`
+      : `${cur}${info.offer.value}`;
+    parts.push(t("codeOff").replace("%1", amount));
+    if (info.offer.minSpend > 0) parts.push(t("codeMin").replace("%1", `${cur}${info.offer.minSpend}`));
+    if (info.offer.newOnly) parts.push(t("codeNew"));
+    if (info.offer.to) parts.push(t("codeUntil").replace("%1", shortDay(info.offer.to)));
+  } else if (info && info.partnerName) {
+    // A shop's label with no offer still says where the treat came from.
+    parts.push(t("codeFrom").replace("%1", info.partnerName));
+  }
+  // Blank it as well as hide it: a hidden node that still holds the last code's
+  // offer is one line-change away from showing a customer a sentence about a
+  // label they never scanned.
+  if (!parts.length) { box.textContent = ""; box.hidden = true; return; }
+  box.textContent = `🎁 ${parts.join(" · ")}`;
+  box.hidden = false;
 }
 
 export function render() {
@@ -1129,9 +1232,24 @@ export function render() {
       createdAt: new Date().toISOString(),
     };
     // A referral link's ?via= stamp: which customer's personal link this order
-    // came through. The bakery decides (new vs repeat) and applies the discount.
+    // came through. You decide (new vs repeat) and apply the discount.
     const via = currentVia();
     if (via) order.referredBy = via;
+    // The label the customer came in on (?c=…), stamped on the order so the
+    // "Shops & codes" screen can count what that one label brought in — and so
+    // you can see, at the moment you confirm, which offer was promised. Kept only
+    // when the code really is one the app published: a made-up ?c= must not land
+    // in the books as a label that never existed.
+    //
+    // Only the code and its kind travel. The shop behind it is read back from the
+    // code record, so a shop renamed later is named right everywhere, and the
+    // order never carries a second, disagreeing copy of it.
+    const scanned = currentCode();
+    const scannedInfo = scanned ? codeInfo(CONFIG, scanned) : null;
+    if (scannedInfo) {
+      order.promoCode = scannedInfo.code;
+      order.codeKind = scannedInfo.kind;
+    }
     // A value pack draws its base out of the shared pool in whole pieces, but
     // the pack itself is already one top-level `lines` entry — so the base
     // pieces it consumes travel here, separate from `lines`. The database
@@ -1230,6 +1348,7 @@ export function render() {
   repaintForLang = (l) => {
     applyTo(document, STORE, l);
     renderStatic(CONFIG);
+    renderCodeBanner(CONFIG); // the offer line is built from words, not data-i18n
     rerender();
     renderBar();
     paintTrack();
@@ -1461,6 +1580,7 @@ function wireTrack() {
 
 render();
 renderReferralBanner();
+renderCodeBanner(CONFIG);
 wireFulfillment();
 wireTrack();
 

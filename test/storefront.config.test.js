@@ -265,3 +265,66 @@ test("mergeStorefront keeps the change/cancel window and the Policies wording", 
   assert.equal(keep.policy, "My own words");
   assert.equal("policy" in base.products[0], false, "base products are not mutated");
 });
+
+test("mergeStorefront adopts the published codes, dropping anything half-written", () => {
+  const out = mergeStorefront({ name: "A" }, {
+    codes: [
+      { code: " pshop ", kind: "shop", partnerName: "  Paw Shop ", headline: "New here?" },
+      { code: "milo", kind: "promo", productName: "Chicken Jerky",
+        offer: { type: "pct", value: 10, minSpend: 30, to: "2026-09-30", newOnly: true, cur: "RM" } },
+      // A malformed offer is dropped whole, never half-adopted: a wrong number in
+      // front of a customer is worse than saying nothing.
+      { code: "BAD1", kind: "promo", offer: { type: "pct", value: 0 } },
+      { code: "BAD2", kind: "promo", offer: { type: "free", value: 5 } },
+      { code: "BAD3", kind: "promo", offer: { type: "rm", value: 5, to: "31 Oct" } },
+      { code: "ODD1", kind: "nonsense" },
+      { code: "  " },
+      null,
+      "not an object",
+    ],
+  });
+  assert.deepEqual(out.codes.map((c) => c.code), ["PSHOP", "MILO", "BAD1", "BAD2", "BAD3", "ODD1"]);
+  const shop = out.codes[0];
+  assert.equal(shop.partnerName, "Paw Shop");
+  assert.equal(shop.headline, "New here?");
+  assert.equal("offer" in shop, false, "a code with no offer carries no offer key");
+  const milo = out.codes[1];
+  assert.equal(milo.productName, "Chicken Jerky");
+  assert.deepEqual(milo.offer, {
+    type: "pct", value: 10, minSpend: 30, to: "2026-09-30", newOnly: true, cur: "RM",
+  });
+  assert.equal("offer" in out.codes[2], false, "a zero amount states nothing");
+  assert.equal("offer" in out.codes[3], false, "an unknown offer type states nothing");
+  assert.equal(out.codes[4].offer.to, "",
+    "a date that is not an ISO day is dropped rather than half-read");
+  assert.equal(out.codes[5].kind, "plain", "a strange kind reads as plain");
+});
+
+test("mergeStorefront replaces the whole code list — a retired code really goes", () => {
+  const base = { name: "A", codes: [{ code: "OLD1", kind: "shop" }, { code: "KEEP", kind: "plain" }] };
+  const out = mergeStorefront(base, { codes: [{ code: "KEEP", kind: "plain" }] });
+  assert.deepEqual(out.codes.map((c) => c.code), ["KEEP"],
+    "the app publishes a complete snapshot, so a code it stopped sending is gone");
+  assert.deepEqual(base.codes.map((c) => c.code), ["OLD1", "KEEP"], "base is not mutated");
+
+  // A remote that says nothing about codes leaves whatever the page already has.
+  assert.deepEqual(mergeStorefront(base, { name: "B" }).codes, base.codes);
+});
+
+test("mergeStorefront adopts the landing page's copy, and never a blank line over it", () => {
+  const out = mergeStorefront({ name: "A" }, {
+    taster: {
+      heading: "  A treat for your cat  ", body: "Scan, say hi",
+      headingZh: "   ", headingMs: "Hadiah untuk kucing anda",
+      instagram: " munchies_furkidz ", shop: "Munchies Furkidz",
+      askPet: false, follow: "yes",
+    },
+  });
+  assert.equal(out.taster.heading, "A treat for your cat");
+  assert.equal(out.taster.body, "Scan, say hi");
+  assert.equal("headingZh" in out.taster, false, "a blank box falls back to English");
+  assert.equal(out.taster.headingMs, "Hadiah untuk kucing anda");
+  assert.equal(out.taster.shop, "Munchies Furkidz");
+  assert.equal(out.taster.askPet, false, "a switched-off dog/cat question is carried");
+  assert.equal("follow" in out.taster, false, "only an explicit false turns the follow row off");
+});

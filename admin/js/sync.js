@@ -35,6 +35,8 @@ const LISTS = {
   credits: "credits", // bring-a-friend ledger rows
   occasions: "occasions", // delivery-calendar reminder marks
   customers: "customers", // customer profiles (pet name/photo, likes, notes)
+  partners: "partners", // the shops you hand samples to — a shop added on one phone must exist on the other
+  codes: "codes", // printed QR labels — the label you print on one phone must be readable on the other
 };
 const SETTINGS_KEY = "settings:default";
 
@@ -93,6 +95,24 @@ function devSet(rec) {
     || (Array.isArray(d.emails) && d.emails.some((e) => String(e).trim()))
     || Boolean(String(d.whatsapp || "").trim());
 }
+// The landing-page copy is only worth pushing once she has actually changed it.
+// Same guard as the developer credit: a phone sitting on the factory defaults
+// must not push them over the customised copy she typed on the other phone.
+function tasterOf(rec) {
+  return (rec.taster && typeof rec.taster === "object") ? rec.taster : {};
+}
+function tasterSet(rec) {
+  const t = tasterOf(rec);
+  for (const k of ["heading", "headingZh", "headingMs", "body", "bodyZh", "bodyMs"]) {
+    if (String(t[k] || "").trim()) return true;
+  }
+  const on = (v) => v !== false; // askPet / follow default to on
+  return !on(t.askPet) || !on(t.follow)
+    || String(t.offerType || "rm") !== "rm"
+    || Number(t.offerValue ?? 5) !== 5
+    || Number(t.offerMin ?? 30) !== 30
+    || Number(t.validDays ?? 30) !== 30;
+}
 function cleanDeveloperForSync(dev) {
   const src = (dev && typeof dev === "object") ? dev : {};
   return {
@@ -138,6 +158,9 @@ function recordPayload(kind, rec) {
       // is typed — a phone that never set it must not push an empty one over
       // the other phone's (last-write-wins would clobber it).
       ...(devSet(rec) ? { developer: cleanDeveloperForSync(rec.developer) } : {}),
+      // The taster landing-page copy and its default offer, only once she has
+      // changed something — same guard again, because this merges wholesale.
+      ...(tasterSet(rec) ? { taster: tasterOf(rec) } : {}),
     };
   }
   return rec;

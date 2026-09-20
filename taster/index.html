@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#c4552f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>A treat for your pet</title>
+  <link rel="stylesheet" href="app.css">
+  <link rel="icon" type="image/svg+xml" href="../images/favicon-cat.svg">
+</head>
+<body>
+  <!-- The page a printed label's QR opens (?c=CODE). It carries no shopping of its
+       own: it says hello, states what the label offers, asks dog or cat, and sends
+       the customer to the shop with the label — and, on a bring-a-friend label, the
+       friend's number — still attached. Everything below is filled by app.js from
+       what Settings → Storefront publishes; the words written here are the fallback
+       a visitor sees on the very first paint, before the settings arrive. -->
+  <main class="t-wrap">
+    <header class="t-hero">
+      <nav id="lang-switch" class="lang-switch" aria-label="Language">
+        <button type="button" class="lang-pill is-on" data-lang="en">EN</button>
+        <button type="button" class="lang-pill" data-lang="zh">中文</button>
+        <button type="button" class="lang-pill" data-lang="ms">BM</button>
+      </nav>
+
+      <p id="brand" class="t-brand">Munchies Furkidz</p>
+      <h1 id="heading" class="t-title">A little something for your pet</h1>
+      <p id="body" class="t-sub">Welcome — have a look at what we make.</p>
+    </header>
+
+    <div id="label-card" class="card t-label" hidden>
+      <p id="label-who" class="t-who" hidden></p>
+      <p id="label-product" class="t-product" hidden></p>
+      <p id="label-offer" class="t-offer" hidden></p>
+    </div>
+
+    <section id="ask" class="card t-ask" hidden>
+      <h2 id="ask-title" class="t-ask-title" data-i18n="askPet">Who is this treat for?</h2>
+      <div class="t-pets">
+        <button type="button" id="pet-dog" class="t-pet"><span class="t-pet-face" aria-hidden="true">🐶</span><span data-i18n="dog">My dog</span></button>
+        <button type="button" id="pet-cat" class="t-pet"><span class="t-pet-face" aria-hidden="true">🐱</span><span data-i18n="cat">My cat</span></button>
+      </div>
+      <p id="ask-thanks" class="card-sub t-thanks" hidden data-i18n="thanks">Noted — lovely to meet you both.</p>
+    </section>
+
+    <div class="t-go">
+      <a id="go" class="t-go-btn" href="../store/">See the treats</a>
+      <p id="go-hint" class="t-hint">Freshly dehydrated, posted nationwide.</p>
+    </div>
+
+    <section id="manual" class="card t-manual" hidden>
+      <h2 class="t-ask-title" data-i18n="typeCode">Type the code from your label</h2>
+      <p class="card-sub" data-i18n="typeCodeHint">The short letters printed beside the square.</p>
+      <div class="t-code-row">
+        <input id="code-input" class="t-input" type="text" maxlength="12" autocomplete="off"
+          autocapitalize="characters" spellcheck="false" placeholder="e.g. K3X9"
+          data-i18n-ph="codePh" aria-label="Label code">
+        <button type="button" id="code-go" class="t-go-small" data-i18n="go">See the treats</button>
+      </div>
+      <p id="code-msg" class="t-msg" hidden></p>
+    </section>
+
+    <div id="social" class="t-social" hidden></div>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

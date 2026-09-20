@@ -2396,3 +2396,102 @@ tr.po-covered td { color: var(--muted); }
   position: absolute;
   width: 1px;
 }
+
+/* ── Shops & codes (20 Sep 2026) ───────────────────────────────────────────
+   The shops she hands samples to, the printed QR labels beside them, and the
+   page a scan lands on. Nothing here is a discount: the label states the offer
+   and she applies it when she confirms the order on WhatsApp. */
+
+.qr-img { display: block; image-rendering: pixelated; }
+.qr-thumb { flex: none; width: 64px; height: 64px; border: 1px solid var(--line); border-radius: 6px; }
+
+.qr-row { align-items: flex-start; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.qr-row-main { flex: 1 1 auto; min-width: 0; }
+.qr-row-btns { display: flex; align-items: center; gap: 4px; flex: none; }
+.qr-off { opacity: .55; }
+.qr-fold { cursor: pointer; }
+.qr-sub-head { font-weight: 700; font-size: 13px; color: var(--brown-dark); margin: 14px 0 8px; }
+
+/* A switch with its own sentence beside it. */
+.qr-switch { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 12px; }
+.qr-switch-text { flex: 1 1 auto; min-width: 0; font-size: 14px; }
+.qr-switch-text .card-sub { display: block; margin-top: 3px; }
+
+/* Two small fields side by side; one column on a narrow phone. */
+.qr-two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+@media (max-width: 430px) { .qr-two { grid-template-columns: 1fr; } }
+.qr-offer { border-left: 3px solid var(--brown-soft); padding-left: 10px; margin-bottom: 12px; }
+
+/* Holding a phone up to a printed label. The camera picture is a square so the
+   frame is the same shape as the square she is aiming at. */
+.qr-scan { margin: 0 0 14px; }
+.qr-scan-video {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  aspect-ratio: 1 / 1;
+  margin: 0 auto 8px;
+  background: #000;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+/* The landing-page copy: an English line, then its 中文 and BM boxes. */
+.qr-copy-line { padding: 8px 0; border-top: 1px dashed var(--line); }
+.qr-trans { display: grid; gap: 6px; }
+.qr-trans-slot { display: flex; align-items: center; gap: 6px; }
+.qr-trans-input { flex: 1 1 auto; min-width: 0; }
+.qr-trans-input.is-mine { border-color: var(--brown); background: var(--brown-soft); }
+
+/* The label itself: QR, then the small type that tells two labels apart. */
+.qr-preview { display: flex; justify-content: center; padding: 4px 0 8px; }
+.qr-url { font-size: 12px; color: var(--muted); text-align: center; word-break: break-all; margin: 0 0 12px; }
+.qr-actions { flex-wrap: wrap; }
+.qr-stats { padding: 10px 12px; margin-top: 10px; }
+.qr-count { width: 84px; }
+
+.qr-sheet-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.qr-sheet-controls .field { margin-bottom: 0; }
+/* The house .label-styles pill row carries a 12px bottom margin of its own, which
+   in this one place would sit inside a single controls row — not under it. */
+.qr-sheet-controls .label-styles { margin: 0; }
+
+/* A label drops to one per row rather than squeezing its own type: a card whose
+   text column is narrower than the QR itself just wraps the offer into four
+   lines and makes the stamp twice as tall as the square it carries. The min()
+   keeps the column inside its container — a fixed minimum wider than the pop-up
+   scrolls the whole sheet sideways on a phone. */
+/* width:100% because the sheet sits inside the same flex-centering wrapper the
+   packing label uses — without it the grid is sized to its own content, so the
+   preview showed one narrow column and never the two-across the printer gets. */
+.qr-sheet { display: grid; width: 100%; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 8px; }
+.qr-sheet:has(.style-mini) { grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); }
+
+/* On a phone there is no room for a QR and its type side by side, so the label
+   stacks: the square, then what it says underneath. */
+@media screen and (max-width: 560px) {
+  .qr-stamp { flex-direction: column; align-items: center; text-align: center; }
+  .qr-stamp-text { width: 100%; }
+}
+
+.qr-stamp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  background: #fff;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+.qr-stamp-text { min-width: 0; }
+.qr-stamp-brand { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--brown-dark); margin: 0; }
+.qr-stamp-code { font-size: 17px; font-weight: 800; margin: 2px 0 0; }
+.qr-stamp-code2 { font-size: 11px; color: var(--muted); margin: 1px 0 0; letter-spacing: .08em; }
+.qr-stamp-offer { font-size: 12px; font-weight: 700; color: var(--brown-dark); margin: 4px 0 0; }
+.qr-stamp-cta { font-size: 11px; color: var(--muted); margin: 4px 0 0; }
+.qr-stamp.style-mini { gap: 6px; padding: 6px; }
+.qr-stamp.style-mini .qr-stamp-code { font-size: 14px; }
+.qr-stamp.style-mini .qr-stamp-brand, .qr-stamp.style-mini .qr-stamp-cta { display: none; }
+.qr-stamp-new { font-size: 11px; font-weight: 700; color: var(--brown); margin: 2px 0 0; }

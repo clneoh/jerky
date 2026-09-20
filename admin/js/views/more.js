@@ -28,6 +28,7 @@ export function renderMore(root, state) {
     menuItem("#/history", "📚 PO history", "Saved purchase orders"),
     menuItem("#/units", "📐 Units", "g, kg, L — how packs compare"),
     menuItem("#/reviews", "⭐ Reviews", "Approve & remove homepage reviews"),
+    menuItem("#/codes", "🏬 Shops & codes", "Sample shops, printed QR labels and offers"),
     menuItem("#/settings", "⚙️ Settings", "Defaults, backup, transfer"));
 
   const wish = wishCard(state);

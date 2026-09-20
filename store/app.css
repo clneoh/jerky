@@ -803,8 +803,10 @@ button.prod-next.off::after { content: ""; }
 }
 
 /* A referral-link visitor (?via=…) sees this amount-free banner at the very top
-   of the page. Green to match the "welcome" feel; the amount is quoted by the
-   bakery on WhatsApp, never here. */
+   of the page. Green to match the "welcome" feel; the amount is quoted by you on
+   WhatsApp, never here. A visited label (?c=…) shows its offer in the same dress
+   — #code-banner reuses this class, since both are the same kind of line: what
+   the customer has waiting, stated and not applied. */
 .referral-banner {
   margin: 0 0 14px;
   padding: 10px 14px;

@@ -50,3 +50,50 @@
   }
   body.label-print .label-sheet.style-mailing { max-width: 110mm; }
 }
+
+/* Printing QR labels shows ONLY the sheet of labels. Scoped to body.codes-print
+   (added only for the instant of printing) so a PO or packing-label print is
+   never affected — the same guard the label sheet above uses. */
+@media print {
+  body.codes-print .view,
+  body.codes-print .topbar,
+  body.codes-print .tabbar,
+  body.codes-print .toast,
+  body.codes-print .confirm-layer,
+  body.codes-print .lock-layer { display: none !important; }
+
+  body.codes-print .popup-layer {
+    position: static;
+    display: block;
+    background: none;
+    padding: 0;
+    overflow: visible;
+  }
+  body.codes-print .popup-card {
+    max-width: none;
+    max-height: none;
+    box-shadow: none;
+    border: none;
+    background: #fff;
+    padding: 0;
+  }
+  body.codes-print .popup-head,
+  body.codes-print .qr-sheet-controls,
+  body.codes-print .popup-actions { display: none !important; }
+  body.codes-print .popup-body { overflow: visible; padding: 0; }
+  body.codes-print .label-preview-wrap { padding: 0; display: block; }
+
+  body.codes-print .qr-sheet {
+    width: 100%;
+    grid-template-columns: 1fr 1fr;
+    gap: 6mm;
+  }
+  body.codes-print .qr-sheet:has(.style-mini) { grid-template-columns: 1fr 1fr 1fr; }
+  body.codes-print .qr-stamp {
+    border: 1px dashed #999;
+    border-radius: 0;
+    padding: 4mm;
+  }
+  /* A QR must stay crisp on paper: never let the printer smooth the squares. */
+  body.codes-print .qr-img { image-rendering: pixelated; }
+}

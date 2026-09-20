@@ -11,6 +11,7 @@ import { publishOccasions } from "./occasion_catalog.js";
 import { effectiveCapacity, effectiveLimit, isPoolablePack, poolRemaining, totalUnitsOnDate } from "./bom.js";
 import { byId, fmtRM, newId, orderCode, orderLineName, orderLinePrice, save, stampOrderLine } from "./state.js";
 import { phoneDigits } from "./customers.js";
+import { publishCodes, publishTaster } from "./codes.js";
 
 const TOKEN_KEY = "bakeadmin.supabase";
 
@@ -359,6 +360,11 @@ function storefrontPayload(state) {
     // sent, even as an empty list, so deleting her last mark really does take the
     // tints off the shop. publishOccasions drops everything she typed herself.
     occasions: publishOccasions(state.occasions, todayISO()),
+    // The printed QR labels and the page they open. Only the customer-readable
+    // half travels — see publishCodes / publishTaster for exactly what that is,
+    // and what it deliberately is not (a shop's number, its rate, your notes).
+    codes: publishCodes(state),
+    taster: publishTaster(state),
   };
   // The "Website by …" credit for the homepage/store footers — name, the email
   // link(s) and the optional WhatsApp number. Published only when set; the
@@ -650,6 +656,13 @@ function importIncoming(state, row) {
       // either way, so a "+" can never split a customer in two.
       whatsapp: phoneDigits(data.whatsapp) || String(data.whatsapp || "").trim(),
       referredBy: String(data.referredBy || "").trim(), // the ?via= link stamp
+      // The label the customer scanned, saved on every row of the order so a
+      // "Shops & codes" card can count what that one label brought in. Without
+      // this line the stamp the shop sends is silently dropped on import, and
+      // every code would report zero forever. `codeKind` rides along so a card
+      // can say what kind of label it was even after she edits the code.
+      promoCode: String(data.promoCode || "").trim().toUpperCase(),
+      codeKind: String(data.codeKind || "").trim(),
       fulfillment: data.fulfillment === "courier" ? "courier" : "collect",
       address: String(data.address || "").trim(),
       note: String(data.note || "").trim(),
@@ -750,5 +763,40 @@ export async function pendingReviewCount(state) {
     return Array.isArray(rows) ? rows.length : null;
   } catch {
     return null;
+  }
+}
+
+// Visits to the landing page, newest first. Visits live only in the cloud (the
+// public page may add one and nobody anonymous may read them back), so this is a
+// signed-in read, like the reviews above.
+//
+// Capped at the most recent page of rows on purpose. A visit count is a "roughly
+// how many people saw this label" number, and asking for every row ever would
+// make the screen slower every month for no better answer. The cap is named so
+// the screen can say when it has been reached, rather than quietly under-reporting.
+export const VISIT_LIMIT = 2000;
+
+export async function pullVisits(state) {
+  const c = cfg(state);
+  if (!ready(c)) return { ok: false, reason: "Supabase not configured", rows: [], capped: false };
+  try {
+    const res = await fetch(
+      `${c.url}/rest/v1/taster_visits?select=code,pet,lang,created_at`
+      + `&order=created_at.desc&limit=${VISIT_LIMIT}`,
+      { headers: await reviewAuth(c) });
+    if (!res.ok) {
+      // A missing table is the one failure worth naming: it means the SQL has not
+      // been run yet, which she can fix in a minute and would otherwise read as
+      // "the feature is broken".
+      const reason = res.status === 404 || res.status === 400
+        ? "Visits need the one-time SQL (supabase/taster_visits.sql)"
+        : `Visits failed to load (HTTP ${res.status})`;
+      return { ok: false, reason, rows: [], capped: false };
+    }
+    const rows = await res.json().catch(() => []);
+    const list = Array.isArray(rows) ? rows : [];
+    return { ok: true, rows: list, capped: list.length >= VISIT_LIMIT };
+  } catch (err) {
+    return { ok: false, reason: reviewErr(err, "Couldn't reach Supabase"), rows: [], capped: false };
   }
 }

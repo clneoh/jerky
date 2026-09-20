@@ -78,6 +78,84 @@ function cloudRow(kind, id, payload, updated_at, deleted = false) {
 
 // ── computeRecords ────────────────────────────────────────────────────────
 
+test("computeRecords: shop and label rows ride the sync", () => {
+  const st = baseState();
+  st.partners = [{ id: "pt1", name: "Pet Shop Alpha", whatsapp: "0123456789", commissionPct: 10 }];
+  st.codes = [{ id: "cd1", code: "K3X9", label: "Shop A", kind: "shop", partnerId: "pt1", active: true }];
+
+  const rows = sync.computeRecords(st);
+  const shops = rows.filter((r) => r.kind === "partners");
+  assert.equal(shops.length, 1);
+  assert.deepEqual(shops[0].data, { id: "pt1", name: "Pet Shop Alpha", whatsapp: "0123456789", commissionPct: 10 });
+  const codes = rows.filter((r) => r.kind === "codes");
+  assert.equal(codes.length, 1);
+  assert.deepEqual(codes[0].data, { id: "cd1", code: "K3X9", label: "Shop A", kind: "shop", partnerId: "pt1", active: true });
+});
+
+test("mergeRows: a label printed on one phone arrives on the other", () => {
+  const { store, restore } = installStorage();
+  try {
+    const st = baseState();
+    st.codes = []; // this phone has no labels yet
+    seedJournal(store);
+
+    const add = sync.mergeRows(st, [cloudRow("codes", "cd1",
+      { id: "cd1", code: "K3X9", label: "Shop A", kind: "shop" }, "2026-09-20T00:00:00.000Z")]);
+    assert.equal(add.changed, true);
+    assert.equal(st.codes.length, 1);
+    assert.equal(st.codes[0].code, "K3X9", "the label the customer scans has to exist on both phones");
+
+    // A cloud tombstone removes a retired label when it's deleted on the other phone.
+    const del = sync.mergeRows(st, [cloudRow("codes", "cd1", null, "2026-09-21T00:00:00.000Z", true)]);
+    assert.equal(del.changed, true);
+    assert.equal(st.codes.length, 0);
+  } finally { restore(); }
+});
+
+test("recordPayload: the landing-page copy syncs only once she has changed it", () => {
+  const st = baseState();
+  st.settings.taster = {
+    heading: "", headingZh: "", headingMs: "", body: "", bodyZh: "", bodyMs: "",
+    askPet: true, follow: true, offerType: "rm", offerValue: 5, offerMin: 30, validDays: 30,
+  };
+
+  let settings = sync.computeRecords(st).find((r) => r.kind === "settings");
+  assert.equal("taster" in settings.data, false,
+    "a phone still on the factory copy must not push it over the copy typed on the other phone");
+
+  st.settings.taster.heading = "Your Furkid Tried Munchies!";
+  settings = sync.computeRecords(st).find((r) => r.kind === "settings");
+  assert.equal(settings.data.taster.heading, "Your Furkid Tried Munchies!");
+
+  // Changing only a switch or a default-offer number counts as customising it too.
+  st.settings.taster = {
+    heading: "", headingZh: "", headingMs: "", body: "", bodyZh: "", bodyMs: "",
+    askPet: false, follow: true, offerType: "rm", offerValue: 5, offerMin: 30, validDays: 30,
+  };
+  settings = sync.computeRecords(st).find((r) => r.kind === "settings");
+  assert.equal("taster" in settings.data, true, "turning the dog/cat question off is a change worth carrying");
+});
+
+test("mergeRows: the landing copy typed on the other phone arrives here", () => {
+  const { store, restore } = installStorage();
+  try {
+    const st = baseState();
+    st.settings.taster = {
+      heading: "", headingZh: "", headingMs: "", body: "", bodyZh: "", bodyMs: "",
+      askPet: true, follow: true, offerType: "rm", offerValue: 5, offerMin: 30, validDays: 30,
+    };
+    seedJournal(store, { meta: { "settings:default": "2026-01-01T00:00:00.000Z" } });
+
+    const r = sync.mergeRows(st, [cloudRow("settings", "default",
+      { currency: "RM", taster: { heading: "Your Furkid Tried Munchies!", askPet: false } },
+      "2026-09-20T00:00:00.000Z")]);
+    assert.equal(r.changed, true);
+    assert.equal(st.settings.taster.heading, "Your Furkid Tried Munchies!", "the copy arrives");
+    assert.equal(st.settings.taster.askPet, false, "so does the switch");
+  } finally { restore(); }
+});
+
+
 test("computeRecords: arrays become rows, settings becomes one default row", () => {
   const st = baseState();
   st.products = [{ id: "p1", name: "Focaccia" }];

@@ -362,6 +362,51 @@ test("syncStorefront publishes the whole config to storefront_config", async () 
   }
 });
 
+test("syncStorefront publishes the labels, and nothing a customer must not see", async () => {
+  const state = makeState();
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
+  state.settings.storefront = { whatsapp: "60123456789", name: "Munchies Furkidz", instagram: "munchies_furkidz" };
+  state.settings.taster = { heading: "A treat for your cat", bodyZh: "扫一扫", askPet: true, follow: false };
+  state.partners = [{ id: "ptn_1", name: "Paw Shop", whatsapp: "60111111111", commissionPct: 15,
+    samplesGiven: 20, notes: "asks for duck", active: true }];
+  state.products = [{ id: "prd_1", name: "Chicken Jerky", price: 15, unit: "pouch", active: true }];
+  state.codes = [
+    { id: "cd_1", code: "pshop", label: "Paw Shop", kind: "shop", partnerId: "ptn_1", active: true },
+    { id: "cd_2", code: "milo", label: "Milo flyer", kind: "promo", productId: "prd_1", active: true,
+      offer: { type: "pct", value: 10, minSpend: 30, from: "", to: "2026-09-30", newOnly: true } },
+    { id: "cd_3", code: "gone", kind: "shop", partnerId: "ptn_1", active: false },
+  ];
+  const calls = [];
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ url, opts });
+    if (url.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    return { ok: true, text: async () => "" };
+  };
+  try {
+    assert.ok((await syncStorefront(state)).ok);
+    const payload = JSON.parse(calls.find((c) => c.url.includes("/rest/v1/storefront_config")).opts.body)[0].data;
+    const published = JSON.parse(payload);
+    // The retired label is not published at all; the live two are, upper-cased.
+    assert.deepEqual(published.codes.map((c) => c.code), ["PSHOP", "MILO"]);
+    const shop = published.codes[0];
+    assert.equal(shop.partnerName, "Paw Shop", "the shop is named by name only");
+    const raw = JSON.stringify(published);
+    for (const secret of ["60111111111", "commissionPct", "samplesGiven", "asks for duck"]) {
+      assert.ok(!raw.includes(secret), `${secret} stays in the app`);
+    }
+    assert.equal(published.codes[1].productName, "Chicken Jerky");
+    assert.equal(published.codes[1].offer.value, 10);
+    assert.equal(published.codes[1].offer.cur, "RM");
+    assert.equal(published.taster.heading, "A treat for your cat");
+    assert.equal(published.taster.bodyZh, "扫一扫");
+    assert.equal(published.taster.follow, false);
+    assert.equal(published.taster.shop, "Munchies Furkidz");
+    assert.equal(published.taster.instagram, "munchies_furkidz");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 test("storefront payload publishes the set's component and its per-product date rules", async () => {
   const state = makeState();
   state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
@@ -745,6 +790,64 @@ test("pullIncoming skips a row another phone already claimed (no double import)"
     assert.deepEqual(r.imported, []);
     assert.equal(state.orders.length, 0, "a row already claimed elsewhere is not imported twice");
     assert.equal(claims, 1, "the claim was attempted exactly once");
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realLocalStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = realLocalStorage;
+  }
+});
+
+test("pullIncoming keeps the label a storefront order came in on", async () => {
+  storageShim(new Map());
+  const state = makeState();
+  state.products = [{ id: "prd_1", name: "Focaccia", active: true }];
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
+  const row = {
+    id: "abc-code",
+    data: JSON.stringify({
+      customer: "Ain", date: "2026-09-04", total: 30,
+      lines: [{ name: "Focaccia", qty: 2, price: 15 }],
+      whatsapp: "60123456789", promoCode: "k3x9", codeKind: "shop",
+    }),
+  };
+  globalThis.fetch = async (url, opts) => {
+    if (url.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    if (url.includes("/rest/v1/incoming_orders") && !(opts && opts.method)) return { ok: true, json: async () => [row] };
+    if (url.includes("/rest/v1/incoming_orders") && (opts && opts.method === "PATCH")) return { ok: true, json: async () => [row] };
+    return { ok: true, text: async () => "" };
+  };
+  try {
+    const r = await pullIncoming(state);
+    assert.ok(r.ok);
+    const o = state.orders[0];
+    // Without this carry the stamp the shop sends is silently dropped, and every
+    // label would report zero forever.
+    assert.equal(o.promoCode, "K3X9", "the code is stored the way the label prints it");
+    assert.equal(o.codeKind, "shop");
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realLocalStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = realLocalStorage;
+  }
+});
+
+test("pullIncoming never invents a label for an order placed without one", async () => {
+  storageShim(new Map());
+  const state = makeState();
+  state.products = [{ id: "prd_1", name: "Focaccia", active: true }];
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
+  const row = { id: "abc-plain", data: JSON.stringify({ customer: "Ain", date: "2026-09-04", lines: [{ name: "Focaccia", qty: 1, price: 15 }] }) };
+  globalThis.fetch = async (url, opts) => {
+    if (url.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    if (url.includes("/rest/v1/incoming_orders") && !(opts && opts.method)) return { ok: true, json: async () => [row] };
+    if (url.includes("/rest/v1/incoming_orders") && (opts && opts.method === "PATCH")) return { ok: true, json: async () => [row] };
+    return { ok: true, text: async () => "" };
+  };
+  try {
+    await pullIncoming(state);
+    const o = state.orders[0];
+    // Blank, not absent — every reader asks one question of every order, and only
+    // a real scan makes a label prove itself.
+    assert.equal(o.promoCode, "");
+    assert.equal(o.codeKind, "");
   } finally {
     globalThis.fetch = realFetch;
     if (realLocalStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = realLocalStorage;

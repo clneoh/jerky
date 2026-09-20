@@ -1,0 +1,377 @@
+// test/codes-lib.test.js — the pure half of the sales-code feature: the code a
+// label carries, the URL it stands for, the words an offer is stated in, and what
+// a code has actually brought in. No DOM, no network.
+// Run with: node --test test/
+
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  CODE_ALPHABET, CODE_LENGTH, KINDS, KIND_LABEL, kindOf, makeCode, tasterUrl,
+  shopUrl, labelUrl, offerText, offerMinText, offerLine, codeStats, codeCustomers,
+  sheetLabels, visitTally, publishCodes, publishTaster,
+} from "../admin/js/codes.js";
+
+function order(over = {}) {
+  return {
+    id: "o" + (over.id || "aaaa01"),
+    groupId: over.groupId || "gaaaa01",
+    customerName: over.customerName ?? "Aisyah",
+    whatsapp: over.whatsapp ?? "60123456789",
+    productId: over.productId ?? "p1",
+    productName: over.productName ?? "Chicken Jerky 100g",
+    unitPrice: over.unitPrice ?? 22,
+    qty: over.qty ?? 1,
+    promoCode: over.promoCode ?? "",
+    createdAt: over.createdAt ?? "2026-09-01T08:00:00.000Z",
+    status: "new",
+    ...over,
+  };
+}
+
+const state = (orders = []) => ({ orders, products: [] });
+
+// ── the code itself ──────────────────────────────────────────────────────
+
+test("a printed code never contains a character people misread", () => {
+  // It may be typed by hand off a label, so 0/O and 1/I/L are out.
+  for (const ch of "01OIL") {
+    assert.equal(CODE_ALPHABET.includes(ch), false, `${ch} is too easy to misread`);
+  }
+  assert.ok(CODE_ALPHABET.length > 20, "but there is still plenty of room");
+});
+
+test("a fresh code is the expected shape and never repeats one in use", () => {
+  const taken = [];
+  for (let i = 0; i < 300; i++) {
+    const c = makeCode(taken);
+    assert.equal(c.length, CODE_LENGTH);
+    for (const ch of c) assert.ok(CODE_ALPHABET.includes(ch), `${ch} is outside the alphabet`);
+    assert.equal(taken.includes(c), false, "a printed label must never be handed out twice");
+    taken.push(c);
+  }
+  assert.equal(new Set(taken).size, 300, "300 codes, 300 different strings");
+});
+
+test("makeCode accepts either whole code records or plain strings as taken", () => {
+  // The caller has a list of records; a test has a list of strings. Both work.
+  const taken = [];
+  for (let i = 0; i < 60; i++) taken.push({ code: makeCode(taken) });
+  const next = makeCode(taken);
+  assert.equal(taken.some((t) => t.code === next), false);
+  assert.equal(taken.some((t) => t.code === makeCode(taken.map((t) => t.code))), false);
+});
+
+// ── the URL a QR carries ─────────────────────────────────────────────────
+
+test("the URL a scan lands on is built from the origin it was printed from", () => {
+  assert.equal(tasterUrl("k3x9", "https://munchies.com.my"), "https://munchies.com.my/taster/?c=K3X9");
+  assert.equal(tasterUrl("K3X9", "http://localhost:8462"), "http://localhost:8462/taster/?c=K3X9");
+});
+
+test("a trailing slash on the origin does not double up", () => {
+  assert.equal(tasterUrl("K3X9", "https://munchies.com.my/"), "https://munchies.com.my/taster/?c=K3X9");
+});
+
+test("the shop link is the same code, one path over", () => {
+  assert.equal(shopUrl("k3x9", "https://munchies.com.my"), "https://munchies.com.my/store/?c=K3X9");
+});
+
+test("an empty code still builds a well-formed link rather than a broken one", () => {
+  assert.equal(tasterUrl("", "https://munchies.com.my"), "https://munchies.com.my/taster/?c=");
+  assert.equal(tasterUrl(null, "https://munchies.com.my"), "https://munchies.com.my/taster/?c=");
+});
+
+// ── the words an offer is stated in ──────────────────────────────────────
+
+test("an offer reads the way it would be said out loud", () => {
+  assert.equal(offerText({ type: "rm", value: 5 }), "RM5 off");
+  assert.equal(offerText({ type: "pct", value: 10 }), "10% off");
+  assert.equal(offerText({ type: "pct", value: 12.5 }), "12.5% off");
+  assert.equal(offerText({ type: "rm", value: 3.5 }), "RM3.5 off");
+});
+
+test("there is nothing to state when there is no offer", () => {
+  assert.equal(offerText(null), "");
+  assert.equal(offerText({ type: "rm", value: 0 }), "");
+  assert.equal(offerText({ type: "rm", value: -5 }), "");
+  assert.equal(offerText({ type: "free", value: 5 }), "", "an unknown type is not guessed at");
+  assert.equal(offerText({ type: "rm", value: "abc" }), "");
+});
+
+test("a minimum spend is only mentioned when one was given", () => {
+  assert.equal(offerMinText({ type: "rm", value: 5, minSpend: 30 }), "on RM30 and above");
+  assert.equal(offerMinText({ type: "rm", value: 5 }), "");
+  assert.equal(offerMinText({ type: "rm", value: 5, minSpend: 0 }), "");
+  assert.equal(offerMinText(null), "");
+});
+
+test("the one-line offer carries its window and its audience", () => {
+  assert.equal(
+    offerLine({ type: "rm", value: 5, minSpend: 30, to: "2026-10-31" }, "RM", "2026-09-20"),
+    "RM5 off · on RM30 and above · until 2026-10-31");
+  assert.equal(
+    offerLine({ type: "pct", value: 10, newOnly: true }, "RM", "2026-09-20"),
+    "10% off · new customers only");
+  assert.equal(
+    offerLine({ type: "rm", value: 5, to: "2026-09-01" }, "RM", "2026-09-20"),
+    "RM5 off · ended", "a finished offer says so rather than quietly vanishing");
+  assert.equal(offerLine(null, "RM", "2026-09-20"), "");
+});
+
+// ── what a code has brought in ───────────────────────────────────────────
+
+test("orders a customer placed through the shop are counted against the code", () => {
+  const s = state([
+    order({ id: "aaaa01", groupId: "g1", promoCode: "K3X9", qty: 2 }),
+    order({ id: "aaaa02", groupId: "g2", promoCode: "K3X9", qty: 1, unitPrice: 22 }),
+    order({ id: "aaaa03", groupId: "g3", promoCode: "OTHER", qty: 9 }),
+  ]);
+  const st = codeStats(s, { code: "K3X9" });
+  assert.equal(st.orders, 2, "two separate orders");
+  assert.equal(st.units, 3);
+  assert.equal(st.sales, 66, "2 x 22 + 1 x 22");
+});
+
+test("one order of three items counts as one order, not three", () => {
+  // A shop order arrives as several rows sharing a groupId.
+  const s = state([
+    order({ id: "aaaa01", groupId: "gsame", promoCode: "K3X9", qty: 1 }),
+    order({ id: "aaaa02", groupId: "gsame", promoCode: "K3X9", qty: 1 }),
+    order({ id: "aaaa03", groupId: "gsame", promoCode: "K3X9", qty: 1 }),
+  ]);
+  const st = codeStats(s, { code: "K3X9" });
+  assert.equal(st.orders, 1, "three rows, one order");
+  assert.equal(st.units, 3, "but three things sold");
+  assert.equal(st.sales, 66);
+});
+
+test("an order typed in by hand is not evidence of what a label did", () => {
+  // A counter sale carries no stamp, so it must not show up against a code.
+  const s = state([order({ promoCode: "" }), order({ id: "aaaa02", promoCode: undefined })]);
+  assert.deepEqual(codeStats(s, { code: "K3X9" }),
+    { orders: 0, units: 0, sales: 0, firstAt: "", lastAt: "" });
+});
+
+test("the frozen price is what the sale counted, not today's menu price", () => {
+  const s = { orders: [order({ promoCode: "K3X9", qty: 1, unitPrice: 18 })], products: [{ id: "p1", price: 99 }] };
+  assert.equal(codeStats(s, { code: "K3X9" }).sales, 18, "the price it was sold at");
+});
+
+test("the stats span the orders they were counted from", () => {
+  const s = state([
+    order({ id: "aaaa01", groupId: "g1", promoCode: "K3X9", createdAt: "2026-09-20T10:00:00.000Z" }),
+    order({ id: "aaaa02", groupId: "g2", promoCode: "K3X9", createdAt: "2026-09-02T10:00:00.000Z" }),
+  ]);
+  const st = codeStats(s, { code: "K3X9" });
+  assert.equal(st.firstAt, "2026-09-02T10:00:00.000Z");
+  assert.equal(st.lastAt, "2026-09-20T10:00:00.000Z");
+});
+
+test("a code with no orders, or no code at all, counts nothing", () => {
+  assert.equal(codeStats(state([]), { code: "K3X9" }).orders, 0);
+  assert.equal(codeStats(state([order({ promoCode: "K3X9" })]), null).orders, 0);
+  assert.equal(codeStats(state([order({ promoCode: "K3X9" })]), { code: "" }).orders, 0);
+});
+
+test("the code is matched whatever case it was stored in", () => {
+  const s = state([order({ promoCode: "k3x9" })]);
+  assert.equal(codeStats(s, { code: "K3X9" }).orders, 1);
+});
+
+test("the same person ordering twice is one customer, two orders", () => {
+  const s = state([
+    order({ id: "aaaa01", groupId: "g1", promoCode: "K3X9", whatsapp: "012-345 6789" }),
+    order({ id: "aaaa02", groupId: "g2", promoCode: "K3X9", whatsapp: "+60 12-345 6789" }),
+    order({ id: "aaaa03", groupId: "g3", promoCode: "K3X9", whatsapp: "60199999999", customerName: "Bala" }),
+  ]);
+  const people = codeCustomers(s, { code: "K3X9" });
+  assert.equal(people.length, 2, "the two spellings of one number are one person");
+  assert.equal(people[0].orders, 2, "the most frequent customer leads");
+  assert.equal(people[1].name, "Bala");
+});
+
+test("a customer with no number on the order is still listed once", () => {
+  const s = state([
+    order({ id: "aaaa01", groupId: "g1", promoCode: "K3X9", whatsapp: "" }),
+    order({ id: "aaaa02", groupId: "g2", promoCode: "K3X9", whatsapp: "" }),
+  ]);
+  const people = codeCustomers(s, { code: "K3X9" });
+  assert.equal(people.length, 1, "an unknown number is one unknown person, not two");
+  assert.equal(people[0].orders, 2);
+});
+
+// ── the printed sheet ────────────────────────────────────────────────────
+
+test("a sheet repeats one label, and every copy carries the code", () => {
+  const sheet = sheetLabels({ code: "K3X9" }, 12);
+  assert.equal(sheet.length, 12);
+  assert.ok(sheet.every((c) => c.code === "K3X9"), "a sheet of labels is one label, repeated");
+});
+
+test("an impossible sheet size is brought back to something printable", () => {
+  assert.equal(sheetLabels({ code: "K3X9" }, 0).length, 1, "never a blank page");
+  assert.equal(sheetLabels({ code: "K3X9" }, -5).length, 1);
+  assert.equal(sheetLabels({ code: "K3X9" }, "abc").length, 1);
+  assert.equal(sheetLabels({ code: "K3X9" }, 9999).length, 60, "capped, so a typo cannot ask for a ream");
+  assert.equal(sheetLabels({ code: "K3X9" }, 7).length, 7);
+});
+
+// ── what the landing page recorded ───────────────────────────────────────
+
+test("visits are tallied per code and by which pet answered", () => {
+  const t = visitTally([
+    { code: "K3X9", pet: "dog" },
+    { code: "K3X9", pet: "cat" },
+    { code: "k3x9", pet: "" },
+    { code: "SHOPB", pet: "dog" },
+  ]);
+  assert.equal(t.total, 4);
+  assert.equal(t.byCode.get("K3X9"), 3, "case-insensitive, same as everywhere else");
+  assert.equal(t.byCode.get("SHOPB"), 1);
+  assert.deepEqual(t.pets, { dog: 2, cat: 1, none: 1 });
+});
+
+test("a visit with no code or no answer still counts as a visit", () => {
+  const t = visitTally([{ code: "", pet: "" }, { pet: "dog" }, null, undefined]);
+  assert.equal(t.total, 4);
+  assert.equal(t.byCode.size, 0);
+  assert.equal(t.pets.dog, 1);
+  assert.equal(t.pets.none, 3);
+});
+
+test("no rows at all is an empty tally, not a crash", () => {
+  const t = visitTally(null);
+  assert.equal(t.total, 0);
+  assert.equal(t.byCode.size, 0);
+  assert.deepEqual(t.pets, { dog: 0, cat: 0, none: 0 });
+});
+
+// ── kinds ────────────────────────────────────────────────────────────────
+
+test("every kind the screen offers has a label, and a strange one falls back", () => {
+  for (const [id] of KINDS) assert.equal(kindOf({ kind: id }), id);
+  assert.equal(kindOf({ kind: "shop" }), "shop");
+  assert.equal(kindOf({ kind: "nonsense" }), "plain");
+  assert.equal(kindOf({}), "plain");
+  assert.equal(kindOf(null), "plain");
+  assert.equal(KIND_LABEL.shop, "Shop");
+});
+
+// ── the URL that goes in a printed QR ────────────────────────────────────
+
+test("a plain label's QR is the landing page, with nothing else on it", () => {
+  const url = labelUrl({ code: "k3x9", kind: "shop" }, "https://munchies.com.my");
+  assert.equal(url, "https://munchies.com.my/taster/?c=K3X9");
+});
+
+test("a bring-a-friend label carries the referrer's number as ?via=", () => {
+  const url = labelUrl(
+    { code: "FRIEND", kind: "intro", referrerDigits: "012-345 6789" },
+    "https://munchies.com.my");
+  // The same digits-only shape the referral link already uses, so the store's
+  // own ?via= reader stamps order.referredBy with no change to the shop.
+  assert.equal(url, "https://munchies.com.my/taster/?c=FRIEND&via=60123456789");
+});
+
+test("the number only rides on a bring-a-friend label, and only when there is one", () => {
+  const at = "https://munchies.com.my";
+  // A shop label that happens to hold a number must not leak it: only `intro`
+  // points the credit at anyone, and a shop's QR is handed to strangers.
+  assert.equal(labelUrl({ code: "S1", kind: "shop", referrerDigits: "60123456789" }, at),
+    `${at}/taster/?c=S1`);
+  assert.equal(labelUrl({ code: "S2", kind: "intro", referrerDigits: "" }, at), `${at}/taster/?c=S2`);
+  assert.equal(labelUrl({ code: "S3", kind: "intro", referrerDigits: "not a number" }, at),
+    `${at}/taster/?c=S3`);
+});
+
+// ── what leaves the app ──────────────────────────────────────────────────
+
+function fullState() {
+  return {
+    settings: { currency: "RM",
+      storefront: { name: "Munchies Furkidz", instagram: "munchies_furkidz" },
+      taster: { heading: "A treat for your cat", headingZh: "给猫咪的零食",
+        body: "Scan, say hi", follow: false, askPet: true, offerType: "pct" } },
+    partners: [{ id: "pa1", name: "Paw Shop", whatsapp: "60111111111",
+      commissionPct: 10, samplesGiven: 12, notes: "asks for duck", active: true }],
+    products: [{ id: "pr1", name: "Chicken Jerky 100g", price: 22 }],
+    codes: [
+      { id: "c1", code: "pshop", kind: "shop", partnerId: "pa1", label: "Paw Shop",
+        headline: "New here?", active: true },
+      { id: "c2", code: "milo", kind: "promo", productId: "pr1", active: true,
+        offer: { type: "pct", value: 10, minSpend: 30, from: "2026-09-01", to: "2026-09-30", newOnly: true } },
+      { id: "c3", code: "gone", kind: "promo", productId: "pr1", active: true,
+        offer: { type: "rm", value: 5, from: "2026-08-01", to: "2026-08-31" } },
+      { id: "c4", code: "oldy", kind: "plain", active: false },
+      { id: "c5", code: "friend", kind: "intro", referrerDigits: "60123456789", active: true },
+      { id: "c6", code: "", kind: "plain", active: true },
+    ],
+  };
+}
+
+test("only the codes a customer may resolve are published, and a retired one is not", () => {
+  const rows = publishCodes(fullState(), "2026-09-20");
+  assert.deepEqual(rows.map((r) => r.code), ["PSHOP", "MILO", "GONE", "FRIEND"]);
+});
+
+test("a shop's card names the shop, and nothing else about it", () => {
+  const shop = publishCodes(fullState(), "2026-09-20").find((r) => r.code === "PSHOP");
+  assert.equal(shop.partnerName, "Paw Shop");
+  assert.equal(shop.headline, "New here?");
+  // The contact, the rate and her own notes are for her phones, never the page.
+  const blob = JSON.stringify(shop);
+  for (const secret of ["60111111111", "commissionPct", "samplesGiven", "asks for duck"]) {
+    assert.equal(blob.includes(secret), false, `${secret} must not be published`);
+  }
+});
+
+test("a bring-a-friend code publishes no number at all", () => {
+  const pick = publishCodes(fullState(), "2026-09-20").find((r) => r.code === "FRIEND");
+  assert.equal(pick.kind, "intro");
+  assert.equal(JSON.stringify(pick).includes("60123456789"), false);
+  // The number travels in the printed link instead — see labelUrl.
+  assert.equal(JSON.stringify([pick]).includes("referrer"), false);
+});
+
+test("an offer is published with its own numbers while it is inside its window", () => {
+  const live = publishCodes(fullState(), "2026-09-20").find((r) => r.code === "MILO");
+  assert.equal(live.productName, "Chicken Jerky 100g");
+  assert.deepEqual(live.offer, {
+    type: "pct", value: 10, minSpend: 30, to: "2026-09-30", newOnly: true, cur: "RM",
+  });
+});
+
+test("an ended offer is not stated, but the label still answers", () => {
+  // The card is already in someone's hand, so the code has to keep resolving —
+  // it simply states nothing, exactly as if it had never carried an offer.
+  const rows = publishCodes(fullState(), "2026-09-20");
+  const ended = rows.find((r) => r.code === "GONE");
+  assert.ok(ended, "a code with an expired offer is still published");
+  assert.equal("offer" in ended, false);
+});
+
+test("a code that has not started yet states nothing either", () => {
+  const st = fullState();
+  st.codes.push({ id: "c7", code: "SOON", kind: "promo", active: true,
+    offer: { type: "rm", value: 3, from: "2026-10-01", to: "2026-10-31" } });
+  const soon = publishCodes(st, "2026-09-20").find((r) => r.code === "SOON");
+  assert.equal("offer" in soon, false);
+});
+
+test("the landing page's own copy is published, and a blank box stays blank", () => {
+  const t = publishTaster(fullState());
+  assert.equal(t.heading, "A treat for your cat");
+  assert.equal(t.headingZh, "给猫咪的零食");
+  assert.equal(t.follow, false);
+  assert.equal(t.askPet, true);
+  assert.equal(t.shop, "Munchies Furkidz");
+  assert.equal(t.instagram, "munchies_furkidz");
+  // Nothing was written for BM, so the page falls back to English rather than
+  // publishing an empty line over it.
+  assert.equal("headingMs" in t, false);
+});
+
+test("a page with no copy of its own still publishes its switches", () => {
+  const t = publishTaster({ settings: {} });
+  assert.deepEqual(t, { askPet: true, follow: true, instagram: "", shop: "" });
+});

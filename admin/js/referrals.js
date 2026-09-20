@@ -10,7 +10,7 @@
 // decider: one tap Give credit / Skip. She applies the actual RM amounts herself
 // when she confirms each order on WhatsApp.
 
-import { fmtRM, newId, orderCode, round2, waNumber } from "./state.js";
+import { fmtRM, isNewCustomer, newId, orderCode, round2, waNumber } from "./state.js";
 import { addDays, todayISO } from "./dates.js";
 import { nameFor, servingFor } from "../../i18n.js";
 import { FOLLOWUP, fmtFollowup } from "./followup-lang.js";
@@ -164,9 +164,9 @@ export function referrerName(state, digits) {
 
 // Where an order with a `referredBy` stamp sits: "self" (they used their own
 // link), "existing" (the friend already ordered before → not a NEW friend), or
-// "new" (never ordered → earns a credit). No stamp → "none". The history scan
-// skips the order's own rows so one multi-item cart never looks like a previous
-// order of its own.
+// "new" (never ordered → earns a credit). No stamp → "none". Whether the friend
+// is new is `isNewCustomer`'s question, defined once in state.js and shared with
+// every sales code marked "new customers only".
 export function referralFlag(state, group) {
   const orders = (group && group.orders) || [];
   const first = orders[0];
@@ -175,13 +175,8 @@ export function referralFlag(state, group) {
   if (!via) return "none";
   const me = waNumber(first.whatsapp);
   if (me && me === via) return "self";
-  const ownIds = new Set(orders.map((o) => o.id));
-  for (const o of state.orders || []) {
-    if (ownIds.has(o.id)) continue;
-    if (first.groupId && o.groupId === first.groupId) continue;
-    if (me && waNumber(o.whatsapp) === me) return "existing";
-  }
-  return me ? "new" : "none";
+  if (!me) return "none";
+  return isNewCustomer(state, group) ? "new" : "existing";
 }
 
 // The credit rows for one holder (by WhatsApp digits), most useful first: valid

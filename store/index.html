@@ -32,6 +32,10 @@
     <div id="referral-banner" class="referral-banner" hidden data-i18n="referral">
       🎁 You were referred — you have a welcome discount on your first order
     </div>
+    <!-- The offer the scanned label stated, in words. Filled by renderCodeBanner
+         (its text is built from the offer's own numbers, so it has no data-i18n
+         string of its own); hidden whenever there is nothing to say. -->
+    <div id="code-banner" class="referral-banner" hidden></div>
 
     <section class="card info">
       <p class="info-row"><strong data-i18n="deliveryDays">Posting days</strong><span id="delivery-days" class="info-val"></span></p>

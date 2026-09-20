@@ -419,6 +419,133 @@ The one shared root module is `availability.js` — the pure sell-day rules
   Products starts it folded to **＋ New product**. Same fold-head/fold-body/outside-tap
   wiring as the ＋ New order card.
 
+## Sales codes & QR labels: shops, promotions, bring-a-friend (built here, no engine bump)
+
+The reseller/sample programme: a shop hands a customer a free sample whose card
+carries a QR, the customer scans it, lands on a branded page, and the order that
+follows is attributed back to that shop. **A QR is deliberately not single-purpose** —
+the same mechanism carries a product promotion and a bring-a-friend introduction, so a
+new idea is a new *code*, not a change to the app. Every printed label also carries a
+tiny human-readable code (`K3X9`) beside the square, so two labels can be told apart by
+eye.
+
+**Built in jerky, so `version.js` does NOT move** — the engine number describes the
+*shared* engine, and the Guide screen promises both apps show the same one. The bakery
+has none of this; `qr.js` and the codes model are business-neutral, so the sync playbook
+could carry it there later (that would be a real engine bump).
+
+### One code, four kinds
+
+`admin/js/codes.js` is the model. `KINDS` are `shop` / `promo` / `intro` / `plain`,
+with `kindOf(c)` defaulting an unlabelled code to `plain`; `CODE_ALPHABET`
+(`23456789ABCDEFGHJKMNPQRSTUVWXYZ` — no `0`/`1`/`I`/`L`/`O`) and `CODE_LENGTH` (5) drive
+`makeCode(state)`, which avoids collisions with codes already in the list. A kind decides
+only what a label *says*; nothing downstream branches on it except the published record.
+
+- `tasterUrl(code, origin)` → `<origin>/taster/?c=CODE`; `shopUrl(code, origin)` →
+  `<origin>/store/?c=CODE`; `labelUrl(code, origin)` is `tasterUrl` **plus**
+  `&via=<waNumber(referrerDigits)>` for an `intro` code only — which is how a
+  bring-a-friend label reuses the existing `?via=` credit engine **unchanged** (it
+  stamps `order.referredBy`, nothing more).
+- `offerLine` / `offerText` / `offerMinText` state an offer in the same words the shop
+  banner uses, so a customer meets one sentence, not two.
+- `codeStats(state, code, today)` counts a code's orders and sales;
+  `codeCustomers(state, code)` lists who it brought. `sheetLabels(state, codes)` builds
+  the printed label sheet.
+- `visitTally(rows)` → `{ total, byCode: Map, pets: {dog, cat, none} }`. A row with no
+  code counts towards the total only, so a page opened without a label is still counted
+  as a visit but is never attributed to a label.
+
+### The encoder
+
+`admin/js/qr.js` is hand-written and dependency-free — house convention: no `package.json`,
+no CDN at runtime. `qrMatrix(text)` returns the boolean matrix (byte mode, ECC M,
+versions 1–10); `qrSvg(matrix, options)` returns a **string**; `qrPngBytes(matrix, options)`
+returns a `Uint8Array`. Both renderers take an options object (`size`, `margin`, `dark`,
+`light`) and are pure — every canvas/blob call sits behind a click handler, so the ~29
+test files that each re-define `createEl` inline are never asked to draw one.
+
+### The screen
+
+`admin/js/views/codes.js` (`#/codes`, More → **🏪 Shops & codes**) has three cards: the
+landing page's own copy (English + 中文 + BM, the products pattern — type English once,
+translate the rest); the **shops** (partner contact, commission rate, samples given);
+and the **codes**, each with a QR preview, a PNG download, the printed label sheet, an
+"open what the customer sees" link and its own counts. Two more sections follow: **Label
+visits** and, above them all, a **📷 Scan a label** button.
+
+The visits card is the only card on the screen that needs Supabase, so it uses the
+Reviews card's shape — `pullVisits(state)` returning `{ ok, reason, rows, capped }`, an
+early return when `!ok` naming the reason plus a **Try again** button, and the unmount
+hook. `VISIT_LIMIT` is 2000 rows; 404/400 means the one-time SQL has not been run.
+`reviewErr(err, fallback)` surfaces a dead host's own `"Failed to fetch"` — deliberately
+matching the Reviews card rather than diverging.
+
+**Scanning** (`openScan`) offers the camera **where the browser supports it** —
+`navigator.mediaDevices.getUserMedia` *and* `"BarcodeDetector" in window`, i.e. Chrome/
+Edge on Android and desktop, **not iPhone Safari**. The typed box is therefore always
+present beside it, never a fallback you have to find. `codeFromScan(raw)` pulls the code
+out of a scanned URL's `?c=` (and accepts a bare `K3X9` if she ever prints one that way).
+The popup has **no on-close hook** (`ui.js`'s `showPopup` draws its own ✕), so the camera
+loop detects its own teardown by polling `video.isConnected`.
+
+### The landing page
+
+`taster/` is a standalone page (`index.html`, `app.js`, `app.css`, plus the root
+`taster-lang.js` for its fixed chrome). It reads `?c=` and `?via=`, paints from its own
+fallback copy, then `loadPublished()` fetches the **same `storefront_config` row the shop
+reads** and merges `remote.taster` / `remote.codes` in — so the words are hers to change
+in Settings with no redeploy. It states the label's offer (`offerWords`, hidden once `to`
+has passed), asks dog-or-cat, records the visit, and links on to `/store/?c=CODE` (via
+`storeLink`, which keeps both stamps). Its stylesheet is self-contained but reads the
+store's tokens, so the two pages look like one business. `app.css` is mobile-first: the
+page is almost always opened by a phone pointed at a square.
+
+`admin/js/views/settings.js`'s **landing page's own copy** block publishes through
+`publishTaster(state)`; `publishCodes(state, today)` publishes the codes. **Both are
+deliberately narrow** — a customer may see a code, what it offers and the shop's *name*,
+never its WhatsApp number, commission or notes.
+
+### The order chain
+
+`store/app.js` gains `parseCode`/`currentCode`/`codeInfo` beside the existing `?via=`
+pair, `renderCodeBanner(cfg)` (a `#code-banner` in `store/index.html` beside the referral
+banner, which **blanks as well as hides** so a stale code's words cannot linger), and the
+stamp at order build: `order.promoCode` + `order.codeKind`, **only when the code really
+is one the app published** — a made-up `?c=` must not land in the books as a label that
+never existed. Only the code and its kind travel; the shop behind it is read back from
+the record, so a renamed shop is named right everywhere.
+
+`admin/js/supabase.js`'s `importIncoming` then carries `promoCode` and `codeKind`
+**through the whitelist** — without that the stamp is silently dropped and every code
+would report zero forever. **No SQL is needed for the stamp**: `incoming_orders` is
+`(id, data text, status, created_at)`, so the whole order rides as one JSON blob and a
+new field costs nothing (`referredBy` works the same way).
+
+### The one SQL she runs
+
+`supabase/taster_visits.sql` — one small table (`code` ≤16 chars, `pet` in `''`/`dog`/
+`cat`, `lang` in `en`/`zh`/`ms`) with **RLS on, an anon INSERT policy only and an
+authenticated SELECT policy only**. That asymmetry is the whole privacy story: the public
+page can add a visit and nobody anonymous can read one back, while the admin sends a
+Bearer token (`reviewAuth`) and sees the counts. Until she runs it, labels print and scan
+normally and only the counts are missing — the card says so instead of going blank.
+
+### State & sync
+
+`state.partners[]` and `state.codes[]` are new lists (both in `sync.js`'s `LISTS` so her
+two phones agree), and `state.settings.taster` rides the `recordPayload("settings")`
+whitelist with the same gated spread the `tasks` entry uses. **All three must be in
+`state.js`'s `normalize()` or they are dropped on load.** `isNewCustomer(state, group)`
+generalises `referralFlag` — "new" is the same thing she described: a WhatsApp number
+that has never bought before — and backs every code marked `newOnly`.
+
+**The money stays hers, deliberately.** The shop never computes a discount: it freezes
+`lines[].price` and the admin stamps it as `unitPrice`, which Money and Profit read. A
+silent storefront discount would rewrite recorded revenue and profit. So the landing page
+and the shop banner *state* the offer and the admin *tells her what to apply* when she
+confirms on WhatsApp — exactly how the existing referral credit works.
+
 ## The customer and the product list (v119–v123)
 
 Five versions about the two things an order form asks for: *who* the order is for,
@@ -981,6 +1108,14 @@ write it**, and **Cloud backups** stores dated snapshot copies under the same
 row-level security (signed-in bakers only). Backup files and the app login
 password are stored in the app's local storage on her phone.
 
+**Sales codes** publish the narrow half of a label to the storefront config: the
+code, its kind, the offer and the shop's **name** — never a shop's WhatsApp number,
+its commission rate or her notes about it. **Label visits** (`taster_visits`) are
+deliberately one-way: **anon may INSERT and nothing else**, and only an authenticated
+read returns rows — so a customer's page can add a visit and nobody anonymous can read
+one back, while her own phones (which send a Bearer token) see the counts. The landing
+page holds no account and no cookie; it records only the code, the pet and the language.
+
 ## Tests
 
 ```bash
@@ -992,6 +1127,12 @@ Tests cover the pure modules (`admin/js/bom.js`, `admin/js/dates.js`,
 sign-in gate (`admin/js/app.js`), the storefront (`store/app.js`), and the
 shop's calendar copy (`store/calendar.js`, pinned against the app's own by
 `test/store-cal.test.js`).
+
+The QR encoder is the one thing that has to be right, so `test/qr.test.js`
+checks it three ways: **frozen golden matrices** for fixed inputs, **structural
+invariants** (finder patterns, timing alternation, the always-dark module, the
+format bits written twice and equal), and **Reed–Solomon known-answer vectors**.
+The real acceptance test is the owner scanning a printed label with her phone.
 
 ## Files
 
@@ -1010,6 +1151,10 @@ store/calendar.js   the shop's own month-grid + mark helpers (a copy of the app'
 store/config.js     fallback name, WhatsApp, menu, days, supabase (overridden by Settings → Storefront)
 store/pool.js       shared-pool rules: pack components, cancel windows, sell days (pure)
 store-lang.js       order-page dictionary (en / zh / ms)
+taster-lang.js      landing-page dictionary (en / zh / ms) — its heading/body come from Settings instead
+taster/index.html   the page a printed label's QR opens (/taster/?c=CODE)
+taster/app.js       landing page: ?c= / ?via=, published copy, the offer, dog-or-cat, the visit
+taster/app.css      landing-page styling (self-contained; reads the store's tokens)
 
 admin/ — backoffice app (/admin/):
   index.html          entry (bottom nav shell)
@@ -1017,6 +1162,9 @@ admin/ — backoffice app (/admin/):
   css/print.css       prints only the PO card
   js/state.js         schema, localStorage load/save, ids, formatting, order-line snapshot
   js/dates.js         posting dates, cut-off, countdown (pure)
+  js/qr.js            QR encoder — matrix / SVG string / PNG bytes, no DOM, no deps (pure)
+  js/codes.js         sales codes: kinds, makeCode, the URLs, the offer sentence,
+                      the published half (publishCodes / publishTaster), visitTally (pure)
   js/money.js         what came in — cash / TNG / still to collect (pure)
   js/profit.js        the books — sales, cost of sales, running costs, capital / drawings (pure)
   js/accounts.js      the categories and ways to pay the books read, and their built-in defaults (pure)
@@ -1049,6 +1197,7 @@ supabase/storefront.sql     run once in Supabase SQL editor (storefront config +
 supabase/reviews.sql        run once in Supabase SQL editor (homepage reviews + photo bucket)
 supabase/tracking.sql       run once in Supabase SQL editor (order tracking)
 supabase/track_no.sql       run once — adds order_tracking.tracking_no (v97; folded into tracking.sql)
+supabase/taster_visits.sql  run once — one table for label visits; anon INSERT only, authenticated SELECT only
 supabase/functions/wish-mail  optional edge function: emails the wish list to the developer
 test/               node --test suites (import from admin/js and store/)
 marketing/          social-media marketing guide generator (gitignored)

@@ -4,6 +4,61 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**20 Sep 2026 — printed labels with QR codes, and the page each one opens (no new
+engine number: this was built here first, so both your apps stay on the same number).**
+A new screen, **More → Shops & codes**, makes a code for anything you print: a pet
+shop's sample card, a short promotion, a bring-a-friend card, or a plain card that
+just says hello. Each code gets its own square — a **QR** you can download as a picture
+or print as a sheet of labels — and that same code's short letters, like **K3X9**, are
+printed small beside the square so you can tell two labels apart by eye.
+
+**One code is one printed label.** A code can carry more than a promotion. It can name
+the **shop** that handed the card out (with its contact, its commission rate and how
+many samples you gave it), a **product and an offer** (a percentage or a ringgit
+amount off, an optional minimum spend, an end date), an **introducing friend**, or
+nothing at all. The screen keeps them in one list, so a new idea is one more row and
+not a change to the app.
+
+**What the customer sees.** Scanning the square opens a page carrying that label's
+code. It says hello in your own words, states what that label offers — *"10% off · on
+RM30 and above · new customers only · valid until 30 Sep"* — asks whether the treat is
+for a **dog or a cat**, and sends them on to your shop **with the label still attached**,
+so the order that follows is counted against it. Once an offer's end date has passed
+the page stops promising it and says the offer has finished instead. **New customers
+only** means exactly what you described: a WhatsApp number that has never bought from
+you before.
+
+**You can see what a label brought in.** Every opening of a label's page is counted for
+you, along with the dog-or-cat answer, on the same screen under **Label visits** — how
+many visits, how many dogs and cats, and a line per label, busiest first. A shop's label
+also shows the orders it has produced. The counts live in your own cloud behind your
+login, so only you can read them; the public page can only add one. The order page's
+own banner states the offer too, so a customer meets the same sentence twice.
+
+**Hold a phone up to a printed label.** **Scan a label** opens the camera so you can
+point it at a square and see at once which code it is, what it offers and how many
+orders it has brought. Typing the short letters always works as well, and sits right
+beside the camera button. The camera works on Android and on a computer; an iPhone's
+Safari cannot read a QR inside a web page — that is Apple's rule — so on your phone,
+type the code. (A customer's own camera app reads the square fine; that happens outside
+the page.)
+
+**Your own words, and the money stays yours.** The page's heading and sentence are
+yours to write in **Settings → the landing page's own copy**, in English, Chinese and
+Bahasa Malaysia, so you can change what a scanned label says without touching the app.
+**No discount is ever applied silently**: the app states the offer and shows you what to
+apply when you confirm the order on WhatsApp — exactly how the existing bring-a-friend
+credit works. Your recorded prices and profit are never rewritten by a promotion.
+
+**Your part, once.** Run **`supabase/taster_visits.sql`** in your Supabase SQL editor.
+It makes the small table the visits are written into, and is safe to re-run. Until it is
+run, labels print and scan normally — only the visit counts are missing, and the
+**Label visits** card says so rather than going blank.
+
+**What did not change.** Your prices, orders, customers, posting dates, the shop and the
+way messages are written are exactly as they were. A code changes nothing until someone
+actually scans one.
+
 **18 Sep 2026 — engine v123 (no database setup needed). The product list's middle
 section now groups sold out and not-sold-that-day together, and a product the shop does
 not sell on a day is named by the days it IS sold instead of being given a count for a

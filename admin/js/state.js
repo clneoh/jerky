@@ -3,6 +3,7 @@
 // be swapped for a backend without touching views or BOM logic.
 
 import { normRules } from "../../availability.js";
+import { todayISO } from "./dates.js";
 
 export const LS_KEY = "bakeadmin.v1";
 
@@ -47,6 +48,21 @@ export function defaultState() {
         referrerRM: 3, // the credit the referrer earns
         validDays: 90, // "" (blank) = never expires
       },
+      // The page a printed QR sends a customer to (/taster/). Typed once in
+      // English; the 中文 / BM boxes are filled by translation but a box she
+      // types over is hers forever (the same rule the product text follows).
+      // Shared between phones, and only the parts a customer may read are ever
+      // published — see the `codes`/`taster` branch in supabase.js.
+      taster: {
+        heading: "", headingZh: "", headingMs: "",
+        body: "", bodyZh: "", bodyMs: "",
+        askPet: true, // ask the customer dog-or-cat, and count the answers
+        follow: true, // show the "follow us" line (the handle comes from Storefront → Instagram)
+        offerType: "rm", // what a NEW code offers by default: "rm" | "pct" | "nothing"
+        offerValue: 5,
+        offerMin: 30,   // suggested minimum spend for the offer
+        validDays: 30,  // how long a new code's offer runs for; "" = no expiry
+      },
       developer: { name: "", emails: [], whatsapp: "" }, // site credit + wish-list recipient; shown only once set
       // The two lists the books are built from (16 Sep 2026). Empty means "the
       // built-in ones" — see js/accounts.js — so a phone that never edits them
@@ -73,6 +89,16 @@ export function defaultState() {
     deposits: [],
     credits: [], // bring-a-friend ledger: {holder, amountRM, role, expiresAt, ...}
     occasions: [], // delivery-calendar reminder marks: {from, to, label}
+    // The shops and pet shops you hand samples to. Kept apart from `codes` so a
+    // shop keeps its contact details, commission rate and sample count even if
+    // you retire the label that pointed at it.
+    partners: [], // {id, name, whatsapp, commissionPct, samplesGiven, notes, active, createdAt}
+    // One printed label each: the QR, the tiny code beside it, and what scanning
+    // it does. `kind` is "shop" | "promo" | "intro" | "plain"; only the fields a
+    // customer may see are ever published (see supabase.js storefrontPayload).
+    // `referrerDigits` is a bring-a-friend label's customer, kept private and
+    // carried in the printed link as `?via=`, never published — see labelUrl.
+    codes: [], // {id, code, label, kind, partnerId?, productId?, referrerDigits?, offer?, headline?, active, createdAt}
   };
 }
 
@@ -256,6 +282,7 @@ function normalize(s) {
       lock: { ...d.settings.lock, ...(((s.settings || {}).lock) || {}) },
       storefront: cleanStorefront((s.settings || {}).storefront),
       referrals: { ...d.settings.referrals, ...(((s.settings || {}).referrals) || {}) },
+      taster: { ...d.settings.taster, ...(((s.settings || {}).taster) || {}) },
       categories: Array.isArray(((s.settings || {}).categories)) ? s.settings.categories : [],
       payMethods: Array.isArray(((s.settings || {}).payMethods)) ? s.settings.payMethods : [],
       developer: cleanDeveloper(((s.settings || {}).developer)),
@@ -274,6 +301,8 @@ function normalize(s) {
     customers: Array.isArray(s.customers) ? s.customers : [],
     credits: Array.isArray(s.credits) ? s.credits : [],
     occasions: Array.isArray(s.occasions) ? s.occasions : [],
+    partners: Array.isArray(s.partners) ? s.partners : [],
+    codes: Array.isArray(s.codes) ? s.codes : [],
   };
   const consolidated = consolidateDeliveryDates(out.deliveryDates, out.orders);
   out.deliveryDates = consolidated.deliveryDates;
@@ -524,6 +553,75 @@ function cleanDeveloper(dev) {
 // Placeholder for future version migrations. v1 is the only format today.
 function migrate(s) {
   return normalize(s);
+}
+
+// Has this number ever bought before? A customer is NEW when no other order in
+// the book carries the same WhatsApp number — the owner's own rule ("by whatsapp
+// number that never buy before will be consider as new customer"). The order's
+// own rows are skipped so a multi-item cart (several rows, one groupId) is not
+// mistaken for a previous order of its own. A blank number can never be new:
+// there is nothing to key on, so an offer marked "new customers only" stays off.
+export function isNewCustomer(state, group) {
+  const orders = (group && group.orders) || (Array.isArray(group) ? group : []);
+  const first = orders[0];
+  if (!first) return false;
+  const me = waNumber(first.whatsapp);
+  if (!me) return false;
+  const ownIds = new Set(orders.map((o) => o.id));
+  for (const o of state.orders || []) {
+    if (ownIds.has(o.id)) continue;
+    if (first.groupId && o.groupId === first.groupId) continue;
+    if (waNumber(o.whatsapp) === me) return false;
+  }
+  return true;
+}
+
+// A code's offer, but only while it should actually be shown: the code has to be
+// live, carry a real offer, and sit inside its own from/to window (either end
+// blank means "always"). Returns null for anything that should not appear, so
+// every reader — the landing page, the shop banner, the admin — asks one question
+// and gets one answer. `today` is a "YYYY-MM-DD" string; string comparison is
+// exact for that format.
+export function liveOffer(code, today = todayISO()) {
+  if (!code || typeof code !== "object") return null;
+  if (code.active === false) return null;
+  const off = code.offer;
+  if (!off || typeof off !== "object") return null;
+  const type = String(off.type || "");
+  const value = Number(off.value);
+  if (type !== "rm" && type !== "pct") return null;
+  if (!(value > 0)) return null;
+  const from = String(off.from || "");
+  const to = String(off.to || "");
+  if (from && today < from) return null;
+  if (to && today > to) return null;
+  return {
+    type,
+    value,
+    minSpend: Number(off.minSpend) || 0,
+    from,
+    to,
+    newOnly: off.newOnly === true,
+  };
+}
+
+// The code a customer scanned, looked up case-insensitively (a printed label may
+// be typed by hand as "k3x9"). Returns the record or null — callers decide what a
+// retired or missing code means for their page.
+export function findCode(state, code) {
+  const want = String(code || "").trim().toUpperCase();
+  if (!want) return null;
+  return (state.codes || []).find(
+    (c) => c && String(c.code || "").trim().toUpperCase() === want
+  ) || null;
+}
+
+// What is printed in small type beside the QR so labels can be told apart by eye.
+// Falls back to the code itself; never blank for a code that has one.
+export function codeLabel(code) {
+  const label = String((code && code.label) || "").trim();
+  if (label) return label;
+  return String((code && code.code) || "").trim();
 }
 
 // Short, shareable code a customer can quote to track an order: the last 6 hex
