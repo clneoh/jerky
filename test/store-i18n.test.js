@@ -100,6 +100,14 @@ test("the closed-product reason and the basket notes are keyed in all three lang
     // they owe the baker money the courier is about to ask them for.
     courierCharge: ["%1"],
     courierCod: ["%1"],
+    // The calendar answering a tap on a day it cannot take an order for (21 Sep
+    // 2026): one she does not post, and one she does post whose window has shut.
+    // Both are built in JS with the day in words, so a language losing its %1
+    // would print the sentence with a hole in it and nothing else would notice —
+    // and the two must not collapse into the same string, or the page would tell
+    // a customer on her own posting day that she does not post that day.
+    calMiss: ["%1"],
+    calClose: ["%1"],
   };
   for (const [key, phs] of Object.entries(holders)) {
     for (const l of LANGS) {
@@ -119,6 +127,18 @@ test("the COD charge is worded differently from the plain one in every language"
     assert.ok(STORE[l].courierCod.length > STORE[l].courierCharge.length,
       `${l}: the COD line carries the instruction on top of naming the charge`);
   }
+});
+
+// A day she does not post and a day she does post whose window has shut are two
+// different facts, and the second one sits on a day the card above the grid names
+// as a posting day. One string for both would have the page contradict itself.
+test("a closed posting day is not described as a day she does not post", () => {
+  for (const l of LANGS) {
+    assert.notEqual(STORE[l].calClose, STORE[l].calMiss, `${l}: one sentence for two facts`);
+  }
+  // English is the only language this can be read off, and it is the one the
+  // contradiction would be spotted in first.
+  assert.ok(!STORE.en.calClose.includes("not a posting day"), "the day is still denied");
 });
 
 test("placeholders and the html-track hint are keyed too", () => {

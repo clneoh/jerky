@@ -716,6 +716,40 @@ the deadline go through it:
 languages in `test/store.test.js` without a phone. Manual **v132a** (a manual-only revision —
 the engine did not move).
 
+## The shop's calendar answers a tap it cannot act on (21 Sep 2026, no engine bump)
+
+`buildCalendar()` in `store/app.js` builds a `<button>` for a day the customer can do something
+with and an inert `<span>` for every other day — so a future day that is not one of her posting
+days swallowed the tap completely: no highlight, no message, nothing. It now answers with a line
+under the grid (`.cal-miss`), styled like the backoffice's own v91 `.cal-miss` so the two
+calendars read alike. A whole sentence goes in a line under the grid rather than in the bubble
+over a day: a bubble is a word or two wide, and a sentence at the edge of a phone would run off
+the screen.
+
+**Two sentences, because there are two facts.** This is the part worth remembering:
+`upcomingDates()` starts at tomorrow and `dates` is filtered through `isOpen`, so **today is
+never on the list and a posting day vanishes the moment its 6pm deadline passes**. Both are days
+she really does post — the info card above the grid names them as posting days — so "not a
+posting day" would have contradicted the same screen daily. `dayAsk(cfg, dayRows, d, spec, now)`
+is the pure decision, exported so it can be pinned against fixed dates:
+
+| situation | `dayAsk` | the line |
+|---|---|---|
+| a day she does not post | `"miss"` | *"Tue, 22 Sep is not a posting day — please pick a green day."* |
+| a day she posts, window shut | `"closed"` | *"Orders for Mon, 21 Sep have closed — please pick a green day."* |
+| a day she posts, window open, not offered | `null` | nothing — neither sentence would be true |
+| a day with a spec (open, or Sold out) | `null` | nothing — a Sold out day is already named |
+
+`postsOn(cfg, dayRows, d)` decides the first branch: a configured posting weekday, **or** a date
+the backoffice published (an extra Thursday she added by hand). `now` is a parameter, so the
+branch is testable without moving the clock.
+
+Choosing a green day clears the line (`missIso`/`missClosed` have the bubble's lifetime), it
+returns null again if the day later gains a spec, and a past day is asked nothing at all — a past
+Monday *was* a posting day, so the sentence would be a lie on it. The line is deliberately **not**
+cleared from the module's `pointerdown` listener: a phone scroll begins with a pointerdown, which
+would wipe the sentence the moment the customer moved the page to read it. Manual **v132b**.
+
 ## The courier charge, and the postage it replaces (v124–v130, v132)
 
 One theme, seven versions, all code-only apart from two small SQL scripts. An order

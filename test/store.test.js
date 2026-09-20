@@ -33,7 +33,7 @@ globalThis.window = { open() {} };
 // so the module-level render() hits no network.
 globalThis.fetch = async () => ({ ok: true, json: async () => [] });
 
-const { buildMessage, mergeStorefront, upcomingDates, daySpecs, dateKey, fmtDay, trackOrder, isOpen, waNumber, parseVia, clockWords, renderStatic } = await import("../store/app.js");
+const { buildMessage, mergeStorefront, upcomingDates, daySpecs, dateKey, fmtDay, trackOrder, isOpen, postsOn, dayAsk, waNumber, parseVia, clockWords, renderStatic } = await import("../store/app.js");
 const { CONFIG } = await import("../store/config.js");
 
 // The cut-off time as the page prints it: the app stores it 24-hour (Settings'
@@ -154,6 +154,104 @@ test("store render() fills the page without crashing", () => {
   assert.ok(chosen.children[0].text.endsWith(fmtDay(firstOpen)), "the first open day is the one named");
 
   assert.equal(registry["order-btn"].disabled, true); // empty cart
+});
+
+test("tapping a day she does not post is answered, not swallowed", async () => {
+  // The month on screen is the month of the first day still open to order (the
+  // calendar's own clamp), and its cells line up one-for-one with the weeks —
+  // after the 7 day-of-week headings in the same grid.
+  const { monthWeeks } = await import("../store/calendar.js");
+  const cal = () => registry["dates"].children[0];
+  const grid = () => cal().children.find((c) => c.className === "cal-grid");
+  const miss = () => cal().children.find((c) => c.className === "cal-miss");
+  const first = upcomingDates(CONFIG).find((d) => isOpen(CONFIG, d));
+  const flat = monthWeeks(first.getFullYear(), first.getMonth()).flat();
+  const todayK = dateKey(new Date());
+  const posts = (iso) => CONFIG.deliveryDays.includes(new Date(`${iso}T00:00:00`).getDay());
+
+  // A day still to come that she does not post. It used to be a dead number: the
+  // grid built a button only for a day that was open or marked (21 Sep 2026).
+  const idx = flat.findIndex((iso) => iso && iso >= todayK && !posts(iso));
+  assert.ok(idx >= 0, "the month on screen has a day she does not post");
+  const cell = grid().children[7 + idx];
+  assert.ok(cell.className.includes("tappable"), "that day answers a tap");
+  cell._listeners.click[0]();
+
+  const note = miss();
+  assert.ok(note, "the tap is answered with a note under the grid");
+  assert.equal(note.children[0].text,
+    `${fmtDay(new Date(`${flat[idx]}T00:00:00`))} is not a posting day — please pick a green day.`);
+
+  // Choosing a day she does post takes the answer away with it, so the note can
+  // never outlive the question it was answering.
+  grid().children.find((c) => c.className.includes("avail"))._listeners.click[0]();
+  assert.equal(miss(), undefined, "picking a green day clears the answer");
+
+  // A day already gone is asked nothing: a past Monday WAS a posting day, so the
+  // sentence would be a lie on it — and it is dimmed besides.
+  const pastIdx = flat.findIndex((iso) => iso && iso < todayK);
+  if (pastIdx >= 0) {
+    assert.ok(!grid().children[7 + pastIdx].className.includes("tappable"),
+      "a past day stays quiet");
+  }
+
+  // The other answer, on a day she DOES post whose 6pm window has shut. Today is
+  // one whenever today is one of her posting weekdays — the shop never offers
+  // today (the list starts tomorrow), so its own cell is the closed one. Two
+  // things can hide it here and neither is the code's fault: the grid shows the
+  // month of the first day it CAN offer, so on the last day of a month today sits
+  // in the previous month and is not drawn at all. When it is drawn, it must give
+  // the closed sentence and not the miss one — the rules themselves are pinned
+  // date-independently in the dayAsk test below.
+  const todayIdx = flat.indexOf(todayK);
+  if (todayIdx >= 0 && posts(todayK)) {
+    const todayCell = grid().children[7 + todayIdx];
+    assert.ok(todayCell.className.includes("tappable"), "a closed posting day answers a tap");
+    todayCell._listeners.click[0]();
+    const closedNote = miss();
+    assert.ok(closedNote, "the tap is answered");
+    assert.equal(closedNote.children[0].text,
+      `Orders for ${fmtDay(new Date(`${todayK}T00:00:00`))} have closed — please pick a green day.`);
+  }
+});
+
+// The two answers are two facts, and getting them the wrong way round is what puts
+// "not a posting day" on a day she posts — the same screen that names that weekday
+// as a posting day. Pinned against fixed dates so it proves both branches on any
+// day of the year.
+test("a day she posts whose window has shut is not called a day she does not post", () => {
+  const cfg = { deliveryDays: [1, 3, 5], cutoff: "18:00" }; // Mon, Wed, Fri; closes 6pm the day before
+  const tue = new Date(2026, 8, 22);  // a day she never posts
+  const wed = new Date(2026, 8, 23);  // a day she posts; window shuts 6pm Tuesday
+  const thu = new Date(2026, 8, 24);  // not a posting weekday — but she published it by hand
+  const mon = new Date(2026, 8, 21);
+  const tue9 = new Date(2026, 8, 22, 9, 0);
+  const tue19 = new Date(2026, 8, 22, 19, 0);
+
+  // A day she does not post is the same answer whenever it is asked.
+  assert.equal(dayAsk(cfg, [], tue, undefined, tue9), "miss");
+  assert.equal(dayAsk(cfg, [], tue, undefined, tue19), "miss");
+  // Her own posting day, before its window shuts: still open, so this grid not
+  // offering it is not worth a sentence — silence is the only honest answer.
+  assert.equal(dayAsk(cfg, [], wed, undefined, tue9), null);
+  // …and the moment it shuts, it is "closed", never "miss".
+  assert.equal(dayAsk(cfg, [], wed, undefined, tue19), "closed");
+  // A day already offered is not asked at all, sold out or not.
+  assert.equal(dayAsk(cfg, [], wed, { soldOut: false }, tue19), null);
+  assert.equal(dayAsk(cfg, [], wed, { soldOut: true }, tue19), null);
+  // A date she added by hand is a day she posts, so it closes like the rest —
+  // Thursday's window shuts at 6pm on the Wednesday, and until then it is still
+  // open like any other of her days.
+  assert.equal(postsOn(cfg, [{ date: "2026-09-24" }], thu), true);
+  assert.equal(dayAsk(cfg, [{ date: "2026-09-24" }], thu, undefined, tue19), null);
+  assert.equal(dayAsk(cfg, [{ date: "2026-09-24" }], thu, undefined, new Date(2026, 8, 23, 19, 0)), "closed");
+  assert.equal(dayAsk(cfg, [], thu, undefined, tue19), "miss");
+  // A Monday's window shuts on the Sunday, so a Monday is already closed by the
+  // time it is Monday — which is the case the old wording got wrong.
+  assert.equal(dayAsk(cfg, [], mon, undefined, new Date(2026, 8, 21, 9, 0)), "closed");
+  // No cutoff configured: nothing ever shuts, so nothing is ever "closed" —
+  // a posting day the grid is not offering stays quiet.
+  assert.equal(dayAsk({ deliveryDays: [1, 3, 5] }, [], wed, undefined, tue19), null);
 });
 
 test("dateKey formats a local YYYY-MM-DD key", () => {

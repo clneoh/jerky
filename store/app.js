@@ -279,6 +279,34 @@ export function fmtDay(d) {
   return `${DAYS_EN[d.getDay()]}, ${d.getDate()} ${MONTHS_EN[d.getMonth()]}`;
 }
 
+// Whether she posts on this day at all, the cutoff aside: one of her configured
+// posting weekdays, or a date the backoffice published (an extra Thursday she
+// added by hand). The calendar needs this to tell the two days it cannot take an
+// order for apart — one she never posts, and one she does post whose order
+// window has shut — because they are answered with different sentences.
+export function postsOn(cfg, dayRows, d) {
+  if (cfg.deliveryDays.includes(d.getDay())) return true;
+  const key = dateKey(d);
+  return (Array.isArray(dayRows) ? dayRows : []).some((r) => r && r.date === key);
+}
+
+// What the page can say about a day it cannot take an order for, given whether
+// the day is one it is offering (`spec`, a real posting day):
+//   "miss"   — she does not post that day at all.
+//   "closed" — she does post it, but its order window has shut. The cutoff is the
+//              evening before, so a Wednesday is gone from 6pm on Tuesday.
+//   null     — she posts it and the window is open, so this grid is simply not
+//              offering it (the list is generated from tomorrow, so today is
+//              never on it) and NEITHER sentence would be true of it.
+// Keeping "closed" apart from "miss" is the whole point: calling a day she posts
+// "not a posting day" would contradict the posting-days line on the card right
+// above the grid, every evening, on her own posting day.
+export function dayAsk(cfg, dayRows, d, spec, now = new Date()) {
+  if (spec) return null;
+  if (!postsOn(cfg, dayRows, d)) return "miss";
+  return isOpen(cfg, d, now) ? null : "closed";
+}
+
 export function dateKey(d) {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
@@ -972,6 +1000,16 @@ export function render() {
   let tipIso = null;
   let tipInstalled = false;
 
+  // The day the customer asked about that the grid could not give them, as a
+  // YYYY-MM-DD key, or null; and whether that day is one she posts whose order
+  // window has shut, which is answered with its own sentence. Same lifetime as
+  // the bubble next to it: a tap sets them, and tapping any day of the grid
+  // clears them. A tap on either kind of day used to do nothing whatsoever
+  // (21 Sep 2026), which reads as a broken page rather than as an answer — so
+  // the grid now says so instead (see missNote).
+  let missIso = null;
+  let missClosed = false;
+
   // The marks the bakery let the shop see. Nothing decides privacy here — the
   // published list is already only the standard days, never a mark she typed
   // herself — so this is a shape guard and nothing more.
@@ -1082,6 +1120,15 @@ export function render() {
       const past = iso < todayK;
       const full = !!spec && spec.soldOut;
       const open = !!spec && !full && !past;
+      // A day still to come that this grid cannot take an order for is answered
+      // rather than swallowed (see missNote and dayAsk) — in one of the two ways
+      // it comes, because the two are different facts: a day she does not post,
+      // and a day she does post whose order window has shut. A day already gone
+      // is asked nothing at all, and a posting day with no room left is not asked
+      // either — it is already named in the Sold out line.
+      const ask = past ? null : dayAsk(CONFIG, dayRows, new Date(`${iso}T00:00:00`), spec);
+      const askable = ask === "miss";
+      const closed = ask === "closed";
       // The mark this day is NAMED by — the shortest one covering it, the app's own
       // "the more specific mark wins" rule, so a day inside a long break is still
       // named by a short holiday sitting on it.
@@ -1107,13 +1154,19 @@ export function render() {
         kids.push(tip);
       }
       // A day she delivers with room left is tapped to choose it; a marked day is
-      // tapped to read its name — and the one day can be both.
-      if (open || named) {
+      // tapped to read its name; a day the grid cannot take an order for is tapped
+      // to be told why — and the one day can be more than one of those.
+      if (open || named || askable || closed) {
         return el("button", {
-          class: cls + (open ? " tappable" : "") + (named ? " tippable" : ""),
+          class: cls + (open || askable || closed ? " tappable" : "") + (named ? " tippable" : ""),
           onclick: () => {
             if (named) tipIso = iso;
             if (open) selected = iso;
+            // Choosing a real day takes the answer away with it; asking about
+            // another day it cannot take replaces it. The one tap can never be
+            // both, because a day she posts is not askable.
+            missIso = askable || closed ? iso : null;
+            missClosed = closed;
             // Rebuild the grid + menu together so the chosen day and the quantities
             // the customer chose are re-checked against this day's availability.
             rerender();
@@ -1135,8 +1188,27 @@ export function render() {
         el("p", { class: "cal-chosen" },
           sub(t("calChosen"), fmtDay(new Date(`${selected}T00:00:00`)))),
         // Any day in this month with no room left, named rather than guessed at.
-        soldOutLine(specs, calMonth)));
+        soldOutLine(specs, calMonth),
+        // The answer to a tap the grid could not act on, last because it is the
+        // reply to whatever the customer just did.
+        missNote(specs)));
   };
+
+  // "Sun, 20 Sep is not a posting day — please pick a green day." for a day she
+  // does not post, and "Orders for Wed, 23 Sep have closed — please pick a green
+  // day." for one she does post whose window has shut. A tap on either used to do
+  // nothing at all; this is what answers it. It is a line under the grid, not a
+  // bubble over the day: a bubble is a word or two wide (that is how a marked day
+  // names itself) and this is a whole sentence, which at the edge of a phone would
+  // run off the screen. Empty unless the customer just asked about such a day —
+  // and empty again if that day has since become one she is offering, so a refresh
+  // can never leave the line telling a lie.
+  function missNote(specs) {
+    if (!missIso) return null;
+    if (specs.some((s) => dateKey(s.date) === missIso)) return null;
+    return el("p", { class: "cal-miss" },
+      sub(t(missClosed ? "calClose" : "calMiss"), fmtDay(new Date(`${missIso}T00:00:00`))));
+  }
 
   // "Sold out: 18 Sep, 25 Sep" — the days in the shown month that are already
   // full. Empty when the month has none, so the line takes no space.

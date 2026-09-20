@@ -361,6 +361,23 @@ html, body {
   line-height: 1.4;
   color: var(--muted);
 }
+/* The calendar answering a tap it cannot act on: the customer tapped a day she
+   does not post, so the grid says so and points them at a day she does. It sits
+   under the grid in the calendar card rather than in a bubble over the day (the
+   way a marked day names itself) — a bubble is a word or two wide and this is a
+   whole sentence, which at the left or right edge of a phone would run off the
+   screen. The warm fill is the shop answering, not another piece of the calendar,
+   and the app's own calendar answers a tap the same way so both read alike. */
+.cal-miss {
+  margin: 8px 2px 0;
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: var(--brown-soft);
+  color: var(--brown-dark);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+}
 
 /* ---------- Menu ---------- */
 .menu-item {

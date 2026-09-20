@@ -62,6 +62,15 @@ const en = {
   noDates: "No upcoming posting days right now — check back soon.",
   noOpenDates: "All upcoming posting days are full right now — check back soon.",
   calChosen: "Your posting day: %1",
+  // The two answers to tapping a day this page cannot take an order for. %1 is
+  // that day in words, built by fmtDay in this language — so neither sentence may
+  // name a weekday of its own. "A green day" is a day she posts and can still
+  // take: its number carries the green ring.
+  calMiss: "%1 is not a posting day — please pick a green day.",
+  // The other one: a day she DOES post, tapped after its window shut. Saying "not
+  // a posting day" here would be untrue and would contradict the posting-days
+  // line on the card above the grid, so it says what really happened instead.
+  calClose: "Orders for %1 have closed — please pick a green day.",
   calPrev: "Previous month",
   calNext: "Next month",
 
@@ -200,6 +209,8 @@ const zh = {
   noDates: "目前没有可预订的发货日 — 请稍后再来。",
   noOpenDates: "近期发货日均已满 — 请稍后再来。",
   calChosen: "你的发货日：%1",
+  calMiss: "%1不是发货日 — 请选择绿色圈起的日期。",
+  calClose: "%1的订单已截止 — 请选择绿色圈起的日期。",
   calPrev: "上个月",
   calNext: "下个月",
 
@@ -316,6 +327,8 @@ const ms = {
   noDates: "Tiada tarikh pos buat masa ini — sila datang lagi nanti.",
   noOpenDates: "Semua hari pos akan datang penuh buat masa ini — sila datang lagi nanti.",
   calChosen: "Hari pos anda: %1",
+  calMiss: "%1 bukan hari pos — sila pilih tarikh bertanda hijau.",
+  calClose: "Tempahan untuk %1 telah ditutup — sila pilih tarikh bertanda hijau.",
   calPrev: "Bulan sebelumnya",
   calNext: "Bulan seterusnya",
 

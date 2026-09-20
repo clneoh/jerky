@@ -4,6 +4,29 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**21 Sep 2026 (no new engine) — tapping a day you do not post is answered.** On the order page,
+tapping a day on the calendar that is not one of your posting days used to do nothing at all: no
+highlight, no message, nothing moved. A customer tapping the day they wanted read that as a
+broken page rather than as an answer. The grid now answers — one line under the calendar, naming
+the day in words, in whichever of the three languages the customer is reading.
+
+**It says one of two things, because there are two different facts.** A day you do not post gets
+*"Tue, 22 Sep is not a posting day — please pick a green day."* A day you **do** post, tapped
+after its 6pm window has shut, gets *"Orders for Mon, 21 Sep have closed — please pick a green
+day."* That second sentence matters more than it looks: your orders close at 6pm **the day
+before**, so from 6pm on Tuesday that Wednesday is gone, and today's own day is always gone. Both
+of those are days you really do post, and the card right above the calendar names them as posting
+days — telling a customer "that is not a posting day" on your own posting day would have had the
+page contradict itself every single evening. So a day that has shut says **closed** instead.
+
+**Nothing else answers.** Choosing a green day takes the sentence away with it, so it can never
+outlive the question. A day already past stays quiet — it *was* a posting day, so the sentence
+would be a lie on it, and it is dimmed besides. And a day you post whose window is still open,
+but which the shop has not put on offer yet, stays quiet too: neither sentence would be true of
+it. The sentence also disappears by itself if you later make that day one you post.
+
+No new engine — nothing changed on your phone. No SQL to run.
+
 **21 Sep 2026 (no new engine) — the cut-off time is written out in words.** The order page's
 info card used to read **"Order by 18:00 the day before"**. It now reads **"Order by 6pm the day
 before posting"**: the time the way you would say it out loud, and the word *posting* spelled
