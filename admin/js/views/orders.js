@@ -2105,9 +2105,9 @@ function refNote(text) {
 // the items. There it is handed the pop-up's OWN total, so the "under the
 // minimum" line can never disagree with the "Order total:" line right above it.
 //
-// The code is resolved live from the code list (see promoOf), so a shop renamed
-// or a code retired after the order still reads right — and a label she can no
-// longer honour is still said out loud rather than leaving a blank.
+// The code is resolved live from the code list (see promoOf), so a label she has
+// since renamed or retired still reads right — and a label she can no longer
+// honour is still said out loud rather than leaving a blank.
 function promoBlockEl(state, group, total) {
   const p = promoOf(state, group, todayISO(), total);
   if (!p) return null;

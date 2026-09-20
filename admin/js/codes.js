@@ -150,9 +150,14 @@ function trimNum(n) {
 // to decide — exactly how a bring-a-friend credit is already applied.
 //
 // The code is resolved LIVE through the code list rather than copied onto the
-// order, because an order deliberately carries only the code and its kind: a shop
-// renamed after the order is then named right here, and a code she has since
-// deleted still leaves the kind the order recorded at the time.
+// order, because an order deliberately carries only the code and its kind: a
+// label she has since renamed reads right here, and a code she has since deleted
+// still leaves the kind the order recorded at the time.
+//
+// The name is the label's own (`codeLabel`). A code record holds only the ids of
+// the shop and product it was made for — their names are written onto the
+// published payload for the customer's page and never stored here — so naming
+// them from this module would be reading a shape the app does not write.
 //
 // `overMin` and `newCustomer` both read TRUE when they do not apply, so the view
 // only ever has to test for a warning. `newCustomer` is the whole reason the
@@ -187,9 +192,7 @@ export function promoOf(state, group, today = todayISO(), total = null) {
 
   const offer = rec.offer || null;
   const live = liveOffer(rec, today);
-  const name = String(rec.partnerName || "").trim()
-    || String(rec.productName || "").trim()
-    || codeLabel(rec);
+  const name = codeLabel(rec);
   const min = live ? Number(live.minSpend) || 0 : 0;
   // isNewCustomer reads a number-less order as "not new" (there is nothing to key
   // on, so the offer stays off there). The question HERE is only whether to warn

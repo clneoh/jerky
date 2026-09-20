@@ -444,8 +444,11 @@ const promoOrder = (over = {}) => ({
 function promoState(over = {}) {
   return {
     ...picker([prod("p1", "Focaccia")], over.orders || [promoOrder()]),
+    // A code record carries `label` (the words printed beside the QR) and ids for
+    // the shop/product it was made for — never their names. The line names the
+    // LABEL, which is the only name the record really has.
     codes: over.codes === undefined ? [{
-      code: "MILO", kind: "promo", productName: "Focaccia",
+      code: "MILO", kind: "promo", label: "Milo promo card",
       offer: { type: "pct", value: 10, minSpend: 30, to: "2030-09-30", newOnly: true, cur: "RM" },
     }] : over.codes,
   };
@@ -464,7 +467,7 @@ test("an order that came in on a label says what to take off it", () => {
   const block = promoBlock(promoState());
   assert.ok(block, "the row carries a line about the label");
   assert.equal(block.textContent,
-    "🎟 MILO — Focaccia — 10% off · on RM30 and above · new customers only · until 2030-09-30" +
+    "🎟 MILO — Milo promo card — 10% off · on RM30 and above · new customers only · until 2030-09-30" +
     " — take it off when you confirm.");
 });
 
@@ -496,22 +499,27 @@ test("an order under the label's minimum is named with both figures", () => {
 test("a label whose offer has ended says so, and offers nothing to take off", () => {
   const state = promoState({
     codes: [{
-      code: "MILO", kind: "promo", productName: "Focaccia",
+      code: "MILO", kind: "promo", label: "Milo promo card",
       offer: { type: "pct", value: 10, minSpend: 30, to: "2020-01-01", cur: "RM" },
     }],
   });
   const block = promoBlock(state);
   assert.equal(block.textContent,
-    "🎟 MILO — Focaccia — 10% off · on RM30 and above · ended — nothing to take off.");
+    "🎟 MILO — Milo promo card — 10% off · on RM30 and above · ended — nothing to take off.");
   assert.equal(byClass(block, "promo-warn"), undefined, "no verdict she cannot act on");
 });
 
 test("a label she has retired is said out loud, not left blank", () => {
   const state = promoState({
-    codes: [{ code: "MILO", kind: "promo", productName: "Focaccia", active: false }],
+    codes: [{ code: "MILO", kind: "promo", label: "Milo promo card", active: false }],
   });
   assert.equal(promoBlock(state).textContent,
-    "🎟 MILO — Focaccia — you retired this code. The order still records it.");
+    "🎟 MILO — Milo promo card — you retired this code. The order still records it.");
+});
+
+test("a label she never named is named by its code instead", () => {
+  const state = promoState({ codes: [{ code: "MILO", kind: "promo" }] });
+  assert.equal(promoBlock(state).textContent, "🎟 MILO — a label with no offer on it.");
 });
 
 test("a label she has deleted is still named, with the kind the order kept", () => {

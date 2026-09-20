@@ -4,7 +4,7 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
-**20 Sep 2026 (manual v123d) — a customer can put a code in, and the order tells you what
+**20 Sep 2026 (manual v123e) — a customer can put a code in, and the order tells you what
 to take off (no new engine number: built here first, so both your apps stay on the same
 number).** The order page now carries a small **Have a code?** box at the top, on every
 visit. Until now a code could only arrive by scanning a label's square, so a customer who
@@ -22,12 +22,21 @@ page would rewrite the money you actually earned — and __new customers only__ 
 checked from the page at all, because that needs your entire order book.
 
 **So your app does the telling.** An order that came in on a code now carries a 🎟 line on its
-row and in its **Edit** box: the code, the shop or product it was for, what it promised, and
+row and in its **Edit** box: the code, the name you gave that label, what it promised, and
 __"take it off when you confirm."__ Two warnings appear when they apply — that the offer is for
 new customers only and this person has bought from you before, or that the order is under the
 code's minimum spend, naming both figures. Both warnings show only while the offer is still
 live. **The line never goes blank:** a code you have since retired, or even deleted, is still
 named, because the order records the label the customer actually came in on.
+
+**One word in this entry was wrong, and is now fixed.** It said the 🎟 line names "the shop or
+product it was for". It does not, and could not: a code keeps only the *ids* of the shop or
+product it was made for — their names are written for the customer's page and are never stored
+in your book — so the line names the **label**, which is what you typed beside the square, and
+the code itself when you left the label unnamed. That is the name you recognise on the shelf
+anyway. **Nothing you see on screen has changed** — the two look-ups that read the missing
+names never found anything and have simply been removed, which makes the code match the words
+that describe it.
 
 **One fix came with it.** The offer shown on the order page now honours its own **Ends** date —
 a label whose offer has run out stops showing it, the way the landing page already did. The

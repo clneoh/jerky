@@ -399,8 +399,12 @@ test("a page with no copy of its own still publishes its switches", () => {
 // make — "new customers only" needs every other order in the book, which is why
 // the customer's own page is not allowed to decide any of this.
 
+// The real shape of a stored code: the label printed beside the QR, and the ids of
+// the shop/product it was made for. Their NAMES are never stored here — they are
+// written onto the published payload the customer's page reads — so the name the
+// app shows is the label's own.
 const PROMO = {
-  code: "MILO", kind: "promo", productName: "Chicken Jerky 100g",
+  code: "MILO", kind: "promo", label: "Chicken Jerky card",
   offer: { type: "pct", value: 10, minSpend: 30, to: "2030-09-30", newOnly: true },
 };
 
@@ -419,7 +423,7 @@ test("a live label is named, and its offer stated in the label's own words", () 
   const group = { orders: [order({ promoCode: "milo", qty: 2 })] };
   const p = promoOf(promoState(), group, "2026-09-20");
   assert.equal(p.code, "MILO", "looked up however the stamp was typed");
-  assert.equal(p.name, "Chicken Jerky 100g");
+  assert.equal(p.name, "Chicken Jerky card", "the label's own name");
   assert.equal(p.live.value, 10);
   assert.equal(p.total, 44, "the order's own frozen price, not the menu's");
   assert.equal(p.gone, false);
@@ -482,7 +486,7 @@ test("a retired label is marked retired, and keeps its name", () => {
   const p = promoOf(state, { orders: [order({ promoCode: "MILO" })] }, "2026-09-20");
   assert.equal(p.retired, true);
   assert.equal(p.gone, false);
-  assert.equal(p.name, "Chicken Jerky 100g", "the code is still in her list, so it still reads right");
+  assert.equal(p.name, "Chicken Jerky card", "the code is still in her list, so it still reads right");
 });
 
 test("a label she has deleted keeps the kind the order recorded at the time", () => {
@@ -496,7 +500,7 @@ test("a label she has deleted keeps the kind the order recorded at the time", ()
   assert.equal(p.offer, null);
 });
 
-test("a label with no partner or product name falls back to the code itself", () => {
+test("a label she never named falls back to the code itself", () => {
   const state = promoState({ codes: [{ code: "HELLO", kind: "plain" }] });
   const p = promoOf(state, { orders: [order({ promoCode: "HELLO" })] }, "2026-09-20");
   assert.equal(p.name, "HELLO");

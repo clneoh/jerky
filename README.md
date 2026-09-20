@@ -680,8 +680,12 @@ that it did.
 in the Edit pop-up. Two design points carry it:
 
 - **The code is resolved live through `findCode`**, never denormalised onto the order — an
-  order carries only `promoCode` + `codeKind`, so a shop renamed later is named right here
-  and a code she has since deleted still leaves the kind the order recorded.
+  order carries only `promoCode` + `codeKind`, so a label renamed later reads right here and a
+  code she has since deleted still leaves the kind the order recorded. The name is the label's
+  own (`codeLabel` — her label, else the code): a code record keeps only the *ids* of the shop
+  and product it was made for, whose names are written onto the published payload for the
+  customer's page and never stored, so naming them from here would read a shape the app does
+  not write.
 - **`overMin` and `newCustomer` read `true` when they do not apply**, so the view only ever
   tests for a *warning*. `newCustomer` is the whole reason validation splits: "new customers
   only" needs every other order in the book, which only the admin has. A number-less order
