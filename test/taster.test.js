@@ -7,8 +7,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  copyFor, createView, findCode, localCopy, mergeTaster, offerWords, parseCode,
-  parseVia, storeLink, visitPayload,
+  codeCopy, copyFor, createView, findCode, localCopy, mergeTaster, offerWords,
+  parseCode, parseVia, storeLink, visitPayload,
 } from "../taster/app.js";
 
 // ── reading the address bar ───────────────────────────────────────────────
@@ -81,6 +81,38 @@ test("a heading with no translation of its own falls back to the English one", (
   assert.equal(copyFor(cfg, "heading", "zh"), "给你的宠物");
   assert.equal(copyFor(cfg, "heading", "ms"), "A treat for your pet", "not written yet");
   assert.equal(copyFor({ headingZh: "   " }, "heading", "zh"), "", "blank either way is blank");
+});
+
+test("a label's own words replace the shared page's, line by line", () => {
+  const shared = { heading: "A treat for your pet", headingZh: "给你的宠物", body: "Scan and say hi" };
+  const own = codeCopy(shared, { heading: "  10% off today  ", body: "Show this at the counter" });
+  assert.equal(copyFor(own, "heading", "en"), "10% off today", "trimmed on the way in");
+  assert.equal(copyFor(own, "body", "en"), "Show this at the counter");
+  assert.equal(copyFor(own, "heading", "zh"), "给你的宠物",
+    "a translation this label never wrote still reads from the shared page");
+  assert.equal(shared.heading, "A treat for your pet", "the shared copy is not written through");
+});
+
+test("a label that says nothing for itself reads as the shared page did", () => {
+  const shared = { heading: "A treat for your pet", headingZh: "给你的宠物", body: "Scan and say hi" };
+  for (const info of [null, undefined, {}, { headingZh: "   " }, "not an object", { heading: 42 }]) {
+    const own = codeCopy(shared, info);
+    assert.equal(copyFor(own, "heading", "en"), "A treat for your pet", `heading for ${info}`);
+    assert.equal(copyFor(own, "heading", "zh"), "给你的宠物");
+    assert.equal(copyFor(own, "body", "en"), "Scan and say hi");
+  }
+});
+
+test("a blank line on one label never blanks the page, or the label beside it", () => {
+  // The whole point of publishing a label's words in the same shape as the shared
+  // page's: the two merge per language, so nothing here can reach a customer as an
+  // empty heading, and no code's own words leak into another code's page.
+  const shared = { heading: "A treat for your pet", headingZh: "给你的宠物" };
+  const mine = codeCopy(shared, { heading: "Just for you", body: "" });
+  const theirs = codeCopy(shared, { code: "OTHER" });
+  assert.equal(copyFor(mine, "heading", "en"), "Just for you");
+  assert.equal(copyFor(mine, "body", "en"), "", "there was no shared body to fall back to");
+  assert.equal(copyFor(theirs, "heading", "en"), "A treat for your pet");
 });
 
 test("the page never lights up for a code she has retired", () => {

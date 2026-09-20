@@ -28,6 +28,22 @@ the page stops promising it and says the offer has finished instead. **New custo
 only** means exactly what you described: a WhatsApp number that has never bought from
 you before.
 
+**One label can say its own words.** Every label opens the same page, and the shared
+page's heading and sentence are what a customer reads — unless a label wants to say
+something the others do not. Open a code and tap **What this label says on the page**:
+a heading and a paragraph, in English, Chinese and Bahasa Malaysia, and a **Fill 中文 /
+BM** button, exactly like the shared page's own copy. Anything left blank falls back to
+the shared page's line for that same language, and the greyed text in an empty box is
+the line a customer will actually get — so a label that says nothing for itself changes
+nothing at all. Every translated box also carries a small **中文** or **BM** tag beside
+it, so you can always see which language you are typing into: on a label the greyed text
+inside the box is the shared page's line rather than the language's name, and two boxes
+whose shared line is blank would otherwise both read as the same English. And a line you
+have typed yourself stays yours — pressing **Fill 中文 / BM** again after you change one
+line translates only the lines you left alone, and never overwrites what you wrote. That
+is how one promotion card can shout its own offer while a shop's sample card keeps the
+shop's words.
+
 **You can see what a label brought in.** Every opening of a label's page is counted for
 you, along with the dog-or-cat answer, on the same screen under **Label visits** — how
 many visits, how many dogs and cats, and a line per label, busiest first. A shop's label
@@ -44,8 +60,9 @@ type the code. (A customer's own camera app reads the square fine; that happens 
 the page.)
 
 **Your own words, and the money stays yours.** The page's heading and sentence are
-yours to write in **Settings → the landing page's own copy**, in English, Chinese and
-Bahasa Malaysia, so you can change what a scanned label says without touching the app.
+yours to write on **More → Shops & codes** — the shared page every label opens, and any
+single label that needs its own — in English, Chinese and Bahasa Malaysia, so you can
+change what a scanned label says without touching the app.
 **No discount is ever applied silently**: the app states the offer and shows you what to
 apply when you confirm the order on WhatsApp — exactly how the existing bring-a-friend
 credit works. Your recorded prices and profit are never rewritten by a promotion.

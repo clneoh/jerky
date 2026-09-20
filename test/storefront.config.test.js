@@ -269,7 +269,8 @@ test("mergeStorefront keeps the change/cancel window and the Policies wording", 
 test("mergeStorefront adopts the published codes, dropping anything half-written", () => {
   const out = mergeStorefront({ name: "A" }, {
     codes: [
-      { code: " pshop ", kind: "shop", partnerName: "  Paw Shop ", headline: "New here?" },
+      { code: " pshop ", kind: "shop", partnerName: "  Paw Shop ",
+        heading: "  New here?  ", body: "Say hi at the counter", headingZh: "   " },
       { code: "milo", kind: "promo", productName: "Chicken Jerky",
         offer: { type: "pct", value: 10, minSpend: 30, to: "2026-09-30", newOnly: true, cur: "RM" } },
       // A malformed offer is dropped whole, never half-adopted: a wrong number in
@@ -286,7 +287,10 @@ test("mergeStorefront adopts the published codes, dropping anything half-written
   assert.deepEqual(out.codes.map((c) => c.code), ["PSHOP", "MILO", "BAD1", "BAD2", "BAD3", "ODD1"]);
   const shop = out.codes[0];
   assert.equal(shop.partnerName, "Paw Shop");
-  assert.equal(shop.headline, "New here?");
+  assert.equal(shop.heading, "New here?", "trimmed, and this label's own words");
+  assert.equal(shop.body, "Say hi at the counter");
+  assert.equal("headingZh" in shop, false,
+    "a blank translation is dropped, not carried as an empty line over the shared page's");
   assert.equal("offer" in shop, false, "a code with no offer carries no offer key");
   const milo = out.codes[1];
   assert.equal(milo.productName, "Chicken Jerky");

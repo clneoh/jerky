@@ -474,6 +474,44 @@ and the **codes**, each with a QR preview, a PNG download, the printed label she
 "open what the customer sees" link and its own counts. Two more sections follow: **Label
 visits** and, above them all, a **📷 Scan a label** button.
 
+**One label's own words.** The same two lines exist twice — on the shared page, and
+optionally on one label. Both are drawn by one `copyLine(target, en, label, max)` against
+a small **copy target** (`{obj, shared, persist, redraw}`), so the boxes, the translating,
+the `is-mine` mark and the `↻` cannot drift apart between the two places. `obj` is where
+the words live (`settings.taster`, or the code being edited); `shared` is what the shared
+page says, shown as the **placeholder** in every empty box so a blank box visibly reads as
+the line a customer will actually get; `persist` keeps what was typed — a **no-op inside
+the code pop-up**, whose Save is the only writer; `redraw` repaints whatever holds the
+boxes. `sharedHint(target, key, fallback)` resolves a hint as the shared page's *same
+language* line, then the shared English, then the box's own label. Clearing a box calls
+`markManual` (not `markAuto`): on a label a blank box means *"the shared page says this
+line"*, which is a decision, so `Fill 中文 / BM` must not put a translation back into it.
+
+The code pop-up's group is folded behind a module flag (`codeCopyOpen`, the `copyOpen`
+pattern). Its `redraw` is `() => { keepTyped(); refresh(); }` — **`keepTyped()` first**,
+because `showPopup`'s `refresh()` rebuilds the label and code boxes from `draft`, and
+those two are only synced on a kind change and on save: a refresh without it would revert
+a label she had just typed. `saveIt` deletes a blank copy key from **both** the new row
+and the record it replaces — an assign only adds or overwrites, so a line she deleted
+would otherwise stay on the label and still be published.
+
+**`codeDraft(code, state, t, today)`** builds the working copy the pop-up edits, and it is
+exported and pure because one rule in it is easy to get wrong and invisible when it is.
+A label's `trOverride` is an **array** of variant names, so copying it with an object
+spread hands back `{"0":"headingZh","1":"headingMs"}` — and `isOverridden()` only reads an
+array, so **every box she had typed by hand would quietly read as machine text again and
+the next `Fill 中文 / BM` would overwrite her words**. It copies with
+`Array.isArray(code.trOverride) ? [...code.trOverride] : []`, and copies the offer and
+`trSrc` alongside it, so nothing typed in the pop-up and then abandoned can mark the
+record underneath. `test/codes-draft.test.js` holds the rule (including a record carrying
+the wrong shape, which must not leak through).
+
+Each translated box in the code pop-up also carries a visible **`.qr-trans-lang` tag**
+(`中文` / `BM`). It cannot be inferred from the placeholder: on a label the placeholder is
+the shared page's line for that language, so a line whose shared translation is blank would
+leave the 中文 and BM boxes showing the same English. The same reason the products editor
+prints a `LANG_LABEL`.
+
 The visits card is the only card on the screen that needs Supabase, so it uses the
 Reviews card's shape — `pullVisits(state)` returning `{ ok, reason, rows, capped }`, an
 early return when `!ok` naming the reason plus a **Try again** button, and the unmount
@@ -495,16 +533,26 @@ loop detects its own teardown by polling `video.isConnected`.
 `taster-lang.js` for its fixed chrome). It reads `?c=` and `?via=`, paints from its own
 fallback copy, then `loadPublished()` fetches the **same `storefront_config` row the shop
 reads** and merges `remote.taster` / `remote.codes` in — so the words are hers to change
-in Settings with no redeploy. It states the label's offer (`offerWords`, hidden once `to`
-has passed), asks dog-or-cat, records the visit, and links on to `/store/?c=CODE` (via
-`storeLink`, which keeps both stamps). Its stylesheet is self-contained but reads the
-store's tokens, so the two pages look like one business. `app.css` is mobile-first: the
-page is almost always opened by a phone pointed at a square.
+on the Shops & codes screen with no redeploy. It states the label's offer (`offerWords`,
+hidden once `to` has passed), asks dog-or-cat, records the visit, and links on to
+`/store/?c=CODE` (via `storeLink`, which keeps both stamps). Its stylesheet is
+self-contained but reads the store's tokens, so the two pages look like one business.
+`app.css` is mobile-first: the page is almost always opened by a phone pointed at a square.
 
-`admin/js/views/settings.js`'s **landing page's own copy** block publishes through
-`publishTaster(state)`; `publishCodes(state, today)` publishes the codes. **Both are
-deliberately narrow** — a customer may see a code, what it offers and the shop's *name*,
-never its WhatsApp number, commission or notes.
+`codeCopy(shared, info)` is what makes a label's own words work: it lays the label's
+non-blank `heading`/`body` (+`Zh`/`Ms`) over the shared copy and hands the result to the
+same `copyFor`, so **each language falls back on its own** — a label that wrote only an
+English heading still reads the shared page's Chinese line for that heading, rather than
+blanking it or mixing languages. It is pure and returns a fresh object, so the shared copy
+is never written through. A label with nothing of its own is therefore byte-identical to
+the shared page.
+
+Both halves of the published payload are built by `publishTaster(state)` and
+`publishCodes(state, today)` in `admin/js/codes.js`, which share one private `pageLines(src,
+out)` — **the same shape in both places is the whole mechanism**, because it is what lets
+`codeCopy` treat an absent key as "the shared page says it". **Both are deliberately
+narrow** — a customer may see a code, what it offers, the shop's *name* and those two
+lines, never its WhatsApp number, commission or notes.
 
 ### The order chain
 
@@ -1151,7 +1199,7 @@ store/calendar.js   the shop's own month-grid + mark helpers (a copy of the app'
 store/config.js     fallback name, WhatsApp, menu, days, supabase (overridden by Settings → Storefront)
 store/pool.js       shared-pool rules: pack components, cancel windows, sell days (pure)
 store-lang.js       order-page dictionary (en / zh / ms)
-taster-lang.js      landing-page dictionary (en / zh / ms) — its heading/body come from Settings instead
+taster-lang.js      landing-page dictionary (en / zh / ms) — its heading/body come from the shared copy instead
 taster/index.html   the page a printed label's QR opens (/taster/?c=CODE)
 taster/app.js       landing page: ?c= / ?via=, published copy, the offer, dog-or-cat, the visit
 taster/app.css      landing-page styling (self-contained; reads the store's tokens)

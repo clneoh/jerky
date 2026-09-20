@@ -119,6 +119,23 @@ export function copyFor(cfg, key, lang = loadLang()) {
   return String(c[key] || "").trim();
 }
 
+// The words THIS label puts on the page: the shared copy with the code's own lines
+// laid over it. A code that says nothing for itself — or says it in English only —
+// keeps the shared page's line for that language, and never blanks the rest. Each
+// language resolves on its own, which is what makes that promise keepable: a blank
+// reflects the missing line, never the missing language.
+export function codeCopy(shared, info) {
+  const out = { ...(shared || {}) };
+  const own = info || {};
+  for (const k of ["heading", "body"]) {
+    for (const key of [k, `${k}Zh`, `${k}Ms`]) {
+      const v = typeof own[key] === "string" ? own[key].trim() : "";
+      if (v) out[key] = v;
+    }
+  }
+  return out;
+}
+
 // The published record for the code in the address bar, or null. Read from the
 // config the shop itself reads — this page never invents a code, so a link
 // carrying a code she has retired or never made resolves to nothing.
@@ -255,7 +272,8 @@ export function boot() {
 
   const paint = () => {
     const lang = loadLang();
-    const c = v.copy;
+    // Whatever this label wants to say for itself, over the shared page's words.
+    const c = codeCopy(v.copy, v.info);
     const shop = $("brand");
     if (shop) shop.textContent = c.shop;
     const title = $("heading");

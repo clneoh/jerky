@@ -28,14 +28,22 @@ import { maybeSyncStorefront, pullVisits, VISIT_LIMIT } from "../supabase.js";
 let sheetCount = 12;
 let sheetStyle = "card";
 let copyOpen = false;
+let codeCopyOpen = false;
 
-// The two lines of landing-page copy she can write, and the two languages each
-// one is translated into.
+// The two lines of landing-page copy she can write — on the shared page, or on one
+// label — and the two languages each one is translated into.
 const COPY_FIELDS = [
   ["heading", "Heading", 80],
   ["body", "A short paragraph", 300],
 ];
-const LANGS = [["Zh", "zh", "中文"], ["Ms", "ms", "Bahasa Malaysia"]];
+// [suffix, API language, the box's own label when there is nothing to show in it,
+// the short tag printed beside it]. The tag is always visible: on a label the
+// greyed line inside the box is the shared page's line, so the language name can
+// no longer live there, and without a tag the 中文 and BM boxes of a line whose
+// shared translation is blank both read as the same English.
+const LANGS = [["Zh", "zh", "中文", "中文"], ["Ms", "ms", "Bahasa Malaysia", "BM"]];
+// Every key one line occupies: the English box and its two translations.
+const COPY_KEYS = COPY_FIELDS.flatMap(([en]) => [en, `${en}Zh`, `${en}Ms`]);
 
 // ── small field builders ──────────────────────────────────────────────────
 
@@ -494,25 +502,39 @@ function codeFromScan(raw) {
   return /^[A-Za-z0-9-]{2,16}$/.test(text) ? text.toUpperCase() : "";
 }
 
-function openCodeForm(state, code, redraw) {
-  const isNew = !code;
-  const t = state.settings.taster || {};
-  const cur = state.settings.currency || "RM";
-  const today = todayISO();
-  const draft = isNew
-    ? {
+// The working copy one label is edited on. Pure, and exported, because one rule
+// in it is easy to get wrong and invisible when it is: `trOverride` is an ARRAY
+// of variant names, so copying it with an object spread would hand back
+// {"0":"headingZh","1":"headingMs"} — `isOverridden()` only reads an array, so
+// every box she had typed by hand would quietly read as machine text again and
+// the next Fill would overwrite her words.
+export function codeDraft(code, state, t, today = todayISO()) {
+  if (!code) {
+    return {
       id: newId("cd"),
       code: makeCode(state.codes || []),
       label: "",
       kind: "shop",
       partnerId: "",
       productId: "",
-      headline: "",
       active: true,
       createdAt: new Date().toISOString(),
       offer: newOffer(t, today),
-    }
-    : { ...code, offer: { ...(code.offer || {}) } };
+    };
+  }
+  // Everything below is copied rather than shared with the record underneath: a
+  // box she types in and then abandons must not leave the label marked as hers.
+  return { ...code, offer: { ...(code.offer || {}) },
+    trOverride: Array.isArray(code.trOverride) ? [...code.trOverride] : [],
+    trSrc: { ...(code.trSrc || {}) } };
+}
+
+function openCodeForm(state, code, redraw) {
+  const isNew = !code;
+  const t = state.settings.taster || {};
+  const cur = state.settings.currency || "RM";
+  const today = todayISO();
+  const draft = codeDraft(code, state, t, today);
 
   showPopup(isNew ? "New code" : "Edit code", (refresh, close) => {
     // Changing the kind rebuilds this form from `draft`, so whatever is typed in
@@ -523,7 +545,6 @@ function openCodeForm(state, code, redraw) {
     function keepTyped() {
       draft.label = label.value;
       draft.code = String(codeText.value || "").trim().toUpperCase();
-      draft.headline = headline.value;
     }
 
     // The hint for each kind is a line of its own under the box rather than a
@@ -539,8 +560,6 @@ function openCodeForm(state, code, redraw) {
     const label = el("input", { class: "input", value: draft.label || "", maxlength: "24",
       placeholder: draft.code });
     const codeText = el("input", { class: "input", value: draft.code || "", maxlength: "12" });
-    const headline = el("input", { class: "input", value: draft.headline || "", maxlength: "80",
-      placeholder: "One line above the offer on the page" });
 
     const partnerSel = draft.kind === "shop"
       ? select([{ value: "", label: "— none yet —" },
@@ -599,6 +618,27 @@ function openCodeForm(state, code, redraw) {
       switchRow("New customers only", off.newOnly === true, (v) => { off.newOnly = v; },
         "A customer counts as new when that WhatsApp number has never ordered before")) : null;
 
+    // This label's own words for the page, folded away because most labels never
+    // need them. Left alone it says nothing and the shared page's lines are what a
+    // customer reads, so nothing changes until she opens this and types.
+    const words = copyTarget({
+      obj: draft,
+      shared: t,
+      // Nothing is kept until Save, so the pop-up's own button is the only writer.
+      persist: () => {},
+      // The body is rebuilt from `draft`, so the two boxes above it have to be
+      // written back first — and the words group keeps its folded state either way.
+      redraw: () => { keepTyped(); refresh(); },
+    });
+    const wordsBody = codeCopyOpen
+      ? el("div", {},
+        el("p", { class: "card-sub", style: "margin:0 0 8px" },
+          "A blank box means the shared page says it — the greyed line shows what a customer would read instead."),
+        ...COPY_FIELDS.map(([en, label, max]) => copyLine(words, en, label, max)),
+        button("Fill 中文 / BM", () => fillAll(words), "ghost small"))
+      : el("p", { class: "card-sub", style: "margin:0" },
+        "The shared page's words, unless this label needs its own.");
+
     const saveIt = () => {
       const got = String(codeText.value || "").trim().toUpperCase();
       if (!got) { toast("A code needs its own short code"); return; }
@@ -609,7 +649,6 @@ function openCodeForm(state, code, redraw) {
         ...draft,
         code: got,
         label: String(label.value || "").trim(),
-        headline: String(headline.value || "").trim(),
         // A kind with no offer box states nothing — so a code switched away from
         // "promo" drops the offer instead of carrying one nobody can see.
         offer: carriesOffer ? cleanOffer(off) : { type: "nothing" },
@@ -618,8 +657,21 @@ function openCodeForm(state, code, redraw) {
         // number at all rather than one no box on this form can show.
         referrerDigits: draft.kind === "intro" ? phoneDigits(referrerSel && referrerSel.value) : "",
       };
+      // A cleared box leaves NO key behind: blank means "the shared page says this
+      // line", and an empty string would be published as a real line that says
+      // nothing. The keys have to go from the record being edited as well — an
+      // assign only adds or overwrites, so a line she just deleted would stay on
+      // the label and a customer would still read it.
+      for (const key of COPY_KEYS) if (!String(row[key] || "").trim()) delete row[key];
+      // An empty provenance map is noise on a record that syncs between her phones.
+      for (const key of ["trOverride", "trSrc"]) {
+        if (!Object.keys(row[key] || {}).length) delete row[key];
+      }
       if (isNew) state.codes.push(row);
-      else Object.assign(code, row);
+      else {
+        for (const key of [...COPY_KEYS, "trOverride", "trSrc"]) delete code[key];
+        Object.assign(code, row);
+      }
       save(state);
       maybeSyncStorefront(state);
       redraw();
@@ -652,8 +704,9 @@ function openCodeForm(state, code, redraw) {
         "The customer who hands it out. Their number rides in the link, so the usual bring-a-friend credit applies on its own.") : null,
       typeSel ? field("Offer", typeSel) : null,
       offerBody,
-      field("A line on the page (optional)", headline,
-        "Shown above the offer, so one label can say something the others do not."),
+      el("div", { class: "qr-fold", onclick: () => { codeCopyOpen = !codeCopyOpen; words.redraw(); } },
+        el("p", { class: "card-title" }, `What this label says on the page ${codeCopyOpen ? "▾" : "▸"}`)),
+      wordsBody,
       switchRow("This label is in use", draft.active !== false, (v) => { draft.active = v; }),
       el("div", { class: "popup-actions" },
         button("Save", saveIt, "primary"),
@@ -809,7 +862,33 @@ function openPrintSheet(state, code, redraw) {
   }
 }
 
-// ── the landing page copy ─────────────────────────────────────────────────
+// ── the landing page's words ──────────────────────────────────────────────
+
+// The same two lines live in two places: on the shared landing page, and — if she
+// wants — on one printed label. Written once against a small "copy target" so the
+// boxes, the translating and the ↻ behave identically in both and cannot drift
+// apart:
+//
+//   obj      where the words live (the settings, or the label being edited)
+//   shared   what the shared page says, shown greyed in every empty box so a blank
+//            one reads as the line a customer will actually get. Null when she IS
+//            editing the shared page — there is nothing above it to fall back to.
+//   persist  keep what was typed. A no-op inside the pop-up, whose Save is the
+//            only thing that writes a label at all.
+//   redraw   repaint whatever holds the boxes.
+function copyTarget({ obj, shared = null, persist, redraw }) {
+  return { obj, shared, persist, redraw };
+}
+
+// What a customer would read in this box if she leaves it empty: the shared page's
+// same language, then the shared page's English (which is what the page itself
+// falls back to), then nothing.
+function sharedHint(target, key, fallback) {
+  const s = target.shared;
+  if (!s) return fallback;
+  const base = String(key).replace(/(Zh|Ms)$/, "");
+  return String(s[key] || s[base] || "").trim() || fallback;
+}
 
 function landingCard(state, redraw) {
   const t = state.settings.taster || (state.settings.taster = {});
@@ -819,6 +898,11 @@ function landingCard(state, redraw) {
     save(state);
     maybeSyncStorefront(state);
   };
+  const words = copyTarget({
+    obj: t,
+    persist: () => { save(state); maybeSyncStorefront(state); },
+    redraw,
+  });
   const offerWord = t.offerType === "pct" ? `${t.offerValue}% off`
     : t.offerType === "rm" ? `${cur}${t.offerValue} off` : "no offer";
 
@@ -828,9 +912,9 @@ function landingCard(state, redraw) {
         el("p", { class: "card-title" }, `The page a scan lands on ${copyOpen ? "▾" : "▸"}`),
         el("p", { class: "card-sub" },
           `${t.askPet !== false ? "Asks dog or cat" : "Does not ask dog or cat"} · ${t.follow !== false ? "shows your socials" : "no socials line"} · a new label offers ${offerWord}`)),
-      button("Fill 中文 / BM", () => fillAll(state, redraw), "ghost small")),
+      button("Fill 中文 / BM", () => fillAll(words), "ghost small")),
     copyOpen ? el("div", {},
-      ...COPY_FIELDS.map(([en, label, max]) => copyLine(t, state, en, label, max, set, redraw)),
+      ...COPY_FIELDS.map(([en, label, max]) => copyLine(words, en, label, max)),
       switchRow("Ask whether it's a dog or a cat", t.askPet !== false, (v) => set("askPet", v)),
       switchRow("Show the follow-us line", t.follow !== false, (v) => set("follow", v)),
       el("p", { class: "qr-sub-head" }, "What a new label offers by default"),
@@ -853,73 +937,82 @@ function landingCard(state, redraw) {
 }
 
 // One English line, its two translated boxes, and a ↻ that asks for one box again.
-function copyLine(t, state, en, label, max, set, redraw) {
-  const english = el("input", { class: "input", value: t[en] || "", maxlength: String(max) });
+// The same boxes serve the shared page and a single label; `target` is what makes
+// the difference, and the greyed text in an empty box is the line a customer gets
+// instead — on the shared page there is none, so the box just names its language.
+function copyLine(target, en, label, max) {
+  const { obj } = target;
+  const english = el("input", { class: "input", value: obj[en] || "", maxlength: String(max),
+    placeholder: sharedHint(target, en, "") });
   english.addEventListener("change", () => {
-    set(en, String(english.value || "").trim());
-    redraw();
+    obj[en] = String(english.value || "").trim();
+    target.persist();
+    target.redraw();
   });
   return el("div", { class: "qr-copy-line" },
     field(label, english),
     el("div", { class: "qr-trans" },
-      ...LANGS.map(([suffix, lang, langLabel]) => {
+      ...LANGS.map(([suffix, lang, langLabel, tag]) => {
         const variant = `${en}${suffix}`;
         const box = el("input", {
-          class: "input qr-trans-input" + (isOverridden(t, variant) ? " is-mine" : ""),
-          value: t[variant] || "",
-          placeholder: langLabel,
+          class: "input qr-trans-input" + (isOverridden(obj, variant) ? " is-mine" : ""),
+          value: obj[variant] || "",
+          placeholder: sharedHint(target, variant, langLabel),
         });
-        // Typing here makes the box hers: automatic filling never touches it again.
+        // Typing OR clearing here makes the box hers: automatic filling never
+        // touches it again. A box left empty on purpose — which on a label means
+        // "let the shared page say this line" — is a decision, not an omission.
         box.addEventListener("change", () => {
           const value = String(box.value || "").trim();
-          set(variant, value);
-          if (value) markManual(t, variant);
-          else markAuto(t, variant, String(t[en] || "").trim());
-          redraw();
+          if (value) obj[variant] = value;
+          else delete obj[variant];
+          markManual(obj, variant);
+          target.persist();
+          target.redraw();
         });
         return el("div", { class: "qr-trans-slot" },
+          el("span", { class: "qr-trans-lang" }, tag),
           box,
           el("button", { class: "btn ghost small", title: "Translate this line again",
-            onclick: () => regenOne(t, state, variant, en, redraw) }, "↻"));
+            onclick: () => regenOne(target, variant, en) }, "↻"));
       })));
 }
 
 // Fill every box that is blank or still holding our own earlier translation.
-async function fillAll(state, redraw) {
-  const t = state.settings.taster || {};
+async function fillAll(target) {
+  const obj = target.obj;
   if (!translateAllowed()) { toast("No connection — translations fill when you're back online"); return; }
   let filled = 0;
   for (const [en] of COPY_FIELDS) {
-    const english = String(t[en] || "").trim();
+    const english = String(obj[en] || "").trim();
     if (!english) continue;
     for (const [suffix, lang] of LANGS) {
       const variant = `${en}${suffix}`;
-      if (isOverridden(t, variant)) continue;
+      if (isOverridden(obj, variant)) continue;
       const got = await translateTo(fetch, english, lang);
       if (!got) continue;
-      t[variant] = got;
-      markAuto(t, variant, english);
+      obj[variant] = got;
+      markAuto(obj, variant, english);
       filled += 1;
     }
   }
-  save(state);
-  maybeSyncStorefront(state);
-  redraw();
+  target.persist();
+  target.redraw();
   toast(filled ? `Filled ${filled} box${filled === 1 ? "" : "es"}` : "Nothing needed filling");
 }
 
 // The ↻: translate this one line again, now. The new wording is machine text, so
 // a box she had typed over becomes translatable again (the products card's rule).
-async function regenOne(t, state, variant, en, redraw) {
+async function regenOne(target, variant, en) {
+  const obj = target.obj;
   if (!translateAllowed()) { toast("No connection — translations fill when you're back online"); return; }
-  const english = String(t[en] || "").trim();
+  const english = String(obj[en] || "").trim();
   if (!english) { toast("Type the English first"); return; }
   const got = await translateTo(fetch, english, variant.endsWith("Zh") ? "zh" : "ms");
   if (!got) { toast("Couldn't translate just now — try again in a moment"); return; }
-  t[variant] = got;
-  markAuto(t, variant, english);
-  save(state);
-  maybeSyncStorefront(state);
-  redraw();
+  obj[variant] = got;
+  markAuto(obj, variant, english);
+  target.persist();
+  target.redraw();
   toast("Translated");
 }

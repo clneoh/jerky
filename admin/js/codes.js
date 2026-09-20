@@ -215,6 +215,26 @@ export function visitTally(rows) {
 // handed it out — never a shop's WhatsApp number, its commission rate, or any
 // note you keep about it. Those stay in the app, on her own phones.
 
+// The landing page's own words: a heading, and the paragraph under it, each in
+// English / 中文 / BM. Deliberately the SAME shape whether the words come from the
+// shared page's settings or from one code — that is what lets the page treat a
+// code's blank line as "use the shared page's line" rather than as an empty line,
+// resolved separately per language (see codeCopy in /taster/).
+function pageLines(src, out = {}) {
+  const t = src || {};
+  for (const k of ["heading", "body"]) {
+    const en = String(t[k] || "").trim();
+    if (en) out[k] = en;
+    // A translated box is published only when it was actually filled, so an
+    // untranslated line shows the English rather than nothing.
+    for (const suf of ["Zh", "Ms"]) {
+      const v = String(t[k + suf] || "").trim();
+      if (v) out[k + suf] = v;
+    }
+  }
+  return out;
+}
+
 // The active codes a customer's page may resolve. A retired code is left out — its
 // link still opens, but it resolves to nothing, which is what retiring it means.
 // A code whose offer has run out is NOT left out: the label is already in someone's
@@ -226,8 +246,9 @@ export function publishCodes(state, today = todayISO()) {
     .filter((c) => c && c.active !== false && String(c.code || "").trim())
     .map((c) => {
       const out = { code: String(c.code).trim().toUpperCase(), kind: kindOf(c) };
-      const headline = String(c.headline || "").trim();
-      if (headline) out.headline = headline;
+      // Whatever this one label wants to say for itself. Left out entirely when
+      // blank, so the shared page's line is what a customer reads.
+      pageLines(c, out);
       // A shop's card says which shop it came from — by NAME only.
       if (out.kind === "shop") {
         const p = (state.partners || []).find((x) => x && x.id === c.partnerId);
@@ -267,15 +288,5 @@ export function publishTaster(state) {
     instagram: String(sf.instagram || "").trim(),
     shop: String(sf.name || "").trim(),
   };
-  for (const k of ["heading", "body"]) {
-    const en = String(t[k] || "").trim();
-    if (en) out[k] = en;
-    // A translated box is published only when it was actually filled, so an
-    // untranslated page shows the English rather than an empty line.
-    for (const suf of ["Zh", "Ms"]) {
-      const v = String(t[k + suf] || "").trim();
-      if (v) out[k + suf] = v;
-    }
-  }
-  return out;
+  return pageLines(t, out);
 }

@@ -297,7 +297,7 @@ function fullState() {
     products: [{ id: "pr1", name: "Chicken Jerky 100g", price: 22 }],
     codes: [
       { id: "c1", code: "pshop", kind: "shop", partnerId: "pa1", label: "Paw Shop",
-        headline: "New here?", active: true },
+        heading: "New here?", body: "Say hi at the counter", headingMs: "  ", active: true },
       { id: "c2", code: "milo", kind: "promo", productId: "pr1", active: true,
         offer: { type: "pct", value: 10, minSpend: 30, from: "2026-09-01", to: "2026-09-30", newOnly: true } },
       { id: "c3", code: "gone", kind: "promo", productId: "pr1", active: true,
@@ -317,12 +317,29 @@ test("only the codes a customer may resolve are published, and a retired one is 
 test("a shop's card names the shop, and nothing else about it", () => {
   const shop = publishCodes(fullState(), "2026-09-20").find((r) => r.code === "PSHOP");
   assert.equal(shop.partnerName, "Paw Shop");
-  assert.equal(shop.headline, "New here?");
+  // This label's own words for the page, in the same shape the shared page's copy
+  // is published in — which is what lets a blank line fall back per language.
+  assert.equal(shop.heading, "New here?");
+  assert.equal(shop.body, "Say hi at the counter");
+  assert.equal("headingMs" in shop, false, "a blank translation is left out, not blanked");
   // The contact, the rate and her own notes are for her phones, never the page.
   const blob = JSON.stringify(shop);
   for (const secret of ["60111111111", "commissionPct", "samplesGiven", "asks for duck"]) {
     assert.equal(blob.includes(secret), false, `${secret} must not be published`);
   }
+});
+
+test("a label that says nothing for itself publishes no wording at all", () => {
+  // Not an empty string: a key that is absent is what tells the page to use the
+  // shared line, and an empty one would blank the page instead.
+  const plain = publishCodes(fullState(), "2026-09-20").find((r) => r.code === "MILO");
+  for (const k of ["heading", "body", "headingZh", "bodyZh", "headingMs", "bodyMs"]) {
+    assert.equal(k in plain, false, `${k} must not be published when blank`);
+  }
+  const shared = publishTaster(fullState());
+  assert.equal(shared.heading, "A treat for your cat");
+  assert.equal(shared.headingZh, "给猫咪的零食");
+  assert.equal("headingMs" in shared, false);
 });
 
 test("a bring-a-friend code publishes no number at all", () => {

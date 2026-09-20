@@ -401,7 +401,11 @@ export function mergeStorefront(base, remote) {
           code: String(c.code).trim().toUpperCase(),
           kind: KINDS.includes(String(c.kind || "")) ? String(c.kind) : "plain",
         };
-        for (const k of ["headline", "partnerName", "productName"]) {
+        // The label's own words for the landing page (heading/body + 中文/BM), and
+        // the two names the shop's banner states. Each is only carried when it was
+        // really written — a blank is what lets /taster/ fall back to its own line.
+        const wordy = ["heading", "body", "headingZh", "bodyZh", "headingMs", "bodyMs"];
+        for (const k of [...wordy, "partnerName", "productName"]) {
           const v = c && typeof c[k] === "string" && c[k].trim();
           if (v) row[k] = c[k].trim();
         }

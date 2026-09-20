@@ -2440,6 +2440,9 @@ tr.po-covered td { color: var(--muted); }
 .qr-copy-line { padding: 8px 0; border-top: 1px dashed var(--line); }
 .qr-trans { display: grid; gap: 6px; }
 .qr-trans-slot { display: flex; align-items: center; gap: 6px; }
+/* Which language this box is. Always printed, because on a label the box's own
+   greyed line is the shared page's words rather than the language's name. */
+.qr-trans-lang { flex: 0 0 auto; width: 34px; font-size: 12px; font-weight: 700; color: var(--muted); }
 .qr-trans-input { flex: 1 1 auto; min-width: 0; }
 .qr-trans-input.is-mine { border-color: var(--brown); background: var(--brown-soft); }
 
