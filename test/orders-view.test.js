@@ -426,3 +426,107 @@ test("the order she is editing does not count against its own product", () => {
   assert.equal(productOptions(state, "d7", "o_p1")[0].tone, "ok",
     "but the order being edited gives its own slots back");
 });
+
+// ---- the label an order came in on ---------------------------------------
+// What she needs to know about the printed card behind an order: which card, what
+// it promised, and the two things only this app can check. It states; it never
+// takes anything off — the customer's page states the offer and does not apply it
+// either, so the amount she quotes back is hers.
+
+const promoOrder = (over = {}) => ({
+  id: "o_promo1", groupId: "g_promo1", deliveryDateId: "d7",
+  customerName: "Aisyah", whatsapp: "60123456789",
+  productId: "p1", productName: "Focaccia", unitPrice: 22, qty: 2,
+  promoCode: "MILO", codeKind: "promo", status: "new",
+  ...over,
+});
+
+function promoState(over = {}) {
+  return {
+    ...picker([prod("p1", "Focaccia")], over.orders || [promoOrder()]),
+    codes: over.codes === undefined ? [{
+      code: "MILO", kind: "promo", productName: "Focaccia",
+      offer: { type: "pct", value: 10, minSpend: 30, to: "2030-09-30", newOnly: true, cur: "RM" },
+    }] : over.codes,
+  };
+}
+
+function promoBlock(state) {
+  const { root } = (() => {
+    const r = createEl("div");
+    renderOrders(r, state, PARAMS());
+    return { root: r };
+  })();
+  return byClass(root, "promo-block");
+}
+
+test("an order that came in on a label says what to take off it", () => {
+  const block = promoBlock(promoState());
+  assert.ok(block, "the row carries a line about the label");
+  assert.equal(block.textContent,
+    "🎟 MILO — Focaccia — 10% off · on RM30 and above · new customers only · until 2030-09-30" +
+    " — take it off when you confirm.");
+});
+
+test("an order with no label on it says nothing about one", () => {
+  assert.equal(promoBlock(promoState({ orders: [promoOrder({ promoCode: "", codeKind: "" })] })),
+    undefined, "no code, no line");
+});
+
+test("a returning customer is warned, because only this app can see that", () => {
+  // The whole reason the shop is not allowed to apply the discount: the customer's
+  // own page cannot see the order history that answers this.
+  const state = promoState({
+    orders: [promoOrder()],
+  });
+  state.orders.push({ ...promoOrder({ id: "o_earlier", groupId: "g_earlier" }) });
+  const block = promoBlock(state);
+  assert.ok(block.textContent.includes("⚠️ Not a new customer — this offer is for new customers only."));
+  assert.equal(byClass(block, "promo-warn") !== undefined, true, "and it is marked as a warning");
+});
+
+test("an order under the label's minimum is named with both figures", () => {
+  // Both figures through fmtRM, the app's one money formatter, so they read the
+  // same way every other amount on this screen does.
+  const state = promoState({ orders: [promoOrder({ qty: 1, unitPrice: 22 })] });
+  const block = promoBlock(state);
+  assert.ok(block.textContent.includes("⚠️ This order is RM 22.00 — under the RM 30.00 minimum."));
+});
+
+test("a label whose offer has ended says so, and offers nothing to take off", () => {
+  const state = promoState({
+    codes: [{
+      code: "MILO", kind: "promo", productName: "Focaccia",
+      offer: { type: "pct", value: 10, minSpend: 30, to: "2020-01-01", cur: "RM" },
+    }],
+  });
+  const block = promoBlock(state);
+  assert.equal(block.textContent,
+    "🎟 MILO — Focaccia — 10% off · on RM30 and above · ended — nothing to take off.");
+  assert.equal(byClass(block, "promo-warn"), undefined, "no verdict she cannot act on");
+});
+
+test("a label she has retired is said out loud, not left blank", () => {
+  const state = promoState({
+    codes: [{ code: "MILO", kind: "promo", productName: "Focaccia", active: false }],
+  });
+  assert.equal(promoBlock(state).textContent,
+    "🎟 MILO — Focaccia — you retired this code. The order still records it.");
+});
+
+test("a label she has deleted is still named, with the kind the order kept", () => {
+  // The order carries only the code and its kind, so a shop label can still be
+  // called a shop label after the record itself is gone.
+  const state = promoState({
+    orders: [promoOrder({ promoCode: "PAW1", codeKind: "shop" })],
+    codes: [],
+  });
+  assert.equal(promoBlock(state).textContent,
+    "🎟 PAW1 — no longer in your code list (a shop label). The order still records it.");
+});
+
+test("a label that never carried an offer says exactly that", () => {
+  const state = promoState({ codes: [{ code: "MILO", kind: "plain" }] });
+  assert.equal(promoBlock(state).textContent,
+    "🎟 MILO — a label with no offer on it.");
+});

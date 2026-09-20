@@ -9,7 +9,10 @@
 // whose link is only 5 characters — that is what makes two labels tellable apart
 // by eye at arm's length.
 
-import { groupOrders, orderLinePrice, liveOffer, waNumber, findPage } from "./state.js";
+import {
+  groupOrders, orderLinePrice, liveOffer, waNumber, findPage,
+  findCode, codeLabel, isNewCustomer,
+} from "./state.js";
 import { todayISO } from "./dates.js";
 
 // What a code can be. The first kind is the default a new code starts as.
@@ -138,6 +141,72 @@ function trimNum(n) {
   const v = Number(n);
   if (!Number.isFinite(v)) return "";
   return String(Math.round(v * 100) / 100);
+}
+
+// What the label an order came in on promised, and the two things about it only
+// the book can answer. Display only, always: this states; it never works out a
+// discount or touches a figure any money reader looks at. The customer's page
+// takes no money off either, so the amount she takes off at confirmation is hers
+// to decide — exactly how a bring-a-friend credit is already applied.
+//
+// The code is resolved LIVE through the code list rather than copied onto the
+// order, because an order deliberately carries only the code and its kind: a shop
+// renamed after the order is then named right here, and a code she has since
+// deleted still leaves the kind the order recorded at the time.
+//
+// `overMin` and `newCustomer` both read TRUE when they do not apply, so the view
+// only ever has to test for a warning. `newCustomer` is the whole reason the
+// customer's page cannot decide any of this: "new customers only" needs every
+// other order in the book, which only this app has.
+//
+// `total`, when given, is used instead of the order's own: the Edit pop-up is
+// mid-edit there, and a minimum warning measured off the saved items would
+// disagree with the "Order total:" line she is watching. Returns null when the
+// order carries no code at all.
+export function promoOf(state, group, today = todayISO(), total = null) {
+  const rows = (group && group.orders) || (Array.isArray(group) ? group : []);
+  const first = rows[0];
+  const code = String((first && first.promoCode) || "").trim().toUpperCase();
+  if (!code) return null;
+
+  const cur = (state.settings && state.settings.currency) || "RM";
+  const sum = total == null
+    ? rows.reduce((acc, o) => acc + (Number(o.qty) || 0) * (orderLinePrice(state, o) || 0), 0)
+    : Number(total) || 0;
+
+  const rec = findCode(state, code);
+  if (!rec) {
+    // She deleted the code (or it never synced to this phone). The order still
+    // records what the customer came in on, so the line names it and says so
+    // rather than going blank.
+    return {
+      code, kind: kindOf({ kind: first.codeKind }), name: "", offer: null, live: null,
+      retired: false, gone: true, total: sum, cur, overMin: true, newCustomer: true,
+    };
+  }
+
+  const offer = rec.offer || null;
+  const live = liveOffer(rec, today);
+  const name = String(rec.partnerName || "").trim()
+    || String(rec.productName || "").trim()
+    || codeLabel(rec);
+  const min = live ? Number(live.minSpend) || 0 : 0;
+  // isNewCustomer reads a number-less order as "not new" (there is nothing to key
+  // on, so the offer stays off there). The question HERE is only whether to warn
+  // her, and a warning she cannot act on is worse than none — so an order with no
+  // number gets no verdict rather than a wrong one. A shop order always carries
+  // one, which leaves this to the hand-typed corner.
+  const keyable = Boolean(waNumber(first && first.whatsapp));
+
+  return {
+    code, kind: kindOf(rec), name, offer, live,
+    retired: rec.active === false,
+    gone: false,
+    total: sum, cur,
+    overMin: !(min > 0) || sum >= min,
+    newCustomer: !live || live.newOnly !== true || !keyable
+      || isNewCustomer(state, { orders: rows }),
+  };
 }
 
 // Everything a code has brought in, counted off the orders themselves.

@@ -629,6 +629,69 @@ silent storefront discount would rewrite recorded revenue and profit. So the lan
 and the shop banner *state* the offer and the admin *tells her what to apply* when she
 confirms on WhatsApp — exactly how the existing referral credit works.
 
+### A customer puts the code in themselves
+
+`#code-section` in `store/index.html` is a **"Have a code?"** box on every visit, even to
+a customer who arrived on a label's own link. `currentCode()` splits into two readers:
+
+```js
+export function boxCode() {          // what the customer typed, or ""
+  const box = document.getElementById("code-input");
+  return box && box.value != null ? String(box.value).trim().toUpperCase() : "";
+}
+export function urlCode() {          // what the printed label's link carried
+  return location.search ? parseCode(location.search) : "";
+}
+export function currentCode() { return boxCode() || urlCode(); }
+```
+
+**Box wins over URL**, so typing *replaces* the label's code and clearing the box and
+pressing Apply puts it back. The three readers — the banner, the note and the order stamp —
+all go through `currentCode()`, so they can never disagree.
+
+The distinction that matters is **whether the box holds anything**, not whether it differs
+from the link: `renderCodeNote`'s `typed` test is `boxCode() !== ""`. Typing the label's own
+code in is still the customer asking a question, and still deserves the answer a silent
+scan does not need. A code the app never published stays silent when it came from the link
+(the label is already in someone's hand) and is answered when it was typed —
+`codeUnknown`. The stamp keeps its `if (usedInfo)` gate, so a made-up code still lands
+nowhere.
+
+`wireCodeBox()` copies `wireTrack()` exactly: click handler plus Enter on the box, and
+**deliberately no `input` or `blur` handler** — a half-typed code matches nothing, and a
+customer half-way through typing must not be told they are wrong because they tapped a
+product.
+
+### The note under the offer
+
+`liveCodeOffer(info, today)` is shared by the banner and the note, so an offer that has run
+out goes quiet in both. `renderCodeNote(cfg, total)` then says one of four things, and takes
+`total` from `renderBar`'s own hoisted `basketTotal()` — never a fresh sum, so the note can
+never contradict the number on screen. The note prints the **offer** and the **shortfall**
+(`codeNoteAdd`, the only subtraction the page ever makes) and never the computed discount: a
+"RM2.20 off" the customer read would be a figure she then has to honour on a basket they may
+still edit. `newOnly` is restated nowhere here — the shop cannot check it and must not imply
+that it did.
+
+### What the order tells her
+
+`promoOf(state, group, today, total)` in `admin/js/codes.js` is the pure resolver behind the
+🎟 line; `promoBlockEl` in `admin/js/views/orders.js` renders it, on the order row **and**
+in the Edit pop-up. Two design points carry it:
+
+- **The code is resolved live through `findCode`**, never denormalised onto the order — an
+  order carries only `promoCode` + `codeKind`, so a shop renamed later is named right here
+  and a code she has since deleted still leaves the kind the order recorded.
+- **`overMin` and `newCustomer` read `true` when they do not apply**, so the view only ever
+  tests for a *warning*. `newCustomer` is the whole reason validation splits: "new customers
+  only" needs every other order in the book, which only the admin has. A number-less order
+  gets no verdict at all (`keyable`) rather than the wrong one — a warning she cannot act on
+  is worse than none.
+
+The pop-up passes `paintTotal`'s own sum as the fourth argument, which is why `total` exists:
+mid-edit, a minimum warning measured off the saved items would disagree with the "Order
+total:" line directly above it, and it tracks a `+`/`−` tap live.
+
 ## The customer and the product list (v119–v123)
 
 Five versions about the two things an order form asks for: *who* the order is for,

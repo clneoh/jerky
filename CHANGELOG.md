@@ -4,6 +4,42 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**20 Sep 2026 (manual v123d) — a customer can put a code in, and the order tells you what
+to take off (no new engine number: built here first, so both your apps stay on the same
+number).** The order page now carries a small **Have a code?** box at the top, on every
+visit. Until now a code could only arrive by scanning a label's square, so a customer who
+was told the code at the counter — or who copied the letters off a card by hand — had
+nowhere to put it. Typing a code **replaces** whatever the link brought, and clearing the box
+and pressing Apply puts the label's own code back. **A code the app never printed is still
+quietly ignored**, so a made-up code never lands in your books as a label that never existed.
+
+**The page now says what will happen to the code.** Under the offer it reads, word for word:
+__"We'll take this off when we confirm on WhatsApp — the total shown is before the
+discount."__ If the basket is below the code's minimum spend it says how much more is needed
+instead — __"Add RM8.00 more to use it."__ **The total on the page never moves, and that is the
+whole point.** An order keeps the price it was sold at, so a discount quietly taken off on the
+page would rewrite the money you actually earned — and __new customers only__ cannot be
+checked from the page at all, because that needs your entire order book.
+
+**So your app does the telling.** An order that came in on a code now carries a 🎟 line on its
+row and in its **Edit** box: the code, the shop or product it was for, what it promised, and
+__"take it off when you confirm."__ Two warnings appear when they apply — that the offer is for
+new customers only and this person has bought from you before, or that the order is under the
+code's minimum spend, naming both figures. Both warnings show only while the offer is still
+live. **The line never goes blank:** a code you have since retired, or even deleted, is still
+named, because the order records the label the customer actually came in on.
+
+**One fix came with it.** The offer shown on the order page now honours its own **Ends** date —
+a label whose offer has run out stops showing it, the way the landing page already did. The
+label itself keeps working; only the expired offer goes quiet.
+
+**Nothing in your books changes.** The line states; it never subtracts. Money, Profit, the
+WhatsApp confirmation and the customer's track page all keep reading the price the order was
+sold at, and what you take off at confirmation is still your decision — exactly how a
+bring-a-friend credit already works. One small consequence: the counts on **Shops & codes** now
+also include orders where a customer typed the code rather than scanned it, which is right —
+it is the same printed label.
+
 **20 Sep 2026 (manual v123c) — your landing pages: one page per promotion, picked on
 each label (no new engine number: built here first, so both your apps stay on the same
 number).** Under **More → 🏪 Shops & codes** there is now a **Your pages** card, and a

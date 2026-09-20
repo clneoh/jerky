@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import {
   CODE_ALPHABET, CODE_LENGTH, KINDS, KIND_LABEL, kindOf, makeCode, tasterUrl,
   shopUrl, labelUrl, offerText, offerMinText, offerLine, codeStats, codeCustomers,
-  sheetLabels, visitTally, publishCodes, publishTaster,
+  sheetLabels, visitTally, publishCodes, publishTaster, promoOf,
 } from "../admin/js/codes.js";
 
 function order(over = {}) {
@@ -391,4 +391,128 @@ test("the landing page's own copy is published, and a blank box stays blank", ()
 test("a page with no copy of its own still publishes its switches", () => {
   const t = publishTaster({ settings: {} });
   assert.deepEqual(t, { askPet: true, follow: true, instagram: "", shop: "" });
+});
+
+// ── the label an order came in on ────────────────────────────────────────
+// What the app tells her about the label behind an order. It states; it never
+// works out a discount. The two verdicts below are the ones only this app can
+// make — "new customers only" needs every other order in the book, which is why
+// the customer's own page is not allowed to decide any of this.
+
+const PROMO = {
+  code: "MILO", kind: "promo", productName: "Chicken Jerky 100g",
+  offer: { type: "pct", value: 10, minSpend: 30, to: "2030-09-30", newOnly: true },
+};
+
+const promoState = (over = {}) => ({
+  orders: [],
+  products: [],
+  codes: over.codes || [PROMO],
+  ...over,
+});
+
+test("an order with no label on it says nothing at all", () => {
+  assert.equal(promoOf(promoState(), { orders: [order()] }), null);
+});
+
+test("a live label is named, and its offer stated in the label's own words", () => {
+  const group = { orders: [order({ promoCode: "milo", qty: 2 })] };
+  const p = promoOf(promoState(), group, "2026-09-20");
+  assert.equal(p.code, "MILO", "looked up however the stamp was typed");
+  assert.equal(p.name, "Chicken Jerky 100g");
+  assert.equal(p.live.value, 10);
+  assert.equal(p.total, 44, "the order's own frozen price, not the menu's");
+  assert.equal(p.gone, false);
+  assert.equal(p.retired, false);
+  assert.equal(p.overMin, true, "RM44 clears the RM30 minimum");
+  assert.equal(p.newCustomer, true);
+});
+
+test("a second order from the same number is not a new customer", () => {
+  // The whole reason the shop cannot validate a code: this needs order history.
+  const group = { orders: [order({ promoCode: "MILO" })] };
+  const state = promoState({ orders: [order({ id: "bbbb02", groupId: "gbbbb02" })] });
+  assert.equal(promoOf(state, group, "2026-09-20").newCustomer, false);
+});
+
+test("one multi-item order is not history — its own other rows are not a repeat", () => {
+  const rows = [order({ promoCode: "MILO" }), order({ id: "aaaa02", promoCode: "MILO" })];
+  assert.equal(promoOf(promoState(), { orders: rows }, "2026-09-20").newCustomer, true);
+});
+
+test("an order with no number gets no verdict rather than a wrong one", () => {
+  // The book cannot tell a number-less order apart from a first-time customer,
+  // and isNewCustomer answers "not new" for it. That answer is right for giving a
+  // credit and wrong as a warning — she cannot act on it — so no warning is shown.
+  const group = { orders: [order({ promoCode: "MILO", whatsapp: "" })] };
+  assert.equal(promoOf(promoState(), group, "2026-09-20").newCustomer, true);
+});
+
+test("an order under the label's minimum says so, and one over it does not", () => {
+  const short = promoState({
+    codes: [{ ...PROMO, offer: { ...PROMO.offer, newOnly: false } }],
+  });
+  const p = promoOf(short, { orders: [order({ promoCode: "MILO", unitPrice: 22 })] }, "2026-09-20");
+  assert.equal(p.total, 22);
+  assert.equal(p.overMin, false, "RM22 is under RM30");
+  assert.equal(p.newCustomer, true, "and with no newOnly rule there is nothing to warn about");
+});
+
+test("an offer whose end date has passed is kept, but is no longer live", () => {
+  const state = promoState({
+    codes: [{ ...PROMO, offer: { ...PROMO.offer, to: "2020-01-01" } }],
+  });
+  const p = promoOf(state, { orders: [order({ promoCode: "MILO" })] }, "2026-09-20");
+  assert.equal(p.live, null);
+  assert.ok(p.offer, "the record still holds it, so the line can say it ended");
+  assert.equal(p.gone, false);
+});
+
+test("the shop's words apply only once the date reaches the offer's start", () => {
+  const state = promoState({
+    codes: [{ ...PROMO, offer: { ...PROMO.offer, from: "2026-10-01", to: "2026-10-31" } }],
+  });
+  const group = { orders: [order({ promoCode: "MILO" })] };
+  assert.equal(promoOf(state, group, "2026-09-20").live, null, "not started yet");
+  assert.equal(promoOf(state, group, "2026-10-05").live.value, 10);
+});
+
+test("a retired label is marked retired, and keeps its name", () => {
+  const state = promoState({ codes: [{ ...PROMO, active: false }] });
+  const p = promoOf(state, { orders: [order({ promoCode: "MILO" })] }, "2026-09-20");
+  assert.equal(p.retired, true);
+  assert.equal(p.gone, false);
+  assert.equal(p.name, "Chicken Jerky 100g", "the code is still in her list, so it still reads right");
+});
+
+test("a label she has deleted keeps the kind the order recorded at the time", () => {
+  // The order carries only the code and its kind, so a deleted shop label can
+  // still be named as a shop label rather than a generic one.
+  const group = { orders: [order({ promoCode: "PAW1", codeKind: "shop" })] };
+  const p = promoOf(promoState(), group, "2026-09-20");
+  assert.equal(p.gone, true);
+  assert.equal(p.kind, "shop");
+  assert.equal(p.name, "", "there is no record left to name it from");
+  assert.equal(p.offer, null);
+});
+
+test("a label with no partner or product name falls back to the code itself", () => {
+  const state = promoState({ codes: [{ code: "HELLO", kind: "plain" }] });
+  const p = promoOf(state, { orders: [order({ promoCode: "HELLO" })] }, "2026-09-20");
+  assert.equal(p.name, "HELLO");
+});
+
+test("a total given by the caller is used instead of the order's own", () => {
+  // The Edit pop-up is mid-edit, so the line has to answer for the items she is
+  // looking at rather than the ones already saved.
+  const group = { orders: [order({ promoCode: "MILO", unitPrice: 22 })] };
+  assert.equal(promoOf(promoState(), group, "2026-09-20").total, 22);
+  assert.equal(promoOf(promoState(), group, "2026-09-20", 44).total, 44);
+  assert.equal(promoOf(promoState(), group, "2026-09-20", 44).overMin, true);
+});
+
+test("the currency comes off her settings, so a non-ringgit book still reads right", () => {
+  const state = { ...promoState(), settings: { currency: "S$" } };
+  const p = promoOf(state, { orders: [order({ promoCode: "MILO" })] }, "2026-09-20");
+  assert.equal(p.cur, "S$");
 });

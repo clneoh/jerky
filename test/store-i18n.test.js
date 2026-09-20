@@ -85,6 +85,14 @@ test("the closed-product reason and the basket notes are keyed in all three lang
     // line is built in JS, so nothing else would catch either going missing.
     trkFinal: [],
     trackingNo: ["%1"],
+    // The "have a code?" box and the line under the offer it produces. All four
+    // of these are built in JS — the note carries the basket's own figure and the
+    // box's two HTML labels sit on nodes the authored-copy walk cannot pair up —
+    // so nothing else would notice one going missing or losing its %1.
+    codeNoteLater: [],
+    codeNoteAdd: ["%1"],
+    codeUnknown: [],
+    codeNotePlain: [],
   };
   for (const [key, phs] of Object.entries(holders)) {
     for (const l of LANGS) {

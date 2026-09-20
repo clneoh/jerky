@@ -16,6 +16,7 @@ import { buildConfirmation } from "../confirm.js";
 import { buildPaymentReminder, buildPickupReminder, buildShippedMessage } from "../messages.js";
 import { maybeSync, publishTracking } from "../supabase.js";
 import { schemeOf, referralFlag, giveCredits, validCredits, markOneUsed, referrerName } from "../referrals.js";
+import { promoOf, KIND_LABEL, offerLine } from "../codes.js";
 import { adjustForStatus } from "../stock.js";
 import { customerList, keyOf } from "../customers.js";
 import { attachProfiles, customerNameMatches, customerRowName, syncContactFromOrder } from "../profiles.js";
@@ -1448,12 +1449,18 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     ...moveNoteLines(state, group, curId).map((t) => el("p", { style: "margin:2px 0" }, t)));
 
   const totalEl = el("p", { class: "card-sub", style: "margin:8px 0 0" });
+  // The label the order came in on, filled by paintTotal below: it is given the
+  // very sum the "Order total:" line shows, so the two can never disagree while
+  // she is editing the items.
+  const promoWrap = el("div", {});
   const paintTotal = () => {
     const priced = lines.filter((l) => l.productId && l.price != null);
+    const sum = priced.reduce((acc, l) => acc + l.qty * Number(l.price), 0);
     totalEl.textContent = priced.length
-      ? `Order total: ${fmtRM(priced.reduce((sum, l) => sum + l.qty * Number(l.price), 0),
-          state.settings.currency)}`
+      ? `Order total: ${fmtRM(sum, state.settings.currency)}`
       : "";
+    const promo = promoBlockEl(state, group, sum);
+    promoWrap.replaceChildren(...(promo ? [promo] : []));
   };
   const rowFor = (line, i) => {
     const prodSel = select(products, line.productId,
@@ -1520,7 +1527,8 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
         "The price beside each item is what THIS order is sold at. Change it here and the confirmation, every later message and the customer's total follow it — your menu price is untouched."),
       rowsEl,
       button("＋ Add another item", () => { lines.push({ productId: "", qty: 1, price: null }); refresh(); }, "ghost"),
-      totalEl),
+      totalEl,
+      promoWrap),
     el("div", { class: "card-sub", style: "margin:0 0 10px" },
       "Hidden products are listed as \"(hidden)\" — you can still add or keep one."),
     button("Save changes", save, "block primary"),
@@ -2058,7 +2066,8 @@ function orderGroupRow(state, group, root, dateId) {
       stSel,
       ...actions),
     orderJourneyEl(first),
-    referralBlockEl(state, group, root, dateId));
+    referralBlockEl(state, group, root, dateId),
+    promoBlockEl(state, group));
 }
 
 // ---- bring-a-friend (order row) ------------------------------------------
@@ -2085,6 +2094,59 @@ function referralBlockEl(state, group, root, dateId) {
 
 function refNote(text) {
   return el("p", { class: "card-sub", style: "margin:0 0 6px" }, text);
+}
+
+// ---- the label an order came in on ---------------------------------------
+// What to take off, never what the app has taken off: the customer's page states
+// the offer and deliberately does not apply it, so the figure she quotes back on
+// WhatsApp is hers to decide — the same way a bring-a-friend credit is applied.
+//
+// Shown on the row and in the Edit pop-up, because the pop-up is where she fixes
+// the items. There it is handed the pop-up's OWN total, so the "under the
+// minimum" line can never disagree with the "Order total:" line right above it.
+//
+// The code is resolved live from the code list (see promoOf), so a shop renamed
+// or a code retired after the order still reads right — and a label she can no
+// longer honour is still said out loud rather than leaving a blank.
+function promoBlockEl(state, group, total) {
+  const p = promoOf(state, group, todayISO(), total);
+  if (!p) return null;
+  const cur = p.cur;
+  const named = p.name && p.name !== p.code ? ` — ${p.name}` : "";
+  const parts = [];
+  if (p.gone) {
+    parts.push(refNote(`🎟 ${p.code} — no longer in your code list (${aKind(p.kind)}).` +
+      " The order still records it."));
+  } else if (p.retired) {
+    parts.push(refNote(`🎟 ${p.code}${named} — you retired this code. The order still records it.`));
+  } else if (!p.live) {
+    // offerLine already ends on "ended" for an offer whose date has passed.
+    const off = offerLine(p.offer, cur, todayISO());
+    parts.push(refNote(off
+      ? `🎟 ${p.code}${named} — ${off} — nothing to take off.`
+      : `🎟 ${p.code}${named} — a label with no offer on it.`));
+  } else {
+    parts.push(refNote(`🎟 ${p.code}${named} — ${offerLine(p.live, cur, todayISO())}` +
+      " — take it off when you confirm."));
+    // Warnings only while the offer is live: a verdict on a code she can no
+    // longer honour is one she cannot act on.
+    if (!p.newCustomer) {
+      parts.push(refNote(el("span", { class: "promo-warn" },
+        "⚠️ Not a new customer — this offer is for new customers only.")));
+    }
+    if (!p.overMin) {
+      parts.push(refNote(el("span", { class: "promo-warn" },
+        `⚠️ This order is ${fmtRM(p.total, cur)} — under the ${fmtRM(Number(p.live.minSpend) || 0, cur)} minimum.`)));
+    }
+  }
+  return el("div", { class: "promo-block" }, ...parts);
+}
+
+// "a shop label" / "an offer label" — the kind she picked when the code was made,
+// which the order keeps even after the code itself is gone.
+function aKind(kind) {
+  const word = String(KIND_LABEL[kind] || "plain").toLowerCase();
+  return `${/^[aeiou]/.test(word) ? "an" : "a"} ${word} label`;
 }
 
 function referralOfferEl(state, group, scheme, root, dateId) {

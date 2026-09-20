@@ -36,6 +36,25 @@
          (its text is built from the offer's own numbers, so it has no data-i18n
          string of its own); hidden whenever there is nothing to say. -->
     <div id="code-banner" class="referral-banner" hidden></div>
+    <!-- What happens to the offer above: stated, never applied. The money comes
+         off by hand at the WhatsApp confirmation, so this line says so, and it
+         leaves the bar's total exactly as it is. Built by renderCodeNote (its
+         words carry the basket's own figure, so it has no data-i18n string);
+         hidden whenever there is nothing to say. -->
+    <p id="code-note" class="card-sub" style="margin:0 0 12px" hidden></p>
+
+    <!-- The box for a customer who was told the code rather than handed the link.
+         Shown on every visit, a scanned label's included — the link's code is
+         already in force, and typing a different one here replaces it. -->
+    <section id="code-section" class="card">
+      <p class="card-sub" style="margin:0 0 10px" data-i18n="codeHave">
+        Have a code? Enter it here.
+      </p>
+      <div class="track-row">
+        <input id="code-input" class="input" type="text" data-i18n-ph="codePh" placeholder="e.g. K3X9" autocomplete="off">
+        <button id="code-btn" class="track-btn" data-i18n="codeApply">Apply</button>
+      </div>
+    </section>
 
     <section class="card info">
       <p class="info-row"><strong data-i18n="deliveryDays">Posting days</strong><span id="delivery-days" class="info-val"></span></p>
