@@ -43,6 +43,7 @@ test("a fresh state carries both new lists and the landing-page copy", () => {
   const d = defaultState();
   assert.deepEqual(d.partners, [], "the shops list starts empty");
   assert.deepEqual(d.codes, [], "so does the label list");
+  assert.deepEqual(d.pages, [], "and so does the landing-page list");
   const t = d.settings.taster;
   assert.equal(t.askPet, true, "the dog/cat question is on by default");
   assert.equal(t.follow, true, "and so is the follow line");
@@ -59,6 +60,7 @@ test("normalize keeps the lists and the copy — it is the only thing that does"
   const s = defaultState();
   s.partners.push({ id: "pt1", name: "Pet Shop Alpha", whatsapp: "60123456789" });
   s.codes.push(code({ kind: "shop", partnerId: "pt1" }));
+  s.pages.push({ id: "pg1", name: "Raya promo 2026", heading: "Raya is here" });
   s.settings.taster.heading = "Your Furkid Tried Munchies!";
   s.settings.taster.askPet = false;
 
@@ -68,14 +70,18 @@ test("normalize keeps the lists and the copy — it is the only thing that does"
   assert.equal(out.codes.length, 1);
   assert.equal(out.codes[0].kind, "shop");
   assert.equal(out.codes[0].partnerId, "pt1");
+  assert.equal(out.pages.length, 1);
+  assert.equal(out.pages[0].name, "Raya promo 2026");
+  assert.equal(out.pages[0].heading, "Raya is here");
   assert.equal(out.settings.taster.heading, "Your Furkid Tried Munchies!");
   assert.equal(out.settings.taster.askPet, false);
 });
 
-test("an older save with neither list loads clean instead of crashing", () => {
+test("an older save with none of the lists loads clean instead of crashing", () => {
   const out = normalize({ version: 1, settings: {}, orders: [] });
   assert.deepEqual(out.partners, []);
   assert.deepEqual(out.codes, []);
+  assert.deepEqual(out.pages, []);
   assert.equal(out.settings.taster.offerType, "rm", "the untouched copy fills back in");
   assert.equal(typeof out.settings.taster.heading, "string");
 });

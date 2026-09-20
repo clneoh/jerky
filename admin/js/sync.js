@@ -37,6 +37,7 @@ const LISTS = {
   customers: "customers", // customer profiles (pet name/photo, likes, notes)
   partners: "partners", // the shops you hand samples to — a shop added on one phone must exist on the other
   codes: "codes", // printed QR labels — the label you print on one phone must be readable on the other
+  pages: "pages", // landing pages — a page a label points at has to exist on the other phone too
 };
 const SETTINGS_KEY = "settings:default";
 

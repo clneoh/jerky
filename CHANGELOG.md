@@ -4,6 +4,34 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**20 Sep 2026 (manual v123c) — your landing pages: one page per promotion, picked on
+each label (no new engine number: built here first, so both your apps stay on the same
+number).** Under **More → 🏪 Shops & codes** there is now a **Your pages** card, and a
+**Landing page** dropdown on every label you make or edit. A page is a set of words for
+one activity — __"Sample card"__, __"Raya promo 2026"__, __"Clearance"__ — so a promotion
+running on a dozen printed cards is written **once** and every card on it follows. Leave
+the dropdown on its first choice, **the shared page**, and the label reads the words you
+already had.
+
+**The words now come in three layers, and each line is decided on its own.** A customer
+reading a label gets, for the heading and for the paragraph, in each of English, 中文 and
+Bahasa Malaysia: the **shared page** first, then the **page the label picked**, then
+anything that **label typed for itself** — the last one wins. So a page supplies the
+lines it has and everything it leaves blank still comes from the shared page, and a label
+on that page can still shout its own line over the top of both. Each language falls back
+on its own: a page with only English typed still shows the shared page's 中文, rather than
+going blank or mixing languages.
+
+**A page is live, and that is the point.** Every printed label carries only its short
+code and its words are read at scan time, so editing __"Raya promo 2026"__ changes what the
+cards **already in customers' hands** say, with no reprint — one edit, every card on it
+follows. A label that needs to differ types its own line, which always wins.
+
+**Deleting a page loses nothing.** The labels sitting on it go back to reading the shared
+page, and any lines those labels typed for themselves stay exactly where they are. The
+confirm box tells you how many labels that is before it acts, and each page's row shows
+the count too.
+
 **20 Sep 2026 — printed labels with QR codes, and the page each one opens (no new
 engine number: this was built here first, so both your apps stay on the same number).**
 A new screen, **More → Shops & codes**, makes a code for anything you print: a pet
@@ -28,9 +56,10 @@ the page stops promising it and says the offer has finished instead. **New custo
 only** means exactly what you described: a WhatsApp number that has never bought from
 you before.
 
-**One label can say its own words.** Every label opens the same page, and the shared
-page's heading and sentence are what a customer reads — unless a label wants to say
-something the others do not. Open a code and tap **What this label says on the page**:
+**One label can say its own words.** Every label opens the same page unless you give it a
+page of its own, and the shared page's heading and sentence are what a customer reads —
+unless a label wants to say something the others do not. Open a code and tap **What this
+label says on the page**:
 a heading and a paragraph, in English, Chinese and Bahasa Malaysia, and a **Fill 中文 /
 BM** button, exactly like the shared page's own copy. Anything left blank falls back to
 the shared page's line for that same language, and the greyed text in an empty box is

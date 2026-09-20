@@ -98,7 +98,14 @@ export function defaultState() {
     // customer may see are ever published (see supabase.js storefrontPayload).
     // `referrerDigits` is a bring-a-friend label's customer, kept private and
     // carried in the printed link as `?via=`, never published — see labelUrl.
-    codes: [], // {id, code, label, kind, partnerId?, productId?, referrerDigits?, offer?, headline?, active, createdAt}
+    // `pageId` is the landing page this label reads, or "" for the shared one.
+    codes: [], // {id, code, label, kind, partnerId?, productId?, referrerDigits?, pageId?, offer?, active, createdAt}
+    // The landing pages, one per promotion or activity. Each holds only the words
+    // a customer reads — the six copy keys, the same shape a label carries — so
+    // the page is resolved into every label on it when the app publishes (see
+    // pageFor/publishCodes). The shared page a label falls back to is
+    // settings.taster, which is not in this list.
+    pages: [], // {id, name, heading, headingZh, headingMs, body, bodyZh, bodyMs, trOverride, trSrc, createdAt}
   };
 }
 
@@ -303,6 +310,7 @@ function normalize(s) {
     occasions: Array.isArray(s.occasions) ? s.occasions : [],
     partners: Array.isArray(s.partners) ? s.partners : [],
     codes: Array.isArray(s.codes) ? s.codes : [],
+    pages: Array.isArray(s.pages) ? s.pages : [],
   };
   const consolidated = consolidateDeliveryDates(out.deliveryDates, out.orders);
   out.deliveryDates = consolidated.deliveryDates;
@@ -614,6 +622,15 @@ export function findCode(state, code) {
   return (state.codes || []).find(
     (c) => c && String(c.code || "").trim().toUpperCase() === want
   ) || null;
+}
+
+// The landing page a label picked, or null for the shared one. A label whose page
+// has since been deleted resolves to null — the shared page says its words again —
+// rather than pointing at nothing.
+export function findPage(state, id) {
+  const want = String(id || "").trim();
+  if (!want) return null;
+  return (state.pages || []).find((p) => p && p.id === want) || null;
 }
 
 // What is printed in small type beside the QR so labels can be told apart by eye.

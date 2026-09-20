@@ -14,8 +14,8 @@
 // PNG/print call here sits behind a button the test shims never fire.
 
 import { el, button, select, showPopup, toast, confirmDialog, copyText } from "../ui.js";
-import { byId, codeLabel, findCode, liveOffer, newId, round2, save } from "../state.js";
-import { KINDS, KIND_LABEL, kindOf, makeCode, labelUrl, shopUrl, tasterUrl, offerText, offerMinText, offerLine, codeStats, sheetLabels, visitTally } from "../codes.js";
+import { byId, codeLabel, findCode, findPage, liveOffer, newId, round2, save } from "../state.js";
+import { KINDS, KIND_LABEL, kindOf, makeCode, labelUrl, shopUrl, tasterUrl, offerText, offerMinText, offerLine, codeStats, sheetLabels, visitTally, pageOf, pageStats, linesFor } from "../codes.js";
 import { customerList, phoneDigits } from "../customers.js";
 import { attachProfiles, customerRowName } from "../profiles.js";
 import { qrMatrix, qrSvg, qrPngBytes } from "../qr.js";
@@ -126,8 +126,9 @@ export function renderCodes(root, state) {
     codesCard(state, draw),
     visitsCard(state, draw),
     landingCard(state, draw),
+    pagesCard(state, draw),
     el("p", { class: "card-sub", style: "margin:0 2px" },
-      "A code is one printed label. Print it, stick it on a sample card or a counter card, and whatever a customer does next is counted against it — you do not have to change anything in the app to start a new promotion or add another shop. The offer on a code is stated on the page and applied by you when you confirm the order on WhatsApp, because every order records the price it sold at and the books have to keep that."),
+      "A code is one printed label. Print it, stick it on a sample card or a counter card, and whatever a customer does next is counted against it — you do not have to change anything in the app to start a new promotion or add another shop. A label can read one of your pages, so a promotion's words are written once and every card on it follows; a label may still say a line of its own. The offer on a code is stated on the page and applied by you when you confirm the order on WhatsApp, because every order records the price it sold at and the books have to keep that."),
   );
   draw();
 }
@@ -247,6 +248,128 @@ function openPartnerForm(state, partner, redraw) {
   }, { wide: true });
 }
 
+// ── her landing pages ─────────────────────────────────────────────────────
+// One page per promotion or activity, written once and read by every label that
+// picks it. A page holds nothing but words — the offer stays on the label, where
+// it already is and where the printed sticker gets it. A label's own lines are a
+// third layer on top, so a page can be shared without being a straitjacket.
+
+// The working copy one page is edited on. Pure and exported for exactly the reason
+// `codeDraft` is: `trOverride` is an ARRAY of variant names, and copying it with an
+// object spread would hand back {"0":"headingZh"} — which `isOverridden()` reads as
+// "not mine", so every line she had typed by hand would read as machine text again
+// and the next Fill 中文 / BM would overwrite her words.
+export function pageDraft(page) {
+  if (!page) {
+    return { id: newId("pg"), name: "", createdAt: new Date().toISOString() };
+  }
+  return { ...page,
+    trOverride: Array.isArray(page.trOverride) ? [...page.trOverride] : [],
+    trSrc: { ...(page.trSrc || {}) } };
+}
+
+function openPageForm(state, page, redraw) {
+  const isNew = !page;
+  const draft = pageDraft(page);
+  const t = state.settings.taster || {};
+
+  showPopup(isNew ? "New page" : "Edit page", (refresh, close) => {
+    const name = el("input", { class: "input", value: draft.name || "", maxlength: "40",
+      placeholder: "Raya promo 2026" });
+
+    // The page's own lines, against the shared page as the base: a blank line here
+    // means the shared page says it, which is where an empty box falls back to for
+    // every label on this page. Shown unfolded — on a page the words ARE the
+    // content, so there is nothing to fold away from.
+    const words = copyTarget({
+      obj: draft,
+      shared: t,
+      // Nothing is kept until Save, so the pop-up's own button is the only writer.
+      persist: () => {},
+      // The body is rebuilt from `draft`, so the name box has to be written back
+      // first — it is not part of the copy target and would otherwise revert.
+      redraw: () => { draft.name = name.value; refresh(); },
+    });
+
+    const saveIt = () => {
+      const got = String(name.value || "").trim();
+      if (!got) { toast("Give the page a name first"); return; }
+      // Same rule the label pop-up uses: a blank box means the shared page says it,
+      // so it must leave NO key behind — an empty string would publish a real line
+      // that says nothing. And the keys have to go from the record being edited
+      // too, because an assign only adds or overwrites.
+      const row = { ...draft, name: got };
+      for (const key of COPY_KEYS) if (!String(row[key] || "").trim()) delete row[key];
+      for (const key of ["trOverride", "trSrc"]) {
+        if (!Object.keys(row[key] || {}).length) delete row[key];
+      }
+      if (isNew) state.pages.push(row);
+      else {
+        for (const key of [...COPY_KEYS, "trOverride", "trSrc"]) delete page[key];
+        Object.assign(page, row);
+      }
+      save(state);
+      maybeSyncStorefront(state);
+      redraw();
+      close();
+    };
+
+    // Deleting a page is allowed whatever is on it — the labels do not break, they
+    // simply read the shared page's words again — so the confirm names how many are
+    // about to change rather than refusing.
+    const deleteIt = () => {
+      const n = pageStats(state, page.id).labels;
+      confirmDialog(n
+        ? `${n} label${n === 1 ? "" : "s"} read this page. Deleting it sends ${n === 1 ? "it" : "them"} back to the shared page's words.`
+        : `Delete "${draft.name || "this page"}"? No label reads it.`,
+      () => {
+        state.pages = (state.pages || []).filter((p) => p !== page);
+        save(state);
+        maybeSyncStorefront(state);
+        redraw();
+        close();
+      }, { danger: true, yesLabel: "Delete" });
+    };
+
+    return el("div", {},
+      field("What this page is called", name,
+        "Only you see this — it names the page in this list and in a label's Landing page box."),
+      ...COPY_FIELDS.map(([en, label, max]) => copyLine(words, en, label, max)),
+      button("Fill 中文 / BM", () => fillAll(words), "ghost small"),
+      el("p", { class: "card-sub" },
+        "A blank box means the shared page says it — the greyed line shows what a customer reads instead. Every label that picks this page reads these words, so editing the page changes all of them at once; a label that needs to say something different types its own line on the label."),
+      el("div", { class: "popup-actions" },
+        button("Save", saveIt, "primary"),
+        isNew ? null : button("Delete", deleteIt, "danger")));
+  }, { wide: true });
+}
+
+function pagesCard(state, redraw) {
+  const pages = (state.pages || []).filter(Boolean).slice()
+    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+
+  const rows = pages.map((p) => {
+    const n = pageStats(state, p.id).labels;
+    return el("div", { class: "card-row qr-row" },
+      el("div", { class: "qr-row-main" },
+        el("p", { class: "card-title" }, String(p.name || "(no name)")),
+        el("p", { class: "card-sub" },
+          n ? `${n} label${n === 1 ? "" : "s"} read this page` : "no label reads this page yet")),
+      el("div", { class: "qr-row-btns" },
+        button("Edit", () => openPageForm(state, p, redraw), "ghost small")));
+  });
+
+  return el("div", { class: "card" },
+    el("div", { class: "card-row" },
+      el("div", {},
+        el("p", { class: "card-title" }, "Your pages"),
+        el("p", { class: "card-sub" }, pages.length
+          ? "One page per promotion — a label picks one and reads its words"
+          : "Write a page once and reuse it across as many labels as you like")),
+      button("＋ New page", () => openPageForm(state, null, redraw), "ghost small")),
+    ...rows);
+}
+
 // ── the codes ─────────────────────────────────────────────────────────────
 
 function codesCard(state, redraw) {
@@ -260,8 +383,13 @@ function codesCard(state, redraw) {
     const st = codeStats(state, c);
     const off = liveOffer(c, today);
     const dead = c.active === false;
+    // The page this label reads, named on the row so a promotion's words are
+    // visible without opening every label. Shown only when one is picked: the
+    // shared page is the norm, and naming it on every row would be noise.
+    const page = pageOf(state, c);
     const sub = [
       partner ? partner.name : KIND_LABEL[kindOf(c)],
+      page && String(page.name || "").trim() ? String(page.name).trim() : null,
       partner ? sampleText(partner) : null,
       st.orders ? `${st.orders} order${st.orders === 1 ? "" : "s"}` : "no orders yet",
       st.sales ? `${cur}${round2(st.sales)}` : null,
@@ -517,6 +645,7 @@ export function codeDraft(code, state, t, today = todayISO()) {
       kind: "shop",
       partnerId: "",
       productId: "",
+      pageId: "",
       active: true,
       createdAt: new Date().toISOString(),
       offer: newOffer(t, today),
@@ -524,7 +653,11 @@ export function codeDraft(code, state, t, today = todayISO()) {
   }
   // Everything below is copied rather than shared with the record underneath: a
   // box she types in and then abandons must not leave the label marked as hers.
-  return { ...code, offer: { ...(code.offer || {}) },
+  // A page that has since been deleted is dropped here rather than left pointing
+  // at nothing, so the dropdown shows "the shared page" — which is what the label
+  // already reads, since a missing page has always fallen back.
+  return { ...code, pageId: findPage(state, code.pageId) ? code.pageId : "",
+    offer: { ...(code.offer || {}) },
     trOverride: Array.isArray(code.trOverride) ? [...code.trOverride] : [],
     trSrc: { ...(code.trSrc || {}) } };
 }
@@ -560,6 +693,16 @@ function openCodeForm(state, code, redraw) {
     const label = el("input", { class: "input", value: draft.label || "", maxlength: "24",
       placeholder: draft.code });
     const codeText = el("input", { class: "input", value: draft.code || "", maxlength: "12" });
+
+    // Which landing page this label reads. The shared page is the app-wide default
+    // every label falls back to; a named page is one promotion or activity she
+    // wrote once and reuses. Blank in the record means the shared page, and the
+    // dropdown says so in words rather than leaving the box looking empty. The
+    // words group below is rebuilt on a change (refresh()), so its greyed hints
+    // follow the page now chosen instead of the one it was opened with.
+    const pageSel = select([{ value: "", label: "— the shared page —" },
+      ...(state.pages || []).map((p) => ({ value: p.id, label: p.name || "(no name)" }))],
+    draft.pageId || "", () => { draft.pageId = pageSel.value; keepTyped(); refresh(); });
 
     const partnerSel = draft.kind === "shop"
       ? select([{ value: "", label: "— none yet —" },
@@ -621,9 +764,13 @@ function openCodeForm(state, code, redraw) {
     // This label's own words for the page, folded away because most labels never
     // need them. Left alone it says nothing and the shared page's lines are what a
     // customer reads, so nothing changes until she opens this and types.
+    // What a customer would read if this label says nothing for itself: the page it
+    // picked, already sitting on the shared page. Passing the resolved base rather
+    // than the shared page keeps the greyed hints honest — an empty box shows the
+    // line a customer really gets, even when that line comes from the page.
     const words = copyTarget({
       obj: draft,
-      shared: t,
+      shared: linesFor(state, draft, t),
       // Nothing is kept until Save, so the pop-up's own button is the only writer.
       persist: () => {},
       // The body is rebuilt from `draft`, so the two boxes above it have to be
@@ -633,11 +780,11 @@ function openCodeForm(state, code, redraw) {
     const wordsBody = codeCopyOpen
       ? el("div", {},
         el("p", { class: "card-sub", style: "margin:0 0 8px" },
-          "A blank box means the shared page says it — the greyed line shows what a customer would read instead."),
+          "A blank box means the page says it — the greyed line shows what a customer would read instead."),
         ...COPY_FIELDS.map(([en, label, max]) => copyLine(words, en, label, max)),
         button("Fill 中文 / BM", () => fillAll(words), "ghost small"))
       : el("p", { class: "card-sub", style: "margin:0" },
-        "The shared page's words, unless this label needs its own.");
+        "The page's words, unless this label needs its own.");
 
     const saveIt = () => {
       const got = String(codeText.value || "").trim().toUpperCase();
@@ -692,6 +839,10 @@ function openCodeForm(state, code, redraw) {
     };
 
     return el("div", {},
+      field("Landing page", pageSel,
+        (state.pages || []).length
+          ? "Which page a scan opens. A label can still say a line of its own below."
+          : 'No pages yet — make one under "Your pages" and reuse its words across as many labels as you like.'),
       field("What this code is for", kindSel,
         (KINDS.find(([id]) => id === kindOf(draft)) || [])[2]),
       field("The words on the label", label,
@@ -911,7 +1062,9 @@ function landingCard(state, redraw) {
       el("div", {},
         el("p", { class: "card-title" }, `The page a scan lands on ${copyOpen ? "▾" : "▸"}`),
         el("p", { class: "card-sub" },
-          `${t.askPet !== false ? "Asks dog or cat" : "Does not ask dog or cat"} · ${t.follow !== false ? "shows your socials" : "no socials line"} · a new label offers ${offerWord}`)),
+          `${t.askPet !== false ? "Asks dog or cat" : "Does not ask dog or cat"} · ${t.follow !== false ? "shows your socials" : "no socials line"} · a new label offers ${offerWord}`),
+        el("p", { class: "card-sub" },
+          "This is the shared page: every label reads it unless you give that label a page of its own.")),
       button("Fill 中文 / BM", () => fillAll(words), "ghost small")),
     copyOpen ? el("div", {},
       ...COPY_FIELDS.map(([en, label, max]) => copyLine(words, en, label, max)),

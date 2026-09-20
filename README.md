@@ -467,25 +467,58 @@ test files that each re-define `createEl` inline are never asked to draw one.
 
 ### The screen
 
-`admin/js/views/codes.js` (`#/codes`, More → **🏪 Shops & codes**) has three cards: the
+`admin/js/views/codes.js` (`#/codes`, More → **🏪 Shops & codes**) has four cards: the
 landing page's own copy (English + 中文 + BM, the products pattern — type English once,
-translate the rest); the **shops** (partner contact, commission rate, samples given);
-and the **codes**, each with a QR preview, a PNG download, the printed label sheet, an
-"open what the customer sees" link and its own counts. Two more sections follow: **Label
-visits** and, above them all, a **📷 Scan a label** button.
+translate the rest); **Your pages** (one set of words per promotion or activity); the
+**shops** (partner contact, commission rate, samples given); and the **codes**, each with
+a QR preview, a PNG download, the printed label sheet, an "open what the customer sees"
+link and its own counts. Two more sections follow: **Label visits** and, above them all,
+a **📷 Scan a label** button.
+
+**Landing pages: the middle layer.** `state.pages[]` (beside `state.codes`) holds one
+record per activity — `{id, name, heading, headingZh, headingMs, body, bodyZh, bodyMs,
+trOverride, trSrc, createdAt}`, the same six copy keys and the same translation
+provenance a label or a product carries, which is what lets `isOverridden` / `markManual`
+and the whole `copyLine` / `fillAll` / `regenOne` machinery work on a page with no new
+translation code. A label names one with `code.pageId` (`""` = the shared page).
+
+The three layers resolve **at publish time, inside `publishCodes`** — not at render time:
+
+```js
+const out = { code, kind };
+pageLines(pageOf(state, c), out);   // layer 2: the page the label picked
+pageLines(c, out);                  // layer 3: the label's own line wins
+```
+
+so the published shape is unchanged and **neither `/taster/` nor `store/app.js` needed an
+edit** (`pageLines` writes only non-blank keys, so a blank line falls through rather than
+blanking — and `pageId` itself is never published, so the customer's page still sees one
+flat shape). `pageOf(state, code)` returns the page or **null**: a label whose page was
+deleted falls back rather than breaking, which is why `codeDraft` blanks a `pageId` that
+no longer resolves. `pageStats(state, pageId)` counts the labels on a page, shown on the
+row and in the delete confirm. `linesFor(state, code, shared)` is the *base* — `shared`
+with the page laid over it, **not** including the label's own line: it answers "what does
+the page say", which is exactly what an empty box falls back to, so the greyed hint is
+the line a customer would really read and a page's blank line shows the shared page's
+line rather than an empty box.
+
+`pageDraft(page)` is exported and pure for the same reason `codeDraft` is (below). A page
+editor is the same `copyTarget` machinery pointed at a page record; `persist` is again a
+no-op and its `redraw` writes the name box back **before** `refresh()`.
 
 **One label's own words.** The same two lines exist twice — on the shared page, and
 optionally on one label. Both are drawn by one `copyLine(target, en, label, max)` against
 a small **copy target** (`{obj, shared, persist, redraw}`), so the boxes, the translating,
 the `is-mine` mark and the `↻` cannot drift apart between the two places. `obj` is where
-the words live (`settings.taster`, or the code being edited); `shared` is what the shared
-page says, shown as the **placeholder** in every empty box so a blank box visibly reads as
-the line a customer will actually get; `persist` keeps what was typed — a **no-op inside
-the code pop-up**, whose Save is the only writer; `redraw` repaints whatever holds the
-boxes. `sharedHint(target, key, fallback)` resolves a hint as the shared page's *same
-language* line, then the shared English, then the box's own label. Clearing a box calls
-`markManual` (not `markAuto`): on a label a blank box means *"the shared page says this
-line"*, which is a decision, so `Fill 中文 / BM` must not put a translation back into it.
+the words live (`settings.taster`, a page, or the code being edited); `shared` is the
+**merged base** (`linesFor(state, draft, t)` — the shared page with the label's page over
+it), shown as the **placeholder** in every empty box so a blank box visibly reads as the
+line a customer will actually get; `persist` keeps what was typed — a **no-op inside the
+code or page pop-up**, whose Save is the only writer; `redraw` repaints whatever holds the
+boxes. `sharedHint(target, key, fallback)` resolves a hint as that base's *same language*
+line, then its English, then the box's own label. Clearing a box calls `markManual` (not
+`markAuto`): on a label a blank box means *"the page says this line"*, which is a
+decision, so `Fill 中文 / BM` must not put a translation back into it.
 
 The code pop-up's group is folded behind a module flag (`codeCopyOpen`, the `copyOpen`
 pattern). Its `redraw` is `() => { keepTyped(); refresh(); }` — **`keepTyped()` first**,
@@ -581,9 +614,11 @@ normally and only the counts are missing — the card says so instead of going b
 
 ### State & sync
 
-`state.partners[]` and `state.codes[]` are new lists (both in `sync.js`'s `LISTS` so her
-two phones agree), and `state.settings.taster` rides the `recordPayload("settings")`
-whitelist with the same gated spread the `tasks` entry uses. **All three must be in
+`state.partners[]`, `state.codes[]` and `state.pages[]` are new lists (all three in
+`sync.js`'s `LISTS` so her two phones agree — a label points at a page by id, so the page
+has to exist on both phones or the label silently reads the shared page on the one that
+never got it), and `state.settings.taster` rides the `recordPayload("settings")`
+whitelist with the same gated spread the `tasks` entry uses. **All of them must be in
 `state.js`'s `normalize()` or they are dropped on load.** `isNewCustomer(state, group)`
 generalises `referralFlag` — "new" is the same thing she described: a WhatsApp number
 that has never bought before — and backs every code marked `newOnly`.
@@ -1212,6 +1247,7 @@ admin/ — backoffice app (/admin/):
   js/dates.js         posting dates, cut-off, countdown (pure)
   js/qr.js            QR encoder — matrix / SVG string / PNG bytes, no DOM, no deps (pure)
   js/codes.js         sales codes: kinds, makeCode, the URLs, the offer sentence,
+                      the landing-page layer (pageOf / pageStats / linesFor),
                       the published half (publishCodes / publishTaster), visitTally (pure)
   js/money.js         what came in — cash / TNG / still to collect (pure)
   js/profit.js        the books — sales, cost of sales, running costs, capital / drawings (pure)

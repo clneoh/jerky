@@ -9,7 +9,7 @@
 // whose link is only 5 characters — that is what makes two labels tellable apart
 // by eye at arm's length.
 
-import { groupOrders, orderLinePrice, liveOffer, waNumber } from "./state.js";
+import { groupOrders, orderLinePrice, liveOffer, waNumber, findPage } from "./state.js";
 import { todayISO } from "./dates.js";
 
 // What a code can be. The first kind is the default a new code starts as.
@@ -220,6 +220,36 @@ export function visitTally(rows) {
 // shared page's settings or from one code — that is what lets the page treat a
 // code's blank line as "use the shared page's line" rather than as an empty line,
 // resolved separately per language (see codeCopy in /taster/).
+// The landing page a label reads, or null when it reads the shared page. A label
+// whose page was deleted resolves to null, so its words fall back rather than
+// disappearing — the page is only ever a layer over the shared one.
+export function pageOf(state, code) {
+  return findPage(state, code && code.pageId);
+}
+
+// How many labels read a page. Shown on the page's row and in the confirm that
+// deletes it, because deleting a page moves every one of those labels back to the
+// shared page's words.
+export function pageStats(state, pageId) {
+  const want = String(pageId || "").trim();
+  if (!want) return { labels: 0 };
+  return {
+    labels: (Array.isArray(state.codes) ? state.codes : [])
+      .filter((c) => c && String(c.pageId || "").trim() === want).length,
+  };
+}
+
+// The words a label reads when it says nothing for itself, as one object: the page
+// it picked laid over the shared page. The same three layers publishCodes resolves,
+// in the same order, so the greyed line the editor shows in an empty box is exactly
+// the line a customer would read — and a page's own blank line shows the shared
+// page's line rather than an empty box.
+export function linesFor(state, code, shared) {
+  const out = { ...(shared || {}) };
+  pageLines(pageOf(state, code), out);
+  return out;
+}
+
 function pageLines(src, out = {}) {
   const t = src || {};
   for (const k of ["heading", "body"]) {
@@ -246,8 +276,12 @@ export function publishCodes(state, today = todayISO()) {
     .filter((c) => c && c.active !== false && String(c.code || "").trim())
     .map((c) => {
       const out = { code: String(c.code).trim().toUpperCase(), kind: kindOf(c) };
-      // Whatever this one label wants to say for itself. Left out entirely when
-      // blank, so the shared page's line is what a customer reads.
+      // The words a customer reads, in the order they override each other: the
+      // page this label picked first, then whatever the label wants to say for
+      // itself. Only non-blank lines are written, so a blank one falls through to
+      // the shared page's line rather than blanking it — and the page id itself is
+      // never published, so the customer's page still sees one flat shape.
+      pageLines(pageOf(state, c), out);
       pageLines(c, out);
       // A shop's card says which shop it came from — by NAME only.
       if (out.kind === "shop") {

@@ -112,6 +112,29 @@ test("mergeRows: a label printed on one phone arrives on the other", () => {
   } finally { restore(); }
 });
 
+test("mergeRows: a page written on one phone arrives on the other", () => {
+  // A label points at a page by id, so the page has to exist on both phones or the
+  // label silently reads the shared page on the phone that never got it.
+  const { store, restore } = installStorage();
+  try {
+    const st = baseState();
+    st.pages = []; // this phone has none yet
+    seedJournal(store);
+
+    const add = sync.mergeRows(st, [cloudRow("pages", "pg1",
+      { id: "pg1", name: "Raya promo 2026", heading: "Raya is here" }, "2026-09-20T00:00:00.000Z")]);
+    assert.equal(add.changed, true);
+    assert.equal(st.pages.length, 1);
+    assert.equal(st.pages[0].heading, "Raya is here", "the words the label reads have to be here too");
+
+    // A tombstone removes it when it is deleted on the other phone, and the labels
+    // sitting on it fall back to the shared page rather than breaking.
+    const del = sync.mergeRows(st, [cloudRow("pages", "pg1", null, "2026-09-21T00:00:00.000Z", true)]);
+    assert.equal(del.changed, true);
+    assert.equal(st.pages.length, 0);
+  } finally { restore(); }
+});
+
 test("recordPayload: the landing-page copy syncs only once she has changed it", () => {
   const st = baseState();
   st.settings.taster = {
