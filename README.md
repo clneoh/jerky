@@ -696,6 +696,26 @@ The pop-up passes `paintTotal`'s own sum as the fourth argument, which is why `t
 mid-edit, a minimum warning measured off the saved items would disagree with the "Order
 total:" line directly above it, and it tracks a `+`/`−` tap live.
 
+## The cut-off time, in words (21 Sep 2026, no engine bump)
+
+The order page's info card read **"Order by 18:00 the day before"**. It now reads
+**"Order by 6pm the day before posting"**, and the rest of the page agrees with it.
+
+The app still *stores* the cut-off 24-hour — Settings' box is an `<input type="time">`, and
+`isOpen` parses `HH:MM` — so this is display-only. `store/app.js` gains `clockWords(cutoff,
+lang)`, which turns `"18:00"` into `6pm` / 晚上6点 / 6 petang and hands anything that is not a
+24-hour time back untouched rather than guessing at it, and **all three** places the page names
+the deadline go through it:
+
+- `beforeVal` — the info card ("Order by 6pm the day before posting"; `store-lang.js` gained the
+  word *posting*: 发货日前一天%1前 / "%1 sehari sebelum hari pos").
+- `madeToOrder` — the hero eyebrow ("Made to order · closes 6pm the day before").
+- `confirmClosedBody` — the note a customer gets when the page was left open across the deadline.
+
+`lang` is a parameter (defaulting to `loadLang()`), so the words are asserted in all three
+languages in `test/store.test.js` without a phone. Manual **v132a** (a manual-only revision —
+the engine did not move).
+
 ## The courier charge, and the postage it replaces (v124–v130, v132)
 
 One theme, seven versions, all code-only apart from two small SQL scripts. An order

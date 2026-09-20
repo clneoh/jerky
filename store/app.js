@@ -61,6 +61,32 @@ function sub(s) {
   return out;
 }
 
+// The cut-off time the way a person says it out loud: "18:00" → "6pm" in
+// English, "晚上6点" in 中文, "6 petang" in BM. The app stores it 24-hour
+// (Settings → the cut-off box is an <input type="time">), which is right for
+// arithmetic and wrong for a customer reading the page — the owner asked for the
+// plain words on 21 Sep 2026. `lang` is a parameter so the words can be tested
+// without a phone; anything that is not a 24-hour time is handed back untouched
+// rather than guessed at.
+export function clockWords(cutoff, lang = loadLang()) {
+  const raw = String(cutoff == null ? "" : cutoff).trim();
+  const m = /^(\d{1,2}):(\d{2})$/.exec(raw);
+  if (!m) return raw;
+  const h = Number(m[1]);
+  const mm = Number(m[2]);
+  if (h > 23 || mm > 59) return raw;
+  const h12 = h % 12 || 12;
+  if (lang === "zh") {
+    const part = h < 5 ? "凌晨" : h < 12 ? "上午" : h === 12 ? "中午" : h < 18 ? "下午" : "晚上";
+    return `${part}${h12}点${mm ? `${m[2]}分` : ""}`;
+  }
+  if (lang === "ms") {
+    const part = h < 12 ? "pagi" : h < 14 ? "tengah hari" : h < 19 ? "petang" : "malam";
+    return `${h12}${mm ? `.${m[2]}` : ""} ${part}`;
+  }
+  return `${h12}${mm ? `:${m[2]}` : ""}${h < 12 ? "am" : "pm"}`;
+}
+
 // "Mon, Wed and Fri" — the visitor's own way of listing things, so a closed
 // product's sentence does not read like a translation.
 function listJoin(items) {
@@ -569,11 +595,11 @@ export function renderStatic(cfg) {
   document.title = `${t("titleWord")} · ${cfg.name}`;
   document.getElementById("name").textContent = cfg.name;
   document.getElementById("tagline").textContent = cfg.tagline;
-  document.getElementById("eyebrow").textContent = sub(t("madeToOrder"), cfg.cutoff);
+  document.getElementById("eyebrow").textContent = sub(t("madeToOrder"), clockWords(cfg.cutoff));
 
   const days = cfg.deliveryDays.map((n) => dayName(n)).join(", ");
   document.getElementById("delivery-days").textContent = days;
-  document.getElementById("cutoff").textContent = sub(t("beforeVal"), cfg.cutoff);
+  document.getElementById("cutoff").textContent = sub(t("beforeVal"), clockWords(cfg.cutoff));
 
   const social = document.getElementById("social");
   const links = [];
@@ -1310,7 +1336,7 @@ export function render() {
     if (!isOpen(CONFIG, new Date(`${selected}T00:00:00`))) {
       showConfirm([
         el("p", { class: "confirm-title" }, t("confirmClosedTitle")),
-        el("p", { class: "confirm-body" }, sub(t("confirmClosedBody"), CONFIG.cutoff)),
+        el("p", { class: "confirm-body" }, sub(t("confirmClosedBody"), clockWords(CONFIG.cutoff))),
       ], "warn");
       return;
     }

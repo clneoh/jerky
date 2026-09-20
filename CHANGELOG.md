@@ -4,6 +4,18 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**21 Sep 2026 (no new engine) — the cut-off time is written out in words.** The order page's
+info card used to read **"Order by 18:00 the day before"**. It now reads **"Order by 6pm the day
+before posting"**: the time the way you would say it out loud, and the word *posting* spelled
+out. Settings is untouched — the cut-off box still takes a time (18:00), because that is what a
+clock reading is for; only the customer's page changed. The other two places the page names the
+deadline changed with it, so the whole page agrees: the line under your business name ("Made to
+order · closes 6pm the day before") and the note a customer sees if they left the page open
+across the deadline ("Orders for this day close at 6pm the day before — please pick a new
+posting day."). The Chinese page and the BM page say it their own way too (the
+BM page reads **"6 petang"**), so a reader in any language gets words rather than a clock face,
+and the wording the shop uses to describe a posting day is now the same in all three.
+
 **20 Sep 2026 (Engine v124–v130, v132) — the courier's charge, and who bore it.** An order
 can now carry a **courier charge** beside its note and tracking number. The **Note / tracking**
 button on the row opens the box for it, and the same box sits in **Edit**. You record what the

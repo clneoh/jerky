@@ -33,8 +33,38 @@ globalThis.window = { open() {} };
 // so the module-level render() hits no network.
 globalThis.fetch = async () => ({ ok: true, json: async () => [] });
 
-const { buildMessage, mergeStorefront, upcomingDates, daySpecs, dateKey, fmtDay, trackOrder, isOpen, waNumber, parseVia } = await import("../store/app.js");
+const { buildMessage, mergeStorefront, upcomingDates, daySpecs, dateKey, fmtDay, trackOrder, isOpen, waNumber, parseVia, clockWords, renderStatic } = await import("../store/app.js");
 const { CONFIG } = await import("../store/config.js");
+
+// The cut-off time as the page prints it: the app stores it 24-hour (Settings'
+// cut-off box is an <input type="time">) and the shop says it out loud — the
+// owner asked for "6pm the day before posting" on 21 Sep 2026, where the card
+// had been reading "18:00 the day before".
+test("the cut-off time is written the way it is said, in all three languages", () => {
+  assert.equal(clockWords("18:00", "en"), "6pm");
+  assert.equal(clockWords("18:00", "zh"), "晚上6点");
+  assert.equal(clockWords("18:00", "ms"), "6 petang");
+  assert.equal(clockWords("09:00", "en"), "9am");
+  assert.equal(clockWords("15:30", "en"), "3:30pm");
+  assert.equal(clockWords("15:30", "ms"), "3.30 petang");
+  assert.equal(clockWords("12:00", "en"), "12pm");
+  assert.equal(clockWords("12:00", "zh"), "中午12点");
+  assert.equal(clockWords("13:00", "ms"), "1 tengah hari");
+  assert.equal(clockWords("00:15", "zh"), "凌晨12点15分");
+});
+
+test("anything that is not a 24-hour time is handed back untouched", () => {
+  assert.equal(clockWords("", "en"), "");
+  assert.equal(clockWords(undefined, "en"), "");
+  assert.equal(clockWords("6pm", "en"), "6pm", "a value already in words is left alone");
+  assert.equal(clockWords("25:00", "en"), "25:00", "an impossible hour is not guessed at");
+});
+
+test("the info card reads 'Order by 6pm the day before posting'", () => {
+  renderStatic({ name: "Munchies Furkidz", tagline: "Handmade", deliveryDays: [1, 3, 5], cutoff: "18:00" });
+  assert.equal(registry["cutoff"].textContent, "6pm the day before posting");
+  assert.equal(registry["eyebrow"].textContent, "Made to order · closes 6pm the day before");
+});
 
 // The receipt's own lines, as plain strings, from the confirm box.
 function confirmLines() {

@@ -73,7 +73,7 @@ test("published config overrides the header and menu at runtime", async () => {
   assert.equal(registry["name"].textContent, "Munchies Furkidz");
   assert.equal(registry["tagline"].textContent, "Jerky & treats, Penang");
   assert.equal(registry["delivery-days"].textContent, "Tue, Thu");
-  assert.equal(registry["cutoff"].textContent, "15:00 the day before");
+  assert.equal(registry["cutoff"].textContent, "3pm the day before posting");
   assert.equal(registry["social"].children.length, 1, "only Instagram links (facebook blank)");
 
   const cards = registry["menu"].children;
