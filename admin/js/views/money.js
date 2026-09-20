@@ -14,7 +14,8 @@ import { entryForm, newEntryChip } from "./accountsEditor.js";
 import { currentUomId, cookingFamilyOf } from "./ingredients.js";
 import { dateField } from "../datepicker.js";
 import { longDate, todayISO, weekdayName } from "../dates.js";
-import { maybeSync } from "../supabase.js";
+import { clearCourierCharge } from "../courier.js";
+import { maybePublishTracking, maybeSync } from "../supabase.js";
 
 // Which stretch is showing. Module scope, like the other screens' own pickers, so a
 // rebuild she did not ask for does not throw her back to Today.
@@ -286,24 +287,41 @@ function openListsManager(state, redraw) {
 // One entry in a money list. A spending row from a shopping run says so by its poId;
 // everything else shows the category she picked, and a money-in row shows her note
 // ("from my pocket") or the word that stands in for it.
+//
+// A courier charge is the one row that is not a row of its own: it is the books half of
+// something the ORDER owns, so deleting it takes the charge off the order as well, and
+// the confirmation says so before she agrees (19 Sep 2026). Deleting the row by itself
+// left the order wearing a charge that was no longer in her books, and the next Save in
+// the order's courier box put the row straight back.
 function pocketRow(state, e, what, listKey, redraw, cur) {
   const how = methodLabel(e.method) || "no method";
+  const courier = listKey === "expenses" && e.courierFor ? e.courierFor : "";
   return el("div", { class: "info-row" },
     el("span", {}, `${dayMonth(String(e.date))} · ${what}${e.note ? ` · ${e.note}` : ""}`),
     el("span", { class: "info-val" }, fmtRM(Number(e.amount) || 0, cur),
       el("span", { class: "muted" }, `  ${how}`),
       button("✕", () => confirmDialog(
-        `Delete this ${listKey === "deposits" ? "money-in record" : "expense"}? ${fmtRM(Number(e.amount) || 0, cur)} — ${what}, ${how}.`,
+        `Delete this ${listKey === "deposits" ? "money-in record" : "expense"}? ${fmtRM(Number(e.amount) || 0, cur)} — ${what}, ${how}.`
+          + (courier ? ` The courier charge comes off order #${courier} with it.` : ""),
         () => {
           state[listKey] = (state[listKey] || []).filter((x) => x.id !== e.id);
+          // A charge you paid lives in two places at once, so it has to leave both at
+          // once. The customer's total moves with it, which is why the card is offered
+          // the new version here exactly as the order's own box does.
+          const cleared = courier ? clearCourierCharge(state, courier) : null;
           save(state);
           maybeSync(state);
-          toast(listKey === "deposits" ? "Money-in record deleted" : "Expense deleted");
+          if (cleared) maybePublishTracking(state, cleared);
+          toast(courier
+            ? `Charge deleted, and taken off order #${courier}`
+            : (listKey === "deposits" ? "Money-in record deleted" : "Expense deleted"));
           redraw();
         }, { danger: true, yesLabel: "Delete" }), "ghost small")));
 }
 const expenseRow = (state, e, redraw, cur) =>
-  pocketRow(state, e, e.poId ? "Shopping run (PO)" : (e.category || "Expense"), "expenses", redraw, cur);
+  pocketRow(state, e, e.poId ? "Shopping run (PO)"
+    : e.courierFor ? `Courier (order #${e.courierFor})`   // the same words the journal uses
+    : (e.category || "Expense"), "expenses", redraw, cur);
 const depositRow = (state, e, redraw, cur) =>
   pocketRow(state, e, e.repay ? "Paid back by the till" : "From my pocket", "deposits", redraw, cur);
 

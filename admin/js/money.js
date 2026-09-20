@@ -9,8 +9,17 @@
 //     back to its delivery date, which is the day it was handed over.
 //   • money STILL TO COLLECT is counted by DELIVERY date — it is money owed for the
 //     orders she is about to hand over, whatever the calendar says today.
+// The one exception to "money in = the items" is the line below: money still to COLLECT
+// is counted at what the customer will actually hand over, the customer's delivery charge
+// included. That charge IS money you will be handed, so leaving it out made the row
+// promise less than the customer's own message asks for. A COD charge is different and
+// stays out: the courier takes that money at the door, so it is never yours to collect at
+// all. Meanwhile the money that HAS come in stays at the items — a charge the customer
+// bears and you pass straight to the courier is not your takings — which is why
+// customerTotal() rather than groupValue() is read here and nowhere else in this file.
 import { groupOrders, orderCode, orderLinePrice } from "./state.js";
 import { isCash, isOther, isTng, methodLabel, methodRank } from "./accounts.js";
+import { customerTotal } from "./courier.js";
 
 // The stages in order, so "is this past Paid?" can be asked here without importing
 // the Orders screen (which imports this one). The list has not changed since the app
@@ -83,7 +92,12 @@ function tally(state, groups) {
   for (const g of groups) {
     out.count++;
     const value = groupValue(state, g);
-    if (!isCollected(g)) { out.toCollect += value; out.toCollectCount++; continue; }
+    // Owed money is counted at what the customer will hand over: the items plus the
+    // delivery charge, which is the flat postage or the courier charge standing in its
+    // place. customerTotal() is the one helper the messages and the track card already
+    // quote, so the figure this row promises is the figure the customer was told to pay.
+    // A COD charge is not in it: that money goes to the courier at the door, never to you.
+    if (!isCollected(g)) { out.toCollect += customerTotal(state, g).total; out.toCollectCount++; continue; }
     const method = methodOf(g);
     // The same money, filed one way for the columns and one way per method: it is the
     // method totals that give a loan, the bank overdraft or a personal pocket a row of
@@ -207,7 +221,12 @@ export function journalFor(state, method, from, to) {
     if (!e || methodLabel(e.method) !== want || !isWithin(String(e.date || "").slice(0, 10), from, to)) continue;
     rows.push({
       date: String(e.date).slice(0, 10),
-      what: `${e.poId ? "Shopping run (PO)" : (e.category || "Expense")}${e.note ? ` — ${e.note}` : ""}`,
+      // A row written by an action elsewhere names what wrote it, so a figure you cannot
+      // place is openable under its own name: a shopping run, or the courier charge you
+      // paid on one order (19 Sep 2026).
+      what: `${e.poId ? "Shopping run (PO)"
+        : e.courierFor ? `Courier (order #${e.courierFor})`
+        : (e.category || "Expense")}${e.note ? ` — ${e.note}` : ""}`,
       amount: Number(e.amount) || 0,
       dir: "out",
     });

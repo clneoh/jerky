@@ -696,6 +696,77 @@ The pop-up passes `paintTotal`'s own sum as the fourth argument, which is why `t
 mid-edit, a minimum warning measured off the saved items would disagree with the "Order
 total:" line directly above it, and it tracks a `+`/`−` tap live.
 
+## The courier charge, and the postage it replaces (v124–v130, v132)
+
+One theme, seven versions, all code-only apart from two small SQL scripts. An order
+gains a **courier charge** (`order.courierFee`) and **who bore it**
+(`order.courierPaidBy` = `"me"` | `"customer"` | `""`), plus a **COD flag**
+(`order.courierCod`). `admin/js/courier.js` is the whole reading of it.
+
+### The reconciliation rule — this app's own, not the bakery's
+
+The bakery has no storefront postage fee, so its per-order charge and this app's flat
+RM8 were two answers to one question: ported verbatim, a posted order would quote
+**two** delivery lines in the same WhatsApp message. The owner ruled on 20 Sep 2026 —
+*"Charge replaces postage"* — so:
+
+- **any recorded charge replaces the flat postage** — a customer-borne one stands in for
+  it on their total, never both;
+- a charge she bore is a `Delivery & fuel` **expense** and the customer owes **no**
+  delivery charge at all — the flat fee goes with it, which is what makes that mode the
+  way a goodwill order absorbs the postage;
+- an order with **no** charge recorded is quoted exactly as it was before this existed.
+
+`customerTotal(state, group)` returns `{ items, courier, cod, postage, total }` where
+`total = items + courier + postage` and **COD is excluded** — the courier takes that
+money at the door, so including it would ask for the same money twice.
+`postage = recorded ? 0 : flatPostage(state, first)` is the rule in one line, where
+`recorded` means a positive `courierFee` **and** a named `courierPaidBy`, and
+`flatPostage` returns 0 for a `collect` order. The payer is part of that test on
+purpose: keyed on the customer's share instead (as it was first written), the she-bore-it
+mode silently re-added the flat fee and a parcel she had just absorbed still asked for
+RM8 — found live in the sandbox on 20 Sep 2026. A half-filled box (an amount typed with
+the payer left at "Not recorded") is deliberately *not* yet a charge, so an unfinished
+entry can never take the delivery line off an order. Routing the messages, the Money
+screen's "still to collect" and the published track-card total through this one helper
+also fixes
+an inconsistency this app had before the port: the card and the Money row counted the
+items alone while the WhatsApp asked for items **plus** postage.
+
+### Where each half lands
+
+**Customer-borne** → added to their total, named in their messages
+(`confirm.js`, `messages.js` via `courierAddUp`) and drawn on their track card as
+`.track-no`'s neighbour `.track-fee`. **She-borne** → one ordinary `state.expenses[]` row
+(`courierFor: <orderCode>`), which reaches Money and Profit through the existing
+machinery; `journalFor`'s row label reads `Courier (order #X)` so a figure she cannot
+place is openable under its own name. `applyCourierCharge(state, group, fee, paidBy,
+method)` is idempotent, keyed on the order code, and returns
+`"created" | "updated" | "removed" | "none"`; `clearCourierCharge(state, code)` removes
+it and returns the group so the caller can republish that customer's card — which is how
+deleting the `Delivery & fuel` row on the Money screen takes the charge off the order
+with it.
+
+### The card republishes whenever anything it shows has moved (v132)
+
+The phones always agreed — an order is a synced record — but the customer's track card
+was published only when the day, the tracking number or the charge moved, so an edit to
+the items, a price, the address or the name left the card quoting the order it used to
+be. The field list was the defect, so the fix is not a longer list: `cardContent(row)`
+strips `updated_at` and JSON-stringifies the whole row, a module-level
+`const published = new Map()` remembers what **this device** last published per code, and
+`pushTracking` records only on `res.ok` — so a write the server refused (a missing
+column, i.e. a SQL script not yet run) is **retried** rather than remembered as done.
+`forgetPublishedCards()` is the test seam.
+
+### Two SQL scripts, and the order matters
+
+`supabase/courier_fee.sql` and `supabase/courier_cod.sql` — `alter table order_tracking
+add column if not exists …`, one paste each, **both before deploying**. The backoffice
+publishes a customer's whole tracking row in a single call, so a missing column rejects
+that call **as a whole**: every customer's card stops updating, not only orders carrying
+a charge. Idempotent, so a repeat is harmless. A commit or a push runs no SQL.
+
 ## The customer and the product list (v119–v123)
 
 Five versions about the two things an order form asks for: *who* the order is for,
@@ -1317,6 +1388,8 @@ admin/ — backoffice app (/admin/):
                       the landing-page layer (pageOf / pageStats / linesFor),
                       the published half (publishCodes / publishTaster), visitTally (pure)
   js/money.js         what came in — cash / TNG / still to collect (pure)
+  js/courier.js       the courier charge, who bore it, and the customer's total —
+                      the flat postage it replaces, the COD split, apply / clear (pure)
   js/profit.js        the books — sales, cost of sales, running costs, capital / drawings (pure)
   js/accounts.js      the categories and ways to pay the books read, and their built-in defaults (pure)
   js/bom.js           BOM explosion, costs, capacity (pure)

@@ -9,9 +9,10 @@ import { generateUpcomingDates, shortDate, todayISO } from "./dates.js";
 import { normRules } from "../../availability.js";
 import { publishOccasions } from "./occasion_catalog.js";
 import { effectiveCapacity, effectiveLimit, isPoolablePack, poolRemaining, totalUnitsOnDate } from "./bom.js";
-import { byId, fmtRM, newId, orderCode, orderLineName, orderLinePrice, save, stampOrderLine } from "./state.js";
+import { byId, fmtRM, newId, orderCode, orderLineName, save, stampOrderLine } from "./state.js";
 import { phoneDigits } from "./customers.js";
 import { publishCodes, publishTaster } from "./codes.js";
+import { customerTotal } from "./courier.js";
 
 const TOKEN_KEY = "bakeadmin.supabase";
 
@@ -487,17 +488,43 @@ export function trackingSnapshot(state, group) {
     const name = orderLineName(state, o);
     return `${name === "(deleted product)" ? "item" : name} ×${o.qty}`;
   }).join(", ");
-  const total = fmtRM(orders.reduce((s, o) => {
-    const price = orderLinePrice(state, o);
-    return s + (Number(o.qty) || 0) * (price == null ? 0 : price);
-  }, 0), state.settings.currency);
+  // The customer's total, from the one helper the messages use too, so the card and the
+  // messages can never quote different figures. This is what makes the card agree with
+  // the WhatsApp that asked them for money: it is the items plus the delivery charge,
+  // which is the flat postage on an order with none recorded. A charge YOU pay is your
+  // own cost and is not published here at all — it is not theirs to see (20 Sep 2026).
+  // The full add-up lives in their WhatsApp message, which is where they are asked.
+  //
+  // A COD charge is published as its own column rather than folded in, because this
+  // total is what the card tells them the order comes to — and the courier is about to
+  // ask them for the charge at the door (19 Sep 2026).
+  const { courier: courierFee, cod: courierCod, total: totalNum } = customerTotal(state, group);
+  const total = fmtRM(totalNum, state.settings.currency);
   return {
     code: orderCode(first),
     status: first.status || "new",
-    // The courier's tracking number, as she typed it on the order. Null when there
-    // is none (a self-collect order, or one not posted yet) — the customer's card
+    // The courier's tracking number, as you typed it on the order. Null when there
+    // is none (a collect order, or one not posted yet) — the customer's card
     // leaves the line out entirely rather than printing an empty label.
     tracking_no: String(first.trackingNo || "").trim() || null,
+    // The courier's charge, when the customer bears it. Null when they don't — you
+    // pay it, or there is no charge — and the card leaves the line out rather than
+    // printing an empty label. NOTE: this column needs supabase/courier_fee.sql run
+    // once, before this build is deployed (see that file).
+    //
+    // Deliberately NOT set for the flat postage: that fee is never published, so a
+    // posted order's card carries the total it makes up without naming the fee.
+    //
+    // The WHOLE charge, whatever way it is settled: the card names it either way, and
+    // only the wording of the line changes with the flag below.
+    courier_fee: (courierFee + courierCod) || null,
+    // True when the courier collects the charge at the door rather than it being paid
+    // with the order — so the card says so instead of leaving them to wonder why the
+    // total is less than the charge. Null otherwise, and the line reads as before.
+    // NOTE: this column needs supabase/courier_cod.sql run once, before this build is
+    // deployed (see that file). A missing column kills publishing for EVERY order
+    // silently, because publishTracking swallows its errors.
+    courier_cod: courierCod > 0 ? true : null,
     delivery: `${date ? shortDate(date) : ""} · ${fulfillment}${address}`,
     items,
     total,
@@ -513,21 +540,26 @@ export function trackingSnapshot(state, group) {
   };
 }
 
-// Push one order's tracking row to Supabase so the customer can look it up on
-// the storefront track card. Fires on status changes and whenever a stage flag
-// flips (Send confirmation / Paid), so the customer's journey map matches the
-// app's; best-effort and silent — a publish failure must never block the baker.
-export async function publishTracking(state, group) {
-  const c = cfg(state);
-  if (!ready(c) || !group || !group.orders || !group.orders.length) return;
+// The card's own content, without the timestamp of when it happened to be
+// written: two rows equal here are the same card, so there is nothing to publish.
+function cardContent(row) {
+  const { updated_at: _at, ...content } = row;
+  return JSON.stringify(content);
+}
+
+// What THIS device last published, by order code. In memory only, and that is the
+// safe way to be wrong: a fresh page load has published nothing, so the first save
+// after a reload always writes, and the most it can cost is one redundant write.
+const published = new Map();
+
+async function pushTracking(c, row, content) {
   let token = cachedToken();
   if (!token) {
     try { token = await login(c.url, c.anonKey, c.email, c.password); }
     catch { return; }
   }
-  const row = trackingSnapshot(state, group);
   try {
-    await fetch(`${c.url}/rest/v1/order_tracking?on_conflict=code`, {
+    const res = await fetch(`${c.url}/rest/v1/order_tracking?on_conflict=code`, {
       method: "POST",
       headers: {
         apikey: c.anonKey,
@@ -537,7 +569,43 @@ export async function publishTracking(state, group) {
       },
       body: JSON.stringify([row]),
     });
+    // Remembered only for a write the server took. A publish that failed — a column
+    // missing because a SQL script has not been run, a phone with no signal — must be
+    // tried again by the next save rather than counted as done (19 Sep 2026).
+    if (res && res.ok) published.set(row.code, content);
   } catch { /* best-effort */ }
+}
+
+// Push one order's tracking row to Supabase so the customer can look it up on
+// the storefront track card. Fires on status changes and whenever a stage flag
+// flips (Send confirmation / Paid), so the customer's journey map matches the
+// app's; best-effort and silent — a publish failure must never block the baker.
+export async function publishTracking(state, group) {
+  const c = cfg(state);
+  if (!ready(c) || !group || !group.orders || !group.orders.length) return;
+  const row = trackingSnapshot(state, group);
+  await pushTracking(c, row, cardContent(row));
+}
+
+// Publish only when the card's own content actually moved. Every door that can change
+// what the customer sees calls THIS, so none of them has to know the card's field list
+// — a list kept by hand is what let an edit that changed the items, the price or the
+// address walk straight past it, leaving the customer reading the order it used to be
+// (19 Sep 2026). One published row per code, and the whole row is compared, so a field
+// added to the card later is covered without any door being told about it.
+export async function maybePublishTracking(state, group) {
+  const c = cfg(state);
+  if (!ready(c) || !group || !group.orders || !group.orders.length) return;
+  const row = trackingSnapshot(state, group);
+  const content = cardContent(row);
+  if (published.get(row.code) === content) return;
+  await pushTracking(c, row, content);
+}
+
+// Test seam: the map above is per-process, so a suite that publishes the same card
+// twice from identical fixtures can start from a clean sheet.
+export function forgetPublishedCards() {
+  published.clear();
 }
 
 // ────────────────────────────────────────────────────────────────────────────

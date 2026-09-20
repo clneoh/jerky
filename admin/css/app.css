@@ -1143,6 +1143,12 @@ option.tone-off { color: var(--muted); }
   border-radius: 999px;
 }
 .paid-tag.tng { color: var(--brown-dark); background: var(--brown-soft); }
+/* The courier's charge, in the paid-tag's family so a row reads as one more fact
+   about the order rather than a new kind of thing. Quiet when the customer bore it
+   — that charge costs you nothing — and amber when it came out of your own pocket,
+   which is the one that is already off your profit (19 Sep 2026). */
+.paid-tag.courier { color: var(--muted); background: var(--gray-bg); }
+.paid-tag.courier.mine { color: var(--amber); background: var(--amber-bg); }
 /* The Money screen's two sums worth stopping on: the net (what should be in her
    hand and on her phone) and the line below it where what is still owed starts. */
 /* The profit statement reads like a set of accounts: figures aligned, a rule under

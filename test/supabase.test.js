@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateUpcomingDates } from "../admin/js/dates.js";
-import { computeSlots, computeProductSlots, syncAvailability, login, syncStorefront, pullIncoming, publishTracking, trackingSnapshot, refreshStorefront, pendingReviewCount } from "../admin/js/supabase.js";
+import { computeSlots, computeProductSlots, syncAvailability, login, syncStorefront, pullIncoming, publishTracking, maybePublishTracking, forgetPublishedCards, trackingSnapshot, refreshStorefront, pendingReviewCount } from "../admin/js/supabase.js";
 import { groupOrders, orderCode } from "../admin/js/state.js";
 
 const realFetch = globalThis.fetch;
@@ -1303,4 +1303,172 @@ test("trackingSnapshot publishes the courier's tracking number, or null for none
     "blank publishes null, so the customer's card leaves the line out");
   assert.equal(trackingSnapshot(state, order({})).tracking_no, null,
     "an order the baker never typed one on publishes null too");
+});
+
+// The charge the courier collects at the door (v128). The published row is what the
+// customer's card is built from, so what this asserts is the one thing that matters:
+// the total in the row is what the baker asks for, and a COD charge is not in it.
+// Both columns need their SQL run first — a column that does not exist makes the
+// upsert fail as a whole, and publishTracking swallows that silently.
+test("trackingSnapshot marks a Courier COD charge and keeps it out of the total", () => {
+  const state = makeState();
+  state.settings.currency = "RM";
+  state.products = [{ id: "prd_1", name: "Focaccia", price: 15, active: true }];
+  const date = state.deliveryDates[0];
+  const order = (extra) => ({ orders: [{
+    id: "ord_1", deliveryDateId: date.id, productId: "prd_1", qty: 2,
+    fulfillment: "courier", status: "ready", createdAt: "2026-09-01T14:32:00",
+    courierFee: 8, courierPaidBy: "customer", ...extra,
+  }] });
+
+  const cod = trackingSnapshot(state, order({ courierCod: true }));
+  assert.equal(cod.courier_cod, true, "the flag the card reads to word the line as COD");
+  assert.equal(cod.courier_fee, 8, "the charge is still published in full, so the card can name it");
+  assert.equal(cod.total, "RM 30.00", "and the total the baker asks for is the bread alone");
+
+  const advance = trackingSnapshot(state, order({}));
+  assert.equal(advance.courier_cod, null,
+    "null for a charge with the order, so the card reads exactly as it did before this column existed");
+  assert.equal(advance.total, "RM 38.00");
+});
+
+test("trackingSnapshot publishes no COD flag for a charge the baker bore", () => {
+  const state = makeState();
+  state.settings.currency = "RM";
+  state.products = [{ id: "prd_1", name: "Focaccia", price: 15, active: true }];
+  const date = state.deliveryDates[0];
+  const snap = trackingSnapshot(state, { orders: [{
+    id: "ord_1", deliveryDateId: date.id, productId: "prd_1", qty: 2,
+    fulfillment: "courier", status: "ready", createdAt: "2026-09-01T14:32:00",
+    courierFee: 8, courierPaidBy: "me", courierCod: true,
+  }] });
+
+  assert.equal(snap.courier_cod, null,
+    "a stray flag on a charge she paid must not tell the customer the courier is coming for money");
+  assert.equal(snap.courier_fee, null, "nor is her own cost published to them at all");
+});
+
+// ── the flat postage, and the charge that stands in for it ──────────────────
+// This app's own answer to "what does delivery cost", which the bakery does not
+// have. The rule she chose on 20 Sep 2026: a recorded courier charge REPLACES the
+// flat postage, so the customer is quoted one delivery line and never two. The
+// postage itself is still never published as a fee — the standing rule — but it
+// IS inside the published total, so the card quotes the same figure the WhatsApp
+// message asks for.
+test("a posted order with no recorded charge is quoted the flat postage in its total", () => {
+  const state = makeState();
+  state.settings.currency = "RM";
+  state.settings.storefront = { postageRM: 8, postageSet: true };
+  state.products = [{ id: "prd_1", name: "Focaccia", price: 15, active: true }];
+  const date = state.deliveryDates[0];
+  const order = (extra) => ({ orders: [{
+    id: "ord_1", deliveryDateId: date.id, productId: "prd_1", qty: 2,
+    fulfillment: "courier", status: "ready", createdAt: "2026-09-01T14:32:00", ...extra,
+  }] });
+
+  const snap = trackingSnapshot(state, order({}));
+  assert.equal(snap.total, "RM 38.00", "the items plus the flat postage — what the message asks for");
+  assert.equal(snap.courier_fee, null,
+    "and the postage is still not published as a charge: that fee is hers to set, not a courier's cost");
+  assert.equal(snap.courier_cod, null);
+
+  // A collect order carries no delivery charge at all, so the postage stays out of it.
+  assert.equal(trackingSnapshot(state, order({ fulfillment: "collect" })).total, "RM 30.00",
+    "nothing is posted, so nothing is charged for posting");
+});
+
+test("a recorded charge replaces the flat postage in the total, rather than joining it", () => {
+  const state = makeState();
+  state.settings.currency = "RM";
+  state.settings.storefront = { postageRM: 8, postageSet: true };
+  state.products = [{ id: "prd_1", name: "Focaccia", price: 15, active: true }];
+  const date = state.deliveryDates[0];
+  const order = (extra) => ({ orders: [{
+    id: "ord_1", deliveryDateId: date.id, productId: "prd_1", qty: 2,
+    fulfillment: "courier", status: "ready", createdAt: "2026-09-01T14:32:00",
+    courierFee: 12, courierPaidBy: "customer", ...extra,
+  }] });
+
+  assert.equal(trackingSnapshot(state, order({})).total, "RM 42.00",
+    "items + the courier's RM12, NOT items + RM12 + the flat RM8 — one delivery line, never two");
+});
+
+// ── v132: the card is offered the new version, and decides for itself ───────
+// "add new order and edit order din sync?" (19 Sep 2026). Her phones always agreed —
+// an order is a synced record. The customer's track card was published only when the
+// day, the tracking number or the charge moved, so an edit to the items, the price, the
+// address or the name left the card quoting the order it used to be. The list of fields
+// was the defect, so the fix is not a longer list: maybePublishTracking compares the
+// WHOLE row it is about to write with the one this device last wrote.
+function cloudState() {
+  const state = makeState();
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon",
+    email: "a@b.c", password: "pw" };
+  state.products = [{ id: "prd_1", name: "Focaccia", price: 15, active: true }];
+  return state;
+}
+function trackingCalls(calls) {
+  return calls.filter((c) => c.url.includes("/rest/v1/order_tracking"));
+}
+
+test("a card identical to the one already published is not written again", async () => {
+  const state = cloudState();
+  const date = state.deliveryDates[0];
+  const group = { orders: [{
+    id: "ord_ab12cd34ef56", deliveryDateId: date.id, productId: "prd_1", qty: 2,
+    customerName: "Ain", fulfillment: "collect", status: "confirmed",
+    createdAt: "2026-09-01T14:32:00",
+  }] };
+  const calls = [];
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ url, opts });
+    if (url.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    return { ok: true, status: 201, text: async () => "" };
+  };
+  try {
+    forgetPublishedCards();
+    await maybePublishTracking(state, group);
+    assert.equal(trackingCalls(calls).length, 1, "the first save publishes the card");
+
+    await maybePublishTracking(state, group);
+    assert.equal(trackingCalls(calls).length, 1, "a second save of the same card writes nothing");
+
+    // What the card shows moved, so the next save has to reach it — the whole point.
+    group.orders[0].qty = 3;
+    await maybePublishTracking(state, group);
+    const written = trackingCalls(calls);
+    assert.equal(written.length, 2, "and a card that actually moved is written");
+    assert.equal(JSON.parse(written[1].opts.body)[0].items, "Focaccia ×3");
+    assert.equal(JSON.parse(written[1].opts.body)[0].total, "RM 45.00");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("a publish the server refused is not remembered as done", async () => {
+  // The trap this guards: publishTracking swallows every error, and a missing column —
+  // a SQL script not yet run — refuses EVERY write. If a refused write were remembered,
+  // the customer's card would never be retried and would stay wrong for good.
+  const state = cloudState();
+  const date = state.deliveryDates[0];
+  const group = { orders: [{
+    id: "ord_ab12cd34ef56", deliveryDateId: date.id, productId: "prd_1", qty: 2,
+    customerName: "Ain", fulfillment: "collect", status: "confirmed",
+    createdAt: "2026-09-01T14:32:00",
+  }] };
+  const calls = [];
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ url, opts });
+    if (url.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    return { ok: false, status: 400, text: async () => "column does not exist" };
+  };
+  try {
+    forgetPublishedCards();
+    await maybePublishTracking(state, group);
+    await maybePublishTracking(state, group);
+    assert.equal(trackingCalls(calls).length, 2,
+      "the rejected write is tried again rather than counted as published");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

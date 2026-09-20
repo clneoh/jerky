@@ -1578,6 +1578,19 @@ function paintTrack() {
   const journey = journeyEl(row);
   const details = el("div", { class: "track-details" }, [
     el("p", {}, row.delivery),
+    // The courier's charge, named above the total — so the figure the customer owes
+    // explains itself instead of looking wrong. Absent when the charge was yours to
+    // bear, or there was none. Never the flat postage: that fee is yours, and the
+    // total below already includes it without naming it.
+    //
+    // A COD charge is named the same way but said to be collected at the door, and it
+    // is deliberately NOT inside the total below: the courier is about to ask for it,
+    // and a total that included it too would read as being charged twice (19 Sep 2026).
+    row.courier_fee
+      ? el("p", { class: "track-note track-fee" }, sub(
+          t(row.courier_cod ? "courierCod" : "courierCharge"),
+          `RM${Number(row.courier_fee).toFixed(2)}`))
+      : null,
     el("p", {}, `${row.items} — ${row.total}`),
   ]);
   const kids = [
@@ -1616,7 +1629,12 @@ export async function trackOrder(code) {
       // tracking_no must be named here: PostgREST returns only the columns
       // listed, so without it the row never carries the number and the line
       // below can never draw.
-      `${base}/rest/v1/order_tracking?select=status,confirmed_sent,paid_received,delivery,items,total,tracking_no,updated_at&code=eq.${clean}&limit=1`,
+      // PostgREST returns ONLY the columns named in `select`, and this card draws the
+      // courier's number, the courier's charge, whether that charge is COD, and whose
+      // order it is — so tracking_no, courier_fee, courier_cod and customer all have to
+      // be asked for here or those lines are simply dead: the row carries the column,
+      // the card never receives it (the same trap this list already fell into twice).
+      `${base}/rest/v1/order_tracking?select=status,confirmed_sent,paid_received,delivery,items,total,tracking_no,courier_fee,courier_cod,customer,updated_at&code=eq.${clean}&limit=1`,
       { headers: { apikey: sb.anonKey }, cache: "no-store" });
     const rows = res.ok ? await res.json() : null;
     const row = Array.isArray(rows) && rows[0];

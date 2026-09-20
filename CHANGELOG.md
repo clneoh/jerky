@@ -1,8 +1,58 @@
-# Munchies Furkidz — change history (v54 → v123)
+# Munchies Furkidz — change history (v54 → v132)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**20 Sep 2026 (Engine v124–v130, v132) — the courier's charge, and who bore it.** An order
+can now carry a **courier charge** beside its note and tracking number. The **Note / tracking**
+button on the row opens the box for it, and the same box sits in **Edit**. You record what the
+courier asked for, and then **who paid it** — the customer or you. Because the same charge
+means two completely different things depending on the answer, it lands in two different places:
+a charge **the customer bears** is added to what they owe for delivery and named in their
+WhatsApp message and on their own track page; a charge **you bore** becomes an ordinary
+**Delivery & fuel** expense in your books, so it comes off your profit like any other cost and
+the customer owes no delivery charge at all.
+
+**One delivery charge per order — your rule, applied.** This app already quotes a flat RM8
+postage on every posted order, so a recorded charge and the flat fee were two answers to one
+question. As you decided, a recorded charge **replaces** the postage rather than joining it: a
+customer-borne charge is the **one** delivery line they are quoted, never two, and a charge **you
+bore** takes the flat fee away with it, so that order asks them for nothing on delivery at all.
+An order with **no** charge recorded is quoted exactly as it was before any of this existed, and
+a box half filled in — an amount typed with the payer left blank — changes nothing either.
+**The postage fee itself is still never published to the storefront** — but it is now inside the
+figure on the track page, so the customer's page and your WhatsApp message ask for the same
+amount.
+
+**Cash on delivery, if anyone ever asks for it.** The same box can be ticked so the courier
+collects the charge at the door. The charge is still named in full, so the customer knows what to
+have ready, but it is kept **out** of the amount your message asks for — asking for it up front
+as well would be asking for the same money twice — and their page words it as a payment to the
+courier, not to you. This is entirely optional and off unless you tick it; an order without it
+behaves exactly as before.
+
+**And the customer's own card catches up properly (v132).** Your phones have always agreed — an
+order is a synced record — but the customer's track page was only re-sent when the day, the
+tracking number or the charge moved. Edit the items, a price, the address or the name and their
+page carried on quoting the order it used to be. The app now compares the **whole card** it is
+about to send with the last one it sent, and re-sends it whenever anything on it differs. If a
+write is refused — most likely because a SQL step has not been run yet — it is not remembered as
+done, so it is retried rather than leaving that page wrong for good.
+
+**Two SQL scripts to run once each, before this build goes live:** `supabase/courier_fee.sql`
+and `supabase/courier_cod.sql`. Paste each into your Supabase SQL editor. The app publishes a
+customer's whole track card in a single call, so a missing column refuses that call **as a
+whole** — every customer's card would stop updating, not only orders with a charge. Both scripts
+are safe to run twice. As always, **a commit or a push never runs SQL**: publishing the file to
+your site does nothing to your database.
+
+**Left out on purpose — your bakery has one thing this app does not.** The bakery gained a
+**Production line** (a planner for focaccia bake days) in the same batch of work. Posting pouches
+of jerky has no bake-day planner in it, so it was deliberately not copied across. That is the
+first time the two apps have genuinely differed, and it is why this app's engine number is now
+**its own** rather than a twin of the bakery's. Everything else is still the same code, and
+future improvements still arrive here the same way.
 
 **20 Sep 2026 (manual v123e) — a customer can put a code in, and the order tells you what
 to take off (no new engine number: built here first, so both your apps stay on the same

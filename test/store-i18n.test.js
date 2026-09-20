@@ -93,6 +93,13 @@ test("the closed-product reason and the basket notes are keyed in all three lang
     codeNoteAdd: ["%1"],
     codeUnknown: [],
     codeNotePlain: [],
+    // The courier's charge on the card, and the same charge when the courier
+    // collects it at the door (v124 / v128). Both are built in JS off the same
+    // published row, so nothing else would notice either going missing — and the
+    // COD one silently falling back to the plain wording would tell the customer
+    // they owe the baker money the courier is about to ask them for.
+    courierCharge: ["%1"],
+    courierCod: ["%1"],
   };
   for (const [key, phs] of Object.entries(holders)) {
     for (const l of LANGS) {
@@ -100,6 +107,17 @@ test("the closed-product reason and the basket notes are keyed in all three lang
       assert.equal(typeof v, "string", `${l}.${key} is missing`);
       for (const ph of phs) assert.ok(v.includes(ph), `${l}.${key} must keep ${ph}`);
     }
+  }
+});
+
+test("the COD charge is worded differently from the plain one in every language", () => {
+  for (const l of LANGS) {
+    assert.notEqual(STORE[l].courierCod, STORE[l].courierCharge,
+      `${l}: the same string for both means the card cannot say who is being paid`);
+    // COD alone reads as paying for the GOODS at the door; here the goods are already
+    // paid and only the charge is collected, so each language has to say so.
+    assert.ok(STORE[l].courierCod.length > STORE[l].courierCharge.length,
+      `${l}: the COD line carries the instruction on top of naming the charge`);
   }
 });
 
