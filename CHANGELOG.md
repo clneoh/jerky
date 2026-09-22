@@ -4,6 +4,31 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**23 Sep 2026 (no new engine) — the homepage grid carries your new prices and the full treat
+descriptions.** Every card in the homepage's "Our Treats" grid now reads the price and the
+wording you sent, for all ten treats (the weights are unchanged — 100g jerky, 80g puff, biscuit
+and Chinese yam, 50g rolls, 40g melts).
+
+**Prices.** Four went up: Chicken Potato Puff RM22 → RM24, Carrot Chicken Biscuit RM23 → RM24,
+and all three rolls (Apple, Pear, Okra) RM20 → RM24. Chicken Jerky RM24, Duck Jerky RM26, Pork
+Jerky RM28, Chinese Yam Chicken RM24 and Egg Yolk Melts RM22 are the prices you already had.
+
+**Wording.** Each card carries your **full** description word for word — what it is made of, that
+nothing else goes in, and how it behaves in the hand — replacing the older short lines. The page
+is read in three languages, so the Chinese and Malay versions were updated to match: switching
+language can never show the old words beside a new price.
+
+**Egg Yolk Melts is marked out of stock.** Its card keeps its price and wears a small "OUT OF
+STOCK" pill beside the name — the same pill style the PORK note already uses — in whichever
+language the reader has chosen.
+
+**The short one-line descriptions were not used.** Your instruction was the full description on
+the homepage, so the short lines are kept aside rather than discarded — they are ready if you
+would like them somewhere smaller later (the shop menu, or a printed label). The treat photos are
+untouched.
+
+No new engine — nothing changed on your phone. No SQL to run.
+
 **21 Sep 2026 (no new engine) — tapping a day you do not post is answered.** On the order page,
 tapping a day on the calendar that is not one of your posting days used to do nothing at all: no
 highlight, no message, nothing moved. A customer tapping the day they wanted read that as a

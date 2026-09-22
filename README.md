@@ -716,6 +716,37 @@ the deadline go through it:
 languages in `test/store.test.js` without a phone. Manual **v132a** (a manual-only revision —
 the engine did not move).
 
+## The homepage grid: prices and card copy (23 Sep 2026, no engine bump)
+
+The homepage's treat grid is **static marketing copy**, not the live menu — the shop's own
+products live in the backoffice and are published to `/store/` (see the single-source rule). So a
+card's price is a literal in `index.html` and its wording is a key in `home-lang.js`; neither is
+read from Supabase, and nothing on the admin side changes a homepage card.
+
+Three things follow, and all three bite:
+
+- **A price lives in the markup only.** `<div class="price">` carries the RM figure as plain
+  text — there is no `data-i18n` on it, because a number reads the same in all three languages.
+  Prices are therefore *not* in the language dictionary and cannot be translated.
+- **A description lives in the dictionary, in three languages.** Its English value must
+  byte-match the authored text in `index.html`: `test/i18n.test.js`'s "English dictionary values
+  match the authored English text" walks every `data-i18n` tag in the markup and asserts
+  `HOME.en[key] === authored`. Edit one side and not the other and the suite fails — which is the
+  point of the test, and why a copy change is always two edits.
+- **`test/i18n.test.js` also asserts key parity**, so a new key (`p10Tag` for the out-of-stock
+  pill) must exist in `en`, `zh` and `ms` or the homepage test fails before the browser ever sees
+  it.
+
+**Out-of-stock is the existing `.soon` pill, not a new mechanism.** The grid already had a pill
+beside a product name (`porkTag`, `.eyebrow .soon.pork`); Egg Yolk Melts reuses the same shape with
+an `.oos` variant in the same muted brown as the `.size` line, so "cannot be ordered right now"
+does not read as a flavour tag. Its price stays on the card — the owner's own marker kept it.
+
+**The Full/Short pair.** The owner supplied a full paragraph and a one-line summary per treat.
+Her instruction was the **full** description on the homepage, so the short lines are unused here;
+they are not deleted, and are the natural copy for a smaller surface (the shop menu's product
+description, or a printed label) if she asks.
+
 ## The shop's calendar answers a tap it cannot act on (21 Sep 2026, no engine bump)
 
 `buildCalendar()` in `store/app.js` builds a `<button>` for a day the customer can do something
