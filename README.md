@@ -747,6 +747,16 @@ Her instruction was the **full** description on the homepage, so the short lines
 they are not deleted, and are the natural copy for a smaller surface (the shop menu's product
 description, or a printed label) if she asks.
 
+**Units and sizes (later the same day).** Every card's size line is a `data-i18n` key like
+`p1Size`, so it obeys the same two-sided rule as a description: the markup and `HOME.en` must
+match byte for byte. Three treats now sell in two weights — Chicken, Duck and Pork Jerky read
+`50/100g pack` in English, `50/100g pack` in Malay (**`Pek 50/100g`**) and the Chinese word for a
+pack rather than a bag, since the site says "pack" rather than "pouch". The unit word on the
+homepage is **not** the product `unit` field the backoffice holds: `pouch` still legitimately
+appears in admin fixtures (`state.test.js`'s `PETTREAT` list, `uom_pouch`) and is deliberate —
+that is the live menu's own vocabulary, a separate copy surface that this change did not touch.
+A second size does **not** imply a second price: each card still carries one literal RM figure.
+
 ## The shop's calendar answers a tap it cannot act on (21 Sep 2026, no engine bump)
 
 `buildCalendar()` in `store/app.js` builds a `<button>` for a day the customer can do something

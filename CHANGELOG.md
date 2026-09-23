@@ -4,10 +4,36 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**23 Sep 2026 (no new engine) — the website says "pack", and the three jerky come in two sizes.**
+Three wording changes on the homepage grid.
+
+**"Pack", not "pouch".** Every card's size line used to end in "pouch"; the website now says
+**pack** throughout, and the note under the grid reads "Every pack is clearly labelled with its
+meat". This is the homepage's own wording — the shop menu in the backoffice is separate copy and
+was left alone, so the unit box on a product still holds whatever you typed there.
+
+**Chicken, Duck and Pork Jerky also come in a 50g pack.** Their size line now reads
+**50/100g pack**, showing both sizes in one label. The other seven are unchanged — 80g for the
+puff, the biscuit and the Chinese yam chicken; 50g for the three rolls; 40g for the melts.
+
+**One small correction to the wording you sent.** The Carrot Chicken Biscuit's description said
+"make into little dinosaur biscuits" and now reads **"made into"**.
+
+The page is read in three languages, so Chinese and Malay were updated to match. The Chinese size
+lines now use the Chinese word for a pack rather than the word for a bag, and the Chinese note
+under the grid changed with them; Malay already said Pek for a pack, so only the weight changed
+there. A language switch can never show an old word beside a new one.
+
+**The card shows one price — the 100g price.** A second size does not get a second price on the
+card unless you ask for one; a 50g price, or a "from" price, is a one-line change if you want it.
+
+No new engine — nothing changed on your phone. No SQL to run.
+
 **23 Sep 2026 (no new engine) — the homepage grid carries your new prices and the full treat
 descriptions.** Every card in the homepage's "Our Treats" grid now reads the price and the
-wording you sent, for all ten treats (the weights are unchanged — 100g jerky, 80g puff, biscuit
-and Chinese yam, 50g rolls, 40g melts).
+wording you sent, for all ten treats (the weights at the time were the ones you gave — 80g puff,
+biscuit and Chinese yam, 50g rolls, 40g melts; the jerky gained a second size the same day, see
+above).
 
 **Prices.** Four went up: Chicken Potato Puff RM22 → RM24, Carrot Chicken Biscuit RM23 → RM24,
 and all three rolls (Apple, Pear, Okra) RM20 → RM24. Chicken Jerky RM24, Duck Jerky RM26, Pork
