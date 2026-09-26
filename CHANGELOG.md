@@ -4,6 +4,30 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**26 Sep 2026 (no new engine) — the homepage grid carries your new prices.**
+Seven cards changed price, the three jerky now name both pack sizes, and one card's price came off.
+
+**What each card says now.** Chicken Potato Puff, Carrot Chicken Biscuit, Pear Chicken Roll and
+Chinese Yam Chicken RM24 → **RM25**. Apple Chicken Roll **RM24** and Okra Chicken Roll **RM24** are
+the prices you already had, so they are unchanged.
+
+**The three jerky show two prices on one line.** They sell in a 50g pack and a 100g pack, so the
+price line now reads **50g RM16 · 100g RM29** (Duck **50g RM18 · 100g RM33**, Pork
+**50g RM17 · 100g RM31**). Before this they carried a single figure. The two-price line is set a
+little smaller than a one-price line on purpose: at the full size it wrapped onto a second row on
+every screen and pushed the description down on those three cards only.
+
+**Egg Yolk Melts has no price on it now.** You asked for the price to come off, and it is off — the
+card shows the name, its OUT OF STOCK pill, the weight and the description. Putting a figure back
+is one line whenever it returns.
+
+**Nothing here needs translating.** A price is a plain number written into the page, not a
+dictionary entry, so English, Chinese and Malay all show the same figure and a language switch
+cannot show an old price beside a new one. This is the homepage's own copy: the live menu in the
+backoffice is a separate list, and its prices are still yours to set there.
+
+No new engine — nothing changed on your phone. No SQL to run.
+
 **23 Sep 2026 (no new engine) — the website says "pack", and the three jerky come in two sizes.**
 Three wording changes on the homepage grid.
 
@@ -24,8 +48,9 @@ lines now use the Chinese word for a pack rather than the word for a bag, and th
 under the grid changed with them; Malay already said Pek for a pack, so only the weight changed
 there. A language switch can never show an old word beside a new one.
 
-**The card shows one price — the 100g price.** A second size does not get a second price on the
-card unless you ask for one; a 50g price, or a "from" price, is a one-line change if you want it.
+**The card showed one price — the 100g price — at the time.** A second size did not get a second
+price on the card until you asked; you asked on 26 Sep and both prices are now on the line (see the
+top entry).
 
 No new engine — nothing changed on your phone. No SQL to run.
 

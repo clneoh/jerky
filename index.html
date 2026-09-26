@@ -68,6 +68,9 @@ h1{font-family:Arial,sans-serif;font-size:clamp(40px,6vw,70px);line-height:.95;l
 .eyebrow{font-family:Arial,sans-serif;font-weight:900;letter-spacing:.05em;font-size:22px;color:var(--brown)}
 .size{font-family:Arial,sans-serif;font-size:13px;color:#7a563e;margin-top:3px}
 .price{font-family:Arial,sans-serif;font-size:28px;font-weight:900;color:var(--accent);margin:13px 0 8px}
+/* A card that shows two prices needs a smaller size than a single RM figure:
+   at 28px the longer line wraps on every screen width. */
+.price.price-two{font-size:22px;line-height:1.5}
 .product-info p{margin:0;font-size:15px;color:#553a2b}
 .eyebrow .soon{display:inline-block;margin-left:8px;vertical-align:3px;font-family:Arial,sans-serif;font-size:9px;font-weight:800;letter-spacing:.08em;color:var(--accent);border:1px solid rgba(163,74,38,.5);border-radius:999px;padding:2px 8px;line-height:1.4}
 .eyebrow .soon.pork{color:var(--red);border-color:rgba(192,57,43,.55)}
@@ -234,7 +237,7 @@ footer a:hover{color:#fff}
         <div class="product-info">
           <div class="eyebrow"><span data-i18n="p1Name">CHICKEN JERKY</span></div>
           <div class="size" data-i18n="p1Size">50/100g pack</div>
-          <div class="price">RM24</div>
+          <div class="price price-two">50g RM16 · 100g RM29</div>
           <p data-i18n="p1Desc">Just chicken breast, sliced thin and dried slowly until it's crisp. One ingredient: chicken breast. Nothing added. Light, wide strips that snap cleanly in your hand.</p>
         </div>
       </article>
@@ -246,7 +249,7 @@ footer a:hover{color:#fff}
         <div class="product-info">
           <div class="eyebrow"><span data-i18n="p2Name">DUCK JERKY</span></div>
           <div class="size" data-i18n="p2Size">50/100g pack</div>
-          <div class="price">RM26</div>
+          <div class="price price-two">50g RM18 · 100g RM33</div>
           <p data-i18n="p2Desc">Duck fillet, dried slowly into dark, rich strips. One ingredient: duck fillet. Nothing added. Firm and crisp, with a deep flavour that stands out.</p>
         </div>
       </article>
@@ -258,7 +261,7 @@ footer a:hover{color:#fff}
         <div class="product-info">
           <div class="eyebrow"><span data-i18n="p3Name">PORK JERKY</span> <span class="soon pork" data-i18n="porkTag">PORK</span></div>
           <div class="size" data-i18n="p3Size">50/100g pack</div>
-          <div class="price">RM28</div>
+          <div class="price price-two">50g RM17 · 100g RM31</div>
           <p data-i18n="p3Desc">Pork loin, sliced thin and dried slowly. A good choice for pets who can't have chicken or duck. One ingredient: pork. Nothing added. Light golden strips that break easily into smaller pieces.</p>
         </div>
       </article>
@@ -270,7 +273,7 @@ footer a:hover{color:#fff}
         <div class="product-info">
           <div class="eyebrow"><span data-i18n="p4Name">CHICKEN POTATO PUFF</span></div>
           <div class="size" data-i18n="p4Size">80g pack</div>
-          <div class="price">RM24</div>
+          <div class="price">RM25</div>
           <p data-i18n="p4Desc">Chicken jerky with sweet potato piped on top, dried until crisp. Chicken, sweet potato and rolled oats. Nothing else. Golden swirls down every strip — crunchy the whole way through.</p>
         </div>
       </article>
@@ -282,7 +285,7 @@ footer a:hover{color:#fff}
         <div class="product-info">
           <div class="eyebrow"><span data-i18n="p5Name">CARROT CHICKEN BISCUIT</span></div>
           <div class="size" data-i18n="p5Size">80g pack</div>
-          <div class="price">RM24</div>
+          <div class="price">RM25</div>
           <p data-i18n="p5Desc">70% Chicken and 20% carrot, made into little dinosaur biscuits. Chicken, carrot, oats and egg. Nothing else. Deep gold and crunchy.</p>
         </div>
       </article>
@@ -306,7 +309,7 @@ footer a:hover{color:#fff}
         <div class="product-info">
           <div class="eyebrow"><span data-i18n="p7Name">PEAR CHICKEN ROLL</span></div>
           <div class="size" data-i18n="p7Size">50g pack</div>
-          <div class="price">RM24</div>
+          <div class="price">RM25</div>
           <p data-i18n="p7Desc">Chicken wrapped around sliced pear, and dried until crisp. Chicken and pear. Nothing else. Little donut that crunch and break apart easily.</p>
         </div>
       </article>
@@ -330,7 +333,7 @@ footer a:hover{color:#fff}
         <div class="product-info">
           <div class="eyebrow"><span data-i18n="p9Name">CHINESE YAM CHICKEN</span></div>
           <div class="size" data-i18n="p9Size">80g pack</div>
-          <div class="price">RM24</div>
+          <div class="price">RM25</div>
           <p data-i18n="p9Desc">Chicken blended with Chinese yam, piped into little round coins. Chicken and Chinese yam (山药). Nothing else. Neat round discs that crunch straight through.</p>
         </div>
       </article>
@@ -342,7 +345,6 @@ footer a:hover{color:#fff}
         <div class="product-info">
           <div class="eyebrow"><span data-i18n="p10Name">EGG YOLK MELTS</span> <span class="soon oos" data-i18n="p10Tag">OUT OF STOCK</span></div>
           <div class="size" data-i18n="p10Size">40g pack</div>
-          <div class="price">RM22</div>
           <p data-i18n="p10Desc">Egg yolk and goat's milk, dried into small drops. Egg yolk and goat-milk powder. Nothing else. Light and crisp, and small enough to break in half for training.</p>
         </div>
       </article>

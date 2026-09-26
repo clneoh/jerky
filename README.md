@@ -740,7 +740,8 @@ Three things follow, and all three bite:
 **Out-of-stock is the existing `.soon` pill, not a new mechanism.** The grid already had a pill
 beside a product name (`porkTag`, `.eyebrow .soon.pork`); Egg Yolk Melts reuses the same shape with
 an `.oos` variant in the same muted brown as the `.size` line, so "cannot be ordered right now"
-does not read as a flavour tag. Its price stays on the card — the owner's own marker kept it.
+does not read as a flavour tag. Its price was on the card until 26 Sep 2026, when the owner asked
+for it to be removed — the card now carries no figure at all (see **Prices** below).
 
 **The Full/Short pair.** The owner supplied a full paragraph and a one-line summary per treat.
 Her instruction was the **full** description on the homepage, so the short lines are unused here;
@@ -755,7 +756,26 @@ pack rather than a bag, since the site says "pack" rather than "pouch". The unit
 homepage is **not** the product `unit` field the backoffice holds: `pouch` still legitimately
 appears in admin fixtures (`state.test.js`'s `PETTREAT` list, `uom_pouch`) and is deliberate —
 that is the live menu's own vocabulary, a separate copy surface that this change did not touch.
-A second size does **not** imply a second price: each card still carries one literal RM figure.
+A second size did **not** imply a second price at the time: each card carried one literal RM figure.
+That changed on 26 Sep 2026 — see **Prices** below.
+
+**Prices (26 Sep 2026).** A price is a literal in the markup and nothing else — no dictionary key,
+no test, no Supabase read — so changing one is a **one-sided edit**, unlike a description or a size.
+Seven cards changed: Puff, Biscuit, Pear Roll and Chinese Yam Chicken to **RM25**, and the three
+jerky to their 100g figures. Apple and Okra stayed at RM24.
+
+Two details worth keeping:
+
+- **`RM24` is a shared literal, not a unique one.** It sat on seven cards at once, so a
+  `replace_all` would have re-priced the wrong treats; every edit is anchored on the neighbouring
+  `data-i18n="pNSize"` line, which *is* unique per card. Keep doing that.
+- **A two-price card needs `.price-two`.** `50g RM16 · 100g RM29` measures ~302 px at the `.price`
+  size of 28 px, but the price box caps at ~251 px (55 % of a 550 px card, less 25 px padding), so
+  at full size it wraps onto a second row and pushes that card's description down. The modifier
+  sets 22 px, which fits on one line at every width. A single-figure card keeps 28 px.
+
+Egg Yolk Melts carries no `.price` element at all now; its `.size` line is followed directly by the
+description.
 
 ## The shop's calendar answers a tap it cannot act on (21 Sep 2026, no engine bump)
 
