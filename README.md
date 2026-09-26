@@ -777,6 +777,10 @@ Two details worth keeping:
 Egg Yolk Melts carries no `.price` element at all now; its `.size` line is followed directly by the
 description.
 
+**Pear Chicken Roll went back to RM24 on 27 Sep 2026** — the one card the owner revisited, and a
+reminder that "the 26 Sep list" is a snapshot, not a standing rule. The fix was the figure alone:
+its size line already read `50g pack`, so nothing else on the card moved.
+
 ## The shop's calendar answers a tap it cannot act on (21 Sep 2026, no engine bump)
 
 `buildCalendar()` in `store/app.js` builds a `<button>` for a day the customer can do something

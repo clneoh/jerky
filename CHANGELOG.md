@@ -4,12 +4,21 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**27 Sep 2026 (no new engine) — Pear Chicken Roll is RM24.**
+One card changed price.
+
+Pear Chicken Roll was **RM25**; it is **RM24** now. The card's size line already said 50g pack, so
+only the figure moved.
+
+No new engine — nothing changed on your phone. No SQL to run.
+
 **26 Sep 2026 (no new engine) — the homepage grid carries your new prices.**
 Seven cards changed price, the three jerky now name both pack sizes, and one card's price came off.
 
 **What each card says now.** Chicken Potato Puff, Carrot Chicken Biscuit, Pear Chicken Roll and
 Chinese Yam Chicken RM24 → **RM25**. Apple Chicken Roll **RM24** and Okra Chicken Roll **RM24** are
-the prices you already had, so they are unchanged.
+the prices you already had, so they are unchanged. (Pear Chicken Roll went back to RM24 the next
+day — see the 27 Sep entry at the top.)
 
 **The three jerky show two prices on one line.** They sell in a 50g pack and a 100g pack, so the
 price line now reads **50g RM16 · 100g RM29** (Duck **50g RM18 · 100g RM33**, Pork
