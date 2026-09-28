@@ -4,6 +4,27 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**28 Sep 2026 (no new engine) — the address lookup in your back office now works. Nothing to run,
+and nothing to update on your phones.**
+
+Your back office had two address boxes that did nothing: you typed an address, pressed the button
+beside it, and neither a map pin nor a list of suggestions ever came back. One cause, two symptoms
+— those boxes ask a small helper that runs inside your own Supabase project, and that helper had
+never been put there, so the request went nowhere. It is there now, deployed by you on 28 September
+2026.
+
+The same helper also holds the price-and-book half for a courier, and that half stays exactly where
+it was: it needs a courier key you have not set up and do not need. So a courier price screen will
+still say a key is missing — that is the honest answer rather than a fault, and nothing about your
+orders, money, labels or postage is touched by it.
+
+Two things worth knowing before you try it. First, the lookup sends your phone's sign-in along with
+it, so the phone has to be signed in to your shared data, or you will be told that instead of being
+given an answer. Second, the list of suggestions only appears when there is a real choice to make —
+two or more matches. Now that your lookups come back with a house number, most addresses will return
+one exact answer and therefore show no list at all, with the pin simply landing where it belongs.
+That is the design, not the old fault returning.
+
 **28 Sep 2026 — engine v224. The picture window is square, and a product's row shows only
 what a customer sees. No database step — nothing to run.**
 

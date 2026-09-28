@@ -977,8 +977,43 @@ call as a whole and *every* customer's card stops updating):
 
 Two **optional** Edge Functions, in her own project so the request goes out under her own name:
 `supabase/functions/courier` (price and book a job) and `supabase/functions/shop-geocode` (the
-address lookup). Neither is needed to sell: without them the courier screens say a key is
-missing and the customer places the pin by hand.
+address lookup). Neither is needed to sell, and **both are deployed as of 2026-09-28** — see
+the next section for what the `courier` deploy did and did not turn on.
+
+## The backoffice address lookup, and the deploy that turned it on (28 Sep 2026, no engine bump)
+
+Her report was **"the courier setup in other like not functioning with the geocode and no auto
+complete"** — the backoffice address box did nothing and drew no suggestion list. One cause, two
+symptoms. The shop (`/store/`) calls `shop-geocode`; the **backoffice calls the `courier`
+function** (`callCourier(state, { action: "geocode" })` in `admin/js/couriers/api.js`), and that
+function had never been deployed — parked along with Lalamove. So the lookup 404'd *and* the
+suggestion panel (`admin/js/place_map.js`, `.sugg-panel`) had nothing to draw. The UI was real;
+it was being fed by a dead channel.
+
+**The deploy fixes it without committing anyone to Lalamove**, because the function answers
+geocoding **before it looks up a provider**:
+
+```ts
+if (action === "geocode") {           // index.ts ~line 114
+  const out = await geocodeAddress(String(args.address || ""));
+  return json(out);
+}
+const found = configFor(provider);    // ~line 119 — the only reader of LALAMOVE_KEY/SECRET
+```
+
+`configFor()` is the only place `LALAMOVE_KEY`/`LALAMOVE_SECRET` are read, so the geocode half
+needs **no courier key at all**. She ran
+`supabase functions deploy courier --project-ref ircwozniiyywsowamixy` herself; `WARNING: Docker
+is not running` is harmless, and **no `--no-verify-jwt`** — the gateway's JWT check passes the
+owner's session token (unlike `shop-geocode`, which the shop calls with the anon key alone). The
+price/book half stays unset and says so.
+
+**Two things that look like faults and are not.** The backoffice lookup requires the phone to be
+**signed in to shared data** — `channelProblem(state)` returns *"Shared data is not set up on this
+phone…"* / *"…is not signed in…"* otherwise. And the suggestion list **only draws with two or more
+matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestions(); return; }` — so
+now that the Google key returns one precise house-number answer, most lookups legitimately show no
+list and the pin simply lands.
 
 ## The picture window is square, and the product row is a shop view (v224)
 
