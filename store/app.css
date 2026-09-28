@@ -417,26 +417,24 @@ html, body {
 
 /* ONE standard photo window, and it is the SAME window in the three places she
    meets a product picture: the shop's card here, her app's products list, and
-   the editor where she picks it. 120 x 120. Before this version each place had
-   its own size — 96 wide here following the card's own height, 64 in the app —
-   so one picture showed three different sizes and none of them big enough to
-   make out the product. A fixed window means what she sees is what a customer
-   sees, at a size that actually shows the bake.
+   the editor where she picks it. 120 x 120, and SQUARE. Before this version each
+   place had its own size — 96 wide here following the card's own height, 64 in
+   the app — so one picture showed three different sizes and none of them big
+   enough to make out the product.
 
-   `contain`, never `cover`. The window is the FIXED thing and the photo is shown
-   WHOLE inside it, in whatever shape the baker's file happens to be. `cover`
-   would crop a second time, right here, and she would never see it happen — a
-   tall portrait would come back with its top and bottom quietly cut off. With
-   `contain` a tall photo fills the window top to bottom with the soft window
-   colour at either side, and a wide one fills it across with the colour above
-   and below. The file keeps its own ratio (readPhotoFit, never readPhoto), and
-   this is the other half of that promise. */
+   `cover`, and the window is square. The photo is cropped to a square when she
+   chooses it (readPhoto, 360 px), so it fills this window edge to edge with no
+   bars. `cover` is here for the photos already stored from before that change: an
+   old wide or tall one is trimmed to the square's middle rather than letterboxed,
+   so every card looks the same and no window colour shows through. She asked for
+   the crop by name — "photo upload can be auto crop to fit the window" — which
+   reverses the no-crop of v220-v223. */
 .menu-thumb {
   width: 120px;
   height: 120px;
   flex: 0 0 auto;
   align-self: flex-start;
-  object-fit: contain;
+  object-fit: cover;
   border-radius: 10px;
   background: #f1e9de;
 }

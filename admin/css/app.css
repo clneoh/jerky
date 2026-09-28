@@ -300,14 +300,15 @@ body { min-height: 100vh; }
    Both are drawn the same shape — a row indented by the category's own depth, so
    what she ticks reads like the tree the shop will draw. */
 .thumb-preview { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-/* The same standard 120 x 120 photo window as the shop's card (.menu-thumb in
-   store/app.css) and the products list (.prod-thumb below) — one size in all
-   three, so the picture she picks here is exactly what her customers see. */
+/* The same standard 120 x 120 SQUARE photo window as the shop's card (.menu-thumb
+   in store/app.css) and the products list (.prod-thumb below) — one size in all
+   three, so the picture she picks here is exactly what her customers see.
+   `cover` because the photo is cropped to a square when it is chosen. */
 .thumb-box {
   width: 120px;
   height: 120px;
   flex: 0 0 auto;
-  object-fit: contain;
+  object-fit: cover;
   border-radius: 10px;
   background: var(--strip);
 }
@@ -329,21 +330,21 @@ body { min-height: 100vh; }
 .cat-pick input { flex: 0 0 auto; width: 20px; height: 20px; margin: 0; }
 
 /* The picture beside a product's name in the products list, so she can see at a
-   glance which ones still need one. The same standard 120 x 120 window as the
-   shop's card (.menu-thumb in store/app.css) and the editor (.thumb-box above).
-   It used to be 64 wide and to follow the row's own height, so the same picture
-   was a different size here than on the shop.
+   glance which ones still need one. The same standard 120 x 120 SQUARE window as
+   the shop's card (.menu-thumb in store/app.css) and the editor (.thumb-box
+   above). It used to be 64 wide and to follow the row's own height, so the same
+   picture was a different size here than on the shop.
 
-   `contain`, never `cover`: the window is fixed and the photo is shown WHOLE
-   inside it, in the shape her file happens to be. The same rule as the shop's
-   card, for the same reason — she must see the same picture here that her
-   customers see there, and neither of them cropped. */
+   `cover`, for the same reason as the shop's card: the photo is cropped to a
+   square when it is chosen, and an older one still in its own shape is trimmed to
+   the square's middle rather than letterboxed — she must see the same picture
+   here that her customers see there. */
 .prod-row-main { display: flex; align-items: stretch; gap: 10px; min-width: 0; flex: 1 1 auto; }
 .prod-thumb {
   width: 120px;
   height: 120px;
   flex: 0 0 auto;
-  object-fit: contain;
+  object-fit: cover;
   border-radius: 10px;
   background: var(--strip);
 }
@@ -435,6 +436,12 @@ h3.cat-head-tail { color: var(--muted); font-weight: 600; }
   color: var(--ink);
   text-shadow: 0 0 4px rgba(255,255,255,.7);
 }
+
+/* The list of jobs on the Production line board (.job-list, views/production.js).
+   Restored from the bakery at the v224 sync: the block it sat in was dropped when
+   the production CSS was hand-merged in v223. The rest of that block styled classes
+   no code in either app emits, so only this live rule came back. */
+.job-list { margin-top: 2px; }
 
 /* ---------- Buttons ---------- */
 .btn {

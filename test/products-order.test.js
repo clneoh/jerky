@@ -419,3 +419,40 @@ test("a group of one is left alone: its grip is absent rather than dead", () => 
   const root = render(state);
   assert.equal(handleOf(cards(root)[0]), null, "no grip at all, so nothing looks movable that is not");
 });
+
+// ── The row is a customer's view, not the recipe ────────────────────────────
+// Her words: "we dont need ingredient and cost price for products in app". The
+// ingredient cost per unit and the recipe's own lines came OFF every row on the
+// Products screen; both are still on the product's Edit screen, where she builds
+// the recipe. Asserted as an ABSENCE, because the absence IS the change — and
+// putting either one back would otherwise leave every existing test green.
+
+const textAll = (n, out = []) => {
+  for (const c of n.children || []) {
+    if (c.nodeType === 1) textAll(c, out);
+    else if (c.nodeType === 3 && c.text != null) out.push(c.text);
+  }
+  return out.join("");
+};
+const subOf = (c) => {
+  const n = walk(mainOf(c)).find((x) => x._classes.has("card-sub"));
+  return n ? textAll(n) : "";
+};
+
+test("a product row shows the SELL price, and neither the ingredient cost nor the recipe", () => {
+  const state = freshState([prod("p1", "Focaccia", {
+    price: 16, recipe: [{ ingredientId: "ing_flour", qty: 50, unit: "g" }],
+  })]);
+  // 50 g x RM 0.006 = RM 0.30, the exact figure the row used to print beside the
+  // sell price.
+  state.ingredients = [{ id: "ing_flour", name: "Flour", cost: 0.006 }];
+  const root = render(state);
+  const card = cards(root)[0];
+  assert.ok(card, "the product has to be on the screen for this to prove anything");
+  assert.match(subOf(card), /RM 16\.00 sell/,
+    "the price a customer pays is the figure she reads off this row");
+  assert.doesNotMatch(subOf(card), /\/\s*unit/,
+    "the ingredient cost per unit is gone from the sub-line");
+  assert.doesNotMatch(textAll(card), /Flour/,
+    "the recipe's own ingredient lines are gone from the row — the recipe lives on the Edit screen");
+});

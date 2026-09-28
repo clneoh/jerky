@@ -9,12 +9,13 @@
 // Anything whose meaning has to be identical on both sides therefore lives here,
 // in the one place both can read it, rather than as two copies that can drift.
 
-// A product thumbnail is a small JPEG the app made with readPhotoFit()
+// A product thumbnail is a small JPEG the app made with readPhoto()
 // (admin/js/photo.js): a data URL of up to ~30 KB, already shrunk for the
-// your phone. Nothing here cares about the SHAPE — the file keeps whatever
-// width-to-height ratio her photo had (v222; before that it was a 240 x 360
-// crop), the shop draws it whole inside a fixed panel, and this only checks that
-// the bytes ARE a photo the app made.
+// your phone. Nothing here cares about the SHAPE — v223 makes every one a
+// square (cropped to fill the shop's 120 px window), but this only checks that
+// the bytes ARE a photo the app made, so an older, still-rectangular thumb from
+// before the crop is just as acceptable here and is simply trimmed by `cover`
+// when the shop draws it.
 //
 // Checked on both sides because a bad one is expensive either way: it rides in
 // the single ~5 MB localStorage key that every cloud snapshot and export carries,

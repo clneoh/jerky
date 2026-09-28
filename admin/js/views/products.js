@@ -4,13 +4,12 @@
 
 import { el, button, select, emptyState, confirmDialog, showPopup, toast, wireRowReorder } from "../ui.js";
 import { byId, productUnitOptions, fmtRM, round2, newId, save } from "../state.js";
-import { costOf, recipeLineCosts, validateRecipeNoCycle } from "../bom.js";
+import { recipeLineCosts, validateRecipeNoCycle } from "../bom.js";
 import { maybeSyncStorefront } from "../supabase.js";
-// readPhotoFit, NOT the readPhoto the customer photos use: that one centre-crops
-// to a fixed shape, which would quietly cut the top and bottom off a tall product
-// photo before she ever saw it. This one keeps her photo's own ratio and only
-// shrinks it, and the shop draws it whole inside a fixed panel.
-import { readPhotoFit } from "../photo.js";
+// readPhoto, at 360 px — the SAME reader the customer photos use, at a bigger
+// size. It centre-crops the photo to a square, which is what the baker asked for:
+// the shop's window is square, and the photo is cropped to fill it.
+import { readPhoto } from "../photo.js";
 import { isLive, isDraft, isHidden, newDraftRow } from "../productState.js";
 import { flattenTree, groupByCategory, indexForDrop, moveInTail, moveProductInCategory, pathTo, primaryCategoryId, productsInCategory, tailOrder } from "../productCategories.js";
 import { translateAllowed, autoTranslateProduct, translateTo, LANG_OF, SRC_OF } from "../translate.js";
@@ -587,18 +586,18 @@ function buildEditor(state, product) {
     value: product?.servingTip || "" });
 
   // ── The thumbnail customers see beside this product on the shop ────────────
-  // One photo, kept in the shape it was taken — readPhotoFit stores it whole and
-  // trims nothing. The baker asked for this after two versions cropped her photos
-  // to a fixed shape: a square crop of a plate or a tray cuts the top and bottom
-  // off the food, and a fixed box crops whatever does not fit. The shop draws the
-  // result inside ONE standard 120 x 120 window, and this editor and her app's
-  // products list use that same window, so the size is decided there and is the
-  // same in all three places. Still JPEG only and still small
-  // in bytes, because this picture rides in the single localStorage blob that
-  // every cloud snapshot and export carries, and it is sent to every customer's
-  // phone on each page load. Its being a real JPEG is checked again on both sides
-  // of the publish (storefront-fields.js) so a malformed one is dropped rather
-  // than shipped.
+  // One photo, CROPPED TO A SQUARE by readPhoto at 360 px — the middle of her
+  // photo, so it fills the shop's square window edge to edge with no cream bars.
+  // She asked for the crop by name ("photo upload can be auto crop to fit the
+  // window"), which reverses the no-crop of v220-v223; the trade is that whatever
+  // the square cuts off at upload is gone, so the only way to change it is to
+  // choose the photo again. 360 px because the window is 120 CSS px and phones are
+  // 2x-3x, so this stays sharp; the byte budget in readPhoto keeps a busy square
+  // under the ceiling. Still JPEG only, because this picture rides in the single
+  // localStorage blob that every cloud snapshot and export carries, and it is sent
+  // to every customer's phone on each page load. Its being a real JPEG is checked
+  // again on both sides of the publish (storefront-fields.js) so a malformed one
+  // is dropped rather than shipped.
   let thumb = String(product?.thumb || "");
   const thumbFile = el("input", { type: "file", accept: "image/*", style: "display:none" });
   const thumbPreview = el("div", { class: "thumb-preview" });
@@ -606,7 +605,7 @@ function buildEditor(state, product) {
     thumbPreview.replaceChildren(
       thumb
         ? el("img", { class: "thumb-box", src: thumb, alt: "" })
-        : el("span", { class: "thumb-box thumb-empty" }, "🍞"),
+        : el("span", { class: "thumb-box thumb-empty" }, "🐾"),
       el("span", { class: "btn-row", style: "margin:0" },
         button(thumb ? "Choose different" : "Choose photo", () => thumbFile.click(), "soft small"),
         thumb ? button("Remove", () => { thumb = ""; drawThumb(); }, "ghost small") : null));
@@ -615,10 +614,10 @@ function buildEditor(state, product) {
   thumbFile.addEventListener("change", () => {
     const f = thumbFile.files && thumbFile.files[0];
     if (!f) return;
-    readPhotoFit(f, (dataUrl) => {
+    readPhoto(f, (dataUrl) => {
       if (dataUrl) { thumb = dataUrl; drawThumb(); toast("Photo added"); }
       else toast("That file couldn't be read as a photo");
-    });
+    }, 360);
     // So choosing the SAME file twice still fires a change event.
     thumbFile.value = "";
   });
@@ -1045,7 +1044,7 @@ function editorFields(state, editor) {
       el("div", {}, el("label", {}, "Unit"), editor.unit)),
     el("div", { class: "field" }, el("label", {}, "Photo (shown beside it on your shop)"),
       el("p", { class: "card-sub", style: "margin:0 0 5px" },
-        "One picture. It keeps its own shape — nothing is cut off — and is shrunk for you. It shows in one standard picture window on your shop card and in your own product list. Blank shows no picture."),
+        "One picture. It is cropped to a square to fill the window, and shrunk for you, so what you pick is exactly what shows. It appears in the standard picture window on your shop card and in your own product list. Blank shows no picture."),
       editor.thumbFile, editor.thumbPreview),
     el("div", { class: "field" }, el("label", {}, "Description (customers read it on your shop)"),
       el("p", { class: "card-sub", style: "margin:0 0 5px" },
@@ -1368,7 +1367,6 @@ function categoriesLine(state, p) {
 // nowhere to drop). It is placed first in the row, so the grip sits where the
 // Categories screen's does.
 function productCard(state, p, root, handle = null) {
-  const cost = costOf(state, p);
   const usedBy = state.orders.some((o) => o.productId === p.id);
   const usedInSets = state.products
     .filter((q) => q !== p && (q.recipe || []).some((l) => l.productId === p.id))
@@ -1376,17 +1374,13 @@ function productCard(state, p, root, handle = null) {
   const protect = usedBy || usedInSets.length > 0;
   const desc = String(p.description || "").trim();
 
+  // What a customer sees, and nothing else: the unit, an optional daily cap, and
+  // the SELL price. The ingredient cost per unit and the recipe's own lines used to
+  // be on this row and were taken off on her word — "we dont need ingredient and
+  // cost price for products in app". The row is a shop view; both are still on the
+  // product's Edit screen, where she builds the recipe. Do not add them back.
   const subParts = [p.unit, p.limit ? `${p.limit}/day` : null,
-    p.price != null ? `${fmtRM(p.price, state.settings.currency)} sell` : null,
-    `${fmtRM(cost, state.settings.currency)} / unit`].filter(Boolean);
-  const lines = (p.recipe || []).map((l) => {
-    if (l.productId && !l.ingredientId) {
-      const comp = byId(state.products, l.productId);
-      return `${l.qty} × ${comp ? comp.name : "(deleted)"}`;
-    }
-    const ing = byId(state.ingredients, l.ingredientId);
-    return `${l.qty}${l.unit} ${ing ? ing.name : "(deleted)"}`;
-  });
+    p.price != null ? `${fmtRM(p.price, state.settings.currency)} sell` : null].filter(Boolean);
 
   const actions = [button("Edit", () => openEditProductPopup(state, p, root), "ghost small")];
   if (isDraft(p)) {
@@ -1414,8 +1408,7 @@ function productCard(state, p, root, handle = null) {
           usedInSets.length
             ? el("p", { class: "po-breakdown" }, `Used in: ${usedInSets.map((n) => `"${n}"`).join(", ")}`)
             : null)),
-      el("div", { class: "li-right" }, ...actions)),
-    lines.length ? el("p", { class: "po-breakdown" }, lines.join("  ·  ")) : null);
+      el("div", { class: "li-right" }, ...actions)));
 }
 
 function deleteProduct(state, p, usedBy, usedInSets, root) {

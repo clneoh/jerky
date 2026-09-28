@@ -1,8 +1,34 @@
-# Munchies Furkidz — change history (v54 → v223)
+# Munchies Furkidz — change history (v54 → v224)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**28 Sep 2026 — engine v224. The picture window is square, and a product's row shows only
+what a customer sees. No database step — nothing to run.**
+
+Two small changes, both about a product, and one tidy-up besides.
+
+**The picture window is square, and your photo is cropped to fill it.** Until now the window
+kept whatever shape your photo happened to be: a tall photo showed whole with the window's cream
+colour at either side, a wide one filled across with cream above and below. You asked for the
+crop by name, so a product photo is now trimmed to a square as it is chosen and fills the window
+edge to edge with no cream at all. The square taken is the middle of your photo. The trade is
+honest: whatever the square leaves out is gone from that picture, so the only way to change it is
+to choose the photo again. A photo already saved keeps the shape it was stored in and is trimmed
+to the square's middle when it is shown, rather than being reshaped on disk. This reverses v220
+to v223, where nothing was cropped.
+
+**A product's row on the Products screen now shows only what a customer sees.** The row used to
+print the ingredient cost per unit ("RM 0.30 / unit") and the recipe's own ingredient lines under
+the sell price. Both are gone from the row, on your word — the row is your shop view, and what a
+packet costs you to make is not something a customer ever sees. Nothing was lost: the price per
+unit and the full recipe are still on the product's **Edit** screen, which is where you build
+them.
+
+**And one tidy-up.** A product with no photo yet showed a small engraved bread loaf in the empty
+picture box - a leftover from the bakery system the app was built from. It is a paw print now.
+Nothing else changed about it: the box is the same size and a product with a photo never saw it.
 
 **28 Sep 2026 — engine v223. Your app has caught up with the bakery in one jump, and it now
 has the Production line.**
@@ -154,14 +180,13 @@ Products list shows it too, so you can see at a glance which products have one a
 still blank. Since v223 the window is the same size in all three places — your shop's card, the
 app's list, and the editor where you choose the photo — and it is bigger than it was.
 
-**Your photo goes in whole.** A tall photo and a wide photo both show in full, with the window's
-soft cream colour filling the spare space beside them. The window is the fixed thing; your photo
-keeps its own shape. **A product with no picture is untouched** — no window, and its name and
-price read across the whole card exactly as before.
+**Your photo went in whole (as of v223 — the v224 entry above reverses this).** A tall photo and
+a wide photo both showed in full, with the window's soft cream colour filling the spare space
+beside them. From v224 the photo is cropped to a square instead. **A product with no picture is
+untouched** — no window, and its name and price read across the whole card exactly as before.
 
-**To get the new window at its best, choose the photo again.** Pictures already saved were cut to
-the old shape when they were saved, so re-choosing the photo is the step that gives you one made
-for this window.
+**Pictures already saved keep the shape they were stored in.** Re-choosing the photo is the step
+that stores a fresh one for the window as it now is.
 
 **Two things to know, said plainly rather than found out later.** The homepage grid is untouched
 and still carries the photographs already written into it, so a picture set here reaches your shop

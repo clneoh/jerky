@@ -933,10 +933,11 @@ stored `sort` number, never the array position; membership lives on the product
 its own `nameZh` / `nameMs` — no new translation code was needed, because it reuses the same
 six copy keys and provenance flags a product uses.
 
-`js/views/products.js` gained `readPhotoFit` for the product thumbnail — deliberately **not**
-`readPhoto`, which centre-crops for customer photos. A shop with no categories is drawn exactly
-as it always was: one plain list, no headings. An empty heading is dropped, but a heading whose
-own products have all sold out today is **kept**.
+`js/views/products.js` gained a photo picker for the product thumbnail, reached as
+`readPhoto(f, cb, 360)`. **v224 deleted the separate `readPhotoFit` it had at first** — there is
+one reader for everything now, and a square is what it makes. A shop with no categories is drawn
+exactly as it always was: one plain list, no headings. An empty heading is dropped, but a heading
+whose own products have all sold out today is **kept**.
 
 ### The shop's address, pin and map
 
@@ -978,6 +979,28 @@ Two **optional** Edge Functions, in her own project so the request goes out unde
 `supabase/functions/courier` (price and book a job) and `supabase/functions/shop-geocode` (the
 address lookup). Neither is needed to sell: without them the courier screens say a key is
 missing and the customer places the pin by hand.
+
+## The picture window is square, and the product row is a shop view (v224)
+
+Two changes in one engine version, both about a product. Code-only — no SQL.
+
+**The square, and the crop.** `readPhoto(file, cb, w = 200, h = w, budget = 30000)` in
+`admin/js/photo.js` is now the only reader — `readPhotoFit` is gone. The source rectangle is
+computed once as **the middle `min(w, h)` square of the image scaled to fill**, so the crop never
+moves as the box shrinks; then the loop draws, encodes at JPEG q0.72 and steps the box by `×0.8`
+(up to six passes) until the data URL fits `budget` **or** the box is 64 px on its long side. The
+products editor calls it as `readPhoto(f, cb, 360)`. `.thumb-box` and `.prod-thumb` in
+`admin/css/app.css` and `.menu-thumb` in `store/app.css` carry `object-fit: cover`, which is what
+fills the square window — including for a photo saved before v224, which keeps the rectangle it
+was stored in and is trimmed to the square's middle only for display. `storefront-fields.js`
+still holds `THUMB_MAX = 40000` and the `isThumb()` test; the two publish whitelists import it so
+they cannot drift.
+
+**The product row.** `productCard()` in `views/products.js` no longer prints the per-unit
+ingredient cost or the recipe's own lines. `recipeLineCosts` is still imported for the Edit
+screen — the row is the shop view, the cost and the recipe are the Edit view, and a comment in
+the code says not to add them back. `test/products-order.test.js` pins the absence: the row must
+match `/RM 16\.00 sell/` and must **not** match `/\/\s*unit/` or contain an ingredient name.
 
 ## The customer and the product list (v119–v123)
 
