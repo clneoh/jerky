@@ -1015,6 +1015,35 @@ matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestion
 now that the Google key returns one precise house-number answer, most lookups legitimately show no
 list and the pin simply lands.
 
+## A product on the shop can always be hidden (v225)
+
+One button, one place. Code-only — no SQL.
+
+The live-products branch of `productCard()` in `admin/js/views/products.js` used to pick a
+**single** action from the product's `protect` flag: `button(protect ? "Hide" : "Delete", …)`.
+`protect` is true when the product is used by an order or a set, so a freshly published product —
+no orders yet — fell to the `Delete` side and offered Delete **and nothing else**. Delete takes
+the recipe with it, so the one product most likely to want a quiet spell off the shop was the one
+that could only be destroyed.
+
+Now Hide is unconditional and Delete joins it only when it is safe:
+
+```js
+actions.push(button("Hide", () => setProductState(state, p, "hidden", root), "ghost small"));
+if (!protect) actions.push(button("Delete", () => deleteProduct(state, p, usedBy, usedInSets, root), "ghost small"));
+```
+
+`setProductState(state, p, "hidden", root)` is the same call the Hidden list's row uses for
+Unhide, so Hide keeps the recipe, the photo, the price, the category and the history, and Unhide
+brings it straight back. `deleteProduct` is unchanged — the "Hide" confirm that used to sit in its
+protect branch once routed Hide **through** it; nothing routes that way any more, so that branch
+is now unreachable from the live row and is kept verbatim rather than trimmed. A product with
+orders therefore reads **Edit · Hide**, a clean live one reads **Edit · Hide · Delete**.
+`test/products-editor.test.js` locks both: a rewritten case asserts the fresh product offers both
+buttons, that Hide leaves `p.recipe` deep-equal and the product still present under
+`Hidden — taken down (1)`, and that Delete on a clean product still really deletes; the
+with-orders case now asserts `!buttonByText(root, "Delete")`.
+
 ## The picture window is square, and the product row is a shop view (v224)
 
 Two changes in one engine version, both about a product. Code-only — no SQL.

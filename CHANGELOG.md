@@ -1,8 +1,32 @@
-# Munchies Furkidz — change history (v54 → v224)
+# Munchies Furkidz — change history (v54 → v225)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**28 Sep 2026 — engine v225. A product on the shop can always be hidden. No database step —
+nothing to run.**
+
+One button, in one place, and it fixes a rule that bit at the worst possible moment.
+
+**What was wrong.** You published a product, looked at its row, and the only button there was
+**Delete**. Its **Hide** button was missing exactly when you were most likely to want it. The
+rule behind that was Hide-if-it-has-history, Delete-if-it-is-clean, and a product you have just
+published has no history yet, so the app counted it as clean and offered you the one button that
+throws work away. Delete takes the recipe with it. So the fresh product, the one you might simply
+want off the shop for a while, was the one that could only be destroyed. Your report: after
+publishing a product, only Delete is allowed, and it should not be.
+
+**Fixed.** A product that is on the shop now always offers both buttons, side by side. **Hide**
+takes it off the shop and keeps everything - the recipe, the photo, the price, the category and
+its past orders - and **Unhide** on the Hidden list puts it back whenever you like. **Delete** is
+still right there beside it for the product you really do want gone for good, and it still asks
+you to confirm first. The older products that already carry orders are the exception, exactly as
+before: they keep Hide alone, because deleting one would break the orders and the sets that point
+at it. That is not a missing button, it is the app refusing to let you break your own books.
+
+Nothing else about the Products screen changed - the same three lists, the same folded New
+product card, the same rows. This is one button in one place.
 
 **28 Sep 2026 (no new engine) — the address lookup in your back office now works. Nothing to run,
 and nothing to update on your phones.**
@@ -463,7 +487,7 @@ whole point.** An order keeps the price it was sold at, so a discount quietly ta
 page would rewrite the money you actually earned — and __new customers only__ cannot be
 checked from the page at all, because that needs your entire order book.
 
-**So your app does the telling.** An order that came in on a code now carries a 🎟 line on its
+**So your app does the telling.** An order that came in on a code now carries a promo line on its
 row and in its **Edit** box: the code, the name you gave that label, what it promised, and
 __"take it off when you confirm."__ Two warnings appear when they apply — that the offer is for
 new customers only and this person has bought from you before, or that the order is under the
@@ -471,7 +495,7 @@ code's minimum spend, naming both figures. Both warnings show only while the off
 live. **The line never goes blank:** a code you have since retired, or even deleted, is still
 named, because the order records the label the customer actually came in on.
 
-**One word in this entry was wrong, and is now fixed.** It said the 🎟 line names "the shop or
+**One word in this entry was wrong, and is now fixed.** It said the promo line names "the shop or
 product it was for". It does not, and could not: a code keeps only the *ids* of the shop or
 product it was made for — their names are written for the customer's page and are never stored
 in your book — so the line names the **label**, which is what you typed beside the square, and
@@ -493,7 +517,7 @@ it is the same printed label.
 
 **20 Sep 2026 (manual v123c) — your landing pages: one page per promotion, picked on
 each label (no new engine number: built here first, so both your apps stay on the same
-number).** Under **More → 🏪 Shops & codes** there is now a **Your pages** card, and a
+number).** Under **More → Shops & codes** there is now a **Your pages** card, and a
 **Landing page** dropdown on every label you make or edit. A page is a set of words for
 one activity — __"Sample card"__, __"Raya promo 2026"__, __"Clearance"__ — so a promotion
 running on a dozen printed cards is written **once** and every card on it follows. Leave
@@ -775,11 +799,11 @@ through Paid. But that step keeps its place in the line, and it wears an **X** �
 amber, deliberate — instead of a tick, and it never turns green while the money
 is outstanding:
 
-> New ✓  ·  Confirmed ✓  ·  **Paid ✕**  ·  Preparing ✓  ·  Packed ✓  ·  Collected / Posted ●
+> New: done  ·  Confirmed: done  ·  **Paid: x**  ·  Preparing: done  ·  Packed: done  ·  Collected / Posted: current
 
 Press **Paid · Cash** or **Paid · TNG** when the money is handed over — at
 whatever stage the order has reached — and **the X becomes the tick**: the
-ordinary green ✓, in the same spot, with the **Cash** or **TNG** tag beside the
+ordinary green tick, in the same spot, with the **Cash** or **TNG** tag beside the
 row. The order itself stays where it was: taking the money never drags it
 backwards.
 
@@ -871,16 +895,18 @@ the tin must not be entered as a sale: a sale has a customer behind it.
 work both ways again.** From you telling me *"the profit month can move earlier but
 cannot move later"*.
 
-**What was wrong.** Open Profit — it starts on this month, where the **›** arrow is
-correctly switched off, because there are no numbers after today. Press **‹** to step
-back to August, and **›** stayed switched off too, so you could not get back to
+**What was wrong.** Open Profit — it starts on this month, where the forward arrow
+is correctly switched off, because there are no numbers after today. Press the back
+arrow to step back to August, and the forward arrow stayed switched off too, so you
+could not get back to
 September. You could walk backwards through the months but never forwards again: to
 return you had to leave the screen and open it again. The arrow's state was worked out
 once, when you opened the screen, and then reused on every step — so it kept answering
 for the month you started on rather than the month you were looking at.
 
-**Fixed.** The arrows are worked out fresh on every step, so **‹** and **›** now move
-both ways between the months you have, and **›** switches off again only when you are
+**Fixed.** The arrows are worked out fresh on every step, so the back and forward
+arrows now move both ways between the months you have, and the forward arrow switches
+off again only when you are
 back on this month. The same fault did not exist on the other calendars — Orders,
 Delivery dates and the date pickers all recompute their arrows each time they draw.
 
@@ -2238,11 +2264,11 @@ The ones waiting for you to publish come first; **Publish** puts it on the
 homepage, **Take down** hides it again, **Delete** removes it for good — and
 every action moves you on to the next review. It deliberately does not
 auto-play, because you are deciding, not watching: the review in front of you
-stays until you move it with the ‹ › arrows, the dots, or a swipe.
+stays until you move it with the arrow buttons, the dots, or a swipe.
 
 Two places now tell you when reviews are waiting on you: **Home** shows an
-"⭐ N new review(s) to publish" card near the top (tap it straight into
-Reviews), and the **⭐ Reviews** row on More gains a green "N waiting" pill.
+"N new review(s) to publish" card near the top (tap it straight into
+Reviews), and the **Reviews** row on More gains a green "N waiting" pill.
 The count refreshes every ~45 seconds while Home is open. No SQL this version.
 
 ## v64 — Your site in 中文 / English / Bahasa Malaysia + a website credit (9 Sep 2026)
@@ -2252,7 +2278,7 @@ cards, the delivery-day and order form, even the track page — switches over on
 the spot, and each phone remembers the language it picked. Because the choice
 lives in the browser, one shop link serves every customer in their own
 language. Each product can also carry a Chinese or Malay **shop name** in
-Products (e.g. 鸡肉肉干 or Jerky Ayam): it shows on the product card while the
+Products (e.g. Jerky Ayam, or a Chinese name): it shows on the product card while the
 order and your records keep the English name.
 
 The homepage **reviews** section is now a **swipeable carousel** — drag left or
@@ -2262,7 +2288,7 @@ made it. A small **"Website by …"** credit then appears at the bottom of your
 homepage and order page, and **More → About** adds a WhatsApp and an email row
 to reach them. That same developer is who the **software wish list** emails:
 add a wish on More and the whole list is sent to them automatically (quietly —
-if it can't send, a gentle note points you to the always-works **"✉ Email the
+if it can't send, a gentle note points you to the always-works **"Email the
 full list"** row underneath). The credit and the email links stay hidden until
 you type a name and an email in Settings.
 
@@ -2292,7 +2318,7 @@ history as a PDF kept on your website. No SQL this version.
 
 ## v62 — "Not sharing" strip + read-only View (8 Sep 2026)
 When a phone is not on the shared cloud — shared data off, never set up, or
-signed out — a thin amber strip at the very top of every screen reads **"⚠ Not
+signed out — a thin amber strip at the very top of every screen reads **"Not
 sharing right now"** with a one-line reason and a **Fix it** tap straight to
 Settings → Shared data. It never locks the app, and it disappears on its own the
 moment sharing is back on. (Set up once per phone: no SQL — the shared-data

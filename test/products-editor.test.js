@@ -587,6 +587,48 @@ test("Publish moves a draft onto the shop — draft cleared, active true, re-lis
   assert.ok(!buttonByText(root, "Publish"), "a live product has nothing left to publish");
 });
 
+// Her report: "after publish a product, only delete is allow, it should not be."
+// A product that is on the shop has to be takeable off it without destroying the
+// recipe, so Hide is on every live row — history/use only decides whether Delete
+// sits beside it. Hide is reversible, so like Publish and Unhide it takes one tap.
+test("a freshly published product offers Hide beside Delete; Hide keeps the recipe, Delete really deletes", () => {
+  doc.body.replaceChildren();
+  resetLayers();
+  const state = freshState();
+  let root = render(state);
+  const f = formHandles(root);
+  f.name.value = "Focaccia";
+  f.unit.value = "u_loaf";
+  fire(f.add);
+  const p = state.products[0];
+  fire(buttonByText(root, "Publish"));
+  p.recipe = [{ ingredientId: "ing_flour", qty: 50, unit: "g" }];
+
+  root = render(state);
+  assert.ok(buttonByText(root, "Hide"), "a live product can always be taken off the shop");
+  assert.ok(buttonByText(root, "Delete"), "and a clean one can still be deleted outright");
+
+  fire(buttonByText(root, "Hide"));
+  assert.equal(p.active, false, "Hide takes it off the shop");
+  assert.notEqual(p.draft, true, "hidden is not a draft");
+  assert.equal(state.products.length, 1, "Hide never removes the product");
+  assert.deepEqual(p.recipe, [{ ingredientId: "ing_flour", qty: 50, unit: "g" }],
+    "the recipe survives Hide — that is the whole reason Delete must not be the only way off the shop");
+  root = render(state);
+  assert.deepEqual(groupHeadings(root),
+    ["On the shop (0)", "Draft — not on the shop yet (0)", "Hidden — taken down (1)"],
+    "it reads in the Hidden list");
+
+  fire(buttonByText(root, "Unhide"));
+  root = render(state);
+  fire(buttonByText(root, "Delete"));
+  const yes = walk(layers["confirm-layer"]).find((n) => n.tagName === "BUTTON"
+    && (n.children || []).some((c) => c.text === "Delete"));
+  assert.ok(yes, "a clean product's Delete asks first");
+  fire(yes);
+  assert.equal(state.products.length, 0, "and then really removes it");
+});
+
 test("a live product with order history Hides into the Hidden list, and Unhide brings it back", () => {
   doc.body.replaceChildren();
   resetLayers();
@@ -599,17 +641,13 @@ test("a live product with order history Hides into the Hidden list, and Unhide b
   const p = state.products[0];
   fire(buttonByText(root, "Publish"));
 
-  // History makes the live card offer Hide instead of Delete (Delete is guarded).
+  // History keeps Delete off the row (it would break the PO and the history), so
+  // Hide is the only way down — and it is still there.
   state.orders = [{ id: "o1", productId: p.id, qty: 1, customerName: "Aisyah", whatsapp: "60123456789" }];
   root = render(state);
-  assert.ok(buttonByText(root, "Hide"), "a product with orders can be hidden, never deleted");
+  assert.ok(buttonByText(root, "Hide"), "a product with orders can be hidden");
+  assert.ok(!buttonByText(root, "Delete"), "a product with orders is never deleted, so Delete is not offered");
   fire(buttonByText(root, "Hide"));
-
-  // The Hide confirm asks, and the yes tap actually hides.
-  const yes = walk(layers["confirm-layer"]).find((n) => n.tagName === "BUTTON"
-    && (n.children || []).some((c) => c.text === "Hide it"));
-  assert.ok(yes, "the confirm offers 'Hide it'");
-  fire(yes);
   assert.equal(p.active, false, "hidden products are inactive");
   assert.notEqual(p.draft, true, "and are not drafts");
   root = render(state);

@@ -1390,9 +1390,13 @@ function productCard(state, p, root, handle = null) {
     actions.push(button("Unhide", () => setProductState(state, p, "live", root), "ghost small"));
     if (!protect) actions.push(button("Delete", () => deleteProduct(state, p, usedBy, usedInSets, root), "ghost small"));
   } else {
-    // Live: Hide when it has history/use (keeps PO + sets working), Delete when clean.
-    actions.push(button(protect ? "Hide" : "Delete",
-      () => deleteProduct(state, p, usedBy, usedInSets, root), "ghost small"));
+    // Live: Hide ALWAYS. A product on the shop must never be takeable-off only by
+    // deleting it — Delete destroys the recipe, and a freshly published product has
+    // no orders yet, so the old Hide-or-Delete rule offered it nothing else. Delete
+    // is still there for a clean, unused one, beside Hide, exactly as a hidden row
+    // offers Unhide beside Delete. Hide keeps the recipe and the history.
+    actions.push(button("Hide", () => setProductState(state, p, "hidden", root), "ghost small"));
+    if (!protect) actions.push(button("Delete", () => deleteProduct(state, p, usedBy, usedInSets, root), "ghost small"));
   }
 
   return el("div", { class: "card prod-row", dataset: { id: p.id } },
