@@ -15,11 +15,19 @@ function createEl(tag) {
   const node = {
     tagName: String(tag || "").toUpperCase(), nodeType: 1, children: [], attrs: {}, dataset: {},
     className: "", style: {}, value: "", checked: false, disabled: false, hidden: false,
-    scrollTop: 0, _listeners: {},
+    scrollTop: 0, parentNode: null, _listeners: {},
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
-    appendChild(c) { if (c != null) this.children.push(c); return c; },
-    append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
-    replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) this.children.push(c); },
+    appendChild(c) { if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parentNode = this; } return c; },
+    append(...cs) { for (const c of cs) if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parentNode = this; } },
+    replaceChildren(...cs) {
+      // The children it drops are ORPHANED, not merely forgotten. A pop-up closes by
+      // emptying its layer, and a screen inside that pop-up asks whether it is still
+      // connected before writing into it — so a node left pointing at the layer it was
+      // taken out of would go on answering "yes, still here" for the rest of the run.
+      for (const old of this.children) if (old && old.nodeType === 1) old.parentNode = null;
+      this.children = [];
+      for (const c of cs) if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parentNode = this; }
+    },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener() {},
     setAttribute(k, v) { this.attrs[k] = String(v); },
@@ -33,20 +41,35 @@ function createEl(tag) {
     get() { return this.children.map((c) => (c.nodeType === 3 ? c.text : c.textContent)).join(""); },
     set(v) { this.children = v === "" ? [] : [{ nodeType: 3, text: String(v) }]; },
   });
+  // isConnected, MODELLED RATHER THAN ASSUMED. A screen that opens a card and then
+  // writes into it asks its own node whether it is still on the page — the courier
+  // panel does, to stop a slow reply landing in a pop-up she has already closed. A
+  // stand-in that answered `undefined` would send every such write down the "it is
+  // gone" path and every test would pass for the wrong reason. So a node is connected
+  // exactly when walking UP from it reaches the document, and a node that is merely
+  // built and never appended is not — which is the unforgiving direction.
+  Object.defineProperty(node, "isConnected", {
+    get() {
+      let n = this;
+      while (n) { if (n.__root) return true; n = n.parentNode; }
+      return false;
+    },
+  });
   return node;
 }
 // A layer registry, so the pop-up held in "popup-layer" can be read back after it
-// has been built.
+// has been built. A layer is a real element of index.html, so it is a root.
 const layers = {};
 globalThis.document = {
   createElement: createEl,
   createTextNode: (s) => ({ nodeType: 3, text: String(s) }),
-  getElementById: (id) => (layers[id] ||= createEl("div")),
+  getElementById: (id) => (layers[id] ||= Object.assign(createEl("div"), { __root: true })),
   querySelector: () => null,
   querySelectorAll: () => [],
   scrollingElement: createEl("html"),
   body: createEl("body"),
 };
+globalThis.document.body.__root = true;
 globalThis.window = { open() {} };
 globalThis.history = { replaceState() {} };
 
@@ -367,12 +390,20 @@ test("the courier box says what the customer owes, and moves the moment they bea
   let pop = layers["popup-layer"];
   assert.match(popText(pop), /The customer owes RM 30\.00/,
     "the box says what the order comes to before any charge is typed");
+  assert.deepEqual(openedOn(selWith(pop, "The customer paid it")), ["The customer paid it"],
+    "and the payer question opens on The customer paid it — her ask, 27 Sep 2026 (v216)");
 
   const box = feeInput(pop);
   box.value = "8";
   box._listeners.input[0].call(box); // the handler reads this.value
+  assert.match(popText(pop), /The customer owes RM 38\.00 — items total RM 30\.00 \+ courier charge RM 8\.00/,
+    "so a typed amount is theirs without any further answer — that is what the default means");
+
+  const unowned = selWith(pop, "The customer paid it");
+  unowned.value = "";                  // back to "Not recorded"
+  unowned._listeners.change[0]();
   assert.match(popText(pop), /The customer owes RM 30\.00/,
-    "an amount on its own asks nobody for it — who bears it is what decides");
+    "and taking the answer back off it leaves an amount nobody owns — the customer owes the bread alone");
 
   const theirs = selWith(pop, "The customer paid it");
   theirs.value = "customer";
@@ -387,6 +418,28 @@ test("the courier box says what the customer owes, and moves the moment they bea
   pop = layers["popup-layer"];
   assert.match(popText(pop), /The customer owes RM 30\.00/,
     "a charge she bears is her own cost — what the customer owes never moves for it");
+});
+
+test("an order that already records a payer opens on THAT payer, not on the default (v216)", () => {
+  // The default is a default and never an overwrite. An order she already answered is
+  // opened showing the answer she gave — otherwise merely looking at an old charge would
+  // be enough to re-attribute it to the customer, and the next Save would move her money.
+  const st = state();
+  st.orders[0].fulfillment = "courier";
+  st.products[0].price = 15;
+  st.orders[0].courierFee = 8;
+  st.orders[0].courierPaidBy = "me";
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+
+  buttonByText(root, "Note / tracking")._listeners.click[0]();
+  const payer = selWith(layers["popup-layer"], "The customer paid it");
+  assert.deepEqual(openedOn(payer), ["I paid it"],
+    "the charge she bore is still shown as hers, however the default is set");
+
+  buttonByText(layers["popup-layer"], "Save")._listeners.click[0]();
+  assert.equal(st.orders[0].courierPaidBy, "me",
+    "and saving without touching it leaves the payer exactly as it was");
 });
 
 test("the Edit pop-up's order total counts a charge the customer bears, and names it", () => {
@@ -537,18 +590,29 @@ test("how they settle the charge is asked only when the customer bears it", () =
   st.orders[0].fulfillment = "courier";
   st.products[0].price = 15;
   const { pop } = courierBox(st);
-  assert.equal(codSelIn(pop), undefined, "no charge yet, so there is nothing to settle");
+  // v216: the payer question opens on The customer paid it, so the question that follows
+  // it is on the card from the first paint — she has already given the answer that
+  // summons it. It is drawn WITH its parent, not ahead of it.
+  assert.deepEqual(openedOn(selWith(pop, "The customer paid it")), ["The customer paid it"],
+    "the payer question opens on The customer paid it — her ask, 27 Sep 2026");
+  assert.ok(codSelIn(pop), "and how they settle it is asked with it, on the customer's own branch");
 
   const box = feeInput(pop);
   box.value = "8";
   box._listeners.input[0].call(box);
-  assert.equal(codSelIn(pop), undefined, "and an amount on its own owns nobody — who bears it decides");
+  assert.ok(codSelIn(pop), "typing the amount only makes clearer what the question is about");
 
   const mine = selWith(pop, "I paid it");
   mine.value = "me";
   mine._listeners.change[0]();
   assert.equal(codSelIn(layers["popup-layer"]), undefined,
     "a charge she paid has nothing for anyone to collect at the door");
+
+  const unowned = selWith(layers["popup-layer"], "The customer paid it");
+  unowned.value = "";                  // back to "Not recorded"
+  unowned._listeners.change[0]();
+  assert.equal(codSelIn(layers["popup-layer"]), undefined,
+    "and an amount on its own owns nobody — who bears it decides");
 
   const theirs = selWith(layers["popup-layer"], "The customer paid it");
   theirs.value = "customer";
@@ -1107,4 +1171,313 @@ test("an edit that changes nothing the card shows leaves it alone", async () => 
 
   assert.equal(st.orders[0].whatsapp, "60111222333", "her own copy of the order did take the change");
   assert.equal(spy.posts.length, 1, "and the customer's card was not written for a number it does not show");
+});
+
+// ── v188: a courier's price becomes the charge on the order ──────────────────
+// Phase one of the courier work, and the one path through it she has to be able to
+// trust: a quoted delivery fee becoming the charge on the order. The panel builds its
+// own price rows, and its [Use this fee] calls the charge box's own `set` — so a quoted
+// amount and a typed one are the same kind of answer, and the payer and the COD
+// questions under them behave identically whichever door the number came through.
+//
+// THE FAULT THESE TWO TESTS ARE WRITTEN AGAINST is this app's most repeated one: a tap
+// that moves the picture and skips the write. The button's toast is not the evidence —
+// the amount in the box and the customer's total below it are. The second test is the
+// same fault seen from the other side, and it is the reason `set` answers whether it
+// wrote: a courier can price a trip at nothing, and a zero is not a charge.
+
+// The courier function, stood in for. It answers the two actions the panel asks — the
+// fleet, and a price per vehicle — with the reply SHAPES the real function returns
+// (see supabase/functions/courier/index.ts), read off the wire the way the app reads
+// it. The fetch boundary is the only thing replaced; nothing under test is stubbed.
+const wireReply = (total) => (body) => {
+  if (body.action === "vehicles") {
+    return { ok: true, services: [
+      { key: "MOTORCYCLE", name: "Motorcycle" },
+      { key: "7FT_VAN", name: "7ft Van" },
+    ] };
+  }
+  if (body.action === "quote") {
+    return { ok: true, quotes: [{
+      serviceType: "MOTORCYCLE",
+      priceBreakdown: { total, currency: "MYR" },
+      distance: { value: 4.2, unit: "km" },
+      expiresAt: new Date(Date.now() + 300000).toISOString(),
+    }], failed: [] };
+  }
+  return { ok: false, reason: `the stand-in was asked for "${body.action}", which this test did not plan for` };
+};
+
+// A courier order with both doors pinned, so the panel prices it rather than looking
+// anything up. The pins are written by the app's own functions, so the state a price is
+// asked of is the state the app would really hold.
+async function courierState() {
+  const { setPickupPlace, setDropPlace } = await import("../admin/js/courier_place.js");
+  const st = state();
+  const o = st.orders[0];
+  o.fulfillment = "courier";
+  o.customerName = "Mei Ling";
+  o.whatsapp = "0169601268";
+  o.address = "12 Jalan Bunga, 10450 Penang";
+  st.products[0].price = 15;                       // 2 × 15 = RM 30 of bread
+  st.settings.supabase = { enabled: true, url: "https://project.test", anonKey: "anon" };
+  setPickupPlace(st, { lat: 5.4141, lng: 100.3288 });
+  setDropPlace(st, o, { lat: 5.41, lng: 100.32, label: "12 Jalan Bunga" });
+  return st;
+}
+
+// The wire, and the phone's own session, for the length of one test and not a moment
+// longer. The client refuses to call anything without a session (couriers/api.js says so
+// in words rather than throwing), and the session lives in storage — so both are put in
+// and taken away here, rather than left behind for the test that runs next.
+async function withCourierWire(total, run, { holdFor = null } = {}) {
+  const had = Object.prototype.hasOwnProperty.call(globalThis, "localStorage");
+  const before = globalThis.localStorage;
+  globalThis.localStorage = {
+    _d: {},
+    getItem(k) { return Object.prototype.hasOwnProperty.call(this._d, k) ? this._d[k] : null; },
+    setItem(k, v) { this._d[k] = String(v); },
+    removeItem(k) { delete this._d[k]; },
+  };
+  globalThis.localStorage.setItem("bakeadmin.supabase",
+    JSON.stringify({ access_token: "test-session", expires_at: Date.now() + 3600_000 }));
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url, opts = {}) => {
+    const said = JSON.parse(opts.body || "{}");
+    // `holdFor(action)` is a reply that has not arrived yet — a phone on one bar of
+    // signal. It is how a test gets ONE particular request in flight and then does
+    // something while it is out; the action is passed in because holding the wrong one
+    // changes the answer entirely.
+    const wait = holdFor ? holdFor(said.action) : null;
+    if (wait) await wait;
+    const text = JSON.stringify(await wireReply(total)(said));
+    return { ok: true, status: 200, text: async () => text, json: async () => JSON.parse(text) };
+  };
+  try {
+    return await run();
+  } finally {
+    globalThis.fetch = real;
+    if (had) globalThis.localStorage = before; else delete globalThis.localStorage;
+  }
+}
+
+// The newest toast on the page. A toast is not evidence that a write happened — it is
+// evidence of what the screen TOLD her, which is the thing that must not lie.
+const lastToast = () => all(globalThis.document.body)
+  .filter((n) => n.className === "toast").pop();
+const owesLine = (pop) => all(pop)
+  .find((n) => String(n.textContent).startsWith("The customer owes"));
+
+// Close the card, and give its own clock the tick it needs to notice. The price panel
+// counts each quotation down on a one-second interval and stops it the moment its node
+// is off the page — so a test that leaves the card open leaves a live interval behind,
+// and Node will not exit while one is running. This is not tidiness: it is the same
+// self-clearing rule the panel ships, exercised rather than assumed.
+const closeCard = async (pop) => {
+  const x = buttonByText(pop, "✕");
+  if (x) x._listeners.click[0]();
+  await new Promise((r) => setTimeout(r, 1100));
+};
+
+test("a price from the courier lands in the charge box, and the customer's total moves with it", async () => {
+  let pop = null;
+  await withCourierWire(12.5, async () => {
+    const st = await courierState();
+    ({ pop } = courierBox(st));
+    const open = buttonByText(pop, "Get a delivery price");
+    assert.ok(open, "the price panel is reachable from the courier charge's own card");
+    open._listeners.click[0]();
+    await drain();
+
+    const row = all(pop).find((n) => String(n.className).includes("quote-row"));
+    assert.ok(row, "a price came back and is on screen");
+    assert.match(row.textContent, /Motorcycle/, "and it wears the vehicle's own name");
+    assert.match(row.textContent, /RM 12\.50/, "and the price the courier gave");
+
+    const use = buttonByText(pop, "Use this fee");
+    assert.ok(use, "with a way to take it");
+    use._listeners.click[0]();
+  });
+
+  const box = feeInput(pop);
+  assert.equal(box.value, "12.5",
+    "the quoted amount is IN the box — the button does not merely say it wrote one");
+
+  // The payer question is under it, opening on The customer paid it (v216) — so the
+  // quoted fee is theirs the moment it lands, and the total moves with it. It is still
+  // hers to change: that is why the question is drawn at all.
+  const payer = selWith(pop, "The customer paid it");
+  assert.ok(payer, "the payer is still hers to answer");
+  assert.deepEqual(openedOn(payer), ["The customer paid it"], "and it opens on The customer paid it (v216)");
+  assert.equal(owesLine(pop).textContent,
+    "The customer owes RM 42.50 — items total RM 30.00 + courier charge RM 12.50",
+    "the same number she would have got by typing 12.50 into the box herself");
+
+  payer.value = "me";
+  payer._listeners.change[0]();
+  assert.match(owesLine(pop).textContent, /RM 30\.00$/,
+    "and answering otherwise takes the charge straight back out of what the customer owes");
+
+  await closeCard(pop);
+});
+
+test("a courier pricing a trip at nothing does not put a charge in the box, and the screen says so", async () => {
+  // A total of zero is a REAL reply — Lalamove answered, and the answer was nothing —
+  // and it is the case a `set` that returns nothing cannot tell apart from success. The
+  // box refuses it (a charge of RM 0.00 is not a charge), and the toast has to report
+  // the refusal rather than the write it did not make.
+  let pop = null;
+  await withCourierWire(0, async () => {
+    const st = await courierState();
+    ({ pop } = courierBox(st));
+    buttonByText(pop, "Get a delivery price")._listeners.click[0]();
+    await drain();
+    const use = buttonByText(pop, "Use this fee");
+    assert.ok(use, "the row is still offered — the price is real, it is just nothing");
+    use._listeners.click[0]();
+  });
+
+  assert.equal(feeInput(pop).value, "", "nothing was put in the charge box");
+  assert.match(lastToast().textContent, /is not a charge/,
+    "and the screen says that, rather than claiming a write it did not make");
+  assert.equal(lastToast().textContent.includes("put in the charge box"), false,
+    "the success line is not the one she is shown");
+  assert.match(owesLine(pop).textContent, /RM 30\.00$/, "the customer's total did not move either");
+
+  await closeCard(pop);
+});
+
+// ── v215: an amount with no payer is REFUSED, not dropped in silence ─────────
+// Her report, 27 Sep 2026: "The selected courier charges cannot save" — after she
+// pressed [Use this fee] and then Save. The amount was in the box, the payer question
+// under it was still on "Not recorded", and `courierPayQuestions.read()` settles those
+// two together: no payer means no charge, so the Save wrote NOTHING — no charge, no
+// expense — and still said "Order updated". The amount vanished with no word about why.
+//
+// A save that reports a write it did not make is the same fault as a tap that moves the
+// picture and skips the write. The fix is a refusal in words, answered from the one
+// place that knows what would really be written, and asked by BOTH doors into the charge
+// box so neither can lose her money. These tests pin the refusal, the amount still in
+// the box, the card still open — and that answering the payer saves exactly as before.
+
+test("taking a courier's price and pressing Save with no payer is refused in words, not dropped (v215)", async () => {
+  let pop = null;
+  await withCourierWire(12.5, async () => {
+    const st = await courierState();
+    ({ pop } = courierBox(st));
+    buttonByText(pop, "Get a delivery price")._listeners.click[0]();
+    await drain();
+    buttonByText(pop, "Use this fee")._listeners.click[0]();
+    assert.equal(feeInput(pop).value, "12.5", "her press put the quoted price in the box");
+    assert.deepEqual(openedOn(selWith(pop, "The customer paid it")), ["The customer paid it"],
+      "and the payer question opens on The customer paid it (v216)");
+
+    // v216: with the question opening on an answer, the ONLY way left to leave an amount
+    // with nobody down for it is to take that answer back deliberately. That press is
+    // exactly the state that used to lose her money in silence, so it is still refused.
+    const cleared = selWith(pop, "The customer paid it");
+    cleared.value = "";
+    cleared._listeners.change[0]();
+
+    buttonByText(pop, "Save")._listeners.click[0]();
+
+    assert.equal(st.orders[0].courierFee, undefined, "the amount is NOT written without a payer");
+    assert.equal((st.expenses || []).length, 0, "and her books are untouched");
+    assert.match(lastToast().textContent, /RM 12\.50/,
+      "the refusal names the amount that would have gone missing");
+    assert.match(lastToast().textContent, /nobody is down as the payer/, "and it gives the reason");
+    assert.ok(buttonByText(pop, "Save"), "the card stays open, so the answer can still be given");
+    assert.equal(feeInput(pop).value, "12.5", "with the amount still in the box, not cleared under her");
+
+    // The way out — and the proof the guard is not a blanket gate: answer the payer and
+    // the very same press writes the charge.
+    const payer = selWith(pop, "The customer paid it");
+    payer.value = "customer";
+    payer._listeners.change[0]();
+    buttonByText(pop, "Save")._listeners.click[0]();
+  });
+
+  await closeCard(pop);
+});
+
+test("the Edit form refuses the same charge in the same words, so neither door can lose it (v215)", () => {
+  const st = state();
+  st.orders[0].fulfillment = "courier";
+  st.products[0].price = 15;
+  const { pop } = editOn(st);
+
+  const box = feeInput(pop);
+  box.value = "8";
+  box._listeners.input[0].call(box);
+  const cleared = selWith(pop, "The customer paid it");
+  cleared.value = "";                  // the one way left to leave an amount unowned (v216)
+  cleared._listeners.change[0]();
+  buttonByText(pop, "Save changes")._listeners.click[0]();
+
+  assert.equal(st.orders[0].courierFee, undefined, "an amount with no payer is not written here either");
+  assert.equal((st.expenses || []).length, 0, "and no expense row is filed");
+  assert.match(lastToast().textContent, /RM 8\.00/, "the refusal names the amount");
+  assert.match(lastToast().textContent, /nobody is down as the payer/,
+    "in the same words the Note / tracking card uses — one shared answer, not two opinions");
+  assert.ok(buttonByText(pop, "Save changes"), "the card stays open to be answered");
+
+  const mine = selWith(pop, "I paid it");
+  mine.value = "me";
+  mine._listeners.change[0]();
+  buttonByText(pop, "Save changes")._listeners.click[0]();
+
+  assert.equal(st.orders[0].courierFee, 8, "answering the payer saves exactly as it always did");
+  assert.equal(st.expenses.length, 1, "including the Delivery & fuel row her own charge makes");
+});
+
+test("the fee's own toast says what still has to happen, and that a booking is not it (v215)", async () => {
+  // Her question, 27 Sep 2026: "should i book?" Booking is not what saves a charge — the
+  // payer question is — and the moment the fee lands is the only moment worth saying so.
+  let pop = null;
+  await withCourierWire(12.5, async () => {
+    const st = await courierState();
+    ({ pop } = courierBox(st));
+    buttonByText(pop, "Get a delivery price")._listeners.click[0]();
+    await drain();
+    buttonByText(pop, "Use this fee")._listeners.click[0]();
+  });
+
+  assert.match(lastToast().textContent, /who paid the courier/,
+    "the toast names the one thing still outstanding");
+  assert.match(lastToast().textContent, /Booking a trip is separate/,
+    "and says plainly that a booking is not what makes the charge save");
+
+  await closeCard(pop);
+});
+
+test("a price that lands after she has closed the card is not written into it", async () => {
+  // A price takes seconds — eight quotations, one per vehicle — and she is standing in
+  // a kitchen, not waiting on a screen. So she closes the card, and the reply arrives
+  // afterwards. Every write in the panel asks its own node whether it is still on the
+  // page before it makes one, and this is the test that holds that rule up: without it
+  // the reply lands in a card that is no longer anywhere, and the fault is invisible —
+  // nothing on screen changes, because there is no screen to change.
+  let release = () => {};
+  const held = new Promise((r) => { release = r; });
+  let card = null;
+
+  await withCourierWire(12.5, async () => {
+    const st = await courierState();
+    const { pop } = courierBox(st);
+    buttonByText(pop, "Get a delivery price")._listeners.click[0]();
+    await drain();                     // the ask is out on the wire, waiting
+    card = pop.children[0];            // held on to ACROSS its own closing
+    const x = buttonByText(pop, "✕");
+    assert.ok(x, "the card can be closed");
+    x._listeners.click[0]();
+    release();                         // and only now does the courier answer
+    await drain();
+    // The QUOTE is held, not the fleet: the fleet is answered first and the panel's
+    // guard for it has already passed, so holding that one would let a later guard
+    // catch the reply and prove nothing about the one this test is named for.
+  }, { holdFor: (action) => (action === "quote" ? held : null) });
+
+  assert.equal(all(card).filter((n) => String(n.className).includes("quote-row")).length, 0,
+    "no price row was painted into the card she had already closed");
+  assert.equal(feeInput(card).value, "", "and no charge was written into the box inside it");
 });

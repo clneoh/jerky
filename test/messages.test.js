@@ -102,3 +102,17 @@ test("a tracking number is sent exactly as typed — spaces and dashes kept", ()
   assert.ok(built.message.includes("Tracking number: JT 123-456"),
     "trimmed at the ends, untouched inside — the courier's site is fussy about it");
 });
+
+// v189 puts a BOOKED TRIP's share link in this same slot. The pure label-maker has
+// tests of its own (courier-job.test.js); what this one holds is the WIRING — that the
+// shipped message routes the value through it at all. Without that, a booking would
+// send the customer a courier's URL labelled "Tracking number", which is a page they
+// are told to read out over the phone.
+test("the share link a booked trip came back with says Track your delivery", () => {
+  const link = "https://www.lalamove.com/en-my/track/order/LM-PG-771204";
+  const built = buildShippedMessage(state(), group({ trackingNo: link }), "https://x");
+  assert.ok(built.message.includes(`Track your delivery: ${link}`),
+    "a link is labelled a link, not a number");
+  assert.ok(!built.message.includes("Tracking number"),
+    "and the number label is not also printed — one slot, one label");
+});

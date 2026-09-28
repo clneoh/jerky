@@ -104,7 +104,7 @@ function body(digest, caption, close) {
       `Also in this copy: ${rest.join(" · ")}.`));
   }
 
-  kids.push(el("div", { class: "popup-actions", style: "margin-top:14px" },
+  kids.push(el("div", { class: "popup-actions" },
     button("Close", close, "primary")));
   return el("div", {}, ...kids);
 }

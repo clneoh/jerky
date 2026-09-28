@@ -91,6 +91,15 @@ const cardFor = (name) => menuCards().find((c) => titleOf(c) === name);
 const cardNotes = (name) => walk(cardFor(name))
   .filter((n) => (n.className || "").includes("prod-note"))
   .map((n) => n.children[0].text);
+// The photo is the card's own left column and everything else stacks in
+// `.card-body` beside it, so the stepper is no longer the card's second child.
+// Found by name (this file's own idiom) rather than by index, so a card with a
+// photo and one without are read the same way.
+const stepperOf = (card) => {
+  const s = walk(card).find((n) => n.className === "stepper");
+  assert.ok(s, "the stepper");
+  return s;
+};
 // Day N of the September 2026 grid. The 1st is a Tuesday, so two padding cells
 // sit in front of it.
 function cell(day) {
@@ -127,7 +136,7 @@ test("choosing a later day brings back the products that sell then", async () =>
 
 test("an item already in the basket leaves it when the day changes, and says why", async () => {
   const focaccia = menuCards()[0];
-  focaccia.children[1].children[2]._listeners.click[0](); // the +
+  stepperOf(focaccia).children[2]._listeners.click[0](); // the +
   assert.equal(registry["bar-count"].textContent, "1 item", "it is in the basket");
 
   tapDay(2); // back to Wed 2 Sep, when Focaccia is not sold
@@ -154,7 +163,7 @@ test("a product she keeps listed stays on a day it isn't sold, stamped Unavailab
   assert.ok(stamp.className.includes("soldout"), "greyed exactly like a sold-out card");
   assert.equal(stamp.children[0].text, "Unavailable",
     "…but its own word — a day it is never sold is not the same as a day it ran out");
-  assert.equal(card.children[1].children[2].disabled, true, "and there is nothing to order");
+  assert.equal(stepperOf(card).children[2].disabled, true, "and there is nothing to order");
 
   const notes = cardNotes("Focaccia");
   assert.equal(notes.length, 2, "the reason, then the date to come back for");

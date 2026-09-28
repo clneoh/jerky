@@ -10,6 +10,7 @@ import {
   giveCredits, markOneUsed, markCreditUsed, setCreditExpiry, removeCredit,
   addManualCredit, ROLE_LABEL,
 } from "../admin/js/referrals.js";
+import { addDays, todayISO } from "../admin/js/dates.js";
 
 const T = "2026-09-05"; // a fixed "today" so expiry math is deterministic
 
@@ -237,9 +238,15 @@ test("giveCredits: a self-referral earns nothing", () => {
 
 test("markOneUsed marks the oldest valid credit and returns it", () => {
   const st = baseState();
+  // The expiries are measured off the clock the app itself reads, so they are in the future
+  // on every run. Written down instead, they were 2026-11-01 / 2026-12-04 — and once the
+  // machine clock passed them BOTH credits read as expired, validCredits came back empty and
+  // this test went red for a reason that had nothing to do with the code under test.
+  const soon = addDays(todayISO(), 30);
+  const later = addDays(todayISO(), 60);
   st.credits = [
-    { id: "c1", holder: "60123456789", expiresAt: "2026-12-04", usedAt: null, amountRM: 3, role: "reward", earnedAt: "2026-09-01T00:00:00.000Z", orderCode: "" },
-    { id: "c2", holder: "60123456789", expiresAt: "2026-11-01", usedAt: null, amountRM: 3, role: "reward", earnedAt: "2026-09-01T00:00:00.000Z", orderCode: "" },
+    { id: "c1", holder: "60123456789", expiresAt: later, usedAt: null, amountRM: 3, role: "reward", earnedAt: "2026-09-01T00:00:00.000Z", orderCode: "" },
+    { id: "c2", holder: "60123456789", expiresAt: soon, usedAt: null, amountRM: 3, role: "reward", earnedAt: "2026-09-01T00:00:00.000Z", orderCode: "" },
   ];
   const used = markOneUsed(st, "60123456789", "2026-09-06T10:00:00.000Z");
   assert.equal(used.id, "c2", "soonest-expiring valid credit first");

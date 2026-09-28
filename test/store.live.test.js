@@ -186,8 +186,15 @@ test("a refresh that depletes an ordered item fixes the cart, bar and tells the 
   const labelVal = (labelEl) => (labelEl.textContent !== ""
     ? String(labelEl.textContent)
     : (labelEl.children.find((c) => c && c.nodeType === 3) || {}).text ?? "");
-  const qty = (i) => labelVal(cards[i].children[1].children[1]);
-  const clickInc = (i) => cards[i].children[1].children[2]._listeners.click[0];
+  // The photo, when a card has one, is the card's own first column — so the
+  // stepper lives in the body, one level in. Found by name rather than by index.
+  const bodyOf = (card) => {
+    const b = card.children.find((c) => c.className === "card-body");
+    assert.ok(b, "the card body");
+    return b;
+  };
+  const qty = (i) => labelVal(bodyOf(cards[i]).children[1].children[1]);
+  const clickInc = (i) => bodyOf(cards[i]).children[1].children[2]._listeners.click[0];
   clickInc(0)(); clickInc(0)();        // Focaccia ×2
   clickInc(1)(); clickInc(1)(); clickInc(1)(); // Sandwich ×3
   assert.equal(qty(0), "2");
@@ -206,9 +213,9 @@ test("a refresh that depletes an ordered item fixes the cart, bar and tells the 
   assert.ok(fetchCalls > callsBefore, "the poll re-checked the live data");
 
   const cards2 = registry["menu"].children;
-  assert.equal(labelVal(cards2[0].children[1].children[1]), "0",
+  assert.equal(labelVal(bodyOf(cards2[0]).children[1].children[1]), "0",
     "the sold-out item is removed from the cart");
-  assert.equal(labelVal(cards2[1].children[1].children[1]), "1",
+  assert.equal(labelVal(bodyOf(cards2[1]).children[1].children[1]), "1",
     "a quantity above what's left is clamped down");
   assert.equal(document.getElementById("bar-count").textContent, "1 item",
     "the bar reflects the corrected cart");

@@ -7,6 +7,57 @@ import { todayISO } from "./dates.js";
 
 export const LS_KEY = "bakeadmin.v1";
 
+// The numbers every phone starts with on More → Production line, in one place
+// so that two screens can ask the same question of them: the screen that seeds
+// the plan on a phone that has never had one, and the sync code, which has to
+// tell a plan she has typed into from a plan that is still exactly this.
+//
+// That question is the whole reason this constant exists. A phone set up today
+// carries a full plan of these numbers before she has touched anything, so
+// "this phone has nothing to say about the line" cannot be read from the plan
+// being missing — the only signature of a phone with no opinion is a plan that
+// still matches this list, number for number. See planIsStock in js/sync.js.
+//
+// A plan that no longer matches is a plan she has typed into. Nothing here is
+// a gate: the production line is a planner, and no number on it blocks a sale.
+export const STOCK_PRODUCTION = {
+  people: 1,
+  hours: 5,
+  target: 60,
+  pans: 12,
+  prooferPans: 12, // what her proofer holds; the chiller is a what-if, not a station
+  mixerPans: 6,    // one tub fills one oven load, which is her actual cycle
+  ovenPans: 6,
+  ovenMin: 15,     // one turn of the oven — bake and swap together
+  ovenShelves: 2,
+  scaleMin6: 15,   // oiling the pans and weighing the dough out, one job one name
+  topMin6: 6,      // her minute a pan
+  swapMin6: 2,     // out and in, both halves
+  // The bake day she corrected on 22 Sep 2026, the chain the backwards plan
+  // walks: mix in the tub, the rests and folds, into pans, the proofer twice
+  // with the dimple between, the oven, then the cooling.
+  mixMin: 20,
+  foldRests: 4,
+  foldRestMin: 30,
+  foldMin: 1,
+  proofMin1: 45,
+  proofMin2: 30,
+  coolWaitMin: 30,
+  // The clock the backwards plan is built from, and the two bands she asked
+  // for: the rhythm she would like, and how many minutes early are still fine
+  // to shuffle work into.
+  readyAtMin: 480,
+  rhythmMin: 15,
+  tolMin: 5,
+  // The one step still untimed: 0 means she has not measured it, and the screen
+  // names it rather than pretending it is free.
+  coolMin6: 0,
+  // Which cutting of the plan these numbers belong to. A phone holding the
+  // earlier one is carried across once, on load — see upgradeProductionPlan
+  // below.
+  planRev: 145,
+};
+
 export function defaultState() {
   return {
     version: 1,
@@ -26,7 +77,7 @@ export function defaultState() {
         enabled: false,
       },
       lock: { enabled: false, pinHash: "" }, // device-local app password (never synced)
-      weekCheck: { week: "", done: {} }, // device-local weekly to-do on Home (never synced; fresh each Monday)
+      weekCheck: { week: "", done: {} }, // weekly to-do on Home: synced, union-merged so a tick on either phone survives, and keyed by week so it starts fresh each Monday
       savedOccNames: [], // device-local occasion names she can reuse (never synced)
       storefront: { // what the customer page shows; published to Supabase
         whatsapp: "",
@@ -40,6 +91,12 @@ export function defaultState() {
         policyMs: "", // its Bahasa Malaysia box (auto-translated, editable)
         postageRM: 8, // flat nationwide-post fee, quoted on posted orders when confirming
         postageSet: false, // true once the owner sets postage here — gates the fee's phone-to-phone sync
+        // "flat" charges the fee above on every posted order that carries no recorded
+        // courier charge. "quote" charges nothing up front: the delivery is priced per
+        // order, from what the courier actually asks for it (the Note / tracking box).
+        // Her ask, 28 Sep 2026: "add a switch whether a flat postage or quote by courier".
+        postageMode: "flat",
+        postageModeSet: false, // true once she has chosen — gates THIS choice's sync, exactly like postageSet
         products: [], // [{ name, price, unit }]
       },
       referrals: { // bring-a-friend scheme; synced so both phones agree
@@ -63,7 +120,42 @@ export function defaultState() {
         offerMin: 30,   // suggested minimum spend for the offer
         validDays: 30,  // how long a new code's offer runs for; "" = no expiry
       },
+      // The production line planner (19 Sep 2026): the numbers her line is
+      // measured from, typed by her on More → Production line. Seeded with the
+      // ones she measured on /form/ so the screen says something true on the
+      // first open. Nothing else in the app reads this — it is a planner, not a
+      // gate. See js/production.js for the model, and STOCK_PRODUCTION above for
+      // why these numbers are named in one place rather than written here.
+      production: { ...STOCK_PRODUCTION },
+      // The scenario planner (21 Sep 2026): a line built out of modules on a
+      // clock, so she can design a production flow rather than only read one.
+      // Left empty here and seeded by the screen itself (views/scenario.js), so
+      // that a phone which never opens it never pushes a preset over the one she
+      // has built on the other phone. See js/scenario.js for the model.
+      scenario: {},
+      // The scenarios she has saved and named (21 Sep 2026): [{ id, name,
+      // modules, ... }]. `scenario` above is the one she is working on; this is
+      // the shelf of them, so two designs — the line without a fridge and the
+      // line with one — can sit side by side. Empty means she has saved none.
+      scenarios: [],
       developer: { name: "", emails: [], whatsapp: "" }, // site credit + wish-list recipient; shown only once set
+      // Where the courier collects from (25 Sep 2026): the bakery's own point on
+      // the map, pinned once on more → Couriers. It is a SETTING rather than part of
+      // the storefront because the storefront is what customers read and this is a
+      // routing fact — but both carry the same address, and the screen says so.
+      // null means "not pinned yet", which every courier screen states in words
+      // rather than sending a blank point to an API.
+      pickupPlace: null,
+      // How the courier is asked for (25 Sep 2026). `dispatch` is the time of day a
+      // delivery is normally called for — the quote screen prefills it and she can
+      // change it per quote, which is why it is a convenience rather than a fact.
+      // Device-local, like lock and weekCheck above, and deliberately NOT synced:
+      // it is the one setting here whose whole job is to prefill a box on the phone
+      // in her hand, and a key that only ever holds a prefilled default is not worth
+      // a branch in sync.js's guarded-key rules. There is no `provider` key yet on
+      // purpose either: there is one courier, and a setting with one choice is a
+      // control that does nothing (see js/couriers.js).
+      courier: { dispatch: "10:00" },
       // The two lists the books are built from (16 Sep 2026). Empty means "the
       // built-in ones" — see js/accounts.js — so a phone that never edits them
       // behaves exactly as before, and both lists are shared between phones.
@@ -74,6 +166,10 @@ export function defaultState() {
     suppliers: [],     // who you buy from (each has a WhatsApp number)
     uoms: seedUoms(),  // units of measure; g/kg/ml/L/pcs convert within a family
     products: [],
+    // The shop's categories, a tree of any depth (see js/productCategories.js).
+    // A separate list from settings.categories, which is the EXPENSE chart — one
+    // is what a product is, the other is what money was spent on.
+    productCategories: [],
     deliveryDates: [],
     orders: [],
     customers: [], // customer profiles (pet name/photo, likes, notes) keyed to orders
@@ -275,6 +371,15 @@ export function groupOrders(orders) {
   return groups;
 }
 
+// A plain object used as a map (person number → name / → to-call flag). Anything
+// else — a list, a string, a number — becomes an empty map rather than being
+// carried through: the planner writes into these with `names[who] = typed`, and
+// a module is strict mode, so assigning a property on a primitive throws and
+// would take the whole people card down with it.
+function plainMap(v) {
+  return (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+}
+
 // Defensive normalization for hand-edited or older imports: guarantees the
 // shape the rest of the app relies on, dropping unknown fields.
 function normalize(s) {
@@ -290,14 +395,31 @@ function normalize(s) {
       storefront: cleanStorefront((s.settings || {}).storefront),
       referrals: { ...d.settings.referrals, ...(((s.settings || {}).referrals) || {}) },
       taster: { ...d.settings.taster, ...(((s.settings || {}).taster) || {}) },
+      production: { ...d.settings.production, ...(((s.settings || {}).production) || {}) },
+      scenario: { ...d.settings.scenario, ...(((s.settings || {}).scenario) || {}) },
+      // Saved scenarios, guarded as a list: a hand-edited import that put an
+      // object here would otherwise break the shelf on the scenario screen.
+      scenarios: Array.isArray((s.settings || {}).scenarios) ? s.settings.scenarios : [],
       categories: Array.isArray(((s.settings || {}).categories)) ? s.settings.categories : [],
       payMethods: Array.isArray(((s.settings || {}).payMethods)) ? s.settings.payMethods : [],
       developer: cleanDeveloper(((s.settings || {}).developer)),
+      // v200: the bakery's own address on the mailing labels, and the planner's
+      // two people maps. All three ride the settings row now, so they arrive
+      // through a cloud merge as readily as through an import and need the same
+      // guarantee those paths already give `categories` above.
+      mailingAddress: typeof (s.settings || {}).mailingAddress === "string"
+        ? s.settings.mailingAddress : "",
+      personNames: plainMap(((s.settings || {}).personNames)),
+      personCalls: plainMap(((s.settings || {}).personCalls)),
     },
     ingredients: Array.isArray(s.ingredients) ? s.ingredients : [],
     suppliers: Array.isArray(s.suppliers) ? s.suppliers : [],
     uoms: (Array.isArray(s.uoms) && s.uoms.length) ? s.uoms : seedUoms(),
     products: Array.isArray(s.products) ? s.products : [],
+    // The shop's category tree. Guarded like every other list: a phone that has
+    // never built one behaves exactly as before, and the cloud merge can land a
+    // tree on it without the shape being assumed.
+    productCategories: Array.isArray(s.productCategories) ? s.productCategories : [],
     deliveryDates: Array.isArray(s.deliveryDates) ? s.deliveryDates : [],
     orders: Array.isArray(s.orders)
       ? s.orders.map((o) => (o && typeof o === "object" ? { ...o, status: o.status || "new" } : o))
@@ -319,7 +441,69 @@ function normalize(s) {
   ensurePlanningUnits(out);
   backfillUnitRefs(out);
   linkProductUnits(out);
+  upgradeProductionPlan(out.settings.production, ((s.settings || {}).production) || {});
   return out;
+}
+
+// The production plan was measured again on 22 Sep 2026, around the bake day she
+// corrected. Three of its fields changed meaning — the wash became the oiling
+// and weighing-out, the chiller's trays became her proofer's pans, and the
+// mixer's bowl became the tub one oven load comes from — so an older phone's
+// numbers cannot simply be kept. They are not dropped in silence either: every
+// one of them is named in the changelog of the release that moved it. This
+// normalize-time step is the only path that reaches a phone which already holds
+// its own copy (the same reason ensureCountUnits exists), and it runs once,
+// keyed on planRev.
+const PLAN_REV = 145;
+
+export function upgradeProductionPlan(plan, saved) {
+  if (!plan || typeof plan !== "object") return false;
+  // The marker is read off her own saved copy rather than the merged plan: by
+  // the time this runs the new defaults are already sitting in every unset key,
+  // so reading planRev off the merged plan would read 145 out of the defaults
+  // and skip the migration on the one phone that needs it.
+  const was = (saved && typeof saved === "object") ? saved : {};
+  if (Number(was.planRev) >= PLAN_REV) return false;
+  const had = (k) => Number(was[k]) || 0;
+
+  // Five fields changed what they are asked, and are re-seeded from the bake day
+  // she corrected. A number cannot be carried across a change of question — hers
+  // would make her phone contradict the chain she gave, and two of these are
+  // numbers she had typed (the mix read 6, the wash 20), so they are named one by
+  // one in the changelog with the value each replaces. That is what makes this an
+  // announced correction rather than a silent edit, and any of them can be typed
+  // back in a tap if her stopwatch disagrees.
+  //
+  //   mixMin    20  "mix the dough in the tub" is the whole mix now, not loading
+  //                 it — her own 20 minutes, against the 6 she had.
+  //   mixerPans  6  "pans one tub of dough makes". Her cycle is one tub, one oven
+  //                 load, six pans. The 28 answered "what does the mixer's bowl
+  //                 hold", and kept it would spread one 20-minute mix over four
+  //                 tubs of pans and break the chain outright.
+  //   scaleMin6 15  the oiling and the weighing-out were one job under two names,
+  //                 and the step is the 15 she gave for them together. Her 46
+  //                 minutes a batch is the proof: it counts them once.
+  //   topMin6    6  her minute a pan. The 8 was measured with the topping in it,
+  //                 which this step no longer includes.
+  //   swapMin6   2  taking six out and putting six in, both halves. The 4 was one
+  //                 half of it.
+  plan.mixMin = 20;
+  plan.mixerPans = 6;
+  plan.scaleMin6 = 15;
+  plan.topMin6 = 6;
+  plan.swapMin6 = 2;
+
+  // The wash has no successor — its job is inside the 15 above.
+  delete plan.washMin6;
+
+  // The trays belonged to the what-if chiller. Her proofer holds the pans now,
+  // and the count carries over where she had one: it was always the same
+  // cabinet, only ever named after the half of the day she is not running.
+  if (!(Number(was.prooferPans) > 0) && had("trays") > 0) plan.prooferPans = had("trays");
+  delete plan.trays;
+
+  plan.planRev = PLAN_REV;
+  return true;
 }
 
 // Give every ingredient a uomId that matches its `unit` string, creating the
@@ -541,6 +725,10 @@ function cleanStorefront(sf) {
     policyMs: String(src.policyMs ?? d.policyMs),
     postageRM: Number(src.postageRM ?? d.postageRM),
     postageSet: src.postageSet === true,
+    // Anything that is not the explicit "quote" reads as "flat", which is the behaviour
+    // every save written before this switch existed already has.
+    postageMode: src.postageMode === "quote" ? "quote" : "flat",
+    postageModeSet: src.postageModeSet === true,
     products,
   };
 }

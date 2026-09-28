@@ -15,12 +15,15 @@ import { strictestCancelDays } from "../../../store/pool.js";
 import { buildConfirmation } from "../confirm.js";
 import { buildPaymentReminder, buildPickupReminder, buildShippedMessage } from "../messages.js";
 import { maybePublishTracking, maybeSync, publishTracking } from "../supabase.js";
-import { applyCourierCharge, courierFeeOf, courierPayerOf, courierCodOf } from "../courier.js";
+import { writeCourierCharge, courierFeeOf, courierPayerOf, courierCodOf } from "../courier.js";
 import { methodsOf } from "../accounts.js";
 import { schemeOf, referralFlag, giveCredits, validCredits, markOneUsed, referrerName } from "../referrals.js";
 import { promoOf, KIND_LABEL, offerLine } from "../codes.js";
 import { adjustForStatus } from "../stock.js";
 import { customerList, keyOf } from "../customers.js";
+import { strictNumber } from "../courier_place.js";
+import { fmtStamp } from "../courier_job.js";
+import { courierQuoteSection } from "./courier_quote.js";
 import { attachProfiles, customerNameMatches, customerRowName, syncContactFromOrder } from "../profiles.js";
 
 let orderStatusFilter = "";
@@ -1399,10 +1402,10 @@ function openEditPopup(state, group, dateId, root) {
   const title = el("div", { class: "popup-title-row" },
     "Edit order",
     orderCodeTag(first));
-  showPopup(title, (refresh, close) => popupEditBody(state, date, group, first, lines, draft, refresh, close, root));
+  showPopup(title, (refresh, close) => popupEditBody(state, date, group, first, lines, draft, refresh, close, root, dateId));
 }
 
-function popupEditBody(state, date, group, first, lines, draft, refresh, close, root) {
+function popupEditBody(state, date, group, first, lines, draft, refresh, close, root, dateId) {
   const curId = draft.deliveryDateId || (date && date.id) || "";
   const products = productOptions(state, curId);
   // Filling in from a suggestion writes the draft and both boxes. Unlike the
@@ -1522,6 +1525,10 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     if (!chosen.length) return toast("Choose a product");
     const destId = draft.deliveryDateId || curId;
     if (!destId || !byId(state.deliveryDates, destId)) return toast("Choose a delivery day");
+    // This door refuses a charge with no payer in the same words the Note / tracking card
+    // uses — one shared answer, so the two cannot drift apart. See courierControls.problem.
+    const whyCharge = charge.problem();
+    if (whyCharge) return toast(whyCharge);
     applyPopupEdits(state, date, group, first, chosen, {
       customerName: customer.value.trim(),
       whatsapp: waNumber(whatsapp.value.trim()),
@@ -1539,6 +1546,11 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     }, close, root);
   };
 
+  // Where the price section draws the door block (v201). Under the address row rather than
+  // at the very top of this card: the first thing the block says is the delivery address,
+  // and a map three fields away from the box that holds it reads as belonging to nothing.
+  const doorSlot = el("div", {});
+
   // Same order as the New-order card: which day, then who, then what.
   return el("div", {},
     el("div", { class: "field", style: "margin-bottom:10px" },
@@ -1552,11 +1564,31 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       el("div", {}, el("label", {}, "WhatsApp (optional)"), whatsapp),
       el("div", {}, el("label", {}, "Fulfillment"), fulfillmentSel),
       el("div", {}, el("label", {}, "Delivery address (if courier)"), address)),
+    doorSlot,
     el("div", { class: "field" }, note),
     el("div", { class: "field" },
       el("label", {}, "Courier tracking number (optional)"),
       tracking),
     charge.el,
+    // Same price section as the Note / tracking box carries, for the same reason that
+    // box carries the charge: the fee is part of what this order IS, so both doors to
+    // the charge open on the same way of filling it in (25 Sep 2026). Booking a trip
+    // (v189) writes the share link onto the order here, so `onCommit` refreshes THIS
+    // card's own copy of it — the draft is what `Object.assign` writes back over the
+    // order on Save, and a booking the card never heard about would be undone by the
+    // next Save. A booked trip is saved the moment it is booked rather than on Save:
+    // a real vehicle on a real road must not be discardable by closing a form.
+    courierQuoteSection({
+      state, orders: [first], onUseFee: (q) => charge.set(q.amount), doorSlot,
+      onCollected: onCollectedMove(state, group, root, dateId),
+      onCommit: (o) => {
+        draft.trackingNo = String((o && o.trackingNo) || "");
+        tracking.value = draft.trackingNo;
+        save(state);
+        maybeSync(state);
+        maybePublishTracking(state, group);
+      },
+    }),
     el("div", { class: "field", style: "margin-top:10px" },
       el("label", {}, "Items"),
       el("p", { class: "card-sub", style: "margin:0 0 6px" },
@@ -1651,18 +1683,12 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
     // leaves no key behind and cannot outlive the amount. `courier` is null only for a
     // caller that does not ask for the charge, which then leaves it exactly as it was.
     if (courier) {
-      for (const o of keptRows) {
-        if (courier.fee > 0) o.courierFee = courier.fee;
-        else delete o.courierFee;
-        if (courier.who) o.courierPaidBy = courier.who;
-        else delete o.courierPaidBy;
-        if (courier.collect) o.courierCod = true;
-        else delete o.courierCod;
-      }
-      // Her own charge is a Delivery & fuel expense as well as an order row; the
-      // customer's touches her books not at all. Same call the box makes, so saving the
-      // charge from either door leaves the order and the expense in step.
-      applyCourierCharge(state, group, courier.fee, courier.who, courier.method);
+      // The three keys and the Delivery & fuel row, written by the one function every
+      // door now uses, so a charge saved from here, from the Note / tracking box or from
+      // a Delivery run cannot end up meaning three slightly different things. The rows
+      // are the ones rebuilt for the destination day, which are not the group's own rows
+      // until the move below.
+      writeCourierCharge(state, keptRows, group, courier);
     }
     // Every kept row now sits on the destination day, with deliveryDateId and
     // the deliveryDate snapshot written together (self-heals a split group).
@@ -1840,22 +1866,40 @@ function orderList(state, dateId, root) {
   return listEl;
 }
 
-// The courier charge's questions — the amount, who bore it, how SHE paid it, and
-// whether the courier collects it at the door — built in ONE place, because two pop-ups
-// ask them now: the small Note / tracking box and the full Edit form (19 Sep 2026). A
-// second copy of this block is exactly how the two doors would start disagreeing about
-// one charge, and a charge she can reach from either door has to behave the same in both.
+// The three courier-charge questions that are NOT the amount: who bore it, how SHE paid
+// it, and whether the courier collects it at the door.
+//
+// They are their own block because a DELIVERY RUN asks exactly these three and nothing
+// else — the amount on a run is not hers to type, it is the trip's fee split evenly over
+// the customers on it (v191). A second copy of these three selects is precisely how two
+// doors would start disagreeing about one charge, which is the same reason this block
+// itself exists.
 //
 // Held in a closure rather than read back off the nodes, and repainted HERE rather than
-// by the pop-up holding it: the third box comes and goes with the payer, and asking the
-// whole form to rebuild for that would throw away everything else she had typed in it.
+// by the form holding it: the question under the payer comes and goes with the answer,
+// and asking the whole form to rebuild for that would throw away everything else she had
+// typed in it.
 //
 // `onChange` fires whenever an answer moves, so each caller repaints what it shows about
-// the charge. read() gives the answers in the terms applyCourierCharge and the three
-// order keys want: an amount of 0 with no payer is no charge at all.
-function courierControls(state, first, onChange = () => {}) {
-  let feeRaw = courierFeeOf(first) ? String(courierFeeOf(first)) : "";
-  let payer = courierPayerOf(first); // "" | "me" | "customer"
+// the charge. read(amount) takes the amount from the caller — the box knows it from what
+// she typed, a run knows it from the split — and gives back the answers in the terms
+// applyCourierCharge and the three order keys want.
+export function courierPayQuestions(state, first, onChange = () => {}, { defaultPayer = "" } = {}) {
+  // Her ask, 27 Sep 2026, the day after v215 shipped: "Can you default the who paid courier
+  // to The customer paid it?" So the ORDER's charge box opens on the answer she gives most
+  // often, rather than on "Not recorded" — which is not a neutral resting place but the one
+  // answer that means NOBODY bore it, and, since v215, the answer that refuses the save.
+  //
+  // It is a DEFAULT and never an overwrite: an order that already records a payer opens on
+  // that payer, because `courierPayerOf` answers first. "Not recorded" stays in the list,
+  // stays hers to choose, and stays how a charge is deleted — see courierControls.problem's
+  // carve-out, which exists for exactly that press.
+  //
+  // The delivery RUN deliberately does not pass this. There the payer is read BEFORE the
+  // amounts and decides which amounts they are (v192): "customer" sends it asking what each
+  // doorstep costs on its own and puts a charge on every customer's bill, so on that screen
+  // it must stay a choice she makes and not one she inherits.
+  let payer = courierPayerOf(first) || defaultPayer; // "" | "me" | "customer"
   let codWanted = courierCodOf(first);
   // How SHE paid the courier is not a field on the order: the expense row IS the record,
   // so this opens on whatever that row already says. That is what stops a save which
@@ -1865,11 +1909,6 @@ function courierControls(state, first, onChange = () => {}) {
   let paidWith = spent ? spent.method : "";
   const methods = methodsOf(state);
 
-  const amountField = el("div", { class: "field" },
-    el("label", {}, "Courier charge (optional)"),
-    el("input", { class: "input", type: "number", inputmode: "decimal", min: "0", step: "0.01",
-      placeholder: "e.g. 8.00", value: feeRaw, "aria-label": "Courier charge",
-      oninput: function () { feeRaw = this.value; onChange(); } }));
   const payerSel = select([
     { value: "", label: "Not recorded" },
     { value: "me", label: "I paid it" },
@@ -1894,11 +1933,11 @@ function courierControls(state, first, onChange = () => {}) {
   const codField = el("div", { class: "field", style: "margin:8px 0 0" },
     el("label", {}, "How they pay it"), codSel);
 
-  const wrap = el("div", {}, amountField, payerField);
-  // The amount and the payer stay where they are; only the third box comes and goes, so
-  // the box she is typing in is never rebuilt underneath her.
+  const wrap = el("div", {}, payerField);
+  // The payer stays where it is; only the question under it comes and goes, so the box
+  // she is choosing in is never rebuilt underneath her.
   function paint() {
-    wrap.replaceChildren(...[amountField, payerField,
+    wrap.replaceChildren(...[payerField,
       payer === "me" ? methodField : null,
       payer === "customer" ? codField : null].filter(Boolean));
   }
@@ -1906,14 +1945,97 @@ function courierControls(state, first, onChange = () => {}) {
 
   return {
     el: wrap,
-    read: () => {
-      const amount = Number(String(feeRaw).replace(/[^0-9.]/g, "")) || 0;
+    // Who she said bore the charge, asked on its own — the delivery run needs the payer
+    // BEFORE it can know which amounts each order is to carry (v192).
+    payer: () => payer,
+    read: (amount = 0) => {
+      const n = Number(amount) || 0;
       // A charge is the amount AND who bore it, so no payer means no charge and the
       // amount goes with it — the v127 lesson, read the same way here.
-      const who = amount > 0 ? payer : "";
-      return { amount, who, fee: who ? amount : 0,
+      const who = n > 0 ? payer : "";
+      return { amount: n, who, fee: who ? n : 0,
         collect: who === "customer" && codWanted, method: methodSel.value };
     },
+  };
+}
+
+// The whole courier charge's questions — the amount, then the three above — built in ONE
+// place, because two pop-ups ask them now: the small Note / tracking box and the full
+// Edit form (19 Sep 2026). A second copy of this block is exactly how the two doors would
+// start disagreeing about one charge, and a charge she can reach from either door has to
+// behave the same in both.
+//
+// The amount box is what this adds to courierPayQuestions, which is the half a run does
+// NOT want: a run's charge per customer is a share of the trip's fee, not a figure she
+// types.
+function courierControls(state, first, onChange = () => {}) {
+  let feeRaw = courierFeeOf(first) ? String(courierFeeOf(first)) : "";
+
+  const amountInput = el("input", { class: "input", type: "number", inputmode: "decimal", min: "0", step: "0.01",
+    placeholder: "e.g. 8.00", value: feeRaw, "aria-label": "Courier charge",
+    oninput: function () { feeRaw = this.value; onChange(); } });
+  const amountField = el("div", { class: "field" },
+    el("label", {}, "Courier charge (optional)"),
+    amountInput);
+  const pay = courierPayQuestions(state, first, onChange, { defaultPayer: "customer" });
+  // What the box holds, read ONE way. Both the save and the guard below ask this, so
+  // they cannot disagree about whether there is an amount in the box.
+  const amountNow = () => Number(String(feeRaw).replace(/[^0-9.]/g, "")) || 0;
+  // Did this box OPEN on a charge the order already owned — an amount with a payer
+  // recorded? That one fact tells apart the two things "an amount and no payer" can mean
+  // on screen, and they need opposite answers. See `problem` below.
+  const openedOnAnOwnedCharge = courierFeeOf(first) > 0 && !!courierPayerOf(first);
+
+  return {
+    el: el("div", {}, amountField, pay.el),
+    // Put an amount into this box from OUTSIDE it — the courier quote's own [Use this
+    // fee]. It writes the same field and fires the same repaint as her typing does, so
+    // a quoted price and a typed one are the same kind of answer: the payer and the COD
+    // questions below it behave identically either way, and there is no second charge
+    // editor for the two to disagree through. A junk reading is refused rather than
+    // written, because `Number("")` is 0 and a box showing RM0.00 is a charge she would
+    // have to notice and clear.
+    //
+    // It ANSWERS whether it wrote, and the answer is not decoration: the caller is a
+    // button that has to say what it did. A courier can quote a total of zero — a real
+    // reply, priced at nothing — and a [Use this fee] that toasted "put in the charge
+    // box" over a box it left empty is the exact fault this app keeps finding: a tap
+    // that moves the picture and skips the write.
+    set: (amount) => {
+      const n = strictNumber(amount);
+      if (n === null || n <= 0) return false;
+      feeRaw = String(n);
+      amountInput.value = feeRaw;
+      onChange();
+      return true;
+    },
+    // Why this charge cannot be SAVED as it stands, in words, or "" when it can. One
+    // combination loses her money in silence, and it is this one: an amount in the box
+    // with nobody named as the payer. `pay.read()` settles the two together — an amount
+    // with no payer is not a charge, so it reads back as fee 0 and the save wrote
+    // nothing at all, while still saying "Order updated". A save that reports a write it
+    // did not make is the same fault as a tap that moves the picture and skips the
+    // write. Her report, 27 Sep 2026: "The selected courier charges cannot save", after
+    // taking a courier's price with [Use this fee] and pressing Save.
+    //
+    // The reading comes from `pay.read` — the very value that would be written — rather
+    // than from a second opinion about what is in the box, so this guard and the write
+    // can never disagree. Both doors into this box ask it before they touch anything.
+    problem: () => {
+      const n = amountNow();
+      if (n <= 0) return "";
+      const { amount, who } = pay.read(n);
+      if (who) return "";
+      // AN AMOUNT THE ORDER ALREADY CARRIED, whose payer she has just set back to "Not
+      // recorded", is her own way of REMOVING a charge — the rule she set on 19 Sep 2026
+      // ("why i delete courier charges and the tag is not remove?"): a charge nobody owns
+      // is not a charge, so the amount goes with the payer. Refusing THAT would be this
+      // app blocking the very action she deletes a charge with. The guard is only for an
+      // amount that arrived while this box was open and never got an owner.
+      if (openedOnAnOwnedCharge) return "";
+      return `The courier charge is ${fmtRM(amount, state.settings.currency)} but nobody is down as the payer, so it would not be saved — a charge is the amount and who bore it. Choose who paid the courier under it, or clear the amount, then press Save again.`;
+    },
+    read: () => pay.read(amountNow()),
   };
 }
 
@@ -1971,11 +2093,40 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
         { value: "tng", label: "TNG transfer" },
       ], first.paidMethod || "", () => {});
       paintCustTotal();
+      // Where the price section draws the door block (v201): the TOP of this card, above the
+      // note. Her report was that this box gives her no way to see the address or the pin
+      // the driver is being sent to — and this is the box where a trip gets priced and
+      // booked, so the door belongs above everything she does here rather than folded in
+      // with the prices. Handed to the section as a node rather than built here, because
+      // the section owns every rule about a door and the card only owns its layout.
+      const doorSlot = el("div", {});
       return el("div", {},
+        doorSlot,
         el("div", { class: "field" }, el("label", {}, "Note (optional)"), note),
         el("div", { class: "field" },
           el("label", {}, "Courier tracking number (optional)"), tracking),
         charge.el,
+        // The price, folded away until she asks for it (25 Sep 2026). It lives INSIDE
+        // this card rather than in a pop-up of its own, because the app has one pop-up
+        // layer: a second card would replace this one and take the charge box, the note
+        // she is part-way through and the Save button with it, so an accepted fee would
+        // land in a box nothing could ever save. Its [Use this fee] writes through this
+        // card's own charge box, so there is still one charge editor in the app.
+        //
+        // Booking a trip (v189) writes the share link onto the order, and this box
+        // captured the tracking number when it opened — so `onCommit` puts the new value
+        // back into the box she is looking at. Without it, the Save below would write
+        // its own stale number over the link the customer was about to be sent.
+        courierQuoteSection({
+          state, orders: [first], onUseFee: (q) => charge.set(q.amount), doorSlot,
+          onCollected: onCollectedMove(state, group, root, dateId),
+          onCommit: (o) => {
+            tracking.value = String((o && o.trackingNo) || "");
+            save(state);
+            maybeSync(state);
+            maybePublishTracking(state, group);
+          },
+        }),
         custTotal,
         el("div", { class: "field" }, el("label", {}, "Paid by the customer"), paidSel),
         el("p", { class: "card-sub", style: "margin:0 0 10px" },
@@ -1997,23 +2148,24 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
             // nothing for anyone to collect at the door, so the key goes with the other
             // two rather than lingering as a flag on no charge. All of that reading is the
             // shared block's, so this box and the Edit form settle it identically.
-            const { fee, who, collect, method: courierMethod } = charge.read();
+            // REFUSED, NOT DROPPED, when an amount is sitting there with no payer: see
+            // courierControls.problem. Asked BEFORE the note and the tracking number are
+            // written too, so a refused Save leaves the whole card exactly as she left it.
+            const why = charge.problem();
+            if (why) return toast(why);
+            const answers = charge.read();
             for (const o of group.orders) {
               o.note = note.value.trim();
               o.trackingNo = number;
               if (method) o.paidMethod = method;
               else delete o.paidMethod; // "Not recorded" is the absent key, as everywhere
-              if (fee > 0) o.courierFee = fee;
-              else delete o.courierFee;
-              if (who) o.courierPaidBy = who;
-              else delete o.courierPaidBy;
-              if (collect) o.courierCod = true;
-              else delete o.courierCod;
             }
-            // The books follow the payer: her own charge becomes an expense row, the
-            // customer's leaves them alone entirely. Written here rather than at the
-            // Money screen so one save keeps the order and the expense in step.
-            applyCourierCharge(state, group, fee, who, courierMethod);
+            // The charge's own three keys and the books follow the payer: her own charge
+            // becomes a Delivery & fuel expense row, the customer's leaves her books
+            // alone entirely. Written here rather than at the Money screen so one save
+            // keeps the order and the expense in step — and written by the one shared
+            // function, so this box and the Edit form cannot drift apart.
+            writeCourierCharge(state, group.orders, group, answers);
             save(state);
             maybeSync(state);
             // The card carries the tracking number and, when the customer bears it, the
@@ -2127,6 +2279,131 @@ function openLabelPrint(state, group) {
   }, { wide: true });
 }
 
+// The courier section's `onCollected`: it tells US the trip has been collected, and the
+// ORDER is what decides what that means for its stage. Written once because the two doors
+// to that section — the Edit card and the Note / tracking card — must move a row
+// identically, and because the sentence about it has to reach the section's own toast.
+function onCollectedMove(state, group, root, dateId) {
+  return (o) => (autoCollect(state, group, o, { root, dateId })
+    ? "The order moved itself to Collected / Shipped — the Undo is on the row."
+    : "");
+}
+
+// ---- moving an order to another stage ------------------------------------
+//
+// ONE place where a stage change is finished off, because there is now more than one door
+// to an order's stage — the drop-down she works and, since v190, the courier telling the
+// app the parcel has been picked up. Everything that has to happen once the new stage has
+// been written lives here: where the row stays pinned, the save, the sync, the badge, and
+// the customer's own card. The publish is the one that matters — a door that forgot it
+// would leave the customer reading the stage the order used to be on, silently.
+function stageWritten(state, group, { root = null, dateId = "", quiet = false, message = "Status saved" } = {}) {
+  const first = ((group && group.orders) || [])[0];
+  if (first) anchorRowId = first.id; // keep this row pinned where the baker tapped it
+  save(state);
+  maybeSync(state);
+  updateOrderBadge(state);
+  maybePublishTracking(state, group); // the customer's track card follows the status
+  if (!quiet) toast(message);
+  if (root) renderAll(root, state, new URLSearchParams({ date: dateId }));
+}
+
+// Move a group of orders onto another stage, with everything a stage carries: the stock
+// it takes or gives back, and the flags that say what the stage means about the money.
+function setStage(state, group, nextStatus, opts = {}) {
+  const rows = ((group && group.orders) || []).filter(Boolean);
+  if (!rows.length) return;
+  // Baked takes the orders' ingredients off your stock; stepping back to before
+  // Baked (an undo) puts them back. Forward moves leave stock be.
+  adjustForStatus(state, rows, nextStatus, STATUSES.map(([id]) => id));
+  for (const o of rows) {
+    o.status = nextStatus;
+    // Stepping into Confirmed / Paid means the stage is being worked, not
+    // finished: it only turns green when Send confirmation / the Paid
+    // button is pressed. Orders saved before these fields existed have no
+    // flag, which reads as already done.
+    if (nextStatus === "confirmed") o.confirmedSent = false;
+    // Stepping PAST Paid without the money recorded says so on the order: a regular who
+    // pays at the counter goes Confirmed -> Baked, and that order owes money. Without
+    // this the flag would stay absent, which reads as "already paid" (the rule that keeps
+    // her older orders from lighting up as unhandled), and the row would claim a payment
+    // that never happened (17 Sep 2026). Only ever set when it is not already true, so
+    // an order she did mark paid is never un-paid by moving it on.
+    else if (STAGES_AT_OR_PAST_PAID.includes(nextStatus) && o.paidReceived !== true) {
+      o.paidReceived = false;
+    }
+  }
+  stageWritten(state, group, opts);
+}
+
+// The stage a collected delivery lands on — the last one, which this app has always
+// labelled once for both of its endings.
+const AUTO_STAGE = "delivered";
+
+// The courier saying a trip has been picked up, and the order moving itself (v190).
+//
+// This is the first time anything in this app changes an order's stage with nobody's hand
+// on it, so it is built to be SEEN and UNDONE rather than to be trusted. What the courier
+// reports is a fact about a parcel; what a stage means is hers. Nothing moves quietly: the
+// row gains a note naming who moved it and when, and one press puts it back.
+//
+// Two guards, and both are about her rather than about the courier. A row this rule has
+// ALREADY moved is never moved again — a second check must not re-stamp the moment or
+// overwrite the memory of what the row was before. And a row already sitting on the last
+// stage is left alone, because there is nothing to move: a trip booked on an order she had
+// already marked Collected / Shipped needs no help from anybody.
+//
+// Returns true when it moved the row, so the caller can say so in its own words.
+//
+// Exported so the rule above can be tested where it is stated. Through the screen the
+// transition guard in the courier panel is reached first — it only asks for a move on the
+// check that first SEES the trip collected — so a second call cannot be produced by
+// pressing anything, and a guard nothing can reach is a guard nothing can prove.
+export function autoCollect(state, group, order, { root = null, dateId = "" } = {}) {
+  const o = order;
+  if (!o || !o.courierJob) return false;
+  if (o.courierJob.autoAt) return false;
+  if ((o.status || "new") === AUTO_STAGE) return false;
+  const at = new Date().toISOString();
+  o.courierJob.autoAt = at;
+  o.courierJob.collectedAt = String(o.courierJob.statusAt || "").trim() || at;
+  // What the row was before, so the Undo can put it back. The payment flag is captured
+  // WITH the stage and not instead of it: moving an order past Paid without the money
+  // recorded is this app's own way of saying the order is owed, and that is the right rule
+  // on a delivery that has gone out — but it is a claim about HER money, raised on a
+  // courier's word, so the Undo has to be able to take it back. An Undo that restored the
+  // stage and left the row saying it owes RM44 would be worse than no Undo at all.
+  o.courierJob.autoFrom = { status: o.status || "new", paidReceived: o.paidReceived };
+  setStage(state, group, AUTO_STAGE, { root, dateId, quiet: true });
+  return true;
+}
+
+// Put a row back the way the courier found it. The three things the rule above wrote are
+// cleared and nothing else is touched, so the Undo leaves no trace for a later check to
+// trip over: with `autoAt` gone this is once again a row the rule has not moved, and the
+// trip being collected does not move it a second time. That is the whole reason the guard
+// is `autoAt` and not the trip's phase — an Undo has to survive her looking again.
+function undoAutoCollect(state, group, order, { root = null, dateId = "" } = {}) {
+  const o = order;
+  const from = (o && o.courierJob && o.courierJob.autoFrom) || null;
+  if (!from) return;
+  delete o.courierJob.autoAt;
+  delete o.courierJob.collectedAt;
+  delete o.courierJob.autoFrom;
+  // The stage goes back to the one this row was already on, and the STOCK rule is
+  // deliberately not run on the way back. It is not an oversight: `adjustForStatus` reads
+  // the row's current stage, which is now the last one, so it cannot tell "put this back"
+  // from "step this out of Baked" — and stepping OUT of Baked puts the ingredients back
+  // on her shelf. Charging one order's ingredients twice because a courier's API spoke is
+  // exactly the kind of thing this release must not do. The auto-move itself changed no
+  // stock (only stepping into or out of Baked does), so nothing needs undoing.
+  o.status = from.status || "new";
+  // Put back as it was, key and all: an order that had no payment flag at all goes back to
+  // having none, rather than to a `false` this Undo invented.
+  if (from.paidReceived === undefined) delete o.paidReceived;
+  else o.paidReceived = from.paidReceived;
+  stageWritten(state, group, { root, dateId, message: "Put back where it was" });
+}
 function orderGroupRow(state, group, root, dateId) {
   const orders = group.orders;
   const first = orders[0];
@@ -2147,38 +2424,20 @@ function orderGroupRow(state, group, root, dateId) {
         return;
       }
       if (stSel.value === (first.status || "new")) return;
-      // Preparing takes the orders' ingredients off your stock; stepping back to
-      // before Preparing (an undo) puts them back. Forward moves leave stock be.
-      adjustForStatus(state, orders, stSel.value, STATUSES.map(([id]) => id));
-      for (const o of orders) {
-        o.status = stSel.value;
-        // Stepping into Confirmed / Paid means the stage is being worked, not
-        // finished: it only turns green when Send confirmation / the Paid
-        // button is pressed. Orders saved before these fields existed have no
-        // flag, which reads as already done.
-        if (stSel.value === "confirmed") o.confirmedSent = false;
-        // Stepping PAST Paid without the money recorded says so on the order: a regular who
-        // pays at the counter goes Confirmed -> Preparing, and that order owes money. Without
-        // this the flag would stay absent, which reads as "already paid" (the rule that keeps
-        // her older orders from lighting up as unhandled), and the row would claim a payment
-        // that never happened (17 Sep 2026). Only ever set when it is not already true, so
-        // an order she did mark paid is never un-paid by moving it on.
-        else if (STAGES_AT_OR_PAST_PAID.includes(stSel.value) && o.paidReceived !== true) {
-          o.paidReceived = false;
-        }
-      }
-      anchorRowId = first.id; // keep this row pinned where you tapped it
-      save(state);
-      maybeSync(state);
-      updateOrderBadge(state);
-      publishTracking(state, group); // the customer's track card follows the status
-      toast("Status saved");
-      renderAll(root, state, new URLSearchParams({ date: dateId }));
+      // Everything a stage change carries — the stock, the money flags, the save, the
+      // customer's card — is in one place, so this door and the courier's own cannot
+      // drift apart (v190).
+      setStage(state, group, stSel.value, { root, dateId });
     });
   stSel.className = "sel-small";
 
   const status = first.status || "new";
   const courier = first.fulfillment === "courier";
+  // The courier moved this row and has not been put back (v190). Read here rather than
+  // lower down, because the Undo press belongs in the row's own button line beside the
+  // other things she can do to this order — and because the note under the row and the
+  // press beside it have to agree about what happened, which one variable guarantees.
+  const auto = first.courierJob && first.courierJob.autoFrom ? first.courierJob : null;
   const actions = [];
   // Edit is available on every order — single items and multi-item groups alike —
   // and opens a pop-up over the screen (the New-order card stays put).
@@ -2239,6 +2498,11 @@ function orderGroupRow(state, group, root, dateId) {
       button("Paid · Cash", () => markPaid(state, group, root, dateId, "cash"), "small primary"),
       button("Paid · TNG", () => markPaid(state, group, root, dateId, "tng"), "small primary"));
   }
+  // The Undo sits with the other things she can do to this order, and before the ✕ so
+  // the box that deletes the row stays the last press on the line where it has always
+  // been. It is not a "dismiss the note" press: it puts the stage and the payment flag
+  // back where they were.
+  if (auto) actions.push(button("Undo", () => undoAutoCollect(state, group, first, { root, dateId }), "ghost small"));
   actions.push(button("✕", () => removeOrder(state, group, root, dateId), "ghost small"));
   const placedLine = el("div", { class: "li-sub" },
     `Placed ${fmtPlaced(first.createdAt, first.orderDate)}`,
@@ -2247,6 +2511,18 @@ function orderGroupRow(state, group, root, dateId) {
   const noWaHint = !first.whatsapp
     && (["confirmed", "paid", "ready"].includes(status) || (status === "delivered" && courier))
     ? el("div", { class: "li-sub muted" }, "Add the customer's WhatsApp (tap Edit) to send this order's messages.")
+    : null;
+
+  // The courier moved this row and the row says so (v190). Written on the row rather than
+  // said in a toast at the moment it happened: a toast is gone in seconds, and this is a
+  // change to an order's own money that she may not look at until the evening. The note
+  // names WHO and WHEN, so the row can never read as something she did and cannot
+  // remember doing.
+  const autoNote = auto
+    ? el("div", { class: "li-sub muted" },
+        `${String(auto.courierName || "").trim() || "The courier"} says it collected`
+        + (auto.collectedAt ? ` at ${fmtStamp(auto.collectedAt, todayISO())}` : "")
+        + " — this row moved itself. Put it back if that is not right.")
     : null;
 
   // The row is tagged with its first item's id; the group id rides along so the
@@ -2262,7 +2538,8 @@ function orderGroupRow(state, group, root, dateId) {
       multi ? el("div", { class: "li-sub" }, items.map((i) => `${i.name} ×${i.qty}`).join("  ·  ")) : null,
       placedLine,
       sub ? el("div", { class: "li-sub" }, sub) : null,
-      noWaHint),
+      noWaHint,
+      autoNote),
     el("div", { class: "li-right" },
       el("span", { class: "qty-chip" }, `×${qtyTotal}`),
       first.paidMethod

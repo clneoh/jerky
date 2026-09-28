@@ -1254,3 +1254,177 @@ test("a tap outside folds it, a tap inside does not, and adding a product leaves
   renderProducts(fresh, state);
   assert.equal(newBody(fresh).hidden, true, "a fresh visit folds it away");
 });
+
+// ── The category picker ──────────────────────────────────────────────────────
+// Written after a real bug: the categories block in collect() referenced `values`
+// before its own `const values = {...}` line, which is only a crash when the
+// branch RUNS — and no test had ever ticked a category, so nothing ran it. The
+// editor had no coverage here at all, which is how it got through.
+
+const catPicks = (root) => walk(root).filter((n) => n.tagName === "INPUT"
+  && n.parent && String(n.parent.className).startsWith("cat-pick"));
+
+// The shim's change event carries nothing the view reads — the handler closes
+// over its own box — so setting `checked` first is the whole of the gesture.
+const tick = (node, on = true) => {
+  node.checked = on;
+  (node._listeners.change || []).forEach((f) => f({ target: node }));
+};
+
+// The line under a product's name on the Products page, which is where she reads
+// off what a customer will see. Its words are a text CHILD, not `.textContent`:
+// el() appends a text node, and the shim does not merge those into a string.
+const catLine = (root) => {
+  const p = walk(root).find((n) => String(n.className).includes("po-breakdown"));
+  return p ? (p.children || []).map((c) => c.text ?? "").join("") : null;
+};
+
+test("the product card names the heading it is listed under, and the ticks that lost", () => {
+  doc.body.replaceChildren();
+  const state = freshState();
+  state.productCategories = [
+    { id: "cat_food", name: "Food", parentId: "", sort: 0 },
+    { id: "cat_savoury", name: "Savoury", parentId: "cat_food", sort: 0 },
+    { id: "cat_snack", name: "Snack", parentId: "", sort: 1 },
+  ];
+  state.products = [{ id: "p1", name: "Brownies", unit: "u_loaf", price: 25,
+    categories: ["cat_snack", "cat_food", "cat_savoury"] }];
+
+  const root = render(state);
+  assert.equal(catLine(root), "🗂 Snack · also ticked: Food, Food › Savoury",
+    "the heading it lists under first, then every other tick NAMED — a bare count leaves her to go and find which one");
+});
+
+test("the product card says a nested heading by its whole path", () => {
+  doc.body.replaceChildren();
+  const state = freshState();
+  state.productCategories = [
+    { id: "cat_food", name: "Food", parentId: "", sort: 0 },
+    { id: "cat_savoury", name: "Savoury", parentId: "cat_food", sort: 0 },
+  ];
+  state.products = [{ id: "p1", name: "Sourdough", unit: "u_loaf", price: 18,
+    categories: ["cat_savoury"] }];
+
+  assert.equal(catLine(render(state)), "🗂 Food › Savoury",
+    "\"Savoury\" alone would not say which parent it hangs from");
+});
+
+test("the product card of a product filed nowhere says where it goes instead", () => {
+  doc.body.replaceChildren();
+  const state = freshState();
+  state.productCategories = [{ id: "cat_food", name: "Food", parentId: "", sort: 0 }];
+  state.products = [{ id: "p1", name: "Muffin", unit: "u_loaf", price: 6 }];
+
+  assert.equal(catLine(render(state)),
+    "Not in a category yet — listed last on the shop, under “More items”.");
+});
+
+test("a tick pointing at a category that is gone is not named on the card", () => {
+  doc.body.replaceChildren();
+  const state = freshState();
+  state.productCategories = [{ id: "cat_food", name: "Food", parentId: "", sort: 0 }];
+  state.products = [{ id: "p1", name: "Ghosted", unit: "u_loaf", price: 5,
+    categories: ["cat_food", "cat_vanished"] }];
+
+  assert.equal(catLine(render(state)), "🗂 Food",
+    "a heading deleted on the other phone must not be read back to her here");
+});
+
+test("a product is filed under the FIRST category ticked, and the tick order is kept", () => {
+  doc.body.replaceChildren();
+  const state = freshState();
+  state.productCategories = [
+    { id: "cat_food", name: "Food", parentId: "", sort: 0 },
+    { id: "cat_drink", name: "Drink", parentId: "", sort: 1 },
+    { id: "cat_snack", name: "Snack", parentId: "", sort: 2 },
+  ];
+  const root = render(state);
+  const picks = catPicks(root);
+  assert.equal(picks.length, 3, "one box per category, in the order she built them");
+
+  // Ticked in a deliberate order that is NOT the list's order: Snack, then Food.
+  tick(picks[2]);
+  tick(picks[0]);
+
+  const f = formHandles(root);
+  f.name.value = "Focaccia";
+  f.unit.value = "u_loaf";
+  fire(f.add);
+
+  assert.equal(state.products.length, 1);
+  assert.deepEqual(state.products[0].categories, ["cat_snack", "cat_food"],
+    "stored in the order she ticked them, because the first is the heading it lands under");
+});
+
+test("a product filed nowhere carries no categories key at all", () => {
+  doc.body.replaceChildren();
+  const state = freshState();
+  state.productCategories = [{ id: "cat_food", name: "Food", parentId: "", sort: 0 }];
+  const root = render(state);
+  assert.equal(catPicks(root).length, 1);
+
+  const f = formHandles(root);
+  f.name.value = "Plain Loaf";
+  f.unit.value = "u_loaf";
+  fire(f.add);
+
+  assert.equal("categories" in state.products[0], false,
+    "absent, so the shop reads it as unfiled and lists it last rather than hiding it");
+});
+
+test("unticking the only category forgets the key again", () => {
+  doc.body.replaceChildren();
+  const state = freshState();
+  state.productCategories = [{ id: "cat_food", name: "Food", parentId: "", sort: 0 }];
+  const root = render(state);
+  const picks = catPicks(root);
+  tick(picks[0]);
+  tick(picks[0], false);   // changed her mind before saving
+
+  const f = formHandles(root);
+  f.name.value = "Plain Loaf";
+  f.unit.value = "u_loaf";
+  fire(f.add);
+
+  assert.equal("categories" in state.products[0], false);
+});
+
+test("editing a saved product reopens with its own category already ticked", () => {
+  doc.body.replaceChildren();
+  resetLayers();
+  const state = freshState();
+  state.productCategories = [
+    { id: "cat_food", name: "Food", parentId: "", sort: 0 },
+    { id: "cat_drink", name: "Drink", parentId: "", sort: 1 },
+  ];
+  state.products = [{ id: "prd_1", name: "Focaccia", price: 5, unit: "loaf",
+    categories: ["cat_drink"] }];
+
+  const root = render(state);
+  // The product row's Edit button opens the pop-up; its fields live in the
+  // popup layer, which is where the picker is rendered from.
+  const edit = walk(root).find((n) => n.tagName === "BUTTON"
+    && (n.children || []).some((c) => c.text === "Edit"));
+  fire(edit);
+
+  const picks = catPicks(layers["popup-layer"]);
+  assert.equal(picks.length, 2);
+  assert.equal(picks[0].checked, false, "Food is not ticked");
+  assert.equal(picks[1].checked, true, "Drink is, because that is where it is filed");
+
+  // The unit menu, set the way the neighbouring edit test sets it: the shim's
+  // select() tracks the choice on the closure rather than on the node, so a
+  // pop-up opened in the shim reads back an empty unit and its save is refused
+  // before anything is written.
+  walk(layers["popup-layer"]).find((n) => n.tagName === "SELECT").value = "u_loaf";
+
+  // Ticking Food as well: Drink is still the first, so the heading does not move.
+  tick(picks[0]);
+  const saves = walk(layers["popup-layer"]).filter((n) => n.tagName === "BUTTON"
+    && (n.children || []).some((c) => c.text === "Update product"));
+  assert.equal(saves.length, 1, "exactly one Update button in the layer");
+  fire(saves[0]);
+
+  assert.deepEqual(state.products[0].categories, ["cat_drink", "cat_food"],
+    "the heading it already had stays first — ticking another does not displace it");
+});

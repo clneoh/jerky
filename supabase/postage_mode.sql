@@ -1,0 +1,22 @@
+-- Order tracking: say whether the postage has been quoted yet.
+-- Run this once in the Supabase SQL editor (Dashboard → SQL → New query → Run).
+-- Safe to re-run: the column is added only if missing.
+--
+-- RUN THIS BEFORE DEPLOYING THE BUILD THAT NAMES IT. The backoffice publishes the
+-- whole tracking row in one call; if this column does not exist yet, that call is
+-- rejected as a whole and the customer's tracking page stops updating for EVERY
+-- order — not only the ones waiting on a quote. Order matters here. (The same trap
+-- courier_fee.sql and courier_cod.sql set, and the reason those files say the same
+-- thing.)
+--
+-- TRUE means the delivery cost is NOT settled: the shop is set to quote each posted
+-- order by courier, and no charge has been recorded on this order yet. The
+-- customer's card says so in words instead of leaving them with a figure that looks
+-- like the whole cost. It clears itself the moment a charge is recorded on the order,
+-- because then the ordinary courier-charge line takes over.
+--
+-- NULL means the delivery cost is settled — a flat postage that the card never names,
+-- a recorded charge, a collect order, or an order whose postage you absorbed — so the
+-- card draws exactly what it drew before this column existed.
+
+alter table order_tracking add column if not exists postage_quoted boolean;

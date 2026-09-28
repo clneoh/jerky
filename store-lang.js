@@ -45,6 +45,40 @@ const en = {
   addressLabel: "Postal address",
   addressPh: "Full address — street, area, town & postcode",
   addressSub: "We post nationwide — your treats are made on the day you pick and posted to this address.",
+  // The door pin (v197). Optional in every sense: with no pin the order goes
+  // exactly as it always has, and you pin the door yourself.
+  pinHint: "Optional: drop a pin where the courier should stop — the guard house or your block's entrance. Put the block and unit number in the address above.",
+  pinHere: "Use my location",
+  pinOnMap: "Pin on the map",
+  pinSet: "Pin set — the courier will drive to the spot you marked.",
+  pinVague: "That spot is only accurate to about %1 m. Move the pin on the map so the courier goes to the right place.",
+  pinNoGeo: "This browser can't share a location. Pin your door on the map instead.",
+  pinDenied: "Location sharing is off for this site. Pin your door on the map instead.",
+  pinUnavailable: "Your location couldn't be found just now. Pin your door on the map instead.",
+  pinTimeout: "Finding your location took too long. Pin your door on the map instead.",
+  pinLoading: "Loading the map…",
+  pinTapFirst: "Tap the map where the courier should stop, or drag the pin.",
+  pinLocating: "Finding you…",
+  pinKeep: "Keep this spot",
+  pinCancel: "Cancel",
+  pinMapFailed: "The map didn't load. Type your address above and we'll find you.",
+  // The address box was edited after a suggestion was taken, so the pin that answered
+  // the old wording is gone (store/app.js, dropListPin). It has to say so: a pin that
+  // quietly disappears is the dead control this shop has a standing rule against, and
+  // the sentence names both ways to put one back.
+  pinAddrChanged: "You changed the address, so the pin you picked no longer goes with it. Tap a suggestion above, or set the pin again.",
+  // A row from the PREVIOUS wording was tapped, in the moment between the typist and the
+  // new list arriving (store/app.js, takeHit). A different sentence from the one above
+  // because it is a different fact: there may have been no pin at all, and what is wrong
+  // here is the row rather than the pin.
+  addrStale: "That suggestion was for the address you had before. Pick one for the new address, or set the pin again.",
+  // Looking the typed address up (v202). The two failures are worded to send the
+  // customer to the map, because the map is the one thing that still works when the
+  // lookup does not — and neither of them is ever a reason an order cannot be placed.
+  addrLooking: "Looking up your address…",
+  addrPick: "Tap the one that matches your address.",
+  addrNone: "We couldn't find that address. Tap the map and put the pin on your door instead.",
+  addrFailed: "The address lookup isn't available right now. Tap the map and put the pin on your door instead.",
   noteLabel: "Note (optional)",
   notePh: "Allergies, extras, anything…",
   sTrack: "Track your order",
@@ -100,6 +134,10 @@ const en = {
   // Shown where the menu would be when every product is marked off today's
   // posting day — an empty space reads like a broken page.
   noMenuToday: "Nothing is on the menu for this day. Please pick another posting day.",
+  // The last heading on the menu, over the products you have not filed
+  // under any category. Nothing is ever hidden for want of filing, so the
+  // heading is plainly a place rather than a warning.
+  moreItems: "More items",
   fixSoldOut: "%1 just sold out — removed from your order.",
   fixPoolClamp: "%1: only %2 can fit with the rest of your order now — we changed your %3 to %2.",
   fixClamp: "%1: only %2 left now — we changed your %3 to %2.",
@@ -148,11 +186,43 @@ const en = {
   trkReady: "Packed",
   trkFinal: "Collected / Posted",
   trackingNo: "Tracking number: %1",
+  // The same slot when a booked courier trip handed back a share link rather than a
+  // number. The value is the link itself and is rendered tappable, so there is no %1.
+  trackDelivery: "Track your delivery:",
+  // The charge a courier made for this order, when one was recorded — drawn instead of
+  // the flat postage, never beside it (v124, 20 Sep 2026). The card names no subtotal:
+  // the shop's flat nationwide postage is never published, so a subtotal worked out
+  // from the published total would be too high. The same line, in the same place, is in
+  // the customer's WhatsApp message — see moneyLines in admin/js/courier.js, which owns
+  // the English wording there.
   courierCharge: "Courier charge: %1",
   // The same charge when the courier collects it at the door: COD is the word
   // Malaysians know for a parcel the receiver pays for, so it is kept, with what to
   // do about it spelled out beside it (19 Sep 2026).
   courierCod: "Courier charge: %1 - COD, pay the courier on delivery",
+  // When the delivery cost is not settled at all: the shop quotes each posted order by
+  // courier, and this order has no charge recorded on it yet (28 Sep 2026). Carries no
+  // figure, so it is not a %1 string — and it is word for word what the customer's
+  // WhatsApp confirmation says at the same moment, because the two are read side by
+  // side and one of them understating the cost would be worse than neither saying it.
+  postageQuoted: "Postage: quoted separately - we'll message you the exact amount",
+  // The booked trip, as the courier's own reply last said. %1 is one of a handful of
+  // NEUTRAL phase words below rather than the courier's own vocabulary — the backoffice
+  // publishes the phase, this page owns the words, so no company's status list is
+  // written into this file (v190). A phase this page has not been taught draws nothing.
+  tripStatus: "Delivery: %1",
+  tripFinding: "Finding a driver",
+  tripOnTheWay: "The driver is on the way",
+  tripCollected: "Collected",
+  tripDelivered: "Delivered",
+  tripStopped: "Called off",
+  tripNoDriver: "No driver took it",
+  // Who is bringing it, once the courier has matched one — which it does only shortly
+  // before the pickup, so this line is absent for most of the wait. The plate is shown
+  // with the name when there is one, and on its own when there is not.
+  driverLine: "Driver: %1",
+  vehicleLine: "Vehicle: %1",
+  callDriver: "Call the driver",
   nextBlockedBasket: "Your basket is for %1. To order for another day, choose it on the calendar above.",
 
   devBy: "Website by",
@@ -192,6 +262,27 @@ const zh = {
   addressLabel: "邮寄地址",
   addressPh: "完整地址 — 街道、地区、市镇与邮编",
   addressSub: "我们提供全马邮寄——您的零食会在所选发货日制作，并寄往这个地址。",
+  pinHint: "（可选）在地图上标出司机应该停下的地方——保安亭或你那一座的入口。座号和门牌号码请写在上面的地址栏。",
+  pinHere: "使用我的位置",
+  pinOnMap: "在地图上标记",
+  pinSet: "已标记位置 — 司机会前往你标记的地点。",
+  pinVague: "这个位置只准确到约 %1 米。请在地图上移动标记，让司机去对地方。",
+  pinNoGeo: "这个浏览器无法获取位置。请在地图上标记你家门口。",
+  pinDenied: "这个网站未获准获取位置。请在地图上标记你家门口。",
+  pinUnavailable: "暂时无法找到你的位置。请在地图上标记你家门口。",
+  pinTimeout: "定位花的时间太长。请在地图上标记你家门口。",
+  pinLoading: "地图载入中…",
+  pinTapFirst: "在地图上点一下司机应该停下的地方，或拖动标记。",
+  pinLocating: "正在定位…",
+  pinKeep: "确定这个位置",
+  pinCancel: "取消",
+  pinMapFailed: "地图无法载入。请在上面填写地址，我们会找到你。",
+  pinAddrChanged: "你更改了地址，所以之前选的标记已经不对应了。请点选上面的建议地址，或重新标记位置。",
+  addrStale: "这个建议对应的是你之前的地址。请点选新地址的建议，或重新标记位置。",
+  addrLooking: "正在查询你的地址…",
+  addrPick: "点选最接近你地址的一项。",
+  addrNone: "找不到这个地址。请直接在地图上把标记放到你家门口。",
+  addrFailed: "地址查询暂时无法使用。请直接在地图上把标记放到你家门口。",
   noteLabel: "备注（可选）",
   notePh: "过敏原、额外要求、其它…",
   sTrack: "查询订单",
@@ -225,6 +316,7 @@ const zh = {
   nextAvailableLeft: "下次可预订：%1 · 剩 %2 份",
   sentenceEnd: "。",
   noMenuToday: "这一天没有商品在菜单上，请另选一个发货日。",
+  moreItems: "更多商品",
   fixSoldOut: "%1 刚刚售完 — 已从你的订单中移除。",
   fixPoolClamp: "%1：现在配合订单其余部分只装得下 %2 份 — 已把你的 %3 改为 %2。",
   fixClamp: "%1：现在只剩 %2 份 — 已把你的 %3 改为 %2。",
@@ -269,8 +361,20 @@ const zh = {
   trkReady: "已打包",
   trkFinal: "已取货 / 已寄出",
   trackingNo: "快递单号：%1",
+  trackDelivery: "查看配送进度：",
   courierCharge: "快递费：%1",
   courierCod: "快递费：%1 - 货到付款，收货时付给快递员",
+  postageQuoted: "邮费：另行报价 — 我们会把准确金额发给你",
+  tripStatus: "配送：%1",
+  tripFinding: "正在寻找司机",
+  tripOnTheWay: "司机在路上",
+  tripCollected: "已取货",
+  tripDelivered: "已送达",
+  tripStopped: "已取消",
+  tripNoDriver: "无司机接单",
+  driverLine: "司机：%1",
+  vehicleLine: "车辆：%1",
+  callDriver: "致电司机",
   nextBlockedBasket: "你的购物袋是 %1 的。想订另一天，请在上面的日历选择。",
 
   devBy: "网站制作：",
@@ -310,6 +414,27 @@ const ms = {
   addressLabel: "Alamat pos",
   addressPh: "Alamat lengkap — jalan, kawasan, bandar & poskod",
   addressSub: "Kami hantar ke seluruh negara — snek anda dibuat pada hari yang anda pilih dan dihantar ke alamat ini.",
+  pinHint: "Pilihan: tandakan tempat kurier patut berhenti — pondok pengawal atau pintu masuk blok anda. Tulis nombor blok dan unit di ruang alamat di atas.",
+  pinHere: "Guna lokasi saya",
+  pinOnMap: "Tanda pada peta",
+  pinSet: "Lokasi ditanda — kurier akan pergi ke tempat yang anda tandakan.",
+  pinVague: "Lokasi itu hanya tepat dalam lebih kurang %1 m. Gerakkan tanda pada peta supaya kurier pergi ke tempat yang betul.",
+  pinNoGeo: "Pelayar ini tidak boleh berkongsi lokasi. Sila tandakan pintu anda pada peta.",
+  pinDenied: "Perkongsian lokasi dimatikan untuk laman ini. Sila tandakan pintu anda pada peta.",
+  pinUnavailable: "Lokasi anda tidak dapat dikesan buat masa ini. Sila tandakan pintu anda pada peta.",
+  pinTimeout: "Mengambil masa terlalu lama untuk mengesan lokasi. Sila tandakan pintu anda pada peta.",
+  pinLoading: "Peta sedang dimuatkan…",
+  pinTapFirst: "Ketik peta di tempat kurier patut berhenti, atau gerakkan tanda itu.",
+  pinLocating: "Sedang mengesan anda…",
+  pinKeep: "Simpan tempat ini",
+  pinCancel: "Batal",
+  pinMapFailed: "Peta tidak dapat dimuatkan. Taip alamat anda di atas, kami akan cari.",
+  pinAddrChanged: "Anda menukar alamat, jadi tanda yang dipilih tadi tidak lagi sepadan. Ketik cadangan di atas, atau tandakan semula.",
+  addrStale: "Cadangan itu untuk alamat anda yang sebelum ini. Pilih satu untuk alamat baharu, atau tandakan semula.",
+  addrLooking: "Sedang mencari alamat anda…",
+  addrPick: "Ketik yang paling hampir dengan alamat anda.",
+  addrNone: "Alamat itu tidak ditemui. Ketik peta dan letakkan tanda pada pintu anda.",
+  addrFailed: "Pencarian alamat tidak tersedia buat masa ini. Ketik peta dan letakkan tanda pada pintu anda.",
   noteLabel: "Nota (pilihan)",
   notePh: "Alahan, tambahan, apa-apa sahaja…",
   sTrack: "Semak tempahan anda",
@@ -343,6 +468,7 @@ const ms = {
   nextAvailableLeft: "Seterusnya tersedia: %1 · tinggal %2",
   sentenceEnd: ".",
   noMenuToday: "Tiada apa-apa pada menu untuk hari ini. Sila pilih hari pos yang lain.",
+  moreItems: "Lebih banyak item",
   fixSoldOut: "%1 baru sahaja habis — dikeluarkan dari tempahan anda.",
   fixPoolClamp: "%1: hanya %2 boleh dimuatkan bersama baki tempahan anda — kami telah tukar %3 anda kepada %2.",
   fixClamp: "%1: tinggal %2 sahaja sekarang — kami telah tukar %3 anda kepada %2.",
@@ -387,8 +513,20 @@ const ms = {
   trkReady: "Dibungkus",
   trkFinal: "Telah diambil / Telah dipos",
   trackingNo: "Nombor penjejakan: %1",
+  trackDelivery: "Jejak penghantaran anda:",
   courierCharge: "Caj kurier: %1",
   courierCod: "Caj kurier: %1 - COD, bayar kepada kurier semasa penghantaran",
+  postageQuoted: "Pos: disebut berasingan — kami akan beritahu jumlah tepat kepada anda",
+  tripStatus: "Penghantaran: %1",
+  tripFinding: "Sedang mencari pemandu",
+  tripOnTheWay: "Pemandu dalam perjalanan",
+  tripCollected: "Telah diambil",
+  tripDelivered: "Telah dihantar",
+  tripStopped: "Dibatalkan",
+  tripNoDriver: "Tiada pemandu yang mengambil",
+  driverLine: "Pemandu: %1",
+  vehicleLine: "Kenderaan: %1",
+  callDriver: "Hubungi pemandu",
   nextBlockedBasket: "Bakul anda untuk %1. Untuk hari lain, pilih pada kalendar di atas.",
 
   devBy: "Laman web oleh",

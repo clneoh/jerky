@@ -380,12 +380,28 @@ html, body {
 }
 
 /* ---------- Menu ---------- */
+/* The card is a ROW: the photo, when there is one, is the left column and the
+   body is everything else. `align-items: stretch` is the whole point — it is
+   what makes the photo take the card's full height rather than a box of its
+   own (the baker asked for the fullest height the card has). A product with no
+   photo is the same shape with the body as the only column. */
 .menu-item {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+}
+.card-body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
-.menu-item .stepper { align-self: flex-end; }
+/* `margin-top: auto` drops the stepper to the card's foot when the photo has
+   made the body taller than its own words need. On a card with no photo the
+   body is exactly its content, so the margin resolves to nothing and the card
+   is drawn exactly as it always was. */
+.menu-item .stepper { align-self: flex-end; margin-top: auto; }
 .card-head {
   display: flex;
   align-items: flex-start;
@@ -394,6 +410,67 @@ html, body {
 }
 .card-title { font-size: 16px; font-weight: 700; margin: 0 0 2px; font-family: var(--serif); }
 .card-sub { font-size: 13px; color: var(--muted); margin: 0; }
+/* The name/price/description column, beside the stamp. `min-width: 0` is what
+   lets a long product name wrap inside the head instead of shoving the stamp
+   off the right of the card. */
+.card-words { flex: 1 1 auto; min-width: 0; }
+
+/* ONE standard photo window, and it is the SAME window in the three places she
+   meets a product picture: the shop's card here, her app's products list, and
+   the editor where she picks it. 120 x 120. Before this version each place had
+   its own size — 96 wide here following the card's own height, 64 in the app —
+   so one picture showed three different sizes and none of them big enough to
+   make out the product. A fixed window means what she sees is what a customer
+   sees, at a size that actually shows the bake.
+
+   `contain`, never `cover`. The window is the FIXED thing and the photo is shown
+   WHOLE inside it, in whatever shape the baker's file happens to be. `cover`
+   would crop a second time, right here, and she would never see it happen — a
+   tall portrait would come back with its top and bottom quietly cut off. With
+   `contain` a tall photo fills the window top to bottom with the soft window
+   colour at either side, and a wide one fills it across with the colour above
+   and below. The file keeps its own ratio (readPhotoFit, never readPhoto), and
+   this is the other half of that promise. */
+.menu-thumb {
+  width: 120px;
+  height: 120px;
+  flex: 0 0 auto;
+  align-self: flex-start;
+  object-fit: contain;
+  border-radius: 10px;
+  background: #f1e9de;
+}
+
+/* The shop's category headings. A heading belongs to the cards under it, so it
+   sits close to them and far from the group above — otherwise a full-width
+   heading reads as a divider between two groups rather than the name of one.
+   A nested heading is indented by its own depth (the `--depth` set inline) and
+   wears the whole path down to it, so it still says where it sits. */
+.menu-cat {
+  margin: 22px 0 8px;
+  font-family: var(--serif);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: .2px;
+}
+.menu-cat:first-child { margin-top: 2px; }
+.menu-cat-sub {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 16px 0 6px;
+  padding-left: calc(var(--depth, 1) * 12px);
+  color: var(--muted);
+}
+/* The tail heading over the products she has not filed yet. It is a plain
+   heading, not a warning: nothing is ever hidden for want of filing. */
+.menu-cat-tail {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
 
 /* The owner's short product description, under the name + price. Keeps its
    line breaks (textarea) but stays quiet next to the title. */
@@ -580,6 +657,99 @@ button.prod-next.off::after { content: ""; }
   box-shadow: 0 1px 4px rgba(80, 50, 30, .15);
 }
 
+/* ---------- The door pin (optional) ---------- */
+/* Two controls side by side, because the two customers are different people: one is
+   standing at the door the bread is going to, the other is ordering from somewhere
+   else entirely and needs to point at it. */
+.pin-hint { margin: 6px 0 0; }
+/* What the address lookup found (v202). A box of doors under the address box, each one
+   a row you can tap. It is not a floating dropdown: the shop's own page scrolls, and a
+   list positioned over the keyboard fights it on a phone. */
+.addr-list {
+  margin-top: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.addr-note {
+  margin: 0;
+  padding: 9px 12px;
+}
+/* The instruction is gone once a door has been chosen, and then the first row sits
+   directly under the list's own border — where its own top border would draw a second
+   line a pixel inside the first. */
+.addr-list > .addr-hit:first-child { border-top: 0; }
+.addr-hit {
+  /* Two lines rather than one: the whole point of this list is telling two houses on
+     the same street apart, and the part that tells them apart is often at the end. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  width: 100%;
+  appearance: none;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--brown-dark);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.35;
+  text-align: left;
+  padding: 11px 12px;
+  min-height: 44px; /* a thumb target, not a mouse target */
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.addr-hit:active { background: #f5ecdf; }
+.pin-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.pin-btn {
+  flex: 1;
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--brown-dark);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 11px 8px;
+  min-height: 44px; /* a thumb target, not a mouse target */
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.pin-btn:active { background: #f5ecdf; }
+.pin-btn:disabled { opacity: .55; cursor: default; }
+.pin-status {
+  margin: 8px 0 0;
+  color: var(--brown-dark);
+}
+.pin-box {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fbf7f1;
+}
+.pin-note { margin: 2px 0 8px; }
+.pin-canvas {
+  /* Leaflet fills whatever box it is given, so the box has to have a height. */
+  height: 240px;
+  border-radius: 10px;
+  background: #e8e0d5; /* the map's own colour before the tiles arrive */
+}
+.pin-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.pin-actions .track-btn { flex: 1; }
+
 /* ---------- Track your order ---------- */
 .track-row {
   display: flex;
@@ -695,6 +865,38 @@ button.prod-next.off::after { content: ""; }
   letter-spacing: .3px;
   font-variant-numeric: tabular-nums;
 }
+/* ---------- The delivery itself, on the customer's card (v190) ---------- */
+/* Where the parcel has got to. This is the question the customer opened this page to
+   ask, so it wears the card's own ink instead of the muted grey the notes around it
+   use — the only line on the card that is news rather than detail. */
+.track-trip { color: var(--ink); font-weight: 600; }
+/* Who is bringing it, and the plate to look for at the gate. */
+.track-driver { color: var(--ink); font-weight: 500; }
+/* Every link on this card is one a customer taps on a phone — the driver's number and
+   the courier's own tracking page — so none of them is left in the browser's default
+   blue, the one colour on this page the bakery never chose.
+   AND THE HEIGHT IS THE PAGE'S OWN. Measured on the drawn card at 375 pixels, a pill
+   built from padding alone came out 30 pixels tall while every other thing a customer
+   taps on this page — the delivery day, the collect / courier pair, Track, Place order —
+   is 37 to 48. The two controls that matter most at the door were the two smallest
+   targets on the page, found by measuring rather than by reading the rule. So the pill
+   takes the page's own floor and centres its word in it, instead of growing with the
+   text. */
+.track-result a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 14px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: var(--brown-soft);
+  color: var(--brown-dark);
+  font-weight: 600;
+  letter-spacing: 0;
+  font-variant-numeric: normal;
+  text-decoration: none;
+}
+.track-result a:active { opacity: .75; }
 /* The customer arrived by tapping "Track your order" in their WhatsApp message:
    the card is lit so it cannot be missed on a page they may not know, and the
    glow only goes when their pointer reaches it (revealTrack, store/app.js) — the

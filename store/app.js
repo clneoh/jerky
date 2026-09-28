@@ -7,8 +7,12 @@ import { CONFIG } from "./config.js";
 import { poolCaps, poolGroups, clampPool, groupFor, poolPieces, closedReason, cancelDaysFor, strictestCancelDays, nextOrderable } from "./pool.js";
 import { monthWeeks, addMonth, occColour, occDays, occStrength, occForDate, occSingleDay } from "./calendar.js";
 import { normRules } from "../availability.js";
+import { isThumb } from "../storefront-fields.js";
 import { isLang, loadLang, pick, rememberLang, nameFor, descFor, unitFor, policyFor, applyTo } from "../i18n.js";
 import { STORE } from "../store-lang.js";
+import { addressFromRow, askGeo, fixVerdict, lookupQuery, placeForOrder, validPin } from "./geo.js";
+import { showPinMap } from "./pin_map.js";
+import { createLookup } from "./lookup.js";
 
 // Day/month short names per site language. English is today's authoring default;
 // fmtDay and the "Posting days" info card read by the visitor's language so a
@@ -453,9 +457,48 @@ export function mergeStorefront(base, remote) {
         // dropping it — the few hot items a customer comes back looking for.
         // Absent (the default) leaves this page reading every product as today.
         if (p.alwaysListed === true) out.alwaysListed = true;
+        // The thumbnail the baker set on the product. Checked against the
+        // same rule the publisher used (storefront-fields.js), so anything that
+        // is not a small JPEG data URL is dropped rather than drawn.
+        if (isThumb(p.thumb)) out.thumb = String(p.thumb).trim();
+        // Where this product sits among the ones no heading carries ("More
+        // items"), re-checked on the shop's own terms like everything else here
+        // — anything that is not a number is dropped rather than trusted, so a
+        // mangled value leaves the tail in the order it was stored.
+        const sort = Number(p.sort);
+        const sortSet = p.sort != null && !(typeof p.sort === "string" && p.sort.trim() === "");
+        if (sortSet && Number.isFinite(sort)) out.sort = sort;
         return out;
       });
     if (products.length) out.products = products;
+  }
+  // The category headings, in the baker's order, each naming the products shown
+  // under it — depth-first, `depth` being the indent. Re-validated here on the
+  // shop's own terms: a half-formed row is dropped rather than drawn, so a
+  // malformed one can never reach the page.
+  //
+  // Replaced WHOLESALE, like the occasions above: the app publishes a complete
+  // snapshot, so an empty list is a real instruction ("she deleted her last
+  // category") and has to clear the headings an already-open page still shows.
+  // An empty list draws nothing, so it can never break the shop.
+  if (Array.isArray(remote.categories)) {
+    out.categories = remote.categories
+      .filter((c) => c && typeof c === "object" && String(c.name || "").trim())
+      .slice(0, 200)
+      .map((c) => {
+        const depth = Number(c.depth);
+        const row = {
+          name: String(c.name).trim(),
+          depth: Number.isInteger(depth) && depth >= 0 ? Math.min(depth, 31) : 0,
+          products: (Array.isArray(c.products) ? c.products : [])
+            .map((n) => String(n || "").trim()).filter(Boolean).slice(0, 500),
+        };
+        for (const k of ["nameZh", "nameMs"]) {
+          const v = c[k];
+          if (typeof v === "string" && v.trim()) row[k] = v.trim();
+        }
+        return row;
+      });
   }
   // The developer credit shown in the store footer (and on the homepage) — set
   // once in the app's Settings and republished. Hidden until both exist.
@@ -555,11 +598,21 @@ export async function placeOrder(order) {
 // Show the order confirmation. Accepts a string (plain) or an array of nodes
 // (a titled card). Scrolls it into view so the customer sees a response right
 // away instead of tapping the button again.
+//
+// NOTHING ABSENT IS PASSED ON. The array form is built by callers out of optional
+// lines — the cancellation note is left out entirely when no product on the order has
+// one — and `replaceChildren` is variadic: a `null` in that array is not a child that
+// is skipped, it is a DOMString, so the DOM writes the word "null" onto the customer's
+// receipt. That is the same defect class as the pickup-pin card at v195 (a single ARRAY
+// argument, String()ed for the same reason) and the same one test/no-null-text.test.js
+// exists for; filtering here rather than at each call site is what stops the next
+// optional line from being the one that ships it.
 function showConfirm(content, kind = "ok") {
   const box = document.getElementById("confirm-msg");
   if (!box) return;
   box.className = `confirm-msg ${kind}`;
-  box.replaceChildren(...(Array.isArray(content) ? content : [document.createTextNode(String(content))]));
+  const parts = Array.isArray(content) ? content : [document.createTextNode(String(content))];
+  box.replaceChildren(...parts.filter((c) => c != null));
   box.hidden = false;
   if (typeof box.scrollIntoView === "function") box.scrollIntoView({ block: "center", behavior: "smooth" });
 }
@@ -763,24 +816,37 @@ export function render() {
   const renderMenu = () => {
     const byProduct = prodAvail && selected ? prodAvail[selected] || {} : {};
     const groups = poolGroups(CONFIG.products);
-    const cards = [];
-    for (const p of CONFIG.products) {
-      const lang = loadLang();
+    const lang = loadLang();
+
+    // A product's own date rules decide whether it is on TODAY's menu at all.
+    // Not sold on the chosen delivery day → it is simply not there: the customer
+    // does not see a thing they cannot have. Two exceptions keep the card and
+    // say so instead: the baker's advance notice (that product IS sold on the
+    // day, it only has to be ordered earlier), and a product she has switched to
+    // stay listed — the few hot items a customer comes back looking for, whose
+    // absence would otherwise read as "they stopped making it". A product with
+    // no marks at all (value packs included) sells on any open date.
+    //
+    // Asked in one place and read in two, because the grouping below needs to
+    // know what is on today's menu BEFORE it can decide which headings are worth
+    // drawing — and it must never come out differently from the cards themselves.
+    const menuGate = (p) => {
+      const closed = closedReason(p, selected, todayKey);
+      const kept = !!(closed && closed.kind !== "close" && p.alwaysListed === true);
+      return { closed, kept, shown: !(closed && closed.kind !== "close" && !kept) };
+    };
+
+    // One product's card, or null when it is off today's menu. A function rather
+    // than a loop body because a product filed under two categories is drawn
+    // TWICE — and a DOM node can only live in one place, so each placement needs
+    // a card of its own, with its own stepper.
+    const cardFor = (p) => {
+      const { closed, kept, shown } = menuGate(p);
+      if (!shown) return null;
       const group = groupFor(groups, p);
       const baseLeft = group && byProduct[group.baseName] != null
         ? Number(byProduct[group.baseName]) : undefined;
       const caps = group && Number.isFinite(baseLeft) ? poolCaps(group, baseLeft, cart) : null;
-      // A product's own date rules decide whether it is on TODAY's menu at all.
-      // Not sold on the chosen delivery day → it is simply not there: the customer
-      // does not see a thing they cannot have. Two exceptions keep the card and
-      // say so instead: the baker's advance notice (that product IS sold on the
-      // day, it only has to be ordered earlier), and a product she has switched to
-      // stay listed — the few hot items a customer comes back looking for, whose
-      // absence would otherwise read as "they stopped making it". A product with
-      // no marks at all (value packs included) sells on any open date.
-      const closed = closedReason(p, selected, todayKey);
-      const kept = closed && closed.kind !== "close" && p.alwaysListed === true;
-      if (closed && closed.kind !== "close" && !kept) continue;
       const reason = closedReasonText(closed);
       // A day this product is not sold on at all, as opposed to a sold-out day
       // (a sell day with nothing left). The two wear different stamps, and a kept
@@ -874,22 +940,115 @@ export function render() {
       // The card reads in the visitor's language: translated name/description/
       // unit when the product has them, else the English text.
       const desc = p && descFor(p, lang);
-      cards.push(el("div", { class: `card menu-item${soldOut ? " soldout" : ""}` },
-        el("div", { class: "card-head" },
-          el("div", {},
-            el("p", { class: "card-title" }, nameFor(p, lang)),
-            el("p", { class: "card-sub" }, `RM${p.price.toFixed(2)} / ${unitFor(p, lang)}`),
-            desc ? el("p", { class: "prod-desc" }, desc) : null),
-          stamp),
-        el("div", { class: "stepper" }, dec, qtyLabel, inc),
-        note,
-        nextNote,
-        cancelNote));
-    }
+      return el("div", {
+        class: `card menu-item${soldOut ? " soldout" : ""}`,
+        dataset: { product: p.name },
+      },
+        // The photo is the card's own LEFT COLUMN: one standard 120 x 120 window,
+        // the same window her app's products list and the editor use (.menu-thumb
+        // in app.css). A FIXED size, not a strip that stretches to the card's own
+        // height — so the same picture is the same size wherever she meets it.
+        // Everything else stacks in `.card-body` beside it, and a product with no
+        // photo is simply a card whose body is its only child, so the two shapes
+        // cannot drift apart.
+        p.thumb
+          ? el("img", { class: "menu-thumb", src: p.thumb, alt: "", loading: "lazy", decoding: "async" })
+          : null,
+        el("div", { class: "card-body" },
+          // `.card-head` is space-between, so the words and the stamp each keep
+          // their end. `min-width: 0` on the words is what lets a long product
+          // name wrap instead of shoving the stamp off the card.
+          el("div", { class: "card-head" },
+            el("div", { class: "card-words" },
+              el("p", { class: "card-title" }, nameFor(p, lang)),
+              el("p", { class: "card-sub" }, `RM${p.price.toFixed(2)} / ${unitFor(p, lang)}`),
+              desc ? el("p", { class: "prod-desc" }, desc) : null),
+            stamp),
+          el("div", { class: "stepper" }, dec, qtyLabel, inc),
+          note,
+          nextNote,
+          cancelNote));
+    };
+
+    // What is actually on today's menu, in the shop's own product order. Asked
+    // with the same gate the cards use, so the two can never disagree.
+    const live = CONFIG.products.filter((p) => menuGate(p).shown);
     // Every product marked off today leaves nothing at all — say so rather than
     // showing a blank space where the menu should be.
-    menu.replaceChildren(...(cards.length ? cards : [el("p", { class: "card-sub" },
-      t("noMenuToday"))]));
+    if (!live.length) {
+      menu.replaceChildren(el("p", { class: "card-sub" }, t("noMenuToday")));
+      return;
+    }
+    // A shop with no categories is drawn exactly as it always was: one plain
+    // list, no headings. Only once she has built a heading does the grouping
+    // below come into play, so a shop that never uses them cannot be changed by
+    // this feature.
+    const catRows = Array.isArray(CONFIG.categories) ? CONFIG.categories : [];
+    if (!catRows.length) {
+      menu.replaceChildren(...live.map(cardFor));
+      return;
+    }
+    // Draw the tree: the headings in her order, each over the cards it names, and
+    // anything she has not filed last under one plain heading. A card filed under
+    // two headings is drawn under BOTH — that is what filing it twice is for — so
+    // only the headings themselves must not repeat. The product is looked up by
+    // name, which is the key the rest of this page already agrees on.
+    const byName = new Map(live.map((p) => [p.name, p]));
+    const rows = catRows.map((c) => ({
+      c,
+      prods: (c.products || []).map((n) => byName.get(n)).filter(Boolean),
+    }));
+    // A heading with nothing to show is dropped rather than drawn as an empty
+    // shelf — but a heading whose own products have all sold out today is KEPT
+    // when something nested under it survives, or a whole branch would vanish
+    // with a parent that had a quiet day.
+    const draws = rows.map((row, i) => {
+      if (row.prods.length) return true;
+      for (let j = i + 1; j < rows.length && rows[j].c.depth > row.c.depth; j++) {
+        if (rows[j].prods.length) return true;
+      }
+      return false;
+    });
+    // The words on a nested heading are the whole path down to it ("For Dog ›
+    // Treats"), so a heading deep in a long scroll still says where it sits. The
+    // stack is the ancestors, kept in step with depth because the list is
+    // depth-first.
+    const stack = [];
+    const placed = new Set();
+    const children = [];
+    rows.forEach((row, i) => {
+      stack[row.c.depth] = row.c;
+      if (!draws[i]) return;
+      const label = stack.slice(0, row.c.depth + 1).filter(Boolean)
+        .map((c) => nameFor(c, lang)).join(" › ");
+      children.push(el("h3", {
+        class: `menu-cat${row.c.depth ? " menu-cat-sub" : ""}`,
+        ...(row.c.depth ? { style: `--depth:${row.c.depth}` } : {}),
+      }, label));
+      for (const p of row.prods) {
+        children.push(cardFor(p));
+        placed.add(p.name);
+      }
+    });
+    // The tail is the one list a product orders ITSELF in: each carries its own
+    // `sort`, because unlike a heading — which is a record that can hold the
+    // order of everything under it — an unfiled product has nothing to hang its
+    // place on. The sort is stable, so products she has never dragged (no
+    // `sort` at all) keep the order they arrived in rather than shuffling.
+    const unfiled = live
+      .map((p, i) => ({ p, i }))
+      .filter(({ p }) => !placed.has(p.name))
+      .sort((a, b) => {
+        const ra = Number.isFinite(Number(a.p.sort)) ? Number(a.p.sort) : Number.MAX_SAFE_INTEGER;
+        const rb = Number.isFinite(Number(b.p.sort)) ? Number(b.p.sort) : Number.MAX_SAFE_INTEGER;
+        return ra - rb || a.i - b.i;
+      })
+      .map(({ p }) => cardFor(p));
+    if (unfiled.length) {
+      children.push(el("h3", { class: "menu-cat menu-cat-tail" }, t("moreItems")));
+      children.push(...unfiled);
+    }
+    menu.replaceChildren(...children);
   };
 
   // Live slots left for `name` on the day currently shown. undefined (no live
@@ -1439,6 +1598,17 @@ export function render() {
       note: document.getElementById("note-input").value.trim(),
       createdAt: new Date().toISOString(),
     };
+    // The door pin the customer dropped, when they dropped one and this order is
+    // being delivered. `placeForOrder` answers null for anything else — a
+    // self-collect order, or a courier order with no pin — and a null answer writes
+    // NOTHING, so an order without a pin posts byte for byte the payload the shop
+    // has always posted. The pin carries the customer's OWN address as its words and
+    // never the suggestion list's name for the place it matched (v205, and see
+    // placeForOrder for why); the bakery treats what arrives as untrusted input and
+    // keeps the point and those words, capped; the door it actually drives to is the
+    // one she accepts.
+    const place = placeForOrder(doorPin, order.fulfillment, order.address);
+    if (place) order.place = place;
     // A referral link's ?via= stamp: which customer's personal link this order
     // came through. You decide (new vs repeat) and apply the discount.
     const via = currentVia();
@@ -1509,6 +1679,7 @@ export function render() {
       }
       const addrField = document.getElementById("address-field");
       if (addrField) addrField.hidden = false;
+      resetPin(); // the next customer does not inherit this one's front door
       renderBar();
       // order-btn label was reset by renderBar — the cart is now empty.
       // The strictest change/cancel window across what was just ordered — the
@@ -1575,6 +1746,15 @@ export function render() {
     rerender();
     renderBar();
     paintTrack();
+    // The pin's own line, said again in the language just chosen — including a
+    // refusal or a vague-fix warning, which is exactly the sentence a customer who
+    // cannot read the first language most needs to read.
+    const note = pinNote;
+    paintPin(note && note.key, note && note.m);
+    // And the address list, which is showing a sentence — "Couldn't find that
+    // address", "Tap the one that matches" — in the language the customer just left.
+    const hits = hitNote;
+    paintHits(hits && { key: hits.key, hits: hits.hits, q: hits.q });
   };
 }
 
@@ -1653,6 +1833,80 @@ function journeyEl(row) {
 // `row`. Null until the customer looks something up.
 let lastTrack = null;
 
+// The one line for whatever is in the tracking slot: a courier's page, or a
+// number to read out. Kept beside paintTrack because it exists only for that
+// card, and it is a function rather than two inline branches so the label and the
+// value cannot drift apart — the failure that matters is a NUMBER rendered as a
+// link, which sends a customer to nothing. Only http and https are links, so a
+// `javascript:` or `data:` value is words, not a destination.
+function trackingEl(value) {
+  const said = String(value || "").trim();
+  const isLink = /^https?:\/\/[^\s]+$/i.test(said);
+  if (!isLink) return el("p", { class: "track-no" }, sub(t("trackingNo"), said));
+  return el("p", { class: "track-no" },
+    `${t("trackDelivery")} `,
+    el("a", { href: said, target: "_blank", rel: "noopener noreferrer" }, said));
+}
+
+// The phases the backoffice publishes about a booked trip, and this page's own words
+// for them. The backoffice sends a NEUTRAL phase — finding, on_the_way, collected — and
+// never the courier's own status string, so this page needs no table of any company's
+// vocabulary and a second courier cannot make it wrong. A phase that is not in this list
+// draws nothing at all: a customer cannot act on an unfamiliar word, so the honest thing
+// is to leave the line off rather than print something nobody can read.
+const TRIP_WORDS = {
+  finding: "tripFinding",
+  on_the_way: "tripOnTheWay",
+  collected: "tripCollected",
+  delivered: "tripDelivered",
+  stopped: "tripStopped",
+  nodriver: "tripNoDriver",
+};
+
+// The lines about the booked trip itself: where the courier says it has got to, who is
+// bringing it, and a way to reach them. Returns an array so the card's own filter can
+// drop whichever of them this order does not have.
+//
+// The driver's number is published by the baker's own app because she asked for it to
+// be: on a courier order the person at the door is a stranger the customer has to meet,
+// and one who cannot find the gate has no other way to be reached. It is turned into a
+// `tel:` link only when it contains digits at all — a number that cannot be dialled is
+// left as words rather than made into a button that rings nothing, the same rule the
+// tracking slot follows.
+// The bakery's v199 money block for this card is deliberately NOT used here (28 Sep
+// 2026). It works out the items subtotal as the published total less the courier's
+// charge — true on the bakery, where a charge is the only thing that can sit between
+// the two. This shop also adds a flat nationwide postage onto every posted order, and
+// that fee is deliberately never published (see trackingSnapshot in admin/js/supabase.js),
+// so the card would subtract nothing and print an "Items total" RM8 too high — a figure
+// the customer's own WhatsApp message contradicts. The card therefore keeps the single
+// line it has always drawn, "what they ordered — the total", which cannot be wrong
+// because it names no subtotal at all. The bakery's readMoney/moneyText/moneyEls are
+// removed rather than left unreachable: a helper that would compute a wrong figure is a
+// trap for whoever wires it up next.
+
+function tripEls(row) {
+  const out = [];
+  const phase = String((row && row.courier_phase) || "").trim();
+  const word = TRIP_WORDS[phase];
+  if (word) out.push(el("p", { class: "track-note track-trip" }, sub(t("tripStatus"), t(word))));
+
+  const name = String((row && row.courier_driver) || "").trim();
+  const plate = String((row && row.courier_plate) || "").trim();
+  const phone = String((row && row.courier_phone) || "").trim();
+  if (name || plate) {
+    const who = name && plate ? `${name} · ${plate}` : (name || plate);
+    out.push(el("p", { class: "track-note track-driver" },
+      sub(t(name ? "driverLine" : "vehicleLine"), who)));
+  }
+  const dial = phone.replace(/[^\d+]/g, "");
+  if (dial) {
+    out.push(el("p", { class: "track-note" },
+      el("a", { href: `tel:${dial}` }, t("callDriver"))));
+  }
+  return out;
+}
+
 // Draw the track card from `lastTrack`. Every string comes from t(), so calling
 // this again after a language change repaints the card — including the journey
 // step labels — with no network.
@@ -1688,17 +1942,38 @@ function paintTrack() {
       ? el("p", { class: "track-note track-fee" }, sub(
           t(row.courier_cod ? "courierCod" : "courierCharge"),
           `RM${Number(row.courier_fee).toFixed(2)}`))
-      : null,
+      // The delivery cost is not settled yet — the shop quotes each posted order by
+      // courier and this one has no charge on it. Said in words, because the total
+      // below is the items alone and would otherwise read as the whole of what they
+      // owe. It goes away by itself the moment a charge is recorded on the order,
+      // when the line above takes over (28 Sep 2026).
+      : row.postage_quoted
+        ? el("p", { class: "track-note track-fee" }, t("postageQuoted"))
+        : null,
     el("p", {}, `${row.items} — ${row.total}`),
   ]);
   const kids = [
     codeLine,
     journey,
     details,
-    // The courier's tracking number, when the order was posted and the baker typed
-    // one. Its own line, in the number face, so it is easy to read back to a
-    // courier or paste into their site.
-    row.tracking_no ? el("p", { class: "track-no" }, sub(t("trackingNo"), row.tracking_no)) : null,
+    // The delivery's own progress and the person bringing it (v190), directly under
+    // the details and above the tracking slot: a customer who has just read what they
+    // ordered and what it cost is next asking when it comes and who is at the door.
+    // Empty for every order with no courier trip on it, so nothing changes shape on
+    // an order that posted itself.
+    ...tripEls(row),
+    // What the baker put in the tracking slot, when the order was posted. It is ONE
+    // slot and it holds one of TWO kinds of thing, and they must not be worded the
+    // same (v189): a number she typed is something the customer reads out to a
+    // courier, and a link a booked trip handed back is a page they open. A link
+    // rendered as plain text is a dead end on a phone — it cannot be tapped, and a
+    // customer staring at a URL has nothing to do with it.
+    //
+    // The check is written out here rather than imported, because this page imports
+    // nothing from the backoffice's own modules; the same rule lives in
+    // admin/js/courier_job.js's isLink, which is what the shipped WhatsApp message
+    // reads, so the card and the message word a link identically.
+    row.tracking_no ? trackingEl(row.tracking_no) : null,
     row.customer ? el("p", { class: "track-note" }, sub(t("forCustomer"), row.customer)) : null,
   ];
   box.replaceChildren(...kids.filter(Boolean));
@@ -1723,16 +1998,23 @@ export async function trackOrder(code) {
     // cache: no-store so a repeated lookup (e.g. re-checking the same order
     // after the baker updates it) always gets the current status, never a
     // cached one from the phone's HTTP cache.
+    //
+    // PostgREST returns ONLY the columns named in `select`, and paintTrack draws
+    // the courier's number, the courier's charge and whether that charge is COD —
+    // so tracking_no, customer, courier_fee and courier_cod all have to be asked for
+    // here or the customer's half of v97/v98 and of the courier charge is dead: the
+    // row carries the column, the card just never receives it (19 Sep 2026).
+    //
+    // The five courier_* trip columns are on the same footing (v190): a column the
+    // backoffice publishes and this list does not name is a line the customer's card
+    // can never draw, and it fails silently — the row would arrive complete and the
+    // card would simply be missing a section, with nothing anywhere saying why.
+    //
+    // postage_quoted follows the same rule (28 Sep 2026): without it in this list the
+    // card cannot tell an order whose delivery cost is still to be quoted from one
+    // with nothing left to pay, and would quietly say neither.
     const res = await fetch(
-      // tracking_no must be named here: PostgREST returns only the columns
-      // listed, so without it the row never carries the number and the line
-      // below can never draw.
-      // PostgREST returns ONLY the columns named in `select`, and this card draws the
-      // courier's number, the courier's charge, whether that charge is COD, and whose
-      // order it is — so tracking_no, courier_fee, courier_cod and customer all have to
-      // be asked for here or those lines are simply dead: the row carries the column,
-      // the card never receives it (the same trap this list already fell into twice).
-      `${base}/rest/v1/order_tracking?select=status,confirmed_sent,paid_received,delivery,items,total,tracking_no,courier_fee,courier_cod,customer,updated_at&code=eq.${clean}&limit=1`,
+      `${base}/rest/v1/order_tracking?select=status,confirmed_sent,paid_received,delivery,items,total,tracking_no,courier_fee,courier_cod,postage_quoted,customer,updated_at,courier_name,courier_phase,courier_driver,courier_plate,courier_phone&code=eq.${clean}&limit=1`,
       { headers: { apikey: sb.anonKey }, cache: "no-store" });
     const rows = res.ok ? await res.json() : null;
     const row = Array.isArray(rows) && rows[0];
@@ -1758,6 +2040,358 @@ function wireFulfillment() {
   };
   for (const b of buttons) b.addEventListener("click", () => apply(b.dataset.fulfillment));
   apply("courier"); // reflect the static HTML's default active button
+}
+
+// ── The customer's own door pin (v197) ─────────────────────────────────────
+// A SUGGESTION the customer can hand over, and nothing more: it rides on the order
+// so the baker can accept it with one press in her own app. Nothing here prices a
+// trip or books a driver — a trip is only ever quoted or booked from a door she has
+// accepted (her condition, in her words: "as security, app side will reconfirm").
+//
+// Three ways to say where the door is, because the customers are different people.
+// One is standing at the door they want the bread delivered to and can just say so;
+// the second is at work ordering for home, and for them the pin is the thing they
+// already know how to drag from a ride-hailing app; the third — added at v202 because
+// her own words asked for it — types the address and lets the map come to it, "just
+// like Grab app". The third does not replace either of the other two: it opens the
+// same map on the address it found, and the customer still finishes by hand.
+let doorPin = null;   // { lat, lng[, label] } — the customer's own pin, or null for none
+let pinWasAt = null;  // what it was when the map opened, so Cancel can put it back
+// WHERE THE PIN CAME FROM, when it came from the list rather than from the customer.
+// A row in that list is an answer to the words already in the box, so a pin taken from
+// one belongs to that wording and to no other. Hold the wording here and the moment the
+// customer types a different address the pin is no longer an answer to what they are
+// saying — see dropListPin, and the order-time consequence it exists to prevent. Null
+// means the customer put the pin there themselves (a drag on the map, or Use my
+// location), which is their own mark about a door they were standing at and is NOT tied
+// to the words in the box.
+let pinOrigin = null; // { q } — the wording this pin answers, or null
+let pinWasOrigin = null; // the same, for the pin Cancel puts back
+let pinMap = null;    // the live map while its box is open, or null
+let pinNote = null;   // { key, m } — the last thing the status line said, kept so a
+                      // language switch can say it again in the language just chosen
+let lookup = null;    // the typed-address lookup (store/lookup.js), built once by
+                      // wireLookup()
+let hitNote = null;   // { key, hits } — what the address list is saying at this
+                      // moment, kept for the same reason pinNote is
+let hitTaken = false; // the customer has already chosen a door from the list. The
+                      // instruction above the rows is then about something they have
+                      // done, and it is retired while the rows stay, so a second tap
+                      // can still change their mind without retyping the address.
+
+// The status line, and the one button whose meaning depends on it. `key` names a
+// dictionary entry for something that needs saying (a vague fix, a refusal); with
+// no key, the line reports the pin itself, or goes quiet when there is none — which
+// is where a first-time visitor starts, and where the address box stands alone.
+function paintPin(key = null, m = null) {
+  pinNote = key ? { key, m } : null;
+  const status = document.getElementById("pin-status");
+  if (status) {
+    const say = key ? (m == null ? t(key) : sub(t(key), m)) : (doorPin ? t("pinSet") : "");
+    status.textContent = say;
+    status.hidden = !say;
+  }
+  const keep = document.getElementById("pin-keep");
+  if (keep) keep.disabled = !doorPin;
+}
+
+// Whether two points are the same spot, by their numbers. The map hands back full float
+// precision and the pin has been tidied to six decimals (store/geo.js, validPin), so
+// this compares the numbers rather than trusting the two to be the same object — the
+// question being asked is "did the customer move it", not "is this the same box".
+function sameSpot(a, b) {
+  return !!a && !!b && a.lat === b.lat && a.lng === b.lng;
+}
+
+// Close the map box. `keep` is the customer's answer to the two buttons: Keep this
+// spot leaves the pin where they put it, Cancel (and a map that could not be drawn)
+// puts back whatever there was before the box opened.
+function closePinBox(keep) {
+  if (pinMap) { pinMap.stop(); pinMap = null; }
+  const box = document.getElementById("pin-box");
+  if (box) box.hidden = true;
+  if (!keep) { doorPin = pinWasAt; pinOrigin = pinWasOrigin; }
+  const note = pinNote;
+  paintPin(note && note.key, note && note.m);
+}
+
+function openPinBox() {
+  const box = document.getElementById("pin-box");
+  const hold = document.getElementById("pin-hold");
+  if (!box || !hold) return;
+  pinWasAt = doorPin;
+  pinWasOrigin = pinOrigin;
+  box.hidden = false;
+  const loadingNote = document.getElementById("pin-loading");
+  const tapNote = document.getElementById("pin-tap");
+  if (loadingNote) loadingNote.hidden = false;
+  if (tapNote) tapNote.hidden = true;
+  if (pinMap) { pinMap.stop(); pinMap = null; }
+  pinMap = showPinMap(hold, {
+    start: doorPin,
+    onMove: (spot) => {
+      if (!pinMap) return; // the box has been closed since this was wired
+      if (loadingNote) loadingNote.hidden = true;
+      if (tapNote) tapNote.hidden = false;
+      if (!spot) {
+        // The map could not be shown at all. Say so plainly and point at the typed
+        // address directly above, which is filled in already and works regardless.
+        closePinBox(false);
+        paintPin("pinMapFailed");
+        return;
+      }
+      // The map is handed the pin as its start and calls back with that very point
+      // while it draws, so a callback that has not MOVED is the map agreeing with the
+      // customer rather than the customer placing anything. It is not a new pin, and the
+      // pin is left EXACTLY as it was — the same object, and still the same claim. Fall
+      // through here and the line below would drop `pinOrigin`, quietly turning a pin
+      // taken from a suggestion row into one the customer placed by hand the instant its
+      // own map opened — which would then survive the very address edit that row's pin
+      // is supposed to go with (dropListPin below). Anything else is their own hand, a
+      // drag or a tap, and from that moment the pin is a place they chose themselves: no
+      // origin.
+      if (sameSpot(spot, doorPin)) { paintPin(); return; }
+      pinOrigin = null;
+      doorPin = { lat: spot.lat, lng: spot.lng };
+      paintPin();
+    },
+  });
+}
+
+// "Use my location" — the customer standing at their own door. Every way this can
+// end has its own sentence, because "nothing happened" is the one answer a customer
+// cannot act on. The vague-fix case is NOT a refusal: it keeps the pin (she confirms
+// every pin anyway) and says how far off it might be, so the customer can fix it.
+async function useMyLocation() {
+  const btn = document.getElementById("pin-here");
+  if (btn) btn.disabled = true;
+  paintPin("pinLocating");
+  const geo = (typeof navigator !== "undefined" && navigator.geolocation) || null;
+  const out = await askGeo(geo);
+  if (btn) btn.disabled = false;
+  if (!out.ok) {
+    paintPin(out.why === "denied" ? "pinDenied"
+      : out.why === "timeout" ? "pinTimeout"
+        : out.why === "unsupported" ? "pinNoGeo"
+          : "pinUnavailable");
+    return;
+  }
+  doorPin = { lat: out.lat, lng: out.lng };
+  // A fix from the phone is a door the customer is standing at, not an answer to
+  // anything typed, so it is theirs and no edit to the address box can call it into
+  // question (dropListPin only ever acts on a pin a suggestion row put there).
+  pinOrigin = null;
+  const vague = fixVerdict(out.accuracyM);
+  paintPin(vague ? "pinVague" : null, vague ? vague.accuracyM : null);
+  if (pinMap) pinMap.goTo(doorPin); // the map is open — bring it to where they are
+}
+
+function wirePin() {
+  const here = document.getElementById("pin-here");
+  const mapBtn = document.getElementById("pin-map");
+  const keep = document.getElementById("pin-keep");
+  const cancel = document.getElementById("pin-cancel");
+  if (here) here.addEventListener("click", useMyLocation);
+  if (mapBtn) mapBtn.addEventListener("click", openPinBox);
+  if (keep) keep.addEventListener("click", () => closePinBox(true));
+  if (cancel) cancel.addEventListener("click", () => closePinBox(false));
+  paintPin();
+}
+
+// ── The typed address (v202) ───────────────────────────────────────────────
+//
+// The list of doors the lookup found, under the address box. store/lookup.js owns the
+// asking and the waiting; this owns only what the customer sees, and it is deliberately
+// the whole of what they see — one box that is either hidden or holds one line of
+// explanation, and a row per door.
+//
+// `key` is a dictionary key or null for "say nothing". It is stored before the paint so
+// a language switch can say the same thing again in the language just chosen, exactly
+// as pinNote does for the status line above it.
+//
+// THE INSTRUCTION IS DRAWN ONLY WHILE NOTHING HAS BEEN CHOSEN. "Tap the one that matches
+// your address" is something to do; the moment a door has been taken the line below the
+// map confirms the pin is set, and the two sentences next to each other contradict — an
+// instruction that outlives its own action, which is the dead-control family this shop
+// has a standing rule against. The ROWS stay, so changing your mind is a second tap
+// rather than retyping the street. `hitTaken` is the whole of that state, and it is
+// cleared on every fresh answer below, because a new answer is a new question.
+function paintHits(state) {
+  hitNote = state && state.key
+    ? { key: state.key, hits: state.hits || [], q: state.q || null }
+    : null;
+  const box = document.getElementById("addr-list");
+  if (!box) return;
+  box.replaceChildren();
+  if (!hitNote) { box.hidden = true; return; }
+
+  if (!hitTaken) {
+    const note = document.createElement("p");
+    note.className = "card-sub addr-note";
+    note.textContent = t(hitNote.key);
+    box.append(note);
+  }
+
+  for (const hit of hitNote.hits) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "addr-hit";
+    // A geocoder that answered with a point and no words still found the door, so the
+    // numbers are shown rather than an empty row — the row has to be tappable and has
+    // to say something about which door it is.
+    row.textContent = hit.label || `${hit.lat}, ${hit.lng}`;
+    row.addEventListener("click", () => takeHit(hit));
+    box.append(row);
+  }
+  box.hidden = false;
+}
+
+// The customer picked one of the doors. This is the "Grab" moment: the pin goes there
+// and the map comes to it.
+//
+// THE PIN COMES FIRST, THEN THE MAP, and the order matters. If the map is not open,
+// opening it is what aims it — showPinMap is handed this point as its start, so it
+// opens on the right street at the right zoom rather than on the island. If the map is
+// already open, goTo flies it there without rebuilding it, so nothing the customer has
+// already looked at is thrown away.
+//
+// pinWasAt is moved onto the choice as well, which is the one line here that is not
+// obvious: Cancel puts the pin back to whatever it was when the map session began, and
+// after this the session began at the address they just chose. Without it, picking an
+// address and then pressing Cancel would throw the address away and restore the pin
+// they had before they started typing — a customer undoing a decision they did not make.
+function takeHit(hit) {
+  const input = document.getElementById("address-input");
+  const now = lookupQuery(input ? input.value : "");
+  // A row is an ANSWER to the words that were in the box when it was drawn, and the list
+  // is deliberately left up while the customer keeps typing — a list that blinks away on
+  // every keystroke is harder to use than one that settles. That leaves a moment, the
+  // length of the lookup's own pause, in which a row drawn for the old wording is still
+  // on screen. Taking it there would set a pin for an address the customer has already
+  // edited away from, which is the disagreement this version exists to remove, so the
+  // tap is refused — out loud, because a tap that does nothing is its own fault — and the
+  // rows it came from go with it. The lookup is already re-asking; its answer is next.
+  if (hitNote && hitNote.q && hitNote.q !== now) {
+    hitNote = null;
+    paintHits(null);
+    paintPin("addrStale");
+    return;
+  }
+  const p = validPin(hit);
+  if (!p) return;
+  doorPin = p;
+  pinWasAt = p;
+  // THE BOX IS FILLED IN FROM THE ROW (v214), and this is the one line of the feature. A
+  // row that found the house they typed carries a COMPLETE address — Google's own, richer
+  // than they bothered to type — so it goes into the box in place of their partial one,
+  // which is what she asked for: "it can go into the delivery address instead of customer
+  // type full". A row that only reached the road, or the wrong town, or said nothing, is
+  // refused by addressFromRow and changes nothing (store/geo.js holds the whole test).
+  //
+  // Written as a VALUE and never as typing: no `input` event is fired, so the pin cannot
+  // be taken away by the very write that put the address there — dropListPin only ever
+  // runs from a keystroke.
+  //
+  // `q` is what the box holds AFTER the write, and it has to be: the pin answers the
+  // wording now under it, and a second tap on the same row is judged against that same
+  // wording. Claim the old wording here and the row the customer is looking at would be
+  // refused as stale one line below the tap that drew it.
+  const found = addressFromRow(hit, now);
+  const words = lookupQuery(found) ? found : "";
+  if (words && input) input.value = words;
+  const q = words || now;
+  // The wording this pin answers. Nothing the customer does to the map or the address
+  // box after this keeps the pin tied to it: a drag on the map drops the claim (above),
+  // and an edit to the words drops the pin (dropListPin).
+  pinOrigin = { q };
+  pinWasOrigin = pinOrigin;
+  if (pinMap) pinMap.goTo(p);
+  else openPinBox();
+  paintPin();
+  // The rows are redrawn without the instruction they have just obeyed, and with their own
+  // claim on the box corrected to the words the box now holds. Nothing is asked again and
+  // the choice is not forgotten — `answered` in store/lookup.js still holds this question,
+  // so the list comes straight back if they edit the address.
+  hitTaken = true;
+  paintHits(hitNote ? { key: hitNote.key, hits: hitNote.hits, q } : null);
+}
+
+// The customer's words have changed, so a pin that was an answer to the OLD words has to
+// go with them.
+//
+// WHAT THIS IS FOR, in her own words: "when the pin arrive at backoffice, it did not
+// tally". A pin taken from a suggestion row is a point for the address that row was
+// found for, and the address on the order is whatever is in the box when they press
+// send — two answers to one question, written at two different moments, with nothing
+// tying them together. Edit the box from Taman Sri Nibong to Bayan Lepas and, until
+// this existed, the order went out carrying Bayan Lepas as the address and a pin five
+// kilometres away at Taman Sri Nibong, with the bakery given no way to see it.
+//
+// ONLY A ROW'S PIN IS AFFECTED. A pin the customer dragged on the map, or took from
+// "Use my location", is a door they chose with their own hand and is not an answer to
+// the typed words — it survives every edit, which is the whole reason the pin records
+// where it came from rather than this being a blanket "clear the pin on every keystroke".
+//
+// THE ROWS STAY, and that is deliberate rather than unfinished. They are the list the
+// customer was reading a moment ago and the lookup is about to replace them anyway;
+// taking them out from under the thumb as well would be two corrections for one mistake,
+// and a list that blinks away on every keystroke is the flicker store/lookup.js is built
+// to avoid. A row tapped while they are out of date is refused AT THE TAP instead
+// (takeHit), which is the one moment the row can be judged against the box.
+//
+// `q` is the wording the box now holds, already put through lookupQuery — so a box that
+// has been emptied counts as a change, which is right: a pin for an address that is no
+// longer written down is exactly the disagreement being removed. Returns whether it acted.
+function dropListPin(q) {
+  if (!doorPin || !pinOrigin || pinOrigin.q === q) return false;
+  doorPin = null;
+  pinOrigin = null;
+  pinWasAt = null;
+  pinWasOrigin = null;
+  // A map left open would be showing a pin that no longer goes with the address
+  // directly above it — the very contradiction, on one screen. `true` because the pin
+  // is already gone: there is nothing for it to put back.
+  if (pinMap) closePinBox(true);
+  // Said out loud rather than done behind the customer's back: they had a pin, they
+  // edited the address, and it is gone. The sentence points at the two things that put
+  // it back, which are the suggestion list above and the map button below.
+  paintPin("pinAddrChanged");
+  return true;
+}
+
+function wireLookup() {
+  const input = document.getElementById("address-input");
+  if (!input) return;
+  // A fresh answer is a fresh question, so the instruction belongs on screen again —
+  // including the answer that says nothing was found. Wrapped rather than passed
+  // straight in, so `hitTaken` cannot survive a new list.
+  lookup = createLookup({ onState: (state) => { hitTaken = false; paintHits(state); } });
+  input.addEventListener("input", () => {
+    // One keystroke, two consequences: a pin that only answered the words as they were
+    // goes, and the new words are put to the lookup. In that order, so the sentence about
+    // the pin is on screen before anything the lookup has to say about the address.
+    dropListPin(lookupQuery(input.value));
+    lookup.typed(input.value);
+  });
+  paintHits(null);
+}
+
+// Forget the pin between customers: a phone can be handed across a counter, and the
+// next order must not inherit a stranger's front door. Exported for the same reason
+// setLang is (below): the Node suite has to be able to put the page back to the state a
+// NEW customer arrives in, and module state otherwise leaks from one test to the next —
+// a leak that once let a fault in this very function go unnoticed.
+export function resetPin() {
+  doorPin = null;
+  pinWasAt = null;
+  pinOrigin = null;
+  pinWasOrigin = null;
+  closePinBox(true);
+  paintPin();
+  // An address the customer typed, and the list it produced, belong to the order that
+  // has just been placed. The next customer must not be shown the last one's house,
+  // and an answer still in the air must not land on a box that has been emptied.
+  if (lookup) lookup.clear();
 }
 
 // What ends the track card's glow: the customer getting to it. The same rule the
@@ -1841,6 +2475,8 @@ render();
 renderReferralBanner();
 renderCodeBanner(CONFIG);
 wireFulfillment();
+wirePin();
+wireLookup();
 wireTrack();
 wireCodeBox();
 

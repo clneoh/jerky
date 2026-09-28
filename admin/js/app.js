@@ -11,6 +11,7 @@ import { renderDashboard } from "./views/dashboard.js";
 import { renderDeliveries } from "./views/deliveries.js";
 import { renderUnits } from "./views/units.js";
 import { renderSuppliers } from "./views/suppliers.js";
+import { renderProductCategories } from "./views/productCategories.js";
 import { renderOrders } from "./views/orders.js";
 import { renderProducts } from "./views/products.js";
 import { renderIngredients } from "./views/ingredients.js";
@@ -24,6 +25,9 @@ import { renderMoney } from "./views/money.js";
 import { renderProfit } from "./views/profit.js";
 import { renderCodes } from "./views/codes.js";
 import { renderGuide } from "./views/guide.js";
+import { renderProduction } from "./views/production.js";
+import { renderDeliveryRun } from "./views/delivery_run.js";
+import { renderScenario } from "./views/scenario.js";
 import { renderLogin } from "./views/login.js";
 import { renderLock } from "./views/lock.js";
 import { refreshShareWarn } from "./sharewarn.js";
@@ -46,12 +50,16 @@ const routes = {
   "/history":   { title: "PO History", tab: "more",     render: renderHistory },
   "/customers": { title: "Customers", tab: "customers", render: renderCustomers },
   "/deliveries":{ title: "Delivery Dates", tab: "more", render: renderDeliveries },
+  "/run":       { title: "Delivery run", tab: "more", render: renderDeliveryRun },
   "/money":     { title: "Money",      tab: "more",      render: renderMoney },
   "/profit":    { title: "Profit",     tab: "more",      render: renderProfit },
   "/codes":     { title: "Shops & codes", tab: "more",    render: renderCodes },
+  "/production":{ title: "Production line", tab: "more", render: renderProduction },
+  "/scenario":  { title: "Scenario planner", tab: "more", render: renderScenario },
   "/units":     { title: "Units",      tab: "more",      render: renderUnits },
   "/reviews":   { title: "Reviews",    tab: "more",      render: renderReviews },
   "/suppliers": { title: "Suppliers",  tab: "more",      render: renderSuppliers },
+  "/product-categories": { title: "Categories", tab: "more", render: renderProductCategories },
   "/settings":  { title: "Settings",  tab: "more",      render: renderSettings },
   "/more":      { title: "More",      tab: "more",      render: renderMore },
   "/guide":     { title: "Guide",     tab: "more",      render: renderGuide },

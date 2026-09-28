@@ -132,6 +132,15 @@ function cell(day) {
   return c;
 }
 
+// The photo, when a card has one, is the card's own first column, so the words
+// and the stepper live one level in. Found by name, and it throws if the body is
+// missing rather than quietly reading an empty string.
+const bodyOf = (card) => {
+  const b = card.children.find((c) => c.className === "card-body");
+  assert.ok(b, "the card body");
+  return b;
+};
+
 test("live availability renders: full day struck out, first open day chosen, per-product stamps", async () => {
   // Let the availability fetches' promise chains settle so the calendar + menu re-render.
   await new Promise((r) => setTimeout(r, 0));
@@ -174,18 +183,18 @@ test("live availability renders: full day struck out, first open day chosen, per
   assert.equal(cards.length, 2);
 
   const f = cards[0];
-  const fStamp = f.children[0].children[1];
+  const fStamp = bodyOf(f).children[0].children[1];
   assert.ok(fStamp.className.includes("prod-stamp") && !fStamp.className.includes("soldout"));
   assert.equal(fStamp.children[0].text, "Only 2 left");
 
   const s = cards[1];
-  const sStamp = s.children[0].children[1];
+  const sStamp = bodyOf(s).children[0].children[1];
   assert.ok(sStamp.className.includes("prod-stamp") && sStamp.className.includes("soldout"));
   assert.equal(sStamp.children[0].text, "Sold out");
-  assert.equal(s.children[1].children[2].disabled, true, "sold-out product's + button is disabled");
+  assert.equal(bodyOf(s).children[1].children[2].disabled, true, "sold-out product's + button is disabled");
 
   // Stepper caps at the remaining count: Chicken Jerky has 2 left.
-  const fStep = f.children[1];
+  const fStep = bodyOf(f).children[1];
   const fQty = fStep.children[1];
   const fDec = fStep.children[0];
   const fInc = fStep.children[2];
@@ -207,8 +216,8 @@ test("tapping another open day moves the marker and swaps the product stamps", (
   assert.equal(c.chosen.children[0].text, `Your posting day: ${fmtDay(dates[2])}`);
 
   const cards = registry["menu"].children;
-  assert.equal(cards[0].children[0].children[1].children[0].text, "Only 9 left");
-  const sStamp = cards[1].children[0].children[1];
+  assert.equal(bodyOf(cards[0]).children[0].children[1].children[0].text, "Only 9 left");
+  const sStamp = bodyOf(cards[1]).children[0].children[1];
   assert.ok(sStamp.className.includes("prod-stamp") && !sStamp.className.includes("soldout"));
   assert.equal(sStamp.children[0].text, "Only 12 left");
 });

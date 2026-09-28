@@ -159,7 +159,11 @@ test("a charge she bears comes off the money she has out, under its own name", (
   st.orders[0].courierPaidBy = "me";
   applyCourierCharge(st, groupOf(st), 8, "me", "Cash");
 
-  const j = journalFor(st, "Cash", "2026-09-01", "2026-09-30");
+  // The row is stamped with the day the money left, which is TODAY — so the stretch is read
+  // back off the same clock rather than written down. A hard-coded month (2026-09-01…30)
+  // went stale on 1 Oct 2026 and then read as the app having lost the expense.
+  const day = todayISO();
+  const j = journalFor(st, "Cash", day, day);
   const line = j.rows.find((r) => r.dir === "out" && r.amount === 8);
   assert.ok(line, "the charge shows as money out of the Cash book");
   assert.equal(line.what, `Courier (order #${code})`,
@@ -308,7 +312,7 @@ test("a charge SHE bore absorbs the flat postage too, and says nothing about del
 
   st.orders[0].courierFee = 12;
   st.orders[0].courierPaidBy = "me";
-  assert.deepEqual(customerTotal(st, groupOf(st)), { items: 30, courier: 0, cod: 0, postage: 0, total: 30 },
+  assert.deepEqual(customerTotal(st, groupOf(st)), { items: 30, courier: 0, cod: 0, postage: 0, quoted: false, total: 30 },
     "she bears it: they owe the bread alone, with no delivery line of any kind");
 
   const msg = buildConfirmation(st, groupOf(st), "https://x/track").message;
@@ -325,7 +329,7 @@ test("a half-filled charge box is not a charge yet — the flat postage stands",
   st.orders[0].fulfillment = "courier";
   st.orders[0].courierFee = 12;
   st.orders[0].courierPaidBy = "";
-  assert.deepEqual(customerTotal(st, groupOf(st)), { items: 30, courier: 0, cod: 0, postage: 8, total: 38 },
+  assert.deepEqual(customerTotal(st, groupOf(st)), { items: 30, courier: 0, cod: 0, postage: 8, quoted: false, total: 38 },
     "the fee is still quoted, exactly as it was before anything was typed");
 });
 
@@ -394,7 +398,7 @@ test("COD is read the house way — a lone flag on no charge is not COD", () => 
 test("a COD charge is split OUT of the advance total, not folded into it", () => {
   const st = state();
   const parts = customerTotal(st, codOrder(st));
-  assert.deepEqual(parts, { items: 30, courier: 0, cod: 8, postage: 0, total: 30 },
+  assert.deepEqual(parts, { items: 30, courier: 0, cod: 8, postage: 0, quoted: false, total: 30 },
     "the charge is named in cod, and the total asks for the bread alone");
 });
 
@@ -402,7 +406,7 @@ test("the same charge with the order still sits inside the total, exactly as bef
   const st = state();
   st.orders[0].courierFee = 8;
   st.orders[0].courierPaidBy = "customer";
-  assert.deepEqual(customerTotal(st, groupOf(st)), { items: 30, courier: 8, cod: 0, postage: 0, total: 38 },
+  assert.deepEqual(customerTotal(st, groupOf(st)), { items: 30, courier: 8, cod: 0, postage: 0, quoted: false, total: 38 },
     "only the mode moved — with the order, the charge is in the total it was always in");
 });
 

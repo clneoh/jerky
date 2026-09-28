@@ -111,10 +111,15 @@ function typeCode(code) {
 // that needs an exact total has to set one rather than assume a clean start. The
 // count is read off the bar, which renderBar keeps true, and the repaint at the
 // end is the one a customer gets from Apply.
+// The product card's layout gained a wrapper (v195): .menu-item > [(.menu-thumb),
+// .card-body > [.card-head > …, .stepper]]. The stepper therefore hangs one level
+// below the card itself, so every read of it digs through that wrapper first.
+const bodyOf = (card) => card.children.find((c) => c.className === "card-body") || card;
+
 function basketTo(n) {
   const total = () => Number((/RM([\d.]+)/.exec(registry["bar-total"].textContent) || [])[1] || 0);
   const step = (dir) => {
-    const s = menuCard().children.find((c) => c.className === "stepper");
+    const s = bodyOf(menuCard()).children.find((c) => c.className === "stepper");
     (dir > 0 ? s.children[2] : s.children[0])._listeners.click[0]();
   };
   // The stepper caps at what is left (unlimited here — the availability fetch is
@@ -133,7 +138,7 @@ function basketTo(n) {
 async function ordering(search, whatsapp = "60123456789", code = "") {
   await withSearch(search);
   if (code) typeCode(code);
-  const stepper = menuCard().children.find((c) => c.className === "stepper");
+  const stepper = bodyOf(menuCard()).children.find((c) => c.className === "stepper");
   stepper.children[2]._listeners.click[0](); // "+" — one more item in the basket
   document.getElementById("whatsapp-input").value = whatsapp;
   document.getElementById("fulfillment")._value = "collect"; // no postal address needed

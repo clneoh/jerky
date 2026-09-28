@@ -5,6 +5,9 @@ import { computeSlots, computeProductSlots, syncAvailability, login, syncStorefr
 import { groupOrders, orderCode } from "../admin/js/state.js";
 
 const realFetch = globalThis.fetch;
+
+// A tiny but well-formed JPEG data URL, matching what admin/js/photo.js emits.
+const THUMB = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==";
 const realLocalStorage = globalThis.localStorage;
 
 function baseSettings() {
@@ -332,6 +335,25 @@ test("syncStorefront publishes the whole config to storefront_config", async () 
   // of truth) — state.products.price/unit feed the published menu.
   state.products = [{ id: "prd_1", name: "Focaccia", price: 15, unit: "loaf", active: true,
     description: "Crisp rosemary crust, airy crumb" }];
+  // The headings she built, and the products she filed into them. This is the
+  // only place the shop's order and grouping come from, so it has to travel.
+  state.productCategories = [
+    { id: "cat_bread", name: "Bread", nameZh: "面包", parentId: "", sort: 0 },
+    { id: "cat_savoury", name: "Savoury", parentId: "", sort: 1 },
+    { id: "cat_dog", name: "For Dog", parentId: "", sort: 2 },
+    { id: "cat_treats", name: "Treats", parentId: "cat_dog", sort: 0 },
+  ];
+  state.products[0].thumb = THUMB;
+  // The place she dragged this one into among the products no heading carries.
+  // Cheese Straw below has never been dragged and so carries no `sort` at all.
+  state.products[0].sort = 0;
+  // Filed under two headings: it goes under the FIRST one only, never twice.
+  state.products[0].categories = ["cat_bread", "cat_savoury"];
+  state.products.push({ id: "prd_2", name: "Cheese Straw", price: 8, unit: "box", active: true,
+    categories: ["cat_savoury", "cat_treats"] });
+  // A draft she is still working on: not on the shop, so not under a heading.
+  state.products.push({ id: "prd_3", name: "Secret Loaf", price: 9, unit: "loaf", draft: true,
+    categories: ["cat_bread"] });
   const calls = [];
   globalThis.fetch = async (url, opts) => {
     calls.push({ url, opts });
@@ -355,8 +377,23 @@ test("syncStorefront publishes the whole config to storefront_config", async () 
     assert.ok(!("setDays" in payload), "no global value-pack window — date rules live on each product");
     assert.deepEqual(payload.deliveryDays, [1, 3, 5]);
     assert.equal(payload.capacity, 12);
-    assert.deepEqual(payload.products,
-      [{ name: "Focaccia", price: 15, unit: "loaf", description: "Crisp rosemary crust, airy crumb" }]);
+    assert.deepEqual(payload.products, [
+      { name: "Focaccia", price: 15, unit: "loaf", description: "Crisp rosemary crust, airy crumb", thumb: THUMB, sort: 0 },
+      { name: "Cheese Straw", price: 8, unit: "box" },
+    ], "a draft never reaches the shop, a published product carries its photo, and a dragged one its place");
+    assert.ok(!("sort" in payload.products[1]), "a product she has never dragged publishes no place at all");
+    assert.deepEqual(payload.categories, [
+      { name: "Bread", depth: 0, products: ["Focaccia"], nameZh: "面包" },
+      // Focaccia is filed here SECOND, and Cheese Straw first — so each lands
+      // under the heading she ticked first and appears under exactly one.
+      { name: "Savoury", depth: 0, products: ["Cheese Straw"] },
+      // A heading nobody shows under is still published, so she can fill it later
+      // without the heading itself having to be rebuilt.
+      { name: "For Dog", depth: 0, products: [] },
+      { name: "Treats", depth: 1, products: [] },
+    ], "depth-first in her order, each product under its FIRST ticked heading once, the draft left out");
+    const named = payload.categories.flatMap((c) => c.products);
+    assert.equal(named.length, new Set(named).size, "no product is named under two headings");
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -764,6 +801,97 @@ test("pullIncoming copies fulfillment, address and whatsapp from the order", asy
     assert.equal(o.whatsapp, "60123456789");
     assert.equal(o.fulfillment, "courier");
     assert.equal(o.address, "12 Jalan Bunga, Penang");
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realLocalStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = realLocalStorage;
+  }
+});
+
+// ── the customer's own pin (v197) ─────────────────────────────────────────
+//
+// THE trap this pair of tests exists for: importIncoming builds each order by
+// NAMING FIELDS ONE AT A TIME, so a field nobody names is dropped in silence —
+// no error, no missing key, nothing on any screen. That is the same shape as the
+// planner's moduleOf, and it is how this whole feature would fail without a single
+// test turning red. So the first test is the regression, and the second is about
+// what arrives when the payload is not what the shop sends.
+
+test("pullIncoming carries the pin the customer dropped on the shop page", async () => {
+  storageShim(new Map());
+  const state = makeState();
+  state.products = [{ id: "prd_1", name: "Focaccia", active: true }];
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
+  const row = {
+    id: "abc-pin",
+    data: JSON.stringify({
+      customer: "Ain", date: "2026-09-04",
+      lines: [{ name: "Focaccia", qty: 1, price: 15 }],
+      whatsapp: "60123456789", fulfillment: "courier", address: "Block C, Sri Bunga Condo",
+      place: { lat: 5.4199, lng: 100.3311, label: "the guard house", at: "2026-09-25T09:00:00Z" },
+    }),
+  };
+  globalThis.fetch = async (url, opts) => {
+    if (url.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    if (url.includes("/rest/v1/incoming_orders") && !(opts && opts.method)) return { ok: true, json: async () => [row] };
+    if (url.includes("/rest/v1/incoming_orders") && (opts && opts.method === "PATCH")) return { ok: true, json: async () => [row] };
+    return { ok: true, text: async () => "" };
+  };
+  try {
+    const r = await pullIncoming(state);
+    assert.ok(r.ok);
+    const p = state.orders[0].customerPlace;
+    assert.ok(p, "a field nobody names is dropped in silence — this is that field being named");
+    assert.equal(p.lat, 5.4199);
+    assert.equal(p.lng, 100.3311);
+    assert.equal(p.label, "the guard house");
+    assert.ok(p.at, "the moment it was pinned, so she can tell a fresh pin from an old one");
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realLocalStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = realLocalStorage;
+  }
+});
+
+test("a pin the app cannot read leaves NO key at all, and never a null", async () => {
+  // Whatever arrives is written by a customer's own browser, so it is untrusted
+  // input: only the three fields this app knows are copied out, and a payload that
+  // does not hold a point leaves no customerPlace key. A null would be a value every
+  // screen showing this order would have to remember to skip — and this app prints
+  // what it is given (see test/no-null-text.test.js).
+  storageShim(new Map());
+  const state = makeState();
+  state.products = [{ id: "prd_1", name: "Focaccia", active: true }];
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
+  const long = "x".repeat(300);
+  const rows = [
+    { id: "r1", data: JSON.stringify({ customer: "Ain", date: "2026-09-04", lines: [{ name: "Focaccia", qty: 1 }], place: { lat: null, lng: 100 } }) },
+    { id: "r2", data: JSON.stringify({ customer: "Bee", date: "2026-09-04", lines: [{ name: "Focaccia", qty: 1 }], place: { lat: 999, lng: 100 } }) },
+    { id: "r3", data: JSON.stringify({ customer: "Chan", date: "2026-09-04", lines: [{ name: "Focaccia", qty: 1 }], place: "5.4,100.3" }) },
+    // A real point with extra keys and a label longer than any place name: the label
+    // lands on her screen, so it is capped, and the extra keys are left behind.
+    { id: "r4", data: JSON.stringify({ customer: "Dee", date: "2026-09-04", lines: [{ name: "Focaccia", qty: 1 }], place: { lat: 5.42, lng: 100.33, label: long, evil: "<script>", at: "whatever" } }) },
+  ];
+  globalThis.fetch = async (url, opts) => {
+    if (url.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    if (url.includes("/rest/v1/incoming_orders") && !(opts && opts.method)) return { ok: true, json: async () => rows };
+    // The claim names the row it is claiming, so the stub answers with that row —
+    // the same "matched 0 rows means another phone got it" contract the real table has.
+    if (url.includes("/rest/v1/incoming_orders") && (opts && opts.method === "PATCH")) {
+      const m = /id=eq\.([^&]+)/.exec(url);
+      const id = m ? decodeURIComponent(m[1]) : "";
+      return { ok: true, json: async () => rows.filter((r) => r.id === id) };
+    }
+    return { ok: true, text: async () => "" };
+  };
+  try {
+    await pullIncoming(state);
+    const by = (name) => state.orders.find((o) => o.customerName === name);
+    for (const name of ["Ain", "Bee", "Chan"]) {
+      assert.equal(by(name).customerPlace, undefined, `${name}'s unreadable pin must leave no key`);
+      assert.equal(Object.prototype.hasOwnProperty.call(by(name), "customerPlace"), false);
+    }
+    const dee = by("Dee").customerPlace;
+    assert.equal(dee.label.length, 120);
+    assert.deepEqual(Object.keys(dee).sort(), ["at", "label", "lat", "lng"]);
   } finally {
     globalThis.fetch = realFetch;
     if (realLocalStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = realLocalStorage;

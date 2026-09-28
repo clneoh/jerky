@@ -8,7 +8,7 @@ import { navigate } from "../app.js";
 import { dayListLabel, dayName, deliveryStatus, generateUpcomingDates, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
 import { effectiveCapacity, totalUnitsOnDate } from "../bom.js";
 import { el, button, confirmDialog, showPopup, toast } from "../ui.js";
-import { newId, save } from "../state.js";
+import { groupOrders, newId, save } from "../state.js";
 import { maybeSync, maybeSyncStorefront } from "../supabase.js";
 import {
   DOW, OCC_COLOURS, addMonth, monthLabel, monthWeeks,
@@ -18,7 +18,7 @@ import { boxClass, nameDay, occBox, occPapers, tipEl } from "../occgrid.js";
 import { OCCASION_CATALOG, importOccColour } from "../occasion_catalog.js";
 
 // Local picker state (survives re-renders while this screen is open): which
-// month is showing, which future dates the baker has tapped to add, and the
+// month is showing, which future dates you have tapped to add, and the
 // occasion-marking mode with any start day awaiting a second tap.
 let viewMonth = null;
 const picked = new Set();
@@ -412,7 +412,7 @@ function occImportPicker(state) {
     showPopup("Load standard occasions", (refresh, close) => el("div", {},
       el("p", { class: "card-sub" },
         "Every date in the list is already on your calendar — nothing new to add."),
-      el("div", { class: "popup-actions", style: "margin-top:12px;display:flex;gap:8px;justify-content:flex-end" },
+      el("div", { class: "popup-actions" },
         button("Close", close, "primary"))));
     return;
   }
@@ -542,7 +542,7 @@ function occImportAdd(state, picks, close) {
   renderAll(view(), state);
 }
 
-// Names the baker has typed before, most recent first — a quick-tap reuse list
+// Names you have typed before, most recent first — a quick-tap reuse list
 // stored on THIS phone only (settings.savedOccNames is never synced).
 function occSavedNames(state) {
   const arr = state.settings && Array.isArray(state.settings.savedOccNames)
@@ -580,7 +580,7 @@ function rangeText(from, to) {
 // The popup that names + colours a fresh mark — or edits an existing mark's
 // name + colour (occ given; its dates stay read-only). The body is rebuilt on
 // refresh() so a forgotten saved name drops out, but `ui` keeps the colour and
-// name the baker is mid-way through, so nothing resets on a refresh.
+// name you are mid-way through, so nothing resets on a refresh.
 function occLabelPicker(state, from, to, occ = null) {
   const editing = !!occ;
   const ui = {
@@ -668,7 +668,7 @@ function occLabelPicker(state, from, to, occ = null) {
       el("p", { class: "occ-sublabel", style: "margin-top:12px" }, "Name it"),
       chips,
       nameInput,
-      el("div", { class: "popup-actions", style: "margin-top:12px;display:flex;gap:8px" },
+      el("div", { class: "popup-actions" },
         button("Cancel", cancel, "ghost"),
         button(editing ? "Save" : "Add", finish, "primary")));
     return body;
@@ -805,5 +805,25 @@ function dateCard(state, date) {
     el("div", { class: "card-row" },
       col,
       el("div", { class: "li-right" },
+        // The signpost to the run, and only where there is a run to make: a press that
+        // lands on "Nothing to run yet" is a dead control, which this app treats as a bug.
+        // The button is a sibling of the pressable column, never inside it, so pressing it
+        // books a run rather than opening the day's orders.
+        courierOn(state, date.id)
+          ? button(`Run (${courierOn(state, date.id)})`, () => navigate(`#/run?date=${date.id}`), "soft small")
+          : null,
         button("Del", () => deleteDate(state, date), "ghost small"))));
+}
+
+// How many customers on this day are being delivered by courier — one per ORDER GROUP, the
+// same grouping the run screen counts stops with, so the number on this button is the
+// number of doorsteps it will find and never the number of order lines behind them.
+function courierOn(state, dateId) {
+  const want = String(dateId || "");
+  let n = 0;
+  for (const g of groupOrders(state.orders || [])) {
+    const first = g.orders[0];
+    if (first && first.fulfillment === "courier" && String(first.deliveryDateId || "") === want) n++;
+  }
+  return n;
 }

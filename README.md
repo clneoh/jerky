@@ -886,6 +886,99 @@ publishes a customer's whole tracking row in a single call, so a missing column 
 that call **as a whole**: every customer's card stops updating, not only orders carrying
 a charge. Idempotent, so a repeat is harmless. A commit or a push runs no SQL.
 
+## The big sync: production, couriers, maps, categories (v133–v223)
+
+Ninety engine versions in one pass, from bakery HEAD. Two things make this sync different
+from every earlier one.
+
+**It reverses the one divergence.** On 2026-09-20 this repo deliberately stopped at v132 and
+left the bakery's **Production line** behind — the first and only time the two apps differed,
+because the bakery's tool was bread-specific and she said she did not need it. She has since
+changed her mind and asked for it after all: **"Port it exactly as it is"**. So the Production
+line, the Scenario planner and the bake-day board are here now, **in the bakery's own words**
+(ovens, pans, dough, mixers, bake days) — a deliberate choice, not a missed localization. What
+transfers is the arithmetic underneath: how many of anything a day can make, given the people,
+the machines and the hours.
+
+**It excludes the v199 money redesign.** The bakery now derives a `Items total:` subtotal by
+subtracting the courier's charge from the published total. On jerky the flat RM8 postage also
+sits inside `total` and is deliberately never published, so a derived subtotal would be RM8
+too high on every order. jerky keeps its own money lines (`moneyLines()` in `js/courier.js`).
+
+### The two new module families
+
+`js/production.js` and `js/scenario.js` are pure and DOM-free. A **module** is a station —
+equipment *and* the pair of hands tending it, as one unit, which is why the same machine is
+one person's job or two depending only on when it starts. A **batch** is one lot through it; a
+**cycle** is one piece of that batch's process. The model's one idea: a line's capacity is its
+slowest station, and a day's capacity is that limit held for the hours she will actually work.
+`js/bakeday.js` works a bake day **backwards** from the oven moment.
+
+`js/couriers.js` is the **registry**, and `js/views/courier_quote.js`, `js/courier_job.js`,
+`js/courier_place.js`, `js/place_map.js` and `js/views/delivery_run.js` are the courier work:
+price a job, book it, follow it, and build a multi-stop run. **The provider seam is enforced by
+test**, not by convention — `test/courier-provider.test.js` walks `admin/js` and
+`supabase/functions/courier`, strips comments only, and fails if any file other than the
+registry and the provider itself contains the courier's label, case-insensitively. A string
+literal in a screen counts as a leak. So the Settings card and the Guide route the name
+through `courierLabel()`. The guard does not cover `marketing/`, so the manual names the
+courier once.
+
+### Product categories and photos
+
+`js/productCategories.js` holds the tree. The record is **flat with a `parentId`**, not a
+children array, because the cloud sync carries whole records keyed by id; sibling order is a
+stored `sort` number, never the array position; membership lives on the product
+(`product.categories = [catId, …]`, first = the heading it is listed under). A category carries
+its own `nameZh` / `nameMs` — no new translation code was needed, because it reuses the same
+six copy keys and provenance flags a product uses.
+
+`js/views/products.js` gained `readPhotoFit` for the product thumbnail — deliberately **not**
+`readPhoto`, which centre-crops for customer photos. A shop with no categories is drawn exactly
+as it always was: one plain list, no headings. An empty heading is dropped, but a heading whose
+own products have all sold out today is **kept**.
+
+### The shop's address, pin and map
+
+`store/geo.js` holds `placeForOrder(pin, fulfillment, address = "")` — a courier order gets
+`{lat, lng, label}`, no address gives `{lat, lng}` only, and a non-courier order returns
+`null`. `store/pin_map.js` is the map the customer drops a pin on, `store/lookup.js` is the
+address lookup, and **both sides import the root `storefront-fields.js`** because the two
+whitelists build fresh objects field-by-field — a field written by one and not copied by the
+other is dropped with no error at all.
+
+`store/lookup.js` is the shop's only new file with a `fetch`, and it asks **her own** Supabase
+function (`supabase/functions/shop-geocode`) rather than a public geocoder directly — her
+decision, *"Through your own Supabase."* Nothing is asked while somebody is still typing: a
+pause, a whole address, one ask.
+
+### The postage switch
+
+Her mid-sync request. `settings.storefront.postageMode` is `"flat"` (the default, and how it
+starts) or `"quote"`, with a `postageModeSet` gate exactly like the tasks list — a phone still
+at the default must not overwrite the value she set on another phone. The switch sits at the
+top of **Settings → Storefront → Postage** and reads *"Quote each posted order by courier
+instead of a flat fee"*. Switched on, the fee box greys out (the figure is kept, not lost, so
+switching back quotes it again) and the customer is told in words that postage is quoted
+separately — on the shop, in the confirmation and on the track card — rather than being quoted
+a figure that would look like the whole cost. **Nothing about an already-taken order changes
+when the switch is flipped**; only orders taken afterwards follow it.
+
+### SQL and Edge Functions
+
+Four scripts, all idempotent, all one paste each in the SQL editor, **all before deploying**
+(the backoffice publishes a whole tracking row in one call, so a missing column rejects the
+call as a whole and *every* customer's card stops updating):
+
+- `supabase/courier_fee.sql`, `supabase/courier_cod.sql` — the courier charge and cash on delivery
+- `supabase/courier_job.sql` — booking a courier job through the app
+- `supabase/postage_mode.sql` — `order_tracking.postage_quoted boolean`, the switch above
+
+Two **optional** Edge Functions, in her own project so the request goes out under her own name:
+`supabase/functions/courier` (price and book a job) and `supabase/functions/shop-geocode` (the
+address lookup). Neither is needed to sell: without them the courier screens say a key is
+missing and the customer places the pin by hand.
+
 ## The customer and the product list (v119–v123)
 
 Five versions about the two things an order form asks for: *who* the order is for,
@@ -1474,6 +1567,14 @@ invariants** (finder patterns, timing alternation, the always-dark module, the
 format bits written twice and equal), and **Reed–Solomon known-answer vectors**.
 The real acceptance test is the owner scanning a printed label with her phone.
 
+Two suites guard things a normal assertion cannot. `test/no-null-text.test.js`
+renders the day pop-up and the Settings screen through a **strict**
+`replaceChildren` shim (every other shim filters nulls, which is exactly why a
+stray `null` text node survived so long) and fails on any `"null"` /
+`"undefined"` text node. `test/courier-provider.test.js` walks `admin/js` and
+`supabase/functions/courier`, strips comments, and fails if any file but the
+registry and the provider itself names the courier — see the sync section above.
+
 ## Files
 
 ```
@@ -1490,6 +1591,10 @@ store/app.js        storefront logic + order intake + availability + published c
 store/calendar.js   the shop's own month-grid + mark helpers (a copy of the app's)
 store/config.js     fallback name, WhatsApp, menu, days, supabase (overridden by Settings → Storefront)
 store/pool.js       shared-pool rules: pack components, cancel windows, sell days (pure)
+store/geo.js        a courier order's pickup point + label; null for a collect order (pure)
+store/lookup.js     address lookup — asks her own Supabase function, never a public geocoder
+store/pin_map.js    the map the customer drops a pin on (customer's own door as a point)
+storefront-fields.js  the shared field whitelist both publish paths import (root module)
 store-lang.js       order-page dictionary (en / zh / ms)
 taster-lang.js      landing-page dictionary (en / zh / ms) — its heading/body come from the shared copy instead
 taster/index.html   the page a printed label's QR opens (/taster/?c=CODE)
@@ -1512,6 +1617,14 @@ admin/ — backoffice app (/admin/):
   js/profit.js        the books — sales, cost of sales, running costs, capital / drawings (pure)
   js/accounts.js      the categories and ways to pay the books read, and their built-in defaults (pure)
   js/bom.js           BOM explosion, costs, capacity (pure)
+  js/production.js    a production day: people, hours, pans, the slowest station (pure)
+  js/scenario.js      the line as modules / batches / cycles; climb to the day you want (pure)
+  js/bakeday.js       a bake day worked backwards from the oven moment (pure)
+  js/couriers.js      the courier REGISTRY — the only app file allowed to name a provider
+  js/courier_job.js   booking a courier job: price, sign, place, follow (pure where it can be)
+  js/courier_place.js a job's pickup / drop points, and the addresses they came from
+  js/place_map.js     the map that shows and edits a stored point
+  js/productCategories.js  the category tree: flat records + parentId, stored sort (pure)
   js/supabase.js      live availability + storefront config publish, order intake
   js/sync.js          shared-data sync engine (queue, pull-then-flush, conflict)
   js/backups.js       cloud backups (auto daily/weekly/monthly snapshots, restore)
@@ -1541,7 +1654,13 @@ supabase/reviews.sql        run once in Supabase SQL editor (homepage reviews + 
 supabase/tracking.sql       run once in Supabase SQL editor (order tracking)
 supabase/track_no.sql       run once — adds order_tracking.tracking_no (v97; folded into tracking.sql)
 supabase/taster_visits.sql  run once — one table for label visits; anon INSERT only, authenticated SELECT only
+supabase/courier_fee.sql    run once — adds order_tracking.courier_fee (v124; see courier_cod.sql)
+supabase/courier_cod.sql    run once — adds order_tracking.courier_cod (v124)
+supabase/courier_job.sql    run once — the table behind booking a courier job from the app
+supabase/postage_mode.sql   run once — adds order_tracking.postage_quoted (the flat/quote switch)
 supabase/functions/wish-mail  optional edge function: emails the wish list to the developer
+supabase/functions/courier   optional edge function: prices and books a courier job
+supabase/functions/shop-geocode  optional edge function: address → map point, under her own name
 test/               node --test suites (import from admin/js and store/)
 marketing/          social-media marketing guide generator (gitignored)
 ```

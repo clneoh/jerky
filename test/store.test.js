@@ -2,6 +2,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 // Minimal DOM shim so store/app.js can render at import time.
+//
+// replaceChildren IS THE BROWSER'S, NOT A KINDER VERSION OF IT. Most shims in this suite
+// drop a null argument (`if (c != null) push(c)`), which is the one thing the real DOM
+// never does: it is variadic and converts every argument with String(), so a null arrives
+// on the page as a text node reading "null". That difference has shipped three defects in
+// this repo and it shipped a fourth in the shop — the order receipt printed the word
+// "null" between two sentence lines, because the cancellation note is optional and was
+// handed over as a null. The assertion at the foot of the order test below is what holds
+// it; a forgiving shim here could not see it at all.
 function createEl(tag) {
   return {
     tagName: String(tag || "").toUpperCase(), nodeType: 1, children: [], attrs: {}, dataset: {},
@@ -10,13 +19,23 @@ function createEl(tag) {
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     appendChild(c) { if (c != null) this.children.push(c); return c; },
     append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
-    replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) this.children.push(c); },
+    replaceChildren(...cs) { this.children = cs.map((c) => (c && c.nodeType ? c : { nodeType: 3, text: String(c) })); },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener() {},
     setAttribute(k, v) { this.attrs[k] = String(v); },
     getAttribute(k) { return this.attrs[k]; },
     focus() {}, click() {},
   };
+}
+
+// Every text node under `node` that would print as the word null or undefined — the whole
+// of what this file's faithful replaceChildren exists to make visible.
+function strayNulls(node, out = []) {
+  for (const c of node.children || []) {
+    if (c.nodeType === 3) { if (c.text === "null" || c.text === "undefined") out.push(c.text); }
+    else strayNulls(c, out);
+  }
+  return out;
 }
 const registry = {};
 globalThis.document = {
@@ -34,6 +53,7 @@ globalThis.window = { open() {} };
 globalThis.fetch = async () => ({ ok: true, json: async () => [] });
 
 const { buildMessage, mergeStorefront, upcomingDates, daySpecs, dateKey, fmtDay, trackOrder, isOpen, postsOn, dayAsk, waNumber, parseVia, clockWords, renderStatic } = await import("../store/app.js");
+const { strictestCancelDays } = await import("../store/pool.js");
 const { CONFIG } = await import("../store/config.js");
 
 // The cut-off time as the page prints it: the app stores it 24-hour (Settings'
@@ -282,7 +302,7 @@ test("daySpecs leaves days plain when availability is off or unknown", () => {
 test("order click sends one order and shows the success card (regression: no throw on the date label)", async () => {
   // Add one item via the first menu card's "+" button (drives the real cart).
   const card = registry["menu"].children[0];
-  const stepper = card.children.find((c) => c.className === "stepper");
+  const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
   stepper.children[2]._listeners.click[0](); // "+" — cart now has 1 item
   assert.equal(registry["order-btn"].disabled, false, "cart non-empty enables the button");
 
@@ -308,14 +328,143 @@ test("order click sends one order and shows the success card (regression: no thr
     assert.equal(payload.address, "12 Jalan Bunga");
     const title = registry["confirm-msg"].children[0].children[0]; // .text, not textContent, in the shim
     assert.equal(title.text, "🎉 Order received!");
+    // THE WORD THAT WAS PRINTED ON HER RECEIPT. The cancellation note is only added when
+    // a product on the order states a window, and the shop's own products state none — so
+    // an order placed against her live storefront carried a null in that card, and the DOM
+    // wrote "null" between the order line and "Your order is in…". Nothing
+    // in this suite could see it while this file's shim skipped null arguments, which is
+    // why the shim now keeps them. The two lines this pins down are both real: the receipt
+    // really drew (the title above), and there is really no window to state.
+    assert.equal(strictestCancelDays(CONFIG.products), null,
+      "no product on the shop states a change/cancel window, so the optional line is absent");
+    assert.deepEqual(strayNulls(registry["confirm-msg"]), [],
+      "and its absence prints as nothing at all — not as the word 'null'");
+    assert.match(registry["confirm-msg"].children.map((n) => (n.children[0] || {}).text || "").join(" "),
+      /Your order is in/,
+      "the line under the missing one is still there, so the check above is not over a blank card");
   } finally {
     globalThis.fetch = realFetch;
   }
 });
 
+// ── the customer's own door pin (v197) ────────────────────────────────────
+//
+// Driven through the REAL controls — the press the customer makes, the phone's own
+// geolocation object, and the order button — because everything that can go wrong
+// here goes wrong in the wiring and not in the rules: store/geo.js is covered purely
+// in test/store-pin.test.js, and what these two check is that the pinned point
+// actually leaves the phone on the order, and only when it should.
+
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
+function refill() {
+  registry["menu"].children[0]
+    .children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+}
+
+test("the pin the customer marks rides on a courier order, and never on a self-collect one", async () => {
+  refill();
+  const realFetch = globalThis.fetch;
+  const realGeo = navigator.geolocation;
+  let posted = null;
+  globalThis.fetch = async (url, opts) => {
+    if (opts && opts.method === "POST") { posted = JSON.parse(JSON.parse(opts.body)[0].data); return { ok: true }; }
+    return { ok: true, json: async () => [] };
+  };
+  try {
+    document.getElementById("whatsapp-input").value = "60123456789";
+    document.getElementById("address-input").value = "Block C, Sri Bunga Condo";
+    // "Use my location" — the customer standing at the guard house, which is the one
+    // path the preview pane cannot test (a permission sheet only a real phone has).
+    navigator.geolocation = {
+      getCurrentPosition: (ok) => ok({ coords: { latitude: 5.41991234, longitude: 100.33116789, accuracy: 12 } }),
+    };
+    registry["pin-here"]._listeners.click[0]();
+    await flush();
+    assert.match(registry["pin-status"].textContent, /Pin set/, "the customer is told the pin is on");
+    assert.equal(registry["pin-status"].hidden, false);
+
+    // COURIER: the pin travels with the order, tidied to six decimals, named with the
+    // customer's OWN typed address (v205 — never the geocoder's name for that spot,
+    // which is a fragment), and nothing else the phone reported travels with it.
+    document.getElementById("fulfillment")._value = "courier";
+    await registry["order-btn"].onclick();
+    assert.ok(posted, "the order went through");
+    assert.deepEqual(posted.place, {
+      lat: 5.419912, lng: 100.331168, label: "Block C, Sri Bunga Condo",
+    });
+    assert.equal(posted.place.label, posted.address,
+      "the pin's words are the customer's own address, so her screen cannot name one place twice");
+    assert.deepEqual(Object.keys(posted.place).sort(), ["label", "lat", "lng"],
+      "no accuracy, no timestamp — the bakery is told where, named the customer's way, and nothing more");
+
+    // SELF COLLECT: the same customer pins again and then chooses to come and get it.
+    // Nothing is being delivered, so no door is posted. (A placed order empties the
+    // cart, the number and the method, so the next one starts them over — which is
+    // exactly what the next customer does too.)
+    document.getElementById("whatsapp-input").value = "60123456789";
+    registry["pin-here"]._listeners.click[0]();
+    await flush();
+    document.getElementById("fulfillment")._value = "collect";
+    refill();
+    posted = null;
+    await registry["order-btn"].onclick();
+    assert.ok(posted, "the self-collect order went through");
+    assert.equal("place" in posted, false, "a self-collect order carries no door");
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realGeo === undefined) delete navigator.geolocation; else navigator.geolocation = realGeo;
+  }
+});
+
+test("the next customer does not inherit the last one's front door", async () => {
+  refill();
+  const realFetch = globalThis.fetch;
+  const realGeo = navigator.geolocation;
+  let posted = null;
+  globalThis.fetch = async (url, opts) => {
+    if (opts && opts.method === "POST") { posted = JSON.parse(JSON.parse(opts.body)[0].data); return { ok: true }; }
+    return { ok: true, json: async () => [] };
+  };
+  try {
+    document.getElementById("whatsapp-input").value = "60123456789";
+    navigator.geolocation = {
+      getCurrentPosition: (ok) => ok({ coords: { latitude: 5.42, longitude: 100.33 } }),
+    };
+    document.getElementById("fulfillment")._value = "courier";
+    // This shop refuses a courier order with no postal address (the bakery does not),
+    // so the door a customer posts to has to be here or the order never leaves.
+    document.getElementById("address-input").value = "12 Jalan Mawar, 10450 Penang";
+    registry["pin-here"]._listeners.click[0]();
+    await flush();
+    assert.equal(registry["pin-status"].hidden, false);
+    await registry["order-btn"].onclick();
+    // The pin carries the customer's OWN typed address as its name (v205), so the order
+    // cannot name one place twice — and nothing else the phone reported travels with it.
+    assert.deepEqual(posted.place, {
+      lat: 5.42, lng: 100.33, label: "12 Jalan Mawar, 10450 Penang",
+    });
+    // An order empties the cart, the number and the delivery method for whoever comes
+    // next. The pin has to go with them, or the phone handed across the counter sends
+    // the NEXT order to the last customer's door.
+    assert.equal(registry["pin-status"].hidden, true, "the pin line is cleared with the order");
+    document.getElementById("whatsapp-input").value = "60123456789";
+    document.getElementById("fulfillment")._value = "courier";
+    document.getElementById("address-input").value = "12 Jalan Mawar, 10450 Penang";
+    refill();
+    posted = null;
+    await registry["order-btn"].onclick();
+    assert.ok(posted, "the second order went through");
+    assert.equal("place" in posted, false, "a courier order nobody pinned carries no door");
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realGeo === undefined) delete navigator.geolocation; else navigator.geolocation = realGeo;
+  }
+});
+
 test("the receipt carries the strictest change/cancel window of the whole basket", async () => {
   const card = registry["menu"].children[0];
-  card.children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+  card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
 
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, opts) => (opts && opts.method === "POST" ? { ok: true } : { ok: true, json: async () => [] });
@@ -333,7 +482,7 @@ test("the receipt carries the strictest change/cancel window of the whole basket
 
     // Nothing stated anywhere → no window line at all.
     CONFIG.products.forEach((p) => { delete p.cancelDays; });
-    card.children.find((c) => c.className === "stepper").children[2]._listeners.click[0](); // basket refilled
+    card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper").children[2]._listeners.click[0](); // basket refilled
     document.getElementById("fulfillment")._value = "collect"; // the success path reset it to Post
     await registry["order-btn"].onclick();
     assert.ok(!confirmLines().some((t) => /change or cancel/i.test(t)),
@@ -356,7 +505,7 @@ test("parseVia normalises the ?via= digits on a referral link", () => {
 
 test("an order placed from a ?via= link is stamped with the referrer", async () => {
   const card = registry["menu"].children[0];
-  const stepper = card.children.find((c) => c.className === "stepper");
+  const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
   stepper.children[2]._listeners.click[0](); // "+" — cart now has 1 item
 
   let posted = null;
@@ -383,7 +532,7 @@ test("an order placed from a ?via= link is stamped with the referrer", async () 
 
 test("an order without a ?via= link carries no referral stamp", async () => {
   const card = registry["menu"].children[0];
-  const stepper = card.children.find((c) => c.className === "stepper");
+  const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
   stepper.children[2]._listeners.click[0]();
 
   let posted = null;
@@ -406,7 +555,7 @@ test("an order without a ?via= link carries no referral stamp", async () => {
 test("order click without a WhatsApp number blocks the order (no POST)", async () => {
   // The number is compulsory — confirmations + the payment QR go over WhatsApp.
   const card = registry["menu"].children[0];
-  const stepper = card.children.find((c) => c.className === "stepper");
+  const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
   stepper.children[2]._listeners.click[0]();
   assert.equal(registry["order-btn"].disabled, false);
 
@@ -430,7 +579,8 @@ test("order click without a WhatsApp number blocks the order (no POST)", async (
 
 test("the default Post (nationwide) order is blocked until a postal address is given", async () => {
   const card = registry["menu"].children[0];
-  const stepper = card.children.find((c) => c.className === "stepper");
+  const body = card.children.find((c) => c.className === "card-body");
+  const stepper = body.children.find((c) => c.className === "stepper");
   stepper.children[2]._listeners.click[0](); // "+" — cart has 1 item
   assert.equal(registry["order-btn"].disabled, false);
 
@@ -458,7 +608,7 @@ test("the default Post (nationwide) order is blocked until a postal address is g
 
 test("order click sanitizes a +60-style phone to wa.me digits", async () => {
   const card = registry["menu"].children[0];
-  const stepper = card.children.find((c) => c.className === "stepper");
+  const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
   stepper.children[2]._listeners.click[0]();
 
   let posted = null;
@@ -706,7 +856,7 @@ test("an order at the last stage shows the whole journey green — nothing flash
 
 test("order that reaches the app shows received WITHOUT opening WhatsApp (no popup)", async () => {
   const card = registry["menu"].children[0];
-  const stepper = card.children.find((c) => c.className === "stepper");
+  const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
   stepper.children[2]._listeners.click[0](); // "+" — cart has 1 item
   assert.equal(registry["order-btn"].disabled, false);
 
@@ -741,7 +891,7 @@ test("order that reaches the app shows received WITHOUT opening WhatsApp (no pop
 
 test("WhatsApp only opens as a fallback when the order could NOT reach the app", async () => {
   const card = registry["menu"].children[0];
-  const stepper = card.children.find((c) => c.className === "stepper");
+  const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
   stepper.children[2]._listeners.click[0]();
   assert.equal(registry["order-btn"].disabled, false);
 
@@ -822,6 +972,63 @@ test("a posted order shows the courier's tracking number", async () => {
     assert.equal(cardLabels(box)[5], "Collected / Posted", "the last step wears the pair");
   } finally {
     globalThis.fetch = async () => ({ ok: true, json: async () => [] });
+  }
+});
+
+// ── v189: the tracking slot can now hold the courier's own share link ────────
+//
+// v189 puts a booked trip's share link into this same slot, so the branch that
+// decides "link or number" is now customer-facing on every courier order — and until
+// this test it had none. The NUMBER half was covered above; the LINK half was not,
+// which is the half a booking newly exercises.
+test("a courier's share link in the tracking slot is a link a customer can tap", async () => {
+  const box = document.getElementById("track-result");
+  const link = "https://www.lalamove.com/en-my/track/order/LM-PG-771204";
+  const posted = {
+    status: "shipped", delivery: "30 Sep · Courier · 12 Jalan Bunga", items: "Focaccia ×2",
+    total: "RM58.00", customer: "Mei Ling", tracking_no: link,
+  };
+  globalThis.fetch = async (url) => ({ ok: true, json: async () => [onlySelected(url, posted)] });
+  try {
+    await trackOrder("A3F9C2");
+    const no = byExactClass(box, "track-no");
+    assert.ok(no, "the card carries the tracking slot on its own line");
+    assert.equal(no.children[0].text, "Track your delivery: ",
+      "a link is labelled for what it is, rather than called a tracking NUMBER");
+    const a = no.children[1];
+    assert.equal(a.tagName, "A", "and it is tappable rather than words to read out");
+    assert.equal(a.attrs.href, link, "pointing at the courier's own page");
+    assert.equal(a.attrs.rel, "noopener noreferrer", "opened without handing it this page's window");
+    assert.equal(a.children[0].text, link, "and the customer can see where it goes before tapping");
+  } finally {
+    globalThis.fetch = async () => ({ ok: true, json: async () => [] });
+  }
+});
+
+test("only http and https become a link — a delivery is never a page to run", async () => {
+  const box = document.getElementById("track-result");
+  // This value arrives from a courier's reply and is rendered as a tappable href.
+  // Only the two schemes that mean "a web address" may become one: a `javascript:`
+  // or `data:` href is a page, not a parcel, and a number read as a link sends the
+  // customer to nothing. `www.` with no scheme is words, and so is a string with a
+  // space in it — a half-match must not become a half-link.
+  const words = ["javascript:alert(1)", "data:text/html,<b>x</b>", "JT123456789", "www.lalamove.com", "https://x.com/a b"];
+  for (const value of words) {
+    const posted = {
+      status: "shipped", delivery: "30 Sep · Courier · 12 Jalan Bunga", items: "Focaccia ×2",
+      total: "RM58.00", customer: "Mei Ling", tracking_no: value,
+    };
+    globalThis.fetch = async (url) => ({ ok: true, json: async () => [onlySelected(url, posted)] });
+    try {
+      await trackOrder("A3F9C2");
+      const no = byExactClass(box, "track-no");
+      assert.ok(no, `the slot still draws for ${value}`);
+      assert.equal(no.children.length, 1, `${value} must not become a link`);
+      assert.equal(no.children[0].tagName, undefined, `${value} is words, and draws as words`);
+      assert.match(no.children[0].text, new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    } finally {
+      globalThis.fetch = async () => ({ ok: true, json: async () => [] });
+    }
   }
 });
 
@@ -909,6 +1116,56 @@ test("a charge paid with the order still reads as the plain charge", async () =>
     await trackOrder("A3F9C2");
     assert.equal(deepByClass(box, "track-fee").children[0].text, "Courier charge: RM8.00",
       "no COD wording, and no flag sent — as every row published before this column existed");
+  } finally {
+    globalThis.fetch = async () => ({ ok: true, json: async () => [] });
+  }
+});
+
+// ── the delivery cost is not settled yet (28 Sep 2026) ───────────────────────
+//
+// The backoffice can be switched to quote each posted order by courier instead of
+// charging the flat nationwide fee (Settings → Storefront). Until she records what
+// the courier asked for it, such an order owes the items alone — and the card's
+// total is therefore the items alone, which by itself reads as the whole cost. The
+// published postage_quoted flag is what tells the card to say so, and it is the same
+// sentence her WhatsApp confirmation carries, because the two are read side by side.
+test("a posted order with its delivery cost still to be quoted says so", async () => {
+  const box = document.getElementById("track-result");
+  const posted = {
+    status: "confirmed", delivery: "30 Sep · Post (nationwide) · 12 Jalan Bunga",
+    items: "Chicken Jerky ×2", total: "RM30.00", customer: "Ain", postage_quoted: true,
+  };
+  const urls = [];
+  globalThis.fetch = async (url) => {
+    urls.push(String(url));
+    return { ok: true, json: async () => [onlySelected(url, posted)] };
+  };
+  try {
+    await trackOrder("A3F9C2");
+    assert.ok(/[?&]select=[^&]*\bpostage_quoted\b/.test(urls[0]),
+      "the lookup names postage_quoted — PostgREST sends only the columns listed, so without this the card cannot tell an order whose delivery is still to be quoted from one with nothing left to pay, and would quietly say neither");
+    const fee = deepByClass(box, "track-fee");
+    assert.ok(fee, "the customer is told the delivery cost is coming, rather than left with a total that looks like the whole of it");
+    assert.equal(fee.children[0].text, "Postage: quoted separately - we'll message you the exact amount");
+  } finally {
+    globalThis.fetch = async () => ({ ok: true, json: async () => [] });
+  }
+});
+
+test("a settled order draws no such line, as every row published before it did", async () => {
+  // The flag's absence is the old behaviour — a flat fee the card never names, or a
+  // charge already recorded — and nothing already published changes because the
+  // column appeared.
+  const box = document.getElementById("track-result");
+  const posted = {
+    status: "confirmed", delivery: "30 Sep · Post (nationwide) · 12 Jalan Bunga",
+    items: "Chicken Jerky ×2", total: "RM38.00", customer: "Ain",
+  };
+  globalThis.fetch = async (url) => ({ ok: true, json: async () => [onlySelected(url, posted)] });
+  try {
+    await trackOrder("A3F9C2");
+    assert.equal(deepByClass(box, "track-fee"), undefined,
+      "no delivery line at all — the flat postage stays inside the total and is never named to the customer");
   } finally {
     globalThis.fetch = async () => ({ ok: true, json: async () => [] });
   }

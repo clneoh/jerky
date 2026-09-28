@@ -86,7 +86,7 @@ const btn = () => registry["order-btn"];
 const barTotal = () => registry["bar-total"].textContent;
 const litPill = () => pills.find((p) => p.classList.contains("is-on"));
 const firstCardStepper = () =>
-  registry["menu"].children[0].children.find((c) => c.className === "stepper");
+  registry["menu"].children[0].children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
 // The line under the delivery calendar naming the chosen day — the one piece of
 // date text outside the grid, and so the one to read for a language switch.
 const chosenDayText = () =>

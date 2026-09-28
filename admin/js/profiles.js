@@ -59,11 +59,16 @@ function repointCredits(state, fromWhatsapp, toWhatsapp, name) {
 // Two profiles landing on one key means the same person now exists twice. The
 // profile being edited wins on the contact details and keeps the fields it
 // already has; the duplicate only fills the blanks in, then goes.
+//
+// `place` (25 Sep 2026) is the customer's doorstep pin for the courier. It is on
+// this list for the same reason the dog photo is: it is knowledge she entered, and
+// a merge that silently dropped it would send her back to the map for a house she
+// had already marked.
 function mergeDuplicateProfiles(state, base) {
   const list = state.customers || [];
   const clash = list.find((p) => p !== base && p && p.key === base.key);
   if (!clash) return;
-  for (const f of ["dogName", "dogPhoto", "likes", "avoid", "notes"]) {
+  for (const f of ["dogName", "dogPhoto", "likes", "avoid", "notes", "place"]) {
     if (!base[f] && clash[f]) base[f] = clash[f];
   }
   const i = list.indexOf(clash);
@@ -82,7 +87,7 @@ function touchedAt(p) {
 // edited by anyone, so the only rule that cannot lose what you know is "never
 // throw away a value only one of them has".
 function foldProfileInto(base, other) {
-  for (const f of ["name", "whatsapp", "dogName", "dogPhoto", "likes", "avoid", "notes"]) {
+  for (const f of ["name", "whatsapp", "dogName", "dogPhoto", "likes", "avoid", "notes", "place"]) {
     if (!base[f] && other[f]) base[f] = other[f];
   }
   if (other.createdAt && (!base.createdAt || other.createdAt < base.createdAt)) {

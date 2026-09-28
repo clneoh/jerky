@@ -8,11 +8,25 @@
 import { generateUpcomingDates, shortDate, todayISO } from "./dates.js";
 import { normRules } from "../../availability.js";
 import { publishOccasions } from "./occasion_catalog.js";
+import { flattenTree, primaryCategoryId, productsInCategory } from "./productCategories.js";
+import { isThumb } from "../../storefront-fields.js";
 import { effectiveCapacity, effectiveLimit, isPoolablePack, poolRemaining, totalUnitsOnDate } from "./bom.js";
 import { byId, fmtRM, newId, orderCode, orderLineName, save, stampOrderLine } from "./state.js";
 import { phoneDigits } from "./customers.js";
 import { publishCodes, publishTaster } from "./codes.js";
 import { customerTotal } from "./courier.js";
+// The trip on the order, read through the one helper that decides what a half-written
+// record means. NOT the courier registry: this module is imported by the channel that
+// talks to a courier (couriers/api.js reads its session token), so reaching for the
+// registry here would close a loop between the two. Everything published about a trip
+// is therefore already ON the record — its courier's name, its phase and its driver are
+// written there when the trip is booked or checked, and this only carries them across.
+import { jobOf, windowSuffix } from "./courier_job.js";
+// The shop's own payload is untrusted input, so the one rule about what a place
+// IS is asked rather than a second copy of it written here — the same reason
+// sync.js asks it. See customerPlaceOf in courier_place.js for what the answer is
+// allowed to do afterwards (nothing, until she presses).
+import { validPlace } from "./courier_place.js";
 
 const TOKEN_KEY = "bakeadmin.supabase";
 
@@ -334,7 +348,49 @@ function storefrontPayload(state) {
         const v = p && p[k];
         if (typeof v === "string" && v.trim()) out[k] = v.trim();
       }
+      // The product's thumbnail. Published only when it IS one (see
+      // storefront-fields.js), so a value a phone mangled — or a huge pasted one
+      // — is dropped here rather than sent to every customer's phone and carried
+      // in every backup.
+      if (isThumb(p.thumb)) out.thumb = String(p.thumb).trim();
+      // Where this product sits among the ones no heading carries ("More items")
+      // — the only place a product's own `sort` is read. Published only when she
+      // has dragged one, so an untouched product keeps the order it was stored
+      // in and nothing moves on the shop on the day this arrives.
+      const sort = Number(p.sort);
+      const sortSet = p.sort != null && !(typeof p.sort === "string" && p.sort.trim() === "");
+      if (sortSet && Number.isFinite(sort)) out.sort = sort;
       return out;
+    });
+  // The shop's category headings, in her order, each naming the products shown
+  // under it. Depth-first — parents before their children — so the shop draws
+  // the whole tree by walking this list once, `depth` being the indent.
+  //
+  // Per-product NAMES, not ids: the customer page keys everything it holds about
+  // a product by name (availability, the shared pool, the order itself), so
+  // publishing names here needs no id lookup to place a card, and a product
+  // renamed after it was filed cannot go missing from its own heading.
+  const catList = Array.isArray(state.productCategories) ? state.productCategories : [];
+  const categories = flattenTree(catList)
+    .filter(({ cat }) => String(cat.name || "").trim())
+    .map(({ cat, depth }) => {
+      const row = {
+        name: String(cat.name).trim(),
+        depth,
+        // Only what this category actually shows: the products whose FIRST tick
+        // is this category, and which are actually on the shop. A product filed
+        // under two headings is named under the first one only, so it is never
+        // drawn twice.
+        products: productsInCategory(state, cat.id)
+          .filter((p) => p && p.draft !== true && p.active !== false && String(p.name || "").trim())
+          .filter((p) => primaryCategoryId(catList, p) === cat.id)
+          .map((p) => String(p.name).trim()),
+      };
+      for (const k of ["nameZh", "nameMs"]) {
+        const v = cat && cat[k];
+        if (typeof v === "string" && v.trim()) row[k] = v.trim();
+      }
+      return row;
     });
   const dev = (state.settings && state.settings.developer) || {};
   const devName = String(dev.name || "").trim();
@@ -366,6 +422,10 @@ function storefrontPayload(state) {
     // and what it deliberately is not (a shop's number, its rate, your notes).
     codes: publishCodes(state),
     taster: publishTaster(state),
+    // Always sent, even empty, like the occasions above: an emptied tree is an
+    // answer ("she deleted her last category"), and it has to take the headings
+    // off a page that is already open.
+    categories,
   };
   // The "Website by …" credit for the homepage/store footers — name, the email
   // link(s) and the optional WhatsApp number. Published only when set; the
@@ -498,8 +558,23 @@ export function trackingSnapshot(state, group) {
   // A COD charge is published as its own column rather than folded in, because this
   // total is what the card tells them the order comes to — and the courier is about to
   // ask them for the charge at the door (19 Sep 2026).
-  const { courier: courierFee, cod: courierCod, total: totalNum } = customerTotal(state, group);
+  const { courier: courierFee, cod: courierCod, quoted, total: totalNum } = customerTotal(state, group);
   const total = fmtRM(totalNum, state.settings.currency);
+  // The booked trip, as the order itself remembers it. Every one of these is null on an
+  // order with no trip, and the customer's card leaves its line out rather than printing
+  // an empty label — the same rule the tracking number and the charge already follow.
+  //
+  // `courier_phase` is one of a handful of NEUTRAL words, never the courier's own status:
+  // the customer's page carries its own words for those phases in all three languages, so
+  // it stays ignorant of which company is carrying the box and of that company's
+  // vocabulary. `courier_name` is the courier's own name for itself, taken from the
+  // registry when the trip was booked rather than decided here.
+  //
+  // NOTE: all five need supabase/courier_job.sql run once, before this build is deployed
+  // (see that file). A missing column kills publishing for EVERY order silently, because
+  // pushTracking swallows its errors — the same trap courier_fee.sql documents.
+  const trip = jobOf(first);
+  const driver = (trip && trip.driver) || null;
   return {
     code: orderCode(first),
     status: first.status || "new",
@@ -525,7 +600,31 @@ export function trackingSnapshot(state, group) {
     // deployed (see that file). A missing column kills publishing for EVERY order
     // silently, because publishTracking swallows its errors.
     courier_cod: courierCod > 0 ? true : null,
-    delivery: `${date ? shortDate(date) : ""} · ${fulfillment}${address}`,
+    // The delivery cost is not settled yet: a posted order, in quote-by-courier mode,
+    // with no charge recorded on it. True tells the card to say so instead of leaving
+    // them with a total that looks like the whole cost, and it disappears the moment
+    // she records what the courier charged (when courier_fee above takes over). Null
+    // on every other order, so the card draws exactly what it always drew.
+    // NOTE: this column needs supabase/postage_mode.sql run once, before this build is
+    // deployed (see that file) — a missing column kills publishing for EVERY order.
+    postage_quoted: quoted === true ? true : null,
+    // Who is carrying it, where it has got to, and who is driving — each null when the
+    // order has no trip or the trip has not told us that yet.
+    courier_name: (trip && String(trip.courierName || "").trim()) || null,
+    courier_phase: (trip && String(trip.phase || "").trim()) || null,
+    courier_driver: (driver && String(driver.name || "").trim()) || null,
+    courier_plate: (driver && String(driver.plate || "").trim()) || null,
+    courier_phone: (driver && String(driver.phone || "").trim()) || null,
+    // The day, and — on a consolidated run — the window the van will come in. The window
+    // rides INSIDE this string rather than in a column of its own (v191): this column is
+    // already published, already read by the storefront's `select` and already printed on
+    // the customer's card, so a window that lives in it needs no migration, no storefront
+    // change and cannot be the thing that breaks publishing for every other order.
+    //
+    // windowSuffix is the PUBLISHING gate, not a formatter: it answers "" for a window
+    // that could not be typed (an end before its start), so a half-typed promise in a box
+    // she is still looking at can never reach a customer.
+    delivery: `${date ? shortDate(date) : ""} · ${fulfillment}${address}${windowSuffix(first)}`,
     items,
     total,
     customer: String(first.customerName || ""),
@@ -739,6 +838,23 @@ function importIncoming(state, row) {
       groupId,
       createdAt: now,
     };
+    // The pin the CUSTOMER dropped on the shop page (v197), if they dropped one.
+    // Named here or it is dropped in silence: this object is built field by field,
+    // so a field nobody names never reaches the app at all (the planner's moduleOf
+    // lesson, same shape). It is copied out of an untrusted payload one field at a
+    // time, and only when it is a real point — a half-written or out-of-range one
+    // leaves NO key at all, rather than a null that a screen would print.
+    const dropped = validPlace(data.place);
+    if (dropped) {
+      order.customerPlace = {
+        lat: dropped.lat,
+        lng: dropped.lng,
+        // Whatever the customer's own map called the spot, capped: their browser
+        // wrote it and it lands on her screen.
+        label: dropped.label.slice(0, 120),
+        at: now,
+      };
+    }
     // Freeze what the shop sold it as, at the price the shop charged. The
     // storefront sends its own name/price with the line; fall back to the
     // product only when the line didn't carry one.

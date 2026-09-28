@@ -90,6 +90,26 @@
         <label for="address-input"><span data-i18n="addressLabel">Postal address</span> <em class="req">*</em></label>
         <input id="address-input" class="input" type="text" data-i18n-ph="addressPh" placeholder="Full address — street, area, town &amp; postcode" autocomplete="street-address">
         <p class="card-sub" style="margin:4px 0 0" data-i18n="addressSub">We post nationwide — your treats are made on the day you pick and posted to this address.</p>
+        <!-- Where the addresses the lookup found appear (v202). Emptied and hidden by
+             store/app.js; every word inside it is written by JS, so it carries no
+             data-i18n tags and the dictionary's English-must-match-the-markup rule in
+             test/store-i18n.test.js is untouched. -->
+        <div class="addr-list" id="addr-list" hidden></div>
+        <p class="card-sub pin-hint" data-i18n="pinHint">Optional: drop a pin where the courier should stop — the guard house or your block's entrance. Put the block and unit number in the address above.</p>
+        <div class="pin-row">
+          <button type="button" id="pin-here" class="pin-btn" data-i18n="pinHere">Use my location</button>
+          <button type="button" id="pin-map" class="pin-btn" data-i18n="pinOnMap">Pin on the map</button>
+        </div>
+        <p class="card-sub pin-status" id="pin-status" hidden></p>
+        <div class="pin-box" id="pin-box" hidden>
+          <p class="card-sub pin-note" id="pin-loading" data-i18n="pinLoading">Loading the map…</p>
+          <p class="card-sub pin-note" id="pin-tap" data-i18n="pinTapFirst" hidden>Tap the map where the courier should stop, or drag the pin.</p>
+          <div class="pin-hold" id="pin-hold"></div>
+          <div class="pin-actions">
+            <button type="button" id="pin-keep" class="track-btn" data-i18n="pinKeep">Keep this spot</button>
+            <button type="button" id="pin-cancel" class="pin-btn" data-i18n="pinCancel">Cancel</button>
+          </div>
+        </div>
       </div>
       <div class="field" style="margin-bottom:0">
         <label for="note-input" data-i18n="noteLabel">Note (optional)</label>

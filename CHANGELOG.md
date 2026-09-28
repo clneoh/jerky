@@ -1,8 +1,234 @@
-# Munchies Furkidz — change history (v54 → v132)
+# Munchies Furkidz — change history (v54 → v223)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**28 Sep 2026 — engine v223. Your app has caught up with the bakery in one jump, and it now
+has the Production line.**
+
+This is the biggest update this app has ever had: ninety engine versions at once, from v133 to
+v223. Everything the bakery built since we last synced is now here, plus one new switch of your
+own that has nothing to do with the bakery at all.
+
+**Why one big jump rather than many small ones.** Improvements are always built on your bakery
+app first, then copied here. The copying had gone quiet while you got Munchies Furkidz off the
+ground, so the gap had grown wide. Doing it in one go means one copy job, one rebuild of every
+document, and one engine number on both phones at the end of it — rather than a dozen tiny
+pushes you would have to do yourself.
+
+**Nothing you already had is lost.** Every figure, every order, every product name and price is
+exactly as it was. This adds screens and fixes; it does not change your records.
+
+**THE PRODUCTION LINE AND THE SCENARIO PLANNER (engine v133 to v187).**
+
+**Two new screens, both under More.** **More → Production line** is a planner for a production
+day: how many units you can make, which step is holding you up, and where the day's hours
+actually go. **More → Scenario planner** is the wider screen next to it, where you build your
+day out of blocks — a block is a machine and the pair of hands that tends it, counted as one
+thing — and watch the day as a timing diagram. A block has its own cycle time, how many units
+one pass deals with, how many minutes of you it takes, and how often it repeats. You raise the
+numbers until something stops you, which is how you find your real ceiling.
+
+**These screens are the bakery's, with the bakery's own words.** You asked for this one to be
+copied exactly as it is rather than reworded, and that is what has been done: the screens talk
+about ovens, pans, dough, mixes, trays and bake days. That is deliberate and not a mistake. The
+reason it is worth having anyway is that the arithmetic underneath is about people, machines and
+hours, and that part is not about bread at all — it works out how many of anything a day can
+make, given what you have and how long each step takes.
+
+**A block can be told to repeat, which is how a loop works.** Nothing special is needed for a
+step you do several times: it is simply a block that repeats more often. A block you have two of
+is drawn twice. A block can be switched off and sits in the list reading "not in this scenario",
+so the screen answers without it — that is how you try a day with and without something you have
+not bought yet.
+
+**The day is drawn as a timeline you can read.** The hour ruler has its lines drawn, the clock
+above your people sweeps as the day runs, every batch bar carries its own label, and the step
+that sets your pace wears a mark and one sentence saying why it is the slow one. A person's row
+is only as tall as the people in it, so three workers do not leave a tall empty box on screen.
+
+**Said plainly: at your scale this is a toy until you put your own numbers in.** Every box it
+seeds is the bakery's, and a seeded number is a guess, not a measurement. The screens say "not
+timed yet" rather than quietly reading as free, so you can see which figures you have not given
+it. If a mix box reads 25 and you know better, type 28 — the figure the app keeps is the one you
+last typed, so a new seed only reaches a fresh phone.
+
+**Windows that open over the app are taller, and cards fold.** Every pop-up in the app now sizes
+itself to what it holds and scrolls inside itself rather than pushing past the bottom of your
+phone. A long card on the planner folds away when you tap its title. Neither of these is a new
+feature so much as the reason the new screens are usable on a phone at all.
+
+**A NEW PHONE NO LONGER EMPTIES THE OTHER ONE (engine v181).** Worth its own line, because it is
+about your records rather than a screen. A phone that had never seen one of your settings could
+previously arrive and hand its own empty version back to the cloud. Staying quiet about a thing
+is now correctly read as "no opinion", never as "delete this". This is the same rule that already
+protected your delivery dates, and it now covers much more.
+
+**COURIER WORK: PRICE IT, BOOK IT, FOLLOW IT (engine v188 to v193).**
+
+**This is the part to set up later, not today.** It needs a Lalamove key on your Supabase
+project before any of it does anything, and nothing about your app breaks or nags without it.
+You told me Lalamove is not suitable for Munchies as your main arrangement, and this is built to
+sit quietly as a secondary choice until you decide otherwise.
+
+**What it does, when you want it.** On an order you are delivering, one press asks Lalamove what
+the trip would cost on every vehicle it runs and shows the prices side by side with the distance
+— the quotation lives five minutes, and the one you choose fills the courier charge box that was
+already there. A second press books it for real, and the share link the courier hands back goes
+into the tracking box your orders already carry. A third checks where the driver has got to, or
+calls the trip off.
+
+**One trip, several doorsteps, and what it saves.** A day's courier orders can be grouped into a
+single trip. The app prices that trip against the same doorsteps sent one at a time and shows you
+the difference as two numbers rather than as a claim. The saving stays with you: a customer who
+bears a courier charge is charged what their own doorstep costs on its own, never a share of the
+combined fee, so consolidating does not quietly become their discount.
+
+**The customer can watch it.** A booked trip's own progress shows on their track card, in their
+own language, with the driver's name, the number plate and a press to ring them. When the courier
+says the parcel is on the vehicle, the order moves itself on. One honest limit, found and left in
+place rather than papered over: the courier hands back ONE link for the whole trip, so a customer
+opening it can see the other stops. There is no way to split it, so the app now warns you instead
+of pretending otherwise.
+
+**THE SHOP'S MAP, THE PIN, AND THE ADDRESS (engine v194 to v218).**
+
+**Your customer can now put their door on a map, and the app uses it.** On the order page they
+type their address, the app suggests doors underneath as they type, and they pick theirs. That
+address is written straight into the delivery address box rather than making them type it twice.
+If nothing comes up they can drop a pin by hand instead.
+
+**The pin is a suggestion and never a fact.** Nothing is priced, booked or sent to a driver from
+a customer's pin on its own; it is offered to you where you already look at a doorstep — on the
+order's charge section and on the delivery run under that customer's row — and you are the one
+who acts on it.
+
+**A pin and an address can no longer disagree.** Before this they arrived as two bare numbers
+with nothing tying them to the address written beside them, so the two could say different places
+and your screen had no way to show you. Now the pin carries the customer's own typed address as
+its name, and the app will not let the two drift apart.
+
+**The order's Note / tracking box now opens with the door on it.** For a courier order the top of
+that card tells you which door the driver would be sent to — the customer, the address, and a
+small map with the pin on it — and you can look at it without pressing anything, or move it if it
+is wrong.
+
+**Nobody's door is another customer's business.** Said in the courier section above, and repeated
+here because it is a privacy matter rather than a convenience: the courier's own link covers the
+whole trip, so a customer following it can see the other stops. The app tells you this rather
+than leaving you to find out.
+
+**An address lookup that used to give up now says why.** A Malaysian address leads with its house
+number, and the free map services the app asks often can only find the road. The screen now says
+so in words — "this is the road, not the house" — rather than leaving you with a pin in the wrong
+place and no explanation. An address with a unit number, which the lookup used to refuse
+outright, is now found.
+
+**PRODUCT CATEGORIES AND PICTURES (engine v219 to v223).**
+
+**More → Categories is a new screen, and it starts empty on purpose.** This is where your shop's
+headings live, built the same way your ingredients are: press New category, give it a name, and
+it appears. Nothing is in it until you put it there, because your shop should say what you sell,
+not what a program guessed for you.
+
+**Your shop now lists by your headings instead of in whatever order the products happened to be
+stored in.** That is the whole point. Under each heading sit the products you filed there, and
+the order they appear in is the order you set — not alphabetical, not by price. A heading can
+hold headings under it, as deep as you like, so "For Dog" and "For Cat" can sit at the top with
+Pork, Duck and Fruits under them.
+
+**A product with no heading yet is never hidden — it is shown last**, under a plain heading called
+**More items**. Add something this evening and file it tomorrow: it is on sale tonight, it simply
+sits at the end until you say where it belongs.
+
+**A product can be in more than one heading, and you choose which one it is listed under by the
+order you tick.** The box you tick first is the heading it is drawn under. Tick a second and the
+product does not vanish from the first, and it is not drawn twice either — one product appears in
+exactly one place on your shop. The other ticks are kept as a note to yourself, and the app's own
+product row spells out which ones they are.
+
+**Every product can now have a picture, and it is one standard window.** Choose a photo from your
+phone in the product editor; your shop shows it at the left of the product's row and your own
+Products list shows it too, so you can see at a glance which products have one and which are
+still blank. Since v223 the window is the same size in all three places — your shop's card, the
+app's list, and the editor where you choose the photo — and it is bigger than it was.
+
+**Your photo goes in whole.** A tall photo and a wide photo both show in full, with the window's
+soft cream colour filling the spare space beside them. The window is the fixed thing; your photo
+keeps its own shape. **A product with no picture is untouched** — no window, and its name and
+price read across the whole card exactly as before.
+
+**To get the new window at its best, choose the photo again.** Pictures already saved were cut to
+the old shape when they were saved, so re-choosing the photo is the step that gives you one made
+for this window.
+
+**Two things to know, said plainly rather than found out later.** The homepage grid is untouched
+and still carries the photographs already written into it, so a picture set here reaches your shop
+and your own product list but not the front page. And a picture costs weight twice: it travels
+inside every backup and every export, and it is fetched again by every customer who opens your
+shop. That is why it is kept small.
+
+**Moving a heading, or a product inside one, is a drag.** Each row carries a small handle at its
+left; press the handle and drag the row up or down. It is the first drag in the app, so it is the
+part most worth a second look on your own phone.
+
+**Deleting a heading is guarded, the way your ingredients and suppliers are.** A heading with
+headings under it will not delete. A heading with products filed in it will not delete, and it
+tells you how many. An empty one simply goes.
+
+**THE POSTAGE SWITCH — flat fee, or quoted by courier (this app only; no engine bump).**
+
+**Your ask: "add a switch whether a flat postage or quote by courier".** On **Settings →
+Storefront**, the Postage card now carries a switch: **Quote each posted order by courier instead
+of a flat fee**. Off is exactly what this app has always done — the flat fee you set (RM8 unless
+you change it) is added to the To-pay line on every posted order. On, the flat fee is taken away
+and nothing stands in its place: you find out what the courier charged and record it on the order
+(More → the order's Note / tracking), and that figure is what the customer is told.
+
+**What the customer hears while the figure is unknown.** They are told plainly rather than quoted
+a number that is not the real one: **"Postage: quoted separately - we'll message you the exact
+amount"**, with no To-pay line at all, because there is nothing extra to pay yet. The very same
+sentence is on their track card, word for word, so the two can never say different things. It
+goes away by itself the moment you record what the courier asked for, and the ordinary courier
+charge line takes over.
+
+**The flat fee is kept, not thrown away.** Switch back to a flat fee and your RM8 is still there
+and quotes exactly as before. A collect order, and an order whose charge you absorbed, say
+nothing about postage in either mode — they owe nothing for delivery, and they say so by saying
+nothing.
+
+**This choice syncs between your phones**, like the fee itself and for the same reason: whichever
+phone you set it on last wins, so both quote the same. It is never shown to customers.
+
+**WHAT IS DELIBERATELY NOT HERE.**
+
+**The bakery's v199 money layout is left out on purpose, and it is worth knowing why.** From v199
+the bakery's WhatsApp messages and track page set the money out as a small addition — "items total
+this, plus the courier's charge, reaching this total". That works on the bakery because the
+courier's charge is the only delivery cost it has. Here it is not: your flat RM8 postage is also
+inside the total and is deliberately never published to the shop page. A subtotal worked out from
+the published total would therefore be RM8 too high, which is worse than not showing the working
+at all. So this app keeps its own money lines — **Total**, then **Postage (nationwide)** or the
+recorded **Courier charge**, then **To pay** — which are already an addition the customer can
+follow, in the place where your postage actually lives.
+
+**WHAT YOU MUST DO BEFORE YOU PUSH THIS.**
+
+**Two new database scripts, and one rule that matters.** Run **`supabase/courier_job.sql`** and
+**`supabase/postage_mode.sql`** in your Supabase SQL editor before this build is live. Both are
+safe to run twice. The reason for the order is not tidiness: the app publishes the whole tracking
+row for an order in a single call, so a column that does not exist yet rejects that call as a
+whole — every customer's track page would stop updating, not only the charged ones. If you have
+not already run `courier_fee.sql` and `courier_cod.sql`, those are needed as well.
+
+**Two optional Edge Functions, for later.** `courier` and `shop-geocode` sit in
+`supabase/functions/`. They are what talks to Lalamove and to the address lookup. Deploy them
+when you set the courier up, not before; until then the courier screens say plainly that no key
+has been added rather than blaming the build.
+
+**Nothing else to run.** No new table beyond those scripts, no change to how you push, and
+**Engine v223** on your **More** screen once this is live.
 
 **27 Sep 2026 (no new engine) — Pear Chicken Roll is RM24.**
 One card changed price.

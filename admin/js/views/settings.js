@@ -11,6 +11,10 @@ import * as sync from "../sync.js";
 import { refreshShareWarn } from "../sharewarn.js";
 import { translateTo, translateAllowed } from "../translate.js";
 import { openSnapshotView } from "./snapshot.js";
+import { openPlacePicker } from "../place_map.js";
+import * as place from "../courier_place.js";
+import { callCourier } from "../couriers/api.js";
+import { activeCourier, courierLabel } from "../couriers.js";
 import { CONFIG } from "../../../store/config.js";
 
 export function renderSettings(root, state) {
@@ -254,8 +258,10 @@ export function renderSettings(root, state) {
     sfStatus);
 
   // ── Mailing labels (post) ───────────────────────────────────────────────
-  // The FROM block on the Mailing packing label. Kept in the phone's settings,
-  // not published with the storefront — fill it on each phone that prints labels.
+  // The FROM block on the Mailing packing label. Held in settings and NOT published
+  // with the storefront — but it is not per-phone: mailingAddress rides the private
+  // shared-data row, so it travels to your other phones like every other setting and
+  // is typed once.
   const mailAddr = cur.mailingAddress ??= "";
   const mailBox = el("textarea", { class: "input", rows: 5, value: mailAddr,
     placeholder: "Munchies Furkidz\nYour house number, street, area\nTown, postcode, state\n012-345 6789",
@@ -266,16 +272,21 @@ export function renderSettings(root, state) {
       "Printed as the FROM block on the Mailing label (shown on posted orders). One line per row — first line your business name, then the address, your phone last."),
     mailBox,
     el("p", { class: "card-sub", style: "margin:6px 0 0" },
-      "A Mailing label prints FROM = this address, TO = the customer's name, phone and postal address, and ORDER = the code, date and items. Type it on each phone you print labels from."));
+      "A Mailing label prints FROM = this address, TO = the customer's name, phone and postal address, and ORDER = the code, date and items. Saved with your settings, so it travels to your other phones — type it once."));
 
   const fileInput = el("input", { class: "input", type: "file", accept: "application/json,.json", style: "display:none",
     onchange: (e) => doImport(e) });
 
   // ── Nationwide postage (private sync, like shared business settings) ──────
-  // The flat fee quoted on posted orders. It rides the PRIVATE shared-data row
-  // (never the public storefront publish) so whichever phone set it last quotes
-  // the same figure on both. postageSet marks "the owner has actually chosen a
-  // value here", so a phone still at the default 8 cannot overwrite it.
+  // The flat fee quoted on posted orders, and the switch that prices delivery the
+  // other way. Both ride the PRIVATE shared-data row (never the public storefront
+  // publish) so whichever phone set them last quotes the same on both. postageSet
+  // marks "the owner has actually chosen a FIGURE here" and postageModeSet "…a WAY
+  // of pricing it", each with its own flag: a phone still sitting at the default 8,
+  // or one that has never touched the switch, must not overwrite what she chose on
+  // the other phone. Two flags rather than one because the two are chosen at
+  // different times — setting a fee months ago says nothing about the way she wants
+  // delivery priced today.
   const sfPostage = el("input", { class: "input", type: "number", inputmode: "decimal", min: 0, step: "0.5",
     value: sf.postageRM == null ? "" : String(sf.postageRM),
     onchange: () => {
@@ -283,13 +294,43 @@ export function renderSettings(root, state) {
       sf.postageSet = true;
       save(state); toast("Saved");
     } });
+  const postageField = el("div", { class: "field" },
+    el("label", {}, "Flat postage per posted order (RM)"),
+    sfPostage);
+  const modeBox = el("input", { type: "checkbox", checked: sf.postageMode === "quote",
+    onchange: () => {
+      sf.postageMode = modeBox.checked ? "quote" : "flat";
+      sf.postageModeSet = true;
+      save(state); toast("Saved");
+      paintPostage();
+    } });
+  const postageNote = el("p", { class: "card-sub", style: "margin:8px 0 0" });
+  // What the fee box says changes with the switch rather than the box disappearing:
+  // the figure she set is kept and shown, so switching back to a flat fee quotes it
+  // again with nothing to retype — and a box that vanished would read as the value
+  // having been lost.
+  function paintPostage() {
+    const quote = sf.postageMode === "quote";
+    sfPostage.disabled = quote;
+    postageField.style.opacity = quote ? "0.5" : "";
+    postageNote.textContent = quote
+      ? "Not used while you quote by courier. The figure is kept, so switching back to a flat fee quotes it again."
+      : "Added to the To-pay line on your WhatsApp confirmations for posted orders. Blank or 0 = no postage line.";
+  }
   const postageCard = el("div", { class: "card" },
     el("h3", { style: "margin:0 0 4px" }, "Postage (nationwide posting)"),
     el("p", { class: "card-sub", style: "margin:0 0 10px" },
-      "The flat posting fee added to the To-pay line on your WhatsApp confirmations for posted orders. Blank or 0 = no postage line. Shared with your other phones (last one you set wins) so they quote the same — never shown to customers."),
-    el("div", { class: "field" },
-      el("label", {}, "Flat postage per posted order (RM)"),
-      sfPostage));
+      "How posted orders are charged for delivery. Shared with your other phones (last one you set wins) so they quote the same — never shown to customers."),
+    el("div", { class: "qr-switch" },
+      el("label", { class: "switch" },
+        modeBox, el("span", { class: "switch-track" }, el("span", { class: "switch-knob" }))),
+      el("span", { class: "qr-switch-text" },
+        "Quote each posted order by courier instead of a flat fee",
+        el("span", { class: "card-sub" },
+          "You record what the courier charged on the order — More → the order's Note / tracking — and that is what the customer is told. Until you do, a posted order is told its postage is quoted separately rather than quoted a figure."))),
+    postageField,
+    postageNote);
+  paintPostage();
 
   // ── Website & developer ──────────────────────────────────────────────────
   // Whose site this is and who the wish-list email reaches. Shown as the little
@@ -360,6 +401,75 @@ export function renderSettings(root, state) {
       devWa,
       el("p", { class: "card-sub", style: "margin:4px 0 0" },
         "The developer link (homepage, order page, About) opens WhatsApp with a ready “Hi!”. The email link stays underneath — the wish-list email still uses it.")));
+
+  // ── Courier ─────────────────────────────────────────────────────────────
+  // Two facts and no settings. A courier is not given a street address, it is given a
+  // POINT, so this card's whole job is to hold the one point every trip starts from —
+  // your own door — and to say which courier it is talking to. There is no
+  // API key, no secret and no account login on this card, and there never will be:
+  // those live in the function on the server, because anything shipped to this page
+  // can be read by anyone who opens the page.
+  //
+  // THIS CARD DOES NOT KNOW ITS COURIER'S NAME. It asks the registry, and every word
+  // it says about the courier comes back from the provider's own `label`. That is what
+  // "ready for another courier" means at this end of the app: the day a second courier
+  // is added, this card names it correctly without one character changing here.
+  const who = courierLabel();
+  const courierKey = (activeCourier() || {}).key || "";
+  const pickupLine = el("p", { class: "card-sub", style: "margin:8px 0 0" },
+    "Not pinned yet — every price needs a door to collect from.");
+  const envLine = el("p", { class: "card-sub", style: "margin:10px 0 0" },
+    `Checking which ${who || "courier"} this phone can reach…`);
+
+  function paintPickup() {
+    const p = place.validPlace(cur.pickupPlace);
+    pickupLine.textContent = p
+      ? `Pickup pin: ${place.fmtPlace(p)}  ·  ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`
+      : "Not pinned yet — every price needs a door to collect from.";
+  }
+  paintPickup();
+
+  const pinBtn = button("Put the pickup pin on the map", () => {
+    openPlacePicker({
+      state,
+      title: "Your pickup pin",
+      hint: "This is the door the driver collects from. Pin it once — it is kept with your settings and travels to your other phone.",
+      address: String(cur.mailingAddress || "").trim(),
+      start: cur.pickupPlace,
+      onPick: (spot) => {
+        place.setPickupPlace(state, spot);
+        paintPickup();
+        toast("Pickup pin saved");
+      },
+    });
+  }, "primary");
+
+  // Which environment is live is a SECRET on the server, not a build — sandbox and
+  // production are separate hosts with separate keys and separate wallets — so the
+  // honest thing this card can do is ask the server and say the answer. It never sees
+  // the key, and neither does this page.
+  (async () => {
+    const out = await callCourier(state, { action: "account", provider: courierKey });
+    if (dead) return;
+    if (!out.ok) {
+      envLine.textContent = `${who || "The courier"} could not be asked: ${out.reason}`;
+      return;
+    }
+    envLine.textContent = out.env === "production"
+      ? `${who}: LIVE account (production). Bookings here are real and cost real money.`
+      : `${who}: sandbox. Test bookings only — no real driver is sent and no money is spent.`;
+  })();
+
+  const courierCard = el("div", { class: "card" },
+    el("h3", { style: "margin:0 0 4px" }, who ? `Courier (${who})` : "Courier"),
+    el("p", { class: "card-sub", style: "margin:0 0 10px" },
+      `Prices and bookings come from ${who || "your courier"} through your own account. This card holds the one thing a courier cannot work without: the pickup point — your exact door rather than the street address written above, because a driver is routed to a point, and an address he cannot find is a trip nobody can book.`),
+    pickupLine,
+    el("div", { class: "btn-row", style: "margin-top:12px" }, pinBtn),
+    el("p", { class: "card-sub", style: "margin:10px 0 0" },
+      "The API key and secret are kept on the server and are never typed here, never on this page, and never in a message. Each customer's own door gets a pin the first time you quote or book for them, and it is remembered against their number."),
+    envLine);
+
 
   const sb = (cur.supabase ??= {});
   const sbUrl = el("input", { class: "input", type: "text", inputmode: "url",
@@ -542,10 +652,7 @@ export function renderSettings(root, state) {
           button("Load sample data", () => loadSample(state), "soft")))
     : null;
 
-  // sampleCard is null once there is any product or ingredient — and
-  // replaceChildren() would turn that null into a stray "null" text node at the
-  // bottom of the screen, so it is spread from an array instead.
-  root.replaceChildren(daysCard, lockCard, storefrontCard, postageCard, devCard, referralsCard, mailingCard, supabaseCard, sharedCard, backupCard, dangerCard, ...(sampleCard ? [sampleCard] : []));
+  root.replaceChildren(daysCard, lockCard, storefrontCard, postageCard, devCard, referralsCard, mailingCard, courierCard, supabaseCard, sharedCard, backupCard, dangerCard, ...(sampleCard ? [sampleCard] : []));
 
   function doImport(e) {
     const file = e.target.files && e.target.files[0];

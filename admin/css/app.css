@@ -234,6 +234,120 @@ body { min-height: 100vh; }
 .card-title { font-size: 16px; font-weight: 700; margin: 0 0 2px; font-family: var(--serif); }
 .card-sub { font-size: 13px; color: var(--muted); margin: 0; }
 
+/* ---------- Product categories (v219) ----------
+   The rows are a tree drawn down the page: each one inset by its own depth (the
+   --depth set inline), a grip on the left, the name and what it holds in the
+   middle, Edit/Delete on the right. */
+.cat-list { display: flex; flex-direction: column; }
+.cat-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: calc(var(--depth, 0) * 16px);
+}
+.cat-row-text { flex: 1 1 auto; min-width: 0; }
+/* The grip a row is dragged by, on the Categories screen and on the Products
+   screen. One rule for both, because it is one gesture — the two lists reorder
+   with the same helper in ui.js and must feel identical under the thumb. */
+.cat-handle,
+.prod-handle {
+  flex: 0 0 auto;
+  /* A 36px target, because this one is dragged with a thumb. */
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: grab;
+  border-radius: 10px;
+  /* Without this the phone scrolls the page under the finger instead of
+     dragging the row — the browser claims the gesture before the pointermove
+     handlers ever see it. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  /* A long press on the grip would raise the selection callout, whose
+     pointercancel kills the drag in her hand. */
+  -webkit-touch-callout: none;
+}
+.cat-handle:active,
+.prod-handle:active { cursor: grabbing; background: var(--strip); }
+/* The row in the air: lifted, and over the rows it is passing. `.card` rather
+   than either row's own class because both lists lift the same way and the
+   helper in ui.js puts the class on both. A pop-up head also carries `dragging`
+   while it is dragged, but it is not a card, so nothing here reaches it. */
+.card.dragging {
+  position: relative;
+  z-index: 3;
+  box-shadow: var(--shadow-lg);
+  cursor: grabbing;
+}
+/* A row the drop cannot land among — not one of the rows the grip may reorder
+   among. Dimmed for the length of the drag, so the reach of the grip is visible
+   before she lets go rather than after. */
+.card.row-dim { opacity: .4; }
+/* Where it will land: a bar on the row it would come above, or under the last
+   one when it would land at the end of the group. A bar rather than a gap pushed
+   into the list — a gap moves every row below it on each pointer sample, which
+   jitters under the finger and shifts the midpoints the next sample measures. */
+.card.row-above { box-shadow: 0 -3px 0 0 var(--brown), var(--shadow); }
+.card.row-below { box-shadow: 0 3px 0 0 var(--brown), var(--shadow); }
+
+/* The product editor's two new fields: the photo picker and the category ticks.
+   Both are drawn the same shape — a row indented by the category's own depth, so
+   what she ticks reads like the tree the shop will draw. */
+.thumb-preview { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* The same standard 120 x 120 photo window as the shop's card (.menu-thumb in
+   store/app.css) and the products list (.prod-thumb below) — one size in all
+   three, so the picture she picks here is exactly what her customers see. */
+.thumb-box {
+  width: 120px;
+  height: 120px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  border-radius: 10px;
+  background: var(--strip);
+}
+.thumb-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+.cat-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* 36px: a whole row is the target, not just the box. */
+  min-height: 36px;
+  margin-left: calc(var(--depth, 0) * 18px);
+  cursor: pointer;
+}
+.cat-pick input { flex: 0 0 auto; width: 20px; height: 20px; margin: 0; }
+
+/* The picture beside a product's name in the products list, so she can see at a
+   glance which ones still need one. The same standard 120 x 120 window as the
+   shop's card (.menu-thumb in store/app.css) and the editor (.thumb-box above).
+   It used to be 64 wide and to follow the row's own height, so the same picture
+   was a different size here than on the shop.
+
+   `contain`, never `cover`: the window is fixed and the photo is shown WHOLE
+   inside it, in the shape her file happens to be. The same rule as the shop's
+   card, for the same reason — she must see the same picture here that her
+   customers see there, and neither of them cropped. */
+.prod-row-main { display: flex; align-items: stretch; gap: 10px; min-width: 0; flex: 1 1 auto; }
+.prod-thumb {
+  width: 120px;
+  height: 120px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  border-radius: 10px;
+  background: var(--strip);
+}
+
 h2.section {
   font-family: var(--serif);
   font-size: 18px;
@@ -241,6 +355,33 @@ h2.section {
   margin: 20px 2px 10px;
 }
 h2.section:first-child { margin-top: 0; }
+
+/* A category heading INSIDE one of the Products screen's own lists: "On the
+   shop" is the h2 above it, "Food" is this. A step down from that heading and a
+   step up from a card's own sub-line, so the three levels read in order —
+   section, heading, product. Inset by its own --depth, the same way the
+   Categories screen draws the same tree, so a nested heading shows where it
+   hangs rather than looking like another top-level one. */
+h3.cat-head {
+  font-family: var(--serif);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--brown);
+  margin: 16px 2px 6px;
+  margin-left: calc(2px + var(--depth, 0) * 16px);
+}
+h3.cat-head:first-of-type { margin-top: 4px; }
+/* The tail holding everything she has not filed yet. Muted, because it is the
+   absence of one of her headings rather than one of them — the same footing it
+   has on the shop. */
+h3.cat-head-tail { color: var(--muted); font-weight: 600; }
+
+/* A heading that carries its own action: the title on the left, the thing to do
+   about it on the right, sitting on the heading's own line so it is above the
+   card it acts on rather than buried at the foot of it. */
+.section-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.section-row h2.section { margin-bottom: 10px; }
+.section-row .btn { flex: 0 0 auto; }
 
 /* ---------- Badges ---------- */
 .badge {
@@ -719,6 +860,22 @@ option.tone-off { color: var(--muted); }
 .profile-name { font-weight: 600; font-size: 14px; }
 .profile-edit { flex: none; }
 
+/* ---------- The customer's own pin, offered ---------- */
+/* A suggestion, and it has to LOOK like one: it sits under the doorstep sentence it
+   would change, tinted so it reads as somebody else's answer rather than another
+   fact about this order. The tint is the only thing telling the two apart — green is
+   what this app already uses for something that has been accepted. */
+.pin-offer {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  background: var(--brown-soft);
+  border-left: 3px solid var(--brown);
+  border-radius: 10px;
+}
+.pin-offer .card-sub { margin: 0; color: var(--ink); }
+.pin-offer .btn-row { gap: 6px; margin-top: 8px; }
+.pin-offer .btn-row .btn { flex: 0 1 auto; }
+
 /* ---------- Bring-a-friend ---------- */
 .ref-block {
   flex: 1 1 100%;
@@ -805,8 +962,8 @@ option.tone-off { color: var(--muted); }
 .avail-line.warn { color: var(--red); }
 
 /* ---------- PO table ---------- */
-.po-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-.po-table th {
+.po-table, .sc-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.po-table th, .sc-table th {
   text-align: left;
   font-size: 12px;
   text-transform: uppercase;
@@ -815,10 +972,50 @@ option.tone-off { color: var(--muted); }
   padding: 6px 4px;
   border-bottom: 1px solid var(--line);
 }
-.po-table td { padding: 8px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
-.po-table td.num, .po-table th.num { text-align: right; }
+.po-table td, .sc-table td { padding: 8px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.po-table td.num, .po-table th.num, .sc-table td.num, .sc-table th.num { text-align: right; }
 .po-total { font-size: 17px; font-weight: 700; text-align: right; padding-top: 10px; }
 .po-breakdown { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+/* ---------- The scenario shelf ---------- */
+/* One rule shapes both tables, so the two cannot be tuned apart; the shelf adds
+   only what is genuinely its own. A row she taps must be at least 36px tall, and
+   the PO table's 8px padding lands exactly on that with nothing to spare, so the
+   shelf takes 11px and comes out at 42. The numbers keep a width of their own
+   (`width: 1%` is the way to say "as narrow as my content") while the name takes
+   all the slack — that is what puts the two figures in columns she can read down
+   instead of at four different x positions per row.
+   Every row is the same height whether or not it is the open one: a table whose
+   rows grow when you pick one makes the shelf jump under the finger that tapped
+   it, and `.now` is said with a fill rather than with weight. */
+.sc-table td { padding: 11px 4px; vertical-align: middle; }
+.sc-table td.num, .sc-table th.num { width: 1%; white-space: nowrap; padding-left: 10px; }
+.sc-table th.sc-edit, .sc-table td.sc-edit { width: 1%; white-space: nowrap; text-align: right; padding-left: 6px; }
+.sc-table .sc-row { cursor: pointer; }
+.sc-table .sc-row:active { background: var(--gray-bg); }
+/* The open day is the one the planner is plotting, so it has to be findable at a
+   glance — but not by indenting its name, which pushed that one name 17px right of
+   the other two and cost the row's own width. The fill says it, and a stripe on the
+   row's own left edge says it again to anyone who cannot pick the fill out of a
+   white card; neither takes a pixel from the name column. */
+.sc-table .sc-row.now { background: var(--brown-soft); }
+.sc-table .sc-row.now .sc-name { box-shadow: inset 3px 0 0 var(--brown); }
+
+/* Four days at a time, the rest reached by sliding the list itself. Asked for on
+   her eighth saved day — with no ceiling the card grew a row per day until it ran
+   down the phone's whole screen and the buttons under it were off the bottom.
+   The height is NOT written here: a day's name wraps to two lines when it is long,
+   so the fourth row's foot is not the first row's foot plus three and only the
+   browser knows where it landed. JS measures that foot after the card is painted
+   and writes `max-height` on this element (see capShelf in views/scenario.js); if it
+   cannot measure, it writes nothing, and a card whose days came to four or fewer is
+   never given a height at all — so a shelf short enough to fit is exactly the shelf
+   it was before this rule existed, with no scroller in it to catch her thumb. */
+.sc-shelf { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+/* The column headings stay put as the list slides, so a row scrolled to is still
+   under the heading that names it. Only its own background can hide the row passing
+   beneath it, so it has to be the card's own surface, and it outranks the rows. */
+.sc-shelf thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); }
 
 /* The owner's product description on the Products list card — quieter than the
    title but legible, so she can read each blurb without opening the editor. */
@@ -866,7 +1063,17 @@ option.tone-off { color: var(--muted); }
   align-items: center;
   justify-content: center;
   padding: 20px;
-  z-index: 60;
+  /* Above every card, because a confirm is opened from INSIDE one. Two of the
+     app's questions — "Delete this module" and "Delete this scenario" — are
+     asked from the card they are about, and the card stays on the screen behind
+     the question. At 60, under the pop-up layer's 65, the question was painted
+     beneath the very card that asked it: measured 23 September 2026 at 375px,
+     every point of the confirm's own box belonged to the card — an input at the
+     Delete button's centre and a label at the card's centre — so the sentence
+     could not be read and neither button could be pressed, and the screen only
+     dimmed a second time with nothing appearing. Only the app-password lock,
+     which she must answer before any of this exists, outranks it. */
+  z-index: 72;
 }
 .confirm-layer[hidden] { display: none; }
 .confirm-card {
@@ -905,21 +1112,150 @@ option.tone-off { color: var(--muted); }
   max-height: calc(100vh - 28px);
 }
 .popup-card.wide { max-width: 560px; }
+/* The card's title bar is its handle — drag it and the card comes with you. A
+   card opens over the screen it is about, so on a phone it covers the very thing
+   she opened it to decide about, and the batch clock is the one she moves most.
+   The grab cursor is the cue where there is a pointer; the grip rule above the
+   title is the cue where there is not, drawn as a pseudo-element rather than a
+   node because a real child of this flex row would become a flex item and push
+   the title across by its own width.
+   touch-action: none is what makes a finger on this strip a drag rather than a
+   scroll of the layer; the close button keeps its own tap either way.
+   The text is unselectable for good, not only while dragging: on iOS a long press
+   on the title raises the selection callout, which fires pointercancel and kills
+   the drag in her hand. */
 .popup-head {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   padding: 14px 16px 4px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.popup-head.dragging { cursor: grabbing; }
+.popup-head::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 34px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line);
 }
 .popup-title { font-family: var(--serif); font-size: 17px; font-weight: 700; color: var(--ink); min-width: 0; }
 .popup-body { overflow-y: auto; padding: 8px 16px 16px; }
+/* The row of buttons at the foot of a card. The class was used in 26 places and
+   never had a rule of its own, so its buttons flowed as inline-blocks: flush
+   against each other, hard against the left edge, no air above them. Measured on
+   the module card 23 September 2026 at 375px, "Delete this module" and "Done"
+   were 0 pixels apart — a thumb reaching for Done was touching the button that
+   deletes the module — with 88 pixels of dead card to their right. Three cards
+   had patched the gap in by hand, each a little differently, and the label
+   printer's own sheet already carried the shape written out in full; that shape
+   is what is written here once, so the class cannot be tuned apart again.
+   `wrap` is not decoration: the module's three buttons need 437 pixels and have
+   303, and a row too wide for the card must go onto a second line rather than
+   off its edge. */
+.popup-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+
+/* ---------- The map that puts a pin on a door ----------
+   The box Leaflet draws into. It must have a height of its own BEFORE the map is
+   built: a container Leaflet measures as zero draws a corner of one tile and never
+   recovers, because it has no reason to measure again. 260px holds about a
+   neighbourhood on a phone, which is the zoom a pin is placed at.
+
+   `touch-action` is left to Leaflet on the PICKER's map — it sets `none` on the
+   container itself while dragging, and overriding it here would make a finger scroll
+   the pop-up instead of the map. The READ-ONLY map in the note/tracking box is the
+   other case, and it is settled where it is built rather than here: a map that cannot
+   be dragged must not take a finger hostage, so mountPinMap gives it `pan-y` until she
+   unlocks it (v201, 26 Sep 2026). */
+.place-map {
+  height: 260px;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #eceae4; /* the tile layer's own ground colour, so an empty blue box is never shown */
+}
+.place-map .leaflet-control-attribution { font-size: 10px; }
+.leaflet-container { font: inherit; }
+
+/* The map inside the Note / tracking box (v201). Shorter than the picker's, and the
+   reason is the card it sits in: this one is drawn above the note, the tracking number,
+   the charge, the customer's total and the Save button, and at 260px it pushed Save off
+   the bottom of a small phone. A door being CHECKED does not need the picker's working
+   height — the pin is already on it, and she is looking at where it landed. */
+.place-map.door-map { height: 200px; margin-top: 10px; }
+
+/* ---------- What the courier would charge ----------
+   One row per vehicle: what it is called on the left, how far and how long the price
+   lasts under it, the price itself on the right, and the button that takes it. The
+   price is tabular-numeric and never wraps, so a column of prices reads as a column —
+   a list of numbers that jitters between rows is a list she has to read twice.
+
+   The row wraps because a phone holds about 300 pixels of it and the vehicle name, the
+   distance and a button do not fit on one line at that width; the button then lands on
+   a line of its own rather than off the card. */
+.quote-box { margin-top: 10px; }
+.quote-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.quote-row:first-child { border-top: none; }
+.quote-what { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+.quote-name { font-weight: 600; }
+.quote-sub { font-size: 11px; color: var(--muted); }
+.quote-price { font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* A price that has died is shown struck through rather than removed: the number she
+   may have written down is still readable and is still the number it was, and a row
+   that vanished would leave her wondering which vehicle she had looked at. */
+.quote-dead .quote-price, .quote-dead .quote-name { color: var(--muted); text-decoration: line-through; }
+
+/* ---------- The trip this order is on ---------- */
+/* A real trip with real money behind it, so it is drawn as a card of its own above the
+   prices rather than as one more line in a list. Wraps for the same reason .quote-row
+   does: a phone holds about 300 pixels, and a vehicle, a price and two presses do not
+   fit on one line at that width. */
+.job-card {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--strip);
+}
+.job-head { margin: 0 0 8px; font-weight: 600; }
+.job-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.job-what { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+.job-name { font-weight: 600; }
+.job-sub, .job-status, .job-link, .job-driver { font-size: 12px; color: var(--muted); }
+.job-status, .job-link, .job-driver { margin: 8px 0 0; overflow-wrap: anywhere; }
+/* The driver on a booked trip (v190), and the two things on this card she taps: the
+   number to ring and the link to the courier's own tracking page. The name carries the
+   card's own ink rather than the muted grey of the readings around it — she reads it
+   out or rings it — and both links wear the app's own link treatment instead of the
+   browser's default blue, which is the one colour here the bakery never chose. */
+.job-driver { color: var(--ink); }
+.job-driver a, .job-link a { color: var(--brown); font-weight: 700; text-decoration: none; }
+.job-driver a:active, .job-link a:active { opacity: .7; }
+.job-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* ---------- App-password lock ---------- */
 .lock-layer {
   position: fixed;
   inset: 0;
-  z-index: 80; /* above toast(70), confirm(60), tabbar(30), topbar(20) */
+  z-index: 80; /* above confirm(72), toast(70), pop-up(65), tabbar(30), topbar(20) */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1342,6 +1678,9 @@ option.tone-off { color: var(--muted); }
 
 /* ---- customers: pick-to-message + history pop-up ---- */
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* A label over its own box rather than beside it — the shape a pair of small boxes
+   needs, where a side-by-side label would leave the two inputs different widths. */
+.stack { display: flex; flex-direction: column; gap: 4px; }
 .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .li-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .list-item .pick-mark { display: none; }
@@ -2516,3 +2855,1368 @@ tr.po-covered td { color: var(--muted); }
 .qr-stamp.style-mini .qr-stamp-code { font-size: 14px; }
 .qr-stamp.style-mini .qr-stamp-brand, .qr-stamp.style-mini .qr-stamp-cta { display: none; }
 .qr-stamp-new { font-size: 11px; font-weight: 700; color: var(--brown); margin: 2px 0 0; }
+
+/* ---------- The scenario planner (21 Sep 2026) ----------
+   A screen for DESIGNING a line rather than reading one: modules on a clock,
+   each with its own cycle time, and the number of people it needs falling out
+   of when they start. She asked for it wider than the phone, so this route —
+   and only this route — is allowed to stretch out on a big screen. */
+.view.wide { max-width: 900px; }
+.tabbar.wide { max-width: 900px; }
+
+/* The four figures that answer "what does this scenario make". Two by two, so
+   they read as one block rather than a list to scroll. */
+.facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.fact { background: var(--surface); padding: 9px 11px; }
+.fact-label { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.fact-value { font-size: 19px; font-weight: 700; font-family: var(--serif); margin-top: 1px; }
+.fact-sub { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+
+/* What the plan costs, in the three numbers she named: less man, less manhours,
+   shorter hours. Set above the fact grid because it is the sentence the rest of
+   the screen is arguing for, and tinted so it is not mistaken for a fourth fact. */
+.plan-cost {
+  margin: 0 0 10px; padding: 9px 11px;
+  background: var(--brown-soft); border-radius: var(--radius-sm);
+  font-size: 14px; color: var(--brown-dark);
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 7px;
+}
+.plan-cost-lab {
+  font-size: 11.5px; color: var(--muted); text-transform: uppercase;
+  letter-spacing: .04em; flex: 0 0 100%;
+}
+.plan-cost b { font-weight: 700; font-family: var(--serif); }
+.plan-cost-dot { color: var(--muted); }
+
+/* Every batch of a module as its own row: the number she types, and the time of
+   day it lands on. One batch per row, so a single one can be nudged without
+   disturbing the rest of the module. */
+.cyc-list {
+  display: flex; flex-direction: column; gap: 1px;
+  background: var(--line); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); overflow: hidden;
+}
+.cyc-row {
+  display: flex; align-items: center; gap: 9px;
+  background: var(--surface); padding: 5px 9px;
+}
+.cyc-lab { flex: 1 1 auto; font-size: 12.5px; color: var(--ink); }
+.cyc-in { flex: 0 0 84px; width: 84px; text-align: right; }
+.cyc-at {
+  flex: 0 0 auto; min-width: 62px; text-align: right;
+  font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+/* A batch's row carries its start time AND the buttons that move it, so it is
+   two lines rather than one: a label, a number and four buttons on a single line
+   would leave the number box too narrow to read on a phone.
+   And it WRAPS rather than clipping. A reading is `flex: 0 0 auto` because a time
+   must not be squeezed to nothing, which means a row of readings that is one word
+   too wide for the card does not shrink — it runs off the edge, and the clock she
+   opened the card for is the thing that goes off it. Measured on a batch card at a
+   phone's width with "never before the module above" standing on it: the end time
+   was cut. Wrapping only ever acts where the row would otherwise be clipped, so a
+   row that fits today is untouched by it. */
+.cyc-line { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; width: 100%; }
+.cyc-batch { flex-direction: column; align-items: stretch; gap: 6px; }
+/* The four move buttons, in one row under the number: two minutes either side of
+   it. The minus pair and the plus pair are drawn in their own order (−5 −1 +1 +5)
+   so the biggest move is at each end and the smallest in the middle, where a thumb
+   lands most often. */
+.cyc-steps { display: flex; gap: 6px; }
+.cyc-step {
+  flex: 1 1 0; min-height: 38px;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: var(--brown-soft); color: var(--brown-dark);
+  font-size: 13.5px; font-weight: 700; cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.cyc-step:active { background: var(--brown); color: #fff; }
+/* A cycle's own row: what it is called, then its three numbers. The name gets the
+   full width so a forty-character name is readable, and the numbers sit under it. */
+.cyc-cycle { flex-direction: column; align-items: stretch; gap: 6px; padding: 7px 9px; }
+.cyc-name { flex: 1 1 auto; min-width: 0; }
+.cyc-nums { display: flex; gap: 6px; }
+.cyc-num { flex: 1 1 0; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cyc-num > span { font-size: 10.5px; color: var(--muted); letter-spacing: .02em; }
+.cyc-num .cyc-in { flex: 1 1 auto; width: 100%; }
+.cyc-del {
+  flex: 0 0 36px; width: 36px; height: 36px; border: 1px solid var(--line);
+  border-radius: 9px; background: var(--surface); color: var(--muted);
+  font-size: 15px; cursor: pointer;
+}
+.cyc-del:active { background: var(--brown-soft); color: var(--brown-dark); }
+
+/* Two buttons that move one thing earlier and later, in the card that opens when
+   she taps a batch on the timeline. Big, because a minute at the bench is easier
+   pressed than typed. */
+.step-pair { display: flex; gap: 8px; }
+.step-pair button {
+  flex: 1 1 0; min-height: 44px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--brown-soft); color: var(--brown-dark);
+  font-size: 15px; font-weight: 700; cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.step-pair button:active { background: var(--brown); color: #fff; }
+
+/* The climb — one rung per module, numbered, so it reads as the order she
+   would actually do them in. */
+.climb-list { display: flex; flex-direction: column; gap: 10px; }
+.climb-step { display: flex; gap: 10px; }
+.climb-num {
+  flex: 0 0 22px; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--brown-soft); color: var(--brown-dark);
+  display: grid; place-items: center;
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.climb-body { flex: 1; min-width: 0; }
+.climb-what { font-weight: 600; font-size: 14.5px; }
+
+/* The timing diagram. A day wide and scrolling sideways; the name column stays
+   put so a bar three screens to the right still says what it belongs to. */
+.tl-card { padding: 10px 12px; }
+/* The chart is TWO windows, stacked, sharing one horizontal slider between them.
+   Her ask of 23 September, in three parts. First the fault: "the window for person
+   stay over size" — measured at 375x812 the single panel was a fixed 650px, the
+   day's content 473px, and the people's rows ended at y=457, which left 177px of
+   empty window under them. Because the content was shorter than the height, the
+   people block's own sticky bottom never activated and the rows sat in the middle of
+   a tall empty box. Second, her own proposal: "instead of consider then one window,
+   why not create 2 windows, and let the ruler sync in the 2 windows. As the business
+   grows, the persons will grows, processs might not, we need to have a better way to
+   manage". Third, watching it go in: "can the 2 window share the horizontal slider,
+   place between the 2 windows, make the 2 windows as close as possible" — and, asked
+   what sits directly under the slider, "slider, then straight into their bars", so
+   the people's window carries no clock row of its own and the two texts sit about
+   twenty pixels apart.
+
+   What that changes from v157. v157 fixed the height on purpose — "the window height
+   should be fix" was her own complaint then, because a panel that grew with the day
+   was a rubber band. That floor is exactly what produced the blank space she is now
+   reporting, so the rule becomes NEVER MORE THAN the number rather than ALWAYS
+   exactly it: the cap survives, the floor does not.
+
+   The budget, and it is still the invariant to keep: the two pane caps must not add
+   up to more than min(84vh, 780px), and that is the chart's own ceiling. It was
+   min(80vh, 760px) while a shared slider sat between the windows; at v168 she took
+   the slider out — "since the both windows have their own slider, additional slider
+   is redundent. Remove that" — and asked in the same breath for more room for the
+   modules — "can you increase the modulle window further?" — so the ceiling keeps
+   the twenty pixels the slider used to spend, and the split moved the same way: the
+   modules now hold 64vh of the 84 where they held 50vh of the 80, and the people
+   hold 20vh where they held 28vh. Move one number and another has to move. */
+.tl-wrap {
+  display: flex; flex-direction: column;
+  /* The hour line and the grid step are set ONCE, here, and inherited by both panes
+     — see timeline(), which writes --hour-w and --tick-w onto this element. Two
+     inline copies could drift apart and nothing would catch it, and the whole point
+     of the v160 grid is that the lines and the ruler cannot disagree about where a
+     minute is. */
+  /* How solid a marker is, set ONCE for both windows and every marker in them — her
+     ask of 23 September 2026: "its scale should be at background, the marker should
+     be ontop, with some degree of transparency". The ruling is the paper's now (see
+     .tl-track) and a marker is a wash laid over it, so the clock she reads is the
+     same sheet inside a batch as beside it. The number is NOT free to be lowered
+     without re-measuring: how strongly a line reads through a marker is
+     (1 - --marker) x the line's own ink, so this and the two alphas on .tl-track are
+     one decision in three numbers, and v169's test measures the three together. */
+  --marker: .72;
+  /* How loud a marker's frame is, set ONCE here for every frame in both windows —
+     her report of 23 September 2026: "the border look like over emphasized". The
+     frame went in at full strength in a 1.5px line and read as a shouted box: a
+     solid, fully saturated outline round every pale bar. It is drawn in the same
+     tone as before (--tone-ink) but the whole layer is now laid down at --frame, so
+     one number here softens every batch and every person's slot together and the two
+     windows cannot be tuned apart. Lower it towards 0 for a whisper, raise it
+     towards 1 for the v169 line back again. */
+  --frame: .55;
+  /* Where each layer of the chart stands, declared ONCE here for both windows and
+     read by every rule that has to know its place among them.
+
+     Her report of 23 September 2026, with the day panned sideways: "the windows
+     when panning right, some of the chart writing shown in between module titles".
+     She was right, and it was the chart's own numbers rather than its drawing. A
+     module's title is pinned to the left of its window and the day slides under it,
+     so anything drawn over the day that carries a z-index above the title cell's is
+     painted straight over her titles — and three of the things a bar draws carry one:
+     its B-number (3), a person's name on their stretch (3), and the solid bands of
+     her own hands (2, and it ties with the old 2 of the title cell, so it won on
+     coming later in the markup). Measured at a phone's width with the day panned 25px:
+     NINE B-numbers and SIX bands were the topmost thing over the title column, at
+     its own right edge, one per row, which is exactly the writing she saw between
+     the module names.
+
+     So the ladder is stated rather than left to the order the rules happen to be
+     written in. The titles are above everything a row draws in its own track; the
+     pinned clock strip is above the titles, because the titles scroll under it; and
+     the two readings that must be legible wherever she is looking — the clock's own
+     "now" line and the clock she takes with her finger — are above the strip, which
+     is where both of them were designed to sit (their labels are drawn on the strip's
+     own row). Nothing inside a bar may be given a number that climbs past --name-z:
+     that is the rule the test holds, and the reason these three are here rather than
+     scattered as literals through the rules that use them. */
+  --name-z: 4;
+  --ruler-z: 6;
+  --read-z: 8;
+  position: relative;
+}
+.tl {
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  /* Each pane is content-sized and capped by its own rule below. flex: 0 0 auto and
+     NOT a shrinkable item, deliberately: a max-height on a flex container is not a
+     definite main size, so an item shrinking against one is the part of flexbox
+     browsers do not agree on — and the day that went wrong the panes would spill out
+     of the card on her phone and not on mine.
+
+     The horizontal overflow is kept on purpose: it is what pins each pane's name
+     column, so a pane without it slides its names off the left edge with the day. And
+     each pane's own horizontal scrollbar is the pan. v167 hid both bars so that a
+     shared slider between the windows would be the only one on the screen, and hid
+     them with ::-webkit-scrollbar — which only WebKit and Blink honour, so on any
+     other engine she saw all three bars and said so: "since the both windows have
+     their own slider, additional slider is redundent. Remove that". The slider is
+     gone and the bars are back, which is the arrangement this chart had before that
+     release. */
+  flex: 0 0 auto;
+}
+/* The modules window: the clock strip and the day's modules. 64vh + 20vh, and
+   590px + 190px, are the whole of the chart's ceiling — 84vh and 780px — with
+   nothing between the two windows now. The modules hold the lion's share of it,
+   which is where her work is: 64vh of the 84. */
+.tl-pane-proc { max-height: min(64vh, 590px); }
+.tl-pane-people {
+  max-height: min(20vh, 190px);
+  /* The seam between the two windows, and it belongs to the PANE rather than to the
+     .tl-people block inside it: a border or a shadow on the block would scroll away
+     under the pane's own top edge, which is the opposite of what a seam is for. */
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -8px 12px -10px rgba(0, 0, 0, .45);
+}
+/* Positioned, so the time cursor can be a hairline down the whole day rather
+   than a line per row: one element inside the day, not one per track. */
+.tl-inner { display: inline-block; min-width: 100%; position: relative; }
+.tl-row { display: flex; align-items: stretch; border-bottom: 1px solid var(--line); }
+.tl-row:last-child { border-bottom: 0; }
+.tl-name {
+  /* A module's title, and the layer the whole day is read through: above everything
+     a row draws in its own track (the B-numbers, a person's name on their stretch,
+     the bands of her hands, the frame round a bar) and below the pinned clock strip.
+     See --name-z on .tl-wrap for why, and for the fault this answers. */
+  position: sticky; left: 0; z-index: var(--name-z, 4);
+  /* A little wider than the 138px it was: with the badges off the name's line,
+     these 18px are the difference between one of her module names reading whole
+     and three of them doing so. The chart pans sideways for the rest of the day. */
+  flex: 0 0 156px; width: 156px;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  padding: 6px 9px 6px 0;
+  cursor: pointer;
+}
+.tl-name-top {
+  display: flex; align-items: center; gap: 0 5px; flex-wrap: wrap;
+  font-size: 13px; font-weight: 600; line-height: 1.25;
+}
+/* The name has the cell's first line to itself. v155 gave it that line by moving her
+   module's badges under the name, because sharing it was the real damage: her longest
+   module, The rests and the stretch and folds, had 35px of a 273px name to read with a
+   badge sitting in the rest of it. v157 then took the badges off the row altogether,
+   so the name is now the whole of what is in here.
+   The name itself is one line, shortened with an ellipsis where the column ends. It
+   used to wrap, to seven lines on this column, and the row grew for it: with the two
+   notes below, a module row could stand as tall as four bars. A whole name is on the
+   row's own card, one tap away. */
+.tl-name-txt { flex: 1 1 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-sub { font-size: 11px; color: var(--muted); margin-top: 1px; font-variant-numeric: tabular-nums; }
+.tl-sub.bad { color: var(--red); }
+/* A module's tags and its two notes are off the row, and the row is exactly the
+   name and its bars: eight modules of notes was 400px of a phone screen spent
+   repeating what the module's card says, and it is why the day scrolled. Pointing
+   at the module's title opens them as a tip instead — laid over the day, so the row
+   it belongs to never changes height while she is reading it. Only where there is a
+   pointer that can hover: a phone has no pointing at things, so it gets the tags and
+   both notes, word for word, on the module's own card.
+   The containing block is the name cell, which is already positioned (sticky) and
+   already stands above the day's own drawing (--name-z), so the tip is drawn over
+   the bars for free.
+   Three lines since v157 (the tags joined the two notes) and so taller than the row
+   it belongs to. It is centred on its row, which is what keeps it inside the panel
+   at either end: a first module has the clock strip's row above it and a last module
+   has the rows under it, so half the box goes into slack either way. The width is
+   capped for the same reason the height is argued about — a wide tip on a narrow
+   window must not run off the panel's own right edge. */
+.tl-tip {
+  display: none;
+  position: absolute; left: calc(100% + 6px); top: 50%; transform: translateY(-50%);
+  z-index: 3;
+  /* The box may never be wider than the panel has room for beside the 156px name
+     column. Measured at 375 pixels: the tip's own left edge sits 162 pixels into
+     the panel and the page leaves 42 pixels to the right of it, so 240 pixels is
+     the whole of what the viewport must give up before the box may be as wide as
+     it likes. At any width a pointer can hover at — a phone has none — the 340px
+     cap is the one that binds, so this only ever bites on a window as narrow as a
+     phone's, where a tip cut by the edge is better than a tip that is not there. */
+  max-width: min(340px, calc(100vw - 240px));
+  padding: 5px 8px;
+  background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .16);
+  white-space: nowrap; text-align: left;
+}
+.tl-tip .tl-sub { margin-top: 0; line-height: 1.3; }
+.tl-tip .tl-sub + .tl-sub { margin-top: 2px; }
+/* The tags line alone may wrap: a module wearing every tag it can wear is a wider
+   line than the box is allowed to be, and a wrapped tag line is still one line of
+   reading. The two notes under it are sentences and stay on their own line each. */
+.tl-tip .tl-tag-line { white-space: normal; }
+
+/* The tags on the module's own card — the same tags, the same colours through the
+   same .badge classes, laid out as the row used to lay them out. */
+.tl-tag-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin: 0 0 6px; }
+.tl-tag-row .badge { flex: 0 0 auto; }
+@media (hover: hover) and (pointer: fine) {
+  .tl-name:hover .tl-tip { display: block; }
+}
+.tl-track {
+  position: relative; height: 34px; flex: 0 0 auto;
+  /* The ruling, back on the track's own background where it began. A bar is a wash
+     now rather than a solid block, so the paper's ruling is UNDER it and reads
+     through it — which is her v169 ask, "its scale should be at background, the
+     marker should be ontop, with some degree of transparency". The two alphas are
+     read through --marker: drew at .60 and .45, a line survives a marker at
+     (1 - .72) of its own strength, which is the ~22 parts in 255 a phone needs. */
+  background-image:
+    repeating-linear-gradient(to right, rgba(122, 96, 74, .60) 0 1px, transparent 1px var(--hour-w, 96px)),
+    repeating-linear-gradient(to right, rgba(122, 96, 74, .45) 0 1px, transparent 1px var(--tick-w, 96px));
+}
+/* The ruling: an hour gridline every 60 minutes, drawn rather than laid out so it
+   costs nothing however wide the day gets. --hour-w is set by the screen from the
+   scale she picked, so the grid follows the zoom — a hardcoded 96px here would
+   leave the lines and the bars disagreeing the moment she changed it.
+
+   The second layer is her own ask of 23 September: "can the ruler extend down to
+   peoples marker area?" The ruler is one row at the top of the chart and the
+   markers are rows away from it, so the ruler's lines are carried down every row
+   instead: a marker's edge then lands on a line she can trace up to the clock.
+   --tick-w is the ruler's own step where the ruler can be read at all and a
+   coarser step where it cannot (gridStepFor, in the screen) — at the closest stop
+   a minute is 3.2 pixels and a line every 3.2 pixels is a wash, not a grid. It is
+   a painted gradient for the same reason the hour line is: drawn as elements, one
+   row at the closest stop would carry 1441 nodes of its own. Listed first, so the
+   hour line is painted over the grid it belongs to.
+
+   The rule the ruling answers, and it is a reading and not a decoration: the clock
+   she reads must hold inside a marker, not only beside it. v165 answered it by
+   painting the ruling as a layer of its own OVER the bars, because a bar was a
+   solid block and the ruling underneath stopped dead at its edge — measured then,
+   5 of one module row's lines fell inside her batches and 14 fell inside the slots
+   on one person's row, every one covered. Her words: "i requested a ruler to draw
+   into person's line time slot", and, asked how, "just like the ruler draw over the
+   batches and cycles". Again at v166 she came back, "you still fail to reveal the
+   ruler at person's time slot" — the mechanism had worked and the ink was too
+   faint to see, so the lines were strengthened.
+
+   Since v169 the marker is the thing that changed. Her words: "its scale should be
+   at background, the marker should be ontop, with some degree of transparency".
+   So the ruling is the track's own background again, the marker is a wash laid
+   over it at --marker, and the clock reads through the marker instead of across
+   it — the same reading, reached the other way round. Two consequences worth
+   keeping: there is still exactly ONE ruling (drawing it under the bars and over
+   them both would make the grid read darker in the gaps than across a marker), and
+   the two alphas above are no longer free — what a line loses through a marker is
+   (1 - --marker) of its strength, so the alphas are raised to pay for it and a test
+   measures the three numbers together. The colour stays a plain rgba and not
+   color-mix, so no phone's browser version can fail to parse the gradient and drop
+   the whole ruling with it. */
+
+.tl-bar { position: absolute; top: 9px; height: 16px; border-radius: 5px; overflow: hidden; }
+/* The frame on every marker — her ask of 23 September 2026: "can the batch and
+   person time slot having a more highligted frame?". A batch bar and a person's
+   time slot are the same element, so one rule frames both, and the frame is drawn
+   in the module's OWN solid tone (--tone-ink, the colour her hands already wear
+   inside that bar) so a marker states which module it is twice over: the pale wash
+   in the middle, the solid edge around it.
+   It is an inset shadow on a pseudo-element and NOT a border, and that is the whole
+   of why it is safe: a border would eat into the padding box the cycles and her
+   hands are placed in, and an inset shadow on the bar itself would be painted over
+   by the cycle shades that fill it. As its own layer it crosses the shades, leaves
+   the bar's outer size, its tap target and the chart's scroll range untouched, and
+   keeps the red outline a collision wears (outer, offset 1px) reading on top of it.
+   pointer-events: none, like the ruling, so every tap still lands on the bar.
+   Her report of 23 September 2026, after living with it: "the border look like over
+   emphasized". So the line is 1px rather than 1.5px, and the whole layer is laid
+   down at --frame rather than at full strength — the ink is still the tone's own, so
+   the provenance the test pins (frame equals the hands' colour, and a person's equals
+   their card's) is untouched, and ONE number softens every frame together. */
+.tl-bar::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--tone-ink, rgba(122, 96, 74, .45));
+  opacity: var(--frame, .55);
+  pointer-events: none; z-index: 1;
+}
+/* Her hands, drawn where she really works them: at a cycle's load, at its unload,
+   or at both ends of it — so the fold sits at the END of its rest and the oven
+   swap sits AFTER the bake, because that is where they happen. Absolute, so more
+   than one of them can be on a bar at once. The hairline down each side is what
+   keeps a one-minute job readable where it lands on the seam between two cycles:
+   without it the band and the seam are the same hard edge and her hands disappear
+   into the shading. */
+.tl-touch { position: absolute; top: 0; bottom: 0; border-radius: 2px;
+  /* Above the bar's frame (--tone-ink, at z-index 1), because both are the same
+     solid tone and both can start at the same minute: a load at a batch's first
+     cycle sits at the bar's own left edge, and a hand a minute wide is barely
+     wider than the frame is thick — under it, her hand would be swallowed by a
+     line drawn to mark the bar it works in.
+     Its place stops there: it is a mark ON a bar, so it is below the module titles
+     (--name-z) and a band of her hands can never be written over a module's name. */
+  z-index: 2;
+  box-shadow: -1px 0 0 rgba(255, 255, 255, .8), 1px 0 0 rgba(255, 255, 255, .8); }
+/* A bar is a button now: it opens its batch's own clock. The cursor says so, and
+   a tap is left to the browser so the track still scrolls under a finger. */
+.tl-row .tl-bar { cursor: pointer; }
+/* The cycles inside one batch, as shaded segments of the batch's own bar. Four
+   evenly spaced shades, the palest lifted off the floor so it still reads as a
+   wash over the pastel bar tones, so a batch of four reads as four cycles — and
+   adjacent cycles never share a shade, so no hairline is needed to tell them
+   apart. A fifth cycle and beyond reuses the darkest rather than falling back to
+   the palest, so a long batch never ends on the faintest band. A single-cycle
+   batch draws no segments at all, which is her own rule: it shows up as a batch.
+   Under the hands, so a load is never hidden behind a shade. */
+.tl-cycle { position: absolute; top: 0; bottom: 0; }
+.tl-cycle.shade-0 { background: rgba(0, 0, 0, .10); }
+.tl-cycle.shade-1 { background: rgba(0, 0, 0, .18); }
+.tl-cycle.shade-2 { background: rgba(0, 0, 0, .26); }
+.tl-cycle.shade-3 { background: rgba(0, 0, 0, .34); }
+/* A module whose batches overlap: each batch gets its own lane, so two batches in
+   the module at once are drawn as two bars rather than one long one. The hairline
+   edge is what keeps two neighbouring lanes reading as two, since a laned bar is
+   too short for its minutes to be printed inside it. */
+.tl-bar.laned { border-radius: 3px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .09); }
+/* A bar whose time came from the module above it: greyed, with the row naming the
+   module it waits on. The fade is the mark that this time is the line's and not
+   one she placed — it is NOT a "do not touch": the bar still opens the batch's own
+   card and that card's buttons work on every batch now (v154), so it keeps the
+   pointer every other bar has. It used to say, in its own comment, that such a bar
+   "must not look like a button — a grip that does nothing reads as broken", and
+   that was true while the card refused the buttons; it is not true any more. */
+.tl-row .tl-bar.locked { opacity: .6; }
+.tl-row .tl-bar.locked .tl-touch { opacity: .8; }
+/* Two of a module. Marked on the row rather than the bars, because it is one fact
+   about the module — the day's room doubled — and not a property of any cycle. */
+/* A module she has more than one of is drawn as its LINES, one under the other: the
+   module's own row first, then a row per further line. What ties them into one module
+   is the name column — an accent running down every line of the block, and the
+   further lines tinted — because two rows that merely happen to be adjacent would
+   read as two modules. The tracks are left exactly as they are, gridlines and all. */
+.tl-block { position: relative; }
+.tl-block > .tl-row.tl-line > .tl-name { padding-left: 8px; box-shadow: inset 3px 0 0 var(--brown-soft); }
+.tl-block > .tl-row.tl-line-sub > .tl-name { background: var(--strip); padding-left: 11px; }
+/* The seam between two lines of one module is dashed, so it reads as a fold inside
+   the module rather than as the edge between two of them. */
+.tl-block > .tl-row.tl-line:not(:last-child) { border-bottom: 1px dashed var(--line); }
+.badge-multi { background: var(--brown-soft); color: var(--brown-dark); font-weight: 600; }
+/* The minutes inside a bar, so a fold module reads "31" where it is drawn. */
+.tl-lab {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 9.5px; font-weight: 700; color: var(--brown-dark); opacity: .75;
+  pointer-events: none; font-variant-numeric: tabular-nums;
+}
+.tl-row.off .tl-name { opacity: .5; cursor: pointer; }
+/* A switched-off module keeps both layers by inheriting .tl-track and is dimmed
+   instead — the grid is what its own bars are read against, so a row without it
+   would be the one row she cannot line up. */
+.tl-row.off .tl-track { opacity: .45; }
+/* Her own ask of 23 September: "I want to have white background for person's line".
+   The people's rows wore the cream strip tint, which is the colour of every other
+   soft band in the app and reads as a highlight sitting under the markers rather
+   than as the plain ground the day is read against. They take the app's own white
+   now — the same --surface the panel behind them and every module's name cell are
+   already painted in, so the foot of the chart is the same paper as the rest of it.
+   The name cell is set too, and not left to inherit: its base rule is --surface
+   anyway, but the strip used to be asked for here and a rule that only half goes
+   away is a rule that comes back. What marks it off now is the pane it sits in —
+   .tl-pane-people carries the border and the shadow — and the row-to-row hairlines,
+   so the people still read as their own block rather than as more of the day. */
+.tl-row.person { background: var(--surface); }
+.tl-row.person .tl-name { background: var(--surface); }
+.tl-row.person .tl-bar { top: 12px; height: 11px; }
+/* The hours a person is here, as a wash under everything the day draws on their own
+   row — v177, and since v182 the ONLY shade a person's row ever wears. Her word of
+   24 September: "shade should just follow what i set, not other consideration". A
+   person whose two hour boxes nobody has filled in has no band at all, and the
+   second, computed shape v179 drew across their work is gone.
+   It is drawn FIRST inside the track and it carries NO z-index on purpose: a
+   positioned element given a z-index creates a stacking context, and inside a track
+   that is exactly how the v174 fault came back (the day's writing climbing over the
+   pinned module titles). With none, the band stays on the floor and every bar, mark
+   and name lands on top of it by simple document order. It is a wash and not a
+   block, so the day reads through it, and it takes no pointer events at all, so it
+   can never swallow a tap meant for the stretch over it. */
+.tl-row.person .tl-shift {
+  position: absolute; top: 0; bottom: 0;
+  background: rgba(122, 96, 74, .07);
+  border-left: 1px solid rgba(122, 96, 74, .35);
+  border-right: 1px solid rgba(122, 96, 74, .35);
+  pointer-events: none;
+}
+/* A person's tip and the tally's tip are blocks of reading rather than sets of
+   one-liners: a job line is a module's name with a clock and a line number in
+   front of it, and "4:21 am — The rests and the stretch and folds, line 1" is
+   wider than the box is ever allowed to be. So the box folds instead of running
+   past the width it is given — the same fix the module's tag line got in v157.
+   The width has to be said out loud here, and that is not tidiness. An absolutely
+   positioned box with only its left edge set is shrink-to-fit, and it measures
+   itself against the 156px name cell it hangs off — already narrower than the 162px
+   the box starts at, so the room for it is a negative number. With the module tip's
+   nowrap that does no harm, because a line that may not break can only be its own
+   width; allow it to break, as this one must, and the same box collapses to its
+   widest single word — measured at 66px wide and 923px tall on her own day, one
+   word to a line. max-content asks for the width the words actually want and
+   max-width then caps it, so the box is as wide as it can usefully be and folds
+   only past the cap. */
+.tl-tip-person { white-space: normal; width: max-content; }
+/* The clock strip is the chart's own header and it stays at the top of the panel
+   while the rows scroll under it — the pinned header is the whole reason the
+   chart is a panel. It needs its own background to be something to scroll under,
+   and a z-index above the rows for the same reason; the red now-line is drawn
+   over it, because what is happening outranks what she is reading. */
+.tl-ruler { background: var(--surface); position: sticky; top: 0; z-index: var(--ruler-z, 6); }
+/* The ruler keeps the hour line and nothing finer. Its own ticks already draw the
+   finer lines as elements, over this background, so a grid layer here would put a
+   second line between every two labelled ticks — and at the widest reading
+   --tick-w is the same 30 minutes as its step, so the two would sit on top of each
+   other saying one thing twice. The grid carried down the day starts below the
+   ruler, which is where it is read. */
+/* The ruler's own track is the one row that does NOT carry the day's ruling: it
+   keeps the hour line alone. Its tick elements already draw the reading she takes,
+   and the fine grid under them would be a second opinion about where a minute is.
+   It overrides the two layers on .tl-track rather than asking for none, so the
+   override has to stay here in full — removing this rule does not leave the ruler
+   bare, it puts the grid back between her ticks. */
+.tl-ruler .tl-track { background-image: repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px var(--hour-w, 96px)); overflow: hidden; }
+/* Why the ruler's own track clips, and only the ruler's. An hour tick is a 1px border
+   on the LEFT edge of a box placed at that hour, so a tick standing exactly on the end
+   of the day draws its line in the pixel AFTER the day — outside the track. Measured on
+   her day at a phone's width that made the modules window's scroll range 2461 pixels
+   against the people's 2460, one pixel of travel the second window does not have. The
+   two windows hold the same day and must be able to reach the same end, or a minute can
+   sit at two different places on one screen, so the overflow is clipped: the day's
+   ruling is the day, 156px of name column plus its own width and nothing past it. No
+   label is lost by it — the last hour's name is set to the left of its line (see
+   .tl-tick.last) and every other tick's name starts inside the day. Scoped to the
+   ruler's track, which carries no bars and nothing that is meant to hang over an edge;
+   the module rows' tracks are untouched, and .tl-ruler itself must never be clipped,
+   because its name cell is the sticky one. */
+
+/* The people rows, in the second window and pinned to nothing. Her own ask of
+   22 September was "I want to freeze the persons card, so that by scrolling thru
+   modules i can see exactly where that slot of that person tie up to", and a window
+   of its own answers that better than a pinned strip did: the strip covered the
+   bottom of the module rows while they scrolled behind it, and it was stuck to the
+   foot of a panel whose height had nothing to do with how many people she has. Now
+   this block is simply what the people's window holds — the window is as tall as
+   its rows up to its own cap, and the module rows above are never covered by it.
+   Opaque, because the window scrolls: a bar sliding under a see-through block is
+   unreadable. The person rows keep their own strip tint over this. */
+.tl-people {
+  background: var(--surface);
+}
+/* The people's window scrolls, and a scrolling window is a clip line on all four
+   sides. This block deliberately carried no overflow of any kind until the window was
+   split in two, so that a person's hover card could never be cut — and inside a window
+   no direction now works, because the card is TALLER THAN THE WINDOW. Measured at
+   1280x900 on her own day: the first person's card is 180 pixels tall in a window of
+   69, so growing down it lost two thirds of itself below the bottom edge, growing up
+   it lost the same two thirds above the top edge, and a scroll showed 69 of those 180
+   pixels at a time whichever way it was scrolled. A card that does not fit its window
+   cannot be placed in that window.
+   So it is taken out of the window: pinned to the screen instead of to the row, placed
+   beside the name by the view (wirePersonTip) and clamped so it can never leave the
+   screen. Nothing is lost and nothing is added — the same card, the same words, the
+   same hover, on a computer only. The width reserve the panel placement needed is gone
+   with it: a card that is pinned to the screen no longer has to fit beside a 156-pixel
+   name column inside the panel, so it may use the width of the screen instead.
+   The module rows above keep the centring they have always had, and keep fitting
+   inside their own window: measured, all eight of their cards sit within it. */
+.tl-people .tl-tip {
+  position: fixed;
+  left: auto; top: auto; bottom: auto;
+  transform: none;
+  max-width: min(340px, calc(100vw - 16px));
+}
+.tl-ruler .tl-sub { padding-top: 2px; }
+.tl-tick {
+  position: absolute; top: 0; bottom: 0;
+  border-left: 1px solid var(--line);
+  padding-left: 4px;
+}
+.tl-tick span { font-size: 10.5px; color: var(--muted); line-height: 34px; white-space: nowrap; }
+/* The last hour of the day, which has no day to its right to write its name in, so
+   the name is set on the other side of its own line — where a ruler with an end on it
+   has always put it. It is not a nicety: the name hanging off the end of the day made
+   the modules window 47 pixels wider than the people's window, and two windows that
+   can pan to different places are two windows that can disagree about where a minute
+   is, which is the one thing the ruler exists to settle. The line itself does not
+   move; only the name changes side. */
+.tl-tick.last { padding-left: 0; }
+.tl-tick.last > span { position: absolute; right: 100%; margin-right: 4px; top: 0; }
+/* The half hour between the hours: enough to judge a 15-minute pass by, not
+   enough to clutter a day. */
+.tl-tick.minor { border-left: 1px dashed var(--line); opacity: .7; }
+/* Everything finer than the half hour, and it only appears where the scale can
+   draw it at all (TICK_MIN in the screen): a quarter hour at the standard
+   reading, five minutes at Close, a minute at Closest. A solid hairline at low
+   opacity rather than a dash — sixty dashes an hour is noise on a ruler, and a
+   dash beside the half hour's dashes would read as the same landmark. */
+.tl-tick.fine { border-left: 1px solid var(--line); opacity: .45; }
+
+/* The time cursor. A hairline down the whole day with the clock at the top of
+   it, so the ruler's 8:00 becomes "8:47 is here" — the reading she needs when
+   she is lining two modules up. It is below the name column (see --name-z) on
+   purpose: the name stays legible and the line starts where the day starts.
+   It takes no pointer of its own, or it would swallow the drag of any bar it
+   crosses. */
+.tl-cursor {
+  position: absolute; top: 0; bottom: 0;
+  width: 1px; background: var(--brown); opacity: .75;
+  pointer-events: none;
+}
+/* The reading hangs just off the right of the line rather than being centred on
+   it. Centred looks tidier on a wide chart, but the name column is sticky and
+   scrolled over the day, so a centred reading would slide away behind it the
+   moment she scrolled — and the reading is the whole point of the cursor.
+   It is a SIBLING of the line and not a child of it: the line is drawn at 75%
+   opacity, and opacity below 1 makes a stacking context of its own, so a reading
+   inside it could never be lifted over the pinned clock strip — and being read
+   wherever she is looking is the whole point of the reading. Its own left and top
+   are written by wireTimeCursor, both of them, so it travels across the day with
+   the minute and down it with her finger.
+   Its place in the ladder is above the pinned clock strip (--read-z), because the
+   strip is where its top line lands and a reading she cannot read is not a reading.
+   What it may not do is answer a minute she cannot see: the pointer is only read
+   where the day is in front of her, which is wireTimeCursor's own guard. */
+.tl-cursor-lab {
+  position: absolute; top: 3px; left: 0; z-index: var(--read-z, 8);
+  transform: translateX(4px);
+  padding: 1px 5px; border-radius: 4px;
+  background: var(--brown); color: #fff;
+  font-size: 10.5px; font-weight: 600; line-height: 1.5;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+  pointer-events: none;
+}
+/* At the far end of the day there is no room to the right, so it hangs to the
+   left instead — always fully readable, never half cut off. */
+.tl-cursor-lab.at-end { transform: translateX(calc(-100% - 4px)); }
+/* The clock strip is the cursor's handle: it is the only band of the chart where
+   a drag moves the cursor instead of scrolling the day. Everything below it
+   still pans, which the day card's own sentence says. See wireTimeCursor. */
+.tl-ruler .tl-track { touch-action: none; cursor: crosshair; }
+
+/* A person's slot and a batch in a module wear the two-tone rule above (--tone-ink
+   for the frame, the pale tone for the wash). The rules that used to live here for
+   the total row went with it at v168 — that row was the only builder of a bar with
+   a "total" class, so nothing has worn these since. */
+/* Two modules given to one person that overlap in time. Outlined rather than
+   re-coloured, so the module it belongs to is still readable underneath. */
+.tl-bar.clash { outline: 2px solid var(--red); outline-offset: 1px; }
+
+/* Which batch a bar is. Every bar carries one, in a band above the bar itself,
+   because the bar is 16px tall and clips — a tag inside it would be cut in half.
+   It carries the same data-k the bar does, so it is a handle as much as a label:
+   tapping B3 opens batch 3's own clock. */
+/* Its own opaque band, so a gridline never crosses a B-number — a number she has to
+   guess at is worse than no number. Since v169 the ruling is the track's own
+   background rather than a layer over the bars, so the band already covers it and
+   the z-index no longer has to fight for that; it is kept as the standing rule that
+   a label outranks whatever the day draws around it, so a heavier ruling or a
+   heavier frame cannot put a line through one.
+   That standing rule is about the day's own drawing and stops there: a B-number is
+   written on a bar she has panned to, so it is below the module titles (--name-z),
+   and panning right can never bring a number up over a title. */
+.tl-btag {
+  position: absolute; top: 0; z-index: 3;
+  height: 11px; line-height: 11px;
+  padding: 0 4px; border-radius: 4px;
+  background: var(--strip); color: var(--muted);
+  font-size: 9.5px; font-weight: 600; letter-spacing: .01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap; cursor: pointer;
+  max-width: 64px; overflow: hidden; text-overflow: ellipsis;
+}
+.tl-row .tl-btag:hover { background: var(--line); color: var(--ink); }
+/* A batch being held back on purpose. It is a choice she made, so it is coloured
+   rather than hidden — a nudge she cannot see is a nudge she cannot undo. */
+.tl-btag.nudged { background: var(--amber-bg); color: #7a4a10; }
+
+/* One person's own colour, so their row reads as one worker's day rather than as
+   a patchwork of every module they passed through. The module's colour stays on
+   the module's own bar above; this is the hands. */
+/* The same two-tone rule for the people's slots: the pale tone is the wash and the
+   solid tone is the frame and the person's own name in the call card, so the slot,
+   its frame and their card are all one colour. --tone-ink is what the bar's frame
+   reads (see .tl-bar::after), which is why these are the one place the solid tone
+   has to be named on a person's bar. */
+.tl-row.person .tl-bar.ptone-1 { background: rgba(207, 224, 245, var(--marker, .72)); --tone-ink: #5b86c2; }
+.tl-row.person .tl-bar.ptone-2 { background: rgba(247, 217, 196, var(--marker, .72)); --tone-ink: #c9743a; }
+.tl-row.person .tl-bar.ptone-3 { background: rgba(217, 236, 210, var(--marker, .72)); --tone-ink: #4f9153; }
+.tl-row.person .tl-bar.ptone-4 { background: rgba(239, 220, 240, var(--marker, .72)); --tone-ink: #8a5aa8; }
+.tl-row.person .tl-bar.ptone-5 { background: rgba(247, 236, 208, var(--marker, .72)); --tone-ink: #b8912f; }
+.tl-row.person .tl-bar.ptone-6 { background: rgba(211, 233, 232, var(--marker, .72)); --tone-ink: #2f8b83; }
+.tl-row.person .tl-bar.ptone-7 { background: rgba(246, 214, 220, var(--marker, .72)); --tone-ink: #b8506f; }
+.tl-row.person .tl-bar.ptone-8 { background: rgba(228, 223, 215, var(--marker, .72)); --tone-ink: #7a6a5c; }
+/* The person's name, on their own stretch, where the stretch is wide enough to
+   hold it. A narrow one keeps its tooltip and stays clean. Above the marker's own
+   frame (z-index 1) by the standing rule that a label is the one thing a marker
+   must never draw a line through: the frame is 1.5px and the name starts 4px in, so
+   they do not meet today — and thickening the frame cannot make them. */
+.tl-pname {
+  position: absolute; z-index: 3; left: 4px; top: 50%; transform: translateY(-50%);
+  font-size: 9.5px; font-weight: 600; color: #4a3a28;
+  white-space: nowrap; overflow: hidden; pointer-events: none;
+}
+/* The row that opens their card. It is a button in behaviour, so it reads as one:
+   the whole row is the target, which is what a 36px row can afford. */
+.tl-row.person.tappable { cursor: pointer; }
+
+/* ── the board's train (v184) ────────────────────────────────────────────────
+   The workers' window on the Production board stops being a strip of time and
+   becomes a strip of WORK: one coach per job, joined in the order the jobs happen,
+   with the clock pinned to the centre of the line. Her ask, 24 September 2026:
+
+     "for each of person line, make his series of work join up like a train,
+      coaches represent work, the current time at the center sharing with all
+      person, showing next work in minutes on top, something like next station
+      coundown for subway. Person should click on their work to turn it green
+      indicating acknowledgement."
+
+   It is the board and only the board — the planner's people window keeps everything
+   below it (see personRow) — and the class on the PANE is what says which of the two
+   a screen is. Everything here is scoped off `.tl-pane-people.train` for that reason.
+
+   TWO things about this block are deliberate and are the reason it is written out at
+   all rather than tucked in beside the rules it borrows:
+
+   1. No rule in it declares a z-index. The chart's ladder is three rungs on .tl-wrap
+      and the v174 fault was a positioned element given a z-index of its own climbing
+      over her pinned module titles. The strip IS translated, and a transform is
+      itself a stacking context — that cannot be avoided — so the rule that holds is
+      the precise one: the transform lives on .tl-train, its track declares nothing,
+      and the name column still outranks the pair at --name-z. Nothing inside a train
+      may ever declare a z-index; that is what the tests pin.
+
+   2. The clock line is not covered by a coach, and it is not lifted over one either.
+      It is the LAST thing drawn in the window, and tree order is what does the work:
+      a translated train is painted in the same layer as a positioned element with no
+      z-index, so a line that comes after every one of them runs over them the way the
+      day's own line runs over the bars — with no rung of its own to climb. Its rung is
+      the one rule this file keeps for the boards: a line the workers read may never
+      need a number to be read. See .tl-clock. */
+
+/* The pane. It takes no sideways scroll at all, and that is not tidiness: the whole
+   strip is placed by translating it against a centre, so a pane that could also be
+   panned sideways would have two ways to move the line and the centre would leave
+   the middle. It is also what makes the drag unambiguous (see wireTrainClock).
+
+   AND it is as tall as its people, with no ceiling of its own. The base rule caps a
+   people's window at min(20vh, 190px) — a ceiling written for the planner's five
+   35-pixel rows, where 190 IS five rows. These rows are 72. So that same ceiling
+   held 162 pixels of a 406-pixel window on her phone and hid persons 2, 3 and 4
+   inside a box that scrolled: her clause 2, "Create windows for each person",
+   answered with one window on screen and three behind a scrollbar nobody could see,
+   and her clause 8, "The person's window be taller", answered by making the ROW
+   taller while the window stayed the same height. A ceiling is exactly what a taller
+   window cannot have. So the board's pane is content-sized and the cap stays where it
+   was written — on the planner's own window, which still needs it. */
+.tl-pane-people.train { overflow-x: hidden; max-height: none; }
+/* And its rows are the pane's own width rather than a day's. There is no day on this
+   axis — the line is as wide as the window and no wider — and the base rule's
+   inline-block shrink-to-fit would otherwise measure the strip against itself. */
+.tl-pane-people.train .tl-inner { display: block; width: 100%; }
+/* Where the train ends and the day's map begins. On the planner the modules window
+   opens the page and needs no seam of its own; on the board it sits under the train,
+   and the two borrowed windows below must read as borrowed — a window with a top
+   edge, not a continuation of the coaches. Nothing inside either window changes. */
+.tl-pane-people.train + .tl-pane-proc {
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -8px 12px -10px rgba(0, 0, 0, .45);
+}
+
+/* One person's line, 72 pixels tall, with the row below it told apart by a rail in
+   that person's own colour and a 2px rule. That is her requirement 4, "Each title of
+   the line show their name, make each line distinctively seperated."
+
+   v184 drew it at 56 and that was her "a taller Person's line" against the planner's
+   35. v186 takes it to 72 on her clause 8, "The person's window be taller, so that
+   coach size better fit wordings" — the same 72 the coach below is scaled against, so
+   the face gains a whole type size rather than a few pixels of air. The rows stay
+   flush against one another ("parallel, close to each other"): the separator is the
+   rule and the rail, never a gap, because a gap between two lines of one train would
+   read as two separate strips. */
+.tl-row.train {
+  min-height: 72px;
+  background: var(--surface);
+  border-bottom: 2px solid var(--line);
+}
+.tl-row.train:last-child { border-bottom: 0; }
+.tl-row.train.tappable { cursor: pointer; }
+/* The board's name column, narrowed. It is scoped off the ROW and not off the pane,
+   and that is deliberate: the column's width is declared in exactly one place and read
+   in exactly one computation, so the two windows of the PLANNER can never size it
+   differently (see the test "the two windows' name columns are one rule"). A board's
+   two windows are not that chart — the people's window there is a train and no longer
+   shares the axis at all — so this is the row's own width and not a second answer to
+   the same question. */
+.tl-row.train > .tl-name {
+  /* 108 and not the planner's 156: these 48 pixels are what let a phone's line still
+     carry four coaches, which is the one figure she gave for the strip. The whole
+     title is one tap away on the person's own card. */
+  flex: 0 0 108px; width: 108px;
+  padding: 7px 8px 7px 13px;
+  display: flex; flex-direction: column; justify-content: center;
+  background: var(--tone-wash, var(--surface));
+  /* The rail. An inset shadow rather than a border, so it cannot change the cell's
+     width and the four-coach budget stays the number trainMetrics worked out. */
+  box-shadow: inset 4px 0 0 var(--tone-ink, var(--line));
+}
+.tl-row.train .tl-name-txt { font-size: 13px; }
+/* The second line of the cell: what they are on, or how long until the next thing.
+   It is the one answer a phone can read without a tap, which is why it is on the row
+   rather than only in the tip. */
+.tl-next {
+  margin-top: 2px;
+  font-size: 11px; line-height: 1.2; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tl-next.due { color: var(--red); font-weight: 600; }
+
+/* The walk's own controls — her clause 5, "I need walk the day, Button 'START THE DAY
+   NOW', 'STOP', 'The N Called', these button are for the person's windows", and her
+   clause 11's two simulation presses: "left buttton make the clock back to current,
+   Right button, when clicked, dropdown a choice list, slow, Mid, fast."
+
+   They sit at the head of the workers' window, ABOVE the lines they work, because that
+   is the window they belong to. Two rows rather than one: five controls on a 375-pixel
+   phone in a single row is five targets under 70 pixels each, and three of them carry
+   words. Every press is drawn at every state and goes inert rather than absent — this
+   app's own rule, and the reason Start and Stop are a pair with one of them disabled
+   instead of a single press whose label changes. */
+.tr-ctl {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 6px 8px 7px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.tr-ctl-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+/* The three walk presses share the first row and take an equal share of it, so Start
+   and Stop are the same size whatever their words are — two presses that behave as a
+   pair must look like a pair. */
+.tr-ctl-row:first-child .tl-chip { flex: 1 1 0; min-width: 0; }
+.tr-ctl-speed { display: flex; align-items: center; gap: 5px; margin-left: auto; }
+.tr-ctl-lab { font-size: 11px; color: var(--muted); white-space: nowrap; }
+/* The drop-down names its own unit beside every option — "Slow 1×", "Mid 10×", "Fast
+   60×" — which is the app's own rule for a number field carried into a list: a list
+   that offered "Slow", "Mid" and "Fast" would be three words and no measurements. */
+.tr-ctl-speed select { min-width: 118px; }
+
+
+/* The track the train is drawn in. It carries no ruling: the base track's two
+   gradients are an hour grid, and an hour grid over a strip that has no minute axis
+   would be a quiet claim that the coaches sit at the times they are named. It also
+   clips the strip, which is what stops a translated train running under the name
+   column or off the right edge. */
+.tl-pane-people.train .tl-track {
+  flex: 1 1 auto; min-width: 0; width: auto; height: auto;
+  overflow: hidden;
+  background-image: none;
+  /* The paper the absolutely placed coaches stand on. v193 makes this the coaches'
+     containing block, so a coach's own `left` is counted from the track's left edge —
+     which IS minute nought of the day, the same pixel in every person's row. Her point 1
+     ("should start left hand side") and her point 3 ("when time start, 3 train started
+     together") are the same fact about this one edge. */
+  position: relative;
+  min-height: 52px;
+}
+/* The strip: the whole day's paper, transformed to bring the minute being read into the
+   window. Its width comes from the view (--line-w), and it is the ONE transformed element
+   on the board — which is why nothing inside it may carry a z-index. */
+.tl-pane-people.train .tl-train {
+  position: absolute; left: 0; top: 0;
+  height: 100%; width: var(--line-w, 0px);
+}
+
+/* A coach: one job, standing at its own minute and exactly as long as her hand is needed
+   on it.
+
+   Her instruction of 25 September 2026, which reverses v184's uniform-width rule in as
+   many words: "Make the coach width relative to its duration, and others batch duration,
+   their labour requirement mark by hand needed, not batch arrival". So `left` and `width`
+   both come from the view as real pixels (see coachGeom) and there is no width here at
+   all — not even a fallback, because a fallback is a second answer to a question the view
+   has already answered.
+
+   TWO COLOURS, her point 5: "The coach should have 2 color only. Green and light red, the
+   coach change to red only when their hand needed time is up, the change of color should
+   be fade in and out, not sudden so that the user dont feel the screen is jumping here
+   and there." So the eight person tones are OFF the coach — they stay on the row's rail,
+   where they still say whose line it is — green is the default ("nothing outstanding"),
+   light red is `.due` (the minute her hand is needed has arrived and nobody has taken
+   it), and a taken coach is green with a tick on it rather than a third shade.
+
+   The transition is the fade she asked for, both ways, and it is on the coach and on its
+   words together so a colour change cannot leave the text a beat behind the box. 0.45s
+   is slow enough to read as a change and fast enough that the screen is never behind the
+   clock by a noticeable amount. */
+.tl-coach {
+  position: absolute; top: 50%;
+  height: 52px;
+  transform: translateY(-50%);
+  border-radius: 7px;
+  background: var(--green-bg);
+  box-shadow: inset 0 0 0 1px var(--green);
+  transition: background-color .45s ease, box-shadow .45s ease;
+  /* The face goes as the box narrows; a container query is the one mechanism that
+     answers "does this box have room for these words" without measuring every coach on
+     every beat. Default is shown, so a browser without container queries loses only the
+     guard and never the face. */
+  container-type: inline-size;
+  cursor: pointer;
+}
+.tl-coach.due { background: var(--red-bg); box-shadow: inset 0 0 0 1px var(--red); }
+/* The ring on the coach the clock is standing in — her "even clearer info in highlight".
+   An outline and not a shadow, so it is independent of the frame and survives a coach
+   being due or taken. */
+.tl-coach.here { outline: 2px solid rgba(122, 96, 74, .45); outline-offset: 1px; }
+
+/* The finger's own target, which is NOT the coach.
+
+   A coach is now exactly as wide as its minutes, so a one-minute fold at the closest
+   scale is seven pixels — far under this app's own 36-pixel floor, and a hairline nobody
+   could hit. Her instruction was to keep the width true and say so in the words ("and if
+   it is not show as no space big enough, just dont show, as we have another place shown
+   it under person's name"), so the coach is not widened. This widens the PRESS instead:
+   an invisible box, centred on the coach and at least 36 pixels across, that carries the
+   same click handler because it is the same element. It moves nothing and paints nothing,
+   so a hairline still LOOKS like a hairline. */
+.tl-coach::before {
+  content: ""; position: absolute; top: 0; bottom: 0;
+  left: 50%; transform: translateX(-50%);
+  width: max(100%, 36px);
+}
+
+.tl-cface {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%; gap: 0; padding: 0 3px; overflow: hidden;
+  transition: color .45s ease;
+}
+.tl-cicon { font-size: 15px; line-height: 1.15; color: var(--green); transition: color .45s ease; }
+.tl-cname {
+  display: block; max-width: 100%;
+  font-size: 11px; font-weight: 600; line-height: 1.2;
+  color: var(--green);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: color .45s ease;
+}
+/* Too narrow for its face, so the face is not drawn at all.
+
+   This is the rule her answer asks for, in her own words: "and if it is not show as no
+   space big enough, just dont show, as we have another place shown it under person's
+   name". It replaces v186's type step-down (11px → 9px) — that rule was about a coach
+   whose width the screen had chosen, and this screen no longer chooses a coach's width,
+   the job's own minutes do. 43 pixels is the width at which the four-line column stops
+   being readable, and past it the row's own next line under the person's name is what
+   says what is coming.
+
+   The TICK goes with it, because a tick drawn wider than the coach it marks would be a
+   mark on its neighbours. A coach narrow enough to lose its face is a coach whose
+   acknowledgement is read on the tip and on the person's card instead. */
+@container (max-width: 43px) {
+  .tl-cface, .tl-cack { display: none; }
+}
+.tl-cwhen { font-size: 11px; line-height: 1.15; color: var(--muted); font-variant-numeric: tabular-nums; transition: color .45s ease; }
+.tl-cbatch { font-size: 10px; line-height: 1.1; color: var(--muted); font-variant-numeric: tabular-nums; transition: color .45s ease; }
+.tl-coach.due .tl-cicon, .tl-coach.due .tl-cname { color: var(--red); }
+.tl-coach.due .tl-cwhen, .tl-coach.due .tl-cbatch { color: var(--red); }
+/* The tick that says somebody has taken this work. Green and not a third colour: a taken
+   job is a job with nothing outstanding on it, which is what green already means. */
+.tl-cack {
+  position: absolute; right: 2px; bottom: 1px;
+  font-size: 11px; font-weight: 700; color: var(--green);
+  transition: color .45s ease;
+}
+
+/* The wait between two coaches, drawn as its own minutes and nothing else — v193 keeps
+   its left and width true (see the view), so a gap drawn wider to hold a number would
+   push every coach after it off the minute it belongs to. It holds the countdown only
+   where those minutes left the room, which is the view's decision and not this rule's.
+
+   Her "showing next work in minutes on top, something like next station countdown for
+   subway", now to the second. */
+.tl-link {
+  position: absolute; top: 0; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.tl-count {
+  font-size: 9px; font-weight: 700; color: var(--muted);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+/* The eight person tones, on the row. The ink is the SAME hex the bars and the call
+   cards already use for that person (see .tl-bar.ptone-N below), so a row's rail and
+   that person's bars and that person's call can never be three colours; the wash is a
+   solid pale so a coach reads as paper rather than as a bar, because it is not a bar. */
+.tl-row.train.ptone-1 { --tone-ink: #5b86c2; --tone-wash: #e6effb; }
+.tl-row.train.ptone-2 { --tone-ink: #c9743a; --tone-wash: #fbe9db; }
+.tl-row.train.ptone-3 { --tone-ink: #4f9153; --tone-wash: #e8f3e3; }
+.tl-row.train.ptone-4 { --tone-ink: #8a5aa8; --tone-wash: #f4e8f5; }
+.tl-row.train.ptone-5 { --tone-ink: #b8912f; --tone-wash: #fbf3df; }
+.tl-row.train.ptone-6 { --tone-ink: #2f8b83; --tone-wash: #e4f1f0; }
+.tl-row.train.ptone-7 { --tone-ink: #b8506f; --tone-wash: #fbe5e9; }
+.tl-row.train.ptone-8 { --tone-ink: #7a6a5c; --tone-wash: #f0ece6; }
+
+/* A coach's tip is a child of the ROW and not of the coach — see the note where it is
+   built — so no `:hover` selector can reach it from the coach and the view opens it by
+   hand. The media query is what keeps a phone from ever showing it, and that matters:
+   a tap there means "I'm on it", and a box opening over the strip on the same tap would
+   put a second meaning on the one gesture the whole screen is built around. */
+.tl-tip-coach { white-space: normal; width: max-content; }
+@media (hover: hover) and (pointer: fine) { .tl-tip-coach.on { display: block; } }
+
+/* The station. Her clause 3, "the 2nd person and subsequent person have the centered
+   red ruler", and her clause 9, "Each of the person line has a clock line at centre of
+   line". So there is one of these PER ROW, drawn inside that row's own track, and every
+   one of them stands at the same pixel — the middle of the line, which is what makes
+   "the current time at the center sharing with all person" true of four lines at once.
+
+   It declares NO z-index, and that is the point rather than an omission. A translated
+   train is painted as though it were positioned with no z-index, so a line that is
+   drawn after the strip is painted over the coaches by tree order alone — the v174 rule
+   ("nothing on this chart climbs over her pinned names") kept in its flat form by not
+   needing to climb at all. What covers the station is exactly what should: a name
+   column at --name-z, and a coach's own tip at its own z-index 3, because a card being
+   read is not a thing to draw a line through.
+
+   It takes no pointer of its own either, so a drag or a tap aimed at the coach the line
+   crosses lands on the coach — a two-pixel line that swallowed one gesture in fifty
+   would be a board whose work randomly cannot be acknowledged.
+
+   It carries NO LABEL. One reading of the time on the window is the whole of her
+   clause 3 ("the 2nd and other don have to show the clock face"), so the face is drawn
+   once, in .tl-clock-head above the rows, and these are the lines it belongs to. A
+   label on each of four rulers would be four answers to one question, and — because a
+   ruler near its track's left edge would be half cut by that track's own clip — four
+   answers of which one and a half could be read.
+
+   It is red at all times, and v185's `.reading` brown is GONE with the thing it was
+   for. That rule existed because a drag in v185 moved the line on its own and left it
+   standing at a minute the day was not at. Here the trains move WITH the station (see
+   wireTrainClock), so a dragged ruler is still standing on the minute the morning is
+   actually at and red is still the truth about it. A class that can only ever fire
+   wrongly is worse than no class: it would paint a claim about NOW in a colour that
+   means "this is not now". */
+.tl-clock {
+  position: absolute; top: 0; bottom: 0;
+  width: 2px; background: var(--red);
+  pointer-events: none;
+}
+
+/* The face — ONE for the window, at the top, on paper of its own.
+
+   Her clause 3 asks for the rulers on the second and later lines with no face on them,
+   which leaves the face somewhere; it goes at the head of the window, above the first
+   line, where it is a property of the WINDOW and not of any one person. That is also
+   the only place it cannot be clipped: a ruler is drawn inside its own track and every
+   track is a clip line on both sides, so a label riding the first line's ruler would be
+   cut in half exactly when the line is walked to its left edge — which is where the
+   start of the day puts it. */
+.tl-clock-head {
+  position: relative;
+  height: 22px;
+}
+
+/* The time it reads. ABSOLUTE, and positioned by the view from `left`: the head is the
+   pane's own width with no padding, so a `left` counted from the pane's edge lands on
+   the same pixel the station is standing at in every row below it. The `left` is
+   written from one expression per beat, so the label and the four rulers it names
+   cannot come to disagree about the minute — see placeClock.
+
+   The minutes are tabular so the label cannot change width as it counts and shuffle
+   the line it belongs to. */
+.tl-clock-lab {
+  position: absolute; top: 50%;
+  transform: translate(-50%, -50%);
+  display: block; width: max-content;
+  padding: 1px 5px; border-radius: 4px;
+  background: var(--red); color: #fff;
+  font-size: 10.5px; font-weight: 600; line-height: 1.5;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+/* The clock the day is being walked against. Deliberately NOT the cursor's
+   colour and not the cursor's shape: a reading she takes must never be mistaken
+   for the minute the day is actually at, and the other way round.
+   It is the one thing on the chart that is happening rather than planned, so it
+   keeps its own place at the top of the ladder (--read-z) with the label it carries
+   to the clock strip: the line is read against the strip it is drawn on. */
+.tl-now {
+  position: absolute; top: 0; bottom: 0;
+  width: 2px; background: var(--red); opacity: .8;
+  pointer-events: none; z-index: var(--read-z, 8);
+}
+.tl-now-lab {
+  position: absolute; top: 3px; left: 0; transform: translateX(4px);
+  padding: 1px 5px; border-radius: 4px;
+  background: var(--red); color: #fff;
+  font-size: 10.5px; font-weight: 600; line-height: 1.5;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+/* The call. One person, their name, their own colour, what they are about to do
+   and the real clock time — and one OK. It sits over everything on purpose: a
+   call that can be missed behind a chart is not a call. Undismissed it stays,
+   and the next call replaces it. */
+.tl-call {
+  position: fixed; left: 12px; right: 12px; bottom: 16px; z-index: 60;
+  border-radius: 14px; padding: 12px 14px;
+  background: #fff; box-shadow: 0 10px 30px rgba(0, 0, 0, .22);
+  border-left: 8px solid var(--brown);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  max-width: 560px; margin: 0 auto;
+}
+.tl-call.ptone-1 { border-left-color: #5b86c2; }
+.tl-call.ptone-2 { border-left-color: #c9743a; }
+.tl-call.ptone-3 { border-left-color: #4f9153; }
+.tl-call.ptone-4 { border-left-color: #8a5aa8; }
+.tl-call.ptone-5 { border-left-color: #b8912f; }
+.tl-call.ptone-6 { border-left-color: #2f8b83; }
+.tl-call.ptone-7 { border-left-color: #b8506f; }
+.tl-call.ptone-8 { border-left-color: #7a6a5c; }
+.tl-call-who { font-size: 15px; font-weight: 700; }
+.tl-call-what { font-size: 13.5px; flex: 1 1 140px; }
+.tl-call-cyc { font-size: 12.5px; color: var(--muted); flex: 1 1 100%; margin-top: -6px; }
+.tl-call-when {
+  font-size: 12.5px; color: var(--muted); width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.tl-call-ok {
+  margin-left: auto; min-height: 36px; padding: 0 18px;
+  border-radius: 10px; border: 0; background: var(--brown); color: #fff;
+  font-size: 14px; font-weight: 600; cursor: pointer;
+}
+
+/* The one box in the module editor that is not a box: a batch count the module
+   is following rather than one she set. */
+.input.cyc-auto {
+  background: var(--strip); color: var(--muted);
+  display: flex; align-items: center; min-height: 36px;
+}
+
+/* The collisions, in words, under the diagram. */
+.tl-notes { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.tl-note {
+  font-size: 12px; color: var(--red); background: var(--red-bg);
+  border-radius: var(--radius-sm); padding: 6px 9px;
+}
+/* A collision reads as three parts rather than one sentence: who and when, then
+   the two jobs on a line each, then what to do. The jobs are indented under a
+   bullet so the eye counts them — the whole failure of the old single sentence
+   was that two forty-character module names ran together and read as one. */
+.tl-note-who { font-weight: 600; }
+.tl-note-job { position: relative; margin: 3px 0 0 11px; }
+.tl-note-job::before { content: "•"; position: absolute; left: -11px; }
+.tl-note-how { margin-top: 4px; }
+
+/* The row of controls above the timeline: the scale she reads it at, and how the
+   hands are handed out. Chips, like the rest of the app's small choices. */
+.tl-ctl {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+  margin: 0 0 10px;
+}
+.tl-ctl-group { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.tl-ctl-lab {
+  font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em;
+}
+.tl-chip {
+  font: inherit; font-size: 12px; line-height: 1;
+  padding: 8px 11px; min-height: 36px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface); color: var(--brown-dark); cursor: pointer;
+}
+/* The scale, as the two presses she makes rather than the six stops of the dial.
+   The stop she is on is the word between them, and the end of the dial is a
+   disabled button rather than a button that does nothing. Both presses are the
+   app's 36px target. */
+.tl-step {
+  font: inherit; font-size: 16px; line-height: 1; font-weight: 600;
+  width: 36px; min-height: 36px; padding: 0;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface); color: var(--brown-dark); cursor: pointer;
+}
+.tl-step:active { background: var(--gray-bg); }
+.tl-step[disabled] { opacity: .4; cursor: default; }
+.tl-step-name {
+  font-size: 12px; min-width: 62px; text-align: center;
+  color: var(--brown-dark); font-variant-numeric: tabular-nums;
+}
+/* The people box. Wears a chip's shape so the row still reads as one row of
+   controls, and the same 36px target as everything beside it. */
+.tl-select {
+  font: inherit; font-size: 12px; line-height: 1;
+  min-height: 36px; max-width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface); color: var(--brown-dark); cursor: pointer;
+}
+.tl-chip:active { background: var(--gray-bg); }
+.tl-chip.on { background: var(--brown-soft); border-color: var(--brown-soft); color: var(--brown-dark); font-weight: 600; }
+.tl-chip.add { border-style: dashed; }
+.tl-chip[disabled] { opacity: .4; cursor: default; }
+.info-row.now { background: var(--brown-soft); border-radius: 8px; }
+
+/* One colour per module. The pale tone is the module running; the solid tone is
+   the minutes of a person inside it — so a bar says both things at once.
+   Since v169 the pale tone is a wash at --marker rather than a solid fill, and the
+   solid tone is named --tone-ink because the bar's frame wears it as well as her
+   hands: the marker's edge and the work inside it are the same colour by design,
+   which is what makes a batch and a person's slot read as one marker either way.
+   The alpha is written through a var so "more or less transparency" is one number
+   in one place (.tl-wrap), not sixteen. */
+.tone-0 { background: rgba(246, 220, 208, var(--marker, .72)); --tone-ink: #c4552f; } .tone-0 .tl-touch { background: #c4552f; }
+.tone-1 { background: rgba(214, 230, 242, var(--marker, .72)); --tone-ink: #3f6f9e; } .tone-1 .tl-touch { background: #3f6f9e; }
+.tone-2 { background: rgba(251, 233, 200, var(--marker, .72)); --tone-ink: #b26a16; } .tone-2 .tl-touch { background: #b26a16; }
+.tone-3 { background: rgba(220, 236, 217, var(--marker, .72)); --tone-ink: #3f7d4e; } .tone-3 .tl-touch { background: #3f7d4e; }
+.tone-4 { background: rgba(230, 220, 242, var(--marker, .72)); --tone-ink: #6b4f9e; } .tone-4 .tl-touch { background: #6b4f9e; }
+.tone-5 { background: rgba(212, 234, 230, var(--marker, .72)); --tone-ink: #2f7d74; } .tone-5 .tl-touch { background: #2f7d74; }
+.tone-6 { background: rgba(246, 215, 224, var(--marker, .72)); --tone-ink: #a8436a; } .tone-6 .tl-touch { background: #a8436a; }
+.tone-7 { background: rgba(232, 224, 214, var(--marker, .72)); --tone-ink: #7a6a5c; } .tone-7 .tl-touch { background: #7a6a5c; }
+
+/* The right-press pan, held (wirePaneDrag). Her ask of 23 September: "can i drag the
+   module window up/down, left/right by right click and hold? Dont let this action open
+   up the card."
+
+   The class is put on the window while the gesture is held, and it does two things.
+   The cursor becomes a hand closed on the paper she is moving — because a gesture with
+   no sign that it has taken hold is a gesture she cannot tell from one that did not
+   register. And nothing under it may be selected: a drag that painted a text selection
+   across the chart would hide the day it is moving.
+
+   The cursor is said again for the surfaces that carry one of their own — a bar, its
+   batch number, a name cell, a person's row — because those are exactly where her hand
+   will be, and a hand that changes everywhere except the thing under it reads as the
+   fault it is. Each line carries one class more than the rule it has to beat
+   (.tl-row .tl-bar, .tl-row.off .tl-name, .tl-row.person.tappable), so none of the
+   four can quietly win over it. */
+.tl.tl-dragging { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+.tl.tl-dragging .tl-bar,
+.tl.tl-dragging .tl-btag,
+.tl.tl-dragging .tl-name,
+.tl.tl-dragging .tl-row.person { cursor: grabbing; }
+
+/* ---------- The Production line board (v176) ------------------------------------
+
+   The Production line screen is a board a worker reads, not a form she fills in. The
+   day chart on it is the Scenario planner's own drawing, brought across whole, so
+   nothing below restyles the chart: only what the board ADDS is styled here.
+
+   Two additions. The strip above the chart says what each person is on now and what
+   follows it, in clock times. The cards the board opens are read-only, built from one
+   builder (boardReadout) so no card can quietly acquire a control.
+
+   The person's own colour is the same eight tones the calls and the person rows
+   already use — the hexes are copied from .tl-call.ptone-N so a name in the strip is
+   the same colour as that person's row on the chart under it. */
+.bd-top { display: flex; flex-direction: column; gap: 10px; }
+.bd-note { font-size: 13px; line-height: 1.5; color: var(--muted); }
+
+/* The strip's own title, under the day's name. Two labels on two jobs: the name above
+   the card (her clause 7) says WHICH morning this board is walking, and this one says
+   that the lines under it are what is coming. It is quieter than the name and louder
+   than the lines, which is the order she reads them in. */
+.bd-head { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--muted); }
+
+/* One person, and the two things they need to know: what they are on and how long,
+   then what follows. Separated by a dashed rule rather than a gap, because on a
+   four-person day four names read as one paragraph without it. */
+.bd-next { display: flex; flex-direction: column; gap: 1px; }
+.bd-next + .bd-next { border-top: 1px dashed var(--line); padding-top: 9px; }
+.bd-job { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+.bd-who { font-weight: 700; font-size: 14px; }
+.bd-what { font-size: 13.5px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.bd-then { font-size: 12.5px; color: var(--muted); padding-left: 2px; }
+
+/* The foot of the strip: what would be called, and the one button a board has. The
+   sentence gets its own full line and the button sits under it, right-aligned — an
+   optional offer should not be the loudest thing on the screen, and a sentence
+   squeezed into the width left over beside a button wraps to five thin lines. */
+.bd-foot { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.bd-foot { border-top: 1px solid var(--line); padding-top: 10px; }
+.bd-actions { display: flex; gap: 8px; align-self: stretch; justify-content: flex-end; }
+
+/* The person's own colour, on their name in the strip. */
+.bd-who.ptone-1 { color: #5b86c2; }
+.bd-who.ptone-2 { color: #c9743a; }
+.bd-who.ptone-3 { color: #4f9153; }
+.bd-who.ptone-4 { color: #8a5aa8; }
+.bd-who.ptone-5 { color: #b8912f; }
+.bd-who.ptone-6 { color: #2f8b83; }
+.bd-who.ptone-7 { color: #b8506f; }
+.bd-who.ptone-8 { color: #7a6a5c; }
+
+/* A read-only card. Label left, reading right, and the reading wraps rather than
+   running off the card — the same rule the chart's own reading row learned, because
+   the clock is the thing she opened the card for. */
+.bd-card { display: flex; flex-direction: column; gap: 9px; }
+.bd-row { display: flex; align-items: flex-start; gap: 8px; }
+.bd-lab { flex: 0 0 82px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.bd-val { flex: 1 1 auto; min-width: 0; font-size: 14px; line-height: 1.5;
+          font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+/* A line inside a reading: one job of a person's day, one batch of a module's. */
+.bd-sub { font-size: 13px; line-height: 1.5; }
+
+/* ---------- The delivery run (v191) ---------- */
+
+/* The list of who is on the run. Each row is a whole pressable line — the tick and the
+   customer's name sit inside one <label> — so a thumb can land anywhere on it, and the
+   "Put it on the map" press is a sibling OUTSIDE that label so tapping it pins a door
+   rather than ticking a customer. */
+.run-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; }
+.run-head-title { font-weight: 600; font-size: 14px; }
+.run-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+}
+/* The padding lives on the LABEL and not on the row, so the whole line is the tick's hit
+   area. On the row it drew a 49-pixel line whose live 32 pixels were the label: a thumb
+   landing in the 9-pixel band at either end hit the row and ticked nobody, which is the
+   one thing the comment above promises cannot happen. Measured at 375 pixels wide. */
+.run-who { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; padding: 8px 0; cursor: pointer; }
+.run-tick { width: 20px; height: 20px; flex: 0 0 auto; accent-color: var(--brown); }
+.run-words { display: flex; flex-direction: column; min-width: 0; }
+.run-name { font-weight: 600; }
+.run-sub { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+
+/* The load: what the run carries, beside the vehicle that would carry it. Never a verdict —
+   no price reply says what fits — so it is drawn as a reading and not as a warning bar. */
+.run-load { font-size: 13px; margin: 10px 0 0; overflow-wrap: anywhere; }
+.run-warn { color: var(--amber); font-weight: 600; }
+
+/* One vehicle's own row on the run screen: the presses sit on a line of their own, and the
+   comparison and the split open BELOW the whole row rather than beside the price, because a
+   phone holds about 300 pixels and neither of them fits in that. */
+.run-price .run-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.run-compare { flex: 1 1 100%; margin-top: 4px; }
+.run-compare .card-sub { margin: 0; }
