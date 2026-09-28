@@ -105,8 +105,8 @@ const en = {
   // a posting day" here would be untrue and would contradict the posting-days
   // line on the card above the grid, so it says what really happened instead.
   calClose: "Orders for %1 have closed — please pick a green day.",
-  calPrev: "Previous month",
-  calNext: "Next month",
+  calPrev: "Earlier weeks",
+  calNext: "Later weeks",
 
   // Why a product reads "Sold out" on a date it can't be ordered for, and the
   // notes above the menu when a refresh changes the basket. The rule comes from
@@ -305,8 +305,9 @@ const zh = {
   calChosen: "你的发货日：%1",
   calMiss: "%1不是发货日 — 请选择绿色圈起的日期。",
   calClose: "%1的订单已截止 — 请选择绿色圈起的日期。",
-  calPrev: "上个月",
-  calNext: "下个月",
+  // The arrows page the grid by whole weeks now, not months (v231).
+  calPrev: "前一週",
+  calNext: "下一週",
 
   closedFrom: "只接受 %1 起的发货日订单",
   closedTo: "只接受 %1 或之前的发货日订单",
@@ -458,8 +459,9 @@ const ms = {
   calChosen: "Hari pos anda: %1",
   calMiss: "%1 bukan hari pos — sila pilih tarikh bertanda hijau.",
   calClose: "Tempahan untuk %1 telah ditutup — sila pilih tarikh bertanda hijau.",
-  calPrev: "Bulan sebelumnya",
-  calNext: "Bulan seterusnya",
+  // The arrows page the grid by whole weeks now, not months (v231).
+  calPrev: "Minggu sebelumnya",
+  calNext: "Minggu seterusnya",
 
   closedFrom: "Hanya tersedia untuk pos dari %1",
   closedTo: "Hanya tersedia untuk pos sehingga %1",

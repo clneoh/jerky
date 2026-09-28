@@ -44,6 +44,7 @@ class MockDate extends RealDate {
 globalThis.Date = MockDate;
 
 const { CONFIG } = await import("../store/config.js");
+const { rollingWeeks } = await import("../store/calendar.js");
 
 // Replicate the storefront's upcoming-dates + date-key logic so the stub rows
 // match exactly the days the page renders.
@@ -110,8 +111,8 @@ test("daySpecs flags sold-out days and leaves open days plain", () => {
   assert.deepEqual(specs.map((s) => appDateKey(s.date)), dates.map(appDateKey));
 });
 
-// The calendar as rendered, pulled apart for the two tests below. `cells` drops
-// the seven weekday headings, so it starts at the padding before the 1st.
+// The calendar as rendered, pulled apart for the test below. `cells` drops the
+// seven weekday headings, leaving the window's own dates in reading order.
 function calendar() {
   const cal = registry["dates"].children[0];
   const grid = cal.children.find((c) => c.className === "cal-grid");
@@ -124,12 +125,15 @@ function calendar() {
   };
 }
 
-// The cell holding day N of the September 2026 grid — the 1st is a Tuesday, so
-// two null padding cells sit in front of it.
+// The picker draws a rolling five-week window that follows today (Tue 1 Sep 2026):
+// the week just gone is the first row, this week the second, and every cell is a
+// real date — so a day is found by its own place in that window, not by padding in
+// front of the 1st.
+const WINDOW = rollingWeeks("2026-09-01").flat();
 function cell(day) {
-  const c = calendar().cells[2 + (day - 1)];
-  assert.ok(c, `the grid holds a cell for ${day} Sep`);
-  return c;
+  const i = WINDOW.indexOf(`2026-09-${String(day).padStart(2, "0")}`);
+  assert.ok(i >= 0, `${day} Sep is inside the window on screen`);
+  return calendar().cells[i];
 }
 
 // The photo, when a card has one, is the card's own first column, so the words
@@ -147,12 +151,19 @@ test("live availability renders: full day struck out, first open day chosen, per
   await new Promise((r) => setTimeout(r, 0));
 
   const c = calendar();
-  assert.equal(c.head.children.length, 3, "an arrow, the month title, an arrow");
-  assert.equal(c.head.children[1].children[0].text, "September 2026");
-  assert.equal(c.cells.length, 35, "September 2026 pads out to five whole weeks");
-  assert.ok(c.cells[0].className.includes("blank") && c.cells[1].className.includes("blank"),
-    "the grid opens with the two days before the 1st left empty");
-  assert.equal(c.cells[2].children[0].children[0].text, "1", "…then the 1st sits in the Tuesday column");
+  // All three dates on sale (2, 4 and 7 Sep) fall inside today's own window, so
+  // there is nowhere to page: the slots either side of the title hold nothing rather
+  // than a control with nothing to do.
+  assert.deepEqual(c.head.children.map((x) => x.className), ["cal-slot", "cal-title", "cal-slot"],
+    "the title, with empty slots either side — nowhere earlier or later to go");
+  assert.equal(c.head.children[1].children[0].text, "23 Aug – 26 Sep",
+    "the title names the window's own two ends, not a month");
+  // Five whole weeks, and every cell in them a real date — there is no padding, so
+  // nothing is left blank. It opens on the Sunday of the week just gone, which puts
+  // today (Tue 1 Sep) in the second row with last week above it.
+  assert.equal(c.cells.length, 35, "five whole weeks, every cell a real day");
+  assert.equal(c.cells[0].children[0].children[0].text, "23", "the window opens on Sun 23 Aug");
+  assert.equal(c.cells[9].children[0].children[0].text, "1", "…and today sits in the second row");
 
   // Wed 2 Sep is full: not a button, plainly struck through, and not offered.
   const d2 = cell(2);

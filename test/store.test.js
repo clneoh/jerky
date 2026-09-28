@@ -52,7 +52,7 @@ globalThis.window = { open() {} };
 // so the module-level render() hits no network.
 globalThis.fetch = async () => ({ ok: true, json: async () => [] });
 
-const { buildMessage, mergeStorefront, upcomingDates, daySpecs, dateKey, fmtDay, trackOrder, isOpen, postsOn, dayAsk, waNumber, parseVia, clockWords, renderStatic } = await import("../store/app.js");
+const { buildMessage, mergeStorefront, upcomingDates, daySpecs, dateKey, fmtDay, windowTitle, trackOrder, isOpen, postsOn, dayAsk, waNumber, parseVia, clockWords, renderStatic } = await import("../store/app.js");
 const { strictestCancelDays } = await import("../store/pool.js");
 const { CONFIG } = await import("../store/config.js");
 
@@ -177,22 +177,27 @@ test("store render() fills the page without crashing", () => {
 });
 
 test("tapping a day she does not post is answered, not swallowed", async () => {
-  // The month on screen is the month of the first day still open to order (the
-  // calendar's own clamp), and its cells line up one-for-one with the weeks —
-  // after the 7 day-of-week headings in the same grid.
-  const { monthWeeks } = await import("../store/calendar.js");
+  // The grid is five whole weeks that follow today (v231), every cell a real
+  // date, so the cells line up one-for-one with the weeks — after the 7
+  // day-of-week headings in the same grid. The window it opens on is derived the
+  // same way the shop derives it, through windowBounds, so this cannot drift from
+  // the app: `home` is today's own window, sliding forward only when nothing on
+  // sale is inside it.
+  const { rollingWeeks, windowBounds } = await import("../store/calendar.js");
   const cal = () => registry["dates"].children[0];
   const grid = () => cal().children.find((c) => c.className === "cal-grid");
   const miss = () => cal().children.find((c) => c.className === "cal-miss");
-  const first = upcomingDates(CONFIG).find((d) => isOpen(CONFIG, d));
-  const flat = monthWeeks(first.getFullYear(), first.getMonth()).flat();
   const todayK = dateKey(new Date());
+  const all = upcomingDates(CONFIG);
+  const first = all.find((d) => isOpen(CONFIG, d));
+  const { home } = windowBounds(todayK, dateKey(first), dateKey(all[all.length - 1]));
+  const flat = rollingWeeks(todayK, { offset: home }).flat();
   const posts = (iso) => CONFIG.deliveryDays.includes(new Date(`${iso}T00:00:00`).getDay());
 
   // A day still to come that she does not post. It used to be a dead number: the
   // grid built a button only for a day that was open or marked (21 Sep 2026).
   const idx = flat.findIndex((iso) => iso && iso >= todayK && !posts(iso));
-  assert.ok(idx >= 0, "the month on screen has a day she does not post");
+  assert.ok(idx >= 0, "the window on screen has a day she does not post");
   const cell = grid().children[7 + idx];
   assert.ok(cell.className.includes("tappable"), "that day answers a tap");
   cell._listeners.click[0]();
@@ -217,12 +222,13 @@ test("tapping a day she does not post is answered, not swallowed", async () => {
 
   // The other answer, on a day she DOES post whose 6pm window has shut. Today is
   // one whenever today is one of her posting weekdays — the shop never offers
-  // today (the list starts tomorrow), so its own cell is the closed one. Two
-  // things can hide it here and neither is the code's fault: the grid shows the
-  // month of the first day it CAN offer, so on the last day of a month today sits
-  // in the previous month and is not drawn at all. When it is drawn, it must give
-  // the closed sentence and not the miss one — the rules themselves are pinned
-  // date-independently in the dayAsk test below.
+  // today (the list starts tomorrow), so its own cell is the closed one. One
+  // thing can hide it here and it is not the code's fault: when the window opens
+  // more than a week past today (nothing on sale inside today's own window, so
+  // `home` 2 or more), the first row is already past this week and today is not
+  // drawn. When it is drawn, it must give the closed sentence and not the miss
+  // one — the rules themselves are pinned date-independently in the dayAsk test
+  // below.
   const todayIdx = flat.indexOf(todayK);
   if (todayIdx >= 0 && posts(todayK)) {
     const todayCell = grid().children[7 + todayIdx];
@@ -277,6 +283,36 @@ test("a day she posts whose window has shut is not called a day she does not pos
 test("dateKey formats a local YYYY-MM-DD key", () => {
   assert.equal(dateKey(new Date(2026, 8, 2)), "2026-09-02");
   assert.equal(dateKey(new Date(2026, 0, 7)), "2026-01-07");
+});
+
+// The delivery window's title. It names the span of dates on screen rather than a
+// month, because the window follows today: five whole weeks beginning with the week
+// just gone. Both ends are always spelled out — a customer reading "6 – 12 Sep" and
+// one reading "23 Aug – 26 Sep" must get the same thing, which is why the ends are
+// named rather than inferred, and why a window across a month or a year boundary is
+// not special-cased but simply falls out of naming both.
+test("windowTitle names the window's own two ends, in the visitor's language", () => {
+  assert.equal(windowTitle("2026-08-23", "2026-09-26"), "23 Aug – 26 Sep",
+    "a window across two months names both");
+  assert.equal(windowTitle("2026-09-06", "2026-09-12"), "6 – 12 Sep",
+    "a window inside one month names it once");
+  assert.equal(windowTitle("2026-12-27", "2027-01-02"), "27 Dec – 2 Jan",
+    "a window across the new year is not special-cased, just spelled out");
+
+  // The visitor's own language, read at paint time like every other string.
+  const realStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = { getItem: () => "zh", setItem() {} };
+    assert.equal(windowTitle("2026-09-06", "2026-09-12"), "9月6日 – 12日",
+      "Chinese repeats the month only when the window crosses one");
+    assert.equal(windowTitle("2026-08-23", "2026-09-26"), "8月23日 – 9月26日");
+    globalThis.localStorage = { getItem: () => "ms", setItem() {} };
+    assert.equal(windowTitle("2026-08-23", "2026-09-26"), "23 Ogo – 26 Sep",
+      "Malay uses its own month names");
+  } finally {
+    if (realStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = realStorage;
+  }
 });
 
 test("daySpecs flags sold-out days and leaves open days plain", () => {

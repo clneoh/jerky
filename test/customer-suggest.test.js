@@ -111,7 +111,7 @@ const WA_BOX = "e.g. 012-345 6789";
 const ADDRESS_BOX = "Postal address (for posting)";
 const nameBox = (root) => all(root).find((n) => n.tagName === "INPUT" && n.attrs.placeholder === NAME_BOX);
 const waBox = (root) => all(root).find((n) => n.tagName === "INPUT" && n.attrs.placeholder === WA_BOX);
-const addrBox = (root) => all(root).find((n) => n.tagName === "INPUT" && n.attrs.placeholder === ADDRESS_BOX);
+const addrBox = (root) => all(root).find((n) => n.tagName === "TEXTAREA" && n.attrs.placeholder === ADDRESS_BOX);
 // Everything the card says, as one string. A stray null arrives as an ordinary text
 // node, so this is the reading that catches one wherever it lands.
 const screenText = (root) => all(root).map((n) => (n.nodeType === 3 ? n.text : n.textContent)).join("");

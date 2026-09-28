@@ -36,6 +36,59 @@ export function addMonth(year, month, delta) {
   return { year: d.getFullYear(), month: d.getMonth() };
 }
 
+// ── the rolling window the customer's picker draws ───────────────────────────
+// A month grid is the wrong shape for a delivery picker. At the end of a month
+// almost every day on screen is already past, and the days before the 1st and
+// after the last of the month are invisible padding — so the grid reads as empty
+// exactly when the customer has come to order. This window follows today
+// instead: five Sun-first weeks beginning with the week just gone, so the row
+// above today is always last week and today is always in the second row. Every
+// cell is a real date; nothing is padded.
+
+export const WINDOW_WEEKS = 5;
+
+// `offset` whole weeks forward from today's own window. All ISO "YYYY-MM-DD",
+// no nulls anywhere in the grid.
+export function rollingWeeks(todayISO, { offset = 0, rows = WINDOW_WEEKS } = {}) {
+  const t = new Date(`${todayISO}T00:00:00`);
+  const start = new Date(t.getFullYear(), t.getMonth(), t.getDate() - t.getDay() - 7 + offset * 7);
+  const out = [];
+  for (let w = 0; w < rows; w++) {
+    const row = [];
+    for (let c = 0; c < 7; c++) {
+      const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + w * 7 + c);
+      row.push(iso(d.getFullYear(), d.getMonth() + 1, d.getDate()));
+    }
+    out.push(row);
+  }
+  return out;
+}
+
+// The whole weeks from the one `todayISO` sits in: 0 is this week, -1 last week,
+// 1 next week. This is the unit the picker's arrows move in.
+export function weekIndex(todayISO, dateISO) {
+  const t = new Date(`${todayISO}T00:00:00`);
+  const d = new Date(`${dateISO}T00:00:00`);
+  const tSun = new Date(t.getFullYear(), t.getMonth(), t.getDate() - t.getDay());
+  const dSun = new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay());
+  return Math.round((dSun - tSun) / 604800000);
+}
+
+// Where the window sits for a given set of dates on sale, in whole weeks.
+//
+// `home` is where it sits on arrival: today's own window — unless nothing on sale
+// is inside it, which happens when the baker has published only dates further
+// out. Then home slides forward to the first window that holds one, rather than
+// opening on a page with nothing to book.
+//
+// `last` is as far forward as it is worth paging: the window that brings the last
+// date on sale to the bottom row. So no date the baker has published can ever be
+// paged out of reach.
+export function windowBounds(todayISO, firstISO, lastISO) {
+  const home = Math.max(0, weekIndex(todayISO, firstISO) - 1);
+  return { home, last: Math.max(home, weekIndex(todayISO, lastISO) - (WINDOW_WEEKS - 2)) };
+}
+
 // ── the occasion marks ───────────────────────────────────────────────────────
 // The same five helpers the app's own calendar uses, copied verbatim so a day
 // wears exactly the same mark on the shop as it does in the back office. The

@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 
 import {
   monthWeeks, addMonth, occColour, occDays, occStrength, occForDate, occSingleDay,
+  rollingWeeks, weekIndex, windowBounds, WINDOW_WEEKS,
 } from "../store/calendar.js";
 import {
   monthWeeks as adminWeeks, addMonth as adminAddMonth,
@@ -114,4 +115,97 @@ test("addMonth crosses year boundaries in both directions", () => {
   assert.deepEqual(addMonth(2026, 0, -1), { year: 2025, month: 11 });
   assert.deepEqual(addMonth(2026, 5, 12), { year: 2027, month: 5 });
   assert.deepEqual(addMonth(2026, 5, 0), { year: 2026, month: 5 });
+});
+
+// ── the rolling window the customer's picker draws ───────────────────────────
+// Nothing in the backoffice has an equivalent, so these are not pinned to the app
+// copy the way the helpers above are: they are tested on their own terms. The
+// window replaces a month grid for one reason — at the end of a month almost every
+// day on a month grid is already past, and the days before the 1st and after the
+// last are invisible padding — so the tests are about it always being whole weeks
+// of real dates, and never able to hide a date the baker has published.
+
+const isoOf = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+// Plain calendar arithmetic, the same rollover the window does — so the expected
+// dates are computed without reusing the code under test.
+const plusDays = (iso, n) => {
+  const d = new Date(`${iso}T00:00:00`);
+  return isoOf(new Date(d.getFullYear(), d.getMonth(), d.getDate() + n));
+};
+const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+const daysFrom = (iso, n) => range(0, n - 1).map((i) => plusDays(iso, i));
+
+test("the window is whole Sun-first weeks, and today's own week is the second row", () => {
+  const weeks = rollingWeeks("2026-09-01"); // a Tuesday
+  assert.equal(weeks.length, WINDOW_WEEKS, "five rows");
+  assert.ok(weeks.every((w) => w.length === 7), "seven days in each");
+  const days = weeks.flat();
+  assert.equal(new Set(days).size, days.length, "no day appears twice");
+  assert.deepEqual(days, daysFrom(days[0], WINDOW_WEEKS * 7),
+    "every cell is a real, consecutive date — nothing padded, nothing skipped");
+  assert.equal(new Date(`${days[0]}T00:00:00`).getDay(), 0, "the first cell is a Sunday");
+
+  // Whichever weekday today is, the week just gone sits above it. That is what
+  // makes the days already past read as context for today rather than as the page.
+  for (const iso of daysFrom("2026-09-01", 7)) {
+    const w = rollingWeeks(iso);
+    assert.ok(w[1].includes(iso), `${iso} is on the second row`);
+    assert.ok(w[0].every((d) => d < iso), `every day above ${iso} is already past`);
+    assert.equal(new Date(`${w[1][0]}T00:00:00`).getDay(), 0, "…and that row starts on its Sunday");
+  }
+});
+
+test("the window pages by whole weeks, and the row count is the caller's", () => {
+  const base = rollingWeeks("2026-09-01");
+  const next = rollingWeeks("2026-09-01", { offset: 1 });
+  assert.equal(next[0][0], plusDays(base[0][0], 7), "one week on starts a week later");
+  assert.ok(next[0].includes("2026-09-01"), "and today has moved up into the top row");
+  assert.ok(!rollingWeeks("2026-09-01", { offset: 2 }).flat().includes("2026-09-01"),
+    "two weeks on, today is behind the window");
+  assert.equal(rollingWeeks("2026-09-01", { offset: -1 })[0][0], plusDays(base[0][0], -7),
+    "a week back starts a week earlier");
+  const three = rollingWeeks("2026-09-01", { rows: 3 });
+  assert.equal(three.length, 3, "three rows asked for, three drawn");
+  assert.deepEqual(three[0], base[0], "and a shorter window starts in the same place");
+});
+
+test("a week index counts whole weeks from today's own", () => {
+  assert.equal(weekIndex("2026-09-01", "2026-09-01"), 0, "a day in today's week is week 0");
+  assert.equal(weekIndex("2026-09-01", "2026-09-05"), 0, "…wherever in that week it falls");
+  assert.equal(weekIndex("2026-09-01", "2026-08-31"), 0,
+    "the day before today is still this week — weeks run Sunday to Saturday");
+  assert.equal(weekIndex("2026-09-01", "2026-08-30"), 0, "…back to its own Sunday");
+  assert.equal(weekIndex("2026-09-01", "2026-08-29"), -1, "the Saturday before that is last week");
+  assert.equal(weekIndex("2026-09-01", "2026-09-06"), 1, "the Sunday after is the next week");
+  assert.equal(weekIndex("2026-09-01", "2026-09-20"), 3, "three whole weeks out");
+  // It agrees with the window itself: the row a day sits in is its index + 1.
+  for (const iso of rollingWeeks("2026-09-01").flat()) {
+    const row = rollingWeeks("2026-09-01").findIndex((w) => w.includes(iso));
+    assert.equal(row, weekIndex("2026-09-01", iso) + 1, `${iso} sits in its own week's row`);
+  }
+});
+
+test("wherever the window opens there is a date to book, and every date stays reachable", () => {
+  const today = "2026-09-01";
+  const dates = ["2026-09-02", "2026-09-17", "2026-10-05", "2026-10-31", "2026-12-24"];
+  const window = (o) => rollingWeeks(today, { offset: o }).flat();
+  for (const first of dates) {
+    for (const last of dates.filter((d) => d >= first)) {
+      const { home, last: far } = windowBounds(today, first, last);
+      const where = `${first}→${last}`;
+      assert.ok(home >= 0, `${where}: the window never opens on a week already gone`);
+      assert.ok(far >= home, `${where}: the far end is never behind the near one`);
+      // Opening on a page with nothing to book is the failure this guards, and it
+      // is the one case a fixed "today" window would produce whenever the baker has
+      // published only dates further out.
+      assert.ok(window(home).includes(first), `${where}: ${first} is on screen when it opens`);
+      assert.ok(window(far).includes(last), `${where}: ${last} is on screen at the far end`);
+      // And no date in between can be paged past: each one has a window of its own.
+      const spanned = 1 + (new Date(`${last}T00:00:00`) - new Date(`${first}T00:00:00`)) / 86400000;
+      for (const iso of daysFrom(first, spanned)) {
+        assert.ok(range(home, far).some((o) => window(o).includes(iso)), `${iso} can be paged to`);
+      }
+    }
+  }
 });

@@ -150,7 +150,9 @@ export function openPlacePicker({ state, title = "Put the pin on the map", hint 
     onResize = () => { if (map && mineStill()) map.invalidateSize(); };
 
     // ── the words she has, and the lookup ────────────────────────────────
-    const addrInput = el("input", { class: "input", type: "text", value: address,
+    // Multi-line, like the order form's address box: this holds the door's whole
+    // address, and a one-line field made her scroll sideways to check it.
+    const addrInput = el("textarea", { class: "input", rows: 3, value: address,
       placeholder: "12 Jalan Bunga, 10450 Penang" });
     const findStatus = say("");
     findStatus.hidden = true;

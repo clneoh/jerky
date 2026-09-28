@@ -54,6 +54,7 @@ globalThis.setInterval = (fn) => { intervalCb = fn; return 1; };
 globalThis.clearInterval = () => {};
 
 const { CONFIG } = await import("../store/config.js");
+const { rollingWeeks } = await import("../store/calendar.js");
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 function dateKey(d) {
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -92,16 +93,40 @@ const settle = () => new Promise((r) => setTimeout(r, 0));
 const { fmtDay } = await import("../store/app.js");
 
 // The calendar as painted: the grid's cells with the weekday headings dropped,
-// and the one line under the grid naming the chosen day. September 2026 starts
-// on a Tuesday, so two padding cells sit in front of the 1st.
+// and the one line under the grid naming the chosen day. The picker draws a
+// rolling window that follows today — the week just gone is the first row, this
+// week the second — so a day is found by its own place in that window rather
+// than by the old "two padding cells in front of the 1st" of a month grid.
 const cells = () =>
   registry["dates"].children[0]
     .children.find((c) => c.className === "cal-grid").children
     .filter((c) => !c.className.includes("cal-dow"));
-const cell = (day) => cells()[2 + (day - 1)];
+const TODAY = dateKey(new Date());
+const cell = (day) => {
+  const i = rollingWeeks(TODAY).flat().indexOf(`${TODAY.slice(0, 8)}${String(day).padStart(2, "0")}`);
+  assert.ok(i >= 0, `day ${day} is inside the window on screen`);
+  return cells()[i];
+};
 const chosenText = () =>
   registry["dates"].children[0]
     .children.find((c) => c.className === "cal-chosen").children[0].text;
+const grid = () =>
+  registry["dates"].children[0]
+    .children.find((c) => String(c.className).includes("cal-grid"));
+const head = () =>
+  registry["dates"].children[0].children.find((c) => c.className === "cal-head");
+// The arrows sit either side of the title and only exist when there is somewhere to
+// go, so "the last child is a nav button" is what "there is a week after this one"
+// means — there is no disabled arrow to read instead.
+const navArrow = (which) => {
+  const kids = head().children;
+  const c = which === "next" ? kids.at(-1) : kids[0];
+  return c && String(c.className).includes("cal-nav") ? c : null;
+};
+const title = () => head().children.find((c) => c.className === "cal-title").children[0].text;
+// Where today's own cell has ended up: index 9 puts it in the second row of an
+// unpaged window, index 2 in the first row of the window one week on.
+const todayIndex = () => cells().findIndex((c) => String(c.className).includes("today"));
 
 test("live refresh updates sold-out days but never clears what the customer typed", async () => {
   await settle(); await settle(); await settle(); // boot + first live refresh
@@ -230,4 +255,50 @@ test("a refresh that depletes an ordered item fixes the cart, bar and tells the 
 
   assert.equal(document.getElementById("name-input").value, "Aunty Bee",
     "the typed name survives the fixing refresh");
+});
+
+// Last in the file on purpose: it leaves a fourth published date behind.
+test("a date beyond the window brings an arrow, and paging slides the week the way it moved", async () => {
+  // None of the three dates above reaches past today's own five weeks, so there is
+  // nowhere to page. Only a date the baker has published beyond them makes the
+  // arrows exist at all — and this is the one place in the suite they are driven.
+  const far = "2026-11-02"; // nine whole weeks out
+  dayData = [
+    { date: k(dates[0]), slots_left: 0 }, // Wed — sold out
+    { date: k(dates[1]), slots_left: 2 }, // Fri — open, auto-selected
+    { date: k(dates[2]), slots_left: 5 }, // Mon — open
+    { date: far, slots_left: 5 },         // far out, past the window
+  ];
+  await intervalCb();
+  await settle(); await settle(); await settle();
+
+  assert.ok(navArrow("next"), "there is an arrow forward: 2 Nov is past this window");
+  assert.equal(navArrow("prev"), null, "and none back — nothing is ever on offer behind today");
+  assert.equal(grid().dataset.slide, undefined, "a live refresh moves nothing");
+  assert.equal(todayIndex(), 9, "today still sits in the second row");
+  const opening = title();
+
+  // Forward: the grid arrives from below, and today moves up a row.
+  navArrow("next")._listeners.click[0]();
+  assert.equal(grid().dataset.slide, "up", "going later, the rows travel up");
+  assert.notEqual(title(), opening, "the window has moved a whole week on");
+  assert.equal(todayIndex(), 2, "and today has moved up into the top row");
+  assert.ok(navArrow("prev"), "now there is a week to come back to as well");
+
+  // Back: the other way, to the window it opened on.
+  navArrow("prev")._listeners.click[0]();
+  assert.equal(grid().dataset.slide, "down", "coming back, the rows travel down");
+  assert.equal(title(), opening, "and the window is the one it opened on");
+  assert.equal(todayIndex(), 9);
+
+  // The published date is reachable rather than published and hidden — the promise
+  // windowBounds makes, driven to the end. Paging stops when there is nothing
+  // further to see, which is the far date's own window.
+  let guard = 0;
+  while (navArrow("next") && guard++ < 20) navArrow("next")._listeners.click[0]();
+  assert.equal(title(), "4 Oct – 7 Nov", "the last window is the one holding 2 Nov");
+  assert.equal(cells().filter((c) => String(c.className).includes("avail")).length, 1,
+    "and 2 Nov is the only day left to book there — it was never paged past");
+  assert.equal(cells().findIndex((c) => String(c.className).includes("avail")), 29,
+    "it sits in the bottom row, where the far end of the window puts it");
 });

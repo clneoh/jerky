@@ -1297,7 +1297,9 @@ function orderForm(state, dateId, root, selectDate) {
     draft.address = text;
     address.value = text;
   });
-  const address = el("input", { class: "input", placeholder: "Postal address (for posting)",
+  // Multi-line on purpose: a courier address is four or five lines on a phone, so a
+  // one-line field hid most of it. Taller, and draggable — see textarea.input in app.css.
+  const address = el("textarea", { class: "input", rows: 4, placeholder: "Postal address (for posting)",
     value: draft.address,
     oninput: function () {
       draft.address = this.value; // synchronous and unconditional — never gated on the network
@@ -1391,7 +1393,8 @@ function orderForm(state, dateId, root, selectDate) {
       el("div", {}, el("label", {}, "Order date"), orderDate),
       el("div", {}, el("label", {}, "WhatsApp (optional)"), whatsapp),
       el("div", {}, el("label", {}, "Fulfillment"), fulfillmentSel),
-      el("div", {}, el("label", {}, "Delivery address (if courier)"), address),
+      // Both columns: the longest field in the form, and the cell beside it was empty.
+      el("div", { class: "span2" }, el("label", {}, "Delivery address (if courier)"), address),
       // Under the address box and across both columns, exactly as the customer
       // suggester's panel sits under the name box — in the grid's normal flow, so it
       // is never clipped by the Edit pop-up's scrolling body.
@@ -1571,7 +1574,9 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     draft.address = text;
     address.value = text;
   });
-  const address = el("input", { class: "input", placeholder: "Postal address (for posting)",
+  // The same multi-line box as the New order form, for the same reason — an address
+  // she can read back in full while editing it.
+  const address = el("textarea", { class: "input", rows: 4, placeholder: "Postal address (for posting)",
     value: draft.address,
     oninput: function () {
       draft.address = this.value; // synchronous and unconditional — never gated on the network
@@ -1717,7 +1722,8 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       el("div", {}, el("label", {}, "Order date"), orderDate),
       el("div", {}, el("label", {}, "WhatsApp (optional)"), whatsapp),
       el("div", {}, el("label", {}, "Fulfillment"), fulfillmentSel),
-      el("div", {}, el("label", {}, "Delivery address (if courier)"), address),
+      // Both columns: the longest field in the form, and the cell beside it was empty.
+      el("div", { class: "span2" }, el("label", {}, "Delivery address (if courier)"), address),
       // Under the address box and across both columns, exactly as the customer
       // suggester's panel sits under the name box — in the grid's normal flow, so it
       // is never clipped by the Edit pop-up's scrolling body.

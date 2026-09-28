@@ -146,10 +146,13 @@ html, body {
   padding: 12px 10px 10px;
   box-shadow: var(--shadow);
 }
+/* Three columns — the title in the middle, an arrow either side — so the title is
+   centred on the card whether or not an arrow is there. An empty slot is a plain
+   span, so the track always has a child and the title never falls into a 36px one. */
 .cal-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: 36px 1fr 36px;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   margin: 0 0 8px;
 }
@@ -158,6 +161,7 @@ html, body {
   font-weight: 700;
   font-size: 16px;
   color: var(--ink);
+  text-align: center;
 }
 .cal-nav {
   appearance: none;
@@ -172,12 +176,23 @@ html, body {
   border-radius: 9px;
   cursor: pointer;
 }
-.cal-nav:disabled { opacity: .35; cursor: default; }
 .cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 2px;
   position: relative; /* anchor for the absolutely-placed occasion bands */
+}
+/* Paging moves the window one whole week, so the grid arrives the way the dates
+   moved: going later the rows travel up, coming back down. The grid is rebuilt on
+   every paint, so what moves is the new grid coming in rather than the old one
+   sliding out — short and shallow on purpose, because the customer is reading
+   dates, not watching motion. Only a tap on an arrow sets this. */
+@keyframes cal-week-up { from { opacity: 0; transform: translateY(10px); } }
+@keyframes cal-week-down { from { opacity: 0; transform: translateY(-10px); } }
+.cal-grid[data-slide="up"] { animation: cal-week-up 180ms ease-out; }
+.cal-grid[data-slide="down"] { animation: cal-week-down 180ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .cal-grid[data-slide] { animation: none; }
 }
 .cal-dow {
   text-align: center;
@@ -205,8 +220,11 @@ html, body {
   padding: 0;
   appearance: none;
 }
-.cal-cell.blank { visibility: hidden; }
-.cal-cell.past { color: #b8afa4; }
+/* A day already gone. The window's first row is always the week just gone, so
+   these are deliberately quiet: they are context for "today", not something to
+   read. They stay faint but legible — a day that vanished completely would read
+   as a hole in the week. */
+.cal-cell.past { color: #ded6cd; }
 .cal-cell.avail { font-weight: 700; }
 .cal-cell.avail.tappable { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cal-cell.avail.tappable:active { background: var(--brown-soft); }

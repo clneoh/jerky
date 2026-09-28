@@ -1015,6 +1015,78 @@ matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestion
 now that the Google key returns one precise house-number answer, most lookups legitimately show no
 list and the pin simply lands.
 
+## The address box, and the shop's picker in whole weeks (v229–v231)
+
+Three engine versions in one pass, from bakery `8affbb1` → `9bbe406`. **Code-only — no SQL.**
+Two versions fix the same thing on the backoffice side (an address does not fit on one line, and
+the box gave it no room), and the third is the shop's own calendar.
+
+### v229 — the delivery address box is a `textarea`
+
+A real address is four or five lines on a phone; a one-line `input` hid most of it and scrolled
+sideways. The box became `el("textarea", { class: "input", rows: 4, ... })` at **three** sites:
+`admin/js/views/orders.js` twice (the ＋ New order card and an order's Edit pop-up) and
+`admin/js/place_map.js` once (`rows: 3`, on the pin card under *Put this doorstep on the map*).
+**No CSS change was needed** — `admin/css/app.css` already carried
+`textarea.input { min-height: 64px; resize: vertical; }`, so the taller box and the drag-to-resize
+handle came with the tag change. Two test helpers that find the box by **tag name** moved
+`INPUT` → `TEXTAREA`, and gained `rows >= 3` / `spansBoth` assertions.
+
+### v230 — and it spans both columns
+
+The order form is a two-column grid (`.form-grid { display: grid; grid-template-columns: 1fr 1fr; }`),
+so the address sat in one column with an empty cell beside it. Its wrapper gained
+`el("div", { class: "span2" }, ...)` — the rule `.form-grid .span2 { grid-column: 1 / -1; }` already
+existed at `admin/css/app.css:621` and had been used nowhere until now. Measured 137px → 315px at
+375px. The pin card is deliberately untouched (it lays out differently), and the shop's own
+customer address box stays a one-line `input` — a different box on a different screen.
+
+### v231 — the shop's posting-day picker is five whole weeks (SHOP ONLY)
+
+`store/app.js`'s calendar stopped being a month page and became **five whole weeks that follow
+today**. The leading and trailing squares of a month were padded with dead numbers; now **every
+cell is a real date**.
+
+New pure helpers in `store/calendar.js`:
+
+- `WINDOW_WEEKS = 5`, `rollingWeeks(todayISO, { offset = 0, rows = WINDOW_WEEKS } = {})` — `offset`
+  whole weeks forward from today's own window, first row = the week just gone, no nulls anywhere.
+- `weekIndex(todayISO, dateISO)` — 0 = this week, −1 = last week, +1 = next week. The unit the
+  arrows move in.
+- `windowBounds(todayISO, firstISO, lastISO)` → `{ home, last }`, where
+  `home = Math.max(0, weekIndex(today, first) - 1)` (today's own window, sliding forward only when
+  nothing on sale is inside it) and `last = Math.max(home, weekIndex(today, last) - (WINDOW_WEEKS - 2))`
+  — the promise that **no published date can be paged out of reach**.
+
+`monthWeeks(year, month)` and `addMonth(year, month, delta)` are **retained** in the file (the
+bakery keeps them too) but are no longer used by the shop.
+
+Shop mechanics: `monthTitle` → exported `windowTitle(fromIso, toIso)`; `calMonth` → `calOffset`;
+new `calSlide`. The arrows are **omitted rather than greyed** (`.cal-nav:disabled` deleted as dead
+code) with an empty `.cal-slot` span holding the title's 36px grid track, because `el()` skips null
+children and the title would otherwise drift sideways when an arrow came or went. The arrival
+animation rides as **`data-slide` on `.cal-grid`** — not a class, because three DOM tests select the
+grid by exact `className` — set only by an arrow tap and cleared by the very next paint
+(`@keyframes cal-week-up` / `cal-week-down 180ms ease-out`, suppressed under
+`prefers-reduced-motion: reduce`). `soldOutLine(specs, month)` → `soldOutLine(specs, shown)` where
+`shown = new Set(weeks.flat())`, and the `.cal-cell.blank` rule was deleted.
+
+**This collided with jerky's own 21 Sep shop-calendar work**, which rewrote the same closure: the
+tap-answer (`missIso`, `missClosed`, `dayAsk`, `postsOn`, `missNote`, the `askable`/`closed` cell
+logic, `.cal-miss`, and the `calMiss`/`calClose` strings) all survive intact, and `dayAsk` still
+decides *miss* / *closed* / silence exactly as before. Only the window it is drawn in changed.
+
+### Worth knowing
+
+- The bakery's v231 commit also added `img/focaccia 800g.jpeg` — a bakery-only asset, deliberately
+  **not** ported (jerky has no `img/` directory).
+- The bakery's own Simplified-Chinese file uses the Traditional `週` in `前一週` / `下一週`; jerky now
+  matches it verbatim, so the zh `calPrev`/`calNext` carry a Traditional character beside Simplified
+  neighbours. Cosmetic, flagged rather than churned.
+- **Pre-existing mixed wording, still mixed:** the field's *label* reads "Delivery address (if
+  courier)" while its *placeholder* reads "Postal address (for posting)". Both predate this pass,
+  neither is pinned by a test, and they were left alone again.
+
 ## Parcels, and an address that fills itself in (v226–v228)
 
 Three engine versions in one pass, one theme: how a posted order finds a door. **Code-only — no

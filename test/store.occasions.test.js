@@ -24,6 +24,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { rollingWeeks } from "../store/calendar.js";
+
 function createEl(tag) {
   return {
     tagName: String(tag || "").toUpperCase(), nodeType: 1, children: [], attrs: {}, dataset: {},
@@ -84,8 +86,15 @@ const grid = () => cal().children.find((c) => c.className === "cal-grid");
 // own children of the grid.
 const cells = () => grid().children.filter((c) => String(c.className).includes("cal-cell"));
 const bands = () => grid().children.filter((c) => String(c.className).includes("occ-paper"));
-// September 2026's 1st is a Tuesday, so two padding cells sit in front of it.
-const cell = (day) => cells()[2 + (day - 1)];
+// The picker draws a rolling five-week window that follows today (Tue 1 Sep
+// 2026) — the week just gone is the first row, this week the second — so a day
+// is found by its own place in that window, not by padding in front of the 1st.
+const windowCell = (iso) => rollingWeeks("2026-09-01").flat().indexOf(iso);
+const cell = (day) => {
+  const i = windowCell(`2026-09-${String(day).padStart(2, "0")}`);
+  assert.ok(i >= 0, `${day} Sep is inside the window on screen`);
+  return cells()[i];
+};
 const tipOf = (c) => c.children.find((x) => String(x.className).includes("cal-tip"));
 const bandAt = (area) => bands().find((b) => String(b.attrs.style).includes(area));
 // Every node under the calendar, so a caption can never hide somewhere unexpected.
@@ -108,28 +117,30 @@ test("a single day the bakery marked is a wash box in its own colour", () => {
 
 test("a mark running over several days is a band, not a square per day", () => {
   // Hungry Ghost is 4 days, but only the 1st and 2nd of September are still to
-  // come, so the band starts at the 1st (column 3 of the Sun-first row).
-  const ghost = bandAt("--gr:2;--gc1:3;--gc2:5");
+  // come — the 30th and 31st of August are on screen too and already past — so
+  // the band covers columns 3–4 of the row holding 1 Sep.
+  const ghost = bandAt("--gr:3;--gc1:3;--gc2:5");
   assert.ok(ghost, "the days still to come are covered by one band");
   assert.ok(ghost.className.includes("occ-grey"), "in the mark's own colour");
   assert.ok(ghost.className.includes("occ-mid"), "4 days is a mid-strength mark");
   // A day the band covers carries no colour class of its own — the band IS the mark.
   // (25 Sep is left out: Mid-Autumn is a single day of its own inside the break, and
   // that day draws its own box — see the test below.)
-  for (const day of [1, 2, 20, 27]) {
+  for (const day of [1, 2, 20, 26]) {
     assert.ok(!String(cell(day).className).includes("occ-"), `${day} Sep is not tinted per day`);
   }
-  for (const day of [18, 28]) {
+  for (const day of [14, 18]) {
     assert.ok(!String(cell(day).className).includes("occ-"), `${day} Sep falls outside every mark`);
   }
 });
 
 test("a stretch crossing week rows becomes one band per row it touches", () => {
-  // 19–27 Sep: Saturday of one row, the whole of the next, Sunday of the one after.
-  assert.ok(bandAt("--gr:4;--gc1:7;--gc2:8"), "the 19th closes its row");
-  assert.ok(bandAt("--gr:5;--gc1:1;--gc2:8"), "the full week is one unbroken band");
-  assert.ok(bandAt("--gr:6;--gc1:1;--gc2:2"), "the 27th opens the next");
-  assert.equal(bands().length, 4, "and nothing else is banded");
+  // 19–27 Sep: Saturday of one row, the whole of the next. The 27th is the Sunday
+  // after both, and it falls past the last day of the window, so nothing is drawn
+  // for it — a mark can only be painted on days the customer can actually see.
+  assert.ok(bandAt("--gr:5;--gc1:7;--gc2:8"), "the 19th closes its row");
+  assert.ok(bandAt("--gr:6;--gc1:1;--gc2:8"), "the full week is one unbroken band");
+  assert.equal(bands().length, 3, "and nothing else is banded");
   assert.ok(bands().every((b) => String(b.className).includes("occ-orange")
     || String(b.className).includes("occ-grey")), "no mark colour outside the marks she set");
 });

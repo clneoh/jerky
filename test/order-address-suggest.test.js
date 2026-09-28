@@ -154,7 +154,20 @@ const buttonByText = (root, text) =>
 // Found by its PLACEHOLDER, not its label: this app words the box
 // "Postal address (for posting)" where the bakery says "Delivery address (if courier)".
 const ADDRESS_BOX = "Postal address (for posting)";
-const addrBox = (root) => all(root).find((n) => n.tagName === "INPUT" && n.attrs.placeholder === ADDRESS_BOX);
+const addrBox = (root) => all(root).find((n) => n.tagName === "TEXTAREA" && n.attrs.placeholder === ADDRESS_BOX);
+// The field wrapper the box sits in, so its grid span can be asserted. The shim carries no
+// parentNode, so this walks down to it rather than up.
+const fieldOf = (node, box) => {
+  for (const c of node.children || []) {
+    if (c === box) return node;
+    const found = fieldOf(c, box);
+    if (found) return found;
+  }
+  return null;
+};
+// The address is the longest field in the form, so it takes BOTH grid columns (v230).
+// One column of the two-column grid is 137px on a phone, with an empty cell beside it.
+const spansBoth = (root, box) => String(fieldOf(root, box).className).includes("span2");
 // `.sugg-panel` is a shared style worn by the customer list too, so the marker is what
 // names THIS one.
 const addressPanel = (root) => all(root).find((n) => n.attrs && n.attrs["data-sugg"] === "address");
@@ -197,6 +210,14 @@ test("nothing is asked until she stops typing, and a burst of keystrokes is one 
   await withWire(async (wire) => {
     const root = openNewCard(state());
     const box = addrBox(root);
+
+    // The box is multi-line, not the one-line field it was (v229): a courier address is
+    // four or five lines on a phone. `addrBox` above already proves the ELEMENT is a
+    // textarea; this proves it was given the height, so a revert to `rows: 1` is caught.
+    assert.ok(Number(box.attrs.rows) >= 3,
+      "the address box is tall enough to read a whole address back");
+    assert.ok(spansBoth(root, box),
+      "the address field takes both columns, not half of a two-column grid");
 
     // Four keystrokes in a row, faster than the pause: a real typist, not a metronome.
     type(box, "12 J");
@@ -275,6 +296,10 @@ test("a tap on the Edit pop-up's own list fills that box, and Save writes it ont
   await withWire(async (wire) => {
     const root = openEdit(st, "o1");
     const pop = layers["popup-layer"];
+    // Asserted here rather than after the Save: closing the pop-up replaces its children,
+    // so the field is no longer findable once Save has run.
+    assert.ok(spansBoth(pop, addrBox(pop)),
+      "the Edit pop-up's address field takes both columns too");
 
     type(addrBox(pop), "12 Jalan Bunga");
     await afterPause();

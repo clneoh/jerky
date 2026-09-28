@@ -51,6 +51,7 @@ class MockDate extends RealDate {
 globalThis.Date = MockDate;
 
 import { CONFIG } from "../store/config.js";
+import { rollingWeeks } from "../store/calendar.js";
 
 const NEAR = "2026-09-02"; // +1 → packs locked (advance-order note)
 const FAR = "2026-09-17";  // +16 → packs orderable, shared pool live
@@ -149,15 +150,22 @@ function tap(card, which) {
   stepperOf(card).children[which]._listeners.click[0]();
 }
 
-// The September 2026 grid, with the seven weekday headings dropped — so the two
-// padding cells before the 1st (a Tuesday) come first, and day N sits at
-// index 2 + N - 1. Both published dates fall in this month.
+// The window's own day cells, headings dropped. The picker draws a rolling five
+// weeks that follows today (Tue 1 Sep 2026) — the week just gone is the first row,
+// this week the second, and every cell is a real date — so day N is found by its
+// place in that window rather than by padding in front of the 1st. Both published
+// dates (2 and 17 Sep) fall inside it.
 function cells() {
   return registry["dates"].children[0]
     .children.find((c) => c.className === "cal-grid").children
-    .filter((c) => !c.className.includes("cal-dow"));
+    .filter((c) => String(c.className).includes("cal-cell"));
 }
-const cell = (day) => cells()[2 + (day - 1)];
+const WINDOW = rollingWeeks("2026-09-01").flat();
+const cell = (day) => {
+  const i = WINDOW.indexOf(`2026-09-${String(day).padStart(2, "0")}`);
+  assert.ok(i >= 0, `${day} Sep is inside the window on screen`);
+  return cells()[i];
+};
 const markedDays = () => cells()
   .filter((c) => c.className.includes("avail"))
   .map((c) => c.children[0].children[0].text);

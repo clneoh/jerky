@@ -5,7 +5,7 @@
 // config.js fallback at runtime.
 import { CONFIG } from "./config.js";
 import { poolCaps, poolGroups, clampPool, groupFor, poolPieces, closedReason, cancelDaysFor, strictestCancelDays, nextOrderable } from "./pool.js";
-import { monthWeeks, addMonth, occColour, occDays, occStrength, occForDate, occSingleDay } from "./calendar.js";
+import { rollingWeeks, weekIndex, windowBounds, WINDOW_WEEKS, occColour, occDays, occStrength, occForDate, occSingleDay } from "./calendar.js";
 import { normRules } from "../availability.js";
 import { isThumb } from "../storefront-fields.js";
 import { isLang, loadLang, pick, rememberLang, nameFor, descFor, unitFor, policyFor, applyTo } from "../i18n.js";
@@ -30,13 +30,6 @@ const MONTHS_MS = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep"
 const DOW_EN = ["S", "M", "T", "W", "T", "F", "S"];
 const DOW_ZH = ["日", "一", "二", "三", "四", "五", "六"];
 const DOW_MS = ["A", "I", "S", "R", "K", "J", "S"];
-
-// Full month names, for the calendar's title line only (MONTHS_* above are the
-// short forms a date reads in). Chinese titles are built from the year instead.
-const FULL_MONTHS_EN = ["January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December"];
-const FULL_MONTHS_MS = ["Januari", "Februari", "Mac", "April", "Mei", "Jun",
-  "Julai", "Ogos", "September", "Oktober", "November", "Disember"];
 
 // Every lookup reads the saved choice fresh, so a language switch only has to
 // repaint — no text is cached in a variable. These helpers stay DOM-free, so
@@ -142,13 +135,26 @@ function dowNames() {
   return DOW_EN;
 }
 
-// The calendar's title for a month — "September 2026", "2026年9月", "September
-// 2026". Chinese puts the year first, so it cannot be built by concatenation.
-function monthTitle(year, month) {
+// The delivery window's title — the span of dates it covers, not a month name,
+// because the window follows today rather than the month. "20 Sep – 10 Oct", and
+// "20 – 26 Sep" when both ends share a month. Chinese puts the month before the
+// day and repeats it only when the months differ, so it cannot be built by
+// concatenation any more than a month name can.
+export function windowTitle(fromIso, toIso) {
+  const a = new Date(`${fromIso}T00:00:00`);
+  const b = new Date(`${toIso}T00:00:00`);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return `${fromIso} – ${toIso}`;
   const lang = loadLang();
-  if (lang === "zh") return `${year}年${month + 1}月`;
-  const names = lang === "ms" ? FULL_MONTHS_MS : FULL_MONTHS_EN;
-  return `${names[month]} ${year}`;
+  const names = (lang === "zh" ? MONTHS_ZH : lang === "ms" ? MONTHS_MS : MONTHS_EN);
+  const same = a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
+  if (lang === "zh") {
+    return same
+      ? `${names[a.getMonth()]}${a.getDate()}日 – ${b.getDate()}日`
+      : `${names[a.getMonth()]}${a.getDate()}日 – ${names[b.getMonth()]}${b.getDate()}日`;
+  }
+  return same
+    ? `${a.getDate()} – ${b.getDate()} ${names[a.getMonth()]}`
+    : `${a.getDate()} ${names[a.getMonth()]} – ${b.getDate()} ${names[b.getMonth()]}`;
 }
 
 // "16 Sep" — a date without the weekday, for the Sold out note under the grid.
@@ -1143,15 +1149,23 @@ export function render() {
   }
 
   // ── the delivery-day calendar ──────────────────────────────────────────────
-  // The customer picks their day from a month grid instead of a row of chips, so
-  // the days her bakery actually delivers stand out in the month at a glance and
-  // the chosen one is read in words underneath. Only the standard days the baker
-  // has marked are drawn — the shop is never told about her own private marks.
+  // The customer picks their day from a five-week window instead of a month grid,
+  // so the days her bakery actually delivers stand out at a glance and the chosen
+  // one is read in words underneath. The window follows today — the week just
+  // gone is the first row and this week is the second — so the past can never
+  // take over the screen the way it does at the end of a month, and no cell in it
+  // is ever invisible padding. Only the standard days the baker has marked are
+  // drawn — the shop is never told about her own private marks.
 
-  // The month on screen. Kept across repaints (a 30-second refresh must not fling
-  // the customer back to this month) and clamped to the months that hold a
-  // delivery day whenever the data changes.
-  let calMonth = null;
+  // How many whole weeks forward the window has been paged. Kept across repaints
+  // (a 30-second refresh must not fling the customer back to today) and clamped
+  // to the windows that hold a delivery day whenever the data changes.
+  let calOffset = null;
+
+  // Which way the window last moved, so the grid it lands on can arrive the way the
+  // dates did: later, the rows travel up; earlier, down. Set by the arrows and
+  // cleared by the very next paint, so a live refresh never animates.
+  let calSlide = 0;
 
   // The marked day whose name is showing, as a YYYY-MM-DD key, or null. A tap sets
   // it; any tap elsewhere clears it. It is read while the grid is rebuilt, so the
@@ -1244,36 +1258,41 @@ export function render() {
     const byKey = new Map(specs.map((s) => [dateKey(s.date), s]));
     const todayK = dateKey(new Date());
 
-    // The arrows page between the months that actually hold a delivery day, so a
-    // customer can never wander into an empty month.
-    const monthOf = (d) => ({ year: d.getFullYear(), month: d.getMonth() });
-    const lo = monthOf(specs[0].date);
-    const hi = monthOf(specs[specs.length - 1].date);
-    const before = (a, b) => a.year < b.year || (a.year === b.year && a.month < b.month);
-    if (!calMonth || before(calMonth, lo) || before(hi, calMonth)) calMonth = { ...lo };
-    const canPrev = before(lo, calMonth);
-    const canNext = before(calMonth, hi);
+    // The window the customer sees. Home is today's own window; it only slides
+    // forward when nothing on sale is inside it, and `last` is the furthest window
+    // that still holds a date she has published — so nothing on sale is ever out
+    // of reach. See windowBounds.
+    const { home, last } = windowBounds(
+      todayK, dateKey(open[0].date), dateKey(specs[specs.length - 1].date));
+    if (calOffset == null || calOffset < home || calOffset > last) calOffset = home;
+    const canPrev = calOffset > home;
+    const canNext = calOffset < last;
 
     const nav = (delta) => {
-      calMonth = addMonth(calMonth.year, calMonth.month, delta);
+      calOffset += delta;
+      calSlide = delta;
       rerender();
     };
-    // A disabled:false would still set the attribute (and grey the arrow out), so
-    // the flag is only added when the arrow really is unavailable.
-    const arrow = (label, delta, enabled) => {
-      const attrs = { class: "cal-nav", "aria-label": label, onclick: () => nav(delta) };
-      if (!enabled) attrs.disabled = "true";
-      return el("button", attrs, delta < 0 ? "‹" : "›");
+    // The arrows only exist when there is somewhere to go: at home on today's
+    // window there is nothing earlier to see, and nothing later until the baker
+    // publishes a date beyond it. An arrow with nothing to do is not drawn at all
+    // rather than drawn greyed out — a dead control reads as a bug. Its slot is kept
+    // either way, so the title is centred on the card rather than drifting sideways
+    // when an arrow comes or goes; an empty span is not a control.
+    const arrow = (label, delta, shown) => {
+      if (!shown) return el("span", { class: "cal-slot" });
+      return el("button", { class: "cal-nav", "aria-label": label, onclick: () => nav(delta) },
+        delta < 0 ? "‹" : "›");
     };
+    const weeks = rollingWeeks(todayK, { offset: calOffset });
+    // The window's own two ends — every cell is a real date, so the title is
+    // simply the first and last of them.
     const head = el("div", { class: "cal-head" },
       arrow(t("calPrev"), -1, canPrev),
-      el("span", { class: "cal-title" }, monthTitle(calMonth.year, calMonth.month)),
+      el("span", { class: "cal-title" }, windowTitle(weeks[0][0], weeks[weeks.length - 1][6])),
       arrow(t("calNext"), 1, canNext));
-
-    const weeks = monthWeeks(calMonth.year, calMonth.month);
     const all = marks();
     const cells = weeks.flat().map((iso) => {
-      if (!iso) return el("span", { class: "cal-cell blank" });
       const spec = byKey.get(iso);
       const isSel = iso === selected;
       const past = iso < todayK;
@@ -1335,10 +1354,16 @@ export function render() {
       return el("span", { class: cls }, ...kids);
     });
 
+    // Which way this grid is arriving, read and cleared in the same breath so only
+    // the paint the arrow caused can carry it — a live refresh leaves it unset and
+    // so moves nothing. See calSlide.
+    const slide = calSlide ? { slide: calSlide > 0 ? "up" : "down" } : null;
+    calSlide = 0;
+
     dateWrap.replaceChildren(
       el("div", { class: "cal" },
         head,
-        el("div", { class: "cal-grid" },
+        el("div", { class: "cal-grid", dataset: slide },
           ...dowNames().map((d) => el("span", { class: "cal-dow" }, d)),
           ...cells,
           // The bands go in last and sit behind the cells (see .occ-paper).
@@ -1346,8 +1371,8 @@ export function render() {
         // The day they picked, in words — the one line under the grid.
         el("p", { class: "cal-chosen" },
           sub(t("calChosen"), fmtDay(new Date(`${selected}T00:00:00`)))),
-        // Any day in this month with no room left, named rather than guessed at.
-        soldOutLine(specs, calMonth),
+        // Any day in this window with no room left, named rather than guessed at.
+        soldOutLine(specs, new Set(weeks.flat())),
         // The answer to a tap the grid could not act on, last because it is the
         // reply to whatever the customer just did.
         missNote(specs)));
@@ -1369,12 +1394,11 @@ export function render() {
       sub(t(missClosed ? "calClose" : "calMiss"), fmtDay(new Date(`${missIso}T00:00:00`))));
   }
 
-  // "Sold out: 18 Sep, 25 Sep" — the days in the shown month that are already
-  // full. Empty when the month has none, so the line takes no space.
-  function soldOutLine(specs, month) {
+  // "Sold out: 18 Sep, 25 Sep" — the days on screen that are already full. Empty
+  // when the window has none, so the line takes no space.
+  function soldOutLine(specs, shown) {
     const names = specs
-      .filter((s) => s.soldOut
-        && s.date.getFullYear() === month.year && s.date.getMonth() === month.month)
+      .filter((s) => s.soldOut && shown.has(dateKey(s.date)))
       .map((s) => shortDay(dateKey(s.date)));
     if (!names.length) return null;
     return el("p", { class: "cal-note" }, `${t("soldOut")}: ${names.join(", ")}`);

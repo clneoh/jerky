@@ -1,8 +1,37 @@
-# Munchies Furkidz — change history (v54 → v228)
+# Munchies Furkidz — change history (v54 → v231)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**28 Sep 2026 — engine v229, v230 and v231. The delivery address box has room, and the
+shop's posting-day picker is five whole weeks. No database step — nothing to run.**
+
+Three versions in one go, and two of them are the same problem: an address does not fit on one
+line, and the box you type it into gave it no room.
+
+**v229 — the delivery address box has room for a whole address.** It was a single-line box, so a
+real address — three lines, four, sometimes five — was cut off and you had to scroll it sideways
+to read back what you had just typed. It is now a proper multi-line box: four lines tall on the
+New order card and on an order's Edit pop-up, three on the pin card under "Put this doorstep on
+the map". You can also drag its bottom edge to make it taller while you type. Nothing about what
+the box stores, saves or pins changed — it is the same field, only taller.
+
+**v230 — and it takes the whole width of the form.** An order form is laid out in two columns,
+and the address sat in one of them with an empty cell beside it. The address is the longest single
+thing you type on an order, so it now stretches across both columns. Nothing else on the form
+moved.
+
+**v231 — the shop's posting-day picker is weeks, not a month.** Your customers' calendar used to
+be a month page, with the leading and trailing squares of the month padded out with dead numbers.
+It is now five whole weeks that follow today: the week just gone at the top, faded because there is
+nothing left to book in it, then this week with today ringed, then three weeks ahead — and every
+square on it is a real date, so nothing is greyed out for no reason. Small arrows page it a week at
+a time and the grid slides as it does. An arrow is drawn only when there is somewhere to go: at the
+start there is usually nothing earlier, and a later arrow appears once you have published a posting
+day further out. A control with nothing to do is left off rather than shown greyed out. A day you
+have not published is still a real square, and tapping it still tells the customer why it cannot be
+booked, in the same two sentences as before.
 
 **28 Sep 2026 — engine v226, v227 and v228. Parcels you post yourself, an address that fills
 itself in, and address suggestions as you type. No database step — nothing to run.**

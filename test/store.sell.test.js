@@ -54,6 +54,7 @@ globalThis.Date = MockDate;
 globalThis.fetch = async () => ({ ok: true, json: async () => [] });
 
 const { CONFIG } = await import("../store/config.js");
+const { rollingWeeks } = await import("../store/calendar.js");
 // Focaccia only on Mondays; the Weekend Cake only over 5-6 Sep; the Brownie Box
 // needs 5 days' notice; the Sandwich is sold every delivery day.
 CONFIG.products = [
@@ -100,14 +101,17 @@ const stepperOf = (card) => {
   assert.ok(s, "the stepper");
   return s;
 };
-// Day N of the September 2026 grid. The 1st is a Tuesday, so two padding cells
-// sit in front of it.
+// Day N of September 2026 as the customer sees it. The picker draws a rolling
+// five-week window that follows today (Tue 1 Sep 2026) — the week just gone is the
+// first row, this week the second, and every cell is a real date — so a day is
+// found by its own place in that window rather than by padding in front of the 1st.
+const WINDOW = rollingWeeks("2026-09-01").flat();
 function cell(day) {
   const grid = registry["dates"].children[0].children.find((c) => c.className === "cal-grid");
   const cells = grid.children.filter((c) => (c.className || "").includes("cal-cell"));
-  const c = cells[2 + (day - 1)];
-  assert.ok(c, `the grid holds a cell for ${day} Sep`);
-  return c;
+  const i = WINDOW.indexOf(`2026-09-${String(day).padStart(2, "0")}`);
+  assert.ok(i >= 0, `${day} Sep is inside the window on screen`);
+  return cells[i];
 }
 const tapDay = (day) => cell(day)._listeners.click[0]();
 const menuNote = () => registry["menu-note"];
