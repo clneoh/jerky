@@ -3,6 +3,9 @@
 .DS_Store
 node_modules/
 
+# Scratch left behind by `supabase functions deploy` — never commit it.
+supabase/.temp/
+
 # Marketing PDF — keep it off the public site.
 marketing/
 
