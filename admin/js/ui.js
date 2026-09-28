@@ -78,7 +78,14 @@ export function select(options, value, onchange, placeholder = "") {
       .filter((c) => c && !c.startsWith("tone-") && c !== "toned");
     s.className = [...rest, toned ? "toned" : "", toneClass(options, current)].filter(Boolean).join(" ");
   };
-  s.addEventListener("change", () => { current = s.value; paint(); if (onchange) onchange(); });
+  // `onchange` is called with the select as `this`, which is the contract every caller
+  // has been written against since this picker had one — several read the new value as
+  // `this.value`. That used to happen by itself: the handler was the listener, so a
+  // browser called it with the element as `this`. v121 wrapped it in an arrow to repaint
+  // the tone, and an arrow cannot carry a `this`, so every one of those handlers has
+  // been throwing on its first line since — the picker still changed on screen, so
+  // nothing looked broken, and the code after the throw simply never ran.
+  s.addEventListener("change", () => { current = s.value; paint(); if (onchange) onchange.call(s); });
   paint();
   return s;
 }

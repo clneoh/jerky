@@ -164,6 +164,13 @@ export function defaultState() {
     },
     ingredients: [],
     suppliers: [],     // who you buy from (each has a WhatsApp number)
+    // The carriers she posts parcels with — J&T, Ninja Van, Line Clear and the
+    // like. A list of her own rather than a courier in js/couriers.js, because
+    // these are not couriers the app asks for a price: she books the parcel
+    // herself and the app records it. See js/parcel.js for why, and for what a
+    // parcel is not. Empty means she has not added any yet; the screen offers the
+    // usual ones in one press.
+    parcelCouriers: [],
     uoms: seedUoms(),  // units of measure; g/kg/ml/L/pcs convert within a family
     products: [],
     // The shop's categories, a tree of any depth (see js/productCategories.js).
@@ -414,6 +421,10 @@ function normalize(s) {
     },
     ingredients: Array.isArray(s.ingredients) ? s.ingredients : [],
     suppliers: Array.isArray(s.suppliers) ? s.suppliers : [],
+    // Guarded like every other list she owns. A phone that has never added a
+    // carrier behaves exactly as before, and the cloud merge can land the list on
+    // it without the shape being assumed.
+    parcelCouriers: Array.isArray(s.parcelCouriers) ? s.parcelCouriers : [],
     uoms: (Array.isArray(s.uoms) && s.uoms.length) ? s.uoms : seedUoms(),
     products: Array.isArray(s.products) ? s.products : [],
     // The shop's category tree. Guarded like every other list: a phone that has

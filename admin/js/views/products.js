@@ -650,6 +650,25 @@ function buildEditor(state, product) {
     : el("p", { class: "card-sub", style: "margin:0" },
         "No categories yet. Build them under More → Categories, then file this product into one.");
 
+  // ── Can this travel as a parcel? (v226) ───────────────────────────────────
+  // The second KIND of courier is a parcel she books herself and the app only
+  // records (see views/orders.js and js/parcel.js). This tick is not a switch the
+  // app obeys: it changes NOTHING about what an order can do, and it is written
+  // only when it is ON, so a product she never opens is byte-for-byte unchanged and
+  // unticking leaves no `parcel: false` behind. It exists to make one sentence
+  // possible — the advisory on a courier order naming a line that probably should
+  // not go in a parcel network — and it is the anchor the weight and the box size
+  // of a real parcel API will sit beside. Nothing here blocks or hides a sale — a
+  // control that did would be the app refusing a sale you take by hand.
+  const parcelBox = el("input", { type: "checkbox", checked: product?.parcel === true });
+  const parcelCheck = el("div", { class: "field" },
+    el("label", {}, "Can travel as a parcel"),
+    el("div", { class: "avail-listed", style: "margin-top:6px" },
+      el("label", { class: "switch" }, parcelBox,
+        el("span", { class: "switch-track" }, el("span", { class: "switch-knob" }))),
+      el("span", { class: "avail-listed-text" },
+        "Tick this if a carrier can post it — sealed treat packs, say, not anything fresh. It only changes the advice you are shown when you record a parcel on a courier order. It never blocks an order.")));
+
   // ── Translated 中文 / Bahasa Malaysia text ────────────────────────────────
   // English is written once above; each line here is translated from it and
   // offered as an ordinary grey suggestion — the → at the box's right edge takes
@@ -946,6 +965,10 @@ function buildEditor(state, product) {
     // Written only while on, and forgotten when switched off — so an absent key
     // reads as off and a product she never opened is byte-for-byte unchanged.
     if (!listed) drop.push("alwaysListed");
+    // The parcel tick goes the same way, and for the same reason: absent reads as
+    // "not parcel-able", so OFF must leave no key at all rather than storing a false
+    // that would publish to the shop as a field of its own (v226).
+    if (!parcelBox.checked) drop.push("parcel");
     // Filed nowhere → the key goes, and the product is listed last on the shop
     // under "More items". The tick ORDER is kept as she left it, because the
     // first tick is the heading it lands under.
@@ -966,11 +989,12 @@ function buildEditor(state, product) {
     if (ticked.length) values.categories = [...ticked];
     if (sellRules) values.sellRules = sellRules;
     if (listed) values.alwaysListed = true;
+    if (parcelBox.checked) values.parcel = true;
     return { values, tr: trCollect(), drop };
   }
 
   return { name, unit, price, limit, closeDays, cancelDays, desc, serving, thumbFile, thumbPreview,
-    catPicker, translations, availability, recipeCard, renderRecipeLines, collect };
+    catPicker, translations, availability, parcelCheck, recipeCard, renderRecipeLines, collect };
 }
 
 // Fold the translated boxes + their provenance onto a saved product row.
@@ -1073,6 +1097,7 @@ function editorFields(state, editor) {
       el("p", { class: "card-sub", style: "margin:0 0 5px" },
         "How long a customer may still change or cancel this product's order — shown on the shop with the product. This only tells the customer; it never blocks you, you always move orders by hand. Blank or 0 = nothing shown."),
       editor.cancelDays),
+    editor.parcelCheck,
     editor.recipeCard);
 }
 

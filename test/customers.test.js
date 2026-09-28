@@ -106,6 +106,23 @@ test("deleted products don't break spend or the favourite", () => {
   assert.equal(r.fav, "Cookies");
 });
 
+test("a row carries where they were last delivered, for the order form to offer back", () => {
+  const st = state([
+    { id: "o1", qty: 1, customerName: "Bee", whatsapp: "6012-111", orderDate: "2026-09-01", address: "9 Jalan Lama" },
+    { id: "o2", qty: 1, customerName: "Bee", whatsapp: "6012-111", orderDate: "2026-09-08", address: "12 Jalan Bunga" },
+    // A later order with no address (a self-collect one) must not blank the address
+    // she actually used — the hint is "where they were last DELIVERED", not "the
+    // address field on their newest order".
+    { id: "o3", qty: 1, customerName: "Bee", whatsapp: "6012-111", orderDate: "2026-09-09", address: "" },
+    { id: "o4", qty: 1, customerName: "Tan", whatsapp: "6016-222", orderDate: "2026-09-05" },
+  ]);
+  const bee = customerList(st).find((r) => r.whatsapp === "6012-111");
+  const tan = customerList(st).find((r) => r.whatsapp === "6016-222");
+  assert.equal(bee.lastAddress, "12 Jalan Bunga", "the newest order that actually carries one");
+  assert.equal(tan.lastAddress, "", "never delivered anywhere, so there is nothing to offer");
+  assert.equal("addrOn" in bee, false, "and the temp comparison key is not left on the row");
+});
+
 test("who-filters: all, phone, recent30, gone30 (relative to a 30-day cutoff)", () => {
   const st = state([
     { id: "o1", qty: 1, customerName: "Old Nia", whatsapp: "6012-111", orderDate: "2026-08-01" },

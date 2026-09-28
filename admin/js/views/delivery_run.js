@@ -63,6 +63,8 @@ import {
 } from "../courier_place.js";
 import { openPlacePicker } from "../place_map.js";
 import { courierPayQuestions } from "./orders.js";
+// A parcel recorded on the order (v226) is never swept into a van run — see runDays.
+import { parcelOf } from "../parcel.js";
 import {
   fmtDistanceKm, fmtQuote, fmtQuoteLeft, fmtWindow, liveJobProblem, loadOf, quoteExpired,
   runLimitProblem, savingOf, scheduleAtUTC, stampTrip, tripOf, tripProblem, windowAt,
@@ -996,6 +998,12 @@ function runDays(state) {
   for (const g of groupOrders(state.orders || [])) {
     const first = g.orders[0];
     if (!first || first.fulfillment !== "courier") continue;
+    // A parcel she posts herself (v226) does NOT go on a van run. It goes to the
+    // carrier's counter or pickup, so a run that swept it in would be pricing a
+    // vehicle for a box that is already on its way — and the customer, who is being
+    // told a carrier has it, would then be told a driver is coming. The record lives
+    // on the order rather than the day, so the filter belongs here.
+    if (parcelOf(first)) continue;
     const id = String(first.deliveryDateId || "").trim();
     if (!id) continue;
     if (!byDay.has(id)) byDay.set(id, []);

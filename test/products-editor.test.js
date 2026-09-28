@@ -1240,6 +1240,96 @@ test("a kept product opens with the switch on, survives a repaint, and saves off
   assert.equal("alwaysListed" in state.products[0], false, "the key is deleted, not set to false");
 });
 
+// ── Engine v226: "Can travel as a parcel" ────────────────────────────────────
+// The second KIND of courier is a parcel she books herself and the app only records.
+// This tick is deliberately not a switch the app obeys: it changes NOTHING about what
+// an order can do, and it is written only when ON, so a
+// product she never opens is byte-for-byte unchanged.
+
+// Found by its OWN field label, never by walking order: the page now carries two
+// `.avail-listed` switches, and a helper that took the first one would quietly
+// measure the availability switch in one test and the parcel tick in the next.
+const parcelField = (root) => walk(root).find((n) => n.nodeType === 1
+  && String(n.className).includes("field")
+  && walk(n).some((c) => c.tagName === "LABEL" && (c.children || []).some((x) => x.text === "Can travel as a parcel")));
+const parcelSwitch = (root) => {
+  const f = parcelField(root);
+  assert.ok(f, "the editor offers a Can travel as a parcel tick");
+  return walk(f).find((n) => n.tagName === "INPUT");
+};
+const setParcel = (root, on) => {
+  const box = parcelSwitch(root);
+  box.checked = on;
+  (box._listeners.change || []).forEach((fn) => fn({ target: box }));
+};
+
+test("the parcel tick is its own field, below the calendar, and OFF writes nothing", () => {
+  doc.body.replaceChildren();
+  resetLayers();
+  const state = freshState();
+  const root = render(state);
+  const f = formHandles(root);
+  f.name.value = "Almond biscuits";
+  f.unit.value = "u_loaf";
+
+  assert.equal(parcelSwitch(root).checked, false, "absent on the product means not parcel-able");
+  // The availability switch is still the FIRST `.avail-listed` on the page: adding
+  // this second one must not have moved the switch that was already there.
+  assert.ok(walk(walk(root).find((n) => n.className === "avail-listed")).includes(listedSwitch(root)),
+    "the first .avail-listed on the page is still the keep-it-listed switch, so nothing that read it by order moved");
+  assert.ok(walk(parcelField(root)).some((n) => String(n.className).includes("avail-listed-text")
+    && (n.children || []).some((c) => String(c.text || "").includes("never blocks an order"))),
+    "and it says in words that it gates nothing");
+
+  fire(f.add);
+  assert.equal("parcel" in state.products[0], false,
+    "an untouched tick writes no key at all — no product she never opens changes");
+});
+
+test("ticking the parcel box saves it, and unticking takes the key back off", () => {
+  doc.body.replaceChildren();
+  resetLayers();
+  const state = freshState();
+  const root = render(state);
+  const f = formHandles(root);
+  f.name.value = "Almond biscuits";
+  f.unit.value = "u_loaf";
+  setParcel(root, true);
+  fire(f.add);
+  assert.equal(state.products[0].parcel, true, "saved on the product");
+
+  // Now take it off. The key goes entirely, so an absent key reads as "not
+  // parcel-able" — the product returns to byte-for-byte today's shape.
+  fire(buttonByText(root, "Edit"));
+  const pop = layers["popup-layer"];
+  assert.equal(parcelSwitch(pop).checked, true, "the saved choice comes back on");
+  setParcel(pop, false);
+  walk(pop).find((n) => n.tagName === "SELECT").value = "u_loaf";
+  fire(buttonByText(pop, "Update product"));
+  assert.equal("parcel" in state.products[0], false, "the key is deleted, not set to false");
+});
+
+test("the parcel tick is not a gate: an unticked product is still sold and still orderable", () => {
+  // The tick exists to make ONE sentence possible — the advisory on a courier order
+  // naming a line that probably should not go in a parcel network. If it ever grew a
+  // second job, it would show up here as an availability mark or an inactive product.
+  doc.body.replaceChildren();
+  resetLayers();
+  const state = freshState();
+  state.products = [{ id: "p1", name: "Fresh Focaccia", unit: "u_loaf", price: 15, active: true }];
+  const root = render(state);
+  fire(buttonByText(root, "Edit"));
+  const pop = layers["popup-layer"];
+  walk(pop).find((n) => n.tagName === "SELECT").value = "u_loaf";
+  fire(buttonByText(pop, "Update product"));
+
+  const p = state.products[0];
+  assert.notEqual(p.active, false, "it is still on the shop");
+  assert.equal("parcel" in p, false);
+  assert.equal(p.sellRules, undefined, "and no sell-day rule was written on its behalf");
+  assert.ok(buttonByText(root, "Hide"), "it can still be taken off the shop the ordinary way");
+});
+
 // ── the New product card folds away (v91) ────────────────────────────────────
 // The card is the screen's setup part, and left open it pushed the three product
 // lists she came to read off the bottom of the page. It now arrives as one line

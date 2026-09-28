@@ -1294,3 +1294,49 @@ test("a door SHE placed by hand is not moved by their pin, and the offer points 
   assert.equal(row.place.from, "customer", "recorded as theirs, so a later re-pin still wins");
 });
 
+
+// ── v226: a parcel she posted herself never goes on a van run ────────────────
+// The second KIND of courier. A parcel goes to a carrier's counter or pickup, so a
+// run that swept it in would price a vehicle for a box already on its way — and the
+// customer, who is being told a carrier has it, would then be told a driver is coming.
+
+test("an order recorded as a parcel is not on the run at all", () => {
+  const st = world();
+  stubCourier();
+  // Ain's doorstep is a parcel now; Bala's is still an ordinary courier delivery.
+  for (const o of st.orders.filter((o) => o.groupId === "g1")) {
+    o.parcel = { carrierId: "pc_jt", carrierName: "J&T Express", handedAt: "" };
+  }
+  const { root } = openRun(st);
+
+  const rows = all(root).filter((n) => String(n.className).includes("run-row"));
+  assert.equal(rows.length, 1, "only the doorstep that really goes on a van");
+  assert.match(rows[0].textContent, /Bala/);
+  assert.doesNotMatch(root.textContent, /Ain/, "the parcel's customer is not offered as a drop");
+});
+
+test("a day whose only courier orders are parcels has nothing to run", () => {
+  const st = world();
+  stubCourier();
+  for (const o of st.orders) {
+    o.parcel = { carrierId: "pc_jt", carrierName: "J&T Express", handedAt: "" };
+  }
+  const { root } = openRun(st);
+  assert.match(root.textContent, /Nothing to run yet/,
+    "an empty run says so rather than offering a vehicle for boxes already gone");
+});
+
+test("clearing the parcel puts the doorstep back on the run", () => {
+  // The rule is read off the order, not remembered anywhere, so undoing the record
+  // undoes the exclusion — which is what makes the press reversible.
+  const st = world();
+  stubCourier();
+  for (const o of st.orders.filter((o) => o.groupId === "g1")) {
+    o.parcel = { carrierId: "pc_jt", carrierName: "J&T Express", handedAt: "" };
+  }
+  for (const o of st.orders) delete o.parcel;
+  const { root } = openRun(st);
+
+  const rows = all(root).filter((n) => String(n.className).includes("run-row"));
+  assert.equal(rows.length, 2, "both doorsteps are back");
+});

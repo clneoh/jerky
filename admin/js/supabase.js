@@ -22,6 +22,8 @@ import { customerTotal } from "./courier.js";
 // is therefore already ON the record — its courier's name, its phase and its driver are
 // written there when the trip is booked or checked, and this only carries them across.
 import { jobOf, windowSuffix } from "./courier_job.js";
+// The parcel record (v226) — the second KIND of courier. See js/parcel.js.
+import { parcelOf, parcelHanded } from "./parcel.js";
 // The shop's own payload is untrusted input, so the one rule about what a place
 // IS is asked rather than a second copy of it written here — the same reason
 // sync.js asks it. See customerPlaceOf in courier_place.js for what the answer is
@@ -567,14 +569,21 @@ export function trackingSnapshot(state, group) {
   // `courier_phase` is one of a handful of NEUTRAL words, never the courier's own status:
   // the customer's page carries its own words for those phases in all three languages, so
   // it stays ignorant of which company is carrying the box and of that company's
-  // vocabulary. `courier_name` is the courier's own name for itself, taken from the
-  // registry when the trip was booked rather than decided here.
+  // vocabulary. `courier_name` names the carrier holding a parcel, and is published only
+  // for one — see the field itself below for why a trip's own name is left out.
   //
   // NOTE: all five need supabase/courier_job.sql run once, before this build is deployed
   // (see that file). A missing column kills publishing for EVERY order silently, because
   // pushTracking swallows its errors — the same trap courier_fee.sql documents.
   const trip = jobOf(first);
   const driver = (trip && trip.driver) || null;
+  // A parcel she posts herself (v226). It carries no driver and no live link, so its
+  // half of the card is only ever the carrier's name and "collected" — which is the
+  // exact neutral word for the carrier having the box, and the only progress fact she
+  // can supply. Both are suppressed on anything that is not a courier order, and the
+  // trip WINS when there is one: a real vehicle the customer is being shown must never
+  // be contradicted by an older record (see views/orders.js for the same rule).
+  const parcel = (first.fulfillment === "courier" && !trip) ? parcelOf(first) : null;
   return {
     code: orderCode(first),
     status: first.status || "new",
@@ -610,8 +619,21 @@ export function trackingSnapshot(state, group) {
     postage_quoted: quoted === true ? true : null,
     // Who is carrying it, where it has got to, and who is driving — each null when the
     // order has no trip or the trip has not told us that yet.
-    courier_name: (trip && String(trip.courierName || "").trim()) || null,
-    courier_phase: (trip && String(trip.phase || "").trim()) || null,
+    //
+    // `courier_name` is the carrier HOLDING A PARCEL, and is published ONLY for a parcel
+    // (v226). A booked trip already reaches the customer through the driver line, and its
+    // own name is deliberately not published here: the shop's rule is to name a carrier
+    // exactly when nobody else is named, so a trip that has told us nothing yet — a
+    // booking whose status this build has no phase for — would otherwise gain a carrier
+    // line it never had. Which carrier belongs on a card is knowledge this side holds, so
+    // the trip/none guarantee is enforced here rather than guessed at from the columns.
+    courier_name: (parcel && String(parcel.carrierName || "").trim()) || null,
+    // "collected" only once she has recorded the hand-over: a parcel sitting on the
+    // counter is not with the carrier yet, and a phase published before the fact would
+    // tell the customer something that has not happened. No hand-over, no phase — the
+    // card then leaves its line off, exactly as it does for a trip that has said nothing.
+    courier_phase: (trip && String(trip.phase || "").trim())
+      || (parcel && parcelHanded(first) ? "collected" : null) || null,
     courier_driver: (driver && String(driver.name || "").trim()) || null,
     courier_plate: (driver && String(driver.plate || "").trim()) || null,
     courier_phone: (driver && String(driver.phone || "").trim()) || null,

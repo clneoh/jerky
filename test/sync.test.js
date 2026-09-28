@@ -275,6 +275,50 @@ test("computeRecords: supplier rows ride the sync", () => {
   assert.deepEqual(sups[1].data, { id: "sup2", name: "Yen Grocer", whatsapp: "0198765432" });
 });
 
+// The carriers a parcel goes with (v226). A list left out of LISTS is silently
+// device-local, which is exactly the bug this asserts against: a carrier added on
+// her phone has to exist on the other, or the order screen offers a different
+// picker on every phone she owns.
+test("computeRecords: parcel courier rows ride the sync", () => {
+  const st = baseState();
+  st.parcelCouriers = [
+    { id: "pc_jt", name: "J&T Express" },
+    { id: "pc_ninja", name: "Ninja Van", note: "counter at Prangin Mall" },
+  ];
+
+  const rows = sync.computeRecords(st);
+  const carriers = rows.filter((r) => r.kind === "parcelCouriers");
+  assert.equal(carriers.length, 2, "both carriers reach the cloud");
+  assert.deepEqual(carriers[0].data, { id: "pc_jt", name: "J&T Express" },
+    "the row goes whole — no field whitelist to fall out of date");
+  assert.deepEqual(carriers[1].data, { id: "pc_ninja", name: "Ninja Van", note: "counter at Prangin Mall" });
+});
+
+test("mergeRows: a carrier added on one phone arrives on the phone that lacked it", () => {
+  const { store, restore } = installStorage();
+  try {
+    const st = baseState();
+    st.parcelCouriers = []; // this phone has no carriers yet
+    seedJournal(store);
+
+    const add = sync.mergeRows(st, [cloudRow("parcelCouriers", "pc_jt",
+      { id: "pc_jt", name: "J&T Express" }, "2026-09-28T00:00:00.000Z")]);
+    assert.equal(add.changed, true);
+    assert.deepEqual(st.parcelCouriers, [{ id: "pc_jt", name: "J&T Express" }]);
+
+    // Her own rename wins over the stale copy the other phone still holds.
+    assert.equal(sync.mergeRows(st, [cloudRow("parcelCouriers", "pc_jt",
+      { id: "pc_jt", name: "J&T old" }, "2026-09-27T00:00:00.000Z")]).changed, false);
+    assert.equal(st.parcelCouriers[0].name, "J&T Express");
+
+    // And a carrier deleted on the other phone goes from this one too. Orders that
+    // already recorded it keep the frozen name, so nothing a customer was told moves.
+    const del = sync.mergeRows(st, [cloudRow("parcelCouriers", "pc_jt", null, "2026-09-29T00:00:00.000Z", true)]);
+    assert.equal(del.changed, true);
+    assert.equal(st.parcelCouriers.length, 0);
+  } finally { restore(); }
+});
+
 test("mergeRows: a shop added on one phone appears on the phone that had none", () => {
   const { store, restore } = installStorage();
   try {

@@ -78,6 +78,8 @@ export function customerList(state, sort = "recent", filter = "all", today = "")
         productQty: new Map(), // productId → total qty, for the favourite
         last: "",            // most recent delivery date
         lastOrdered: "",     // most recent order date
+        lastAddress: "",     // the delivery address on the most recent order that has one
+        addrOn: "",          // (temp) that order's date, so the most recent one wins
       };
       map.set(key, row);
     }
@@ -95,6 +97,12 @@ export function customerList(state, sort = "recent", filter = "all", today = "")
     const od = orderDateOf(o);
     if (d && (!row.last || d > row.last)) row.last = d;
     if (od && (!row.lastOrdered || od > row.lastOrdered)) row.lastOrdered = od;
+    // Where they were last delivered — the address the New-order card offers back
+    // when she picks their name. Only an order that actually carries one counts, so
+    // a run of self-collect orders never blanks an address she did use. Ties, and
+    // orders with no order date at all, keep the later row in `state.orders`.
+    const addr = String(o.address || "").trim();
+    if (addr && (!row.addrOn || od >= row.addrOn)) { row.addrOn = od; row.lastAddress = addr; }
   }
 
   let rows = [...map.values()];
@@ -105,6 +113,7 @@ export function customerList(state, sort = "recent", filter = "all", today = "")
     delete r.seenOrders;
     delete r.spend;
     delete r.productQty;
+    delete r.addrOn;
   }
 
   const cutoff = today ? daysAgoISO(today, 30) : "";

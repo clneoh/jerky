@@ -1904,6 +1904,15 @@ function tripEls(row) {
     out.push(el("p", { class: "track-note" },
       el("a", { href: `tel:${dial}` }, t("callDriver"))));
   }
+  // Who is carrying it, when this is a PARCEL rather than a booked trip (v226). The
+  // backoffice publishes the carrier's name in the same column a trip publishes its
+  // own name into; a parcel has no driver, so the line is drawn only when nothing
+  // about a driver has come through at all — which leaves every existing courier-trip
+  // card byte-identical, and a trip that has told us nothing yet still draws nothing.
+  const carrier = String((row && row.courier_name) || "").trim();
+  if (carrier && !name && !plate && !dial) {
+    out.push(el("p", { class: "track-note track-carrier" }, sub(t("carrierLine"), carrier)));
+  }
   return out;
 }
 

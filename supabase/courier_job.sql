@@ -9,12 +9,16 @@
 -- would not look like a failure: every customer's tracking page would simply stop
 -- updating, for every order, with nothing on any screen saying why. Order matters here.
 --
--- All five are NULL on an order with no courier trip, and the customer's card leaves each
--- line out entirely rather than printing an empty label.
+-- All five are NULL on an order the app knows nothing about, and the customer's card
+-- leaves each line out entirely rather than printing an empty label.
 --
---   courier_name    the courier's own name for itself, e.g. "Lalamove". Taken from the
---                   provider registry when the trip was written, so the customer's page
---                   never has to know a provider key or a company's vocabulary.
+--   courier_name    the carrier holding a PARCEL, e.g. "J&T Express" (v226). Published
+--                   only for a parcel — a booked trip reaches the customer through the
+--                   driver line instead, and its own name is deliberately not published,
+--                   so a trip whose status this build has no phase for can never gain a
+--                   carrier line it never had. The name is the one frozen onto the order
+--                   when she recorded the parcel, so renaming or deleting a carrier in
+--                   her own list never rewrites what a customer was told.
 --   courier_phase   ONE of a handful of neutral words — finding, on_the_way, collected,
 --                   delivered, stopped, nodriver — never the courier's own status string.
 --                   The storefront carries its own words for these in all three

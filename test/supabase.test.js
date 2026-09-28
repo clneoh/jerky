@@ -1020,6 +1020,126 @@ test("trackingSnapshot includes the courier address in delivery", () => {
   assert.ok(snap.delivery.includes("12 Jalan Bunga, Penang"));
 });
 
+// ── a parcel she posted herself (v226) ───────────────────────────────────────
+// The second KIND of courier has no driver and no live link, so its whole half of
+// the customer's card is the carrier's name and one neutral word. `collected` is
+// that word, and it is published ONLY once she has recorded the hand-over: a parcel
+// still on her counter is not with the carrier, and a phase published early would
+// tell a customer something that has not happened.
+
+function parcelGroup(over = {}) {
+  const state = makeState();
+  state.products = [{ id: "prd_1", name: "Biscuits", price: 15, active: true }];
+  const date = state.deliveryDates[0];
+  const group = { orders: [{
+    id: "ord_parcel01", groupId: "ordg_112233445566", deliveryDateId: date.id, productId: "prd_1", qty: 1,
+    customerName: "Ain", fulfillment: "courier", address: "12 Jalan Bunga, Penang",
+    status: "confirmed", createdAt: "2026-09-01T14:32:00",
+    trackingNo: "JT123456789",
+    parcel: { carrierId: "pc_jt", carrierName: "J&T Express", handedAt: "2026-09-28T02:00:00.000Z" },
+  }] };
+  Object.assign(group.orders[0], over);
+  return { state, group };
+}
+
+test("trackingSnapshot: a handed-over parcel names the carrier and says it is collected", () => {
+  const { state, group } = parcelGroup();
+  const snap = trackingSnapshot(state, group);
+
+  assert.equal(snap.courier_name, "J&T Express", "who is carrying it");
+  assert.equal(snap.courier_phase, "collected", "the one neutral word for the carrier having the box");
+  assert.equal(snap.tracking_no, "JT123456789", "the consignment number rides the slot a number already uses");
+  assert.equal(snap.courier_driver, null, "a parcel network has nobody to name");
+  assert.equal(snap.courier_plate, null);
+  assert.equal(snap.courier_phone, null, "and nobody to ring");
+});
+
+test("trackingSnapshot: a parcel not yet handed over names the carrier and claims NO progress", () => {
+  const { state, group } = parcelGroup({
+    parcel: { carrierId: "pc_jt", carrierName: "J&T Express", handedAt: "" },
+  });
+  const snap = trackingSnapshot(state, group);
+
+  assert.equal(snap.courier_name, "J&T Express", "she still knows who it is going with");
+  assert.equal(snap.courier_phase, null,
+    "a box on the counter is not with the carrier, so nothing has happened to claim");
+});
+
+test("trackingSnapshot: the name is the FROZEN one, so a rename never rewrites a customer's card", () => {
+  const { state, group } = parcelGroup();
+  // She renamed the carrier in her own list after recording this parcel.
+  state.parcelCouriers = [{ id: "pc_jt", name: "J&T (Prangin counter)" }];
+  assert.equal(trackingSnapshot(state, group).courier_name, "J&T Express",
+    "the order's own frozen copy is what the customer reads, not the list's current name");
+
+  // And the same when the carrier has been deleted outright.
+  state.parcelCouriers = [];
+  assert.equal(trackingSnapshot(state, group).courier_name, "J&T Express");
+});
+
+test("trackingSnapshot: an order with neither a trip nor a parcel publishes nulls, exactly as before", () => {
+  const state = makeState();
+  state.products = [{ id: "prd_1", name: "Focaccia", price: 15, active: true }];
+  const date = state.deliveryDates[0];
+  const group = { orders: [{
+    id: "ord_plain01", deliveryDateId: date.id, productId: "prd_1", qty: 2,
+    customerName: "Ain", fulfillment: "collect", status: "confirmed", createdAt: "2026-09-01T14:32:00",
+  }] };
+  const snap = trackingSnapshot(state, group);
+  assert.equal(snap.courier_name, null);
+  assert.equal(snap.courier_phase, null);
+  assert.equal(snap.courier_driver, null);
+  assert.equal(snap.tracking_no, null);
+});
+
+test("trackingSnapshot: a parcel record on an order that is NOT a courier order publishes nothing", () => {
+  // A record left behind when a courier order was switched back to self-collect.
+  // The customer is collecting it themselves, so naming a carrier would contradict
+  // the line right above it.
+  const { state, group } = parcelGroup({ fulfillment: "collect" });
+  const snap = trackingSnapshot(state, group);
+  assert.equal(snap.courier_name, null);
+  assert.equal(snap.courier_phase, null);
+  assert.ok(snap.delivery.includes("Collect (local)"));
+});
+
+test("trackingSnapshot: a real trip WINS over an older parcel record on the same order", () => {
+  // Both can exist: a trip booked on an order that already had a parcel recorded.
+  // The vehicle the customer is actually being shown must never be contradicted by
+  // the older record — the same rule the order screen draws by.
+  const { state, group } = parcelGroup({
+    courierJob: { jobId: "LLM-1", courierName: "Lalamove", phase: "on_the_way",
+      driver: { name: "Ah Meng", plate: "PMM 1234", phone: "0123456789" } },
+  });
+  const snap = trackingSnapshot(state, group);
+  assert.equal(snap.courier_name, null, "the trip's own name is not published at all");
+  assert.equal(snap.courier_phase, "on_the_way", "its phase is, and not the parcel's");
+  assert.equal(snap.courier_driver, "Ah Meng", "with the driver it really has");
+});
+
+// The trip/none guarantee, which the shop CANNOT make for itself: its rule is to name
+// a carrier whenever nobody else is named, so a trip whose status this build has no
+// phase for — a name and nothing else — is indistinguishable from a parcel down there.
+// So the column is published for a parcel ONLY. Every state a trip can be in is
+// walked here, because the one that was missed is the one that would print a second
+// line on a Lalamove card the customer is already reading.
+test("trackingSnapshot never publishes a trip's own name as a carrier", () => {
+  const states = [
+    { label: "a booking whose status has no phase", job: { jobId: "LLM-1", courierName: "Lalamove", phase: "" } },
+    { label: "searching for a driver", job: { jobId: "LLM-1", courierName: "Lalamove", phase: "finding" } },
+    { label: "on the way with a driver", job: { jobId: "LLM-1", courierName: "Lalamove", phase: "on_the_way",
+      driver: { name: "Ah Meng", plate: "PMM 1234", phone: "0123456789" } } },
+    { label: "collected but with no driver matched", job: { jobId: "LLM-1", courierName: "Lalamove", phase: "collected" } },
+    { label: "cancelled", job: { jobId: "LLM-1", courierName: "Lalamove", phase: "stopped" } },
+  ];
+  for (const { label, job } of states) {
+    const { state, group } = parcelGroup({ courierJob: job });
+    const snap = trackingSnapshot(state, group);
+    assert.equal(snap.courier_name, null,
+      `${label}: the shop would name "Lalamove" beside the driver line, or where the trip is silent`);
+  }
+});
+
 test("publishTracking upserts the order's row keyed on the code", async () => {
   const state = makeState();
   state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };

@@ -43,6 +43,12 @@
 //      means the lookup falls back to the road rather than a charge. Read fresh per call,
 //      so setting it takes effect on the next lookup with no redeploy. This step is the
 //      only one here that is not required for the rest of the function to work.
+//      v228 ADDS ONE MORE THING TO THIS SAME KEY AND NO NEW SECRET: the address
+//      SUGGESTIONS the New-order box offers while she types. They need "Places API (New)"
+//      ENABLED on the Google project and TICKED onto this key's API restrictions — see
+//      suggest.ts for the whole argument. Until that is done the key simply cannot call
+//      Places, this function answers "not set up", and the address box behaves exactly as
+//      it did before v228. That is why the two halves can ship apart safely.
 //
 // To try it before her account exists, nothing here has to change: the app's own
 // screens work against the same contract with no key at all (they say so in words),
@@ -52,6 +58,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { LALAMOVE_KEY, LALAMOVE_LABEL, hostFor, servicesIn, quotation, cities, placeOrder, orderDetail, orderWithDriver, cancelOrder, notSetUpReason, type LlmConfig } from "./providers/lalamove.ts";
 import { geocodeAddress } from "./geocode.ts";
+import { suggestAddresses, allowSuggestion, type HitRecord } from "./suggest.ts";
 import { validPoint } from "./place.ts";
 import { orderArgs } from "./booking.ts";
 
@@ -71,6 +78,14 @@ const GAP_MS = 600;
 const MAX_SERVICES = 8;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Who has asked for address suggestions lately, and how often (v228). Module-level, so it
+// spans requests for as long as this instance stays warm, which is exactly the window the
+// fence needs. She has no daily cap on Places — her choice, and a deliberate one — so with
+// nothing on Google's side to stop a runaway, this map is the thing that does. It is keyed
+// by her own user id rather than her IP: the session above has already said who she is, and
+// an IP behind a moving mobile connection would be a different name at every request.
+const suggestionHits: Map<string, HitRecord> = new Map();
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -113,6 +128,24 @@ Deno.serve(async (req) => {
   // before the provider is looked up.
   if (action === "geocode") {
     const out = await geocodeAddress(String(args.address || ""));
+    return json(out);
+  }
+
+  // Address SUGGESTIONS for the box she is still typing in (v228). Answered here for the
+  // same reason geocoding is: what she might be typing is nobody's courier business, and
+  // it must work with no Lalamove key in sight. So it sits above configFor(provider) and
+  // never reaches it.
+  //
+  // A REFUSED CALLER GETS AN EMPTY LIST, NOT AN ERROR. The cap exists to stop a runaway,
+  // and a runaway is by definition not a person reading the screen — so the honest answer
+  // to it is the same answer a person gets when there are no suggestions this time: none.
+  // An error would be the wrong sentence for a state the app handles by saying nothing.
+  if (action === "autocomplete") {
+    if (!allowSuggestion(suggestionHits, String(user.id || ""), Date.now())) {
+      console.error("[courier] address suggestions rate limited for", user.id);
+      return json({ ok: true, places: [] });
+    }
+    const out = await suggestAddresses(String(args.query || ""));
     return json(out);
   }
 

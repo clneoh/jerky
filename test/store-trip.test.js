@@ -214,6 +214,64 @@ test("a number that cannot be dialled is left as words, never made into a dead b
   assert.equal(link.href, "tel:+60123456789", "stripped to digits and a leading plus");
 });
 
+// ── a parcel she posted herself (v226) ──────────────────────────────────────
+// A parcel has no driver, no plate and no number to ring, so the whole of its half
+// of the card is one line naming the carrier. It rides the same published column a
+// trip puts its own name into, which is why the line is drawn only when nothing
+// about a driver came through — every existing Lalamove card must stay untouched.
+
+test("a parcel's card names the carrier, with no driver line and nothing to ring", async () => {
+  const read = await card({
+    ...base,
+    courier_name: "J&T Express", courier_phase: "collected",
+    tracking_no: "JT123456789",
+  });
+  assert.ok(read.includes("Carrier: J&T Express"), `the carrier is named: ${JSON.stringify(read)}`);
+  assert.ok(read.includes("Delivery: Collected by the courier") || read.some((s) => s.startsWith("Delivery:")),
+    "and the neutral phase is said in this page's own words");
+  assert.equal(read.some((s) => s.startsWith("Driver:") || s.startsWith("Vehicle:")), false,
+    "a parcel network has nobody to name");
+  assert.equal(read.includes("Call the driver"), false, "and nobody to ring");
+  assert.equal(findLink(box()), null, "so nothing on the card is a link");
+});
+
+test("a booked trip's card is NOT given a carrier line — the driver is named instead", async () => {
+  // A Lalamove card publishes a name in the same column. Drawing both lines would
+  // say the same thing twice, and the driver line is the one that matters.
+  const read = await card({
+    ...base,
+    courier_name: "Lalamove", courier_phase: "on_the_way",
+    courier_driver: "Ah Meng", courier_plate: "PMM 1234", courier_phone: "0123456789",
+  });
+  assert.ok(read.includes("Driver: Ah Meng · PMM 1234"));
+  assert.equal(read.some((s) => s.startsWith("Carrier:")), false, "a trip names its driver, not its carrier");
+});
+
+test("a carrier is named whenever nobody else is — the trip case is kept out by the PUBLISHER", async () => {
+  // This page's rule is one sentence long and has no branch for "is this a parcel":
+  // a carrier name arrives and nothing says who is bringing it, so the carrier is
+  // named. That is deliberate — the page cannot tell a parcel from a trip whose
+  // status has no phase, and a guess here would either hide a parcel's own carrier
+  // or invent a line on a Lalamove card. The judgement belongs on the side that
+  // knows, so the backoffice publishes a trip's name for a trip NOWHERE
+  // (test/supabase.test.js: "never publishes a trip's own name as a carrier").
+  const bare = await card({ ...base, courier_name: "Lalamove" });
+  assert.ok(bare.includes("Carrier: Lalamove"), "nothing else names who is carrying it");
+  assert.equal(bare.some((s) => s.startsWith("Driver:") || s.startsWith("Vehicle:")), false);
+
+  // And the phase drawing must NOT suppress it: a parcel that has been handed over
+  // publishes both the carrier and "collected", and that is exactly the card where
+  // the customer most needs to know who has their box.
+  const collected = await card({ ...base, courier_name: "J&T Express", courier_phase: "collected" });
+  assert.ok(collected.includes("Carrier: J&T Express"), "the carrier survives a phase word");
+  assert.ok(collected.some((s) => s.startsWith("Delivery:")), "and the phase draws beside it");
+});
+
+test("a blank or absent carrier name draws no line at all", async () => {
+  assert.equal((await card({ ...base, courier_name: "   " })).some((s) => s.startsWith("Carrier:")), false);
+  assert.equal((await card({ ...base })).some((s) => s.startsWith("Carrier:")), false);
+});
+
 // ── the silent failure, measured off the request the page actually sends ─────
 test("every trip column the card reads is named in the page's own select", async () => {
   TRACK_ROW = null;
@@ -233,7 +291,7 @@ test("every trip column the card reads is named in the page's own select", async
 // ── the words themselves ────────────────────────────────────────────────────
 test("every trip word exists in all three languages, and the labels keep their placeholder", () => {
   const keys = ["tripStatus", "tripFinding", "tripOnTheWay", "tripCollected", "tripDelivered",
-    "tripStopped", "tripNoDriver", "driverLine", "vehicleLine", "callDriver"];
+    "tripStopped", "tripNoDriver", "driverLine", "vehicleLine", "callDriver", "carrierLine"];
   for (const l of LANGS) {
     for (const k of keys) {
       const said = STORE[l][k];
@@ -245,7 +303,7 @@ test("every trip word exists in all three languages, and the labels keep their p
   // "Delivery:" and then nothing. Cheap to check, and it is exactly the broken-label class
   // the shop has been caught by before.
   for (const l of LANGS) {
-    for (const k of ["tripStatus", "driverLine", "vehicleLine"]) {
+    for (const k of ["tripStatus", "driverLine", "vehicleLine", "carrierLine"]) {
       assert.ok(STORE[l][k].includes("%1"), `${k} keeps its placeholder in ${l}`);
     }
   }

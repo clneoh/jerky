@@ -31,6 +31,7 @@ const LISTS = {
   productCategories: "productCategories", // the shop's category tree — a heading built on one phone must exist on the other
   ingredients: "ingredients",
   suppliers: "suppliers", // who you buy from — pack prices ride ingredients, so the shops must too
+  parcelCouriers: "parcelCouriers", // the carriers she posts parcels with — a carrier added on one phone has to exist on the other, or the order screen offers a list that is different on every phone
   uoms: "uoms", // units of measure — a unit added on one phone has to exist on the other
   deliveryDates: "deliveryDates",
   purchaseOrders: "purchaseOrders",

@@ -1,8 +1,49 @@
-# Munchies Furkidz — change history (v54 → v225)
+# Munchies Furkidz — change history (v54 → v228)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**28 Sep 2026 — engine v226, v227 and v228. Parcels you post yourself, an address that fills
+itself in, and address suggestions as you type. No database step — nothing to run.**
+
+Three versions in one go, and they all answer the same kind of question: how a posted order
+finds its way to a door.
+
+**v226 — the parcels you post yourself have somewhere to live.** Your flat postage and the
+courier you could book were already here; the third case, the box you take to a counter or book
+on a carrier's own website, was not. There is a new screen, **More then Parcel couriers**, that
+keeps your list of carriers. J&T Express, Ninja Van, Line Clear, Pos Laju and SPX Express are one
+press to add, and you can add or rename your own. On an order you pick the carrier, the app
+remembers it, and the consignment number goes into the **tracking box the order already has** —
+so it reaches the customer's page and the posted message through machinery that was there
+already, with no new slot and nothing to run. A product can also be ticked **"Can travel as a
+parcel"**, and that tick is deliberately not a switch the app obeys: it only changes the advice
+you are shown when you record a parcel on a courier order, and it never blocks, hides or delays a
+sale. Two things this version also repaired, both had been quietly broken for a long time: the
+app's own dropdown control had a change handler that had been dead for around a hundred versions
+(nothing depended on it until the carrier picker did), and the **Note / tracking card** on an
+order rebuilt itself from scratch every time it repainted, so it threw away the carrier you had
+just named and the number you had just typed.
+
+**v227 — the delivery address remembers your regulars.** Type a customer's name into an order
+and, if you have posted to them before, their delivery address fills itself in from the order you
+sent them last. It helps the **returning** customer only, because it reads your own past orders —
+and it never overwrites an address you typed yourself.
+
+**v228 — the address suggests real ones while you type.** For the customer you have never posted
+to, who has no history for v227 to read. As you type a delivery address, the app offers real
+addresses that match and a tap writes the whole thing in. It is on both order forms, the New
+order card and an order's Edit pop-up. It is deliberately quiet: it waits for you to stop typing
+before it asks anything, it ignores a fragment, and an answer that arrives after you have typed
+on is thrown away rather than painted over your words. This half needs one thing switched on in
+your Google project — the same key the map lookup already uses, with the Places service ticked on
+— and until that is done the address box behaves exactly as it did before.
+
+**One day, three versions.** The bakery and this app had differed for eight days over the
+bakery's bread-only Production line. That was settled earlier on 28 September, and v224 and v225
+came the same day; v226 to v228 followed on that same day too, so the two apps read the same
+number again and will after every future sync.
 
 **28 Sep 2026 — engine v225. A product on the shop can always be hidden. No database step —
 nothing to run.**

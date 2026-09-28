@@ -223,6 +223,9 @@ const en = {
   driverLine: "Driver: %1",
   vehicleLine: "Vehicle: %1",
   callDriver: "Call the driver",
+  // A PARCEL she posted herself (v226): a carrier has a name and no driver, so this
+  // is drawn where the driver line would be, and never beside one.
+  carrierLine: "Carrier: %1",
   nextBlockedBasket: "Your basket is for %1. To order for another day, choose it on the calendar above.",
 
   devBy: "Website by",
@@ -375,6 +378,7 @@ const zh = {
   driverLine: "司机：%1",
   vehicleLine: "车辆：%1",
   callDriver: "致电司机",
+  carrierLine: "快递公司：%1",
   nextBlockedBasket: "你的购物袋是 %1 的。想订另一天，请在上面的日历选择。",
 
   devBy: "网站制作：",
@@ -527,6 +531,7 @@ const ms = {
   driverLine: "Pemandu: %1",
   vehicleLine: "Kenderaan: %1",
   callDriver: "Hubungi pemandu",
+  carrierLine: "Kurier: %1",
   nextBlockedBasket: "Bakul anda untuk %1. Untuk hari lain, pilih pada kalendar di atas.",
 
   devBy: "Laman web oleh",

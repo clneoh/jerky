@@ -16,8 +16,17 @@ function createEl(tag) {
     scrollTop: 0, _listeners: {},
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     appendChild(c) { if (c != null) this.children.push(c); return c; },
-    append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
-    replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) this.children.push(c); },
+    // Faithful on purpose, the same rule test/board-view.test.js:106 carries: the real
+    // `append` and `replaceChildren` have NO null filter — `el()` does, a DOM method
+    // does not — and convert every argument with String(), so a bare `?: null` left in
+    // a list puts the literal word "null" on the screen. v226 shipped exactly that on
+    // the Parcel couriers screen while a forgiving shim said it was clean, so these do
+    // not quietly drop it: they make it readable, and a stray one fails a test.
+    append(...cs) { for (const c of cs) this.children.push(c && c.nodeType ? c : { nodeType: 3, text: String(c) }); },
+    replaceChildren(...cs) {
+      this.children = [];
+      for (const c of cs) this.children.push(c && c.nodeType ? c : { nodeType: 3, text: String(c) });
+    },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener() {},
     setAttribute(k, v) { this.attrs[k] = String(v); },
@@ -64,15 +73,22 @@ const { renderOrders } = await import("../admin/js/views/orders.js");
 // Their orders sit on Thu 10 Sep; the New-order card is opened on the later day
 // d20 because a delivery date whose 6pm cutoff has passed asks for a backfill
 // confirmation before it will add anything.
+//
+// Aunty Bee's two orders carry two different addresses, the newer one on o2, so a
+// test can tell "the address she delivered to last" from "the address on the first
+// order" — and Uncle Tan's carries none, which is the case where there is nothing
+// to offer and the box must be left alone rather than filled with a blank.
 function state() {
   return {
     deliveryDates: [{ id: "d10", date: "2026-09-10" }, { id: "d20", date: "2026-09-20" }],
     products: [{ id: "p1", name: "Focaccia", price: 18, limit: 50, active: true, recipe: [], unit: "pc" }],
     orders: [
       { id: "o1", deliveryDateId: "d10", deliveryDate: "2026-09-10", orderDate: "2026-09-01",
-        productId: "p1", qty: 2, customerName: "Aunty Bee", whatsapp: "012-345 6789" },
+        productId: "p1", qty: 2, customerName: "Aunty Bee", whatsapp: "012-345 6789",
+        address: "9 Jalan Lama, Penang" },
       { id: "o2", deliveryDateId: "d10", deliveryDate: "2026-09-10", orderDate: "2026-09-02",
-        productId: "p1", qty: 1, customerName: "Aunty Bee", whatsapp: "012-345 6789" },
+        productId: "p1", qty: 1, customerName: "Aunty Bee", whatsapp: "012-345 6789",
+        address: "12 Jalan Bunga, Penang" },
       { id: "o3", deliveryDateId: "d10", deliveryDate: "2026-09-10", orderDate: "2026-09-03",
         productId: "p1", qty: 1, customerName: "Uncle Tan", whatsapp: "016-222 3333" },
     ],
@@ -86,18 +102,23 @@ const all = (node, out = []) => {
   for (const c of node.children || []) { out.push(c); all(c, out); }
   return out;
 };
-const byClass = (root, name) => all(root).find((n) => String(n.className).includes(name));
-const buttonByText = (root, text) =>
-  all(root).find((n) => n.tagName === "BUTTON" && n.textContent.includes(text));
+const buttonByText = (root, text) =>  all(root).find((n) => n.tagName === "BUTTON" && n.textContent.includes(text));
 
 const NAME_BOX = "Customer name (optional)";
 const WA_BOX = "e.g. 012-345 6789";
+// Found by its PLACEHOLDER, not its label: this app words the box
+// "Postal address (for posting)" where the bakery says "Delivery address (if courier)".
+const ADDRESS_BOX = "Postal address (for posting)";
 const nameBox = (root) => all(root).find((n) => n.tagName === "INPUT" && n.attrs.placeholder === NAME_BOX);
 const waBox = (root) => all(root).find((n) => n.tagName === "INPUT" && n.attrs.placeholder === WA_BOX);
+const addrBox = (root) => all(root).find((n) => n.tagName === "INPUT" && n.attrs.placeholder === ADDRESS_BOX);
+// Everything the card says, as one string. A stray null arrives as an ordinary text
+// node, so this is the reading that catches one wherever it lands.
+const screenText = (root) => all(root).map((n) => (n.nodeType === 3 ? n.text : n.textContent)).join("");
 // The suggestion panel and the rows currently offered under the name box. The
 // row count is the honest reading: `hidden` means different things to different
 // shims, but an empty panel means the same thing to all of them.
-const panel = (root) => byClass(root, "sugg-panel");
+const panel = (root) => all(root).find((n) => n.attrs && n.attrs["data-sugg"] === "customer");
 const offered = (root) => (panel(root) ? panel(root).children : []);
 // Typing: the handler reads this.value, so it is fired with the box as `this`.
 const type = (box, text) => {
@@ -207,8 +228,9 @@ test("the Edit pop-up offers the same list, and a tap fills its name and number"
 
   const pop = layers["popup-layer"];
   assert.equal(offered(pop).length, 0, "the list is shut until she starts typing");
-  assert.equal(all(pop).filter((n) => String(n.className).includes("sugg-panel")).length, 1,
-    "but the panel itself is in the pop-up, under the name box");
+  assert.equal(all(pop).filter((n) => String(n.className).includes("sugg-panel")).length, 2,
+    "but the panels themselves are in the pop-up — the customer one under the name box, " +
+    "and (v228) the address one under the address box");
 
   type(nameBox(pop), "uncle");
   const rows = offered(pop);
@@ -235,4 +257,94 @@ test("saving the pop-up writes the picked number onto the order it edits", () =>
 
   assert.equal(st.orders.find((o) => o.id === "o2").whatsapp, "60123456789",
     "her own number is stored in the one WhatsApp form");
+});
+
+// ── the delivery address the suggestion offers (v227) ──────────────────────
+//
+// A tap fills the address as well as the name and number, from the orders she has
+// already delivered. The whole point is that it is a DEFAULT: it fills an empty
+// box and it never touches one that already says something, because the address is
+// what decides which door a cake is left at.
+
+test("a tap fills the delivery address too, with the one she delivered to last", () => {
+  const st = state();
+  const root = openNewCard(st);
+
+  type(nameBox(root), "aun");
+  tap(offered(root)[0]);
+
+  assert.equal(addrBox(root).value, "12 Jalan Bunga, Penang",
+    "the address on the newest of her orders, not the one on the first");
+
+  const prodSel = all(root).find((n) => n.tagName === "SELECT"
+    && n.children.some((o) => o.value === "p1"));
+  prodSel.value = "p1";
+  (prodSel._listeners.change || []).forEach((f) => f.call(prodSel));
+  tap(buttonByText(root, "Add order"));
+
+  const added = st.orders.find((o) => !["o1", "o2", "o3"].includes(o.id));
+  assert.ok(added, "the order landed");
+  assert.equal(added.address, "12 Jalan Bunga, Penang", "and it is saved onto the order");
+});
+
+test("a tap never overwrites an address she has already typed", () => {
+  const root = openNewCard(state());
+
+  type(addrBox(root), "5 Jalan Saya Sendiri");
+  type(nameBox(root), "aun");
+  tap(offered(root)[0]);
+
+  assert.equal(nameBox(root).value, "Aunty Bee", "the name still fills");
+  assert.equal(addrBox(root).value, "5 Jalan Saya Sendiri",
+    "but her own words stand — it is a default, never an overwrite");
+});
+
+test("a person with no address on their orders fills nothing, and nothing on the card says undefined", () => {
+  const root = openNewCard(state());
+
+  type(nameBox(root), "uncle");
+  tap(offered(root)[0]);
+
+  assert.equal(addrBox(root).value, "", "there is nothing to offer, so the box is left alone");
+  assert.equal(/undefined|null/.test(screenText(root)), false,
+    "and the card never says either word — the shim would print one rather than drop it");
+});
+
+test("the Edit pop-up fills an address the order does not have yet", () => {
+  const st = state();
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+
+  // o3 is Uncle Tan's, which carries no address.
+  const row = all(root).find((n) => n.dataset && n.dataset.order === "o3");
+  tap(buttonByText(row, "Edit"));
+  const pop = layers["popup-layer"];
+
+  assert.equal(addrBox(pop).value, "", "the box opens empty, as the order is");
+  type(nameBox(pop), "aun");
+  tap(offered(pop)[0]);
+  assert.equal(addrBox(pop).value, "12 Jalan Bunga, Penang", "and the pick offers her last address");
+
+  tap(buttonByText(pop, "Save changes"));
+  assert.equal(st.orders.find((o) => o.id === "o3").address, "12 Jalan Bunga, Penang",
+    "which is saved with the order");
+});
+
+test("the Edit pop-up keeps the address the order already carries", () => {
+  const st = state();
+  st.orders[2].address = "99 Jalan Sendiri"; // the order she is about to edit
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+
+  const row = all(root).find((n) => n.dataset && n.dataset.order === "o3");
+  tap(buttonByText(row, "Edit"));
+  const pop = layers["popup-layer"];
+
+  assert.equal(addrBox(pop).value, "99 Jalan Sendiri", "the order's own address is what opens");
+  type(nameBox(pop), "aun");
+  tap(offered(pop)[0]);
+  assert.equal(nameBox(pop).value, "Aunty Bee", "the customer still changes");
+  assert.equal(addrBox(pop).value, "99 Jalan Sendiri",
+    "but the address she set on this order is not replaced by the pick — a pick would not be " +
+    "offering an address if the box already holds one");
 });

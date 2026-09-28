@@ -140,3 +140,40 @@ export async function geocodeAddress(state, address, { timeoutMs = 15000 } = {})
   }
   return { ok: true, place: list[0], places: list };
 }
+
+// Half-typed addresses, offered back as she types (v228). Returns
+// { ok: true, places: [{ text, placeId }, ...] } or { ok: false, reason }.
+//
+// THIS IS NOT GEOCODING AND IT MUST NOT BE FOLDED INTO IT. geocodeAddress answers a
+// question she has FINISHED asking and gives back places; this one answers a question she
+// is still asking and gives back WORDS. Nothing here is a point, so nothing here can be
+// turned into a pin by accident — which is why it rides its own action and its own reply
+// shape rather than a flag on the other one.
+//
+// A MISS IS THE NORMAL ANSWER, exactly as it is above: Google knowing nothing about a
+// half-typed street is ordinary, and the caller's job is then to show no list at all
+// rather than an apology. An empty list and a refusal are deliberately NOT told apart
+// here — both reach her as "nothing to tap this time", and the difference is in the
+// function's own log, where the person who can fix it is looking.
+//
+// The timeout sits ABOVE the server's own 4s Places timeout on purpose: the server gives
+// up on Google first and says so in words, and a client that gave up first would replace
+// that sentence with a vaguer one of its own.
+export async function suggestAddresses(state, query, { timeoutMs = 8000 } = {}) {
+  const text = String(query || "").trim();
+  if (!text) return { ok: true, places: [] };
+  const out = await callCourier(state, { action: "autocomplete", payload: { query: text }, timeoutMs });
+  if (!out.ok) return out;
+  // Junk is dropped, not drawn — the same discipline as `named` above and for the same
+  // reason. A row with no words to print would still be a tappable row, and a tap on it
+  // would put an empty address in her box.
+  const places = (Array.isArray(out.places) ? out.places : [])
+    .map((p) => {
+      if (!p || typeof p !== "object") return null;
+      const t = String(p.text || "").trim();
+      if (!t) return null;
+      return { text: t, placeId: String(p.placeId || "").trim() };
+    })
+    .filter(Boolean);
+  return { ok: true, places };
+}

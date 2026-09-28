@@ -1015,6 +1015,96 @@ matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestion
 now that the Google key returns one precise house-number answer, most lookups legitimately show no
 list and the pin simply lands.
 
+## Parcels, and an address that fills itself in (v226–v228)
+
+Three engine versions in one pass, one theme: how a posted order finds a door. **Code-only — no
+SQL.** The bakery's own commits are `44f7276` (v226), `e8bd78e` (v227) and `7a1dd26` (v228), plus
+the rename follow-up `8affbb1`, which is the state ported here.
+
+### v226 — a parcel carrier is a RECORD, not an integration
+
+The third way an order leaves the house, beside the flat postage and the bookable courier: the box
+she takes to a counter or books on the carrier's own website herself. New pure module
+`admin/js/parcel.js` (`parcelOf`, `carrierOf`, `parcelHanded`, `setParcel`, `markHanded`,
+`clearParcel`, `notParcelable`, `USUAL_CARRIERS`, `missingCarriers`) plus the new screen
+`admin/js/views/parcelCouriers.js` at `#/parcel-couriers` (More → **📦 Parcel couriers**).
+
+Deliberately **not** in `admin/js/couriers.js`, whose registry is the seam for a courier the app
+*asks*: to be one at all a provider must answer vehicles, quote and book, and a parcel carrier
+answers none of those here. So a parcel is a record on the order — `order.parcel =
+{carrierId, carrierName, handedAt}` — synced whole like every other order field, with no column
+and no migration. `carrierName` is **frozen at record time**, exactly as a booked trip freezes its
+courier's own name, so renaming or deleting a carrier later never rewrites what a customer was
+already told at what her books already say. A record with no carrier reads as no record.
+
+The consignment number rides the order's **existing** `trackingNo` slot — a parcel's number is the
+"read it out" kind, which the shipped message, the customer's card and the pop-up's tracking box
+already render from that one value. Keeping one slot is what stops those three ever disagreeing. A
+**parcel and a booked trip are mutually exclusive** on one order, and `admin/js/supabase.js`'s
+`trackingSnapshot` gives the trip priority: `courier_phase` is the trip's phase when there is one,
+else `"collected"` for a handed-over parcel.
+
+The per-product tick **"Can travel as a parcel"** (`product.parcel === true`) **gates nothing** —
+it is written only when ON, so a product she never opens is byte-for-byte unchanged and unticking
+leaves no `parcel: false` behind. It exists to make one sentence possible: the advisory
+`notParcelable(state, group)` returns the line names that are not marked parcelable, and the order
+screen *names* them while leaving every control exactly where it is.
+
+**Two latent faults repaired**, both long dead and both invisible:
+
+- **`admin/js/ui.js` — the app's own `select()` change handler had been dead for ~100 versions.**
+  It was the listener itself, so browsers called it with the element as `this`, and several callers
+  read the new value as `this.value`. v121 wrapped it in an arrow to repaint the tone, and an arrow
+  cannot carry a `this` — so every one of those handlers had been throwing on its first line since.
+  The picker still changed on screen, so nothing looked broken; the code after the throw simply
+  never ran. Nothing depended on it until the carrier picker did.
+- **The Note / tracking card rebuilt its draft on every repaint.** `openNoteTrackingPopup`'s
+  `draft` is now hoisted out of the body, because the parcel's carrier picker asks for a repaint
+  when it changes and the body is rebuilt from scratch each time — held inside, a repaint threw
+  away the carrier she had just named and the number she had just typed, and the hand-over press
+  never appeared.
+
+### v227 — the address fills in from her own order history
+
+`admin/js/customers.js`'s `suggestedAddress(state, {customerName, whatsapp, ...})` reads the
+address off the most recent order for that person. It helps a **returning** customer only, since
+it reads her own past orders, and it never overwrites an address already typed into the box.
+
+### v228 — Google as-you-type suggestions, for the new customer
+
+A new pure module `supabase/functions/courier/suggest.ts` (`suggestAddresses`, `allowSuggestion`,
+`HitRecord`) and a new `action === "autocomplete"` branch in the **session-gated** `courier`
+function, sitting **above** `configFor(provider)` — so it answers with no courier key in sight,
+for the same reason `geocode` does. The branch carries a **per-user 60-per-60-seconds limiter**
+keyed on her own user id, not her IP: she chose to have **no daily cap** on Places, so this map is
+the thing that stops a runaway. A refused caller gets `{ok: true, places: []}`, not an error — a
+runaway is by definition not a person reading the screen, and the honest answer is the one a
+person gets when there are no suggestions this time.
+
+One shared `addressSuggester(state, onPick)` in `admin/js/views/orders.js` is wired into **both**
+order forms, the New order card and the Edit pop-up. It waits for a pause before asking, ignores a
+fragment, discards an answer that lands after she has typed on, and writes **both** the draft and
+the box on a tap — the same pair the customer suggester writes. It is inert until **Places API
+(New)** is enabled on the Google key the map lookup already uses; the key itself is a
+**project-level** secret (`GOOGLE_GEOCODING_KEY`, set with no `--function` flag, so every function
+including `courier` can read it), and `suggest.ts` reads the same name the bakery does.
+
+**Deploy note, and it is transferable:** `supabase functions deploy` does **not** upload the
+function folder — it walks the **import graph** out of `index.ts` and silently skips any file
+nothing imports, which reads exactly like the CLI dropping a file. After v228 the courier upload is
+**seven assets**: `index.ts`, `booking.ts`, `place.ts`, `suggest.ts`, `geocode.ts`,
+`providers/lalamove.ts`, `sign.mjs`. **Deploy from the app's own folder.**
+
+### Test-file localization, and the one string left alone
+
+The two new suites find the address box by its **placeholder**, which this app words
+`"Postal address (for posting)"` where the bakery says `"Delivery address (if courier)"` — so that
+one constant differs in `test/order-address-suggest.test.js` and `test/customer-suggest.test.js`.
+Bakery fixtures (`Focaccia`, `pc`, `ing_flour`) are left as-is per the documented fixture policy.
+**Left alone deliberately:** the address field's *label* in `admin/js/views/orders.js` still reads
+`"Delivery address (if courier)"` — a pre-existing bakery wording, untouched by this pass and
+pinned by no test. Flagged rather than churned; it is a one-word change if she wants it.
+
 ## A product on the shop can always be hidden (v225)
 
 One button, one place. Code-only — no SQL.
@@ -1711,6 +1801,7 @@ admin/ — backoffice app (/admin/):
   js/courier_job.js   booking a courier job: price, sign, place, follow (pure where it can be)
   js/courier_place.js a job's pickup / drop points, and the addresses they came from
   js/place_map.js     the map that shows and edits a stored point
+  js/parcel.js        a parcel: a box she posts herself, with a carrier frozen on the order (pure)
   js/productCategories.js  the category tree: flat records + parentId, stored sort (pure)
   js/supabase.js      live availability + storefront config publish, order intake
   js/sync.js          shared-data sync engine (queue, pull-then-flush, conflict)
@@ -1746,7 +1837,8 @@ supabase/courier_cod.sql    run once — adds order_tracking.courier_cod (v124)
 supabase/courier_job.sql    run once — the table behind booking a courier job from the app
 supabase/postage_mode.sql   run once — adds order_tracking.postage_quoted (the flat/quote switch)
 supabase/functions/wish-mail  optional edge function: emails the wish list to the developer
-supabase/functions/courier   optional edge function: prices and books a courier job
+supabase/functions/courier   optional edge function: prices and books a courier job, geocodes,
+                            and suggests addresses (suggest.ts — needs Places API (New))
 supabase/functions/shop-geocode  optional edge function: address → map point, under her own name
 test/               node --test suites (import from admin/js and store/)
 marketing/          social-media marketing guide generator (gitignored)
