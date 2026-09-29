@@ -691,9 +691,9 @@ function buildEditor(state, product) {
     const src = SRC_OF[variant];
     const node = el(isText(src) ? "textarea" : "input", {
       class: "input",
-      // Four rows, not two: a line's greyed hint is "e.g. <the translation>……if
-      // blank, it will be filled with English", and a sentence of translation
-      // plus that tail needs the height or its end is cut off in a two-row box.
+      // Four rows, not two: a description or a serving tip in another language
+      // wants the room to read and edit, and a greyed hint in a two-row box is
+      // clipped.
       rows: isText(src) ? 4 : undefined,
       dataset: { variant },
       value: product ? String(product[variant] ?? "") : "",
@@ -733,24 +733,44 @@ function buildEditor(state, product) {
     return "";
   }
 
-  // The greyed hint on a line with no words of its own: the translation on
-  // offer, then what happens if she leaves it alone. Says "filled with English"
-  // rather than naming the English, because that is what the customer gets —
-  // the English goes in where the translation is missing.
-  const hintFor = (t) => `e.g. ${t}……if blank, it will be filled with English`;
+  // The greyed hint on a line with no words of its own: the translation on offer,
+  // and nothing else. It used to carry a tail — "……if blank, it will be filled
+  // with English" — and on a one-line box that tail ran past the right edge and
+  // was cut off mid-word, right where the → sits, so the very sentence meant to
+  // explain the line was the one you could not read. The same promise is made in
+  // full in the card's own words above, and every other suggested field in the app
+  // is a plain "e.g. <the value>" — so this one is too.
+  const hintFor = (t) => `e.g. ${t}`;
 
-  // What the right edge of one line offers. An empty line shows the greyed
-  // recommendation with the → the app draws on any suggested field; once it has
+  // What the right edge of one line offers. An untouched empty line shows the
+  // greyed recommendation with the → the app draws on any suggested field; with
   // words, → gives way to ↻ — except on a line the baker typed, which is hers.
   // An empty line with nothing on offer still gets ↻, so it is never a dead end.
+  //
+  // The greyed words and the → are the SAME offer and are written together here,
+  // in one place, so a line can never show words that nothing will take: the
+  // arrow's CSS keys off `data-suggest`, and the words it sits over belong to the
+  // placeholder, so a stale hint left behind after she emptied a line would be
+  // machine words with no arrow — which is exactly what she saw.
+  // Kept short on purpose: a single-line box cuts its placeholder off at the right
+  // edge, and the tightest case is the Edit pop-up on a 375px phone, where the
+  // room is about 229px minus the gap the ↻ needs. Measured live, not guessed. The
+  // ↻ sits right there, so the hint need not name it.
+  const BLANK_HINT = "Left blank — English shows.";
   function refreshRow(variant) {
     const node = boxes[variant];
     // Emptiness is the box's own value being "", exactly what the CSS arrow keys
     // off, so the arrow and ↻ can never both show or both hide.
     const empty = node.value === "";
-    if (!empty) { suggests[variant] = ""; delete node.dataset.suggest; }
+    const hers = manualSet.has(variant); // typed into, or deliberately emptied
+    const offer = empty && !hers ? suggests[variant] : "";
+    if (offer) node.dataset.suggest = offer;
+    else delete node.dataset.suggest;
+    // A line she emptied says what blank means, instead of leaving the machine
+    // translation greyed in the box as if it were still on offer.
+    if (empty && hers && englishSource(variant)) node.placeholder = BLANK_HINT;
     const show = !pending.has(variant) && !!englishSource(variant)
-      && (empty ? !suggests[variant] : !manualSet.has(variant));
+      && (empty ? !offer : !hers);
     regenBtns[variant].hidden = !show;
     wraps[variant].className = "tr-wrap" + (show ? " has-regen" : "")
       + (isText(SRC_OF[variant]) ? " tr-wrap--text" : "");
@@ -767,6 +787,10 @@ function buildEditor(state, product) {
     if (node.value !== "") { refreshRow(variant); return; }
     const src = englishSource(variant);
     if (!src) { node.placeholder = "Needs the English above first"; refreshRow(variant); return; }
+    // A line the baker made hers — typed over, or emptied on purpose — is not
+    // offered words back. It is left as she left it, and the ↻ in refreshRow is
+    // her way to a translation if she changes her mind.
+    if (manualSet.has(variant)) { refreshRow(variant); return; }
     if (!translateAllowed()) { refreshRow(variant); return; }
     const key = `${LANG_OF[variant]}|${src}`;
     if (cache[key] === undefined) {
@@ -779,7 +803,7 @@ function buildEditor(state, product) {
     }
     const t = cache[key] || "";
     node.placeholder = t ? hintFor(t) : "Couldn't translate — tap ↻ to try again";
-    if (t) { suggests[variant] = t; node.dataset.suggest = t; }
+    if (t) suggests[variant] = t; // the one offer; refreshRow draws its arrow
     refreshRow(variant);
   }
 
@@ -824,7 +848,7 @@ function buildEditor(state, product) {
   // anywhere outside it — see openCards at the top of this module.
   const transBody = el("div", { class: "trans-body", hidden: true },
     el("p", { class: "card-sub", style: "margin:8px 0 0" },
-      "The same text in 中文 and Bahasa Malaysia, worked out for you. Tap the → in a line to take the suggested words, or type your own. A line that already has words shows ↻ instead — tap it for fresh wording. If you leave a line blank, it will be filled with English."),
+      "The same text in 中文 and Bahasa Malaysia, worked out for you. Tap the → in a line to take the suggested words; anything you type is yours and is never overwritten. A line translated for you shows ↻ in place of the →, and so does a line you have emptied — tap it for fresh wording. If you leave a line blank, it will be filled with English."),
     langSection("zh"),
     langSection("ms"));
   const caret = el("span", { class: "trans-caret" }, "▸");

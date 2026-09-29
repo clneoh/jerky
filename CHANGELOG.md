@@ -1,8 +1,34 @@
-# Munchies Furkidz — change history (v54 → v231)
+# Munchies Furkidz — change history (v54 → v232)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**29 Sep 2026 — engine v232. A translated line you delete stays deleted, and the greyed hint is
+readable. No database step — nothing to run.**
+
+One version, and both halves are the same card: the Chinese / Bahasa Malaysia card on a product's
+Edit screen.
+
+**A line you empty on purpose goes quiet.** If you deleted the wording from a translated line
+because you wanted the English shown for that line, the machine translation used to come straight
+back into the box, greyed out — and the small right-pointing arrow that is meant to sit over those
+words had gone. The greyed words and the arrow are one single offer: the arrow is drawn on the
+words, and the words exist only because the arrow can take them. They were written in two separate
+places, so they could disagree, and the box ended up showing machine words that nothing would
+take. They are now written together in one place, so a line can never show words with no arrow over
+them. An emptied line stays empty, says "Left blank - English shows." so blank is clearly meant,
+and keeps its round arrow as the way back to a translation if you change your mind.
+
+**The greyed hint no longer runs off the edge.** On a line you have not touched, the greyed hint
+read "e.g. <the translation>......if blank, it will be filled with English". On a one-line box that
+tail ran past the right edge and was cut off mid-word, right where the arrow sits — so the one
+sentence meant to explain the line was the one you could not read. It is now just "e.g. <the
+translation>", the same shape as every other suggested box in the app, and the promise that blank
+means English is still made in full in the card's own line above.
+
+Nothing you have already typed is touched. A line you typed is yours and is never overwritten, and
+an untouched empty line behaves exactly as it did before: greyed suggestion, with the arrow.
 
 **28 Sep 2026 — engine v229, v230 and v231. The delivery address box has room, and the
 shop's posting-day picker is five whole weeks. No database step — nothing to run.**

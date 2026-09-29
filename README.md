@@ -1015,6 +1015,52 @@ matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestion
 now that the Google key returns one precise house-number answer, most lookups legitimately show no
 list and the pin simply lands.
 
+## A translated line you empty goes quiet (v232)
+
+One engine version, from bakery `9bbe406` → `15b1043`. **Code-only — no SQL.** Both halves are on
+the 中文 / Bahasa Malaysia card in a product's Edit screen (`admin/js/views/products.js`).
+
+### The greyed words and the → are one offer, written in one place
+
+The card offers a machine translation as a **greyed hint** with a right-pointing `→` drawn over it
+(the app's shared `data-suggest` gesture). Those two things were written in **two** places —
+`loadSuggestion()` set `node.dataset.suggest` and `node.placeholder` — so they could disagree.
+The failure the owner reported: emptying a translated line on purpose left the translation back in
+the box, greyed, with the arrow gone, because the placeholder survived and the dataset did not.
+**`refreshRow()` is now the single writer of both**, deriving them from the same `offer`, so a line
+can never show words that nothing will take:
+
+```js
+const hers = manualSet.has(variant);           // typed into, or deliberately emptied
+const offer = empty && !hers ? suggests[variant] : "";
+if (offer) node.dataset.suggest = offer;
+else delete node.dataset.suggest;
+if (empty && hers && englishSource(variant)) node.placeholder = BLANK_HINT;
+```
+
+`loadSuggestion()` also gained one early return — `if (manualSet.has(variant))` — placed **after**
+the "Needs the English above first" branch and **before** the network call, so a line she made hers
+is neither offered words back nor asked for a translation. `BLANK_HINT` is
+`"Left blank — English shows."`: 229px of room in the Edit pop-up at 375px, measured, not guessed.
+
+### The hint's tail was cut off mid-word
+
+`hintFor()` built `e.g. ${t}……if blank, it will be filled with English`. On a one-line box that
+tail ran past the right edge and was clipped **right where the `→` sits** — the sentence explaining
+the line was the one you could not read. It is now `e.g. ${t}`, the same shape as every other
+suggested field in the app; the promise is still made in full in the card's own paragraph above,
+which was reworded to say that a typed line is yours and that an emptied line also shows `↻`.
+
+**Merge note:** `admin/js/version.js` was byte-identical to the bakery base and was copied
+wholesale. `admin/js/views/products.js` and `test/products-editor.test.js` are **fork points** —
+both hand-merged with `git merge-file -p --diff3`, **0 conflicts each**, and audited: the diff
+against jerky's own copy is exactly the four v232 hunks and nothing else. All nine jerky
+product-editor strings survive ("Feeding tip", "e.g. Chicken Jerky", the pouch/batch/posting-day
+limit wording, the two card-sub descriptions, "which cut or brand of meat", the serving-tip
+placeholder) along with the 🐾 empty-photo placeholder and zero 🍞. The test file keeps its bakery
+fixtures (`Focaccia`, `u_loaf`, `ing_flour`) per the documented fixture policy; `formHandles()`
+still finds the name box by jerky's own `e.g. Chicken Jerky` placeholder.
+
 ## The address box, and the shop's picker in whole weeks (v229–v231)
 
 Three engine versions in one pass, from bakery `8affbb1` → `9bbe406`. **Code-only — no SQL.**

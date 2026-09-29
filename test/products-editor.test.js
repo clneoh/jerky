@@ -733,8 +733,8 @@ test("opening the card works out each line's translation and offers it as a sugg
     const nameZh = trBox(root, "nameZh");
     assert.equal(nameZh.value, "", "the words are offered, never taken for her");
     assert.equal(nameZh.dataset.suggest, "T:Focaccia", "the → would insert the translation");
-    assert.equal(nameZh.placeholder, "e.g. T:Focaccia……if blank, it will be filled with English",
-      "the greyed text carries the wording and what blank means");
+    assert.equal(nameZh.placeholder, "e.g. T:Focaccia",
+      "the greyed text is the wording on offer, and nothing that a one-line box would cut off");
     assert.equal(trRegen(root, "nameZh").hidden, true, "no ↻ while the → is on offer");
     assert.equal(trBox(root, "descZh").dataset.suggest, "T:Rosemary focaccia — golden, airy crumb",
       "each line is translated from its own English");
@@ -826,6 +826,122 @@ test("the ↻ translates a line again in place and the line stays machine text",
     assert.deepEqual(state.products[0].trSrc, { nameZh: "Focaccia" });
     assert.equal(state.products[0].trOverride, undefined, "regenerating never freezes the line");
     await settle(200); // drain the update's auto-fill — see the note above
+  });
+});
+
+// The greyed words on an empty line ARE an offer, and the → is how it is taken.
+// So the two are set together and can never disagree: a line showing machine
+// words must have the arrow over them, and a line with no arrow must not be
+// dangling words nothing will take. A line the baker has made hers — typed into,
+// or emptied on purpose — is left alone, with the ↻ as her way back.
+const BLANK_HINT = "Left blank — English shows.";
+
+test("a line she emptied by hand goes quiet: no greyed machine words, and no → over them", async () => {
+  await online(async () => {
+    doc.body.replaceChildren();
+    resetLayers();
+    const state = freshState();
+    // Blank, and recorded as HERS: the baker deleted the Chinese on purpose, so
+    // the shop shows the English for this line.
+    state.products = [{ id: "p1", name: "Focaccia", unit: "u_loaf", active: true,
+      trOverride: ["nameZh"] }];
+    const root = render(state);
+
+    fire(buttonByText(root, "Edit"));
+    const pop = layers["popup-layer"];
+    fire(transHead(pop));
+    await settle();
+
+    const nameZh = trBox(pop, "nameZh");
+    assert.equal(nameZh.value, "", "the box is still blank — nothing was put back");
+    assert.equal(nameZh.dataset.suggest, undefined, "no → on a line she emptied herself");
+    assert.equal(nameZh.placeholder, BLANK_HINT,
+      "the line says what blank means, rather than offering words with no arrow to take them");
+    assert.equal(trRegen(pop, "nameZh").hidden, false, "the ↻ stays as her way back to a translation");
+  });
+});
+
+test("typing into a line and then emptying it leaves the hint and the → agreeing", async () => {
+  await online(async () => {
+    doc.body.replaceChildren();
+    resetLayers();
+    const root = render(freshState());
+    const f = formHandles(root);
+    f.name.value = "Focaccia";
+    f.unit.value = "u_loaf";
+    fire(transHead(root));
+    await settle();
+
+    const nameZh = trBox(root, "nameZh");
+    assert.equal(nameZh.dataset.suggest, "T:Focaccia", "an untouched line is offered the words");
+
+    nameZh.value = "佛卡夏"; // her own words
+    nameZh.dispatchEvent(new Event("input"));
+    nameZh.value = "";       // and then she changes her mind
+    nameZh.dispatchEvent(new Event("input"));
+
+    assert.equal(nameZh.value, "", "the box is empty again");
+    assert.equal(nameZh.dataset.suggest, undefined, "the → does not come back with the words");
+    assert.equal(nameZh.placeholder, BLANK_HINT,
+      "nor does the greyed translation, which the missing arrow could not have taken");
+    assert.equal(trRegen(root, "nameZh").hidden, false, "the ↻ is left as the way back");
+  });
+});
+
+test("a line she emptied whose English also went blank still asks for the English", async () => {
+  await online(async () => {
+    doc.body.replaceChildren();
+    resetLayers();
+    const state = freshState();
+    // The Chinese line was emptied by hand, and there is no description either —
+    // so there is nothing to translate and nothing for the customer to fall back
+    // to. The line must say so rather than promise an English that does not exist.
+    state.products = [{ id: "p1", name: "Focaccia", unit: "u_loaf", active: true,
+      trOverride: ["descZh"] }];
+    const root = render(state);
+
+    fire(buttonByText(root, "Edit"));
+    const pop = layers["popup-layer"];
+    fire(transHead(pop));
+    await settle();
+
+    const descZh = trBox(pop, "descZh");
+    assert.equal(descZh.placeholder, "Needs the English above first",
+      "no English means nothing to offer and nothing to fall back to");
+    assert.equal(descZh.dataset.suggest, undefined, "and nothing for the → to take");
+  });
+});
+
+test("a line the baker emptied stays empty: the save keeps it blank and hers", async () => {
+  await online(async () => {
+    doc.body.replaceChildren();
+    resetLayers();
+    const state = freshState();
+    state.products = [{ id: "p1", name: "Focaccia", unit: "u_loaf", active: true,
+      nameZh: "佛卡夏", trSrc: { nameZh: "Focaccia" } }];
+    const root = render(state);
+
+    fire(buttonByText(root, "Edit"));
+    const pop = layers["popup-layer"];
+    fire(transHead(pop));
+    await settle();
+
+    const nameZh = trBox(pop, "nameZh");
+    assert.equal(nameZh.value, "佛卡夏", "the saved translation is in the box");
+    nameZh.value = ""; // she deletes it
+    nameZh.dispatchEvent(new Event("input"));
+
+    // The shim's <select> never reports the selected option the way a browser
+    // does, so give it the value the loaded product would have put there.
+    walk(pop).find((n) => n.tagName === "SELECT").value = "u_loaf";
+    fire(buttonByText(pop, "Update product"));
+    await settle(200); // drain the update's auto-fill — see the note above
+
+    const saved = state.products[0];
+    assert.equal(saved.nameZh, undefined, "the translation is gone from the saved product");
+    assert.deepEqual(saved.trOverride, ["nameZh"], "and the line is recorded as hers");
+    assert.ok(!(saved.trSrc && "nameZh" in saved.trSrc),
+      "with no machine provenance left on the line she emptied");
   });
 });
 
