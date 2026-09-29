@@ -1015,6 +1015,38 @@ matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestion
 now that the Google key returns one precise house-number answer, most lookups legitimately show no
 list and the pin simply lands.
 
+## The order page has a way back to your homepage (v233)
+
+One engine version, from bakery `15b1043` → `93a87b2`. **Code-only — no SQL.** It is one small
+addition on the shop page, and a **hand-merge** here rather than a copy, because jerky's `store/`
+and the root `store-lang.js` are no longer the bakery's.
+
+A customer reaches `/store/` from an Instagram bio, a shared link or a bookmark as often as from the
+homepage, and the order page had **no route back to `/` at all** — so a visitor who landed there
+first could not reach the reviews, the gallery or the story. `store/index.html` now carries, on its
+own line under the tagline inside `header.hero`:
+
+```html
+<a id="home-link" class="hero-home" href="/" data-i18n="homeLink">🏠 Our homepage</a>
+```
+
+It is the ordinary `data-i18n` path, so the shop's existing EN / 中文 / BM switch translates it **in
+place** like every other tagged string. `homeLink` is a new key in all three dictionaries
+(`🏠 Our homepage` / `🏠 我们的主页` / `🏠 Laman utama kami`) — copied from the bakery verbatim, since
+the wording is not brand-specific.
+
+**Why its own line, not a third item on the top row.** The top row is the eyebrow beside the
+language pills, and at 375px the eyebrow already wraps to two lines; a third item would have pushed
+the language switch out of reach. `.hero-home` in `store/app.css` gives the link the same pill shape
+as those pills (`border-radius: 999px`) and a full `min-height: 36px`, so it is a real tap target
+rather than a line of text.
+
+`test/store-i18n.test.js` gains one test: the tag exists, its `href` is `/`, the root `index.html`
+really is served there (`<html` present — a link to a path with nothing behind it is a 404 in a nav
+item's clothes), the label is keyed, and both the Chinese and BM strings differ from English.
+
+Nothing about taking an order changed.
+
 ## A translated line you empty goes quiet (v232)
 
 One engine version, from bakery `9bbe406` → `15b1043`. **Code-only — no SQL.** Both halves are on

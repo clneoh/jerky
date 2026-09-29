@@ -1,8 +1,26 @@
-# Munchies Furkidz — change history (v54 → v232)
+# Munchies Furkidz — change history (v54 → v233)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**29 Sep 2026 — engine v233. The order page has a way back to your homepage. No database step —
+nothing to run.**
+
+One small thing, and it sits on the shop page rather than in the app.
+
+Customers reach your order page from plenty of places that are not your homepage — an Instagram
+bio, a link someone shared in a group, a bookmark saved on their phone. Until now that page had no
+route back to your front page at all, so a visitor who landed on it first could never get to the
+reviews, the gallery or your story: there was simply nothing to tap. From this version there is a
+small "Our homepage" link in the orange banner, on its own line just under your tagline and marked
+with a little house. It points at your homepage, and it reads in all three shop languages.
+
+It sits on its own line rather than on the top row beside the EN, Mandarin and BM buttons on
+purpose. That row already fills a phone — the line beside it wraps to two lines at 375px — and a
+third item would have pushed the language buttons out of easy reach. The link is a full-size tap
+target in the same pill shape as those buttons, so it looks like it belongs there and is easy to
+hit. Nothing else on the order page moved, and nothing about taking an order changed.
 
 **29 Sep 2026 — engine v232. A translated line you delete stays deleted, and the greyed hint is
 readable. No database step — nothing to run.**

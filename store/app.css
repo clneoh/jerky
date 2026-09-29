@@ -97,6 +97,27 @@ html, body {
 }
 .hero-sub { margin: 0; font-size: 14px; opacity: .92; }
 
+/* The way back to the brand page. Its own line under the tagline, so it belongs
+   to the banner and never competes with the language pills on the top row —
+   that row's eyebrow already wraps to two lines on a phone. Same pill shape as
+   those pills, and a full 36px tall so it is a real tap target. */
+.hero-home {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  margin-top: 12px;
+  padding: 6px 14px;
+  border: 1px solid rgba(255, 255, 255, .45);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .14);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.hero-home:active { background: rgba(255, 255, 255, .3); }
+
 /* ---------- Layout ---------- */
 .view {
   max-width: 540px;

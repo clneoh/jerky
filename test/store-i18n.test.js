@@ -148,3 +148,21 @@ test("placeholders and the html-track hint are keyed too", () => {
     for (const l of LANGS) assert.ok(STORE[l][k].includes("<strong>"), `${l}.${k} keeps its <strong>`);
   }
 });
+
+test("the shop has a way back to the homepage, and it points at a page that exists", () => {
+  const m = html.match(/<a\b[^>]*id="home-link"[^>]*>/);
+  assert.ok(m, "the shop page carries a home link");
+  const tag = m[0];
+  assert.match(tag, /href="\/"/, "it points at the site root — the homepage");
+
+  // The root is the homepage only because a page is served there; a link to a
+  // path with nothing behind it is a 404 wearing a nav item's clothes.
+  const root = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  assert.match(root, /<html\b/, "index.html is served at the root the link points to");
+
+  // And it is a shop-page string like any other: keyed, and actually translated.
+  assert.match(tag, /data-i18n="homeLink"/, "the label is a translated string");
+  for (const l of LANGS) assert.ok(STORE[l].homeLink.trim(), `${l}.homeLink is present`);
+  assert.notEqual(STORE.zh.homeLink, STORE.en.homeLink, "Chinese is translated, not left in English");
+  assert.notEqual(STORE.ms.homeLink, STORE.en.homeLink, "Bahasa Malaysia is translated, not left in English");
+});

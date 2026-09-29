@@ -9,6 +9,7 @@
 
 const en = {
   titleWord: "Order",
+  homeLink: "🏠 Our homepage",
   referral: "🎁 You were referred — you have a welcome discount on your first order",
   // The scanned-label banner. Its words mirror what the owner states on a label
   // (offerLine in admin/js/codes.js) so the page and the card agree.
@@ -234,6 +235,7 @@ const en = {
 
 const zh = {
   titleWord: "订购",
+  homeLink: "🏠 我们的主页",
   referral: "🎁 经由好友推荐 — 首次下单即可享受专属优惠",
   codeOff: "折扣 %1",
   codeMin: "消费 %1 以上",
@@ -388,6 +390,7 @@ const zh = {
 
 const ms = {
   titleWord: "Tempahan",
+  homeLink: "🏠 Laman utama kami",
   referral: "🎁 Anda dirujuk — anda ada diskaun sambutan untuk tempahan pertama",
   codeOff: "Diskaun %1",
   codeMin: "pembelian %1 ke atas",
