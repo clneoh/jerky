@@ -453,6 +453,7 @@ test("storefront payload publishes the set's component and its per-product date 
     { id: "prd_2", name: "Focaccia Value Pack (4)", price: 54, unit: "set", active: true,
       recipe: [{ productId: "prd_1", qty: 4 }], closeDays: 3, cancelDays: 2,
       validFrom: "2026-12-01", validTo: "2026-12-24", alwaysListed: true,
+      askNote: true,
       // The calendar's marks, plus one entry the whitelist must not carry: a span
       // whose ends are not dates at all.
       sellRules: [{ days: [6, 0], from: "2027-01-01", to: "2027-01-31" },
@@ -473,14 +474,17 @@ test("storefront payload publishes the set's component and its per-product date 
       { name: "Focaccia Value Pack (4)", price: 54, unit: "set", component: { name: "Focaccia", qty: 4 },
         closeDays: 3, cancelDays: 2, validFrom: "2026-12-01", validTo: "2026-12-24",
         alwaysListed: true,
+        askNote: true,
         sellRules: [{ days: [0, 6], from: "2027-01-01", to: "2027-01-31" }] });
     // A product without rules publishes no date keys at all — the storefront's
     // pack default (14) is applied on its side. The keep-listed switch is absent
-    // too: switched off is today's behaviour, and the shop reads an absent key
-    // as off, so a product she never opened publishes byte-for-byte as before.
+    // too, and so is the note switch: switched off is today's behaviour, and the
+    // shop reads an absent key as off, so a product she never opened publishes
+    // byte-for-byte as before.
     const base = payload.products.find((p) => p.name === "Focaccia");
     assert.ok(!("closeDays" in base) && !("validFrom" in base) && !("validTo" in base)
-      && !("cancelDays" in base) && !("sellRules" in base) && !("alwaysListed" in base),
+      && !("cancelDays" in base) && !("sellRules" in base) && !("alwaysListed" in base)
+      && !("askNote" in base),
       "no marks publishes no sellRules key");
   } finally {
     globalThis.fetch = realFetch;
@@ -892,6 +896,100 @@ test("a pin the app cannot read leaves NO key at all, and never a null", async (
     const dee = by("Dee").customerPlace;
     assert.equal(dee.label.length, 120);
     assert.deepEqual(Object.keys(dee).sort(), ["at", "label", "lat", "lng"]);
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realLocalStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = realLocalStorage;
+  }
+});
+
+// ── the customer's note on ONE item (v236) ────────────────────────────────
+//
+// The same trap the pin tests above exist for, one field over: importIncoming
+// builds each order by naming fields ONE AT A TIME, so a field nobody names is
+// dropped in silence. And this one is per LINE, not per order — a three-item
+// basket where only the second item carries a note must land that note on the
+// second row and leave the other two with no key at all.
+
+test("pullIncoming carries each item's own note onto that item's row, and only that row", async () => {
+  storageShim(new Map());
+  const state = makeState();
+  state.products = [
+    { id: "prd_1", name: "Focaccia", active: true },
+    { id: "prd_2", name: "Cheese Straw", active: true },
+    { id: "prd_3", name: "Brownie", active: true },
+  ];
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
+  const row = {
+    id: "abc-note",
+    data: JSON.stringify({
+      customer: "Ain", date: "2026-09-04",
+      lines: [
+        { name: "Focaccia", qty: 1, price: 15 },
+        { name: "Cheese Straw", qty: 2, price: 8, note: "no nuts please" },
+        { name: "Brownie", qty: 1, price: 9 },
+      ],
+      whatsapp: "60123456789", fulfillment: "collect",
+    }),
+  };
+  globalThis.fetch = async (url, opts) => {
+    if (url.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    if (url.includes("/rest/v1/incoming_orders") && !(opts && opts.method)) return { ok: true, json: async () => [row] };
+    if (url.includes("/rest/v1/incoming_orders") && (opts && opts.method === "PATCH")) return { ok: true, json: async () => [row] };
+    return { ok: true, text: async () => "" };
+  };
+  try {
+    const r = await pullIncoming(state);
+    assert.ok(r.ok);
+    const byName = (n) => state.orders.find((o) => o.productName === n);
+    assert.equal(byName("Cheese Straw").lineNote, "no nuts please",
+      "a field nobody names is dropped in silence — this is that field being named");
+    // The other two lines are untouched: the note belongs to the LINE, never to the
+    // group. A note smeared onto every row of the order would show up right here.
+    for (const n of ["Focaccia", "Brownie"]) {
+      assert.equal(Object.prototype.hasOwnProperty.call(byName(n), "lineNote"), false,
+        `${n} carries no note key at all`);
+    }
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realLocalStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = realLocalStorage;
+  }
+});
+
+test("a note the app cannot use leaves NO key at all, and never an empty string", async () => {
+  // What arrives was typed into a browser the baker does not control, and a shop
+  // page running yesterday's cached script would never have capped it. So the value
+  // is trimmed to the shared cap and written only when it has words: an order nobody
+  // noted must be byte-for-byte the order this app has always read.
+  storageShim(new Map());
+  const state = makeState();
+  state.products = [{ id: "prd_1", name: "Focaccia", active: true }];
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
+  const rows = [
+    { id: "n1", data: JSON.stringify({ customer: "Ain", date: "2026-09-04", lines: [{ name: "Focaccia", qty: 1, note: "" }] }) },
+    { id: "n2", data: JSON.stringify({ customer: "Bee", date: "2026-09-04", lines: [{ name: "Focaccia", qty: 1, note: "   " }] }) },
+    { id: "n3", data: JSON.stringify({ customer: "Chan", date: "2026-09-04", lines: [{ name: "Focaccia", qty: 1, note: 42 }] }) },
+    { id: "n4", data: JSON.stringify({ customer: "Dee", date: "2026-09-04", lines: [{ name: "Focaccia", qty: 1, note: "x".repeat(300) }] }) },
+  ];
+  globalThis.fetch = async (url, opts) => {
+    if (url.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    if (url.includes("/rest/v1/incoming_orders") && !(opts && opts.method)) return { ok: true, json: async () => rows };
+    if (url.includes("/rest/v1/incoming_orders") && (opts && opts.method === "PATCH")) {
+      const m = /id=eq\.([^&]+)/.exec(url);
+      const id = m ? decodeURIComponent(m[1]) : "";
+      return { ok: true, json: async () => rows.filter((r) => r.id === id) };
+    }
+    return { ok: true, text: async () => "" };
+  };
+  try {
+    await pullIncoming(state);
+    const by = (name) => state.orders.find((o) => o.customerName === name);
+    // "42" is a number, not words: String()-ing it into a note would put a figure on
+    // a packing slip where nothing was asked for.
+    for (const name of ["Ain", "Bee", "Chan"]) {
+      assert.equal(Object.prototype.hasOwnProperty.call(by(name), "lineNote"), false,
+        `${name}'s unusable note must leave no key`);
+    }
+    assert.equal(by("Dee").lineNote.length, 120, "capped, so one line cannot bloat every backup");
   } finally {
     globalThis.fetch = realFetch;
     if (realLocalStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = realLocalStorage;

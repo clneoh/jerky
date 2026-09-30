@@ -100,7 +100,8 @@ export function dropPlaceOf(state, order) {
 
 // HOW that saved door got there (v209): "hand" when SHE put it there — a drag on the
 // card, or a pick in the map's own picker — "customer" when she took up the pin they
-// dropped, "lookup" when the app found it from the typed address on its way to a price.
+// dropped, "lookup" when the app found it from the typed address on its way to a price,
+// and "reset" when she pressed the one-press look-up on a door that had gone stale (v238).
 //
 // It exists for one question only: whether the door she keeps may be overridden by the
 // pin the customer dropped. A door from a LOOKUP must be, because a lookup answers the
@@ -111,6 +112,16 @@ export function dropPlaceOf(state, order) {
 // A door saved before v209 carries no `from` at all, so it reads as neither — and loses
 // to the customer's pin, which is exactly the fix. `setDropPlace` stamps every door it
 // writes from now on.
+//
+// "RESET" IS THE ONE VALUE THAT BEATS THEIR PIN WITHOUT SHUTTING IT OUT (v238). Her
+// report: the customer has moved since they dropped their pin, so their pin is the stale
+// one now, and the press that would replace it used to be hidden by exactly the rule this
+// comment describes. It cannot reuse "lookup" — that would lose to their pin again, and
+// the press would appear to do nothing at all — and it cannot reuse "hand", because a door
+// she placed by her own hand is deliberately never offered up for replacement, so a reset
+// that landed on the road would have no second press. So it is its own value: it beats the
+// pin it replaced, and it stays re-pressable. See `against` below for how their pin still
+// wins the moment they drop a genuinely new one.
 export function doorFromOf(state, order) {
   const row = profileFor(state, keyOf(order));
   const place = row && row.place;
@@ -135,18 +146,52 @@ export function doorRoadOf(state, order) {
   return String((place && place.road) || "");
 }
 
+// THE PIN A RESET REPLACED, or null (v238). Written only by a reset, and only ever the
+// one point it stood on at the time — so it answers exactly one question: has the
+// customer dropped a NEW pin since?
+//
+// It exists because "a reset beats their pin" cannot be allowed to be permanent. The
+// rule the whole door system is built on is that their own pin is the door (v209), and
+// a reset is a correction to a STALE one, not a standing order that their pin now counts
+// for nothing. Without this stamp, a customer who moved and then genuinely re-pinned from
+// their new door would be ignored until she pressed reset a second time — her correction
+// quietly outliving the fact it corrected.
+//
+// So `doorIsTheirs` reads it back: while their pin is still the one that was replaced,
+// the reset stands; the moment it is a different point, theirs wins again.
+export function doorAgainstOf(state, order) {
+  const row = profileFor(state, keyOf(order));
+  const place = row && row.place;
+  return validPlace(place && place.against);
+}
+
 // WHICH of the two doors on this order is the one in force: the customer's own pin, or a
 // door of hers. The single question everything else here derives from, so the point the
 // price is asked for, the point a driver is sent to, and the words on the card can never
 // disagree about which door they are talking about.
 //
 // True when the customer dropped a pin AND the door she keeps is not her own hand.
+//
+// A door from a RESET (v238) is the second thing that beats their pin — but only while
+// their pin is still the one the reset replaced. See `against` in doorAgainstOf above:
+// the customer's pin is the door by default, and a correction to a stale one must not
+// outlive the staleness.
 export function doorIsTheirs(state, order) {
-  if (!customerPlaceOf(order)) return false;
-  return doorFromOf(state, order) !== "hand";
+  const theirs = customerPlaceOf(order);
+  if (!theirs) return false;
+  const from = doorFromOf(state, order);
+  if (from === "hand") return false;
+  if (from === "reset") return !sameDoor(doorAgainstOf(state, order), theirs);
+  return true;
 }
 
-// Whether the app may OFFER to look this order's address up again (v213).
+// Whether the app may OFFER to look this order's address up again (v213) — or, since v238,
+// to RESET a door that has gone stale. One press, one question: may the door in force be
+// replaced by a fresh answer from the address on the order?
+//
+// Named for the RESET because that is what it now decides (v238). The old name said
+// "looked up again", and its own note said NO wherever the customer's pin was the door —
+// which this inverts. A name is not worth keeping once it has stopped being true.
 //
 // A door a lookup wrote is not a fact about the world. It is the best answer ONE service had
 // on the day it was asked, and for a Malaysian house number that answer is often just the
@@ -155,19 +200,62 @@ export function doorIsTheirs(state, order) {
 // price reads it back, so a customer pinned before v212 keeps the old answer for good, and
 // the key she has now set would appear to have changed nothing. This is the way out of that.
 //
-// YES where the door was written by a LOOKUP, and where it was written before the app
-// recorded how a door got there at all. That second case is honest rather than tidy: `from`
-// arrived at v209, and before it the only writer that ran by itself was the lookup, so a door
-// with no `from` is a lookup's answer or a drag she made before the app kept a note of one.
-// Offering the press is safe in that grey area precisely because nothing happens without it.
+// YES where the door was written by a LOOKUP, where a RESET already wrote it (so a reset that
+// landed on the road can be pressed again — the whole reason "reset" is not spelled "hand"),
+// and where it was written before the app recorded how a door got there at all. That last
+// case is honest rather than tidy: `from` arrived at v209, and before it the only writer that
+// ran by itself was the lookup, so a door with no `from` is a lookup's answer or a drag she
+// made before the app kept a note of one. Offering the press is safe in that grey area
+// precisely because nothing happens without it.
 //
-// NO where their own pin is the point in force — they were standing at their door, and no
-// lookup improves on that (v209) — and NO where a door she placed by hand is in force, which
-// is a correction rather than a guess, and not something to be offered up for replacement.
-export function doorMayBeLookedUpAgain(state, order) {
-  if (doorIsTheirs(state, order)) return false;
+// ALSO YES where their own pin is the door in force (v238). v209's reason for saying no —
+// "they were standing at their door, and no lookup improves on that" — is true of the day
+// they dropped it and says nothing about today. Her report is the case it misses: the
+// customer moved, their pin is now the stale one, and the press that would replace it was
+// hidden by this very line.
+//
+// AND SINCE v239 THE ANSWER IS THE SAME WHEREVER A DOOR IS IN FORCE (her second report). v238
+// got this wrong in a way that left the press invisible in exactly the state she takes the
+// card into: a door of her own making. Her workflow is "we are offer move the pin only" — a
+// drag is the one thing she does on this card, and a drag writes `from: "hand"`, which this
+// rule then refused. So a customer whose pin she had ever corrected by hand could NEVER be
+// reset afterwards, and v238 appeared to have changed nothing at all. The fault was in
+// asking the wrong question: this function should say whether there is a door TO replace,
+// not whether we approve of the one that is there.
+//
+// WHAT A DOOR IS, and the answer is not "something we may overwrite": it is the point a
+// driver is sent to. Where the point is wrong, she needs both tools — a reset to re-derive
+// it from the address, and a drag to place it exactly. Offering one and hiding the other
+// behind it is what she reported twice. Nothing here overwrites anything without being
+// asked: see `resetReplacesAChoice` below, which is what decides the confirmation.
+export function doorMayBeReset(state, order) {
+  return !!doorSpotOf(state, order);
+}
+
+// Whether replacing the door in force would overwrite something a PERSON chose, rather than
+// re-asking a service this app already asked (v239). This is the one question the card needs
+// answered before it presses: not "may I?" but "had I better ask first?" — and it is asked in
+// exactly one place so the button's own label and the confirmation that follows it cannot
+// come apart.
+//
+// YES for the customer's own pin, for a copy of it, and for a door she placed by her own hand.
+// The first two are a FACT FROM THE CUSTOMER, and a press that quietly overwrote one would be
+// the "dot moved on its own" that six versions of this card were written to end. The third is
+// HER OWN CORRECTION, made on the map, knowing the door — and a look-up that can only reach the
+// road is a real downgrade of it. Both are worth one confirmation; neither is worth refusing.
+//
+// NO for a look-up's answer, for a reset of one, and for a door saved before the app recorded
+// how it got there (`from` arrived at v209). Those are this app's own guesses, and replacing a
+// guess with a fresher guess is what this press has always done — so nothing new is put in her
+// way on the route she already knows.
+export function resetReplacesAChoice(state, order) {
+  // THE DOOR IN FORCE FIRST, because that is the door the press replaces. Where their pin is
+  // the point a driver is sent to it is a choice no matter what the profile row says — a
+  // lookup's answer can sit on the profile while their pin is the door, and asking the row
+  // instead would label their pin "Look this address up again" and skip the confirmation.
+  if (doorIsTheirs(state, order)) return true;
   const from = doorFromOf(state, order);
-  return from === "lookup" || from === "";
+  return !(from === "lookup" || from === "" || from === "reset");
 }
 
 // THE POINT THAT IS THE DOOR — the one a price is asked for and a driver is sent to.
@@ -266,7 +354,15 @@ export function doorSwitchOf(state, order) {
 // `road` is the house number a lookup could not find (v211, see doorRoadOf above). Only the
 // callers that just ran a lookup pass it, and only when `houseNotIn` says the answer missed
 // the number — so a hand-placed door leaves no trace of a road, which is the point.
-export function setDropPlace(state, order, place, from = "hand", road = "") {
+//
+// `against` is the pin a RESET replaced (v238, see doorAgainstOf above). Only a reset passes
+// it, and it is what stops her correction outliving the fact it corrected: while the
+// customer's pin is still the one named here, the reset stands; the moment it is a different
+// point, their pin is the door again. Written on the same "only when it means something"
+// rule as `road` below, so every other door carries no `against` key at all — and a drag or a
+// lookup therefore CLEARS it, which is right, because a fresh answer replaces the whole
+// question.
+export function setDropPlace(state, order, place, from = "hand", road = "", against = null) {
   const p = validPlace(place);
   const key = keyOf(order);
   if (!p || !key) return null;
@@ -293,6 +389,10 @@ export function setDropPlace(state, order, place, from = "hand", road = "") {
   // a record with no `road` and a record with `road: ""` would read the same here, which is
   // one way for two states to mean one thing, and this app has been bitten by that before.
   if (road) row.place.road = String(road);
+  // Same rule, same reason (v238): an `against` that is not a real point is not written, so
+  // a non-reset door has no such key and `doorAgainstOf` reads null rather than a zero point.
+  const a = validPlace(against);
+  if (a) row.place.against = { lat: a.lat, lng: a.lng };
   save(state);
   return row.place;
 }

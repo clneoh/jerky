@@ -49,13 +49,15 @@ import { button, confirmDialog, el, guarded, toast } from "../ui.js";
 import { todayISO } from "../dates.js";
 import {
   fmtAgo, fmtDistanceKm, fmtQuote, fmtQuoteLeft, fmtStamp, isLink, jobOf, liveJobOf,
-  liveJobProblem, orderDay, quoteExpired, scheduleAtUTC, tripCollected, tripOf, tripProblem,
+  liveJobProblem, orderDay, quoteExpired, scheduleAtUTC, tripCalledOff, tripCollected, tripOf,
+  tripProblem,
 } from "../courier_job.js";
 import {
-  customerPlaceOf, doorIsTheirs, doorMayBeLookedUpAgain, doorRoadOf, doorSpotOf, doorSwitchOf,
-  dropAddress, dropPlaceOf, fmtPlace, houseNotIn, pickupAddress, pickupPlace, roadNotHouse,
-  sameDoor, setDropPlace, setPickupPlace,
+  customerPlaceOf, doorFromOf, doorIsTheirs, doorMayBeReset, doorRoadOf, doorSpotOf, doorSwitchOf,
+  dropAddress, dropPlaceOf, fmtPlace, houseNotIn, pickupAddress, pickupPlace, resetReplacesAChoice,
+  roadNotHouse, sameDoor, setDropPlace, setPickupPlace,
 } from "../courier_place.js";
+import { feeGapLine } from "../courier.js";
 import { geocodeAddress } from "../couriers/api.js";
 import { activeCourier, courierByKey } from "../couriers.js";
 import { mountPinMap, openPlacePicker } from "../place_map.js";
@@ -91,8 +93,14 @@ import { mountPinMap, openPlacePicker } from "../place_map.js";
 // the same save and the same publish. This section does not move the status itself: what
 // an order's status means is the order's own business, and this file's job is to tell the
 // host the fact and let it decide. It is a TRANSITION and not a state (see `commit`).
+// `canBook: false` is the PRICE-ONLY mode, used by the ＋ New order card (v237). Booking
+// writes a real trip onto an order — `courierJob`, `trackingNo` — so it needs an order to
+// exist. The New-order card is editing a draft that has no id yet, so it takes prices and
+// nothing else: no [Book this trip], no job card, and no booking prose. Everything in the
+// price half is untouched, because none of it resolves an order by id or reads state.orders.
 export function courierQuoteSection({
   state, orders, onUseFee = null, onCommit = null, onCollected = null, doorSlot = null,
+  canBook = true,
 }) {
   const list = (Array.isArray(orders) ? orders : [orders]).filter(Boolean);
   const first = list[0] || null;
@@ -202,6 +210,10 @@ export function courierQuoteSection({
   let doorBtn = null;
   // The door block's second press (v213) — drawn only where the door is one a lookup wrote.
   let lookBtn = null;
+  // The door block's OWN line for the answer to that press (v240), created with the block. It
+  // exists because the press must work whether or not the price fold has ever been opened —
+  // see sayDoorAnswer.
+  let doorStatus = null;
   let doorHandle = null;
   // Read-only until she says otherwise — see mountPinMap. It is reset to locked every time
   // the block is rebuilt, so a card she opens is never already in "move" mode.
@@ -209,10 +221,42 @@ export function courierQuoteSection({
   // Assigned by build(), because only build() knows about the prices. Before the fold has
   // ever been opened there are no prices and nothing to say.
   let afterDoorMove = () => {};
-  // Assigned by build() for the same reason, and one more: only build() owns the status line,
-  // which is where the answer to a re-lookup is said. The no-op default is what lets the door
-  // block be DRAWN before the card that contains it has been built.
+  // Assigned with the door block, NOT by build() (v240). It used to be assigned only inside
+  // build(), which meant that until she had pressed "Get a delivery price" this press was
+  // wired to a no-op and did NOTHING AT ALL — a button on screen that answered every tap with
+  // silence. Her report: "now i see the button but pressing that botton dont work." The door
+  // block is drawn before the price fold exists and its press must therefore not need it.
   let relookUp = () => {};
+  // THE PRICE SECTION'S OWN LINE, once there is one. Hoisted out of build() because the door
+  // press has to be able to ask whether that line is on screen at all — see sayDoorAnswer.
+  let priceStatusLine = null;
+  // WHERE AN ANSWER ABOUT THE DOOR IS SAID, and the one writer of it.
+  //
+  // TWO LINES CAN HOLD IT, AND WHICH ONE IS DECIDED BY WHAT SHE CAN SEE. The door block's own
+  // line sits on the card and is always visible; the price section's line sits INSIDE the fold,
+  // and is therefore on screen only while the fold is open. This press can run long before the
+  // fold has ever been opened, so it needs the door's line — and it can just as easily run after
+  // the fold has been opened and shut again, which is the ordinary state of an order she has
+  // already priced.
+  //
+  // THAT SECOND STATE IS THE BUG (v241). v240 gave this press a home outside build(), but left
+  // build() handing every later answer to the price section's line for good — and that line lives
+  // inside the fold. So on any card whose fold had ever been opened, the press ran the lookup,
+  // moved the pin, and then said what it had done into a node with `hidden` on its parent: the
+  // card said NOTHING. Her report of a press that answers with silence, one version after the
+  // press itself was said to be fixed. It reads as a press that never ran at all wherever the
+  // lookup answers with the point the door already had, because then nothing else moves either.
+  //
+  // The line NOT in use is emptied rather than left behind: two lines that can each hold the
+  // answer are two lines that can come to disagree about what the press did.
+  let sayDoorAnswer = (line) => {
+    const onThePriceLine = !!priceStatusLine && open;
+    if (priceStatusLine) priceStatusLine.textContent = onThePriceLine ? line : "";
+    if (doorStatus) {
+      doorStatus.hidden = onThePriceLine || !line;
+      doorStatus.textContent = onThePriceLine ? "" : line;
+    }
+  };
 
   const isCourierOrder = String((first && first.fulfillment) || "") === "courier";
 
@@ -304,14 +348,24 @@ export function courierQuoteSection({
         doorHandle.setDraggable(!doorLocked);
         paintDoor();
       }, "ghost small");
-      // ASK THE ADDRESS UP AGAIN (v213). A door a lookup wrote is the best answer one service
-      // had on the day it was asked, not a fact about the world — and for a Malaysian house
-      // number that answer is usually just the road. v212 added a second, better service, but
-      // it is only ever asked when there is NO door yet, so every customer pinned before it
-      // keeps the old answer for good. This is the way out, and it is a press rather than
-      // something the card does by itself: a pin that moved under her without being asked to
-      // is the bug v209 was written to end.
+      // ASK THE ADDRESS UP AGAIN (v213) — or RESET a door that has gone stale (v238). A door a
+      // lookup wrote is the best answer one service had on the day it was asked, not a fact
+      // about the world — and for a Malaysian house number that answer is usually just the
+      // road. v212 added a second, better service, but it is only ever asked when there is NO
+      // door yet, so every customer pinned before it keeps the old answer for good. This is the
+      // way out, and it is a press rather than something the card does by itself: a pin that
+      // moved under her without being asked to is the bug v209 was written to end.
+      //
+      // ONE BUTTON, AND IT IS ASKED UP AGAIN AND RESET BY THE SAME PRESS (v238) — the label
+      // says which of the two she is about to do, and paintDoor repaints it, because the
+      // answer depends on which door is in force and that changes under her.
       lookBtn = button("Look this address up again", () => relookUp(), "ghost small");
+      // THE PRESS'S OWN LINE (v240), under the buttons it answers for. It exists so that a
+      // press made before the price fold has ever been opened still has somewhere to say what
+      // it did — and so the answer sits with the door it is about rather than 200 pixels up in
+      // a section she may never have opened. Hidden until there is something to say, so it
+      // takes no room on the card until she presses.
+      doorStatus = el("p", { class: "card-sub", style: "margin:10px 0 0", hidden: true });
       // ONE node, never an array: replaceChildren is variadic, and an array handed to it
       // prints as "[object HTMLParagraphElement],…" with nothing left to press — the fault
       // this card shipped at v195.
@@ -320,7 +374,8 @@ export function courierQuoteSection({
           el("label", {}, "The door the driver is sent to"),
           doorWords,
           doorMapBox,
-          el("div", { class: "btn-row", style: "margin-top:10px" }, doorBtn, lookBtn)));
+          el("div", { class: "btn-row", style: "margin-top:10px" }, doorBtn, lookBtn),
+          doorStatus));
     }
 
     const spot = doorSpot();
@@ -385,11 +440,30 @@ export function courierQuoteSection({
     }
 
     // ASK UP AGAIN, WHERE ASKING CAN STILL HELP (v213) — the rule itself is in
-    // courier_place.js. Not over the customer's own pin, which is a fact from them, and not
-    // over a pin she placed by her own hand, which is a correction and not a guess. No door
-    // at all means nothing to re-ask for: the price press looks one up by itself.
+    // courier_place.js. Not over a pin she placed by her own hand, which is a correction and
+    // not a guess. No door at all means nothing to re-ask for: the price press looks one up
+    // by itself.
+    //
+    // AND SINCE v238 IT IS OFFERED OVER THE CUSTOMER'S OWN PIN TOO, which it never was before.
+    // v209's reason for hiding it there — "they were standing at their door, and no lookup
+    // improves on that" — is true of the day they dropped it, not of today. Her report is the
+    // case it misses: the customer moved, their pin is the stale one, and the press that would
+    // replace it was the press hidden.
+    //
+    // AND SINCE v239 IT IS OFFERED OVER A DOOR OF HER OWN MAKING TOO, which is the state she
+    // actually reported twice. v238 fixed the customer's pin and left `from: "hand"` refused —
+    // and a drag is the ONLY thing this card offered her, so every door she had ever corrected
+    // by hand still showed "Move this pin" and nothing else. The label below now follows the
+    // SAME rule as the confirmation that follows it (resetReplacesAChoice), so the two cannot
+    // disagree about whether this press is about to ask her something.
+    //
+    // `addr` stays in the gate: with no address typed there are no words to look up, and a
+    // press that could only ever do nothing has no business being on screen.
     if (lookBtn) {
-      lookBtn.hidden = !(spot && addr && doorMayBeLookedUpAgain(state, first));
+      lookBtn.textContent = resetReplacesAChoice(state, first)
+        ? "Reset the pin from the address"
+        : "Look this address up again";
+      lookBtn.hidden = !(spot && addr && doorMayBeReset(state, first));
     }
 
     if (!spot) {
@@ -440,6 +514,143 @@ export function courierQuoteSection({
         doorWords.textContent += ` (The map is not available right now — ${why}. The point above is still the door.)`;
       },
     });
+  }
+
+  // ── resetting the same address, or asking it up again (v213, extended v238, v239, v240) ──
+  //
+  // Reached from the door block's own second press, and drawn only where the door in force
+  // may be replaced (see courier_place.js doorMayBeReset). It exists because a lookup's
+  // answer is never re-asked: `ask()` looks an address up only when there is no door yet, and
+  // every later price reads the saved one back — so a customer pinned under the free map
+  // services keeps that road-level point for as long as the app knows them, and the Google
+  // key she has now set would look like it had changed nothing at all.
+  //
+  // SINCE v238 IT ALSO REPLACES THE CUSTOMER'S OWN PIN, WHICH IS WHERE SHE REPORTED IT. The
+  // case v209 left out: the customer moved, so the pin they dropped is the stale one now, and
+  // before this the only press that could replace it was hidden. Their pin is asked about
+  // first (see relookUp) — this is a replacement, not a suggestion.
+  //
+  // AND SINCE v239 IT REPLACES A DOOR OF HER OWN HAND TOO, which is the report v238 did not
+  // answer. v238 left `from: "hand"` refused, and a drag is the only thing this card ever
+  // offered her — so every door she had corrected by hand still showed "Move this pin" and
+  // nothing else, and the reset she asked for was missing in exactly the state she works in.
+  // That door is a correction and not a guess, so it is asked about first like their pin is.
+  //
+  // AND SINCE v240 IT IS BUILT WITH THE DOOR BLOCK, NOT WITH THE PRICE FOLD. v238 and v239
+  // both left this press assigned inside build(), and build() runs only on the first press of
+  // "Get a delivery price" — so until she had opened that fold the button was on screen with
+  // its listener wired to a no-op default, and every tap on it did NOTHING AT ALL. Her report:
+  // "now i see the button but pressing that botton dont work." Nothing below needs the price
+  // section; the one thing that did, the line the answer is said on, is now sayDoorAnswer's
+  // job and it has a home in both states.
+  //
+  // THREE ANSWERS, AND EACH ONE IS SAID. It moved; it did not move; it could not be asked.
+  // A button whose only outcome is silence is the dead control this app has a standing rule
+  // against, and here silence would be worse than usual — she would have no way to tell a
+  // lookup that found the same road from a press that never ran.
+  relookUp = async () => {
+    const words = dropAddress(first);
+    const before = doorSpot();
+    if (busy || !words || !before) return;
+    // WHERE REPLACING THE DOOR MEANS REPLACING SOMEBODY'S CHOICE, THE PRESS ASKS FIRST
+    // (v238 for the customer's pin, v239 for a door of her own hand). Everywhere else it
+    // replaces something THIS app worked out — a look-up's answer, or a reset of one — and
+    // replacing it is what this press has always done, so nothing new is put in her way.
+    //
+    // The question is `resetReplacesAChoice`'s, and the label paints itself from the same
+    // function, so a press reading "Reset the pin from the address" is always a press that
+    // will ask. Two things are worth a confirmation: a fact from the customer, which a
+    // quiet overwrite would turn back into the "dot moved on its own" that six versions of
+    // this card were written to end; and her own correction on the map, which a look-up may
+    // only DOWNGRADE to the road.
+    //
+    // WHAT THE CONFIRM HAS TO SAY, and why each wording says two things: which door it
+    // replaces, and that the answer may be no better — a look-up that can only reach the
+    // road LOWERS a real doorstep to a street, and she should read that before the press
+    // rather than after. It also names the way back, because there is one.
+    if (resetReplacesAChoice(state, first)) {
+      const who = String(first.customerName || "the customer").trim() || "the customer";
+      // Said by HOW THE DOOR GOT THERE, not by whether their pin is in force. Those agree
+      // everywhere except one case — a copy of their pin kept on the profile when the order
+      // row itself no longer carries it — and there `doorIsTheirs` is false while the door is
+      // still theirs. Saying "the door you placed by hand" over their own pin would be the
+      // card inventing a fact about her, which is the fault v205 and v207 were written to end.
+      const said = doorFromOf(state, first) === "hand"
+        ? "This is the door you placed on the map by hand, and a look-up may only find the road — which can be a step back from a door you already had right. Resetting replaces it with a fresh look-up of the address on this order, and you can always drag the pin again afterwards."
+        : `${who}'s own pin is the door the driver is sent to. Resetting replaces it with a fresh look-up of the address on this order, and a look-up may only find the road. You can switch back to their pin afterwards.`;
+      confirmDialog(said, () => runReset(words, before), { danger: true, yesLabel: "Reset the pin" });
+      return;
+    }
+    await runReset(words, before);
+  };
+
+  // THE PRESS ITSELF, once it has been decided — one path for both doors, so a reset and a
+  // plain re-look-up cannot come to differ in how they run or what they leave behind.
+  //
+  // `against` is the customer's pin as it stands RIGHT NOW, and it is passed on every route,
+  // not only where their pin is the door in force. That is what keeps the press from being a
+  // silent no-op: courier_place.js's doorIsTheirs reads it back, so a reset that did not name
+  // the pin it replaced would still lose to that pin and the dot would not move at all (v238).
+  //
+  // Wrapped for the same reason `ask` is (v217), and on the same guard: a lookup that threw
+  // used to leave `busy` set and this button disabled for the life of the card.
+  async function runReset(words, before) {
+    const against = customerPlaceOf(first);
+    await guarded({
+      btn: lookBtn,
+      hold: (v) => { busy = v; },
+      work: () => relookUpBody(words, before, against),
+      said: sayDoorAnswer,
+      trouble: "The address could not be looked up again, and the door has been left as it was",
+    });
+  }
+
+  async function relookUpBody(words, before, against) {
+    busy = true;
+    if (lookBtn) lookBtn.disabled = true;
+    stopClock();
+    sayDoorAnswer(`Looking ${words} up again…`);
+    const found = await geocodeAddress(state, words);
+    if (!wrap.isConnected) return;
+    busy = false;
+    if (lookBtn) lookBtn.disabled = false;
+    if (!found.ok) {
+      sayDoorAnswer(`${found.reason} The door has been left as it was.`);
+      return;
+    }
+    // The house number this answer could not find, by the same test the automatic lookup
+    // uses — so a re-lookup that still only reaches the road keeps wearing the caveat (v211)
+    // instead of clearing it by having been asked twice.
+    const road = houseNotIn(words, found.place);
+    const moved = !sameDoor(before, found.place);
+    // Written with the address on the order as its name, never the geocoder's row (v207):
+    // the same split the lookup makes on its way to a price, so the two cannot disagree.
+    //
+    // Recorded as a RESET (v238), not a look-up, because this press replaces a door that is
+    // already on the order — and where that door is the customer's own pin, a "lookup" stamp
+    // would lose to it and move nothing at all. `against` carries the pin it replaced, so
+    // their pin wins again the moment they drop a genuinely new one.
+    setDropPlace(state, first, { lat: found.place.lat, lng: found.place.lng, label: words }, "reset", road, against);
+    if (onCommit) onCommit(first);
+    paintDoor();
+    if (!moved) {
+      sayDoorAnswer(road
+        ? `Looking ${words} up again found the same spot, and still only ${roadNotHouse(road, { short: true })}. The pin on the card is where this address is being answered with.`
+        : `Looking ${words} up again found the same spot — the pin on the card is what this address is answered with.`);
+      return;
+    }
+    const note = road
+      ? `The door moved, and it is still only ${roadNotHouse(road, { short: true })}.`
+      : "The door moved — the lookup answers this address with a different point now.";
+    // AND THE NEWS OF THE MOVE IS SAID WHERE THERE IS A LINE TO SAY IT ON (v240, made
+    // state-aware at v241). With a price section, afterDoorMove says it in the same breath as
+    // what it means for the prices — and since v241 that goes through sayDoorAnswer, so it lands
+    // on whichever line she can actually see rather than into the fold whenever the fold happens
+    // to be shut. With no build() at all there is no afterDoorMove and no such line, so the news
+    // is said here — and without that the door's own line would sit on "Looking … up again…" for
+    // good, having really moved the pin.
+    if (!built) sayDoorAnswer(note);
+    invalidatePrices(note);
   }
 
   // Drawn on the card the moment the box opens, for a courier order, whether or not she
@@ -500,12 +711,20 @@ export function courierQuoteSection({
       // `which: "customer"` means her own door is the one in force and the pin they dropped is
       // the alternative — so the words below split on this one flag, and nothing else.
       const theirs = offer.which === "customer";
+      // AND WHY HER DOOR IS THE ONE IN FORCE DECIDES THE SENTENCE (v238). The line below used
+      // to say they "pinned a different spot this time", which is true when her door is her own
+      // hand — she corrected a pin of theirs and both points are real. It is NOT true after a
+      // reset: they did not re-pin, SHE replaced a pin that had gone stale, and telling her the
+      // customer moved when the customer did not is the card inventing a fact about a person.
+      const wasReset = theirs && doorFromOf(state, first) === "reset";
       offerBox.hidden = false;
       offerBox.replaceChildren(
         el("p", { class: "card-sub" },
-          theirs
-            ? `${who} pinned a different spot this time. Taking it replaces the doorstep you keep for them.`
-            : `${who}'s own pin is in use. The doorstep you keep for them is a different spot.`),
+          !theirs
+            ? `${who}'s own pin is in use. The doorstep you keep for them is a different spot.`
+            : wasReset
+              ? `You reset this door from the address on the order. ${who}'s own pin is a different spot.`
+              : `${who} pinned a different spot this time. Taking it replaces the doorstep you keep for them.`),
         el("div", { class: "btn-row" },
           button(theirs
             ? "Use the customer's pin instead"
@@ -607,6 +826,38 @@ export function courierQuoteSection({
       // the same one-second tick as the prices, so there is one timer in this section.
       if (!job.cancelledAt && job.statusAt) jobClocks.push((now) => paintStatus(now));
 
+      // WHEN CALLING IT OFF STOPS BEING FREE. The one thing about a booked trip that can
+      // still cost her money after it is booked, so it belongs on the card rather than in
+      // her head. Asked of the courier that HOLDS the trip (never of one selected today —
+      // the grace is that courier's own), and drawn only while the trip is live: a
+      // finished or already-called-off trip has nothing left to call off.
+      const freeLine = (!done && !job.cancelledAt && holder.freeCancelLine)
+        ? el("p", { class: "job-free" }) : null;
+      const paintFree = (now) => {
+        freeLine.textContent = holder.freeCancelLine(job, { today, now });
+      };
+      if (freeLine) {
+        paintFree(Date.now());
+        // A window that shuts while she is reading the card would leave a line still
+        // promising "free until 10:15" at half past — worse than no line at all. So it
+        // rides the same one-second tick as the status, and is pushed only while the
+        // deadline is still AHEAD, so a line that has already shut costs no timer.
+        const fc = holder.freeCancelOf ? holder.freeCancelOf(job) : null;
+        if (fc && fc.kind === "scheduled" && Date.parse(fc.until) > Date.now()) {
+          jobClocks.push((now) => paintFree(now));
+        }
+      }
+
+      // WHAT THE TRIP COST, AGAINST WHAT SHE CHARGED (v235). A booked trip is the real
+      // cost of the journey; the charge on the order is the price she decided. When the two
+      // disagree the difference is hers, and seeing WHICH WAY it fell is what she asked for
+      // — "real costing make aware", and something to price from next time. Drawn from the
+      // booked amount rather than the live quotes above, because this is the figure that
+      // actually left her purse; and drawn on HER screen only, never near a customer.
+      // Built as one node and handed to `el`, so a trip with nothing to say prints no line.
+      const gap = feeGapLine(list, job, cur);
+      const gapLine = gap ? el("p", { class: "job-gap" }, gap) : null;
+
       // The driver, when a check has found one (v190). Not known at booking time and
       // never invented: this courier hands the name, the plate and a number over only
       // shortly before the pickup, so the line is drawn when there is something to put on
@@ -643,6 +894,8 @@ export function courierQuoteSection({
             : `${holder.label} is on this order`),
           row,
           statusLine,
+          freeLine,
+          gapLine,
           driverLine,
           linkLine),
       );
@@ -693,6 +946,9 @@ export function courierQuoteSection({
 
     // ── booking ──────────────────────────────────────────────────────────
     function book(q) {
+      // A price-only host has nowhere to put a trip, so the press is refused here as well
+      // as not drawn — a stray call cannot put a real vehicle on the road.
+      if (!canBook) return;
       if (jobBusy || !wrap.isConnected) return;
       const trip = pricedTrip;
       if (!trip) { toast("Ask for a price first — a trip is booked at the price it was quoted at."); return; }
@@ -839,8 +1095,9 @@ export function courierQuoteSection({
       // The app records that SHE called it off, with the moment, rather than a
       // status word the courier never gave: a DELETE answers with nothing at all,
       // so a card claiming "Cancelled" in the courier's own voice would be this
-      // screen putting words in its mouth.
-      commit({ ...job, done: true, cancelledAt: new Date().toISOString() });
+      // screen putting words in its mouth. Written by the one shared helper (v242),
+      // because the delivery run screen can call a trip off too.
+      commit(tripCalledOff(job));
       paintJob();
       toast("Trip called off");
     }
@@ -878,6 +1135,11 @@ export function courierQuoteSection({
     // ── the prices ───────────────────────────────────────────────────────
     const quoteBox = el("div", { class: "quote-box" });
     const statusLine = el("p", { class: "card-sub", style: "margin:10px 0 0" });
+    // From here on there is a price section, and this is its line — handed to sayDoorAnswer
+    // rather than REPLACING it (v241). Replacing it is what made every later answer land in a
+    // node inside the fold, which is only on screen while the fold is open; the door block's own
+    // line is outside it, and sayDoorAnswer now picks between the two by what she can see.
+    priceStatusLine = statusLine;
     const askBtn = button(`Get a price from ${courier.label}`, () => ask(), "primary");
     const askRow = el("div", { class: "btn-row", style: "margin-top:12px" }, askBtn);
 
@@ -896,7 +1158,9 @@ export function courierQuoteSection({
       // moment she can be told what still has to happen for it to SAVE. Her question on
       // 27 Sep 2026 was "should i book?" — booking is not what saves a charge, and the
       // payer question is the thing that does.
-      toast(`Fee ${fmtQuote(q.amount, q.currency, cur)} put in the charge box — now choose who paid the courier and press Save. Booking a trip is separate: the charge saves without one.`);
+      toast(canBook
+        ? `Fee ${fmtQuote(q.amount, q.currency, cur)} put in the charge box — now choose who paid the courier and press Save. Booking a trip is separate: the charge saves without one.`
+        : `Fee ${fmtQuote(q.amount, q.currency, cur)} put in the charge box — now choose who paid the courier, then press Add order.`);
       // Folded away so the amount it just wrote is what she is looking at, with the
       // payer question under it — which is the next thing she has to answer.
       open = false;
@@ -923,7 +1187,8 @@ export function courierQuoteSection({
       // with a hole in it, and the reason is the useful part — she has to call the
       // running trip off first.
       const bookBlocked = liveJobProblem(list);
-      const bookBtn = button("Book this trip", () => book(q), "soft small");
+      // A price-only host draws no booking press at all — `el()` skips a null child.
+      const bookBtn = canBook ? button("Book this trip", () => book(q), "soft small") : null;
       const row = el("div", { class: "quote-row" },
         el("div", { class: "quote-what" },
           el("span", { class: "quote-name" }, String(q.name || "").trim() || "Vehicle"),
@@ -959,8 +1224,10 @@ export function courierQuoteSection({
         }
         // `why` covers everything `unbookable` used to, and more — except the dead clock,
         // which is this row's own reading of the time and not a property of the quote.
-        bookBtn.disabled = dead || !!why || !!bookBlocked || jobBusy;
-        if (dead) bookBtn.textContent = "Expired";
+        if (bookBtn) {
+          bookBtn.disabled = dead || !!why || !!bookBlocked || jobBusy;
+          if (dead) bookBtn.textContent = "Expired";
+        }
       });
       return row;
     }
@@ -1003,7 +1270,7 @@ export function courierQuoteSection({
         ...missed,
         whyNode,
         blocked ? el("p", { class: "card-sub", style: "margin:8px 0 0" }, blocked) : null,
-        quotes.length ? el("p", { class: "card-sub", style: "margin:8px 0 0" },
+        canBook && quotes.length ? el("p", { class: "card-sub", style: "margin:8px 0 0" },
           "Booking a trip does not put its fee in the charge box — the courier's charge, who pays it and whether it is collected at the door are still yours to set above, and it is the Save button that writes them.") : null,
       ].filter(Boolean));
       for (const c of clocks) c(Date.now());
@@ -1163,72 +1430,14 @@ export function courierQuoteSection({
       // about the same consequence are two sentences that can come apart. Left out, the
       // sentence is byte for byte the one a drag has always produced.
       const prices = "The prices that were here were quoted for the old one.";
-      statusLine.textContent = note
+      // SAID THE SAME WAY AS EVERY OTHER ANSWER ABOUT THE DOOR (v241), not written straight into
+      // this section's line. A DRAG comes through here too, and with the fold shut that write
+      // went into a hidden node exactly as the press's did — so a pin she had just dragged sat
+      // on the card saying nothing about it.
+      sayDoorAnswer(note
         ? `${note} Ask again for a price for this spot. ${prices}`
-        : `The door moved — ask again for a price for this spot. ${prices}`;
+        : `The door moved — ask again for a price for this spot. ${prices}`);
     };
-
-    // ── asking the same address up again (v213) ──────────────────────────
-    //
-    // Reached from the door block's own second press, and drawn only where a LOOKUP wrote the
-    // door (see courier_place.js doorMayBeLookedUpAgain). It exists because a lookup's answer
-    // is never re-asked: `ask()` looks an address up only when there is no door yet, and every
-    // later price reads the saved one back — so a customer pinned under the free map services
-    // keeps that road-level point for as long as the app knows them, and the Google key she has
-    // now set would look like it had changed nothing at all.
-    //
-    // THREE ANSWERS, AND EACH ONE IS SAID. It moved; it did not move; it could not be asked.
-    // A button whose only outcome is silence is the dead control this app has a standing rule
-    // against, and here silence would be worse than usual — she would have no way to tell a
-    // lookup that found the same road from a press that never ran.
-    relookUp = async () => {
-      const words = dropAddress(first);
-      const before = doorSpot();
-      if (busy || !words || !before) return;
-      // Wrapped for the same reason `ask` is (v217), and on the same guard: a lookup that
-      // threw used to leave `busy` set and this button disabled for the life of the card.
-      await guarded({
-        btn: lookBtn,
-        hold: (v) => { busy = v; },
-        work: () => relookUpBody(words, before),
-        said: (s) => { statusLine.textContent = s; },
-        trouble: "The address could not be looked up again, and the door has been left as it was",
-      });
-    };
-
-    async function relookUpBody(words, before) {
-      busy = true;
-      if (lookBtn) lookBtn.disabled = true;
-      stopClock();
-      statusLine.textContent = `Looking ${words} up again…`;
-      const found = await geocodeAddress(state, words);
-      if (!wrap.isConnected) return;
-      busy = false;
-      if (lookBtn) lookBtn.disabled = false;
-      if (!found.ok) {
-        statusLine.textContent = `${found.reason} The door has been left as it was.`;
-        return;
-      }
-      // The house number this answer could not find, by the same test the automatic lookup
-      // uses — so a re-lookup that still only reaches the road keeps wearing the caveat (v211)
-      // instead of clearing it by having been asked twice.
-      const road = houseNotIn(words, found.place);
-      const moved = !sameDoor(before, found.place);
-      // Written with the address on the order as its name, never the geocoder's row (v207):
-      // the same split the lookup makes on its way to a price, so the two cannot disagree.
-      setDropPlace(state, first, { lat: found.place.lat, lng: found.place.lng, label: words }, "lookup", road);
-      if (onCommit) onCommit(first);
-      paintDoor();
-      if (!moved) {
-        statusLine.textContent = road
-          ? `Looking ${words} up again found the same spot, and still only ${roadNotHouse(road, { short: true })}. The pin on the card is where this address is being answered with.`
-          : `Looking ${words} up again found the same spot — the pin on the card is what this address is answered with.`;
-        return;
-      }
-      invalidatePrices(road
-        ? `The door moved, and it is still only ${roadNotHouse(road, { short: true })}.`
-        : "The door moved — the lookup answers this address with a different point now.");
-    }
 
     dayInput.addEventListener("input", paintWhen);
     timeInput.addEventListener("input", paintWhen);
@@ -1238,10 +1447,12 @@ export function courierQuoteSection({
     paintQuotes();
     paintJob();
 
-    bodyWrap.replaceChildren(
+    bodyWrap.replaceChildren(...[
       el("p", { class: "card-sub", style: "margin:0 0 10px" },
-        `Prices for this delivery come from ${courier.label}'s own account. Taking a price fills the charge box, where you still choose who paid the courier — booking the trip is a separate press, and it is the Save button that writes the charge.`),
-      jobBox,
+        canBook
+          ? `Prices for this delivery come from ${courier.label}'s own account. Taking a price fills the charge box, where you still choose who paid the courier — booking the trip is a separate press, and it is the Save button that writes the charge.`
+          : `Prices for this delivery come from ${courier.label}'s own account. Taking a price fills the charge box — choose who paid the courier, then press Add order. Booking the trip happens on the order itself, once it has been added.`),
+      canBook ? jobBox : null,
       endsLine,
       offerBox,
       endsRow,
@@ -1252,8 +1463,9 @@ export function courierQuoteSection({
       askRow,
       statusLine,
       quoteBox,
-      el("p", { class: "card-sub", style: "margin:14px 0 0" },
-        `Booking books the trip this price was quoted at, so the vehicle and the hour that arrive are the ones priced here — moving the time box after a price does not move a booking. The customer's tracking box takes the trip's share link, which is what the card and the shipped message send them to, and the customer's card also carries the trip's own progress, the driver's name, the plate and a button to ring them. ${courier.label} hands the driver over only shortly before the pickup, so a check made before then comes back with the trip and no driver at all — there is no driver line until there is one to have.`));
+      canBook ? el("p", { class: "card-sub", style: "margin:14px 0 0" },
+        `Booking books the trip this price was quoted at, so the vehicle and the hour that arrive are the ones priced here — moving the time box after a price does not move a booking. The customer's tracking box takes the trip's share link, which is what the card and the shipped message send them to, and the customer's card also carries the trip's own progress, the driver's name, the plate and a button to ring them. ${courier.label} hands the driver over only shortly before the pickup, so a check made before then comes back with the trip and no driver at all — there is no driver line until there is one to have.`) : null,
+    ].filter(Boolean));
 
     ask();
   }

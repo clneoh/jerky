@@ -1,8 +1,435 @@
-# Munchies Furkidz — change history (v54 → v233)
+# Munchies Furkidz — change history (v54 → v246)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**30 Sep 2026 — engine v246, THE NOTES ON THE ITEMS ARE NOW UNDERLINED ON THE COMPACT LABEL TOO (no
+database step, no redeploy, one push).**
+
+You spotted this one: on the Compact label a note like **no nuts** was printing as ordinary words, while
+the same note stood out on the Full and Mailing labels. It was the last place a customer's own words went
+unmarked, and it was easy to miss — Compact puts every item on ONE line, so the note sat in the middle of
+that line with nothing to pick it out.
+
+**Each noted item's words are underlined on that joined line now**, on the item they belong to, so a note
+on the second of four items is underlined on the second item and not somewhere else on the line. **If two
+items carry the same note, each one gets its own underline** — the line is not allowed to mark one item
+twice and leave the other plain.
+
+**The line itself has not changed at all.** It reads exactly as it did — the items in order, the notes in
+brackets beside the item they belong to — and a label for an order with no notes on it is byte-for-byte
+what it was. Nothing else about any label moved: the Full, Mailing and Name-only styles print exactly as
+they did, and the delivery note on the Compact label is untouched by this.
+
+**30 Sep 2026 — engine v245, THE DELIVERY NOTE IS UNDERLINED TOO, AND IT NOW PRINTS ON THE COMPACT
+LABEL (no database step, no redeploy, one push).**
+
+You made the point that the **delivery note** is not a courier thing — it applies to a self-collect order
+just as much, so it should stand out and be printed wherever it belongs.
+
+**It is underlined now wherever it is drawn.** The order row carries it as `Aunty Bee · 012-345 6789 ·
+deliver after 3pm`, with the note itself drawn under, exactly as a note on a single item already was. The
+same on the printed label: the `Note:` line keeps its label plain and underlines the customer's words.
+
+**The Compact label prints it too.** Compact used to join every item onto one line and leave the delivery
+note off entirely — so a note about the doorstep, the gate code or a collect time disappeared the moment
+you picked the denser label, on a self-collect order as much as a courier one. It now prints in the same
+place the Full label puts it: after the items, before the posting address.
+
+**Everything else is unchanged.** The Mailing and Full labels read exactly as they did, the note box is
+still offered on both self-collect and courier orders, and an order with no note on it looks and prints
+exactly as before. Name-only stays a bag tag — code and name, no fields to read.
+
+**30 Sep 2026 — engine v244, A NOTE A CUSTOMER LEAVES ON ONE ITEM IS NOW UNDERLINED, SO IT IS
+HARD TO MISS (no database step, no redeploy, one push).**
+
+You asked where the words a customer leaves actually reach you. The answer turned out to be uneven: the
+**delivery note** on the whole order pings your phone the moment the order lands, but the **note on a single
+item** — "no nuts", "write Happy Birthday" — only ever lived inside the app, sitting quietly in grey beside
+its item where it is easy to skim past. You decided that is enough for it to be **underlined**, so it reads
+as something you were meant to notice.
+
+**On the Orders list**, an item that carries the customer's own words now has those words underlined —
+`Chicken Jerky 100g ×2 (no nuts)` with the brackets drawn under. It is the same line in the same place, just
+marked. Nothing moves, nothing is added, and an order with no notes on it looks exactly as it did.
+
+**On the printed label**, the note beside its item is underlined the same way, on both the Full sheet and
+the Mailing sheet — so what you hold in your hand while you kit an order is as easy to read as the screen.
+
+**The line itself is unchanged.** Only the way it is drawn changed, so the row, the label and the search
+still read the very same words — the underline cannot quietly disagree with what the line says.
+
+**30 Sep 2026 — engine v243, THE DELIVERY-DAY CALENDAR IN THE ORDER SCREENS NOW FOLLOWS TODAY, THE
+SAME AS YOUR SHOP (no database step, no redeploy, one push).**
+
+Your words: you wanted the calendar in the ＋ New order card to behave like the one on your shop.
+
+It does now, and it is the **same calendar in all three places it appears** — the ＋ New order card, the
+strip at the top of Orders, and the day picker in the Edit-order pop-up. One behaviour in three places, so
+a day sits in the same square wherever you meet it.
+
+**What was wrong with it.** It was a **month** — the whole of September, then the whole of October —
+exactly the calendar v231 replaced on your shop, for the same reason. On the 30th, most of what it drew
+was days already gone; a delivery day on the 29th could not be seen at all; and both arrows were drawn
+even at the ends, so a greyed button sat there inviting a press that would do nothing.
+
+**From this version it is five whole weeks anchored on today.** The first row is the week just gone, the
+second row is this week with today ringed so you can see where "now" is, and the three rows under it are
+the weeks ahead, which is where your delivery days actually live. Today is always in the second row.
+**Every square is a real date now** — no blanks, no padding, so a delivery day at the start of next month
+is visible and openable from the moment you publish it.
+
+**Your delivery days are unchanged on it.** Still circled, still carrying how booked each one is under the
+number, still FULL in red where a day is at capacity, and a day already gone still dimmed but **still open**
+— you backfill and review old days. A day you do not deliver still answers a tap, and still names where it
+gets added, so a holiday falling on a day you do not deliver is never the one square with nothing to say.
+
+**The arrows move one whole week, and are gone where there is nowhere to go.** A dead control reads as a
+bug, so at the ends of the days you have set there is simply **no arrow** — nothing greyed out, nothing to
+press that would do nothing. The window still stops where your shop's stops for the same list, so the two
+calendars agree about where the far end is. A new week arrives **sliding up** going forward and **coming
+down** going back — the direction you are travelling in — and only when you pressed an arrow: an ordinary
+redraw never replays it.
+
+**The marks you made on Delivery Dates are on it too** — the same single-day boxes and the same see-through
+bands, in their own colours and their own depths.
+
+**It opens on the day you are working on, not on today.** The Edit-order pop-up opens on the day that order
+is actually on, so moving an order a season out does not leave you looking at a week with nothing to do
+with it. And picking a day that is already on screen **does not move the window**, so the grid never slides
+out from under your finger.
+
+**One thing I deliberately left alone.** v231 ended with "nothing in the backoffice calendars changed; this
+is the shop's calendar only" — that was your instruction then, and this version is you asking for the
+opposite, for this one calendar. The **look** of the past days in the backoffice is untouched, and so are
+the other admin calendars: the free order-date field, Delivery Dates, Profit and Deliveries. What changed
+here is this one calendar's behaviour.
+
+**30 Sep 2026 — engine v242, A CUSTOMER WHO ALREADY HAS A COURIER BOOKING IS NEVER QUIETLY PUT ON A
+SECOND VAN (no database step, no redeploy, one push).**
+
+Your report: if a customer's order already has a courier booked, the delivery run should not tick that
+order, and it needs to say so, so that a delivery is not booked twice.
+
+Here is what was happening. A booked trip is recorded on the order's own row, and the delivery run did not
+look at it when it built the day. Every customer on the day opened already ticked, the Tick them all press
+ticked them all, and a booked customer looked exactly like any other. The only thing that refused was the
+app's own sentence at the Book press — so you could tick a customer a driver was already on the way to,
+price the run, and press Book, and the refusal arrived afterwards as a message rather than as anything you
+could see while you were choosing.
+
+**From this version, a customer whose trip is already running opens OFF the run, with a line under their
+name saying so.** The line names the courier and its own word for where the trip has got to, and it says
+plainly that ticking them and booking the run would send a second vehicle to the same door. The head of the
+list counts them too — it will read something like "Who is on the run — 3 of 5, 1 already booked", so the
+number you tick and the number of rows in front of you never disagree.
+
+**It is not a gate.** The tick is still live and still yours. If you tick a booked customer by hand the app
+honours it, and the refusal comes at the price instead, in the same words as before. That is deliberate:
+the tick is a decision you make, and the app's job is to make sure you can see what you are deciding.
+
+**And the row offers the way out, rather than going grey.** Under the warning there is one press: Call off
+the trip and add to this run. It asks you first, in the open, because calling a trip off is the half that
+cannot be undone — the driver stops being sent, and the customer's tracking box keeps its link but nothing
+will update it any more. If you say yes, the original booking is cancelled with the courier, the order's own
+row records that it was you who called it off and when, the warning disappears, and that customer is put on
+this run so their delivery can be consolidated with the rest of the day. If the courier refuses to call the
+trip off, its own reason is shown and nothing is written.
+
+A trip that has already finished — delivered, or cancelled earlier — is not a barrier at all. Those
+customers open ticked like anyone else, with no warning, because a delivery that has to be done again still
+has to go on a run.
+
+Orders going out by parcel carrier are untouched by this version. They were never on the run list in the
+first place, so there is no second van for them and nothing here to warn you about.
+
+No database step, no redeploy, no new key, and no new setting to switch on.
+
+**30 Sep 2026 — engine v241, THE RESET NOW ANSWERS ON EVERY CARD, NOT ONLY A FRESH ONE (no database
+step, no redeploy, one push).**
+
+You pushed v240 and you were right again: the press worked, but the card could still stay silent. This
+version closes the last way it could.
+
+Here is what was happening. The answer your press writes — the pin moved, or it found the same spot, or
+the address could not be reached — has two possible places to be said. One is the line under the buttons
+on the door card itself. The other is the line inside the delivery-price section. That section folds away,
+and its line folds away with it. v240 made the press work before the price section existed at all, which
+was the right fix — but the moment you opened **Get a delivery price** even once, the card handed every
+later answer to the folded-away section and stopped using the door card's own line.
+
+So the sequence that caught you was this: open an order, press **Get a delivery price**, close it again,
+then reset the pin. The look-up really ran and the pin really moved, but the sentence saying so was
+written inside the section you had folded away, and the door card said nothing at all. And where the
+look-up answers with the same spot as before, nothing moved on the map either — so the whole press looked
+exactly like a press that had never happened.
+
+**From this version the answer is always said on the line you can actually see.** While the price section
+is open it is said there, exactly as it always was. While it is folded away — or if you have never opened
+it at all — it is said on the door card, right under the buttons. The two lines are never both used at
+once, so they cannot come to disagree about what your press did.
+
+**The same fault was on the pin you drag.** Moving the pin by hand ends through the same sentence about
+the price section's numbers, and that sentence had the same problem: with the price section folded away, a
+drag you had just made reported into a section you could not see. It now says what it did on the door card
+in exactly the same way.
+
+Nothing else changed. No database step, no redeploy, no new key, and no new setting to switch on.
+
+**30 Sep 2026 — engine v240, THE RESET BUTTON NOW ACTUALLY PRESSES (no database step, no redeploy,
+one push).**
+
+You pushed v239, saw the reset button at last, and pressed it — and nothing happened. That was exactly
+what your report said, and it was exactly right. The button was on the card, but its press was not
+connected to anything yet.
+
+Here is what was happening. The reset press was wired up at the same moment as the delivery-price half
+of the card, and that half is only built the first time you press **Get a delivery price**. So on a card
+you had just opened, the button was drawn and waiting but its press led nowhere: no look-up, no message,
+no movement. The instant you happened to open the price fold once, the button started working — which is
+why it looked like an ordinary working button that simply ignored you.
+
+**From this version the reset press is connected the moment the card opens.** It never waits on the
+delivery price again. You can open an order, see the pin, and reset it without touching the price button
+at all — which is the order you would naturally do it in anyway, because you reset a stale pin when you
+call the customer, not when you ask for a price.
+
+**And the press now always tells you what it did, on the card itself, right under the buttons.** It says
+it is looking the address up, then it says one of the three things that can happen: the pin moved, or the
+look-up found the same spot and there was nothing to move, or the address could not be reached and the
+pin has been left exactly as it was. Those words used to appear only up in the price section, which is
+another reason a press on a fresh card looked like it had done nothing at all.
+
+If a reset is about to replace a pin a person chose — the customer's own pin, or one you placed by hand —
+it still asks you first, exactly as v239 described.
+
+Nothing else changed. No database step, no redeploy, no new key, and no new setting to switch on.
+
+**30 Sep 2026 — engine v239, THE RESET NOW SHOWS UP WHERE YOU ACTUALLY WORK (no database step, no
+redeploy, one push).**
+
+This is the fix for v238. You pushed it, opened an order, and the reset was still not there. You were
+right, and the reason is this: v238 offered the reset when the pin was the customer's own, and hid it
+when the pin was one **you** had placed by hand.
+
+But placing the pin by hand is the only thing that card ever offered you. So a drag is what you did, and
+a drag is exactly what then hid the reset. Every customer whose pin you had ever corrected by hand still
+showed **Move this pin** and nothing else. v238 changed nothing at all for the doors you had touched
+yourself, which is why it looked like it had not arrived.
+
+**From this version the reset is offered wherever there is a pin to replace.** If a pin exists on the
+order and an address is typed, the press is on the card — the customer's own pin, a pin you dragged by
+hand, a pin an older look-up wrote, or one a reset already wrote. The only case with no press is an order
+that has no pin yet, where there is simply nothing to replace; the price button looks one up on its own.
+
+**Where it would replace something a person chose, it still asks first.** That is the customer's own pin,
+and it is also now your own hand-placed pin. The wording names which of the two it is about to replace.
+Over your own pin it says this is the door you placed on the map by hand, that a look-up may only find the
+road and can be a step back from a door you already had right, and that you can drag the pin again
+afterwards. Over the customer's pin it says, as v238 did, that this is their pin and you can switch back
+to it. Either way the confirming button says **Reset the pin**, and Cancel changes nothing at all.
+
+**Where it only replaces the app's own guess, it does not ask** — a look-up's answer, or a reset of one.
+That is what this press has always done, so nothing new is put in your way there. The button says
+**Look this address up again** on those, and **Reset the pin from the address** on the two that will ask.
+
+Nothing else changed. No database step, no redeploy, no new key, and no new setting to switch on.
+
+**30 Sep 2026 — engine v238, RESET THE PIN, AND LET THE MAP ZOOM (no database step, no redeploy, one
+push).**
+
+This one is yours, word for word: when you call a customer, their address may already have changed, and
+the only thing on offer was to move the pin. The map would not zoom out, and dragging a pin onto the right
+rooftop by thumb was slow and easy to get wrong. You asked why there was no way to reset the pin. There
+wasn't one. There is now, and the map zooms.
+
+**There is now a reset, on the pin card, where you can see it.** When the pin the driver is sent to is the
+customer's own — the one they dropped on your shop page — the button under the map reads **Reset the pin
+from the address**. One press asks your address service for the address on the order again and puts the
+pin where that answer lands. That is the case you described: the pin was right when they dropped it, and
+they have moved since.
+
+**It asks before it replaces their pin.** The customer's own pin is a fact they gave you, so a button that
+quietly overwrote it would be the pin moving on its own again — the fault several versions of this card
+have been spent ending. So the press asks first, in plain words: this is their pin, resetting replaces it
+with a fresh look-up of the address, and a look-up may only find the road. The confirming button says
+**Reset the pin**. Cancel changes nothing at all, not even a look-up.
+
+**And you can put their pin back.** Once a reset has replaced their pin, the same card offers **Use the
+customer's pin instead**, one press, back to their exact point. The reset is not a one-way door.
+
+**A reset yields to a pin they drop afterwards.** If that customer pins a new spot on your shop page after
+you reset, their new pin wins again straight away — the same rule as before. A reset replaces one specific
+stale pin, not every pin that customer will ever drop.
+
+**The map zooms the whole time now.** The plus and minus buttons are drawn on the pin card, and pinch,
+double-tap and a desktop box zoom all work — before you press anything. Only moving the pin is still behind
+**Move this pin**: the map will not pan under a pin you are reading, and the pin will not take a drag, until
+you say so. That split is the point of this version. Looking and correcting used to be one action; they are
+two again.
+
+**Nothing else changed.** Your prices, your delivery calendar, your messages, the order card, the packing
+slip and the label sheet are all exactly as they were. Adding an order is still the one pass v237 made it,
+and a pin you placed by your own hand is still not offered up for replacement.
+
+**On two phones.** If your second phone has not been reloaded yet and is still running v237, it reads a
+reset as the older kind of pin and will price to the pin you replaced until it is reloaded. Reloading it
+fixes it, and there is nothing to run in Supabase for any of this.
+
+**30 Sep 2026 — engine v237, AN ORDER IN ONE PASS, AND THE DAY ON ONE LINE (no database step, no
+redeploy, one push).**
+
+This one is yours, and it came from a complaint about your own way of working. Adding an order used to be
+two steps: fill in the New order card, press Add order, then find the order again and open the Edit window
+to finish it. You said that was redundant, that the flow was not smooth, and that it started in the wrong
+place.
+
+**A posted order is now one pass.** The reason it was ever two steps is that four things lived only in the
+Edit window and not on the card: the courier charge, the tracking number, the parcel carrier, and the Get a
+delivery price block. They are all on the card now. Choose Post (nationwide) and they unfold underneath it,
+in the order you need them: the address with the map pin, the charge, the tracking number, the parcel, and
+the price. Take the order, price the trip and record what it cost, all before you press Add order once.
+
+**The price is on the card. The booking is not.** This is the way you asked for it. You can ask for a price
+and take the fee onto the order from the card, but Book this trip stays on the order itself, where it has
+always been. Booking a real vehicle against an order you have not finished taking would be the wrong thing
+to put under your thumb one press away.
+
+**The day is one line now.** The card used to open on a whole month of calendar, even though you had already
+picked the day on the screen behind it. It now reads as one line — Delivering Fri, 2 Oct — with the calendar
+unfolding underneath only when you tap it. Nothing about how a day is chosen has changed: tapping one still
+switches the screen, so the products and the day's limits are right.
+
+**The items come first.** After the day comes what the customer wants, then the customer. It is the order
+things are actually said to you on the phone: they tell you what they want, then who they are. Everything
+else on the card is unchanged and in the place it has always been.
+
+**Your own note box is now the delivery note.** Your app and your shop both used to call the order's note
+box simply Note. Now that every item carries its own note, that box was left doing a different job, so it
+says what it does: it is the delivery note, for the gate code, the landmark and the time you should arrive.
+The box on your shop and the box in your app now show a grey hint saying exactly that, so a customer knows
+what belongs in it without you having to tell them.
+
+**Nothing is written until you press Add order.** The card was, and still is, a draft. The charge, the
+tracking number and the parcel are written onto the order at the same moment the order itself is created,
+so an order you decide against leaves nothing behind it. And if you type a charge but do not say who paid
+it, the card refuses in words and changes nothing, exactly as the Edit window does.
+
+**Nothing else changed.** The order's own field order in the Edit window, your prices, the delivery
+calendar, your WhatsApp messages, the packing slip and the label sheet are all exactly as they were.
+
+**30 Sep 2026 — engine v236, A NOTE ON EACH ITEM, SWITCHED ON PER PRODUCT (no database step, no redeploy,
+one push).**
+
+This one is yours, word for word: you wanted to switch a note box on or off on a product card, so a customer
+can leave a note on each thing they order — and switch it off on the products where a note makes no sense.
+And you asked for the same box in your own app, so a note you are told over the phone can be written down in
+the same place.
+
+**The switch lives on the product card.** In your app, open a product and you will find a tick that reads
+**Ask the customer for a note on this item**, sitting beside the other selling switches. Tick it and the
+customer is offered a note on that item; leave it alone and they are not. It is off until you tick it, so
+nothing on your shop changes until you decide it should.
+
+**On the shop, the note is quiet.** A customer who puts an item in the basket sees a small **Add a note**
+link under it. Nothing is opened on their screen until they tap it, so your menu still looks exactly as it
+looks today. Tap it and a box opens on that item, with a short example in grey: no nuts, or a name to write
+on the pack. Whatever they type stays with that one item and rides on that item's line when the order comes
+in.
+
+**The note belongs to the item, not to the order.** This is the whole point of it. If someone orders two
+things and writes "no nuts" on one of them, that note comes through on that item's line only. The other
+line is untouched, and the order's own note box at the bottom still works exactly as it did for anything
+that is about the whole order.
+
+**A note in your own app is offered on every line.** Your New order card, and the Edit order window, both
+give every line its own small note box — whichever product it is, and whether or not you have switched the
+customer's box on. The switch decides what you ASK a customer for; it must never decide what you are allowed
+to write down. A phone order of "no nuts on the chicken jerky" has to have somewhere to go.
+
+**You see the note where you work.** On the orders list it appears in brackets beside the item it belongs to,
+so it sits next to the thing it is about rather than in a note line at the foot of the order. The same is
+true of the packing slip and the label sheet: it prints beside that item and never as the order's own note.
+
+**Nothing about a note blocks an order.** An empty box and no box at all place exactly the same order — there
+is no such thing as a half-filled note to chase. Switching a product's note box off after the fact never
+hides or loses a note you have already collected, and clearing a note you wrote puts that line back exactly
+as it was.
+
+**Your WhatsApp messages do not change.** The note stays in your app, which is what you asked for. Every
+message you send reads exactly as it reads today, and your customers' tracking page is untouched by this
+version.
+
+**Nothing to set up.** There is no database step and nothing to redeploy. The switch travels to your shop
+with the rest of the product details, and a note travels with the order from one of your phones to the other
+on its own, the same way the rest of the order already does.
+
+**Nothing else changed.** The order's own note box, the prices, the delivery calendar, the basket and the
+place-order bar are all exactly as they were.
+
+**29 Sep 2026 — engine v235, A BOOKED TRIP NOW SHOWS WHAT IT COST AGAINST WHAT YOU CHARGED (no database
+step, no redeploy, one push).**
+
+This one is yours, and it started as a worry rather than a request. A courier price you pick when you take an
+order can turn out to be higher or lower by the time the trip is actually booked, and nothing was watching
+that gap. You asked to see it rather than be protected from it: a real cost makes you aware, leaves room for
+a promotion later, and lets you decide not to collect the delivery at all.
+
+**So the booked-trip card now does the sum.** Under the line that tells you when calling the trip off stops
+being free, the card compares what the trip actually cost against the courier charge on the order, and says
+which way the difference fell. If the trip cost more than you charged, it says so and tells you that much
+came out of your own pocket. If it cost less, it says that too, and that the difference stayed with you.
+Neither direction is treated as the bad one.
+
+**It shows both directions on purpose.** A gap that only spoke up when you were short would be an alarm; you
+asked for a reading, so a surplus and a shortfall are worded the same way, in the same plain sentences.
+
+**A trip you decided not to charge for says so.** If you have recorded no courier charge at all, the card
+tells you the whole cost of the trip is your own, rather than staying silent. That is the free-delivery case
+you named, and the one number worth seeing is the one you chose to give away.
+
+**A charge that matches the trip says nothing at all.** When the two agree there is no line, because a
+difference of nothing is not a difference, and an "RM 0.00" row on every card would be noise you would learn
+to skip.
+
+**A delivered trip keeps the reading.** The calling-off deadline disappears when a trip is over, because
+there is nothing left to call off. This line stays, because a cost is money that has already been spent and
+the whole point is to learn from it afterwards.
+
+**This is on your screen only.** Nothing here goes near a customer. The price a customer was quoted does not
+move, their messages do not change, and their tracking page is untouched by this version.
+
+**Nothing else changed.** The van you pick, the prices, the five-minute life of a price, the booking buttons,
+the charge box and the calling-off deadline are all exactly as they were.
+
+**29 Sep 2026 — engine v234, A BOOKED TRIP NOW TELLS YOU WHEN CALLING IT OFF STOPS BEING FREE (no database
+step, no redeploy, one push).**
+
+This one started as your own question: if you book a trip and then need to call it off, when does it start
+costing you money? The answer is a rule rather than a feeling. Lalamove lets you call off a scheduled pickup
+at no charge up to 45 minutes before it, and it may charge a fee after that. That rule was living in your
+head, so this version puts it on the page. Under the status line on a booked trip, the card now says
+**Free to call off until 30 Sep, 10:15 am - Lalamove may charge a fee after that.**
+
+**It turns over by itself when the window shuts.** Leave the card open and the sentence changes on its own
+to **Lalamove's free calling-off window shut at 10:15 am, so a fee may apply from here.** You never have to
+work out which side of the deadline you are on, because the card says it for you.
+
+**A trip booked for as soon as possible is told apart honestly.** On an immediate booking the free window
+runs from the moment a driver takes the job, and Lalamove never sends that moment back to the app. So rather
+than inventing a time that could be wrong, the card states the rule instead: **Booked for collection as soon
+as possible, so there is no pickup time to count back from. An immediate trip is free to call off only for a
+short while after a driver takes it - check with Lalamove before you count on it.**
+
+**Nothing is claimed that the app cannot stand behind.** Every sentence says the fee may apply rather than
+that it will, because it is Lalamove's own terms that decide it and not this app. A trip that has finished,
+or one you have already called off, shows no deadline line at all, since there is nothing left to call off.
+
+**Nothing else about booking changed.** The vans, the prices, the five-minute life of a price, the customer's
+tracking box, the charge box and the buttons on this card are all exactly as they were. This is one line
+added to a card you already had.
+
 
 **29 Sep 2026 — engine v233. The order page has a way back to your homepage. No database step —
 nothing to run.**

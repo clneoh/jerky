@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 
 const { addMonth, DOW, OCC_COLOURS, monthLabel, monthWeeks, occColour,
   occForDate, occForDateAll, occDays, occRange, occSingleDay, occStrength,
-  upcomingOccasions } =
+  upcomingOccasions, WINDOW_WEEKS, rollingWeeks, weekIndex, deliveryWindow,
+  windowTitle } =
   await import("../admin/js/calendar.js");
 
 function flatDates(grid) { return grid.flat().filter(Boolean); }
@@ -204,4 +205,119 @@ test("upcomingOccasions drops malformed marks (missing or mangled dates)", () =>
   assert.deepEqual(upcomingOccasions(occs, "2026-09-08").map((o) => o.id), ["ok"]);
   assert.deepEqual(upcomingOccasions([], "2026-09-08"), [], "no occasions → empty list, never a crash");
   assert.deepEqual(upcomingOccasions(null, "2026-09-08"), [], "null occasions → empty list");
+});
+
+// ── deliveryWindow (where the delivery-day picker opens, v243) ────────────────
+// The picker's window is the shop's rolling five weeks (see store-cal.test.js for
+// the window itself, which is copied from it). What is only the back office's is
+// where it opens and how far it pages, because she reviews and backfills days
+// already gone and the shop's picker never looks back at all.
+
+const flat = (weeks) => weeks.flat();
+const win = (today, offset) => flat(rollingWeeks(today, { offset }));
+const span = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+
+test("deliveryWindow opens on today's own window whenever a day is on it", () => {
+  const today = "2026-09-01"; // a Tuesday; window 0 covers 23 Aug – 26 Sep
+  for (const d of ["2026-08-23", "2026-08-30", "2026-09-01", "2026-09-05", "2026-09-20", "2026-09-26"]) {
+    const { home } = deliveryWindow(today, [d, "2026-09-10"]);
+    assert.equal(home, 0, `${d} is on the opening page, so the window does not slide`);
+    assert.ok(win(today, home).includes(d), `${d} really is on it`);
+  }
+});
+
+test("deliveryWindow slides to the nearest day when nothing is near today", () => {
+  const today = "2026-09-01";
+
+  // Nothing on sale for five weeks: it opens on the last window that still holds
+  // that day, rather than on an empty page of the next four weeks.
+  const fwd = deliveryWindow(today, ["2026-10-05"]);
+  assert.equal(fwd.home, 2);
+  assert.equal(fwd.home, fwd.max, "and that is as far forward as it ever needs to go");
+  assert.ok(win(today, fwd.home).includes("2026-10-05"));
+
+  // Nothing on sale since July: it opens on the first window that holds the last
+  // day she set, which is the whole reason the back office pages back at all.
+  const back = deliveryWindow(today, ["2026-07-15"]);
+  assert.equal(back.home, -6);
+  assert.equal(back.home, back.min, "and that is as far back as it ever needs to go");
+  assert.ok(win(today, back.home).includes("2026-07-15"));
+  assert.ok(back.min < 0, "a past-only list can be paged behind today");
+});
+
+test("deliveryWindow never pages past the days she has set", () => {
+  const today = "2026-09-01";
+  const sets = [
+    ["2026-09-02"],                                  // one day, today's window
+    ["2026-10-05"],                                  // only ahead
+    ["2026-07-15"],                                  // only behind
+    ["2026-07-15", "2026-10-05"],                    // a gap with nothing in it
+    ["2026-08-23", "2026-09-26"],                    // exactly one window's span
+    ["2026-01-01", "2027-06-30"],                    // a whole year of days
+    ["2026-09-01", "2026-09-01", "2026-09-01"],      // the same day three times
+  ];
+  for (const days of sets) {
+    const where = days.join(", ");
+    const { min, max, home } = deliveryWindow(today, days);
+    assert.ok(min <= home && home <= max, `${where}: it opens inside its own ends`);
+    for (const d of days) {
+      assert.ok(span(min, max).some((o) => win(today, o).includes(d)),
+        `${where}: ${d} can still be paged to`);
+    }
+    // Opening on a page with nothing on it is the failure this guards: a list of
+    // only-future days and a list split across a gap both used to produce it.
+    assert.ok(days.some((d) => win(today, home).includes(d)),
+      `${where}: the opening page always has a day on it`);
+  }
+});
+
+test("deliveryWindow with nothing on sale sits on today with nowhere to page", () => {
+  for (const days of [[], null, undefined, [null, undefined], ["", null]]) {
+    assert.deepEqual(deliveryWindow("2026-09-01", days), { min: 0, max: 0, home: 0 },
+      `${JSON.stringify(days)} → today's window only, so neither arrow is drawn`);
+  }
+});
+
+test("the window's title is the span it covers, not a month name", () => {
+  assert.equal(windowTitle("2026-08-23", "2026-09-26"), "23 Aug – 26 Sep");
+  assert.equal(windowTitle("2026-09-06", "2026-10-10"), "6 Sep – 10 Oct");
+  assert.equal(windowTitle("2026-09-06", "2026-09-12"), "6 – 12 Sep",
+    "one month is named once, at the end");
+  assert.equal(windowTitle("2026-12-27", "2027-01-30"), "27 Dec – 30 Jan",
+    "and it crosses the year without a word about it");
+  assert.equal(windowTitle("2026-12-01", "2027-12-02"), "1 Dec – 2 Dec",
+    "December 2026 is not the same month as December 2027");
+  assert.equal(windowTitle("nonsense", "2026-09-12"), "nonsense – 2026-09-12",
+    "a mangled end is shown as it is rather than as NaN");
+});
+
+test("the title names the window it is given, week for week", () => {
+  const today = "2026-09-01";
+  for (const offset of [-3, 0, 2, 6]) {
+    const w = rollingWeeks(today, { offset });
+    const from = w[0][0];
+    const to = w[WINDOW_WEEKS - 1][6];
+    const title = windowTitle(from, to);
+    assert.ok(title.includes(String(new Date(`${from}T00:00:00`).getDate())),
+      `offset ${offset}: the title starts on the window's own first day`);
+    assert.ok(title.includes(String(new Date(`${to}T00:00:00`).getDate())),
+      `offset ${offset}: and ends on its own last day`);
+  }
+  assert.equal(windowTitle(...(() => { const w = rollingWeeks(today); return [w[0][0], w[WINDOW_WEEKS - 1][6]]; })()),
+    "23 Aug – 26 Sep", "today's own window, spelled out");
+});
+
+test("a week index and the window agree about which row a day sits in", () => {
+  const today = "2026-09-01";
+  for (const offset of [-4, 0, 3]) {
+    const rows = rollingWeeks(today, { offset });
+    rows.forEach((row, r) => {
+      for (const d of row) {
+        // A day's own week is the only row it can be in, and in window `offset`
+        // that row is number `weekIndex - offset + 2` counting from the top.
+        assert.equal(weekIndex(today, d), offset + r - 1,
+          `${d} sits in row ${r + 1} because its week index says so`);
+      }
+    });
+  }
 });

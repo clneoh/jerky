@@ -28,8 +28,9 @@ import assert from "node:assert/strict";
 const {
   validPlace, pickupPlace, pickupAddress, dropPlaceOf, dropAddress,
   setDropPlace, setPickupPlace, latLngText, fmtPlace, splitLabel, parseCoords, placeProblem,
-  customerPlaceOf, doorFromOf, doorIsTheirs, doorMayBeLookedUpAgain, doorSpotOf, doorSwitchOf,
-  houseNotIn, roadNotHouse, doorRoadOf, sameDoor,
+  customerPlaceOf, doorFromOf, doorIsTheirs, doorMayBeReset, doorSpotOf, doorSwitchOf,
+  resetReplacesAChoice,
+  houseNotIn, roadNotHouse, doorRoadOf, doorAgainstOf, sameDoor,
 } = await import("../admin/js/courier_place.js");
 const { canonicaliseCustomers } = await import("../admin/js/profiles.js");
 
@@ -552,7 +553,7 @@ test("the second ask is offered where a LOOKUP wrote the door, and where nothing
   const s = state();
   const o = order();
   setDropPlace(s, o, { lat: 5.4141, lng: 100.3288, label: o.address }, "lookup", "12");
-  assert.equal(doorMayBeLookedUpAgain(s, o), true, "a lookup's answer is a guess, and a guess may be asked again");
+  assert.equal(doorMayBeReset(s, o), true, "a lookup's answer is a guess, and a guess may be asked again");
 
   // A door saved before v209 carries no record of how it was made. The only writer that ran
   // by itself was the lookup, so this is the grey area — and offering a press in it is safe
@@ -562,30 +563,203 @@ test("the second ask is offered where a LOOKUP wrote the door, and where nothing
   setDropPlace(old, oldOrder, { lat: 5.4141, lng: 100.3288, label: oldOrder.address });
   old.customers[0].place.from = undefined; // as an older version left it
   assert.equal(doorFromOf(old, oldOrder), "");
-  assert.equal(doorMayBeLookedUpAgain(old, oldOrder), true, "no record of how, so it may be asked again");
+  assert.equal(doorMayBeReset(old, oldOrder), true, "no record of how, so it may be asked again");
 });
 
-test("the second ask is NOT offered over her own hand or over the customer's own pin (v213)", () => {
+test("the press is offered over a RESET so a reset that landed on the road can be pressed again (v238)", () => {
+  // The whole reason "reset" is not spelled "hand": a door she placed by hand is never
+  // offered up for replacement, so writing a reset as "hand" would leave a reset that
+  // found only the street with no second press and no way out.
+  const s = state();
+  const o = order({ customerPlace: { lat: 5.42, lng: 100.33 } });
+  setDropPlace(s, o, { lat: 5.4141, lng: 100.3288, label: o.address }, "reset", "12", { lat: 5.42, lng: 100.33 });
+  assert.equal(doorFromOf(s, o), "reset");
+  assert.equal(doorMayBeReset(s, o), true, "a reset is a fresh guess too, and may be asked again");
+});
+
+test("the press IS offered over a door she placed by hand (v239 — this is what v238 got wrong)", () => {
+  // v213 withheld the press here to protect a correction from a geocoder's guess, and v238
+  // kept that. Her second report is why it had to go: a drag is the ONLY thing this card ever
+  // offered her, so a drag is what she does — and it writes `from: "hand"`, which the press
+  // then refused for good. Every customer whose pin she had ever corrected by hand showed
+  // "Move this pin" and nothing else, and v238 looked like it had changed nothing.
+  //
+  // The protection is not gone, it has moved: the door is still never replaced WITHOUT BEING
+  // ASKED. See resetReplacesAChoice below, which is the confirmation's own question.
   const s = state();
   const o = order();
   setDropPlace(s, o, { lat: 5.4, lng: 100.3, label: "the door she checked" }, "hand");
-  assert.equal(doorMayBeLookedUpAgain(s, o), false,
-    "a door she placed by hand is a correction, not a guess, and is not offered up for replacement");
+  assert.equal(doorMayBeReset(s, o), true, "there is a door, so there is a door to replace");
+});
 
-  // And where THEIR pin is the point in force, no lookup improves on it — they were standing
-  // at their door when they dropped it (v209). This holds even when the door she keeps beside
-  // it came from a lookup, because the card's point is theirs and a second ask is answered
-  // into the door she keeps, which is not the point on screen.
+test("a door may be reset exactly when there is a door — nothing to replace means no press (v239)", () => {
+  // The one question this function answers now. It used to answer "do we approve of how this
+  // door got here", which is a different question, and answering it hid the press in the state
+  // she works in.
+  const bare = state();
+  const o = order();
+  assert.equal(doorSpotOf(bare, o), null, "no pin and no customer pin — there is no door yet");
+  assert.equal(doorMayBeReset(bare, o), false,
+    "nothing to replace, and the price press looks one up by itself");
+});
+
+test("the press ASKS FIRST where it would replace a person's choice, and never where it replaces our own guess (v239)", () => {
+  // The confirmation's one question, and the button's label paints itself from the same
+  // function — so a press reading "Reset the pin from the address" is always a press that asks.
+  const theirs = state();
+  const theirsOrder = order({ customerPlace: { lat: 5.42, lng: 100.33 } });
+  setDropPlace(theirs, theirsOrder, { lat: 5.4141, lng: 100.3288, label: theirsOrder.address }, "lookup");
+  assert.equal(doorIsTheirs(theirs, theirsOrder), true);
+  assert.equal(resetReplacesAChoice(theirs, theirsOrder), true, "a fact from the customer is asked about");
+
+  const hand = state();
+  const handOrder = order();
+  setDropPlace(hand, handOrder, { lat: 5.4, lng: 100.3, label: "the door she checked" }, "hand");
+  assert.equal(resetReplacesAChoice(hand, handOrder), true, "and so is her own correction on the map");
+
+  const looked = state();
+  const lookedOrder = order();
+  setDropPlace(looked, lookedOrder, { lat: 5.4141, lng: 100.3288, label: lookedOrder.address }, "lookup");
+  assert.equal(resetReplacesAChoice(looked, lookedOrder), false,
+    "a look-up's answer is our own guess, and a fresher guess is what this press has always been");
+
+  const again = state();
+  const againOrder = order({ customerPlace: { lat: 5.42, lng: 100.33 } });
+  setDropPlace(again, againOrder, { lat: 5.4141, lng: 100.3288, label: againOrder.address },
+    "reset", "12", { lat: 5.42, lng: 100.33 });
+  assert.equal(resetReplacesAChoice(again, againOrder), false,
+    "and a reset may be pressed again without being made to justify itself twice");
+
+  const old = state();
+  const oldOrder = order();
+  setDropPlace(old, oldOrder, { lat: 5.4141, lng: 100.3288, label: oldOrder.address });
+  old.customers[0].place.from = undefined; // as an older version left it
+  assert.equal(resetReplacesAChoice(old, oldOrder), false,
+    "a door saved before v209 is a look-up's answer, which is the only thing that wrote one by itself");
+});
+
+test("a copy of their pin is asked about even when the order row no longer carries it (v239)", () => {
+  // The one case where "is their pin the door" and "how did this door get here" disagree: the
+  // profile keeps a copy written while the order still had a `customerPlace`, and the order has
+  // since lost it. `doorIsTheirs` says no — there is nothing to compare against — but the door
+  // is still theirs, so the confirmation must not call it the door she placed by hand.
+  const s = state();
+  const o = order(); // no customerPlace on the row
+  setDropPlace(s, o, { lat: 5.42, lng: 100.33, label: o.address }, "customer");
+  assert.equal(doorIsTheirs(s, o), false, "nothing on the row to call theirs");
+  assert.equal(doorFromOf(s, o), "customer", "and the door still says where it came from");
+  assert.equal(doorMayBeReset(s, o), true, "so it is offered");
+  assert.equal(resetReplacesAChoice(s, o), true, "and it is asked about, not quietly overwritten");
+});
+
+test("the press IS offered over the customer's own pin (v238 — this is what changed)", () => {
+  // v209 said no here, and its reason — "they were standing at their door when they dropped
+  // it, and no lookup improves on that" — is true of the day they dropped it and says nothing
+  // about today. Her report is the case it misses: the customer MOVED, their pin is the stale
+  // one now, and the press that would replace it was hidden by that very rule. The card asks
+  // before it overwrites their pin, so the press costs a confirmation and never a surprise.
   const t = state();
   const pinned = order({ customerPlace: { lat: 5.42, lng: 100.33 } });
   setDropPlace(t, pinned, { lat: 3.1, lng: 101.6, label: "the wrong town" }, "lookup");
   assert.equal(doorIsTheirs(t, pinned), true, "their pin is the door in force");
-  assert.equal(doorMayBeLookedUpAgain(t, pinned), false, "so nothing is offered over it");
+  assert.equal(doorMayBeReset(t, pinned), true, "and it may be replaced, because it may be stale");
 
-  // The pinned customer with NO kept door at all: still theirs, still nothing to offer.
+  // The pinned customer with NO kept door at all: still theirs, still offered.
   const u = state();
   const bare = order({ customerPlace: { lat: 5.42, lng: 100.33 } });
-  assert.equal(doorMayBeLookedUpAgain(u, bare), false, "their pin, and nothing of hers to re-ask");
+  assert.equal(doorMayBeReset(u, bare), true, "their pin, and it too may have gone stale");
+});
+
+// ── resetting a stale pin (v238) ──────────────────────────────────────────
+//
+// Her words: "when we call a customer in an order his address might already change, we are
+// offer move the pin only... why not offer to reset the pin?" The customer's pin is the door
+// by default and stays that way, but a reset beats the ONE pin it replaced — so a customer
+// who really has moved is not stuck with a doorstep only they could correct.
+//
+// The trap these tests exist for is silent: writing the reset as "lookup" would leave
+// doorIsTheirs true, so doorSpotOf would keep handing back their pin and the press would
+// appear to do nothing at all. The first assertion below is what stands between her and that.
+
+test("a reset beats the pin it replaced, and a lookup does not — the difference is the whole feature (v238)", () => {
+  const theirs = { lat: 5.42, lng: 100.33 };
+  const fresh = { lat: 5.4141, lng: 100.3288, label: "12 Jalan Bunga, 10450 Penang" };
+
+  // The counterfactual: the SAME press, written as a lookup, changes nothing at all. This is
+  // the version that would look like it worked and leave her staring at an unmoved pin.
+  const asLookup = state();
+  const o1 = order({ customerPlace: { lat: theirs.lat, lng: theirs.lng } });
+  setDropPlace(asLookup, o1, fresh, "lookup");
+  assert.equal(doorIsTheirs(asLookup, o1), true, "a lookup still loses to their pin");
+  assert.equal(doorSpotOf(asLookup, o1).lat, theirs.lat, "so the driver is still sent to the OLD pin");
+
+  // The same press, written as a reset, actually moves the door.
+  const asReset = state();
+  const o2 = order({ customerPlace: { lat: theirs.lat, lng: theirs.lng } });
+  setDropPlace(asReset, o2, fresh, "reset", "", theirs);
+  assert.equal(doorIsTheirs(asReset, o2), false, "the reset wins over the pin it replaced");
+  assert.equal(doorSpotOf(asReset, o2).lat, fresh.lat, "and the driver is sent to the new one");
+  assert.equal(doorSpotOf(asReset, o2).lng, fresh.lng);
+});
+
+test("a reset yields to a genuinely NEW pin — her correction must not outlive the staleness (v238)", () => {
+  const stale = { lat: 5.42, lng: 100.33 };
+  const moved = { lat: 5.455, lng: 100.29 }; // they moved and pinned their new door
+  const s = state();
+  const o = order({ customerPlace: { lat: stale.lat, lng: stale.lng } });
+  setDropPlace(s, o, { lat: 5.4141, lng: 100.3288, label: o.address }, "reset", "", stale);
+  assert.equal(doorIsTheirs(s, o), false, "while their pin is the one that was replaced, the reset stands");
+
+  // They drop a new pin. The whole system's rule is that their own pin is the door (v209), and
+  // a reset is a correction to a stale one — not a standing order that their pin now counts for
+  // nothing. Without the `against` stamp this case is silently ignored.
+  const after = order({ customerPlace: { lat: moved.lat, lng: moved.lng } });
+  assert.equal(doorIsTheirs(s, after), true, "a new pin is a new fact, and it wins again");
+  assert.equal(doorSpotOf(s, after).lat, moved.lat, "the driver follows them to the new door");
+  assert.equal(doorSpotOf(s, after).lng, moved.lng);
+});
+
+test("the pin a reset replaced rides with the door, and only a reset writes one (v238)", () => {
+  const s = state();
+  const o = order({ customerPlace: { lat: 5.42, lng: 100.33 } });
+  assert.equal(doorAgainstOf(s, o), null, "no door at all, nothing replaced");
+
+  setDropPlace(s, o, { lat: 5.4141, lng: 100.3288, label: o.address }, "lookup");
+  assert.equal(doorAgainstOf(s, o), null, "a plain lookup replaced nothing");
+
+  setDropPlace(s, o, { lat: 5.4141, lng: 100.3288, label: o.address }, "reset", "", { lat: 5.42, lng: 100.33 });
+  assert.deepEqual(doorAgainstOf(s, o), { lat: 5.42, lng: 100.33, label: "" }, "the pin it stood against");
+
+  // The door is written whole every time, so a later drag takes the stamp with it: the old
+  // point is gone and so is the fact about it. Her own hand answers the whole question.
+  setDropPlace(s, o, { lat: 5.43, lng: 100.31, label: o.address });
+  assert.equal(doorAgainstOf(s, o), null, "her own hand is the correction, and leaves no against behind");
+  assert.equal(doorFromOf(s, o), "hand");
+
+  // An `against` that is not a real point is refused the same way `road` is: a half-written
+  // point is not a point, and a zero point would silently match the Equator.
+  const t = state();
+  const o2 = order({ customerPlace: { lat: 5.42, lng: 100.33 } });
+  setDropPlace(t, o2, { lat: 5.41, lng: 100.32, label: o2.address }, "reset", "", { lat: 5.42 });
+  assert.equal(doorAgainstOf(t, o2), null, "half a point is not a point");
+});
+
+test("the reset stays reversible: the switch still offers their pin back (v238)", () => {
+  const theirs = { lat: 5.42, lng: 100.33 };
+  const s = state();
+  const o = order({ customerPlace: { lat: theirs.lat, lng: theirs.lng } });
+  setDropPlace(s, o, { lat: 5.4141, lng: 100.3288, label: o.address }, "reset", "", theirs);
+  const offer = doorSwitchOf(s, o);
+  assert.ok(offer, "the two doors differ, so there is something to switch to");
+  assert.equal(offer.which, "customer", "and it is THEIR pin being offered back");
+  assert.equal(offer.place.lat, theirs.lat);
+  assert.equal(offer.place.lng, theirs.lng);
+
+  // Pressing it restores their exact point and hands the door back to them.
+  setDropPlace(s, o, offer.place, offer.which, "");
+  assert.equal(doorFromOf(s, o), "customer");
+  assert.equal(doorIsTheirs(s, o), true, "their pin is the door again");
+  assert.equal(doorAgainstOf(s, o), null, "and the stamp went with the door it belonged to");
 });
 
 test("two points are the same door by ONE rule, so the switch and the second ask cannot disagree (v213)", () => {

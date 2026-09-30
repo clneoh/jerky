@@ -29,6 +29,7 @@ const {
   stopsUnplaced, tripProblem, fmtDistanceKm,
   orderDay, fmtQuote, fmtQuoteLeft, quoteExpired,
   isLink, trackingLine, jobOf, liveJobOf, liveJobProblem, fmtStamp, fmtAgo,
+  freeCancelOf, freeCancelLine,
 } = await import("../admin/js/courier_job.js");
 const { setPickupPlace, setDropPlace } = await import("../admin/js/courier_place.js");
 
@@ -446,4 +447,88 @@ test("how long ago is said the way a person says it, and a future moment is not 
   assert.equal(fmtAgo(new Date(t0 + 5000).toISOString(), t0), "just now");
   assert.equal(fmtAgo("", t0), "");
   assert.equal(fmtAgo("whenever", t0), "");
+});
+
+// ── when calling it off stops being free (v234) ────────────────────────────
+//
+// The one thing about a booked trip that can still cost her money after it is booked.
+// A courier gives a grace period and charges after it, and the grace runs in TWO
+// DIRECTIONS — back from a scheduled pickup, forward from a driver taking an immediate
+// job — which is why this is arithmetic rather than a subtraction written at the screen.
+
+test("the free calling-off window shuts BEFORE a scheduled pickup, by the courier's own grace", () => {
+  const pick = new Date(2026, 9, 2, 10, 0).toISOString();
+  const job = { jobId: "J1", scheduleAt: pick };
+  const fc = freeCancelOf(job, { scheduledMs: 45 * 60 * 1000 });
+  assert.equal(fc.kind, "scheduled");
+  assert.equal(Date.parse(fc.until), Date.parse(pick) - 45 * 60 * 1000);
+  // And it is the pickup MINUS the grace. The direction matters: a deadline read
+  // forward would tell her she is free at the very moment she is being charged.
+  assert.notEqual(Date.parse(fc.until), Date.parse(pick));
+  assert.ok(Date.parse(fc.until) < Date.parse(pick));
+});
+
+test("a trip booked for as soon as possible has no clock to count back from, and says so", () => {
+  const fc = freeCancelOf({ jobId: "J1" }, { scheduledMs: 45 * 60 * 1000 });
+  assert.equal(fc.kind, "immediate");
+  assert.equal(fc.until, "", "the match moment is the courier's; there is no honest time to give");
+  assert.equal(freeCancelOf({ jobId: "J1", scheduleAt: "   " }, {}).kind, "immediate");
+});
+
+test("a deadline is never invented from an absence — no grace, no unreadable record, no line", () => {
+  const pick = new Date(2026, 9, 2, 10, 0).toISOString();
+  // No grace supplied. The pickup time is NOT the deadline, and defaulting to it would
+  // promise 45 free minutes that do not exist — the difference between a free call-off
+  // and a fee.
+  assert.deepEqual(freeCancelOf({ jobId: "J1", scheduleAt: pick }, {}), { kind: "", until: "" });
+  assert.deepEqual(freeCancelOf({ jobId: "J1", scheduleAt: pick }, { scheduledMs: 0 }), { kind: "", until: "" });
+  // A pickup time that cannot be READ is not the same as no pickup time at all — the
+  // first is a torn record, the second is an immediate booking, and they are not
+  // allowed to wear the same answer.
+  assert.equal(freeCancelOf({ jobId: "J1", scheduleAt: "next Tuesday" }, { scheduledMs: 1 }).kind, "");
+  assert.deepEqual(freeCancelOf(null, { scheduledMs: 1 }), { kind: "", until: "" });
+});
+
+test("the deadline is read out with the moment it shuts, and past it the line says so", () => {
+  // Moments are BUILT IN LOCAL TIME, the same choice fmtStamp makes and the same one
+  // the test above it explains: this is what a person reads on their own phone.
+  const pick = new Date(2026, 9, 2, 10, 0).toISOString();   // 2 Oct, 10:00 am; shuts 9:15 am
+  const job = { jobId: "J1", scheduleAt: pick };
+  const grace = { label: "Lalamove", scheduledMs: 45 * 60 * 1000 };
+  const at = (h, m) => Date.parse(new Date(2026, 9, 2, h, m).toISOString());
+
+  assert.equal(
+    freeCancelLine(job, { ...grace, now: at(8, 30), today: "2026-10-02" }),
+    "Free to call off until 9:15 am — Lalamove may charge a fee after that.",
+  );
+  assert.equal(
+    freeCancelLine(job, { ...grace, now: at(9, 30), today: "2026-10-02" }),
+    "Lalamove's free calling-off window shut at 9:15 am, so a fee may apply from here.",
+  );
+  // On any other day the moment is dated, or "9:15 am" would read as this morning.
+  assert.equal(
+    freeCancelLine(job, { ...grace, now: at(8, 30), today: "2026-10-03" }),
+    "Free to call off until 2 Oct, 9:15 am — Lalamove may charge a fee after that.",
+  );
+  // The instant itself is read as SHUT. "Up to 45 minutes before" is the courier's own
+  // wording, and at exactly 45 minutes she is on the line rather than inside it — the
+  // conservative reading, because the fee is the half she cannot undo.
+  const edge = freeCancelOf(job, grace).until;
+  assert.match(freeCancelLine(job, { ...grace, now: Date.parse(edge), today: "2026-10-02" }), /window shut/);
+});
+
+test("an immediate trip is given the rule and not a made-up clock", () => {
+  const said = freeCancelLine({ jobId: "J1" }, {
+    label: "Lalamove", scheduledMs: 45 * 60 * 1000, now: Date.now(), today: "2026-10-02",
+  });
+  assert.match(said, /no pickup time to count back from/);
+  assert.match(said, /Lalamove/);
+  // No digit anywhere: the 20 minutes runs from a match this app never sees, so a time
+  // on this line would be a promise it cannot keep.
+  assert.equal(/\d/.test(said), false, "the rule is said, no clock is invented");
+});
+
+test("nothing readable means no line at all, rather than an empty sentence on the card", () => {
+  assert.equal(freeCancelLine({ jobId: "J1", scheduleAt: "whenever" }, { label: "Lalamove", scheduledMs: 1 }), "");
+  assert.equal(freeCancelLine(null, { label: "Lalamove", scheduledMs: 1 }), "");
 });

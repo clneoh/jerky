@@ -332,6 +332,73 @@ export function runChargeAmounts(who, fee, originals, count) {
   return [];
 }
 
+// WHAT THE TRIP ACTUALLY COST, AGAINST THE CHARGE SHE PUT ON THE ORDER (v235, 29 Sep 2026).
+//
+// A charge is a price she DECIDED; a booked trip is what the journey really cost. They are
+// two numbers about the same thing, and when they disagree the difference is hers — carried
+// by her if the trip cost more, kept by her if it cost less. She asked to see both directions
+// rather than only the alarming one: "it is good to see it. Real costing make aware, good for
+// future promotion room if possible, i can even opt not to collect delivery."
+//
+// The Delivery run screen already makes this comparison BEFORE booking (see delivery_run.js's
+// chargeSentence); this is its after-the-fact twin for a trip booked from one order, and it is
+// worded in the same family so the two screens cannot say the same thing two ways.
+//
+// The arithmetic is the same whoever bears the charge, so it is worked out once here; only the
+// MEANING of a difference depends on the payer, and that is the sentence's business (below).
+//
+// `orders` is every order riding this trip — a value set is one charge over several rows — so
+// the charges are summed rather than read off the first. Returns null — rather than zeros —
+// when there is no readable price to compare against: a card cannot report on a number the
+// trip never gave, and a line about nothing is worse than no line.
+//
+// The price must be ABOVE zero, not merely finite. `Number(null)`, `Number("")` and
+// `Number([])` are all 0 rather than NaN, so a `>= 0` guard would read a job with no amount
+// at all as a trip that cost nothing — and print "the trip cost RM 0.00" as a fact about her
+// money. A booked trip never costs nothing, so demanding a positive price is the honest test.
+export function feeGapOf(orders, job) {
+  const list = (Array.isArray(orders) ? orders : [orders]).filter(Boolean);
+  if (!list.length) return null;
+  const cost = Number(job && job.amount);
+  if (!Number.isFinite(cost) || !(cost > 0)) return null;
+  const cent = (n) => Math.round(n * 100) / 100;
+  const charged = cent(list.reduce((sum, o) => sum + courierFeeOf(o), 0));
+  return { charged, cost: cent(cost), diff: cent(charged - cost), payer: courierPayerOf(list[0]) };
+}
+
+// The one line the booked-trip card draws about that difference, or "" when there is nothing
+// worth saying — the two figures agree, or there is no price. Her screen only: a difference
+// between what a trip cost and what she charged is hers to absorb or learn from, and is never
+// put in front of a customer (see the standing rule, 29 Sep 2026).
+//
+// What a difference MEANS depends on whether the money was ever coming in, so there are three
+// readings behind the five sentences:
+//
+//   • no charge at all — the whole trip is her cost, which is exactly the free-delivery case
+//     she named, so it is worth stating rather than staying silent;
+//   • the customer bears it — money in, money out, so a shortfall comes out of her own purse
+//     and a surplus stays with her;
+//   • she bears it (or a charge with no payer, which the app refuses to save but older data
+//     may carry) — it was always her cost, so the difference is only against what she allowed.
+export function feeGapLine(orders, job, cur) {
+  const gap = feeGapOf(orders, job);
+  if (!gap) return "";
+  const { charged, cost, diff, payer } = gap;
+  const money = (n) => fmtRM(n, cur);
+  if (!charged) {
+    return `No courier charge is on the order, so the whole ${money(cost)} of this trip is your own cost.`;
+  }
+  if (diff === 0) return "";
+  if (payer === "customer") {
+    return diff < 0
+      ? `The customer is charged ${money(charged)} and the trip cost ${money(cost)} — ${money(-diff)} short, so that much came out of your own pocket.`
+      : `The customer is charged ${money(charged)} and the trip cost ${money(cost)} — ${money(diff)} under, and that difference stayed with you.`;
+  }
+  return diff < 0
+    ? `You recorded ${money(charged)} as your own cost, and the trip cost ${money(cost)} — ${money(-diff)} more than you had allowed for.`
+    : `You recorded ${money(charged)} as your own cost, and the trip cost ${money(cost)} — ${money(diff)} less than you had allowed for.`;
+}
+
 // Take a charge off the order it belongs to, found by its order code — the way back
 // from the Money screen, where the expense row is all you can see of a charge you paid
 // yourself.

@@ -24,6 +24,10 @@
 //                   is stored on the order row rather than in a table of its own,
 //                   which is what makes booking need no database step at all, and
 //                   this is the one place that reading is written down.
+//   • freeCancelOf / freeCancelLine — when a booked trip stops being free to call off.
+//                   The only thing about a booking that can still cost her money once
+//                   it is made, and a rule rather than a guess, so it is worked out
+//                   here and tested rather than written as a subtraction at the screen.
 //   • the RUN       — one trip carrying several doorsteps, which is the only thing
 //                   about a courier that actually saves her money. The load, the
 //                   one-trip-against-separate arithmetic, and the delivery WINDOW —
@@ -299,6 +303,76 @@ export function liveJobOf(order) {
   const j = jobOf(order);
   if (!j) return null;
   return j.done ? null : j;
+}
+
+// THE RECORD OF A TRIP SHE CALLED OFF — written by the app, never read from the courier.
+// Calling a trip off answers with nothing at all, so a record carrying the courier's own word
+// for it would be this app putting words in its mouth; what it knows first-hand is that it was
+// HER, and when. So the trip is marked finished and stamped with the moment.
+//
+// It is written HERE, in one place, because two screens can call a trip off — the order's own
+// card and the delivery run — and a record only one of them knows how to write is a trip the
+// other one still believes is running.
+//
+// `when` is passed rather than read here so the caller keeps its own clock, as it does for
+// every other stamp it writes.
+export function tripCalledOff(job, when = new Date().toISOString()) {
+  return job ? { ...job, done: true, cancelledAt: when } : job;
+}
+
+// WHEN A BOOKED TRIP STOPS BEING FREE TO CALL OFF. A courier gives a grace period on a
+// booking, and a fee after it — which makes this the one thing about a trip that can
+// still cost her money once the booking is made, and the reason it is a named function
+// rather than a line on the card.
+//
+// THE GRACE RUNS IN TWO DIFFERENT DIRECTIONS, which is the whole reason this cannot be
+// one subtraction written at the screen:
+//
+//   • a SCHEDULED trip's grace counts back from the pickup, so the window shuts BEFORE
+//     it: the deadline is the pickup time MINUS the grace.
+//   • an IMMEDIATE trip's grace counts forward from the driver taking the job, so the
+//     window shuts AFTER it — and that moment is never sent back to the app, so this
+//     answers `kind: "immediate"` with no moment rather than inventing one from the
+//     booking time. A deadline made up out of an absence is worse than no deadline.
+//
+// The grace itself is passed IN. It is the courier's own published number, and this
+// file is not allowed to know whose trip this is (see the header) — so the caller that
+// holds the trip supplies its own.
+//
+// Three answers, and the screen is expected to tell them apart:
+//   { kind: "scheduled", until } — a pickup time was on the record and the grace is known
+//   { kind: "immediate" }        — no pickup time, so it was booked for as soon as possible
+//   { kind: "", until: "" }      — nothing readable, so nothing can be said
+export function freeCancelOf(job, { scheduledMs = 0 } = {}) {
+  const j = job && typeof job === "object" ? job : null;
+  if (!j) return { kind: "", until: "" };
+  const when = String(j.scheduleAt || "").trim();
+  if (!when) return { kind: "immediate", until: "" };
+  const at = Date.parse(when);
+  if (!Number.isFinite(at) || !(scheduledMs > 0)) return { kind: "", until: "" };
+  return { kind: "scheduled", until: new Date(at - scheduledMs).toISOString() };
+}
+
+// The sentence for that deadline, or "" when there is nothing to say. Kept here beside
+// the arithmetic rather than at the screen so that BOTH halves of the claim — when the
+// window shuts and how it is worded — are testable without a browser, and so that the
+// two can never drift apart.
+//
+// `label` is the courier's name, supplied by whoever holds the trip. Every sentence
+// hedges the fee with "may" on purpose: the courier's own terms reserve the right to
+// charge, and the app cannot make a promise on its behalf that it would not keep.
+export function freeCancelLine(job, { label = "The courier", scheduledMs = 0, now = Date.now(), today = "" } = {}) {
+  const fc = freeCancelOf(job, { scheduledMs });
+  if (fc.kind === "scheduled") {
+    const at = Date.parse(fc.until);
+    return Number.isFinite(at) && at > now
+      ? `Free to call off until ${fmtStamp(fc.until, today)} — ${label} may charge a fee after that.`
+      : `${label}'s free calling-off window shut at ${fmtStamp(fc.until, today)}, so a fee may apply from here.`;
+  }
+  if (fc.kind === "immediate") {
+    return `Booked for collection as soon as possible, so there is no pickup time to count back from. An immediate trip is free to call off only for a short while after a driver takes it — check with ${label} before you count on it.`;
+  }
+  return "";
 }
 
 // Whether this trip is in the courier's hands — the one fact about a trip that moves

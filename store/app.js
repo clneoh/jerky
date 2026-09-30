@@ -7,7 +7,7 @@ import { CONFIG } from "./config.js";
 import { poolCaps, poolGroups, clampPool, groupFor, poolPieces, closedReason, cancelDaysFor, strictestCancelDays, nextOrderable } from "./pool.js";
 import { rollingWeeks, weekIndex, windowBounds, WINDOW_WEEKS, occColour, occDays, occStrength, occForDate, occSingleDay } from "./calendar.js";
 import { normRules } from "../availability.js";
-import { isThumb } from "../storefront-fields.js";
+import { isThumb, lineNoteOf, LINE_NOTE_MAX } from "../storefront-fields.js";
 import { isLang, loadLang, pick, rememberLang, nameFor, descFor, unitFor, policyFor, applyTo } from "../i18n.js";
 import { STORE } from "../store-lang.js";
 import { addressFromRow, askGeo, fixVerdict, lookupQuery, placeForOrder, validPin } from "./geo.js";
@@ -463,6 +463,11 @@ export function mergeStorefront(base, remote) {
         // dropping it — the few hot items a customer comes back looking for.
         // Absent (the default) leaves this page reading every product as today.
         if (p.alwaysListed === true) out.alwaysListed = true;
+        // Does this item invite a note? (v236.) Re-checked here on the shop's own
+        // terms like everything else on this boundary: only a literal true is
+        // adopted, so "yes", 1 and a missing key all read as "do not ask" and the
+        // card is drawn exactly as it is today.
+        if (p.askNote === true) out.askNote = true;
         // The thumbnail the baker set on the product. Checked against the
         // same rule the publisher used (storefront-fields.js), so anything that
         // is not a small JPEG data URL is dropped rather than drawn.
@@ -810,6 +815,18 @@ export function render() {
   const dateWrap = document.getElementById("dates");
   const menu = document.getElementById("menu");
   const cart = new Map();
+  // What the customer typed as a note on each item (v236), and which items' note
+  // boxes they have opened. Both are keyed by product NAME, exactly like the cart
+  // itself, and both live HERE rather than in the card's DOM — because a card is
+  // rebuilt on every stepper tap (redraw() below), and anything held in the card
+  // would be wiped out mid-sentence by a press of "+".
+  //
+  // A note is read ONLY for a name that is in the cart, so one left behind by a
+  // line that was stepped to zero — or removed by reconcileCart because it sold
+  // out — is inert: it is never sent, and it is still there if they add the item
+  // back. That is why nothing here bothers to sweep up after a removal.
+  const lineNotes = new Map();
+  const noteOpen = new Set();
   let selected = null;
   let avail = null;      // { 'YYYY-MM-DD': slots_left } — day-level, for the calendar
   let prodAvail = null;  // { 'YYYY-MM-DD': { product: slots_left } } — for the item stamps
@@ -872,7 +889,27 @@ export function render() {
       // sibling's cap/stamp depends on this quantity) and so does every
       // Next-available line, which is a control only while the basket is empty.
       // The bar refreshes either way (count/total/button).
-      const redraw = () => { renderMenu(); renderBar(); };
+      // A repaint rebuilds this card, so a note box the customer is typing in
+      // would be replaced and lose the caret. The WORDS are never at risk (they
+      // live in `lineNotes`, keyed by product name, and the box is rebuilt FROM
+      // them), but a box that quietly dropped the caret out from under a typing
+      // thumb would read as broken — so the caret is put back where it was.
+      const redraw = () => {
+        const active = document.activeElement;
+        const typing = active && active.dataset && active.dataset.lineNote != null
+          ? { name: active.dataset.lineNote, at: active.selectionStart } : null;
+        renderMenu();
+        renderBar();
+        if (!typing) return;
+        const again = Array.from(menu.querySelectorAll("input.line-note"))
+          .find((n) => n.dataset.lineNote === typing.name);
+        if (!again) return;
+        again.focus();
+        if (typing.at != null && again.setSelectionRange) {
+          try { again.setSelectionRange(typing.at, typing.at); }
+          catch { /* a box with no text range, or a test shim */ }
+        }
+      };
       const dec = el("button", { class: "step-btn", onclick: () => {
         const q = Math.max(0, (cart.get(p.name) || 0) - 1);
         if (q === 0) cart.delete(p.name); else cart.set(p.name, q);
@@ -890,6 +927,29 @@ export function render() {
       const stamp = left != null
         ? el("span", { class: (unavailable || soldOut) ? "prod-stamp soldout" : "prod-stamp" },
             unavailable ? t("unavailable") : soldOut ? t("soldOut") : sub(t("onlyLeft"), left))
+        : null;
+      // ── This item's own note (v236) ────────────────────────────────────────
+      // Offered only where the product invites one (the baker's switch, published
+      // as `askNote`), and only once the item is actually in the basket — a note
+      // on something nobody is ordering would have no line to belong to. It opens
+      // on a press rather than standing open on every card, so the menu keeps the
+      // shape it has always had.
+      //
+      // Once opened it stays open, and the words stay in `lineNotes` even if the
+      // item is stepped back to zero and added again — a stray "−" must not cost
+      // the customer what they typed. Nothing here gates anything: an empty box
+      // and no box at all place exactly the same order.
+      const lineNoteArea = p.askNote === true && !soldOut && !reason && qty > 0
+        ? el("div", { class: "line-note-row" },
+            noteOpen.has(p.name)
+              ? el("input", { class: "input line-note", type: "text",
+                  maxlength: String(LINE_NOTE_MAX),
+                  placeholder: t("lineNotePh"),
+                  value: lineNotes.get(p.name) || "",
+                  dataset: { lineNote: p.name },
+                  oninput: function () { lineNotes.set(p.name, this.value); } })
+              : el("button", { class: "line-note-add", type: "button",
+                  onclick: () => { noteOpen.add(p.name); redraw(); } }, t("addNoteLink")))
         : null;
       const note = reason ? el("p", { class: "prod-note" }, reason) : null;
       // A product the baker keeps listed names the next date a customer can
@@ -971,6 +1031,7 @@ export function render() {
               desc ? el("p", { class: "prod-desc" }, desc) : null),
             stamp),
           el("div", { class: "stepper" }, dec, qtyLabel, inc),
+          lineNoteArea,
           note,
           nextNote,
           cancelNote));
@@ -1557,7 +1618,14 @@ export function render() {
     for (const [n, q] of cart) {
       const p = CONFIG.products.find((x) => x.name === n);
       if (!p) continue;
-      lines.push({ name: n, qty: q, price: p.price });
+      const line = { name: n, qty: q, price: p.price };
+      // The customer's own words for this item (v236), when they wrote any. The
+      // key is written only when there IS something to send, so an order with no
+      // notes posts byte-for-byte the payload this page has always posted — the
+      // same "absent means nothing" spelling the pin and the referral stamp use.
+      const noteText = lineNoteOf(lineNotes.get(n));
+      if (noteText) line.note = noteText;
+      lines.push(line);
     }
     if (!lines.length || !selected) return;
     // The baker confirms every order (and sends the payment QR) over WhatsApp,
@@ -1683,6 +1751,11 @@ export function render() {
       // New order and only becomes Confirmed when the baker confirms it (which
       // is also when the customer gets the WhatsApp confirmation).
       cart.clear();
+      // …and with it every note typed against it, or the next customer's first
+      // look at the menu would open with the last person's words sitting in the
+      // boxes. Nothing else on this page is carried over; neither is this.
+      lineNotes.clear();
+      noteOpen.clear();
       const noteBox = document.getElementById("menu-note");
       if (noteBox) { noteBox.hidden = true; noteBox.replaceChildren(); }
       document.getElementById("name-input").value = "";

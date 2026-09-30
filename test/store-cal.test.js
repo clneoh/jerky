@@ -17,6 +17,8 @@ import {
   monthWeeks as adminWeeks, addMonth as adminAddMonth,
   occColour as adminColour, occDays as adminDays, occStrength as adminStrength,
   occForDate as adminForDate, occSingleDay as adminSingleDay,
+  rollingWeeks as adminRollingWeeks, weekIndex as adminWeekIndex,
+  WINDOW_WEEKS as ADMIN_WINDOW_WEEKS,
 } from "../admin/js/calendar.js";
 
 // Every month of two years plus a couple of far ones — leap years, 31/30/28-day
@@ -118,12 +120,31 @@ test("addMonth crosses year boundaries in both directions", () => {
 });
 
 // ── the rolling window the customer's picker draws ───────────────────────────
-// Nothing in the backoffice has an equivalent, so these are not pinned to the app
-// copy the way the helpers above are: they are tested on their own terms. The
-// window replaces a month grid for one reason — at the end of a month almost every
-// day on a month grid is already past, and the days before the 1st and after the
-// last are invisible padding — so the tests are about it always being whole weeks
-// of real dates, and never able to hide a date the baker has published.
+// The window replaces a month grid for one reason — at the end of a month almost
+// every day on a month grid is already past, and the days before the 1st and after
+// the last are invisible padding — so the tests are about it always being whole
+// weeks of real dates, and never able to hide a date the baker has published.
+//
+// The back office draws the same window (her delivery-day picker, v243), so like
+// the grid helpers above it is copied across and pinned: a day has to sit in the
+// same place on the shop as it does in her own calendar. Only the window BOUNDS
+// differ between the two — the shop's `windowBounds` never pages back past today,
+// the back office's `deliveryWindow` does — so those are tested on their own side.
+test("the shop's rolling window is the app's, week for week", () => {
+  assert.equal(WINDOW_WEEKS, ADMIN_WINDOW_WEEKS, "the same number of weeks");
+  const todays = ["2026-01-01", "2026-02-28", "2026-08-30", "2026-09-01", "2027-12-31", "2028-02-29"];
+  for (const today of todays) {
+    for (const offset of [-6, -1, 0, 1, 6]) {
+      assert.deepEqual(rollingWeeks(today, { offset }), adminRollingWeeks(today, { offset }),
+        `${today} at offset ${offset} draws the same window`);
+    }
+    assert.equal(rollingWeeks(today).flat().length, ADMIN_WINDOW_WEEKS * 7, `${today}: 35 cells`);
+    for (const d of rollingWeeks(today, { offset: 3 }).flat()) {
+      assert.equal(weekIndex(today, d), adminWeekIndex(today, d),
+        `${today} → ${d} is the same distance in whole weeks`);
+    }
+  }
+});
 
 const isoOf = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;

@@ -504,3 +504,90 @@ test("a charge with the order publishes no COD flag, so nothing already recorded
   assert.equal(snap.courier_cod, null, "null, and the card's courier line reads as it did before this column existed");
   assert.equal(snap.courier_fee, 8);
 });
+
+// ── what the trip cost, against what she charged (v235, 29 Sep 2026) ───────
+//
+// A charge is a price she DECIDED; a booked trip is what the journey really cost. Her ask
+// was to see BOTH directions rather than only the alarming one — "real costing make aware,
+// good for future promotion room if possible, i can even opt not to collect delivery" — so
+// the tests below pin the sign as hard as the arithmetic. A difference is only useful if it
+// says which way it fell, and a line that read "RM 5.50 different" would be worse than none.
+//
+// The three things most likely to be quietly wrong, and each has a test:
+//   • the SUM, not the first row — a value set is one charge over several orders;
+//   • the payer changes the SENTENCE and not the number;
+//   • nothing is said when there is nothing to say, rather than "RM 0.00 different".
+const { feeGapOf, feeGapLine } = await import("../admin/js/courier.js");
+
+const trip = (amount, currency = "MYR") => ({ jobId: "J1", provider: "lalamove", amount, currency });
+
+test("the trip costing more than she charged reads as short, and names whose pocket it came from", () => {
+  const charged = orders({ courierFee: 25.5, courierPaidBy: "customer" });
+  const gap = feeGapOf(charged, trip(31));
+  assert.deepEqual(gap, { charged: 25.5, cost: 31, diff: -5.5, payer: "customer" },
+    "the difference is SIGNED: the trip cost more, so it is negative");
+  assert.equal(feeGapLine(charged, trip(31), "RM"),
+    "The customer is charged RM 25.50 and the trip cost RM 31.00 — RM 5.50 short, so that much came out of your own pocket.");
+});
+
+test("the trip costing less reads as money that stayed with her, not as an error", () => {
+  const charged = orders({ courierFee: 25.5, courierPaidBy: "customer" });
+  const gap = feeGapOf(charged, trip(20));
+  assert.equal(gap.diff, 5.5, "the other direction, and still the trip's own cost that is being compared");
+  assert.equal(feeGapLine(charged, trip(20), "RM"),
+    "The customer is charged RM 25.50 and the trip cost RM 20.00 — RM 5.50 under, and that difference stayed with you.");
+});
+
+test("a charge she bears is measured against what she allowed for, because the money never came in", () => {
+  const mine = orders({ courierFee: 25.5, courierPaidBy: "me" });
+  assert.equal(feeGapLine(mine, trip(31), "RM"),
+    "You recorded RM 25.50 as your own cost, and the trip cost RM 31.00 — RM 5.50 more than you had allowed for.");
+  assert.equal(feeGapLine(mine, trip(20), "RM"),
+    "You recorded RM 25.50 as your own cost, and the trip cost RM 20.00 — RM 5.50 less than you had allowed for.");
+});
+
+test("a trip with no charge on the order says so, because that is the free-delivery case she named", () => {
+  const free = orders({});
+  assert.deepEqual(feeGapOf(free, trip(31)), { charged: 0, cost: 31, diff: -31, payer: "" });
+  assert.equal(feeGapLine(free, trip(31), "RM"),
+    "No courier charge is on the order, so the whole RM 31.00 of this trip is your own cost.");
+});
+
+test("a charge that matches the trip exactly says nothing at all", () => {
+  const even = orders({ courierFee: 31, courierPaidBy: "customer" });
+  assert.equal(feeGapOf(even, trip(31)).diff, 0, "the arithmetic still reads it, so a caller can still ask");
+  assert.equal(feeGapLine(even, trip(31), "RM"), "",
+    "but the card draws no line: a difference of nothing is not a difference");
+});
+
+test("a trip that never gave a price is not reported on", () => {
+  const charged = orders({ courierFee: 25.5, courierPaidBy: "customer" });
+  for (const nothing of [undefined, null, {}, trip(""), trip(null), trip("abc"), trip(0)]) {
+    assert.equal(feeGapOf(charged, nothing), null, `no readable price in ${JSON.stringify(nothing)}`);
+    assert.equal(feeGapLine(charged, nothing, "RM"), "", "and therefore no sentence built from it");
+  }
+  // `null`, `""` and `0` are the ones that matter: all three are a FINITE zero to `Number()`,
+  // so a guard written as ">= 0" would have taken a job with no amount for a free trip and
+  // put "the trip cost RM 0.00" on her card. A price has to be a positive number to be read.
+  assert.equal(feeGapOf([], trip(31)), null, "no orders riding the trip is nothing to compare either");
+});
+
+test("every order riding the trip is counted, so a value set's single charge is not read three times", () => {
+  // The same charge over three rows is ONE charge. Reading list[0] would have been right here
+  // by accident; the trap is the opposite shape — a set whose rows each carry a share.
+  const set = [
+    { courierFee: 4.66, courierPaidBy: "me" },
+    { courierFee: 4.66, courierPaidBy: "me" },
+    { courierFee: 4.68, courierPaidBy: "me" },
+  ];
+  assert.equal(feeGapOf(set, trip(14)).charged, 14, "the parts sum to the charge, the way splitEven wrote them");
+  assert.equal(feeGapLine(set, trip(14), "RM"), "", "and summing them exactly is what makes this line silent");
+  assert.equal(feeGapOf([{ courierFee: 8, courierPaidBy: "customer" }], trip(14)).diff, -6,
+    "four rows left empty would otherwise read as a charge of zero");
+});
+
+test("the money is rounded to cents, so float dust never reaches her screen", () => {
+  const ugly = [{ courierFee: 8.1, courierPaidBy: "me" }, { courierFee: 8.2, courierPaidBy: "me" }];
+  assert.equal(feeGapOf(ugly, trip(10.1)).charged, 16.3, "16.299999999999997 is not a number she has ever seen");
+  assert.equal(feeGapLine(ugly, trip(16.3), "RM"), "", "and rounding it is what keeps a zero difference silent");
+});

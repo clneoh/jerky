@@ -9,7 +9,7 @@ import { generateUpcomingDates, shortDate, todayISO } from "./dates.js";
 import { normRules } from "../../availability.js";
 import { publishOccasions } from "./occasion_catalog.js";
 import { flattenTree, primaryCategoryId, productsInCategory } from "./productCategories.js";
-import { isThumb } from "../../storefront-fields.js";
+import { isThumb, lineNoteOf } from "../../storefront-fields.js";
 import { effectiveCapacity, effectiveLimit, isPoolablePack, poolRemaining, totalUnitsOnDate } from "./bom.js";
 import { byId, fmtRM, newId, orderCode, orderLineName, save, stampOrderLine } from "./state.js";
 import { phoneDigits } from "./customers.js";
@@ -335,6 +335,13 @@ function storefrontPayload(state) {
       // looking for. Published only while switched on, so an absent key leaves
       // the storefront reading every product exactly as it does today.
       if (p.alwaysListed === true) out.alwaysListed = true;
+      // Does this product invite a note? (v236.) The shop draws a small "Add a
+      // note" link on the card and carries whatever the customer types on the
+      // ordered LINE. Published only while switched on, so an absent key leaves
+      // the storefront reading every product exactly as it does today — and a
+      // shop-side recheck of its own lives in store/app.js's merge, as with
+      // every other field that crosses this boundary.
+      if (p.askNote === true) out.askNote = true;
       // Optional translated names for 中文 / BM shoppers. Published only when
       // written — blank falls back to the English name on the shop (nameFor).
       for (const k of ["nameZh", "nameMs"]) {
@@ -860,6 +867,14 @@ function importIncoming(state, row) {
       groupId,
       createdAt: now,
     };
+    // The note the customer attached to THIS item (v236), when the product
+    // invites one — the shop's “Add a note” link. Named here or it is dropped in
+    // silence: this object is built field by field, so a field nobody names never
+    // reaches the app at all, exactly as the pin below records. Copied out of an
+    // untrusted payload one field at a time, trimmed to the shared cap, and
+    // written only when it has words — so an order nobody noted carries no key.
+    const lineNote = lineNoteOf(line.note);
+    if (lineNote) order.lineNote = lineNote;
     // The pin the CUSTOMER dropped on the shop page (v197), if they dropped one.
     // Named here or it is dropped in silence: this object is built field by field,
     // so a field nobody names never reaches the app at all (the planner's moduleOf

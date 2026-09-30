@@ -66,9 +66,9 @@ import { courierPayQuestions } from "./orders.js";
 // A parcel recorded on the order (v226) is never swept into a van run — see runDays.
 import { parcelOf } from "../parcel.js";
 import {
-  fmtDistanceKm, fmtQuote, fmtQuoteLeft, fmtWindow, liveJobProblem, loadOf, quoteExpired,
-  runLimitProblem, savingOf, scheduleAtUTC, stampTrip, tripOf, tripProblem, windowAt,
-  windowProblem,
+  fmtDistanceKm, fmtQuote, fmtQuoteLeft, fmtWindow, liveJobOf, liveJobProblem, loadOf,
+  quoteExpired, runLimitProblem, savingOf, scheduleAtUTC, stampTrip, tripCalledOff, tripOf,
+  tripProblem, windowAt, windowProblem,
 } from "../courier_job.js";
 
 // One separate-trip price is one request, and the courier allows two requests a second.
@@ -177,9 +177,29 @@ export function renderDeliveryRun(root, state, params) {
     return tickedGroups().map((g) => g.orders[0]).filter(Boolean);
   }
 
-  function allTicked() {
+  // A CUSTOMER WHO ALREADY HAS A TRIP RUNNING (v242). They stay on the list — she asked to be
+  // able to see which customer it is — but they are never ticked FOR her: the common case is
+  // that the whole day goes out in one van, and a booked customer swept in with the rest is a
+  // second vehicle at a door a driver is already on the way to.
+  //
+  // The tick itself stays LIVE. Her instruction, twice over: guide, never a gate. If she ticks a
+  // booked customer anyway the app honours it and refuses at the Book press instead, with the
+  // reason on screen — which is why the row has to SAY it is booked rather than go inert.
+  function bookedGroups() {
     const day = dayRowNow();
-    return !!day && day.groups.length > 0 && day.groups.every((g) => ticked.has(groupKey(g)));
+    return day ? day.groups.filter((g) => liveJobOf(g.orders[0])) : [];
+  }
+
+  function tickableGroups() {
+    const day = dayRowNow();
+    return day ? day.groups.filter((g) => !liveJobOf(g.orders[0])) : [];
+  }
+
+  // Asked of the TICKABLE groups only, so the bulk press still flips its label over a booked
+  // row even though that row is not its to tick.
+  function allTicked() {
+    const gs = tickableGroups();
+    return gs.length > 0 && gs.every((g) => ticked.has(groupKey(g)));
   }
 
   // The identity of the SET that was priced, so a price can be tied to the exact list it
@@ -207,7 +227,8 @@ export function renderDeliveryRun(root, state, params) {
   // asking her to repeat what she already decided.
   function pickTicked() {
     const day = dayRowNow();
-    ticked = new Set(day ? day.groups.map(groupKey) : []);
+    // Every tickable customer on, and a booked one left OFF (v242) — tickableGroups, above.
+    ticked = new Set(tickableGroups().map(groupKey));
     if (day) pickupDay.value = String(day.date || "");
   }
 
@@ -238,7 +259,7 @@ export function renderDeliveryRun(root, state, params) {
   // correct them WITHOUT rebuilding the rows, which would throw away the row under her finger.
   const headTitle = el("span", { class: "run-head-title" });
   const headBtn = button("Tick them all", () => {
-    ticked = allTicked() ? new Set() : new Set((dayRowNow() || {}).groups.map(groupKey));
+    ticked = allTicked() ? new Set() : new Set(tickableGroups().map(groupKey));
     compare = {};
     paintList();
     paintLoad();
@@ -249,8 +270,17 @@ export function renderDeliveryRun(root, state, params) {
   function paintHead() {
     const day = dayRowNow();
     if (!day) return;
-    headTitle.textContent = `Who is on the run — ${ticked.size} of ${day.groups.length}`;
+    const booked = bookedGroups().length;
+    // The count keeps its old shape and only gains a note, so a day with nothing booked reads
+    // exactly as it always did. The booked ones are named because the denominator counts them:
+    // a list whose head said "2 of 3" over three visible rows would be the app losing a customer.
+    headTitle.textContent = `Who is on the run — ${ticked.size} of ${day.groups.length}`
+      + (booked ? ` · ${booked} already booked` : "");
     headBtn.textContent = allTicked() ? "Untick them all" : "Tick them all";
+    // A press that would change nothing is inert rather than silently doing nothing: on a day
+    // where every order is booked there is nothing for it to tick, and a live-looking button
+    // that answers no tap is the shape of fault she has reported before.
+    headBtn.disabled = !allTicked() && ticked.size === tickableGroups().length;
   }
 
   function paintList() {
@@ -297,6 +327,24 @@ export function renderDeliveryRun(root, state, params) {
             el("span", { class: "run-name" }, nameOf(first)),
             el("span", { class: "run-sub" }, [where, what].filter(Boolean).join(" · ")))),
         place ? null : button("Put it on the map", () => pinDoorstep(first), "ghost small"));
+      // ALREADY ON A TRIP (v242). Her report: a customer whose courier booking is already made
+      // must never be swept onto a second van. The block sits OUTSIDE the row's <label> for the
+      // same reason the door offer below does — a press in there would tick the customer rather
+      // than call the trip off. The tick itself stays LIVE (her instruction, twice over: guide,
+      // never a gate) and the words carry the warning instead, with the one press that turns
+      // this row back into an ordinary one.
+      const job = liveJobOf(first);
+      const holder = job ? (courierByKey(job.provider) || courier) : null;
+      const offBtn = job
+        ? button("Call off the trip and add to this run", () => callOffTrip(g, job, holder), "ghost small")
+        : null;
+      // Greyed while a courier call of any kind is in flight, so the press cannot be taken twice.
+      if (offBtn) offBtn.disabled = Boolean(busy);
+      const booked = job
+        ? el("div", { class: "pin-offer run-booked" },
+            el("p", { class: "card-sub" }, bookedSaid(job, holder)),
+            el("div", { class: "btn-row" }, offBtn))
+        : null;
       // The two doors on this order, when they disagree, offered under its own row — one
       // line and one press. It is a block of its own rather than a line inside the row
       // because everything in that row sits inside one <label>: a press in there would tick
@@ -309,8 +357,9 @@ export function renderDeliveryRun(root, state, params) {
       // `which: "customer"` means HER door is the one in force and the pin they dropped is the
       // alternative, so the words and the press both split on this one flag and nothing else.
       const theirs = Boolean(offer && offer.which === "customer");
-      return offer
-        ? [row, el("div", { class: "pin-offer" },
+      const tail = [];
+      if (booked) tail.push(booked);
+      if (offer) tail.push(el("div", { class: "pin-offer" },
             el("p", { class: "card-sub" },
               theirs
                 ? `${nameOf(first)} pinned a different spot this time. Taking it replaces the doorstep you keep for them.`
@@ -325,8 +374,8 @@ export function renderDeliveryRun(root, state, params) {
                 // exactly where it is still needed. The other direction offers THEIR pin,
                 // which no lookup wrote, so there is nothing to carry.
                 () => keepPin(first, offer.place, theirs, theirs ? "" : doorRoadOf(state, first)),
-                "ghost small")))]
-        : [row];
+                "ghost small"))));
+      return [row, ...tail];
     });
 
     listBox.replaceChildren(
@@ -334,6 +383,82 @@ export function renderDeliveryRun(root, state, params) {
       ...rows.filter(Boolean),
     );
     paintHead();
+  }
+
+  // WHY THIS ROW IS NOT TICKED, in words (v242). The courier is named, and so is its own word
+  // for where the trip has got to — resolved through the REGISTRY rather than by name, because
+  // this file is not allowed to know whose trip it is (see the header). The consequence is the
+  // sentence `liveJobProblem` already puts on the Book press, word for word, so the app says ONE
+  // thing about double-booking wherever she happens to meet it.
+  //
+  // Built as a list and joined, so a trip whose status has not been read back yet stops at the
+  // courier's name rather than printing a dangling dash or the word null.
+  function bookedSaid(job, holder) {
+    const said = String(holder && holder.statusLabel ? holder.statusLabel(job.status) : "").trim();
+    const held = [holder ? holder.label : "", said].filter(Boolean).join(" — ");
+    return `Already booked with ${held}. Ticking it and booking the run would send a second vehicle to the same door.`;
+  }
+
+  // ── calling a booked trip off, so that customer can join the run instead ──
+  //
+  // HER WORDS, AND BOTH HALVES OF THEM: a booked customer is not greyed out, and the row offers
+  // to call the original booking off so it can be consolidated with the others. The press does
+  // both, behind one confirm, because consolidating is the purpose she named — and the
+  // cancellation is the irreversible half, so it is asked about in the open and never taken on
+  // the way past. Nothing about this is a gate: the tick above stays live, and this is the press
+  // that turns the row back into an ordinary one.
+  function callOffTrip(g, job, holder) {
+    if (busy || !root.isConnected) return;
+    const first = g.orders[0];
+    const h = holder || courierByKey(job.provider) || courier;
+    confirmDialog(
+      `Call off this ${h.label} trip and put ${nameOf(first)} on this run instead? ` +
+      `The driver stops being sent, and the customer's tracking box keeps the link but nothing will update it. ` +
+      `This cannot be undone from here — you would have to book again, at a fresh price.`,
+      async () => {
+        if (busy || !root.isConnected) return;
+        // Wrapped on the same guard as every other press that spends money (v217): `busy` is what
+        // a throw used to leave set, and a cancellation that throws on the way back cannot say
+        // which side of it we are on — so the trouble sentence says to look, not to press again.
+        await guarded({
+          hold: (v) => { busy = v; },
+          work: () => callOffNow(g, job, h),
+          said: (s) => { statusLine.textContent = s; paintList(); paintPrices(); },
+          trouble: `The trip may not have been called off — check it in ${h.label} before pressing again`,
+        });
+      },
+      { danger: true, yesLabel: "Call it off and add to the run" },
+    );
+  }
+
+  async function callOffNow(g, job, holder) {
+    busy = true;
+    paintList();
+    const out = await holder.cancel(state, job.jobId);
+    if (!root.isConnected) return;
+    busy = false;
+    if (!out.ok) {
+      // An ordinary answer rather than a fault: the courier decides how long a trip may still be
+      // called off, and it says so in its own words. Nothing is written and nothing is ticked.
+      toast(out.reason);
+      paintList();
+      return;
+    }
+    // The called-off record goes on every LINE of the group, exactly as a booking does, so a
+    // customer's order edited and re-split later does not keep a trip that is no longer running.
+    // Then the customer joins the run, which is the whole point of the press.
+    stampTrip(g.orders, tripCalledOff(job), holder.label);
+    ticked.add(groupKey(g));
+    // The standing price describes a list that has just changed, so it is thrown away rather
+    // than left standing beside a run it no longer prices.
+    priceAgain();
+    save(state);
+    maybeSync(state);
+    paintList();
+    paintLoad();
+    paintPay();
+    paintPrices();
+    toast(`${nameOf(g.orders[0])} is off the ${holder.label} trip and on this run — ask for a price when you are ready.`);
   }
 
   // Keep a doorstep against a customer. THE one path, whether the pin was dragged on

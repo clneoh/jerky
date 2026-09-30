@@ -548,6 +548,36 @@ html, body {
   line-height: 1.4;
 }
 
+/* The customer's own note for one item (v236), under that item's stepper.
+
+   It opens on a press rather than standing open, so the row is usually just the
+   link. The link is deliberately quiet — it is an invitation, not an instruction,
+   and it must not compete with the stepper for the thumb — but it is a real
+   target: 36px tall, the smallest thing on this page that is meant to be tapped.
+
+   When it opens, the box is the full width of the card's body so it lines up with
+   the product's own words above it, and it keeps the shop's ordinary input look. */
+.line-note-row { margin: 8px 0 0; }
+.line-note-add {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 2px;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--brown-dark);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.line-note-add:active { color: var(--brown); }
+.line-note {
+  width: 100%;
+  font-size: 13px;
+}
+
 /* On a greyed card, the one line that says what to do: the next date this
    product can be ordered, and how many are left that day. It wears the brand
    colour and pulses, so it reads through the dimming and draws the eye on a
@@ -664,6 +694,10 @@ button.prod-next.off::after { content: ""; }
   min-height: 46px;
 }
 .input:focus { outline: 2px solid var(--brown); outline-offset: -1px; border-color: transparent; }
+/* The delivery note is a hint, never content (v237). Set explicitly rather than
+   left to the browser, whose default grey is dark enough to read as typed text
+   and differs between Safari, Chrome and Firefox. `opacity: 1` for Firefox. */
+.note-input::placeholder { color: var(--muted); opacity: 1; }
 
 /* Self collect / courier picker */
 .seg {

@@ -270,6 +270,42 @@ function withThirdCustomer(st) {
   return st;
 }
 
+// A customer whose trip is ALREADY BOOKED (v242). A live job on the order's own row is the
+// whole of what "booked" means — `liveJobOf` reads that and nothing else — so the fixture
+// only has to put one there. It goes on Bala, deliberately NOT on Ain, so one test can tell
+// the booked customer from an ordinary one on the same day.
+//
+// `done` is absent on purpose: a record with no `done` key reads as LIVE, which is the shape
+// a card written by an older version of the app would have.
+function bookedBala(st, over = {}) {
+  st.orders[2].courierJob = {
+    jobId: "LLM-SOLO-1", provider: "lalamove", courierName: "Lalamove",
+    status: "ON_GOING", amount: 16.25, currency: "MYR",
+    bookedAt: "2026-09-26T02:00:00.000Z", ...over,
+  };
+  return st;
+}
+
+// Every row on the list, in the order the screen drew them, each paired with the customer it
+// is about. Read off the tick's own label rather than the document order, because the whole
+// point of these tests is which customer a press belongs to.
+const rowFor = (root, name) => {
+  const tick = inputByLabel(root, `Send ${name} on this run`);
+  let node = tick;
+  while (node && !String(node.className).includes("run-row")) node = node.parentNode;
+  return { tick, row: node };
+};
+
+// The block the warning and its press live in, reached from the row so a test can ask whether
+// it is INSIDE the row's own <label> — which is the difference between ticking the customer and
+// calling the trip off.
+const bookedBlock = (root, name) => {
+  const { row } = rowFor(root, name);
+  if (!row) return undefined;
+  return all(root).find((n) => String(n.className).includes("run-booked")
+    && n.parentNode === row.parentNode);
+};
+
 // ── the stubbed wire ──────────────────────────────────────────────────────
 //
 // It answers the courier function's own contract — a JSON body carrying `{ok, ...}` — and
@@ -299,7 +335,7 @@ function priceOf(key, { alone = false, address = "", override = null } = {}) {
   return ALONE_BY_ADDRESS[address] ?? CAR_ALONE;
 }
 
-function stubCourier({ failAloneAfter = Infinity, standalone, badStops = false } = {}) {
+function stubCourier({ failAloneAfter = Infinity, standalone, badStops = false, cancel } = {}) {
   const real = globalThis.fetch;
   const sent = [];
   // How many single-doorstep requests have been answered, so a test can make the courier
@@ -321,7 +357,7 @@ function stubCourier({ failAloneAfter = Infinity, standalone, badStops = false }
     const drops = body.action === "quote" && Array.isArray(p.drops) ? p.drops.length : 2;
     const reply = body.action === "quote" && drops < 2 && ++alone > failAloneAfter
       ? { ok: false, reason: "Lalamove could not price that doorstep on its own." }
-      : answerFor(body, { standalone, badStops });
+      : answerFor(body, { standalone, badStops, cancel });
     return { ok: true, status: 200, json: async () => reply, text: async () => JSON.stringify(reply) };
   };
   globalThis.fetch = stubFetch;
@@ -379,6 +415,15 @@ function answerFor(body, opts = {}) {
       })),
       failed: [],
     };
+  }
+  // Calling a trip off (v242). A DELETE-shaped action answers with nothing at all in the real
+  // world, which is exactly why the app's own record of it is written locally. The refusal is
+  // the other half of the contract and is an ordinary answer, not a fault (see `cancel:false`).
+  if (body.action === "cancel") {
+    if (opts.cancel === false) {
+      return { ok: false, reason: "The driver has already been matched, so this trip can no longer be called off." };
+    }
+    return { ok: true, cancelled: true };
   }
   if (body.action === "book") {
     return { ok: true, order: {
@@ -1339,4 +1384,233 @@ test("clearing the parcel puts the doorstep back on the run", () => {
 
   const rows = all(root).filter((n) => String(n.className).includes("run-row"));
   assert.equal(rows.length, 2, "both doorsteps are back");
+});
+
+// ── v242: a customer whose trip is already booked is never quietly put on a second van ──
+//
+// Her report, 30 Sep 2026: "if a customer order courier book, delivery run should not tick
+// that order and need an info indicating it is book so that a delivery will not be double
+// book". Her two answers settled the shape: NOT a gate (default unticked, plus a warning),
+// and NOT greyed out (offer to call the original booking off so it can be consolidated).
+//
+// Every test below therefore has a counterfactual twin, because "it does not tick" alone
+// would also be true of a greyed row or a hidden one — the point is that the row stays
+// fully usable and only the DEFAULT changed. See also test/courier-run.test.js for the
+// pure `tripCalledOff` record these presses write.
+
+test("a booked customer opens off the run, while their neighbour stays on it (v242)", async () => {
+  const st = bookedBala(world());
+  stubCourier();
+  const { root } = openRun(st);
+
+  const ain = rowFor(root, "Ain");
+  const bala = rowFor(root, "Bala");
+  assert.ok(ain.tick && bala.tick, "both customers are on the list — a booked one is not hidden");
+  assert.equal(ain.tick.checked, true, "the ordinary customer opens ticked, exactly as before");
+  assert.equal(bala.tick.checked, false, "and the booked one does not");
+
+  const head = all(root).find((n) => String(n.className).includes("run-head-title")).textContent;
+  assert.equal(head, "Who is on the run — 1 of 2 · 1 already booked",
+    `the head counts the booked one rather than losing them — read "${head}"`);
+});
+
+test("a day with nothing booked reads exactly as it always did (v242)", async () => {
+  // The note is an APPENDAGE, not a replacement, so the line she has been reading for
+  // months is byte-identical until there is something to say.
+  const st = world();
+  stubCourier();
+  const { root } = openRun(st);
+  const head = all(root).find((n) => String(n.className).includes("run-head-title")).textContent;
+  assert.equal(head, "Who is on the run — 2 of 2");
+});
+
+test("the booked row says WHICH courier and where the trip has got to, in its own words (v242)", async () => {
+  const st = bookedBala(world());
+  stubCourier();
+  const { root } = openRun(st);
+
+  const block = bookedBlock(root, "Bala");
+  assert.ok(block, "the warning is on the page, under the customer it is about");
+  assert.match(block.textContent, /Already booked with Lalamove — The driver is on the way\./,
+    "the courier and its own word for the trip's state");
+  assert.match(block.textContent, /would send a second vehicle to the same door/,
+    "and the consequence — the very sentence the Book press refuses with, so the app says one "
+    + "thing about double-booking wherever she meets it");
+
+  // AND IT IS OUTSIDE THE ROW'S OWN <label>. Everything inside that label ticks the customer,
+  // so a press in here would put them ON the run instead of taking the trip off it.
+  const { row } = rowFor(root, "Bala");
+  let node = block;
+  while (node && node !== row) node = node.parentNode;
+  assert.notEqual(node, row, "the block is a sibling of the row, never inside its label");
+});
+
+test("a trip whose status has not been read back names the courier and stops there (v242)", async () => {
+  // The joined line is what keeps a job with no status from printing a dangling dash or the
+  // word null on her screen — the class of fault the suite already guards elsewhere.
+  const st = bookedBala(world(), { status: "" });
+  stubCourier();
+  const { root } = openRun(st);
+
+  const block = bookedBlock(root, "Bala");
+  assert.ok(block, "the warning is still there — a trip is booked whether or not we know how far");
+  assert.match(block.textContent, /Already booked with Lalamove\. Ticking it/);
+  assert.doesNotMatch(block.textContent, /—\s*\./, "no dangling dash where the courier's word would be");
+  assert.doesNotMatch(block.textContent, /null/, "and nothing reading null");
+});
+
+test("the bulk press leaves a booked customer alone, and still flips its own label (v242)", async () => {
+  const st = bookedBala(world());
+  stubCourier();
+  const { root } = openRun(st);
+
+  const bulk = () => (buttonByText(root, "Tick them all") || buttonByText(root, "Untick them all"));
+  // The whole tickable day is already on, so the press offers to take it off — the label is
+  // asked of the TICKABLE set, and a booked row must not be able to hold it hostage.
+  assert.equal(bulk().textContent, "Untick them all");
+
+  press(bulk());
+  assert.equal(rowFor(root, "Bala").tick.checked, false, "ticks them all does not mean THEM all");
+  assert.equal(rowFor(root, "Ain").tick.checked, false, "and the ordinary customer really did come off");
+
+  assert.equal(bulk().textContent, "Tick them all", "the label still flips");
+  press(bulk());
+  assert.equal(rowFor(root, "Ain").tick.checked, true, "putting them back puts the ordinary one back");
+  assert.equal(rowFor(root, "Bala").tick.checked, false, "and still leaves the booked one off");
+});
+
+test("it is a warning, not a gate: ticking a booked customer by hand is honoured, and the PRICE says why (v242)", async () => {
+  // The counterfactual the whole design rests on. Her words: "it should not be gate". So the
+  // tick is live, the tick is honoured, and the refusal is the app's existing one — arriving on
+  // the price panel with the Book press already inert, rather than as a shock at the press.
+  const st = bookedBala(world());
+  stubCourier();
+  const { root } = openRun(st);
+
+  const bala = rowFor(root, "Bala");
+  bala.tick.checked = true;
+  change(bala.tick, "");
+  assert.equal(rowFor(root, "Bala").tick.checked, true,
+    "the press is honoured — nothing puts her tick back");
+
+  press(buttonByText(root, "Price this run"));
+  await settle();
+
+  const row = priceRow(root, "Car");
+  assert.ok(row, "the run is still priced — a booked customer is not refused at the price either");
+  assert.match(root.textContent, /This order is already on a trip\. Check it below, or cancel it first/,
+    "and the reason is ON THE SCREEN before she presses anything");
+  const book = buttonByText(row, "Book this run");
+  assert.ok(book, "with the booking press still drawn");
+  assert.equal(book.disabled, true, "and inert — the money never moves");
+  assert.equal(st.orders[2].courierJob.jobId, "LLM-SOLO-1", "the trip she already had is untouched");
+});
+
+test("calling a booked trip off asks first, and Cancel writes nothing at all (v242)", async () => {
+  const st = bookedBala(world());
+  const wire = stubCourier();
+  const { root } = openRun(st);
+
+  assert.match(root.textContent, /Call off the trip and add to this run/,
+    "the way out is offered on the row itself");
+  press(buttonByText(root, "Call off the trip and add to this run"));
+  await settle();
+
+  const confirm = layers["confirm-layer"];
+  assert.match(confirm.textContent, /Call off this Lalamove trip and put Bala on this run instead\?/,
+    "the app asks before cancelling a real driver, and names whose trip it is");
+  assert.match(confirm.textContent, /cannot be undone from here/,
+    "saying plainly which half is irreversible");
+
+  press(buttonByText(confirm, "Cancel"));
+  await settle();
+
+  assert.equal(wire.sent.filter((b) => b.action === "cancel").length, 0,
+    "no cancellation left the phone");
+  assert.equal(st.orders[2].courierJob.done, undefined, "and the trip is still running");
+  assert.ok(bookedBlock(root, "Bala"), "the warning is still on the row");
+  assert.equal(rowFor(root, "Bala").tick.checked, false, "and nobody was quietly ticked");
+});
+
+test("Call it off cancels the trip, records it, drops the warning, and puts the customer on the run (v242)", async () => {
+  // Her second answer, both halves of it: "offer to cancel the original booking to consolidate
+  // with other order". The cancel and the consolidation are one press because that is one
+  // intention — but only the cancel is irreversible, which is why it is the half that is asked.
+  const st = bookedBala(world());
+  const wire = stubCourier();
+  toastNode.textContent = "";
+  const { root } = openRun(st);
+
+  press(buttonByText(root, "Call off the trip and add to this run"));
+  await settle();
+  press(buttonByText(layers["confirm-layer"], "Call it off and add to the run"));
+  await settle();
+
+  const sent = wire.sent.filter((b) => b.action === "cancel");
+  assert.equal(sent.length, 1, "exactly one cancellation");
+  assert.equal(sent[0].provider, "lalamove", "asked of the courier that HOLDS the trip");
+  assert.equal(sent[0].payload.orderId, "LLM-SOLO-1", "and about the trip she already had");
+
+  const job = st.orders[2].courierJob;
+  assert.equal(job.done, true, "the order's own row now records the trip as finished");
+  assert.ok(job.cancelledAt, "stamped with when, so the card can say how long ago");
+  assert.equal(job.jobId, "LLM-SOLO-1", "without losing which trip it was");
+  assert.equal(job.status, "ON_GOING", "and without inventing a status word the courier never sent");
+
+  assert.equal(bookedBlock(root, "Bala"), undefined, "the warning is gone — the row is ordinary again");
+  assert.equal(rowFor(root, "Bala").tick.checked, true,
+    "and the customer is ON this run, which is the whole point of calling the trip off");
+  assert.match(root.textContent, /2 of 2/, "the head counts them both");
+  assert.match(toastNode.textContent, /Bala is off the Lalamove trip and on this run/,
+    "and it says so, in her words, so a press that spends money is never silent");
+});
+
+test("a courier that refuses to call the trip off is answered in its own words, and nothing is written (v242)", async () => {
+  // A refusal is an ORDINARY answer, not a fault: the courier is the one who decides whether a
+  // trip can still be called off. So it is said and the app writes nothing — no finished record,
+  // no tick, no half-state to reconcile later.
+  const st = bookedBala(world());
+  const wire = stubCourier({ cancel: false });
+  toastNode.textContent = "";
+  const { root } = openRun(st);
+
+  press(buttonByText(root, "Call off the trip and add to this run"));
+  await settle();
+  press(buttonByText(layers["confirm-layer"], "Call it off and add to the run"));
+  await settle();
+
+  assert.equal(wire.sent.filter((b) => b.action === "cancel").length, 1, "it was asked");
+  assert.equal(st.orders[2].courierJob.done, undefined, "and the trip is still the one it was");
+  assert.ok(bookedBlock(root, "Bala"), "the warning stands, because the trip really does");
+  assert.equal(rowFor(root, "Bala").tick.checked, false, "and nobody was ticked");
+  assert.match(toastNode.textContent, /can no longer be called off/,
+    "the courier's own sentence reaches her rather than a grey button");
+});
+
+test("a trip that has already finished is no barrier — that customer can be sent again (v242)", async () => {
+  // The redo path, and the reason the predicate is `liveJobOf` rather than "has a courierJob":
+  // a delivered or cancelled trip is a fact about the past, and a customer whose delivery failed
+  // has to be put on a run again.
+  const st = bookedBala(world(), { done: true, status: "COMPLETED" });
+  stubCourier();
+  const { root } = openRun(st);
+
+  assert.equal(rowFor(root, "Bala").tick.checked, true, "they open on the run like anyone else");
+  assert.equal(bookedBlock(root, "Bala"), undefined, "with no warning to read past");
+  const head = all(root).find((n) => String(n.className).includes("run-head-title")).textContent;
+  assert.equal(head, "Who is on the run — 2 of 2", "and the head has no note to make");
+});
+
+test("the booked customer is still priced and loaded with the rest of the day (v242)", async () => {
+  // The one thing that has NOT changed: a booked customer left off the run is off the LOAD as
+  // well, so the van's own numbers describe the run she is actually taking. A screen that said
+  // "2 stops" while carrying one would be the app describing a trip nobody is driving.
+  const st = bookedBala(world());
+  stubCourier();
+  const { root } = openRun(st);
+
+  const read = all(root).find((n) => String(n.className).includes("run-load"));
+  assert.ok(read.textContent.startsWith("1 stop"), `one door on this run — read "${read.textContent}"`);
+  assert.ok(read.textContent.includes("3 items"), "and the focaccia that go to that one door");
+  assert.doesNotMatch(read.textContent, /6 items/, "the booked customer's order is not on the van");
 });

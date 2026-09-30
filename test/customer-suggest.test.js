@@ -127,12 +127,25 @@ const type = (box, text) => {
 };
 const tap = (node) => (node._listeners.click || []).forEach((f) => f.call(node));
 
+// The ＋ New order card holds the delivery address inside its courier half, which unfolds
+// only when Fulfillment says Courier delivery (v237) — and that half is what the customer
+// suggestion fills. Every test here goes through this, so the card is the one she meets.
 function openNewCard(st) {
   const root = createEl("div");
   renderOrders(root, st, new URLSearchParams({ date: "d20" }));
   tap(buttonByText(root, "New order"));
+  pickCourier(root);
   return root;
 }
+
+const pickCourier = (root) => {
+  const sel = all(root).find((n) => n.tagName === "SELECT"
+    && (n.children || []).some((o) => o.value === "courier"));
+  if (!sel) return null;
+  sel.value = "courier";
+  (sel._listeners.change || []).forEach((f) => f.call(sel));
+  return sel;
+};
 
 // ── the ＋ New order card ───────────────────────────────────────────────────
 

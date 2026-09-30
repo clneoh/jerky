@@ -493,6 +493,12 @@ h3.cat-head-tail { color: var(--muted); font-weight: 600; }
 }
 .input:focus { outline: 2px solid var(--brown); outline-offset: -1px; border-color: transparent; }
 textarea.input { min-height: 64px; resize: vertical; }
+/* The note boxes carry a hint, never content (v237). Set explicitly rather than
+   left to the browser: the default grey is dark enough to read as something she
+   had already typed, and it differs between Safari, Chrome and Firefox.
+   `opacity: 1` because Firefox dims its own placeholder further. */
+.note-input::placeholder,
+.line-note::placeholder { color: var(--muted); opacity: 1; }
 
 /* A field with a suggestion (data-suggest) shows a small arrow at its right
    edge while it is empty — the greyed text is the suggestion, and pressing →
@@ -674,6 +680,10 @@ option.tone-off { color: var(--muted); }
    the price pushed to the right of them and kept small, because it is a figure. */
 .add-item-ctl { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 .add-item-ctl .line-price { flex: 0 0 84px; width: 84px; text-align: right; margin-left: auto; }
+/* The note for THIS line (v236) takes a row of its own under the controls, full
+   width, so a "no nuts, write Happy Birthday" is readable as she types it rather
+   than squeezed into the space left beside the price box. */
+.add-item .line-note { flex: 1 1 100%; width: 100%; }
 
 /* Order-status flow map above the Orders list */
 .status-flow {
@@ -1183,7 +1193,9 @@ option.tone-off { color: var(--muted); }
    the pop-up instead of the map. The READ-ONLY map in the note/tracking box is the
    other case, and it is settled where it is built rather than here: a map that cannot
    be dragged must not take a finger hostage, so mountPinMap gives it `pan-y` until she
-   unlocks it (v201, 26 Sep 2026). */
+   unlocks it (v201, 26 Sep 2026). Since v238 that `pan-y` is doing a second job —
+   declining the pinch on the browser's behalf so Leaflet's own touchZoom answers it,
+   which is how the zoom stays live on a card she has not unlocked. */
 .place-map {
   height: 260px;
   margin-top: 12px;
@@ -1246,14 +1258,23 @@ option.tone-off { color: var(--muted); }
 .job-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
 .job-what { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
 .job-name { font-weight: 600; }
-.job-sub, .job-status, .job-link, .job-driver { font-size: 12px; color: var(--muted); }
-.job-status, .job-link, .job-driver { margin: 8px 0 0; overflow-wrap: anywhere; }
+.job-sub, .job-status, .job-link, .job-driver, .job-free, .job-gap { font-size: 12px; color: var(--muted); }
+.job-status, .job-link, .job-driver, .job-free, .job-gap { margin: 8px 0 0; overflow-wrap: anywhere; }
 /* The driver on a booked trip (v190), and the two things on this card she taps: the
    number to ring and the link to the courier's own tracking page. The name carries the
    card's own ink rather than the muted grey of the readings around it — she reads it
    out or rings it — and both links wear the app's own link treatment instead of the
    browser's default blue, which is the one colour here the bakery never chose. */
 .job-driver { color: var(--ink); }
+/* When a booked trip stops being free to call off (v234). Money rather than a reading,
+   so it carries the card's own ink the way the driver's line does instead of the grey
+   the status and the link sit in — she has to SEE this one, not skim past it. */
+.job-free { color: var(--ink); }
+/* What the trip cost against what she charged (v235). Money as well, and the one line on
+   this card whose whole job is to be NOTICED — a difference she never sees is one she
+   cannot learn from, so it takes the same ink the free-cancel deadline does. The sentence
+   itself carries the meaning ("came out of your own pocket"), so nothing here shouts. */
+.job-gap { color: var(--ink); }
 .job-driver a, .job-link a { color: var(--brown); font-weight: 700; text-decoration: none; }
 .job-driver a:active, .job-link a:active { opacity: .7; }
 .job-actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -1655,6 +1676,10 @@ option.tone-off { color: var(--muted); }
 .label-sheet .ls-customer { font-size: 17px; font-weight: 700; margin-top: 4px; }
 .label-sheet .ls-item { font-size: 13px; margin-top: 3px; }
 .label-sheet .ls-items { font-size: 13px; margin-top: 6px; }
+/* The customer's own words, underlined wherever an item line is drawn — the order
+   row and the printed label — so a note is never lost in the grey beside a busy
+   line (v244). Underline only: the words keep the line's own weight and colour. */
+.line-note { text-decoration: underline; }
 .label-sheet .ls-note, .label-sheet .ls-address { font-size: 12px; color: #7a6a58; margin-top: 8px; }
 .label-sheet .ls-address { font-weight: 600; }
 .label-print-body .popup-actions { display: flex; justify-content: flex-end; gap: 8px; }
@@ -1891,12 +1916,30 @@ option.tone-off { color: var(--muted); }
 }
 .cal-title { font-family: var(--serif); font-weight: 700; font-size: 16px; }
 .cal-nav { min-width: 36px; padding: 6px 0; }
+/* The delivery-day calendar draws the shop's ROLLING five weeks rather than a
+   month (v243). Its head is a grid and not a flex row so the title stays centred
+   in the middle track whether or not an arrow is drawn: at the ends of the days
+   she has set, one of them is a bare .cal-slot span in place of a button, and
+   space-between would slide the title off centre. Only this calendar wears
+   .weeks — the other five .cal-head calendars are untouched. */
+.cal-head.weeks { display: grid; grid-template-columns: 36px 1fr 36px; }
+.cal-head.weeks .cal-title { text-align: center; }
 .cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 4px;
   margin-top: 6px;
   position: relative; /* anchor the absolutely-placed occasion papers */
+}
+/* A new week arrives with a short slide, and only when an arrow was pressed: the
+   attribute is consumed by the paint that sets it, so an ordinary redraw never
+   replays the animation (store/app.css does the same). */
+@keyframes cal-week-up { from { opacity: 0; transform: translateY(10px); } }
+@keyframes cal-week-down { from { opacity: 0; transform: translateY(-10px); } }
+.cal-grid[data-slide="up"] { animation: cal-week-up 180ms ease-out; }
+.cal-grid[data-slide="down"] { animation: cal-week-down 180ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .cal-grid[data-slide] { animation: none; }
 }
 /* The weekday letters on Delivery Dates' add grid are controls (v100): tap M and
    every Monday in the month is picked. A button arrives with its own chrome, so the
@@ -4220,6 +4263,12 @@ tr.po-covered td { color: var(--muted); }
    no price reply says what fits — so it is drawn as a reading and not as a warning bar. */
 .run-load { font-size: 13px; margin: 10px 0 0; overflow-wrap: anywhere; }
 .run-warn { color: var(--amber); font-weight: 600; }
+
+/* A customer whose trip is already booked (v242). The block reuses the .pin-offer shape — a
+   line and a press under the row, OUTSIDE the row's own label — so a press in it calls the trip
+   off instead of ticking the customer. Only the line's weight and colour are its own, taken
+   from .run-warn, because this is the one thing on the list she must not read past. */
+.run-booked .card-sub { color: var(--amber); font-weight: 600; }
 
 /* One vehicle's own row on the run screen: the presses sit on a line of their own, and the
    comparison and the split open BELOW the whole row rather than beside the price, because a

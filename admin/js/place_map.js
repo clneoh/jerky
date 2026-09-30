@@ -18,8 +18,13 @@
 // at. Nothing about a customer is sent to the tile server — a tile request carries a
 // zoom level and a square of the world, and that is all it carries.
 //
-// NOT pure, so not Node-tested: this file is a map and nothing else. Every rule it
-// obeys about what a place IS lives in courier_place.js, which is pure and tested.
+// NOT pure, so the RULES in it are not Node-tested: this file is a map and nothing else, and
+// every rule it obeys about what a place IS lives in courier_place.js, which is pure and
+// tested. What IS driven is the contract it has with Leaflet — the options the card's map is
+// built with, and which gestures the lock holds back — in test/place-map.test.js. That file
+// also states, in its own header, the two things no Node shim can settle: how a real phone
+// arbitrates a pinch between the browser and Leaflet, and whether the zoom control's buttons
+// overlap the marker in the door card's 200px box.
 
 import { el, button, showPopup, toast } from "./ui.js";
 import { validPlace, parseCoords, splitLabel, houseNotIn, roadNotHouse } from "./courier_place.js";
@@ -420,9 +425,20 @@ export function openPlacePicker({ state, title = "Put the pin on the map", hint 
 //
 // READ-ONLY UNTIL SHE SAYS OTHERWISE is the whole reason this exists as well as the
 // picker. Her answer, in so many words: "Look, and a Move button." So it opens with no map
-// drag, no zoom gesture and no tap-to-place, and setDraggable(true) turns them on — the
-// same map and the same pin, with no second card opened and nothing typed beside it thrown
-// away, which is exactly what the pin button cost her.
+// drag and no tap-to-place, and setDraggable(true) turns those on — the same map and the
+// same pin, with no second card opened and nothing typed beside it thrown away, which is
+// exactly what the pin button cost her.
+//
+// ZOOM IS NOT PART OF THAT LOCK, AND THAT IS HER OWN REVISION (v238, 30 Sep 2026). It used
+// to be: no zoom of any kind until she pressed Move, on the reasoning that a map she is
+// CHECKING should sit still. What that produced, in her words, was "the map are not allow to
+// zoom out and dragging the pin to the right pin become extremely time consuming and prompt
+// to error" — she had a stale pin and one way to fix it, a 24-pixel marker dragged by thumb
+// across a map that refused to zoom out first. Zoom is how anyone finds the right rooftop;
+// withholding it made LOOKING impossible to separate from CORRECTING. So the zoom control is
+// drawn and the gestures are live the whole time the card is up, and the lock now covers only
+// what could move the PIN: the map's own pan (a pan under a still pin would let a reach-past
+// nudge the view she was reading), the marker's drag, and the tap that places a point.
 export function mountPinMap(box, { place = null, onMove = () => {}, onFail = () => {} } = {}) {
   let map = null;
   let marker = null;
@@ -486,13 +502,25 @@ export function mountPinMap(box, { place = null, onMove = () => {}, onFail = () 
   // is locked the box lets the card's own vertical scroll through; that is the only gesture
   // it gives up, and it has no drag of its own to protect. Unlocked, it behaves exactly
   // like the picker's map. (See the note in app.css — this is the case that note names.)
+  //
+  // `pan-y` AND NOT `pan-y pinch-zoom` (v238), which is the value that looks like it would
+  // help here and does the opposite. `pan-y` tells the browser it may scroll this box
+  // vertically and NOTHING ELSE — so a two-finger pinch is a gesture the browser has
+  // declined, the touch events keep arriving, and Leaflet's own touchZoom is the thing that
+  // answers them. Adding `pinch-zoom` would hand that same pinch to the BROWSER, which zooms
+  // the whole page out from under the card; the map would then never see it. One value lets
+  // the map zoom, the other lets the page zoom, and only one of them is what she asked for.
   function paintTouch() {
     const c = map && map.getContainer && map.getContainer();
     if (c && c.style) c.style.touchAction = sharp ? "none" : "pan-y";
   }
 
-  // Leaflet has no option for this after the fact — dragging, touchZoom, doubleClickZoom
-  // and boxZoom are handler objects that have to be switched on and off themselves.
+  // Leaflet has no option for this after the fact — a handler object has to be switched on
+  // and off itself.
+  //
+  // ONLY THE DRAG IS STILL FLIPPED (v238). The zoom handlers used to be flipped with it and
+  // are now left alone: they are built on, and the lock has nothing to say about them. See
+  // the note on mountPinMap for why that is the point of the version.
   function flip(handler) {
     if (handler) handler[sharp ? "enable" : "disable"]();
   }
@@ -501,9 +529,6 @@ export function mountPinMap(box, { place = null, onMove = () => {}, onFail = () 
     sharp = !!on;
     if (!map || !live) return;
     flip(map.dragging);
-    flip(map.touchZoom);
-    flip(map.doubleClickZoom);
-    flip(map.boxZoom);
     flip(marker && marker.dragging);
     if (sharp) map.on("click", onTap);
     else map.off("click", onTap);
@@ -531,13 +556,18 @@ export function mountPinMap(box, { place = null, onMove = () => {}, onFail = () 
     map = L.map(box, {
       // A wheel over a 200px box inside a card she is scrolling would zoom the map instead
       // of scrolling past it, which is the wrong thing for a finger that was only passing
-      // through.
+      // through. The one gesture that is NOT wanted here, and it stays off.
       scrollWheelZoom: false,
-      // The picker's map carries zoom controls because she is working on it. This one is
-      // CHECKING a door, and the plus and minus would sit on the card's own space saying
-      // something she did not ask. Pinch and double-tap zoom it when she unlocks it.
-      zoomControl: false,
-      dragging: sharp, touchZoom: sharp, doubleClickZoom: sharp, boxZoom: sharp,
+      // ZOOM IS ALWAYS ON (v238). The plus and minus are the reliable half of her ask — a
+      // button zooms whatever any browser decides to do with a pinch, and "the map are not
+      // allow to zoom out" is answered by a control she can press rather than a gesture she
+      // has to win. The gestures are on with it: pinch, double-tap and the desktop box zoom
+      // are how anyone finds a rooftop, and they cost the card nothing, because none of them
+      // can move the PIN. The lock is on the drags and the tap, below.
+      zoomControl: true,
+      // ON WHILE LOCKED, and this is the version (see the note on mountPinMap): what the lock
+      // holds back is a pan under a pin she is reading, not a look at the ground around it.
+      dragging: sharp, touchZoom: true, doubleClickZoom: true, boxZoom: true,
     }).setView(at ? [at.lat, at.lng] : [HOME.lat, HOME.lng], at ? 16 : HOME.zoom);
     L.tileLayer(TILES, { maxZoom: 19, attribution: ATTRIB }).addTo(map);
     map.on("dragend", onResize);

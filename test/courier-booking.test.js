@@ -57,6 +57,7 @@ const {
 const {
   lalamove, phoneE164, statusLabel, statusDone, normaliseJob, normaliseDetail,
   stopIdsFor, quoteBookable, QUOTE_VALID_MS, phaseOf, driverOf,
+  FREE_CANCEL_SCHEDULED_MS,
 } = await import("../admin/js/couriers/lalamove.js");
 
 const KEY = "pk_test_0123456789abcdef";
@@ -898,4 +899,52 @@ test("the fleet the booking half knows about is the same one the price half list
   for (const verb of ["vehicles", "quote", "book", "job", "cancel"]) {
     assert.equal(typeof lalamove[verb], "function", `${verb}() is part of what a courier is`);
   }
+});
+
+// ── the share of a booking that can still cost her money (v234) ────────────
+//
+// 45 minutes is Lalamove's own published number for a scheduled pickup, and the reason
+// it lives in this file rather than in courier_job.js is the same reason QUOTE_VALID_MS
+// does: it is one courier's own policy, and courier_job.js is not allowed to know whose
+// trip it is. The screen asks the courier that HOLDS the trip, so these go through the
+// real holder object rather than through the pure function directly.
+
+test("the free calling-off deadline is the courier's own 45 minutes, counted back from the pickup", () => {
+  const pick = "2026-10-02T02:00:00.000Z";           // 2 Oct, 10:00 am in Penang
+  const job = normaliseJob({ orderId: "J1", status: "ASSIGNING_DRIVER", shareLink: "https://x/1" },
+    { trip: { scheduleAt: pick }, now: Date.parse("2026-10-01T00:00:00.000Z") });
+
+  assert.equal(FREE_CANCEL_SCHEDULED_MS, 45 * 60 * 1000);
+  const fc = lalamove.freeCancelOf(job);
+  assert.equal(fc.kind, "scheduled");
+  assert.equal(Date.parse(fc.until), Date.parse(pick) - FREE_CANCEL_SCHEDULED_MS);
+
+  const said = lalamove.freeCancelLine(job, { now: Date.parse("2026-10-02T00:00:00.000Z"), today: "" });
+  assert.match(said, /may charge a fee after that/);
+  // The courier names itself in its own sentence, from the one place its name is written.
+  assert.match(said, /Lalamove/);
+  assert.equal(lalamove.label, "Lalamove");
+});
+
+test("an immediate booking is given the rule, because the 20 minutes starts at a match this app never sees", () => {
+  // The tempting mistake, and the one this pins: 20 minutes is also a published Lalamove
+  // number, so it looks like it can be counted FORWARD from `bookedAt` into a real
+  // deadline. It cannot — the clock starts when a driver takes the job, which the booking
+  // reply does not carry — and a deadline counting from the wrong instant is a fee she
+  // would not have agreed to pay.
+  const job = normaliseJob({ orderId: "J2", status: "ASSIGNING_DRIVER" },
+    { now: Date.parse("2026-10-01T00:00:00.000Z") });
+  assert.equal(String(job.scheduleAt || ""), "", "a booking with no schedule time is the immediate case");
+
+  const fc = lalamove.freeCancelOf(job);
+  assert.equal(fc.kind, "immediate");
+  assert.equal(fc.until, "");
+  const said = lalamove.freeCancelLine(job, { now: Date.parse("2026-10-01T00:00:00.000Z"), today: "" });
+  assert.match(said, /as soon as possible/);
+  assert.equal(/\d/.test(said), false, "no deadline may be made up out of the booking time");
+});
+
+test("a booking that cannot be read at all gets no line, rather than a wrong one", () => {
+  assert.equal(lalamove.freeCancelLine({ jobId: "J3", scheduleAt: "whenever" }), "");
+  assert.equal(lalamove.freeCancelOf(null).kind, "");
 });

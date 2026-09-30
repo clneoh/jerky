@@ -29,3 +29,33 @@ export function isThumb(value) {
   const s = typeof value === "string" ? value.trim() : "";
   return s.length <= THUMB_MAX && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(s);
 }
+
+// A note a customer attaches to ONE ordered item (v236) — “no nuts”, “write
+// Happy Birthday”. Short on purpose: it rides the order row, and every order row
+// is repeated in each phone's localStorage copy, in every cloud snapshot, in
+// every export and in every backup, and it is read off a packing slip where a
+// paragraph is not a note.
+//
+// The cap lives here because BOTH sides have to use the same number, which is
+// this module's whole reason for existing: the shop stops the typist at it, and
+// the app trims whatever arrives to it — because what arrives was typed into a
+// browser the baker does not control, and a shop page running yesterday's cached
+// script would not have stopped anyone at all.
+export const LINE_NOTE_MAX = 120;
+
+// The note as it should be STORED, or "" when there is nothing worth storing.
+//
+// Only a STRING is a note. A number, a list or an object arriving from a page the
+// baker does not control is not words a customer wrote, and String()-ing it would
+// print a figure on a packing slip where nothing was ever asked for — the same
+// reason `isThumb` above checks the type before it checks the shape.
+//
+// Absent — not an empty string — is how this app spells “no note” everywhere, so
+// a caller writes the key only when this answers with words. That is what keeps
+// an order nobody attached a note to byte-for-byte the order it always was, and
+// keeps the sync journal from seeing a change that is not one.
+export function lineNoteOf(value) {
+  if (typeof value !== "string") return "";
+  const s = value.trim();
+  return s.length > LINE_NOTE_MAX ? s.slice(0, LINE_NOTE_MAX).trim() : s;
+}

@@ -1015,6 +1015,100 @@ matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestion
 now that the Google key returns one precise house-number answer, most lookups legitimately show no
 list and the pin simply lands.
 
+## Thirteen versions in one pass: the item note, the pin reset, the run guard, the labels (v234–v246)
+
+Thirteen engine versions, from bakery `93a87b2` (v233 — exactly where jerky sat) → `5ba41df` (v246).
+**Code-only: no SQL, no migration, no secret, no deploy.** Everything the versions add is in the app's
+own files, and every column they read was already applied — `supabase/courier_job.sql` and
+`supabase/postage_mode.sql` were pasted and confirmed on 2026-09-28.
+
+**This is the first cumulative port.** Earlier syncs walked the bakery's log one version at a time. Here
+the two apps were thirteen apart, so the port was done as **one merge per file** rather than thirteen
+sequential ones: `git merge-file -p --diff3 <jerky-file> <bakery@93a87b2:file> <bakery@5ba41df:file>`.
+That is sound because jerky's `admin/` files are bakery@v233 plus localization deltas, so the bakery's
+v233 blob is a true common ancestor. It produced **8 conflicts across 38 files** — six in
+`admin/js/views/orders.js`, two in tests — against a combined `6160 insertions, 434 deletions` diffstat.
+
+`admin/js/version.js` is now `246`.
+
+### The seventeen source files
+
+`admin/css/app.css` · `admin/js/calendar.js` · `admin/js/courier.js` · `admin/js/courier_job.js` ·
+`admin/js/courier_place.js` · `admin/js/couriers/lalamove.js` · `admin/js/place_map.js` ·
+`admin/js/supabase.js` · `admin/js/views/courier_quote.js` · `admin/js/views/delivery_run.js` ·
+`admin/js/views/orders.js` · `admin/js/views/products.js` · `store-lang.js` · `store/app.css` ·
+`store/app.js` · `store/index.html` · `storefront-fields.js`.
+
+`store/app.js` and the root `store-lang.js` were **hand-merges, not copies** — they stopped being the
+bakery's at v231 — and `store/index.html` / `storefront-fields.js` carry the v237 note wording.
+
+### What each version brought
+
+| | |
+|---|---|
+| **v234** | A booked trip names when calling it off stops being free (the courier's 45-minute rule), and the sentence turns over by itself when the window shuts. An immediate booking states the rule instead of inventing a pickup time. |
+| **v235** | The booked-trip card sums what the trip cost against what you charged and says which way the difference fell. A trip with no charge recorded says the whole cost is yours; a matching charge draws no line at all. |
+| **v236** | A note on each item, switched on per product. The tick is a storefront field carried to the shop by `mergeStorefront()` alongside the rest of the product details, and a note rides with the order phone-to-phone. |
+| **v237** | A posted order in one pass — the charge, tracking number, parcel carrier and price block moved onto the ＋ New order card — and the card's day is one line with the calendar folding out under it. |
+| **v238** | Reset the pin from the address, with the customer's own pin protected behind a confirmation and restorable in one press; and the map zooms without Move this pin. |
+| **v239** | The reset is offered wherever a pin exists to replace, not only when the pin is the customer's own. |
+| **v240** | The reset press is wired the moment the card opens, instead of waiting on the delivery-price half being built. |
+| **v241** | The reset's answer is said on the line you can see — the door card while the price section is folded away. |
+| **v242** | The delivery run opens an already-booked customer off the run, counts them in its head, and offers Call off the trip and add to this run. |
+| **v243** | The order screens' day calendar is five weeks anchored on today, matching the shop's, with the arrows moving one week and left off where there is nowhere to go. |
+| **v244** | An item's own note is underlined on the Orders list and both printed sheets. |
+| **v245** | The delivery note is underlined too, and prints on the Compact label where it used to be dropped. |
+| **v246** | Each noted item's words are underlined on the Compact label's joined line, on the item they belong to. |
+
+### The six conflicts, and what jerky kept
+
+All six are in `admin/js/views/orders.js`, and every one resolved the same way — **take the bakery's
+head, then re-apply jerky's wording**:
+
+- **The draft, hoisted to module scope.** `newOrderContact` became `newOrderDraft` (+ `newFormDayOpen`,
+  `newFormDayView`). This is the v237/v238 change that lets the card keep what you typed across the
+  rebuild a day tap causes; `addNew` now clears it by hand on a successful add.
+- **`sheetItemRow` / `sheetNoteRow`** replace the inline label loops on the mail-line, full and
+  compact sheets — jerky kept its own `Post` / `Post to:` wording on the address row.
+- **`paintCourier()`** is now the callback the Fulfilment select fires, so switching back to a posted
+  order **rebuilds** the block rather than re-showing a dead one. jerky's labels stay
+  `Collect (local)` / `Post (nationwide)`.
+
+### The five new test files, and the two the merge had to localize
+
+New, copied from the bakery head: `test/courier-quote-card.test.js`,
+`test/line-note-underline.test.js`, `test/order-line-note.test.js`,
+`test/orders-card-courier.test.js`, `test/place-map.test.js`. Twenty-one existing suites were merged
+(only `test/store.test.js` and `test/storefront.config.test.js` conflicted — both resolved as a union).
+
+**Two bakery idioms in the merged suites do not exist in jerky's copies**, and both are the ordinary
+localization rule rather than a defect:
+
+- `test/no-null-text.test.js` uses `strays()` where the bakery renamed it `strayNulls()`, and jerky's
+  `state()` inlines its own two products instead of taking a `products` list, so the bakery's
+  `FOCACCIA` constant has no jerky counterpart. The two v237/v238 tests use jerky's own spellings now.
+- `test/orders-card-courier.test.js` selected the Fulfilment option by the bakery's label
+  (`"Courier delivery"` / `"Self collect"`) and the address box by the bakery's placeholder
+  (`"Delivery address (if courier)"`). jerky says **Post (nationwide)** / **Collect (local)** and its
+  address box is placeheld **Postal address (for posting)** — the same swap
+  `test/customer-suggest.test.js` and `test/order-address-suggest.test.js` already carry a comment
+  about.
+
+Bakery fixtures (`Focaccia`, `Sourdough`, `Jienluv2bake` in a stubbed storefront) are deliberately left
+in place, per the documented fixture policy.
+
+`node --test test/*.test.js` → **2388 pass, 0 fail**.
+
+### Jerky-only work that had to survive
+
+Re-checked by grep after the merge, all intact: the 🐾 empty-photo placeholder
+(`views/products.js`), the three `null`-child guards (`views/orders.js` `.filter(Boolean)`,
+`views/settings.js` `...(sampleCard ? [sampleCard] : [])`, `datepicker.js` `todayShortcut`), the
+jerky-only `/guide` route (`app.js`, `views/more.js`), `moneyLines()` in `courier.js`, the
+courier-provider seam (no engine file outside the registry and the provider names the courier), the
+track lookup's named `select` list in `store/app.js`, and the 21 Sep shop-calendar deltas.
+
+
 ## The order page has a way back to your homepage (v233)
 
 One engine version, from bakery `15b1043` → `93a87b2`. **Code-only — no SQL.** It is one small

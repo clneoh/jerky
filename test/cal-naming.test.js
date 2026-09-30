@@ -125,18 +125,17 @@ function build() {
     state: STATE,
     days: DAY_LIST,
     getActiveId: () => "d7",
-    month: { year: 2026, month: 8 },
+    view: { offset: null }, // settles on the week the day on screen sits in
     onPick: (id) => picked.push(id),
     noteMisses: true, // what the Orders screen itself passes
   });
 }
-const grid = (cal) => cal.el.children.find((c) => c.className === "cal-grid");
-const cells = (cal) => grid(cal).children.filter((c) => !String(c.className).includes("cal-dow"));
-function cell(cal, day) {
-  const list = cells(cal);
-  const first = list.findIndex((c) => !String(c.className).includes("blank"));
-  return list[first + (day - 1)];
-}
+const grid = (cal) => cal.el.children.find((c) => String(c.className).includes("cal-grid"));
+// The grid rolls with today (v243), so a cell is found by its own DATE and never
+// by counting along from the first of the month — the same slot holds a different
+// day every week.
+const cells = (cal) => grid(cal).children.filter((c) => String(c.className).includes("cal-cell"));
+const cell = (cal, day) => cells(cal).find((c) => c.dataset.date === `2026-09-${String(day).padStart(2, "0")}`);
 
 test("a marked day the bakery does not deliver still says its name when tapped", () => {
   STATE.occasions = [MALAYSIA_DAY];

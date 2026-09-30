@@ -52,7 +52,7 @@ globalThis.window = { open() {} };
 // so the module-level render() hits no network.
 globalThis.fetch = async () => ({ ok: true, json: async () => [] });
 
-const { buildMessage, mergeStorefront, upcomingDates, daySpecs, dateKey, fmtDay, windowTitle, trackOrder, isOpen, postsOn, dayAsk, waNumber, parseVia, clockWords, renderStatic } = await import("../store/app.js");
+const { buildMessage, mergeStorefront, upcomingDates, daySpecs, dateKey, fmtDay, windowTitle, trackOrder, isOpen, postsOn, dayAsk, waNumber, parseVia, clockWords, renderStatic, render } = await import("../store/app.js");
 const { strictestCancelDays } = await import("../store/pool.js");
 const { CONFIG } = await import("../store/config.js");
 
@@ -1287,4 +1287,158 @@ test("a bypassed order shows the customer five steps, with no Paid tick", async 
   } finally {
     globalThis.fetch = async () => ({ ok: true, json: async () => [] });
   }
+});
+
+// ── the customer's note on ONE item (v236) ────────────────────────────────
+//
+// Driven through the REAL controls — the "+" the customer presses, the link they
+// tap, the box they type in, and the order button — because everything that can go
+// wrong here goes wrong in the wiring: the menu is repainted from scratch on every
+// stepper tap, so a note held in the card's DOM would be wiped out mid-sentence.
+// That is the defect these tests exist to catch, and it is not visible in the
+// rules. The switch that publishes `askNote` is covered in test/supabase.test.js
+// and test/storefront.config.test.js; what is left is that the shop obeys it.
+
+const hasClass = (n, cls) => String(n.className || "").split(/\s+/).includes(cls);
+const textOf = (n) => (n.children || []).map((c) => (c.nodeType === 3 ? c.text : textOf(c))).join("");
+const cardNamed = (name) => {
+  let hit = null;
+  (function walk(n) {
+    for (const c of n.children || []) {
+      if (c.dataset && c.dataset.product === name && !hit) hit = c;
+      walk(c);
+    }
+  })(registry["menu"]);
+  return hit;
+};
+const cardBodyOf = (card) => card.children.find((c) => hasClass(c, "card-body"));
+const plusOf = (card) => cardBodyOf(card).children.find((c) => hasClass(c, "stepper")).children[2];
+const noteRow = (card) => cardBodyOf(card).children.find((c) => hasClass(c, "line-note-row")) || null;
+const noteAdd = (card) => (noteRow(card) ? noteRow(card).children.find((c) => hasClass(c, "line-note-add")) || null : null);
+const noteBox = (card) => (noteRow(card) ? noteRow(card).children.find((c) => hasClass(c, "line-note")) || null : null);
+const pressPlus = (card) => plusOf(card)._listeners.click[0]();
+const tapNote = (card) => noteAdd(card)._listeners.click[0]();
+const typeNote = (box, text) => { box.value = text; box._listeners.input[0].call(box); };
+
+// One product switched on for a note, rendered, driven, and put back exactly as it
+// was. `render()` is the real page render, so the second call rebuilds the menu and
+// gives each test a cart of its own.
+async function withNotedProduct(fn) {
+  const p = CONFIG.products[0];
+  const realFetch = globalThis.fetch;
+  p.askNote = true;
+  render();
+  try {
+    return await fn(p, realFetch);
+  } finally {
+    delete p.askNote;
+    globalThis.fetch = realFetch;
+    render();
+  }
+}
+
+test("the note link appears only once the item is in the basket, and opens the box on a tap", async () => {
+  await withNotedProduct(async (p) => {
+    const card = cardNamed(p.name);
+    assert.ok(card, "the product is on the menu");
+    assert.equal(noteRow(card), null, "nothing is offered before the item is in the basket");
+
+    // A press repaints the menu, so the card in hand is a detached node from here on —
+    // every read after a press re-finds the card, the way a thumb on the screen does.
+    pressPlus(cardNamed(p.name));
+    assert.ok(noteAdd(cardNamed(p.name)), "one in the basket, and the card offers a way to add a note");
+    assert.match(textOf(noteAdd(cardNamed(p.name))), /Add a note/, "and it says what it does");
+    assert.equal(noteBox(cardNamed(p.name)), null, "the box itself stays shut until it is asked for");
+
+    tapNote(cardNamed(p.name));
+    const box = noteBox(cardNamed(p.name));
+    assert.ok(box, "the tap opens the box");
+    assert.equal(box.value, "", "and it opens empty");
+    assert.equal(box.attrs.maxlength, "120", "stopped at the cap the app will trim to anyway");
+    assert.equal(noteAdd(cardNamed(p.name)), null, "the link is gone — the box has taken its place");
+  });
+});
+
+test("a product the baker never switched on offers no note at all", async () => {
+  await withNotedProduct(async () => {
+    const other = CONFIG.products[1];
+    assert.notEqual(other.askNote, true, "this product carries no note switch");
+    const card = cardNamed(other.name);
+    pressPlus(card);
+    assert.equal(noteRow(cardNamed(other.name)), null,
+      "an item in the basket still offers nothing — the switch is the whole permission");
+  });
+});
+
+test("the note rides that item's line, and a repaint mid-sentence keeps the words", async () => {
+  await withNotedProduct(async (p) => {
+    pressPlus(cardNamed(p.name));
+    tapNote(cardNamed(p.name));
+    typeNote(noteBox(cardNamed(p.name)), "no nuts");
+
+    // A second press of "+" repaints the whole menu — the card in front of them is
+    // rebuilt from scratch, and the box they were typing in is a new node.
+    pressPlus(cardNamed(p.name));
+    const again = noteBox(cardNamed(p.name));
+    assert.ok(again, "the box is still there after the repaint");
+    assert.equal(again.value, "no nuts", "and it still holds what they typed");
+
+    let posted = null;
+    globalThis.fetch = async (url, opts) => {
+      if (opts && opts.method === "POST") { posted = JSON.parse(JSON.parse(opts.body)[0].data); return { ok: true }; }
+      return { ok: true, json: async () => [] };
+    };
+    document.getElementById("whatsapp-input").value = "60123456789";
+    document.getElementById("fulfillment")._value = "collect";
+    await registry["order-btn"].onclick();
+
+    assert.ok(posted, "the order went through");
+    assert.equal(posted.lines.length, 1);
+    assert.equal(posted.lines[0].name, p.name);
+    assert.equal(posted.lines[0].note, "no nuts", "the words ride the line they were typed against");
+  });
+});
+
+test("an order with no note posts no note key at all — the payload is the one this page always sent", async () => {
+  await withNotedProduct(async (p) => {
+    pressPlus(cardNamed(p.name));
+    tapNote(cardNamed(p.name)); // the box is opened and then left alone
+
+    let posted = null;
+    globalThis.fetch = async (url, opts) => {
+      if (opts && opts.method === "POST") { posted = JSON.parse(JSON.parse(opts.body)[0].data); return { ok: true }; }
+      return { ok: true, json: async () => [] };
+    };
+    document.getElementById("whatsapp-input").value = "60123456789";
+    document.getElementById("fulfillment")._value = "collect";
+    await registry["order-btn"].onclick();
+
+    assert.ok(posted, "the order went through");
+    assert.equal(Object.prototype.hasOwnProperty.call(posted.lines[0], "note"), false,
+      "an empty box and no box at all place exactly the same order");
+  });
+});
+
+test("the next customer does not inherit the last one's note", async () => {
+  await withNotedProduct(async (p) => {
+    pressPlus(cardNamed(p.name));
+    tapNote(cardNamed(p.name));
+    typeNote(noteBox(cardNamed(p.name)), "no nuts");
+
+    globalThis.fetch = async (url, opts) => {
+      if (opts && opts.method === "POST") return { ok: true };
+      return { ok: true, json: async () => [] };
+    };
+    document.getElementById("whatsapp-input").value = "60123456789";
+    document.getElementById("fulfillment")._value = "collect";
+    await registry["order-btn"].onclick();
+
+    // The person behind them adds the same item; the box must open on nothing.
+    pressPlus(cardNamed(p.name));
+    const link = noteAdd(cardNamed(p.name));
+    assert.ok(link, "the item is back in the basket and offers its note again");
+    tapNote(cardNamed(p.name));
+    assert.equal(noteBox(cardNamed(p.name)).value, "",
+      "the last customer's words are not sitting in this one's box");
+  });
 });

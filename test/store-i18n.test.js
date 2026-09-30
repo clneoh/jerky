@@ -118,6 +118,22 @@ test("the closed-product reason and the basket notes are keyed in all three lang
   }
 });
 
+// The per-item note's link and its empty box (v236). Both are built in JS rather
+// than tagged in the HTML — the link is a <button> and the box a bare <input> —
+// so nothing else on this page would notice either going missing. A language that
+// never got the placeholder would open a box with no hint in it, which reads as a
+// broken field rather than an optional one.
+test("the per-item note's link and its hint are translated in all three languages", () => {
+  for (const l of LANGS) {
+    for (const key of ["addNoteLink", "lineNotePh"]) {
+      assert.ok(typeof STORE[l][key] === "string" && STORE[l][key].trim(),
+        `${l}.${key} is present`);
+    }
+  }
+  assert.notEqual(STORE.zh.addNoteLink, STORE.en.addNoteLink, "Chinese is translated, not left in English");
+  assert.notEqual(STORE.ms.addNoteLink, STORE.en.addNoteLink, "Bahasa Malaysia is translated, not left in English");
+});
+
 test("the COD charge is worded differently from the plain one in every language", () => {
   for (const l of LANGS) {
     assert.notEqual(STORE[l].courierCod, STORE[l].courierCharge,

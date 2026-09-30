@@ -29,7 +29,7 @@ import assert from "node:assert/strict";
 
 const {
   windowAt, windowParts, validWindow, windowProblem, fmtWindow, windowSuffix,
-  loadOf, savingOf, runLimitProblem, stampTrip,
+  loadOf, savingOf, runLimitProblem, stampTrip, tripCalledOff,
 } = await import("../admin/js/courier_job.js");
 const { splitEven, runChargeAmounts } = await import("../admin/js/courier.js");
 
@@ -355,6 +355,60 @@ test("the trip is stamped on the rows it is handed and nothing else", () => {
   stampTrip(rows, { jobId: "LLM-5" }, "Lalamove");
   assert.equal(rows[0].courierJob.jobId, "LLM-5");
   assert.equal(rows[1], null, "a null in the list is skipped, not turned into an object");
+});
+
+// ── a trip she called off, as a record (v242) ─────────────────────────────
+//
+// It lives here rather than in the delivery run's own file because TWO screens can call a
+// trip off — the order's card and the run — and this is the one place both of them write
+// through. A record only one screen knew how to write is a trip the other still believes
+// is running, which is a second van at a door.
+
+test("calling a trip off finishes it and stamps the moment, in one record (v242)", () => {
+  const job = {
+    jobId: "LLM-SOLO-1", provider: "lalamove", courierName: "Lalamove",
+    status: "ON_GOING", link: "https://lalamove.com/t/solo",
+  };
+  const off = tripCalledOff(job, "2026-09-30T04:00:00.000Z");
+
+  assert.equal(off.done, true, "finished — which is what `liveJobOf` reads to stop believing it");
+  assert.equal(off.cancelledAt, "2026-09-30T04:00:00.000Z", "and when, so a card can say how long ago");
+  assert.equal(off.jobId, "LLM-SOLO-1", "it is still the SAME trip, so what it was is not lost");
+  assert.equal(off.status, "ON_GOING");
+});
+
+test("calling a trip off invents no status word the courier never sent (v242)", () => {
+  // A DELETE answers with nothing at all, so the courier has no word for what became of the
+  // trip. Writing "CANCELLED" here would be this app putting words in its mouth — and it
+  // would be a word that made it onto the customer's own card.
+  const off = tripCalledOff({ jobId: "LLM-2", status: "ASSIGNING_DRIVER" }, "2026-09-30T04:00:00.000Z");
+  assert.equal(off.status, "ASSIGNING_DRIVER", "the last thing the courier really said is what is kept");
+  assert.equal("CANCELLED" in off, false);
+});
+
+test("calling a trip off never touches the record it was handed (v242)", () => {
+  // The order's row and the app's own state both hold the same object. A helper that edited
+  // it in place would rewrite every order on the trip before the write-back had been decided.
+  const job = { jobId: "LLM-3", status: "ON_GOING" };
+  const off = tripCalledOff(job, "2026-09-30T04:00:00.000Z");
+  assert.notEqual(off, job, "a new record, not the same one");
+  assert.equal(job.done, undefined, "and the original is exactly as it was");
+  assert.equal("cancelledAt" in job, false);
+});
+
+test("calling off a trip that is not there answers with nothing, rather than throwing (v242)", () => {
+  assert.equal(tripCalledOff(null, "2026-09-30T04:00:00.000Z"), null);
+  assert.equal(tripCalledOff(undefined), undefined);
+});
+
+test("a called-off trip is not live, so that customer can go on a run again (v242)", async () => {
+  // The two halves joined up, through the app's own predicate rather than a re-reading of
+  // `done`: what the delivery run believes about an order is what this record makes it believe.
+  const { liveJobOf } = await import("../admin/js/courier_job.js");
+  const order = { id: "o1", courierJob: { jobId: "LLM-4", status: "ON_GOING" } };
+  assert.ok(liveJobOf(order), "before the call-off the trip is running");
+  order.courierJob = tripCalledOff(order.courierJob, "2026-09-30T04:00:00.000Z");
+  assert.equal(liveJobOf(order), null, "and after it, the order is free again");
 });
 
 // ── the courier's own limit, warned about rather than enforced ────────────

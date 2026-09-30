@@ -168,6 +168,12 @@ const fieldOf = (node, box) => {
 // The address is the longest field in the form, so it takes BOTH grid columns (v230).
 // One column of the two-column grid is 137px on a phone, with an empty cell beside it.
 const spansBoth = (root, box) => String(fieldOf(root, box).className).includes("span2");
+// Is this box a cell of the card's two-column grid? The ＋ New order card's address is not
+// (v237): it moved into the courier block, where every field is full width.
+const inGrid = (root, box) => {
+  const grid = all(root).find((n) => String(n.className).includes("form-grid"));
+  return !!grid && all(grid).includes(box);
+};
 // `.sugg-panel` is a shared style worn by the customer list too, so the marker is what
 // names THIS one.
 const addressPanel = (root) => all(root).find((n) => n.attrs && n.attrs["data-sugg"] === "address");
@@ -183,12 +189,25 @@ const tap = (node) => (node._listeners.click || []).forEach((f) => f.call(node))
 // the debounce to expire and nothing else.
 const afterPause = () => new Promise((r) => setTimeout(r, 500));
 
+// The ＋ New order card holds the delivery address inside its courier half, which unfolds
+// only when Fulfillment says Courier delivery (v237). Every address assertion therefore
+// goes through here, so all of them stay about the address and none about the gate.
 function openNewCard(st) {
   const root = createEl("div");
   renderOrders(root, st, new URLSearchParams({ date: "d20" }));
   tap(buttonByText(root, "New order"));
+  pickCourier(root);
   return root;
 }
+
+const pickCourier = (root) => {
+  const sel = all(root).find((n) => n.tagName === "SELECT"
+    && (n.children || []).some((o) => o.value === "courier"));
+  if (!sel) return null;
+  sel.value = "courier";
+  (sel._listeners.change || []).forEach((f) => f.call(sel));
+  return sel;
+};
 
 function openEdit(st, orderId) {
   const root = createEl("div");
@@ -216,8 +235,11 @@ test("nothing is asked until she stops typing, and a burst of keystrokes is one 
     // textarea; this proves it was given the height, so a revert to `rows: 1` is caught.
     assert.ok(Number(box.attrs.rows) >= 3,
       "the address box is tall enough to read a whole address back");
-    assert.ok(spansBoth(root, box),
-      "the address field takes both columns, not half of a two-column grid");
+    // The ＋ New order card's address now sits in the courier block, whose fields are full
+    // width — it is not a cell of the two-column grid at all (v237), which is what v230
+    // was really asking for. One column of that grid is 137px on a phone.
+    assert.equal(inGrid(root, box), false,
+      "the address sits full width in the courier block, not in the two-column grid");
 
     // Four keystrokes in a row, faster than the pause: a real typist, not a metronome.
     type(box, "12 J");

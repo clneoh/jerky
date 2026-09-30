@@ -1,6 +1,6 @@
 // test/orders-view.test.js — the shape of the Orders screen's ＋ New order card
 // (admin/js/views/orders.js): it arrives folded, and when it is opened it reads
-// the day calendar first, then the customer, then the items.
+// the day on one line, then the items, then the customer.
 //
 // The screens it lives on sit behind the sign-in, so this is the closest anyone
 // gets to tapping it here: the card is built for real and then walked.
@@ -127,20 +127,75 @@ test("its title opens and shuts it, and the caret follows", () => {
   assert.equal(byClass(root, "fold-caret").children[0].text, "▸");
 });
 
-test("opened, it reads the day calendar first, then the customer, then the items", () => {
+test("opened, it reads the day on one line, then the items, then the customer", () => {
   const { root } = build();
   const body = byClass(root, "fold-body");
   const dayIdx = body.children.findIndex((n) => labelOf(n) === "Delivery day");
-  const customerIdx = body.children.findIndex((n) => labelOf(n) === "Customer");
   const itemsIdx = body.children.findIndex((n) => labelOf(n) === "Items");
+  const customerIdx = body.children.findIndex((n) => labelOf(n) === "Customer");
   const addIdx = body.children.findIndex((n) => String(n.className).includes("block"));
 
   assert.equal(dayIdx, 0, "which day she is adding to comes first");
-  assert.equal(body.children[0].children[1].className, "cal-wrap",
-    "and under it is the month calendar, the same one the shop shows");
-  assert.ok(customerIdx > dayIdx, "who the order is for comes after the day");
-  assert.ok(itemsIdx > customerIdx, "and what they want comes after that");
-  assert.ok(addIdx > itemsIdx, "with Add order last");
+
+  // The day is ONE line and its month grid is SHUT until that line is tapped (v237).
+  // The card stands on every delivery day, so a full grid in front of the first thing
+  // she has to type was mostly a wall of dates she did not need.
+  const dayLine = body.children[0].children[1];
+  assert.ok(String(dayLine.className).includes("datepick"), "the day is the one-line control");
+  const dayBtn = dayLine.children[0];
+  assert.match(dayBtn.textContent, /^Delivering /, "and it names the day already chosen");
+  assert.equal(dayBtn.attrs["aria-expanded"], "false", "shut at first");
+  assert.equal(dayLine.children[1].children.length, 0, "with nothing drawn under it");
+  assert.equal(all(body).some((n) => String(n.className).includes("cal-wrap")), false,
+    "so the month calendar is not on screen");
+
+  dayBtn._listeners.click[0]();
+  assert.equal(dayBtn.attrs["aria-expanded"], "true", "tapping the line unfolds it");
+  assert.ok(all(dayLine).some((n) => String(n.className).includes("cal-wrap")),
+    "onto the same calendar the top of the screen shows");
+
+  assert.ok(itemsIdx > dayIdx, "what they want comes after the day");
+  assert.ok(customerIdx > itemsIdx, "and who ordered it comes after that");
+  assert.ok(addIdx > customerIdx, "with Add order last");
+});
+
+test("the card's calendar unfolds on the day the card is on, and re-homes each time", () => {
+  // A day a season out. The card's calendar must show the week THAT day is in and
+  // not the week today is in — unfolding it has one job, which is to say where this
+  // order is going — and it is a different order from the one the screen is on, so
+  // the two calendars must settle independently.
+  const far = {
+    ...STATE,
+    deliveryDates: [{ id: "d7", date: "2026-09-07" }, { id: "dF", date: "2026-11-07" }],
+  };
+  const root = createEl("div");
+  renderOrders(root, far, new URLSearchParams({ date: "dF" }));
+
+  const dayLine = byClass(root, "fold-body").children[0].children[1];
+  const panel = dayLine.children[1];
+  const dayBtn = dayLine.children[0];
+  const onPanel = (iso) => all(panel).some((n) => n.dataset && n.dataset.date === iso);
+  const arrowIn = (glyph) => all(panel).find((n) => n.tagName === "BUTTON"
+    && String(n.className).includes("cal-nav") && n.children[0].text === glyph);
+
+  dayBtn._listeners.click[0]();
+  assert.ok(onPanel("2026-11-07"), "unfolded, it shows the day this order is on");
+  assert.equal(arrowIn("›"), undefined, "at the far end of the days she has set");
+
+  // Page a week back, then shut and open the fold again.
+  arrowIn("‹")._listeners.click[0]();
+  assert.equal(onPanel("2026-11-07"), false, "the week behind it does not hold that day");
+  dayBtn._listeners.click[0]();
+  dayBtn._listeners.click[0]();
+  assert.ok(onPanel("2026-11-07"), "and unfolding re-homes it, rather than reopening on that week");
+
+  // Paging the card's own calendar is the card's business: the screen's calendar
+  // above it is left exactly where it was.
+  const inPanel = all(panel);
+  const top = all(root).find((n) => String(n.className).includes("cal-wrap") && !inPanel.includes(n));
+  assert.ok(top, "the screen keeps its own calendar above the card");
+  assert.ok(all(top).some((n) => n.dataset && n.dataset.date === "2026-11-07"),
+    "still showing the day the screen is on, where the card's own paging left it");
 });
 
 test("a rebuild around an open card leaves it open, and a fresh visit folds it", () => {

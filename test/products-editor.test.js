@@ -1446,6 +1446,100 @@ test("the parcel tick is not a gate: an unticked product is still sold and still
   assert.ok(buttonByText(root, "Hide"), "it can still be taken off the shop the ordinary way");
 });
 
+// ── Engine v236: "Ask the customer for a note on this item" ───────────────────
+// A per-LINE note: the customer's own words about ONE item they ordered ("no
+// nuts", "write Happy Birthday"), which lands on the order row itself. This tick
+// decides ONE thing — whether the SHOP draws that box. It is written only while
+// it is ON, so a product she never opened stays byte-for-byte the product it was
+// (the parcel tick's rule, v226), and it is found by its OWN label because the
+// page already carries two other `.avail-listed` switches.
+
+const askNoteField = (root) => walk(root).find((n) => n.nodeType === 1
+  && String(n.className).includes("field")
+  && walk(n).some((c) => c.tagName === "LABEL"
+    && (c.children || []).some((x) => x.text === "Ask the customer for a note on this item")));
+const askNoteSwitch = (root) => {
+  const f = askNoteField(root);
+  assert.ok(f, "the editor offers an Ask the customer for a note tick");
+  return walk(f).find((n) => n.tagName === "INPUT");
+};
+const setAskNote = (root, on) => {
+  const box = askNoteSwitch(root);
+  box.checked = on;
+  (box._listeners.change || []).forEach((fn) => fn({ target: box }));
+};
+
+test("the note tick is its own field and OFF writes nothing at all", () => {
+  doc.body.replaceChildren();
+  resetLayers();
+  const state = freshState();
+  const root = render(state);
+  const f = formHandles(root);
+  f.name.value = "Almond biscuits";
+  f.unit.value = "u_loaf";
+
+  assert.equal(askNoteSwitch(root).checked, false, "absent on the product means do not ask");
+  // Adding a third `.avail-listed` must not have moved the two that were already
+  // there: the availability switch is still the FIRST one on the page, so nothing
+  // that reads a switch by position quietly changed meaning.
+  assert.ok(walk(walk(root).find((n) => n.className === "avail-listed")).includes(listedSwitch(root)),
+    "the first .avail-listed on the page is still the keep-it-listed switch");
+  assert.ok(walk(askNoteField(root)).some((n) => String(n.className).includes("avail-listed-text")
+    && (n.children || []).some((c) => String(c.text || "").includes("never blocks an order"))),
+    "and it says in words that it gates nothing");
+
+  fire(f.add);
+  assert.equal("askNote" in state.products[0], false,
+    "an untouched tick writes no key at all — no product she never opens changes");
+});
+
+test("ticking the note box saves it, and unticking takes the key back off", () => {
+  doc.body.replaceChildren();
+  resetLayers();
+  const state = freshState();
+  const root = render(state);
+  const f = formHandles(root);
+  f.name.value = "Almond biscuits";
+  f.unit.value = "u_loaf";
+  setAskNote(root, true);
+  fire(f.add);
+  assert.equal(state.products[0].askNote, true, "saved on the product");
+
+  // Now take it off. The key goes entirely — an absent key is how this app spells
+  // "do not ask", so leaving `askNote: false` behind would publish a key of its
+  // own to the shop and change an order nobody meant to change.
+  fire(buttonByText(root, "Edit"));
+  const pop = layers["popup-layer"];
+  assert.equal(askNoteSwitch(pop).checked, true, "the saved choice comes back on");
+  setAskNote(pop, false);
+  walk(pop).find((n) => n.tagName === "SELECT").value = "u_loaf";
+  fire(buttonByText(pop, "Update product"));
+  assert.equal("askNote" in state.products[0], false, "the key is deleted, not set to false");
+});
+
+test("the note tick is not a gate: it writes no availability rule and no price of its own", () => {
+  // The tick exists to make one thing possible — a box on the shop card. If it ever
+  // grew a second job (closing the product, hiding it, changing what it costs), it
+  // would show up here as a sell rule, an inactive product or a priced change.
+  doc.body.replaceChildren();
+  resetLayers();
+  const state = freshState();
+  state.products = [{ id: "p1", name: "Fresh Focaccia", unit: "u_loaf", price: 15, active: true }];
+  const root = render(state);
+  fire(buttonByText(root, "Edit"));
+  const pop = layers["popup-layer"];
+  setAskNote(pop, true);
+  walk(pop).find((n) => n.tagName === "SELECT").value = "u_loaf";
+  fire(buttonByText(pop, "Update product"));
+
+  const p = state.products[0];
+  assert.equal(p.askNote, true);
+  assert.notEqual(p.active, false, "it is still on the shop");
+  assert.equal(p.sellRules, undefined, "and no sell-day rule was written on its behalf");
+  assert.equal(p.price, 15, "and it still costs what it cost");
+  assert.ok(buttonByText(root, "Hide"), "it can still be taken off the shop the ordinary way");
+});
+
 // ── the New product card folds away (v91) ────────────────────────────────────
 // The card is the screen's setup part, and left open it pushed the three product
 // lists she came to read off the bottom of the page. It now arrives as one line

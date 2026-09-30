@@ -669,6 +669,27 @@ function buildEditor(state, product) {
       el("span", { class: "avail-listed-text" },
         "Tick this if a carrier can post it — sealed treat packs, say, not anything fresh. It only changes the advice you are shown when you record a parcel on a courier order. It never blocks an order.")));
 
+  // ── Does this product invite a note? (v236) ───────────────────────────────
+  // A per-LINE note: the customer may attach a few words to this item as they
+  // order it — “no nuts”, “write Happy Birthday” — and it lands on the order row
+  // itself, not on the order as a whole. The tick decides one thing only: whether
+  // the SHOP offers that box. It never decides whether she may write one in her
+  // own app (see views/orders.js), because a setting that hid her own box would
+  // keep her from writing down what a customer told her on the phone — the same
+  // shape as the rule that no shop setting may block a sale she takes by hand.
+  //
+  // Written only while it is on, so an absent key reads as “do not ask”, a product
+  // she never opened stays byte-for-byte unchanged, and unticking leaves no
+  // `askNote: false` behind for the shop to publish (the parcel tick's rule, v226).
+  const askNoteBox = el("input", { type: "checkbox", checked: product?.askNote === true });
+  const askNoteCheck = el("div", { class: "field" },
+    el("label", {}, "Ask the customer for a note on this item"),
+    el("div", { class: "avail-listed", style: "margin-top:6px" },
+      el("label", { class: "switch" }, askNoteBox,
+        el("span", { class: "switch-track" }, el("span", { class: "switch-knob" }))),
+      el("span", { class: "avail-listed-text" },
+        "Switch this on and the shop gives this item a small “Add a note” link — the customer can ask for something just for theirs, and you see those words on the order and on the packing slip. Leave it off where a note would make no difference. It never blocks an order, and switching it off never hides a note you already have.")));
+
   // ── Translated 中文 / Bahasa Malaysia text ────────────────────────────────
   // English is written once above; each line here is translated from it and
   // offered as an ordinary grey suggestion — the → at the box's right edge takes
@@ -993,6 +1014,10 @@ function buildEditor(state, product) {
     // "not parcel-able", so OFF must leave no key at all rather than storing a false
     // that would publish to the shop as a field of its own (v226).
     if (!parcelBox.checked) drop.push("parcel");
+    // The note switch goes the same way, and for the same reason: absent reads as
+    // "do not ask the customer", so OFF must leave no key rather than storing a
+    // false that would publish to the shop as a field of its own (v236).
+    if (!askNoteBox.checked) drop.push("askNote");
     // Filed nowhere → the key goes, and the product is listed last on the shop
     // under "More items". The tick ORDER is kept as she left it, because the
     // first tick is the heading it lands under.
@@ -1014,11 +1039,12 @@ function buildEditor(state, product) {
     if (sellRules) values.sellRules = sellRules;
     if (listed) values.alwaysListed = true;
     if (parcelBox.checked) values.parcel = true;
+    if (askNoteBox.checked) values.askNote = true;
     return { values, tr: trCollect(), drop };
   }
 
   return { name, unit, price, limit, closeDays, cancelDays, desc, serving, thumbFile, thumbPreview,
-    catPicker, translations, availability, parcelCheck, recipeCard, renderRecipeLines, collect };
+    catPicker, translations, availability, parcelCheck, askNoteCheck, recipeCard, renderRecipeLines, collect };
 }
 
 // Fold the translated boxes + their provenance onto a saved product row.
@@ -1122,6 +1148,7 @@ function editorFields(state, editor) {
         "How long a customer may still change or cancel this product's order — shown on the shop with the product. This only tells the customer; it never blocks you, you always move orders by hand. Blank or 0 = nothing shown."),
       editor.cancelDays),
     editor.parcelCheck,
+    editor.askNoteCheck,
     editor.recipeCard);
 }
 

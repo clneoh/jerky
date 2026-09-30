@@ -553,6 +553,79 @@ test("a kept door with no record of her hand loses to the customer's pin, with n
   }
 });
 
+// THE SAME SWITCH, AFTER A RESET (v238). Her pin is the door, she replaced a stale pin of
+// theirs from the address, and the switch now offers THEIR pin back — one press that undoes
+// it. Two things are checked that a reset could otherwise get wrong: the sentence must say a
+// reset happened rather than that the customer moved (they did not, and the card must not
+// invent a fact about a person), and the press is reversible in one step rather than one-way.
+test("after a reset the offer points back at their pin, and says a reset rather than a move (v238)", async () => {
+  globalThis.localStorage.getItem = (k) => (k === "bakeadmin.supabase"
+    ? JSON.stringify({ access_token: "t", expires_at: Date.now() + 3600_000 }) : null);
+  const s = stubChannel();
+  const leaf = makeLeaflet();
+  globalThis.window.L = leaf.L;
+  const st = courierState();
+  // The row a reset leaves behind: her point, stamped "reset", carrying the pin it replaced.
+  st.customers = [{
+    id: "c1", key: keyOf(COURIER_ORDER), name: "Mei Ling", whatsapp: "60123456789",
+    place: {
+      lat: 5.4172, lng: 100.3311, label: "12 Jalan Bunga, 10450 Penang",
+      from: "reset", at: "2026-09-28T10:00:00.000Z",
+      against: { lat: 5.4299, lng: 100.3399 },
+    },
+  }];
+  const order = {
+    ...COURIER_ORDER,
+    customerPlace: { lat: 5.4299, lng: 100.3399, label: "Sri Bunga guard house", at: "2026-09-25T10:00:00.000Z" },
+  };
+  const doorSlot = createEl("div");
+  let wrap = null;
+  try {
+    wrap = courierQuoteSection({ state: st, orders: [order], doorSlot });
+    doc.body.append(doorSlot);
+    doc.body.append(wrap);
+    buttonByText(wrap, "Get a delivery price")._listeners.click[0]();
+    for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 1));
+
+    // The reset stands: it beats the pin it replaced, so HER door is the one in force — and it
+    // still may be asked up again, which is the whole reason a reset is not recorded as "hand".
+    assert.match(doorSlot.textContent, /the door you keep for Mei Ling/,
+      "the door on screen is the one the reset put there, not the pin they dropped");
+    assert.equal(lookBtnOn({ doorSlot }).hidden, false,
+      "and a reset stays re-askable — recorded as her hand it would strand her on a road answer");
+    assert.equal(lookBtnOn({ doorSlot }).textContent, "Look this address up again",
+      "under the plain label, because there is no customer pin being replaced here");
+
+    const offered = byClass(wrap, "pin-offer");
+    assert.ok(offered && !offered.hidden, "the two doors disagree, so the switch is on offer");
+    assert.match(offered.textContent, /You reset this door from the address on the order/,
+      "and it says a reset happened, which is what happened");
+    assert.doesNotMatch(offered.textContent, /pinned a different spot this time/,
+      "never that the customer moved — they did not, and the card may not invent that about a person");
+    const press = buttonByText(offered, "Use the customer's pin instead");
+    assert.ok(press, "with one press back to the pin they dropped");
+
+    press._listeners.click[0]();
+    for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 1));
+    const kept = st.customers[0].place;
+    assert.equal(kept.lat, 5.4299, "their own point is the door again, in both numbers");
+    assert.equal(kept.lng, 100.3399, "not just the one");
+    assert.equal(kept.from, "customer", "recorded as a copy of their pin, so a new one of theirs still wins");
+    assert.equal(kept.against, undefined, "and the reset's stamp is gone with the door it was about");
+    assert.equal(offered.hidden, true, "the two doors agree again, so there is nothing left to switch");
+    assert.equal(lookBtnOn({ doorSlot }).textContent, "Reset the pin from the address",
+      "and the press is back under the reset label, because their pin is the one it would replace");
+    assert.deepEqual(strays(wrap), [], "and nothing on the card prints 'null'");
+  } finally {
+    const hide = wrap && buttonByText(wrap, "Hide the delivery price");
+    if (hide) hide._listeners.click[0]();
+    if (wrap) wrap.parentNode = null;
+    doorSlot.parentNode = null;
+    s.restore();
+    delete globalThis.window.L;
+  }
+});
+
 // ── the pin window of last resort opens on the door in force (v210) ───────
 //
 // FOUND AT v209 while answering her own question — "if the customer didn't pin
@@ -1060,8 +1133,8 @@ test("a second lookup that finds nothing takes the first one's matches off the c
 
 // A handler object, the way Leaflet really models these: `dragging`, `touchZoom`,
 // `doubleClickZoom` and `boxZoom` are things that get switched on and off, not options.
-const toggle = (name) => ({
-  name, on: false, enable() { this.on = true; }, disable() { this.on = false; },
+const toggle = (name, on = false) => ({
+  name, on: !!on, enable() { this.on = true; }, disable() { this.on = false; },
 });
 
 // Records what the map was ASKED FOR. Not an approximation of Leaflet — every assertion
@@ -1073,8 +1146,12 @@ function makeLeaflet() {
     map(container, opts) {
       const m = {
         container, opts, removed: false, sized: 0, handlers: {}, zoom: 16,
-        dragging: toggle("map drag"), touchZoom: toggle("pinch"),
-        doubleClickZoom: toggle("double tap"), boxZoom: toggle("box"),
+        // Built on or off according to the OPTION, as Leaflet builds them — and every later
+        // enable/disable is the app's. Since v238 that distinction is load-bearing: the zoom
+        // handlers are switched on at build and never flipped again, so a stub that started
+        // every handler at `false` would show a map with no zoom at all and call it correct.
+        dragging: toggle("map drag", !!opts.dragging), touchZoom: toggle("pinch", !!opts.touchZoom),
+        doubleClickZoom: toggle("double tap", !!opts.doubleClickZoom), boxZoom: toggle("box", !!opts.boxZoom),
         setView(center, zoom) { m.center = center; m.zoom = zoom; rec.views.push({ center, zoom }); return m; },
         on(evt, cb) { m.handlers[evt] = cb; return m; },
         // Faithful about the difference that matters here: off() with no arguments lets go
@@ -1104,7 +1181,7 @@ function makeLeaflet() {
         // on and off afterwards. Both are real Leaflet's own names, and getting them the
         // wrong way round here is the sort of stub fault that hides a screen doing nothing.
         latlng: { lat: latlng[0], lng: latlng[1] }, opts, handlers: {},
-        dragging: toggle("marker drag"),
+        dragging: toggle("marker drag", !!opts.draggable),
         addTo(map) { mk.addedTo = map; map.marker = mk; return mk; },
         on(evt, cb) { mk.handlers[evt] = cb; return mk; },
         getLatLng() { return { lat: mk.latlng.lat, lng: mk.latlng.lng }; },
@@ -1575,11 +1652,16 @@ test("the map is read-only until she presses Move this pin (v201)", async () => 
     const box = byClass(mounted.doorSlot, "door-map");
 
     assert.equal(map.opts.dragging, false, "the map itself does not drag");
-    assert.equal(map.opts.touchZoom, false, "nor pinch");
-    assert.equal(map.opts.doubleClickZoom, false, "nor double-tap");
-    assert.equal(map.opts.boxZoom, false, "nor box");
-    assert.equal(map.opts.zoomControl, false, "and it carries no zoom buttons on a card that is only looking");
     assert.equal(map.opts.scrollWheelZoom, false, "a wheel passing over it scrolls the card, not the map");
+    // THE ZOOM IS NOT PART OF THE LOCK SINCE v238, and these four flip the other way. Her
+    // report: "the map are not allow to zoom out and dragging the pin to the right pin become
+    // extremely time consuming and prompt to error" — the lock had been drawn around the whole
+    // map, so a stale pin could only be corrected by dragging a marker across a map that
+    // refused to zoom out first. The lock now covers only what could move the pin.
+    assert.equal(map.opts.touchZoom, true, "pinch zooms the map while the card is only being looked at");
+    assert.equal(map.opts.doubleClickZoom, true, "and so does a double-tap");
+    assert.equal(map.opts.boxZoom, true, "and the desktop box zoom");
+    assert.equal(map.opts.zoomControl, true, "and the plus and minus are drawn, which is the half of her ask a button answers");
     assert.equal(mk.opts.draggable, false, "the pin does not drag either");
     assert.equal(map.handlers.click, undefined, "and a tap on the map places nothing");
     // Measured once the card settled. A map built while the card is still being laid out
@@ -1593,9 +1675,7 @@ test("the map is read-only until she presses Move this pin (v201)", async () => 
 
     buttonByText(mounted.doorSlot, "Move this pin")._listeners.click[0]();
     assert.equal(map.dragging.on, true, "pressing it turns the map's drag on");
-    assert.equal(map.touchZoom.on, true, "and pinch");
-    assert.equal(map.doubleClickZoom.on, true, "and double-tap");
-    assert.equal(map.boxZoom.on, true, "and box");
+    assert.equal(map.touchZoom.on, true, "and the pinch was already on, because the lock never covered it");
     assert.equal(mk.dragging.on, true, "and the pin's own drag");
     assert.equal(typeof map.handlers.click, "function", "and a tap becomes a way to place the pin");
     assert.equal(box.style.touchAction, "none", "the unlocked map takes the gesture for itself, like the picker's");
@@ -1603,6 +1683,8 @@ test("the map is read-only until she presses Move this pin (v201)", async () => 
     buttonByText(mounted.doorSlot, "Done moving")._listeners.click[0]();
     assert.equal(map.dragging.on, false, "pressing it again locks the map");
     assert.equal(mk.dragging.on, false, "and the pin");
+    assert.equal(map.touchZoom.on, true, "but NOT the zoom — a lock that took the pinch away with it is the fault v238 fixed");
+    assert.equal(map.doubleClickZoom.on, true, "the double-tap stays live with it");
     assert.equal(map.handlers.click, undefined, "and takes the tap-to-place away with it");
     assert.equal(box.style.touchAction, "pan-y", "giving the card its scroll back");
   } finally {
@@ -1751,7 +1833,13 @@ const NO_ANSWER = { ok: false, reason: "The address service could not be reached
 // The order every test below asks for a price on. The address is the one whose house number the
 // free services cannot find, so a lookup of it really does come back with the road.
 const SEAK_ORDER = () => ({ ...COURIER_ORDER, address: "23 Jalan Seang Tek" });
-const lookBtnOn = (mounted) => buttonByText(mounted.doorSlot, "Look this address up again");
+// The ONE press on the door block that replaces the door in force. It wears one of two labels
+// — "Look this address up again" over a door of ours, "Reset the pin from the address" over the
+// customer's own pin (v238) — so the tests below find it by either, rather than by whichever one
+// they happen to expect. A test that looked for only one label would read the other as "no press
+// on the card", which is exactly the confusion this feature is about.
+const lookBtnOn = (mounted) => buttonByText(mounted.doorSlot, "Look this address up again")
+  || buttonByText(mounted.doorSlot, "Reset the pin from the address");
 
 test("the second ask appears where a lookup wrote the door, and nowhere before one exists (v213)", async () => {
   signIn();
@@ -1801,7 +1889,7 @@ test("the second ask appears where a lookup wrote the door, and nowhere before o
   }
 });
 
-test("the second ask is never offered over her own hand or over the customer's own pin (v213)", async () => {
+test("the press IS offered over her own hand and over the customer's own pin (v213, changed v238, changed again v239)", async () => {
   signIn();
   const s = stubGeocodeAsks([AT_THE_HOUSE]);
   const leaf = makeLeaflet();
@@ -1812,30 +1900,373 @@ test("the second ask is never offered over her own hand or over the customer's o
   let hand = null;
   let theirs = null;
   try {
-    // HER OWN HAND. A door she dragged or picked is a correction, not a guess, and offering to
-    // replace it with a lookup would be handing her work back to the service she just corrected.
+    // HER OWN HAND. v213 withheld the press here to keep a correction from being handed back to
+    // the service she had just corrected, and v238 kept that half. Her SECOND report is why it
+    // had to go: a drag is the only thing this card ever offered her, so a drag is what she does
+    // — and it writes `from: "hand"`, which the press then refused for good. Every customer she
+    // had ever corrected by hand showed "Move this pin" and nothing else.
+    //
+    // The protection did not go, it MOVED: this door is still never replaced without being asked
+    // (the test below drives that confirmation). Nothing is replaced by merely painting the card.
     st.customers = [{
       id: "c1", key: keyOf(order), name: "Mei Ling", whatsapp: "60123456789",
       place: { lat: 5.4, lng: 100.3, label: "the door she checked", from: "hand", at: "2026-09-25T10:00:00.000Z" },
     }];
     hand = mountDoor(st, order);
     await settle(4);
-    assert.equal(lookBtnOn(hand).hidden, true,
-      "a door she placed herself is not a lookup's answer and is not offered up for replacement");
-    assert.equal(st.customers[0].place.lat, 5.4, "and nothing has moved it");
+    assert.equal(lookBtnOn(hand).hidden, false,
+      "a door she placed herself can still go stale — she needs both tools, not only the drag");
+    assert.equal(lookBtnOn(hand).textContent, "Reset the pin from the address",
+      "said as a reset, because a look-up may only DOWNGRADE a door she had right");
+    assert.equal(st.customers[0].place.lat, 5.4, "and merely painting the card has moved nothing");
 
-    // THE CUSTOMER'S OWN PIN, which is the door in force (v209). Their pin is a fact FROM them,
-    // and it is not the app's to re-derive: the app never looked it up in the first place.
+    // THE CUSTOMER'S OWN PIN, WHICH IS THE DOOR IN FORCE (v209) — AND WHICH SINCE v238 IS
+    // OFFERED ANYWAY. v209 hid the press here on the reasoning that they were standing at their
+    // door when they dropped it, which is true of the day they dropped it and says nothing about
+    // today. Her report is the case that misses: the customer MOVED, so their pin is the stale
+    // one now, and the press that would replace it was the press hidden by that very rule.
+    //
+    // It comes back with the label that says what it will do, and — because this replaces a fact
+    // that came FROM them — the press asks before it changes anything (the test below drives it).
     closeDoor(hand); hand = null;
     st.customers = [];
     theirs = mountDoor(st, withDoor());
     await settle(4);
     assert.ok(lookBtnOn(theirs), "the press is on the card, so its absence below would be a real one");
-    assert.equal(lookBtnOn(theirs).hidden, true,
-      "the customer's own pin is the door, and it is not a guess to be asked again");
+    assert.equal(lookBtnOn(theirs).hidden, false,
+      "their pin may have gone stale, so the press that replaces it is offered");
+    assert.equal(lookBtnOn(theirs).textContent, "Reset the pin from the address",
+      "and the label says which of the two things it is about to do");
   } finally {
     if (hand) closeDoor(hand);
     closeDoor(theirs);
+    s.restore();
+    delete globalThis.window.L;
+  }
+});
+
+test("over the customer's own pin the press ASKS first, and nothing moves until she says yes (v238)", async () => {
+  signIn();
+  const s = stubGeocodeAsks([AT_THE_HOUSE]);
+  const leaf = makeLeaflet();
+  globalThis.window.L = leaf.L;
+  const st = courierState();
+  st.orders = [withDoor()];
+  let mounted = null;
+  try {
+    // The card starts standing on the pin they dropped from the shop page — the pin that was
+    // right when they dropped it and may be stale now.
+    mounted = mountDoor(st, withDoor());
+    await settle(4);
+    // An earlier test in this file can leave its own card in the one confirm layer, so this is
+    // emptied first: what the assertions below read has to be this press's own asking.
+    layers["confirm-layer"].replaceChildren();
+    assert.match(mounted.doorSlot.textContent, /own pin from the shop page/,
+      "the card is standing on their pin");
+
+    // THE PRICE FOLD IS OPENED FIRST — and this used to say WHY, in words that made the fault
+    // sound like a design: "the press is only wired up when the fold is built, so a press on the
+    // door block of a folded card is a press on nothing." That was true, and it was the bug she
+    // reported as "pressing that botton dont work" (v240). It is opened here now only so that the
+    // sections below — the confirm, and the answer written into the price section's own line —
+    // are the ones this test was written for. The folded card has its own test beside it.
+    buttonByText(mounted.wrap, "Get a delivery price")._listeners.click[0]();
+    await settle(4);
+    assert.equal(s.geocodes(), 0,
+      "and opening it asked no look-up, because their pin is the door (v208)");
+    assert.equal(st.customers[0].place.from, "customer",
+      "it kept their pin as a copy tagged theirs, which is the door the card is standing on");
+
+    // THE CANCEL PATH FIRST, because "asks first" is only true if saying no really stops it.
+    lookBtnOn(mounted)._listeners.click[0]();
+    await settle(2);
+    assert.ok(buttonByText(layers["confirm-layer"], "Reset the pin"),
+      "the app asked before replacing a pin that came from the customer");
+    buttonByText(layers["confirm-layer"], "Cancel")._listeners.click[0]();
+    await settle(2);
+    assert.equal(s.geocodes(), 0, "and Cancel really stopped it: no look-up ran at all");
+    assert.equal(st.customers.length, 1, "so no second door was written either");
+    assert.equal(st.customers[0].place.from, "customer", "the row is still the copy of their pin");
+    assert.equal(st.customers[0].place.lat, DOOR.lat, "on their own point, unmoved");
+    assert.match(mounted.doorSlot.textContent, /own pin from the shop page/,
+      "and the card is still standing on their pin");
+
+    // SAY YES, and the door really is replaced — written as a RESET carrying the pin it replaced,
+    // so it beats that pin now and yields to a genuinely new one the moment they drop one.
+    lookBtnOn(mounted)._listeners.click[0]();
+    await settle(2);
+    buttonByText(layers["confirm-layer"], "Reset the pin")._listeners.click[0]();
+    await settle(4);
+    assert.equal(s.geocodes(), 1, "the press ran once the app was told to go ahead");
+    const place = st.customers[0].place;
+    assert.equal(place.from, "reset", "and the door is stamped a reset, never a plain look-up");
+    assert.equal(place.lat, 5.4172, "standing where the new answer put it");
+    assert.equal(place.lng, 100.3311, "in both numbers, not just the one");
+    assert.deepEqual(place.against, { lat: DOOR.lat, lng: DOOR.lng },
+      "with the pin it replaced recorded, so their pin wins again the moment they drop a new one");
+    assert.doesNotMatch(mounted.doorSlot.textContent, /own pin from the shop page/,
+      "and the card now says the door is the one she keeps, not theirs");
+    assert.equal(lookBtnOn(mounted).textContent, "Look this address up again",
+      "the press goes back to the other label, because there is no customer pin left to replace");
+  } finally {
+    closeDoor(mounted);
+    s.restore();
+    delete globalThis.window.L;
+  }
+});
+
+test("over a door she placed by hand the press ASKS first too, and says which door it is replacing (v239)", async () => {
+  signIn();
+  const s = stubGeocodeAsks([AT_THE_HOUSE]);
+  const leaf = makeLeaflet();
+  globalThis.window.L = leaf.L;
+  const order = SEAK_ORDER();
+  const st = courierState();
+  st.orders = [order];
+  // The door in force is the one she placed on the map herself. This is the state her own
+  // workflow leaves behind — a drag is the only thing the card ever offered her — and it is
+  // the state v238 still refused the press in, which is why she reported it twice.
+  st.customers = [{
+    id: "c1", key: keyOf(order), name: "Mei Ling", whatsapp: "60123456789",
+    place: { lat: 5.4, lng: 100.3, label: "the door she checked", from: "hand", at: "2026-09-25T10:00:00.000Z" },
+  }];
+  let mounted = null;
+  try {
+    mounted = mountDoor(st, order);
+    await settle(4);
+    layers["confirm-layer"].replaceChildren();
+    assert.match(mounted.doorSlot.textContent, /the door you keep for Mei Ling/,
+      "the card is standing on the door she keeps");
+    // HER ACTUAL COMPLAINT, asserted first: the press is ON THE CARD. v238 hid it here, so all
+    // she ever saw was "Move this pin" and nothing else — for a door she had corrected by hand.
+    assert.equal(lookBtnOn(mounted).hidden, false,
+      "the reset is offered over a door of her own hand, which is the state she reported twice");
+
+    buttonByText(mounted.wrap, "Get a delivery price")._listeners.click[0]();
+    await settle(4);
+    assert.equal(s.geocodes(), 0, "opening the fold asked no look-up — a door is already in force");
+
+    // CANCEL REALLY STOPS IT, which is the whole of what "asks first" has to mean.
+    lookBtnOn(mounted)._listeners.click[0]();
+    await settle(2);
+    const card = layers["confirm-layer"];
+    assert.match(card.textContent, /the door you placed on the map by hand/,
+      "and it names the door it is about to replace, so she is not guessing what it means");
+    assert.doesNotMatch(card.textContent, /own pin from the shop page/,
+      "never their pin — this door is hers, and the card may not invent a fact about a person");
+    assert.match(card.textContent, /only find the road/,
+      "it says the answer may be NO BETTER, which is the real risk of replacing a door she had right");
+    buttonByText(card, "Cancel")._listeners.click[0]();
+    await settle(2);
+    assert.equal(s.geocodes(), 0, "Cancel stopped it: no look-up ran at all");
+    assert.equal(st.customers[0].place.from, "hand", "and her door is still a door of her hand");
+    assert.equal(st.customers[0].place.lat, 5.4, "on her own point, unmoved");
+
+    // SAY YES, and it is replaced — a reset, so it stays pressable again afterwards.
+    lookBtnOn(mounted)._listeners.click[0]();
+    await settle(2);
+    buttonByText(layers["confirm-layer"], "Reset the pin")._listeners.click[0]();
+    await settle(4);
+    assert.equal(s.geocodes(), 1, "the press ran once she said go ahead");
+    const place = st.customers[0].place;
+    assert.equal(place.from, "reset", "stamped a reset, so the press can be used again on what it found");
+    assert.equal(place.lat, 5.4172, "standing where the fresh answer put it");
+    assert.equal(place.lng, 100.3311, "in both numbers, not just the one");
+    assert.equal(place.against, undefined,
+      "and with no `against`, because this order carries no customer pin for it to have replaced");
+    assert.equal(lookBtnOn(mounted).textContent, "Look this address up again",
+      "the label goes back to the plain one — a reset is a guess, and a guess is not asked about");
+  } finally {
+    closeDoor(mounted);
+    s.restore();
+    delete globalThis.window.L;
+  }
+});
+
+test("the press works on a card whose price fold was NEVER opened (v240)", async () => {
+  signIn();
+  const s = stubGeocodeAsks([AT_THE_HOUSE]);
+  const leaf = makeLeaflet();
+  globalThis.window.L = leaf.L;
+  const order = SEAK_ORDER();
+  const st = courierState();
+  st.orders = [order];
+  let mounted = null;
+  let hand = null;
+  try {
+    // HER WORDS: "pushed / now i see the button but pressing that botton dont work."
+    //
+    // The press was assigned inside build(), and build() runs only on the first press of "Get a
+    // delivery price" — so until that fold had been opened once, this button was on the card
+    // with its listener wired to a no-op default, and every tap on it did NOTHING AT ALL. v238
+    // hid the button over a door of her own hand and v239 made it visible there, which is what
+    // put a dead control in front of her.
+    //
+    // NOTHING IN THIS TEST OPENS THE FOLD, and that is the whole of it. Every other test in this
+    // file opens it first — necessarily, because the answer to the press used to be written into
+    // the price section's own line — and that is exactly what hid this fault for two versions.
+
+    // ── over a door of the app's own look-up, where nothing stands between the tap and the pin
+    st.customers = [{
+      id: "c1", key: keyOf(order), name: "Mei Ling", whatsapp: "60123456789",
+      place: { lat: 5.4141, lng: 100.3288, label: "Seang Tek Road, George Town", from: "lookup" },
+    }];
+    mounted = mountDoor(st, order);
+    await settle(4);
+    // The fold is CLOSED, asserted rather than assumed: if a later change ever opens it on mount
+    // this test must fail loudly instead of quietly going back to testing the other path.
+    assert.equal(buttonByText(mounted.wrap, "Get a delivery price").textContent, "Get a delivery price",
+      "the price fold has never been opened on this card");
+    assert.equal(lookBtnOn(mounted).textContent, "Look this address up again",
+      "and the press is the plain one, so nothing is about to ask her anything first");
+
+    lookBtnOn(mounted)._listeners.click[0]();
+    await settle(4);
+    assert.equal(s.geocodes(), 1,
+      "THE PRESS ASKED — a button that answers a tap with silence is the dead control this version exists to end");
+    assert.equal(st.customers[0].place.lat, 5.4172, "and the door moved to the point the fresh answer gave");
+    assert.equal(st.customers[0].place.from, "reset",
+      "written as a reset, exactly as it is when the fold happens to be open");
+    // AND IT SAID SO. Moving the pin is not the whole answer on its own: a lookup that lands on
+    // the same point moves nothing at all, and without a line to read she could not tell that
+    // from a press that never ran. Nothing here may need the price section to say it.
+    assert.match(mounted.doorSlot.textContent, /The door moved — the lookup answers this address with a different point now\./,
+      "the door block itself says what the press did, with no price section to say it in");
+    assert.doesNotMatch(mounted.doorSlot.textContent, /Looking 23 Jalan Seang Tek up again…$/,
+      "and it does not leave the card sitting on 'Looking … up again…' after the lookup has answered");
+    closeDoor(mounted); mounted = null;
+
+    // ── and the ask-first path, which is the other thing this same press does
+    st.customers = [{
+      id: "c1", key: keyOf(order), name: "Mei Ling", whatsapp: "60123456789",
+      place: { lat: 5.4, lng: 100.3, label: "the door she checked", from: "hand", at: "2026-09-25T10:00:00.000Z" },
+    }];
+    hand = mountDoor(st, order);
+    await settle(4);
+    layers["confirm-layer"].replaceChildren();
+    assert.equal(buttonByText(hand.wrap, "Get a delivery price").textContent, "Get a delivery price",
+      "this card's price fold is closed too");
+    assert.equal(lookBtnOn(hand).textContent, "Reset the pin from the address",
+      "and the press is the one that asks about a door a person chose");
+    lookBtnOn(hand)._listeners.click[0]();
+    await settle(2);
+    assert.match(layers["confirm-layer"].textContent, /the door you placed on the map by hand/,
+      "the confirmation comes up on a card whose fold was never opened — before v240 this press could not reach it either");
+    buttonByText(layers["confirm-layer"], "Reset the pin")._listeners.click[0]();
+    await settle(4);
+    assert.equal(s.geocodes(), 2, "and saying yes really ran the look-up — the press's second ask on the day");
+    assert.equal(st.customers[0].place.from, "reset",
+      "saying yes really did replace her own door, with no price section anywhere on the card");
+    assert.equal(st.customers[0].place.lat, 5.4172, "at the point the fresh answer gave");
+    assert.equal(st.customers[0].place.against, undefined,
+      "and with no `against`, because this order carries no customer pin for it to have replaced");
+  } finally {
+    if (mounted) closeDoor(mounted);
+    if (hand) closeDoor(hand);
+    s.restore();
+    delete globalThis.window.L;
+  }
+});
+
+test("the press still ANSWERS after the price fold has been opened and shut again (v241)", async () => {
+  signIn();
+  // THE ANSWER IS THE SAME POINT THE DOOR ALREADY HAS, on purpose. That is what makes this fault
+  // invisible rather than merely quiet: with the pin unmoved there is nothing to see on the map
+  // either, so a press whose answer goes nowhere looks exactly like a press that never ran. The
+  // sentence IS the whole of the evidence, which is why it must not be written into a node that
+  // is off screen.
+  const s = stubGeocodeAsks([ON_THE_ROAD]);
+  const leaf = makeLeaflet();
+  globalThis.window.L = leaf.L;
+  const order = SEAK_ORDER();
+  const st = courierState();
+  st.orders = [order];
+  let mounted = null;
+  try {
+    st.customers = [{
+      id: "c1", key: keyOf(order), name: "Mei Ling", whatsapp: "60123456789",
+      place: { lat: 5.4141, lng: 100.3288, label: "Seang Tek Road, George Town", from: "lookup" },
+    }];
+    mounted = mountDoor(st, order);
+    await settle(4);
+
+    // THE FOLD IS OPENED AND THEN SHUT AGAIN, which is the ordinary state of an order she has
+    // already priced. v240 gave the press a home of its own — but build() still handed every
+    // later answer to the PRICE SECTION's line for good, and that line lives inside the fold.
+    // So on a card whose fold had ever been opened, the press answered into a hidden node while
+    // the door block's own line, the one outside the fold, was cleared and never written to
+    // again. Same dead control as v240, reached from the other side.
+    buttonByText(mounted.wrap, "Get a delivery price")._listeners.click[0]();
+    await settle(6);
+    buttonByText(mounted.wrap, "Hide the delivery price")._listeners.click[0]();
+    await settle(2);
+    assert.equal(buttonByText(mounted.wrap, "Get a delivery price").textContent, "Get a delivery price",
+      "the price section is off screen again, and its line with it");
+    assert.equal(s.geocodes(), 0,
+      "and opening it cost no lookup: this order already keeps a door, so `ask` reads it back");
+
+    const before = { ...st.customers[0].place };
+    lookBtnOn(mounted)._listeners.click[0]();
+    await settle(4);
+
+    assert.equal(s.geocodes(), 1, "the press really ran the lookup");
+    assert.equal(st.customers[0].place.lat, before.lat, "and this address answers with the point it already had");
+    // AND ON THE DOOR BLOCK ITSELF, not merely somewhere in the card. `wrap.textContent` would
+    // pass on this while the sentence sat in the price section's line, which is INSIDE the fold
+    // and invisible — textContent does not know about `hidden`, and an assertion that cannot
+    // tell a line she can read from one she cannot is the forgiving-shim fault this file exists
+    // to avoid. The door block is the node outside the fold, so the answer is proved here.
+    assert.match(mounted.doorSlot.textContent, /found the same spot/,
+      "SO THE CARD SAYS SO — with the price section off screen the answer belongs on the door block's own line, the only line actually on the card");
+    // ANCHORED, because the answer itself begins with those words ("Looking … up again found
+    // the same spot") — an unanchored check here would fail on the very sentence that proves the
+    // press worked, which is the sort of assertion that gets "fixed" by deleting the feature.
+    assert.doesNotMatch(mounted.doorSlot.textContent, /Looking 23 Jalan Seang Tek up again…$/,
+      "and the door's line does not stay on 'Looking … up again…' after the lookup has answered");
+  } finally {
+    if (mounted) closeDoor(mounted);
+    s.restore();
+    delete globalThis.window.L;
+  }
+});
+
+test("a DRAG also says what it did on a card whose price fold has been shut again (v241)", async () => {
+  signIn();
+  const s = stubGeocodeAsks([ON_THE_ROAD]);
+  const leaf = makeLeaflet();
+  globalThis.window.L = leaf.L;
+  const order = SEAK_ORDER();
+  const st = courierState();
+  st.orders = [order];
+  let mounted = null;
+  try {
+    st.customers = [{
+      id: "c1", key: keyOf(order), name: "Mei Ling", whatsapp: "60123456789",
+      place: { lat: 5.4141, lng: 100.3288, label: "Seang Tek Road, George Town", from: "lookup" },
+    }];
+    mounted = mountDoor(st, order);
+    await settle(4);
+
+    // THE OTHER WRITER OF THE SAME SENTENCE. A drag ends at `invalidatePrices`, whose sentence
+    // about the prices went straight into the price section's line — the line inside the fold.
+    // So the press was not the only thing answering into a hidden node; a pin she had just
+    // dragged did too, and this test holds that half of the fix as well as the press's.
+    buttonByText(mounted.wrap, "Get a delivery price")._listeners.click[0]();
+    await settle(6);
+    buttonByText(mounted.wrap, "Hide the delivery price")._listeners.click[0]();
+    await settle(2);
+
+    buttonByText(mounted.doorSlot, "Move this pin")._listeners.click[0]();
+    const mk = leaf.rec.markers[0];
+    mk.latlng = { lat: 5.42, lng: 100.33 };
+    mk.handlers.dragend({ target: mk });
+    await settle(4);
+
+    assert.equal(st.customers[0].place.lat, 5.42, "the drag moved the door, as a drag always does");
+    assert.match(mounted.doorSlot.textContent, /The door moved — ask again for a price for this spot\./,
+      "and the card says so ON THE DOOR BLOCK, the line that is on screen while the price section is shut");
+  } finally {
+    if (mounted) closeDoor(mounted);
     s.restore();
     delete globalThis.window.L;
   }
@@ -1864,7 +2295,8 @@ test("a re-ask that answers with a different point moves the door and takes the 
     assert.equal(s.geocodes(), 2, "the press really asked the address up a second time");
     assert.equal(st.customers[0].place.lat, 5.4172, "and the door moved to the point the new answer gave");
     assert.equal(st.customers[0].place.lng, 100.3311, "in both numbers, not just the one");
-    assert.equal(st.customers[0].place.from, "lookup", "still written as a lookup's answer, because that is what it is");
+    assert.equal(st.customers[0].place.from, "reset",
+      "written as a RESET, not a lookup (v238) — this press REPLACES a door that is already on the order, and where that door is the customer's own pin a lookup stamp would lose to it and move nothing");
     assert.equal(st.customers[0].place.label, "23 Jalan Seang Tek",
       "and still NAMED with the address on the order, never the geocoder's row (v207)");
     assert.equal(st.customers[0].place.road, undefined,
@@ -1983,4 +2415,37 @@ test("a re-ask that moves but still only reaches the road keeps the caveat (v213
     s.restore();
     delete globalThis.window.L;
   }
+});
+
+// ── the ＋ New order card's courier half (v237, 30 Sep 2026) ────────────────
+//
+// The card gained four things in v237 — the delivery address, the courier charge, the
+// tracking number and the parcel — and the biggest of them, the price section, is in
+// this very file already for the very fault this suite exists to catch (see the v189
+// note at the top of the test above). What is NEW is that the block is now reachable
+// from the card rather than only from the Edit pop-up, so a stray `?: null` on it
+// prints onto the screen she takes orders on.
+//
+// The shim in this file is the unforgiving one on purpose: it stringifies a non-node
+// argument exactly as the browser does. The card's own test file drops nulls in its
+// replaceChildren, so it cannot see this; this file can.
+
+test("the card's courier half prints no stray 'null', with nothing filled in at all (v237)", () => {
+  const root = createEl("div");
+  doc.body.append(root);
+  // No couriers on her list and no address typed: every optional line on the block is
+  // taking its absent branch at once, which is where a bare `?: null` shows up.
+  renderOrders(root, state(), new URLSearchParams({ date: "d10" }));
+  buttonByText(root, "＋ New order")._listeners.click[0]();
+  // Fold the courier half out, which is what builds the charge box, the parcel list and
+  // the price section on the card.
+  const sel = all(root).find((n) => n.tagName === "SELECT"
+    && (n.children || []).some((o) => o.value === "courier"));
+  sel.value = "courier";
+  (sel._listeners.change || []).forEach((f) => f.call(sel));
+
+  assert.match(root.textContent, /Courier tracking number/,
+    "the courier half really did unfold, so this is not passing over a screen with nothing on it");
+  assert.deepEqual(strays(root), [], "no 'null' anywhere on the card");
+  assert.deepEqual(strayObjects(root), [], "nor an element stringified into a line");
 });

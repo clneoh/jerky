@@ -437,6 +437,29 @@ test("mergeStorefront adopts the landing page's copy, and never a blank line ove
   assert.equal("follow" in out.taster, false, "only an explicit false turns the follow row off");
 });
 
+test("mergeStorefront adopts the per-item note switch only on a literal true", () => {
+  // The shop re-checks every field on this boundary for itself, and this one decides
+  // whether a text box is drawn on a card — so "yes", 1, "true" and a missing key all
+  // have to read as "do not ask". A truthy test here would put a note box on products
+  // the baker never switched on, and a customer's words would arrive for an item she
+  // is not expecting them on.
+  const out = mergeStorefront({ name: "A", products: [] }, {
+    products: [
+      { name: "Focaccia", price: 15, unit: "loaf", askNote: true },
+      { name: "Brownie", price: 6, unit: "piece", askNote: "yes" },
+      { name: "Cookies", price: 6, unit: "piece", askNote: 1 },
+      { name: "Scone", price: 5, unit: "piece", askNote: "true" },
+      { name: "Tart", price: 5, unit: "piece" },
+    ],
+  });
+  const by = (n) => out.products.find((p) => p.name === n);
+  assert.equal(by("Focaccia").askNote, true, "a literal true reaches the shop");
+  for (const n of ["Brownie", "Cookies", "Scone", "Tart"]) {
+    assert.equal("askNote" in by(n), false,
+      `${n} gains no key — anything but a literal true reads as do not ask`);
+  }
+});
+
 test("mergeStorefront adopts the category headings, dropping a half-formed row", () => {
   const base = { name: "A", products: [] };
   const out = mergeStorefront(base, {

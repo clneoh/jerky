@@ -5,11 +5,16 @@ import { capacityStatus, dayCapacityParts, dayRuleRows, parseDayDelta, productRe
 import { dayMoney, groupValue } from "../money.js";
 import { el, button, select, fillMeter, emptyState, confirmDialog, toast, showPopup } from "../ui.js";
 import { dateField } from "../datepicker.js";
-import { DOW, addMonth, monthLabel, monthWeeks, occColour, occForDate } from "../calendar.js";
+import { DOW, WINDOW_WEEKS, deliveryWindow, occColour, occForDate, rollingWeeks,
+  windowTitle } from "../calendar.js";
 import { boxClass, nameDay, occBox, occPapers, tipEl } from "../occgrid.js";
 // A product's sell days — the shared root copy the shop reads, so the day this
 // pop-up counts a product on is exactly the day the shop offers it.
 import { availSummary, sellOpen } from "../../../availability.js";
+// The cap and the trimming rule for a customer's note on ONE item (v236) — the
+// same pair the shop applies, from the one module both sides read, so a note can
+// never be longer on this side than the box that collected it allowed.
+import { lineNoteOf, LINE_NOTE_MAX } from "../../../storefront-fields.js";
 import { byId, fmtRM, groupOrders, moveOrderGroup, newId, orderCode, orderLineName, orderLinePrice, save, stampOrderLine, updateOrderBadge, waNumber } from "../state.js";
 import { strictestCancelDays } from "../../../store/pool.js";
 import { buildConfirmation } from "../confirm.js";
@@ -42,25 +47,35 @@ let orderQuery = "";
 // current screen spot across the rebuild — the row the baker is touching must
 // never move, no matter how the New-orders box or the form above change size.
 let anchorRowId = null;
-// The month the Orders screen's calendar is showing, as { year, month } — null
-// until the first render settles it on the day that opens. It lives out here, not
-// inside the render, so paging forward to look at a later week survives a rebuild
-// the baker did not ask for (a sync pull, a status change).
-let ordersCalMonth = null;
+// The week the Orders screen's calendar is showing, as { offset } — whole weeks
+// forward from today's own week, null until the first render settles it on the day
+// that opens. It lives out here, not inside the render, so paging forward to look
+// at a later week survives a rebuild the baker did not ask for (a sync pull, a
+// status change).
+let ordersCalView = null;
 // Whether the ＋ New order card is open. Also module scope, because the card is
 // rebuilt whenever anything around it changes — including when a day is tapped in
 // its own calendar — and folding under her finger at that moment would be mad.
 let newFormOpen = false;
-// The customer's name and number as typed into the ＋ New order card. Module scope
-// for the same reason as the fold above, and one more: the draft inside orderForm
-// is built fresh on every rebuild, so a rebuild silently threw away what you had
-// put in the customer boxes — the comment down there claimed otherwise, but only
-// the item rows ever came back. Holding just these two fields out here makes the
-// claim true, which matters now that choosing from the suggestion list is a thing
-// you do in this card. Cleared on a fresh visit to the screen (with the fold)
-// and when an add actually completes — never when one is merely asked for, since
-// the capacity and closed-day warnings can still be cancelled.
-let newOrderContact = { customerName: "", whatsapp: "" };
+// THE WHOLE DRAFT of the ＋ New order card, held out here for the same reason as the fold
+// above: the card is rebuilt whenever anything around it changes, and that includes
+// tapping a day in the card's OWN calendar (onPick is selectDate, which redraws the
+// screen). A draft built fresh inside orderForm therefore loses everything you typed —
+// and not only the customer boxes. Measured in v237: `items` was declared inside
+// orderForm as well, so the item rows went with it too; the old comment on this line
+// claimed "only the item rows ever came back", and that was never true. Now that the
+// day line sits UNDER the items, picking a day from this card is an ordinary thing to do
+// part-way through an order, so the whole draft — items included — has to outlive the
+// rebuild. Cleared on a fresh visit to the screen (with the fold) and when an add
+// actually completes — never when one is merely asked for, since the capacity and
+// closed-day warnings can still be cancelled.
+let newOrderDraft = null;
+// Whether the card's day calendar is unfolded under its one-line day, and which week it
+// is paged to. Both module scope for that same rebuild reason. `newFormDayView` is
+// handed straight to deliveryCal, which mutates it in place when its arrows are pressed —
+// so paging forward to look at a later week survives a rebuild for free.
+let newFormDayOpen = false;
+let newFormDayView = null;
 
 const STATUSES = [
   ["new", "New"],
@@ -196,6 +211,93 @@ export function applyGroupPatch(orders, patch, qtyOf) {
   return orders;
 }
 
+// The customer's own words for one item, bracketed exactly as a line spells them
+// — the one place that bracket is written, so the underline on the row and on the
+// printed label wraps the same characters the search and the tests read (v244).
+export function lineNoteSuffix(rawNote) {
+  const note = lineNoteOf(rawNote);
+  return note ? ` (${note})` : "";
+}
+
+// One ordered item as one line of text, with the note that belongs to IT in
+// brackets — "Focaccia 800g ×2 (no nuts)". This is the single place the order
+// list, the packing slip and the label sheet spell a line, so the customer's
+// words can never appear on one of them and be missing from another (v236).
+export function orderLineText(state, o) {
+  return `${orderLineName(state, o)} ×${Number(o && o.qty) || 1}${lineNoteSuffix(o && o.lineNote)}`;
+}
+
+// That same line, split at the note's bracket, for the two places that underline
+// it (v244): the head is everything up to the bracket, the suffix is the bracket
+// itself. A line with no note comes back whole with an empty suffix, so a caller
+// can always draw the pair without first asking whether there is a note.
+export function splitOrderLine(state, o) {
+  const text = orderLineText(state, o);
+  const suffix = lineNoteSuffix(o && o.lineNote);
+  return { head: suffix ? text.slice(0, text.length - suffix.length) : text, suffix };
+}
+
+// A line drawn with the customer's words underlined, so a note is never lost in
+// the grey beside a busy row or on a printed sheet (v244). Built from the one
+// string orderLineText owns, so the screen, the label and the search cannot
+// disagree about what the line says — only about how it is drawn.
+function orderLineNodes(state, o) {
+  const { head, suffix } = splitOrderLine(state, o);
+  return suffix ? [head, el("span", { class: "line-note" }, suffix)] : [head];
+}
+
+// A dot-separated line drawn from pieces, where any piece may be marked to wear
+// the same underline the per-item note does (v245) — the order row's sub-line is
+// name · number · delivery note, and only the last of those is the customer's own
+// words. Blank pieces are dropped, and the separator goes only BETWEEN the pieces
+// that survive, so no dangling dot can print.
+function subLineNodes(parts) {
+  const nodes = [];
+  for (const p of parts) {
+    const text = String(p.text == null ? "" : p.text).trim();
+    if (!text) continue;
+    if (nodes.length) nodes.push(" · ");
+    nodes.push(p.mark ? el("span", { class: "line-note" }, text) : text);
+  }
+  return nodes;
+}
+
+// A sheet row is [class, text] or [class, text, mark], where `mark` names what
+// the sheet underlines — the customer's own words, never a re-spelling of them.
+// A row that holds ONE item carries one run, and it is the tail of `text` (v244).
+// The Compact row joins every item, so it carries a list of runs instead, in the
+// order the items print (v245). A row with nothing to mark stays the plain pair
+// it always was, which is what keeps the sheet's own tests honest about the
+// no-note case.
+export function sheetItemRow(state, o, cls) {
+  const line = orderLineText(state, o);
+  const mark = lineNoteSuffix(o && o.lineNote);
+  return mark ? [cls, line, mark] : [cls, line];
+}
+
+// Every item on ONE row — the Compact style. The line is the same joined text it
+// always was; what it must not do is drop the notes, which is exactly what it did
+// while the items were joined as plain strings: a "no nuts" on the second of four
+// items printed on the sheet as ordinary words, with nothing to pick it out
+// (v245). One run per noted item, in printing order, so the sheet can underline
+// each where it falls. No noted item means the plain pair it always was.
+export function sheetItemsRow(state, orders, cls = "items") {
+  const lines = orders.map((o) => orderLineText(state, o));
+  if (!lines.length) return null;
+  const marks = orders.map((o) => lineNoteSuffix(o && o.lineNote)).filter(Boolean);
+  return marks.length ? [cls, lines.join(" · "), marks] : [cls, lines.join(" · ")];
+}
+
+// The order's OWN note as a sheet row (v245). It is the delivery note, and it
+// applies to a self-collect order exactly as much as to a courier one, so the one
+// row is pushed by every style that prints the order's fields rather than written
+// out three times. The note itself is the marked run, leaving the "Note: " label
+// to the sheet's own styling.
+export function sheetNoteRow(noteText, cls = "note") {
+  const note = String(noteText || "").trim();
+  return note ? [cls, `Note: ${note}`, note] : null;
+}
+
 // Packing labels print from a small pure model so the on-screen preview and the
 // printed sheet always match, and the model is testable without a DOM. `style`
 // picks the density: "full" = every useful field (one line per item, the note,
@@ -213,7 +315,6 @@ export function packingLabelData(state, group, style = "full") {
   const customer = String(first.customerName || "").trim();
   const note = String(first.note || "").trim();
   const address = courier ? String(first.address || "").trim() : "";
-  const itemLines = orders.map((o) => `${orderLineName(state, o)} ×${Number(o.qty) || 1}`);
   const bakery = String((state.settings && state.settings.storefront
     && state.settings.storefront.name) || "Munchies Furkidz").trim();
   const code = `#${orderCode(first)}`;
@@ -244,8 +345,9 @@ export function packingLabelData(state, group, style = "full") {
     for (const ln of recipientAddress) rows.push(["mail-line", ln]);
     rows.push(["mail-sec", "ORDER"]);
     rows.push(["mail-line", [code, dateLine && `Post ${dateLine}`].filter(Boolean).join(" · ")]);
-    for (const line of itemLines) rows.push(["mail-line", line]);
-    if (note) rows.push(["mail-line", `Note: ${note}`]);
+    for (const o of orders) rows.push(sheetItemRow(state, o, "mail-line"));
+    const mailNote = sheetNoteRow(note, "mail-line");
+    if (mailNote) rows.push(mailNote);
     return { style, rows };
   }
 
@@ -259,15 +361,24 @@ export function packingLabelData(state, group, style = "full") {
   if (style === "compact") {
     rows.push(["code", code]);
     if (customer) rows.push(["customer", customer]);
-    if (itemLines.length) rows.push(["items", itemLines.join(" · ")]);
+    const itemsRow = sheetItemsRow(state, orders);
+    if (itemsRow) rows.push(itemsRow);
+    // The delivery note prints here too (v245). It used to be the one field
+    // Compact dropped, which meant a note about the doorstep vanished the moment
+    // she picked the denser label — on a self-collect order as much as a courier
+    // one. It sits exactly where the full style puts it: after the items, before
+    // the courier address.
+    const compactNote = sheetNoteRow(note);
+    if (compactNote) rows.push(compactNote);
     if (address) rows.push(["address", address]);
     return { style, rows };
   }
   if (dateLine || method) rows.push(["meta", [dateLine, method].filter(Boolean).join(" · ")]);
   rows.push(["code", code]);
   if (customer) rows.push(["customer", customer]);
-  for (const line of itemLines) rows.push(["item", line]);
-  if (note) rows.push(["note", `Note: ${note}`]);
+  for (const o of orders) rows.push(sheetItemRow(state, o, "item"));
+  const fullNote = sheetNoteRow(note);
+  if (fullNote) rows.push(fullNote);
   if (address) rows.push(["address", `Post to: ${address}`]);
   return { style, rows };
 }
@@ -297,8 +408,10 @@ export function renderOrders(root, state, params) {
   orderStatusFilter = "";
   orderQuery = ""; // a fresh visit to Orders starts with an empty finder box
   newFormOpen = false;  // …and with the New-order card shut
-  newOrderContact = { customerName: "", whatsapp: "" }; // …and with its customer boxes empty
-  ordersCalMonth = null; // …and on the month of the day that opens
+  newFormDayOpen = false; // …its day calendar folded back up
+  newFormDayView = null; // …and paged to the day that opens
+  newOrderDraft = null; // …and with nothing half-typed inside it
+  ordersCalView = null; // …and on the week of the day that opens
   installOrderCollapseOutside();
   renderAll(root, state, params);
   // Everything built above goes away with this screen — forget the open cards so
@@ -325,6 +438,9 @@ function groupSearchText(state, group) {
     const wa = waNumber(o.whatsapp);
     if (wa) digitChunks.push(wa);
     words.push(o.note);
+    // The note on THIS item (v236), so typing "nuts" finds the order that asked
+    // for no nuts — the same reason the order-level note is searchable above.
+    words.push(o.lineNote);
     words.push(o.address);
     words.push(o.fulfillment === "courier" ? "post (nationwide)" : "collect (local)");
     if (product && product.name) words.push(product.name);
@@ -359,25 +475,24 @@ export function matchingGroups(state, query) {
 
 // ── The delivery-day calendar ────────────────────────────────────────────────
 // What the Orders screen shows at the top instead of the old sideways strip of
-// date pills: the same month grid the shop shows its customers, with each day the
+// date pills: the same calendar the shop shows its customers, with each day the
 // bakery delivers carrying how booked it is. A strip could only ever show a
 // handful of days and made a distant date something to hunt for.
 //
+// It draws the shop's ROLLING WINDOW and not a month (v243): five Sun-first weeks
+// beginning with the week just gone, so the row above today is always last week,
+// today is always in the second row, and no cell is ever empty padding. The arrows
+// slide one week and are GONE at the ends of the days she has set, where a month
+// grid greyed them out — and at the end of a month most of what it drew was days
+// already gone.
+//
 // `days` is deliveryDayList(state) on this screen (the Edit pop-up passes its own
-// shorter list); a day in it is tapped to open it, and a day of the month with no
+// shorter list); a day in it is tapped to open it, and a day on the grid with no
 // delivery record is drawn quietly and does nothing. `getActiveId()` is read on
 // every paint rather than captured, so a rebuild marks the day actually on screen,
-// and `month` is the caller's own { year, month }, paged in place so the month she
-// is looking at survives that rebuild.
-function monthOf(iso) {
-  const d = new Date(`${iso}T00:00:00`);
-  return { year: d.getFullYear(), month: d.getMonth() };
-}
-
-function before(a, b) {
-  return a.year < b.year || (a.year === b.year && a.month < b.month);
-}
-
+// and `view` is the caller's own { offset } — whole weeks forward from today's own
+// — paged in place, so the week she is looking at survives that rebuild.
+//
 // `noteMisses` turns on one extra thing: tapping a day the bakery does not deliver
 // is ANSWERED instead of swallowed — the calendar says the day is not a delivery
 // day, and where it gets added. The baker is on these screens to put an order
@@ -385,21 +500,16 @@ function before(a, b) {
 // of (15 Sep 2026: she tapped a marked 16 Sep, read "Malaysia Day", and had no way
 // of knowing why no order could go on it). The state is this calendar's own, in
 // its closure: nothing outside the grid answers for it.
-export function deliveryCal({ state, days, getActiveId, month, onPick, noteMisses = false }) {
+export function deliveryCal({ state, days, getActiveId, view, onPick, noteMisses = false }) {
   const list = (days || []).filter((d) => d && d.id && d.date);
   const today = todayISO();
   let missedIso = null; // the day she asked about and the bakery does not deliver
   const byDate = new Map(list.map((d) => [d.date, d.id]));
-  // The arrows reach only the months a delivery day falls in: a month with
-  // nothing to deliver has nothing to show, so paging into it is a dead end.
-  let lo = null;
-  let hi = null;
-  for (const d of list) {
-    const m = monthOf(d.date);
-    if (!lo || before(m, lo)) lo = m;
-    if (!hi || before(hi, m)) hi = m;
-  }
-  if (!lo) { lo = monthOf(today); hi = lo; }
+  // How far the arrows may go, and where an unsettled view opens: the ends of the
+  // days she has actually set, so neither arrow ever leads to a week with nothing
+  // on it.
+  const bounds = deliveryWindow(today, list.map((d) => d.date));
+  let slide = 0; // which way the last arrow moved — an arrival, never a redraw
 
   const wrap = el("div", { class: "cal-wrap" });
 
@@ -415,20 +525,34 @@ export function deliveryCal({ state, days, getActiveId, month, onPick, noteMisse
 
   function paint() {
     const active = getActiveId();
+    // A view the caller has not settled yet — or has just cleared — opens on the
+    // day the calendar is on: today's own week when that day is near today, and
+    // otherwise the week that brings it into today's row. A calendar that opened
+    // on today instead would leave the Edit pop-up showing nothing of the order
+    // whose day she came to move.
+    if (view.offset == null) {
+      const activeDate = list.find((d) => d.id === active)?.date;
+      view.offset = activeDate ? windowForDay(today, activeDate) : bounds.home;
+    }
+    view.offset = Math.min(bounds.max, Math.max(bounds.min, view.offset));
     const go = (delta) => {
-      const next = addMonth(month.year, month.month, delta);
-      month.year = next.year;
-      month.month = next.month;
+      const next = Math.min(bounds.max, Math.max(bounds.min, view.offset + delta));
+      if (next === view.offset) return; // no week that way; the arrow is not drawn either
+      view.offset = next;
+      slide = delta;
       paint();
     };
-    const prev = button("‹", () => go(-1), "ghost small cal-nav");
-    const next = button("›", () => go(1), "ghost small cal-nav");
-    if (!before(lo, month)) prev.disabled = true;
-    if (!before(month, hi)) next.disabled = true;
+    // Where there is nowhere to go the arrow is not drawn at all, so a tap can
+    // never do nothing — a greyed button reads as a bug ([feedback-affordances]).
+    const prev = view.offset > bounds.min
+      ? button("‹", () => go(-1), "ghost small cal-nav")
+      : el("span", { class: "cal-slot" });
+    const next = view.offset < bounds.max
+      ? button("›", () => go(1), "ghost small cal-nav")
+      : el("span", { class: "cal-slot" });
 
-    const weeks = monthWeeks(month.year, month.month);
+    const weeks = rollingWeeks(today, { offset: view.offset });
     const cells = weeks.flat().map((iso) => {
-      if (!iso) return el("span", { class: "cal-cell blank" });
       // The baker's own occasion marks are drawn here too — a holiday she marked
       // is worth seeing while she is deciding which day to open, and a day the
       // bakery does not deliver has no other way of saying so.
@@ -439,16 +563,17 @@ export function deliveryCal({ state, days, getActiveId, month, onPick, noteMisse
       const dateId = byDate.get(iso);
       // A day the bakery does not deliver: a quiet number, nothing to open — but a
       // marked day still says its name when tapped, or a holiday falling on a day
-      // she does not deliver would be the one day of the month with no way to be
+      // she does not deliver would be the one day on the grid with no way to be
       // read (the customer's shop page names that day too).
       if (!dateId) {
         const cls = `cal-cell off${iso === today ? " today" : ""}${box}`;
         // A day already gone is asked nothing: there is nothing left to add to it,
         // and the past is reviewed in the list below, not on the grid.
         const askable = noteMisses && !past;
-        if (!tip && !askable) return el("span", { class: cls }, num);
+        if (!tip && !askable) return el("span", { class: cls, dataset: { date: iso } }, num);
         return el("button", {
           class: `${cls} ${tip ? "tippable" : "tappable"}`,
+          dataset: { date: iso },
           onclick: () => {
             nameDay(state.occasions, iso, past); // names a marked day, exactly as everywhere else
             if (askable) missedIso = iso;
@@ -473,6 +598,7 @@ export function deliveryCal({ state, days, getActiveId, month, onPick, noteMisse
       // from the day this module was just told about.
       return el("button", {
         class: `${cls} tappable`,
+        dataset: { date: iso },
         // Naming the day comes BEFORE opening it, as it always has; the repaint
         // before handing over is what takes the "not a delivery day" answer away,
         // so the grid never relies on the caller to tidy up after it.
@@ -486,12 +612,17 @@ export function deliveryCal({ state, days, getActiveId, month, onPick, noteMisse
     });
 
     const note = missNote();
+    // The slide is read and cleared in the same breath, so the new week arrives
+    // once and an ordinary redraw never replays it (store/app.js does the same).
+    const sl = slide;
+    slide = 0;
     wrap.replaceChildren(
-      el("div", { class: "cal-head" },
+      el("div", { class: "cal-head weeks" },
         prev,
-        el("span", { class: "cal-title" }, monthLabel(month.year, month.month)),
+        el("span", { class: "cal-title" },
+          windowTitle(weeks[0][0], weeks[WINDOW_WEEKS - 1][6])),
         next),
-      el("div", { class: "cal-grid" },
+      el("div", { class: "cal-grid", dataset: sl ? { slide: sl > 0 ? "up" : "down" } : null },
         ...DOW.map((d) => el("span", { class: "cal-dow" }, d)),
         ...cells,
         ...occPapers(state.occasions, weeks, today)),
@@ -500,6 +631,13 @@ export function deliveryCal({ state, days, getActiveId, month, onPick, noteMisse
 
   paint();
   return { el: wrap, repaint: paint };
+}
+
+// The week a day is shown in: today's own when the day is anywhere near it, and
+// otherwise the week that brings the day into today's row. It is the same rule
+// deliveryWindow uses for a whole list, asked about one day.
+function windowForDay(today, iso) {
+  return deliveryWindow(today, iso ? [iso] : []).home;
 }
 
 function renderAll(root, state, params) {
@@ -532,13 +670,12 @@ function renderAll(root, state, params) {
     ? requested
     : (dates.find((d) => d.date >= todayISO())?.id || dates[dates.length - 1].id);
 
-  const activeDate = byId(state.deliveryDates, activeId);
-  if (!ordersCalMonth) ordersCalMonth = monthOf(activeDate.date);
+  if (!ordersCalView) ordersCalView = { offset: null };
   const topCal = deliveryCal({
     state,
     days: deliveryDayList(state),
     getActiveId: () => activeId,
-    month: ordersCalMonth,
+    view: ordersCalView,
     onPick: (id) => selectDate(id),
     noteMisses: true,
   });
@@ -555,17 +692,18 @@ function renderAll(root, state, params) {
   };
 
   // Switch dates in place instead of navigating: only the order area below the
-  // calendar is rebuilt, so the calendar keeps the month she paged it to. The URL
+  // calendar is rebuilt, so the calendar keeps the week she paged it to. The URL
   // still updates (without firing the router) so the current date stays shareable.
   const selectDate = (id) => {
     activeId = id;
-    // Opening a day in another month brings the grid with it — a New-orders row a
-    // season away must not leave the calendar showing a month it isn't on.
+    // Opening a day the grid is NOT on brings the grid with it — a New-orders row a
+    // season away must not leave the calendar showing a week it isn't on. A day
+    // already on screen leaves the window exactly where she put it, so opening one
+    // day never slides the week out from under her finger.
     const dest = byId(state.deliveryDates, id);
-    if (dest) {
-      const m = monthOf(dest.date);
-      ordersCalMonth.year = m.year;
-      ordersCalMonth.month = m.month;
+    if (dest && ordersCalView && ordersCalView.offset != null) {
+      const shown = rollingWeeks(todayISO(), { offset: ordersCalView.offset }).flat();
+      if (!shown.includes(dest.date)) ordersCalView.offset = windowForDay(todayISO(), dest.date);
     }
     topCal.repaint();
     renderContent();
@@ -1257,21 +1395,32 @@ function orderForm(state, dateId, root, selectDate) {
       el("p", { class: "muted" }, "No products yet. Add products with their recipes first — More → Products."));
   }
 
-  // The form edits a *draft*, not the orders directly, so a mid-edit re-render
-  // (a sync pull, a fresh storefront import) rebuilds this form with what you
-  // actually typed. Nothing is written until Add order is pressed. The customer's
-  // name and number are the two the draft alone could not keep across a rebuild,
-  // so they are seeded from newOrderContact and written back to it as you type.
-  const draft = {
-    customerName: newOrderContact.customerName, whatsapp: newOrderContact.whatsapp,
+  // The form edits a *draft*, not the orders directly, so a mid-edit re-render (a sync
+  // pull, a fresh storefront import, or a day tapped in this card's own calendar)
+  // rebuilds this form with what you actually typed. Nothing is written until Add order
+  // is pressed. The draft lives at MODULE scope (see newOrderDraft) so that is true of
+  // every field and not only the customer's name and number.
+  const draft = newOrderDraft || (newOrderDraft = {
+    customerName: "", whatsapp: "",
     fulfillment: "collect", address: "", note: "", orderDate: todayISO(),
-  };
+    trackingNo: "", carrierId: "", handedAt: "",
+    items: [{ productId: "", qty: 1, price: null }],
+  });
+  // The day is the SCREEN's, not the draft's: picking one switches the screen, because
+  // the product list and each day's limits are built for the date on screen. So the
+  // draft simply follows whatever day is on screen, on every build.
+  draft.deliveryDateId = dateId;
+  draft.deliveryDate = date.date;
+  // The card's own charge box, rebuilt with the courier block and read by `submit`. Held
+  // out here because the block is built on every Fulfillment change and `submit` has to
+  // reach whichever one is standing — null whenever the block is not on screen.
+  let courierCharge = null;
   // Filling in from a suggestion has to write both the boxes and the draft: the
   // draft is what the other controls read, the boxes are what you see. The
   // address comes too, but only into an empty box — see suggestedAddress.
   const suggester = customerSuggester(state, (r) => {
-    draft.customerName = newOrderContact.customerName = customerRowName(r);
-    draft.whatsapp = newOrderContact.whatsapp = suggestionNumber(r);
+    draft.customerName = customerRowName(r);
+    draft.whatsapp = suggestionNumber(r);
     customer.value = draft.customerName;
     whatsapp.value = draft.whatsapp;
     const addr = suggestedAddress(r, address);
@@ -1280,16 +1429,16 @@ function orderForm(state, dateId, root, selectDate) {
   const customer = el("input", { class: "input", placeholder: "Customer name (optional)",
     value: draft.customerName,
     oninput: function () {
-      draft.customerName = newOrderContact.customerName = this.value;
+      draft.customerName = this.value;
       suggester.paint(this.value);
     } });
   const whatsapp = el("input", { class: "input", type: "tel", inputmode: "tel",
     placeholder: "e.g. 012-345 6789", "data-suggest": "012-345 6789",
     value: draft.whatsapp,
-    oninput: function () { draft.whatsapp = newOrderContact.whatsapp = this.value; } });
+    oninput: function () { draft.whatsapp = this.value; } });
   const fulfillmentSel = select(
     [{ value: "collect", label: "Collect (local)" }, { value: "courier", label: "Post (nationwide)" }],
-    draft.fulfillment, function () { draft.fulfillment = this.value; });
+    draft.fulfillment, function () { draft.fulfillment = this.value; paintCourier(); });
   // The address box also offers what she might be typing, from Google (v228). A tap
   // writes BOTH the draft (what the other controls read) and the box (what she sees),
   // the same pair the customer suggestion writes.
@@ -1305,28 +1454,41 @@ function orderForm(state, dateId, root, selectDate) {
       draft.address = this.value; // synchronous and unconditional — never gated on the network
       addressSug.typed(this.value);
     } });
-  const note = el("input", { class: "input", placeholder: "Note (optional)",
+  // The order-level note is the DELIVERY note now that every item carries its own
+  // (v236). It stays the same field on the order — only what it is for has changed.
+  const note = el("input", { class: "input note-input", placeholder: "Collect time, delivery time, etc.",
     value: draft.note, oninput: function () { draft.note = this.value; } });
   const orderDate = dateField(draft.orderDate, (iso) => { draft.orderDate = iso; },
     { occasions: state.occasions });
 
-  // "Which day am I adding to?" — the same calendar the top of the screen shows,
-  // so the two can never disagree about which days exist. Choosing a day switches
-  // the screen instead of filling a draft: the product list and each day's limits
-  // are built for the date on screen, so a day held only in the draft would offer
-  // items that are not sellable on it.
+  // "Which day am I adding to?" — the same calendar the top of the screen shows, so the
+  // two can never disagree about which days exist. It is drawn on ONE LINE and unfolds
+  // only when that line is tapped (v237): the card stands on every delivery day, so a
+  // full month grid in front of the first thing she has to type was mostly a wall of
+  // dates she did not need. Choosing a day still SWITCHES THE SCREEN rather than filling
+  // a draft, because the product list and each day's limits are built for the date on
+  // screen — a day held only in the draft would offer items not sellable on it.
+  // The week is held at MODULE scope so paging it forward survives a rebuild — the day
+  // line now sits under the items, so touching it part-way through an order is ordinary.
+  // deliveryCal mutates the object it is handed in place when its arrows are pressed,
+  // which is what makes handing it the same object each build enough.
   const dayCal = deliveryCal({
     state,
     days: deliveryDayList(state),
     getActiveId: () => dateId,
-    month: monthOf(date.date),
-    onPick: selectDate,
+    view: newFormDayView || (newFormDayView = { offset: null }),
+    // The panel shuts BEFORE the screen switches, so it cannot spring open again under
+    // her on the rebuilt card.
+    onPick: (id) => { newFormDayOpen = false; selectDate(id); },
     noteMisses: true,
   });
 
   const rowsEl = el("div", {});
   const totalEl = el("p", { class: "card-sub", style: "margin:8px 0 0" });
-  const items = [{ productId: "", qty: 1, price: null }];
+  // The rows are the DRAFT's own array, not a fresh one — so a rebuild (a day tapped in
+  // this card's own calendar above all) repaints what she has entered instead of wiping
+  // it back to one empty row.
+  const items = draft.items;
   const paintTotal = () => {
     const priced = items.filter((it) => it.productId && it.price != null);
     totalEl.textContent = priced.length
@@ -1345,9 +1507,23 @@ function orderForm(state, dateId, root, selectDate) {
           renderRows();
         }, "Product…");
       const qtySpan = el("span", { class: "stepper-val" }, String(it.qty));
+      // A note that belongs to THIS line (v236) — "no nuts", "write Happy Birthday".
+      // Offered once a product is picked, because a note with no item to belong to
+      // has nowhere to go; and offered on EVERY line whatever that product's own
+      // switch says, because the switch decides what the CUSTOMER is asked and must
+      // never decide what she may write down from a phone call — the standing rule
+      // that no setting may block or hide a sale she takes by hand.
+      const lineNoteBox = it.productId
+        ? el("input", { class: "input line-note", type: "text",
+            maxlength: String(LINE_NOTE_MAX),
+            placeholder: "Note for this item (optional) — e.g. no nuts",
+            value: it.note || "",
+            oninput: function () { it.note = this.value; } })
+        : null;
       // Two lines, built as two: the product across the top so its name is readable,
       // then its controls — how many, the price, remove. Letting flexbox wrap them
-      // instead left the dropdown 2px wide with the price box eating the row.
+      // instead left the dropdown 2px wide with the price box eating the row. The
+      // note box is a third child on its own full-width line for the same reason.
       return el("div", { class: "add-item" },
         prodSel,
         el("div", { class: "add-item-ctl" },
@@ -1357,7 +1533,8 @@ function orderForm(state, dateId, root, selectDate) {
             el("button", { onclick: () => { it.qty = it.qty + 1; qtySpan.textContent = String(it.qty); paintTotal(); } }, "＋")),
           linePriceBox(it, paintTotal),
           el("button", { class: "inbox-del", "aria-label": "Remove item",
-            onclick: () => { items.splice(i, 1); renderRows(); } }, "✕")));
+            onclick: () => { items.splice(i, 1); renderRows(); } }, "✕")),
+        lineNoteBox);
     }));
     paintTotal();
   };
@@ -1372,35 +1549,133 @@ function orderForm(state, dateId, root, selectDate) {
     const addressText = address.value.trim();
     const noteText = note.value.trim();
     const placed = draft.orderDate;
+    // The courier half is settled BEFORE anything is created (v237). A charge with an
+    // amount in the box and nobody named as the payer is REFUSED in words — the same
+    // words the Edit pop-up uses, because courierControls.problem is the one guard. Asked
+    // here rather than after the order is written, so a refused Add order leaves the card
+    // exactly as she left it and no half-written order behind it.
+    const shared = {};
+    if (fulfillment === "courier" && courierCharge) {
+      const why = courierCharge.problem();
+      if (why) return toast(why);
+      shared.courier = courierCharge.read();
+      shared.trackingNo = draft.trackingNo.trim();
+      shared.parcel = { carrierId: draft.carrierId, handedAt: draft.handedAt };
+    }
     if (picked.length === 1) {
+      // The line's own note rides with it (v236); `noteText` beside it is the
+      // ORDER-level note, which is a different thing and stays exactly as it was.
       addNew(state, date, picked[0].productId, picked[0].qty, picked[0].price ?? null,
-        customerName, phone, fulfillment, addressText, noteText, placed, root);
+        customerName, phone, fulfillment, addressText, noteText,
+        lineNoteOf(picked[0].note), placed, shared, root);
     } else {
-      addGroupNew(state, date, picked, customerName, phone, fulfillment, addressText, noteText, placed, root);
+      addGroupNew(state, date, picked, customerName, phone, fulfillment, addressText, noteText, placed, shared, root);
     }
   };
 
-  // Shut until its title is tapped: the card stands on every delivery day and is
-  // not what the screen is for day to day. Inside, the day calendar comes first
-  // (the same month grid the shop shows), then the customer, then the items.
+  // ── the day, on ONE line ─────────────────────────────────────────────────
+  // The same affordance the Order date field already uses (datepicker.js): a soft button
+  // that names the value and unfolds a panel under it. The panel holds deliveryCal rather
+  // than datepicker's own month grid, because only deliveryCal knows which days she
+  // delivers on, what each is already carrying, and which are closed.
+  const dayBtn = el("button", {
+    class: "btn soft block datepick-btn", type: "button",
+    "aria-expanded": newFormDayOpen ? "true" : "false",
+    onclick: () => {
+      newFormDayOpen = !newFormDayOpen;
+      // Unfolding re-homes the calendar on the day the card is on: it may have
+      // changed since she last looked, and a view left where she paged it before
+      // would unfold on a week this order is not on. The null sentinel is what
+      // deliveryCal re-homes on, so this needs no other hook.
+      if (newFormDayOpen) { newFormDayView.offset = null; dayCal.repaint(); }
+      paintDay();
+    },
+  });
+  const dayPanel = el("div", { class: "datepick-panel" });
+  function paintDay() {
+    dayBtn.setAttribute("aria-expanded", newFormDayOpen ? "true" : "false");
+    dayBtn.replaceChildren(
+      el("span", { class: "datepick-val" }, `Delivering ${shortDate(date.date)}`),
+      el("span", { class: "datepick-ico", "aria-hidden": "true" },
+        newFormDayOpen ? "· close" : "· change"));
+    // replaceChildren is not el(): it prints a bare null as the text "null" on her screen,
+    // so the panel is emptied with a spread of nothing rather than handed a null child.
+    dayPanel.replaceChildren(...(newFormDayOpen ? [dayCal.el] : []));
+  }
+  paintDay();
+  const dayLine = el("div", { class: "datepick" }, dayBtn, dayPanel);
+
+  // ── the courier's half of the order ──────────────────────────────────────
+  // Everything a courier order needs that the card used to be missing: the address, the
+  // tracking number, the parcel, the charge and a price. They unfold only when Fulfillment
+  // says Courier delivery, and that is the point — the card no longer has to be added and
+  // then reopened under Edit to become a courier order (v237).
+  //
+  // The block is BUILT on every change, never built once and unhidden. `isCourierOrder` is
+  // captured ONCE at construction inside courierQuoteSection (courier_quote.js): a price
+  // section built while Fulfillment said self-collect would keep a permanently dead map and
+  // a permanently dead quote half for the rest of the card's life. Only the Fulfillment
+  // handler calls this, so nothing else she has typed is disturbed by it — never renderAll.
+  //
+  // The address NODE is built once at the top of this form and merely MOVED in and out of
+  // here, because the customer suggester writes into it: it holds `address`, and the
+  // suggestion panel belongs under it. Everything else in the block is fresh each build.
+  //
+  // The parcel's carrier picker repaints ITSELF (`paintParcel` below) rather than the whole
+  // block, so naming a carrier cannot throw away the charge she has just typed — the same
+  // rule courier_pay_questions already follows for its own two questions.
+  const courierBox = el("div", {});
+  function buildCourierBlock() {
+    const parcelSlot = el("div", {});
+    function paintParcel() {
+      const p = parcelSection({ state, group: { orders: [draft] }, draft, refresh: paintParcel });
+      parcelSlot.replaceChildren(...(p ? [p] : []));
+    }
+    const charge = courierControls(state, draft, () => {});
+    courierCharge = charge;
+    const tracking = el("input", { class: "input", placeholder: "e.g. JT123456789",
+      autocomplete: "off", value: draft.trackingNo,
+      oninput: function () { draft.trackingNo = this.value; } });
+    // A fresh slot every build: a hoisted one would still be holding the Leaflet mount
+    // from the previous block.
+    const doorSlot = el("div", {});
+    const quote = courierQuoteSection({
+      state, orders: [draft], doorSlot, canBook: false,
+      // [Use this fee] writes through THIS block's own charge box, so there is still one
+      // charge editor in the app. `onCommit` and `onCollected` are both null in
+      // price-only mode: booking writes a trip onto an order, and this order has no id
+      // until Add order is pressed.
+      onUseFee: (q) => charge.set(q.amount),
+    });
+    paintParcel();
+    return [
+      el("div", { class: "field" },
+        el("label", {}, "Delivery address (if courier)"),
+        address,
+        addressSug.panel),
+      doorSlot,
+      el("div", { class: "field" },
+        el("label", {}, "Courier tracking number (optional)"), tracking,
+        el("p", { class: "hint" }, "For a parcel this is the consignment number the carrier gave you.")),
+      parcelSlot,
+      charge.el,
+      quote,
+    ];
+  }
+  function paintCourier() {
+    courierCharge = null;
+    courierBox.replaceChildren(...(draft.fulfillment === "courier" ? buildCourierBlock() : []));
+  }
+  paintCourier();
+
+  // Shut until its title is tapped: the card stands on every delivery day and is not what
+  // the screen is for day to day. Inside, the DAY comes first but as a single line, then
+  // the two things she is actually holding when a customer is on the phone — the items,
+  // then who ordered them. The courier's fields follow the Fulfillment choice further down.
   const body = el("div", { class: "fold-body", hidden: !newFormOpen },
     el("div", { class: "field", style: "margin-bottom:10px" },
       el("label", {}, "Delivery day"),
-      dayCal.el),
-    el("div", { class: "form-grid order-sugg" },
-      el("div", {}, el("label", {}, "Customer"), customer),
-      suggester.panel,
-      el("div", {}, el("label", {}, "Order date"), orderDate),
-      el("div", {}, el("label", {}, "WhatsApp (optional)"), whatsapp),
-      el("div", {}, el("label", {}, "Fulfillment"), fulfillmentSel),
-      // Both columns: the longest field in the form, and the cell beside it was empty.
-      el("div", { class: "span2" }, el("label", {}, "Delivery address (if courier)"), address),
-      // Under the address box and across both columns, exactly as the customer
-      // suggester's panel sits under the name box — in the grid's normal flow, so it
-      // is never clipped by the Edit pop-up's scrolling body.
-      addressSug.panel),
-    el("div", { class: "card-sub", style: "margin:0 0 10px" },
-      "Order date = when it was placed (defaults to today). WhatsApp is kept in your delivery history for marketing follow-ups."),
+      dayLine),
     el("div", { class: "field" },
       el("label", {}, "Items"),
       rowsEl,
@@ -1408,7 +1683,18 @@ function orderForm(state, dateId, root, selectDate) {
       totalEl),
     el("div", { class: "card-sub", style: "margin:0 0 10px" },
       "Everything in the Items list becomes one customer order — add every item, then press Add order."),
-    el("div", { class: "field" }, note),
+    el("div", { class: "form-grid order-sugg" },
+      el("div", {}, el("label", {}, "Customer"), customer),
+      suggester.panel,
+      el("div", {}, el("label", {}, "Order date"), orderDate),
+      el("div", {}, el("label", {}, "WhatsApp (optional)"), whatsapp),
+      el("div", {}, el("label", {}, "Fulfillment"), fulfillmentSel)),
+    // The courier's half, unfolding under the Fulfillment choice above it (v237) — the
+    // address and the suggester's panel with it, which is why the grid no longer holds it.
+    courierBox,
+    el("div", { class: "card-sub", style: "margin:0 0 10px" },
+      "Order date = when it was placed (defaults to today). WhatsApp is kept in your delivery history for marketing follow-ups."),
+    el("div", { class: "field" }, el("label", {}, "Delivery note (optional)"), note),
     button("＋ Add order", submit, "block primary"));
 
   const caret = el("span", { class: "fold-caret" }, newFormOpen ? "▾" : "▸");
@@ -1514,6 +1800,10 @@ function openEditPopup(state, group, dateId, root) {
   const lines = group.orders.map((o) => ({
     id: o.id, productId: o.productId || "", qty: o.qty,
     price: orderLinePrice(state, o),
+    // This line's own note (v236), held on the draft so a repaint re-reads it and
+    // she can change it here as well as in the New-order card. Line-level, so it
+    // is edited per row and never travels in the shared fields below.
+    lineNote: o.lineNote || "",
   }));
   const draft = {
     customerName: first.customerName || "",
@@ -1582,7 +1872,9 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       draft.address = this.value; // synchronous and unconditional — never gated on the network
       addressSug.typed(this.value);
     } });
-  const note = el("input", { class: "input", placeholder: "Note (optional)",
+  // The order-level note is the DELIVERY note now that every item carries its own
+  // (v236). It stays the same field on the order — only what it is for has changed.
+  const note = el("input", { class: "input note-input", placeholder: "Collect time, delivery time, etc.",
     value: draft.note, oninput: function () { draft.note = this.value; } });
   // The courier's tracking number, editable here as well as on the row: a number
   // read back over the phone, or one typed wrong, gets fixed in the pop-up.
@@ -1593,13 +1885,13 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
   // Picking a day writes the draft and repaints the pop-up, so the soft notes
   // below re-read against the new day — the move itself is unchanged. The
   // calendar is always open here: a pop-up the baker opened on purpose has no
-  // room for another thing to unfold.
-  const curDate = byId(state.deliveryDates, curId);
+  // room for another thing to unfold. Its view is settled fresh on every rebuild
+  // (see deliveryCal), which is what keeps it on the day this order is actually on.
   const deliveryPick = deliveryCal({
     state,
     days: deliveryDayOptions(state, curId),
     getActiveId: () => draft.deliveryDateId || curId,
-    month: monthOf(curDate ? curDate.date : todayISO()),
+    view: { offset: null },
     onPick: (id) => { draft.deliveryDateId = id; refresh(); },
     noteMisses: true,
   }).el;
@@ -1658,6 +1950,18 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
         refresh();
       }, "Product…");
     const qtySpan = el("span", { class: "stepper-val" }, String(line.qty));
+    // This line's own note (v236), the same box the New-order card offers and on the
+    // same terms: shown once there is a product, and shown whether or not that
+    // product's shop switch is on — a note already collected must stay readable and
+    // editable here even after she turns the switch off, and she must be able to add
+    // one she took over the phone whatever the shop asks.
+    const lineNoteBox = line.productId
+      ? el("input", { class: "input line-note", type: "text",
+          maxlength: String(LINE_NOTE_MAX),
+          placeholder: "Note for this item (optional) — e.g. no nuts",
+          value: line.lineNote || "",
+          oninput: function () { line.lineNote = this.value; } })
+      : null;
     return el("div", { class: "add-item" },
       prodSel,
       el("div", { class: "add-item-ctl" },
@@ -1667,7 +1971,8 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
           el("button", { onclick: () => { line.qty = line.qty + 1; qtySpan.textContent = String(line.qty); paintTotal(); } }, "＋")),
         linePriceBox(line, paintTotal),
         el("button", { class: "inbox-del", "aria-label": "Remove item",
-          onclick: () => { lines.splice(i, 1); refresh(); } }, "✕")));
+          onclick: () => { lines.splice(i, 1); refresh(); } }, "✕")),
+      lineNoteBox);
   };
 
   const rowsEl = el("div", {}, ...lines.map(rowFor));
@@ -1710,7 +2015,11 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
   // and a map three fields away from the box that holds it reads as belonging to nothing.
   const doorSlot = el("div", {});
 
-  // Same order as the New-order card: which day, then who, then what.
+  // Which day, then who, then what — deliberately NOT the ＋ New order card's order any
+  // more. v237 moved that card to day, then items, then customer, because a customer on the
+  // phone is telling her what they want first. A pop-up she opened on ONE known order has
+  // nothing to decide that way: the order is already in front of her, so it keeps the order
+  // it has always had, and the two screens are allowed to differ.
   return el("div", {},
     el("div", { class: "field", style: "margin-bottom:10px" },
       el("label", {}, "Delivery day"),
@@ -1729,7 +2038,7 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       // is never clipped by the Edit pop-up's scrolling body.
       addressSug.panel),
     doorSlot,
-    el("div", { class: "field" }, note),
+    el("div", { class: "field" }, el("label", {}, "Delivery note (optional)"), note),
     el("div", { class: "field" },
       el("label", {}, "Courier tracking number (optional)"),
       tracking,
@@ -1847,6 +2156,13 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
         const typed = l.price == null ? NaN : Number(l.price);
         if (Number.isFinite(typed) && typed >= 0) o.unitPrice = typed;
         else delete o.unitPrice;
+        // This line's own note (v236). Written here rather than through `fields`, which
+        // the Object.assign above copies onto EVERY row of the group — a line's note
+        // riding there would give all three items the same words, the same trap the
+        // courier charge and the parcel each document. Emptying the box deletes the key,
+        // so a note she clears leaves the row exactly as it was before she wrote one.
+        const lineNote = lineNoteOf(l.lineNote);
+        if (lineNote) o.lineNote = lineNote; else delete o.lineNote;
         keptRows.push(o);
       } else {
         const row = {
@@ -1868,6 +2184,9 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
         };
         stampOrderLine(row, byId(state.products, row.productId));
         if (Number.isFinite(Number(l.price))) row.unitPrice = Number(l.price);
+        // This new line's note, written per row like the kept ones above (v236).
+        const newLineNote = lineNoteOf(l.lineNote);
+        if (newLineNote) row.lineNote = newLineNote;
         state.orders.push(row);
         keptRows.push(row);
       }
@@ -1916,15 +2235,19 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
   }
 }
 
-function addNew(state, date, productId, qty, price, customerName, whatsapp, fulfillment, address, note, orderDate, root) {
+function addNew(state, date, productId, qty, price, customerName, whatsapp, fulfillment, address, note, lineNote, orderDate, shared, root) {
   const cap = capacityStatus(state, date.id);
   const newTotal = cap.total + qty;
   const st = deliveryStatus(date.date, state.settings);
+  // The courier's own three records, off the card's shared answers (v237). Destructured
+  // here rather than left nested, because they are written by their own functions AFTER
+  // the row exists and must never be copied onto the row as fields of their own.
+  const { courier = null, parcel = null, trackingNo = "" } = shared || {};
 
   function commit() {
-    // The card keeps your customer across a rebuild, so a successful add has to
-    // clear it by hand or the next order would open on the person you just served.
-    newOrderContact = { customerName: "", whatsapp: "" };
+    // The card keeps your draft across a rebuild, so a successful add has to clear it by
+    // hand or the next order would open on the person you just served.
+    newOrderDraft = null;
     const row = {
       id: newId("ord"),
       deliveryDateId: date.id,
@@ -1942,7 +2265,22 @@ function addNew(state, date, productId, qty, price, customerName, whatsapp, fulf
     };
     stampOrderLine(row, byId(state.products, productId));
     if (Number.isFinite(Number(price))) row.unitPrice = Number(price); // the typed price wins
+    // The customer's words for THIS item (v236). Written only when there are
+    // words, so a line nobody noted carries no key at all and an order she takes
+    // with no notes is byte-for-byte the order this app has always written —
+    // the same "absent means nothing" spelling the shop side uses when it posts.
+    if (lineNote) row.lineNote = lineNote;
     state.orders.push(row);
+    // The courier half, written only once the row EXISTS. Both writers key what they
+    // write on the order's own code (writeCourierCharge through orderCode, which for a
+    // draft is the literal "??????" — a string applyCourierCharge's `!!code` guard lets
+    // through), so writing from the card before this push would orphan a Delivery & fuel
+    // expense the moment the real order got its real code. Written before the save and
+    // before maybePublishTracking, so the tracking number and the carrier are on the row
+    // by the time the customer's card is published.
+    if (trackingNo) row.trackingNo = trackingNo;
+    writeCourierCharge(state, [row], { orders: [row] }, courier);
+    writeParcel(state, row, [row], parcel);
     save(state);
     maybeSync(state);
     updateOrderBadge(state);
@@ -1969,15 +2307,16 @@ function addNew(state, date, productId, qty, price, customerName, whatsapp, fulf
 // list shows one block with one status and the group shares one order code
 // (orderCode uses groupId || id), exactly like a multi-item storefront order.
 // The capacity/backfill checks run against the combined quantity.
-function addGroupNew(state, date, items, customerName, whatsapp, fulfillment, address, note, orderDate, root) {
+function addGroupNew(state, date, items, customerName, whatsapp, fulfillment, address, note, orderDate, shared, root) {
   const totalQty = items.reduce((s, it) => s + it.qty, 0);
   const cap = capacityStatus(state, date.id);
   const newTotal = cap.total + totalQty;
   const st = deliveryStatus(date.date, state.settings);
+  const { courier = null, parcel = null, trackingNo = "" } = shared || {}; // see addNew
 
   function commit() {
     // See addNew: a completed add starts the card clean.
-    newOrderContact = { customerName: "", whatsapp: "" };
+    newOrderDraft = null;
     const groupId = newId("ordg");
     const createdAt = new Date().toISOString();
     const rows = [];
@@ -2000,9 +2339,21 @@ function addGroupNew(state, date, items, customerName, whatsapp, fulfillment, ad
       };
       stampOrderLine(row, byId(state.products, it.productId));
       if (Number.isFinite(Number(it.price))) row.unitPrice = Number(it.price);
+      // Per ROW, from that row's own item — a group of three items may have a note
+      // on one of them and none on the others, so this can never be a value shared
+      // across the group (v236).
+      const lineNote = lineNoteOf(it.note);
+      if (lineNote) row.lineNote = lineNote;
       state.orders.push(row);
       rows.push(row);
     }
+    // One group, one charge and one parcel — keyed on the SHARED group code orderCode
+    // resolves through groupId, exactly as the Edit pop-up writes them. The tracking
+    // number rides on every row of the order, as the pop-up does. See addNew for why this
+    // can only happen after the rows exist.
+    if (trackingNo) for (const o of rows) o.trackingNo = trackingNo;
+    writeCourierCharge(state, rows, { orders: rows }, courier);
+    writeParcel(state, rows[0], rows, parcel);
     save(state);
     maybeSync(state);
     updateOrderBadge(state);
@@ -2352,7 +2703,7 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
   };
   showPopup(el("div", { class: "popup-title-row" }, "Note / tracking / courier / payment", orderCodeTag(first)),
     (refresh, close) => {
-      const note = el("input", { class: "input", placeholder: "Note (optional)",
+      const note = el("input", { class: "input note-input", placeholder: "Collect time, delivery time, etc.",
         value: draft.note, oninput: function () { draft.note = this.value; } });
       const tracking = el("input", { class: "input", placeholder: "e.g. JT123456789",
         autocomplete: "off", value: draft.trackingNo, oninput: function () { draft.trackingNo = this.value; } });
@@ -2410,7 +2761,7 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
       const doorSlot = el("div", {});
       return el("div", {},
         doorSlot,
-        el("div", { class: "field" }, el("label", {}, "Note (optional)"), note),
+        el("div", { class: "field" }, el("label", {}, "Delivery note (optional)"), note),
         el("div", { class: "field" },
           el("label", {}, "Courier tracking number (optional)"), tracking,
           el("p", { class: "hint" }, "For a parcel this is the consignment number the carrier gave you.")),
@@ -2537,7 +2888,34 @@ const LABEL_STYLES = [
 // preview is exactly what prints.
 function labelSheetEl(state, group, style) {
   const data = packingLabelData(state, group, style);
-  const kids = data.rows.map(([cls, text]) => el("div", { class: `ls-${cls}` }, text));
+  const kids = data.rows.map(([cls, text, mark]) => {
+    const runs = (mark == null ? [] : [].concat(mark)).filter(Boolean);
+    if (!runs.length) return el("div", { class: `ls-${cls}` }, text);
+    // The customer's own words, underlined on the sheet exactly as they are on the
+    // order row (v244) — the row itself chose the runs, so the two surfaces cannot
+    // underline different characters. Runs are placed from the RIGHT: the last one
+    // ends the row, and each earlier one is the last match before it, which keeps a
+    // note two items happen to share on the right two items (v245).
+    const str = String(text);
+    const cuts = new Array(runs.length).fill(-1);
+    let limit = str.length;
+    for (let i = runs.length - 1; i >= 0; i--) {
+      const at = str.lastIndexOf(runs[i], limit - runs[i].length);
+      if (at < 0) continue;
+      cuts[i] = at;
+      limit = at;
+    }
+    const out = [];
+    let drawn = 0;
+    for (let i = 0; i < runs.length; i++) {
+      if (cuts[i] < drawn) continue; // a run that cannot be placed is never invented
+      if (cuts[i] > drawn) out.push(str.slice(drawn, cuts[i]));
+      out.push(el("span", { class: "line-note" }, runs[i]));
+      drawn = cuts[i] + runs[i].length;
+    }
+    if (drawn < str.length) out.push(str.slice(drawn));
+    return el("div", { class: `ls-${cls}` }, ...out);
+  });
   return el("div", { class: `label-sheet style-${data.style}` }, ...kids);
 }
 
@@ -2722,9 +3100,22 @@ function orderGroupRow(state, group, root, dateId) {
   const first = orders[0];
   const multi = orders.length > 1;
   const items = orders.map((o) => ({ name: orderLineName(state, o), qty: o.qty }));
+  // Any note on any line of this order (v236). A single-item order with a note
+  // gets the items line too — otherwise the only place the customer's words could
+  // live would be the big title, and a heading is not where a note belongs.
+  const anyNote = orders.some((o) => lineNoteOf(o.lineNote));
   const title = items.map((i) => i.name).join(" + ");
   const qtyTotal = items.reduce((s, i) => s + i.qty, 0);
-  const sub = [first.customerName, waNumber(first.whatsapp), first.note].filter(Boolean).join(" · ");
+  // Name, number, then the order's OWN note — the delivery note. It carries the
+  // same underline the per-item note wears beside its item (v245), because it is
+  // the customer's own words too and it applies to a self-collect order exactly as
+  // much as a courier one. Blank pieces drop out, so a row with nothing to say
+  // still draws no sub-line at all.
+  const sub = subLineNodes([
+    { text: first.customerName },
+    { text: waNumber(first.whatsapp) },
+    { text: first.note, mark: true },
+  ]);
   const stSel = select(STATUSES.map(([v, l]) => ({ value: v, label: l })), first.status || "new",
     () => {
       // Picking Confirmed starts the confirming step, and confirming is what
@@ -2866,9 +3257,12 @@ function orderGroupRow(state, group, root, dateId) {
     el("div", { class: "li-main" },
       el("div", { class: "li-title" }, title, orderCodeTag(first),
         orders.some((o) => o.source === "storefront") ? el("span", { class: "src-tag" }, "storefront") : null),
-      multi ? el("div", { class: "li-sub" }, items.map((i) => `${i.name} ×${i.qty}`).join("  ·  ")) : null,
+      (multi || anyNote)
+        ? el("div", { class: "li-sub" }, orders.flatMap((o, i) =>
+            i ? ["  ·  ", ...orderLineNodes(state, o)] : orderLineNodes(state, o)))
+        : null,
       placedLine,
-      sub ? el("div", { class: "li-sub" }, sub) : null,
+      sub.length ? el("div", { class: "li-sub" }, ...sub) : null,
       parcelLine,
       noWaHint,
       autoNote),

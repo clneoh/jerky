@@ -17,7 +17,9 @@
 // quotes to a customer is money she has already lost by the time anyone notices.
 
 import { callCourier } from "./api.js";
-import { quoteExpired, senderOf, tripReady, tripProblem } from "../courier_job.js";
+import {
+  quoteExpired, senderOf, tripReady, tripProblem, freeCancelOf, freeCancelLine,
+} from "../courier_job.js";
 import { strictNumber } from "../courier_place.js";
 
 export const LALAMOVE_KEY = "lalamove";
@@ -48,6 +50,20 @@ export function phoneE164(v) {
 // says when it dies is believed; one that does not is given this, and the screen
 // says "about five minutes" rather than pretending to know the second.
 export const QUOTE_VALID_MS = 5 * 60 * 1000;
+
+// How long before a scheduled pickup her free calling-off window shuts. Lalamove's own
+// published rule rather than a guess — its FAQ says a scheduled order may be cancelled
+// at no charge "up to 45 minutes before the scheduled pick up time after it has been
+// matched", and an immediate order "up to 20 minutes since the match".
+//
+// ONLY THE SCHEDULED HALF BECOMES A DEADLINE. The match moment lives in Lalamove's own
+// system and is never sent back on the booking, so the 20 minutes cannot be turned into
+// a clock from here without inventing the moment it starts — which is why
+// `freeCancelOf` (courier_job.js) answers an immediate trip with the RULE and no time.
+//
+// It sits in this file for the same reason QUOTE_VALID_MS does: it is one courier's own
+// number, and courier_job.js is not allowed to know whose trip it is.
+export const FREE_CANCEL_SCHEDULED_MS = 45 * 60 * 1000;
 
 // The order she thinks in: the smallest thing that can carry a box first, then up.
 // Any service Lalamove adds that is not on this list still appears — it sorts after
@@ -595,6 +611,19 @@ export const lalamove = {
   // see the comment on `bookProblem` itself, which asks for exactly this.
   bookProblem(state, trip, quote) {
     return bookProblem(state, trip, quote);
+  },
+
+  // When this trip stops being free to call off, worked out from its OWN record. The
+  // number is this file's, the arithmetic is courier_job.js's, and a screen asks only
+  // for the answer — so a second courier with a different grace changes one line here.
+  freeCancelOf(job) {
+    return freeCancelOf(job, { scheduledMs: FREE_CANCEL_SCHEDULED_MS });
+  },
+
+  // The sentence for that deadline, or "" when there is nothing to say. The courier names
+  // itself, for the same reason every other sentence in this file does.
+  freeCancelLine(job, opts = {}) {
+    return freeCancelLine(job, { label: LALAMOVE_LABEL, scheduledMs: FREE_CANCEL_SCHEDULED_MS, ...opts });
   },
 
   // Call the trip off. The courier is the one who decides whether it still can, so a

@@ -29,11 +29,104 @@ export function addMonth(year, month, delta) {
   return { year: d.getFullYear(), month: d.getMonth() };
 }
 
+// ── the rolling window the delivery-day picker draws ─────────────────────────
+// A month grid is the wrong shape for a delivery picker. At the end of a month
+// almost every day on screen is already past, and the days before the 1st and
+// after the last of the month are invisible padding — so the grid reads as empty
+// exactly when the baker has come to work on it. This window follows today
+// instead: five Sun-first weeks beginning with the week just gone, so the row
+// above today is always last week and today is always in the second row. Every
+// cell is a real date; nothing is padded.
+//
+// Copied verbatim from store/calendar.js, where the customer's own picker draws
+// the same window, and pinned against it by test/store-cal.test.js — a day must
+// sit in the same place on the shop as it does in the back office.
+
+export const WINDOW_WEEKS = 5;
+
+// `offset` whole weeks forward from today's own window. All ISO "YYYY-MM-DD",
+// no nulls anywhere in the grid.
+export function rollingWeeks(todayISO, { offset = 0, rows = WINDOW_WEEKS } = {}) {
+  const t = new Date(`${todayISO}T00:00:00`);
+  const start = new Date(t.getFullYear(), t.getMonth(), t.getDate() - t.getDay() - 7 + offset * 7);
+  const out = [];
+  for (let w = 0; w < rows; w++) {
+    const row = [];
+    for (let c = 0; c < 7; c++) {
+      const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + w * 7 + c);
+      row.push(iso(d.getFullYear(), d.getMonth() + 1, d.getDate()));
+    }
+    out.push(row);
+  }
+  return out;
+}
+
+// The whole weeks from the one `todayISO` sits in: 0 is this week, -1 last week,
+// 1 next week. This is the unit the picker's arrows move in.
+export function weekIndex(todayISO, dateISO) {
+  const t = new Date(`${todayISO}T00:00:00`);
+  const d = new Date(`${dateISO}T00:00:00`);
+  const tSun = new Date(t.getFullYear(), t.getMonth(), t.getDate() - t.getDay());
+  const dSun = new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay());
+  return Math.round((dSun - tSun) / 604800000);
+}
+
+// Where the window sits for the delivery days there are, in whole weeks.
+//
+// A window at offset `o` holds week indices o-1 … o+3, so the day at index `i`
+// is on screen for every `o` in [i-3, i+1].
+//
+// `min` and `max` are as far back and as far forward as it is worth paging: just
+// far enough for the earliest and the latest day to reach the far edge of the
+// window, so no row is ever shown past the end of the days she has set, no day
+// can be paged out of reach, and neither arrow leads to an empty page. `max` is
+// the shop's own bound (windowBounds), so both calendars stop in the same place
+// for the same list; `min` is the mirror of it, and exists only because the back
+// office reviews and backfills days already gone — the shop's picker never looks
+// back at all.
+//
+// `home` is where it opens: today's own window whenever a delivery day is on it,
+// and otherwise the nearest window that holds the day nearest to today, so it
+// never opens on a page with nothing on it. A list of only-future days and a
+// list of only-past ones are the same rule seen from either side.
+export function deliveryWindow(todayISO, dayISOs) {
+  const idx = (dayISOs || []).filter(Boolean)
+    .map((d) => weekIndex(todayISO, d)).sort((a, b) => a - b);
+  if (!idx.length) return { min: 0, max: 0, home: 0 };
+  const first = idx[0];
+  const last = idx[idx.length - 1];
+  const min = Math.min(0, first + 1);
+  const max = Math.max(0, last - (WINDOW_WEEKS - 2));
+  const nearest = idx.reduce((best, i) =>
+    (Math.abs(i) < Math.abs(best) || (Math.abs(i) === Math.abs(best) && i > best) ? i : best), idx[0]);
+  const onHome = idx.some((i) => i >= -1 && i <= WINDOW_WEEKS - 2);
+  return { min, max, home: onHome ? 0 : Math.min(max, Math.max(min, nearest)) };
+}
+
 const MONTHS = ["January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"];
 
 export function monthLabel(year, month) {
   return `${MONTHS[month]} ${year}`;
+}
+
+const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// The window's title — the span of dates it covers, not a month name, because
+// the window follows today rather than the month. "20 Sep – 10 Oct", and
+// "20 – 26 Sep" when both ends share a month. The back office is
+// single-language, so this is the shop's English wording verbatim
+// (store/app.js windowTitle) and the two calendars therefore read the same.
+export function windowTitle(fromIso, toIso) {
+  const a = new Date(`${fromIso}T00:00:00`);
+  const b = new Date(`${toIso}T00:00:00`);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return `${fromIso} – ${toIso}`;
+  const m = MONTHS_SHORT;
+  const same = a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
+  return same
+    ? `${a.getDate()} – ${b.getDate()} ${m[a.getMonth()]}`
+    : `${a.getDate()} ${m[a.getMonth()]} – ${b.getDate()} ${m[b.getMonth()]}`;
 }
 
 export const DOW = ["S", "M", "T", "W", "T", "F", "S"];

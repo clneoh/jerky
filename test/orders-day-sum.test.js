@@ -847,7 +847,7 @@ test("a save that changes nothing publishes once, then leaves the card alone", a
 // own total has to move as she types the fee here, or the figure she reads is one she
 // cannot check until after a save.
 const noteInput = (pop) => all(pop).find((n) =>
-  n.tagName === "INPUT" && n.attrs && n.attrs.placeholder === "Note (optional)");
+  n.tagName === "INPUT" && String(n.className).includes("note-input"));
 const trackingInput = (pop) => all(pop).find((n) =>
   n.tagName === "INPUT" && n.attrs && n.attrs.placeholder === "e.g. JT123456789");
 
