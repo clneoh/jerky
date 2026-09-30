@@ -1106,19 +1106,25 @@ the bakery's v199 money block, because the shop adds a flat postage that is neve
 subtotal would come out RM8 too high (the reasoning is written at `store/app.js:2218`). The keys are
 supposed to be missing, and the check is right to say so.
 
-### The owner's one step
+### The owner's one step — DONE 2026-09-30
 
 The mail builder lives on Supabase, not on GitHub, so a push does not update it — and **v253 changes
-it**, which means the deploy is not optional this time:
+it**, which made the deploy unavoidable. **It is deployed**: `shop-feedback`, ACTIVE, **VERSION 1**,
+`2026-09-30 10:21:46 UTC` (`supabase functions list --project-ref ircwozniiyywsowamixy`).
 
 ```
 supabase functions deploy shop-feedback --project-ref ircwozniiyywsowamixy
 ```
 
-Nothing else: no SQL, no new secret, no new table. It reuses the `RESEND_API_KEY` and verified sending
-domain the wish list already runs on, and the developer address already published in
-**Settings → Website & developer**. Until it is deployed the box still appears and still says the send
-did not go through.
+**Run it from the repo folder** — never from inside `supabase/functions/shop-feedback/`. With no
+`supabase/config.toml`, the CLI anchors on the current folder: from inside the function it looks for
+`supabase/functions/shop-feedback/supabase/functions/shop-feedback/index.ts` and dies with *"Entrypoint
+path does not exist"* (the first attempt, 2026-09-30). The "own folder" rule is a different thing —
+**a helper must live inside the function's own folder to be uploaded** at all. Nothing else: no SQL,
+no new secret, no new table. It reuses the `RESEND_API_KEY` and verified sending domain the wish list
+already runs on, and the developer address already published in **Settings → Website & developer**.
+If the function is ever changed again, redeploy the same way; until then the box still appears and
+still says the send did not go through.
 
 ## Thirteen versions in one pass: the item note, the pin reset, the run guard, the labels (v234–v246)
 
