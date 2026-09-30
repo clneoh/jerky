@@ -236,12 +236,24 @@ const en = {
 
   devBy: "Website by",
   devWa: "WhatsApp the developer",
+
+  // The question printed IN the box, which the customer types over. Its length is
+  // MEASURED, not written (see promptHeight in store/app.js): a phone offers ~323px at
+  // 13px and "the User Interface" costs about 150px of it, so this string wraps to a
+  // second line on a 375px phone and the box opens to show the whole question rather
+  // than clipping its tail. Raise it and re-measure.
+  fbPh: "Webmaster: Like the User Interface? Tell me & I will improve it!",
+  fbHint: "Press Enter to send",
+  fbSending: "Sending…",
+  fbThanks: "Your idea is well taken care of. New updates soon!",
+  fbFailed: "Couldn't send just now — please try again, or WhatsApp the developer.",
+  fbEmpty: "Please write your idea first.",
 };
 
 const zh = {
   titleWord: "订购",
   homeLink: "🏠 我们的主页",
-  referral: "🎁 经由好友推荐 — 首次下单即可享受专属优惠",
+  referral: "🎁 朋友介绍的 — 首次下单有优惠！",
   codeOff: "折扣 %1",
   codeMin: "消费 %1 以上",
   codeNew: "仅限新客户",
@@ -265,7 +277,7 @@ const zh = {
   namePh: "例如：Aisyah",
   whatsappNo: "WhatsApp 号码",
   whatsPh: "例如：012-345 6789",
-  waSub: "我们会用这个号码确认订单并发送付款二维码，绝不会骚扰您。",
+  waSub: "我们会用这个号码确认订单和发送付款二维码，不会拿来 spam 您。",
   howGet: "您希望怎样收货？",
   courier: "邮寄（全马）",
   selfCollect: "自取（本地）",
@@ -303,10 +315,10 @@ const zh = {
   trackBtn: "查询",
   sPolicies: "条规",
 
-  items: "%1 项",
-  oneItem: "1 项",
+  items: "%1 件",
+  oneItem: "1 件",
   placeOrder: "提交订单",
-  sending: "发送中…",
+  sending: "正在发送…",
   soldOut: "已售完",
   onlyLeft: "仅剩 %1 份",
   noDates: "目前没有可预订的发货日 — 请稍后再来。",
@@ -315,8 +327,8 @@ const zh = {
   calMiss: "%1不是发货日 — 请选择绿色圈起的日期。",
   calClose: "%1的订单已截止 — 请选择绿色圈起的日期。",
   // The arrows page the grid by whole weeks now, not months (v231).
-  calPrev: "前一週",
-  calNext: "下一週",
+  calPrev: "前一周",
+  calNext: "下一周",
 
   closedFrom: "只接受 %1 起的发货日订单",
   closedTo: "只接受 %1 或之前的发货日订单",
@@ -337,8 +349,8 @@ const zh = {
 
   cancelNote: "可在发货日前 %1 天更改或取消。",
   cancelNoteOne: "可在发货日前 1 天更改或取消。",
-  orderCancelNote: "可在发货日前 %1 天更改或取消。款项不退还 — 订单可改期至其他发货日。",
-  orderCancelNoteOne: "可在发货日前 1 天更改或取消。款项不退还 — 订单可改期至其他发货日。",
+  orderCancelNote: "发货日前 %1 天可以更改或取消。不退款 — 订单可以换到其他发货日。",
+  orderCancelNoteOne: "发货日前 1 天可以更改或取消。不退款 — 订单可以换到其他发货日。",
 
   confirmAddWaTitle: "请填写您的 WhatsApp 号码。",
   confirmAddWaBody: "我们会用它确认订单并发送付款二维码。",
@@ -356,7 +368,7 @@ const zh = {
   orderRecvLine: "📅 %1 · %2 · RM%3",
   orderRecvSub: "订单已收到 — 确认后我们会通过 WhatsApp 通知您。",
   failTitle: "暂时无法发送您的订单。",
-  failBody: "别担心 — 请通过 WhatsApp 发送订单，以免遗漏。",
+  failBody: "别担心 — 直接用 WhatsApp 把订单发过来，不要弄丢。",
   failOpened: "WhatsApp 已打开并带上您的订单 — 请按「发送」。",
   failLink: "📲 通过 WhatsApp 发送订单",
   failRetry: "请稍后再试一次。",
@@ -376,7 +388,7 @@ const zh = {
   trackingNo: "快递单号：%1",
   trackDelivery: "查看配送进度：",
   courierCharge: "快递费：%1",
-  courierCod: "快递费：%1 - 货到付款，收货时付给快递员",
+  courierCod: "快递费：%1 - 货到付款，收货时付给送货员",
   postageQuoted: "邮费：另行报价 — 我们会把准确金额发给你",
   tripStatus: "配送：%1",
   tripFinding: "正在寻找司机",
@@ -389,10 +401,18 @@ const zh = {
   vehicleLine: "车辆：%1",
   callDriver: "致电司机",
   carrierLine: "快递公司：%1",
-  nextBlockedBasket: "你的购物袋是 %1 的。想订另一天，请在上面的日历选择。",
+  nextBlockedBasket: "你的购物篮是 %1 的。想订另一天，请在上面的日历选择。",
 
   devBy: "网站制作：",
-  devWa: "用 WhatsApp 联系开发者",
+  devWa: "用 WhatsApp 找开发者",
+
+  // The same one-line rule as the English: no more than about 23 characters here.
+  fbPh: "网站管理员：喜欢这个界面吗？告诉我，我把它做好",
+  fbHint: "按 Enter 发送",
+  fbSending: "正在发送…",
+  fbThanks: "你的建议我们收到了，会好好处理。新更新很快就来！",
+  fbFailed: "刚才发送不成功 — 再试一次，或用 WhatsApp 找开发者。",
+  fbEmpty: "先写下你的想法吧。",
 };
 
 const ms = {
@@ -463,7 +483,7 @@ const ms = {
   items: "%1 item",
   oneItem: "1 item",
   placeOrder: "Hantar tempahan",
-  sending: "Menghantar…",
+  sending: "Sedang dihantar…",
   soldOut: "Habis",
   onlyLeft: "Tinggal %1 sahaja",
   noDates: "Tiada tarikh pos buat masa ini — sila datang lagi nanti.",
@@ -487,10 +507,10 @@ const ms = {
   sentenceEnd: ".",
   noMenuToday: "Tiada apa-apa pada menu untuk hari ini. Sila pilih hari pos yang lain.",
   moreItems: "Lebih banyak item",
-  fixSoldOut: "%1 baru sahaja habis — dikeluarkan dari tempahan anda.",
-  fixPoolClamp: "%1: hanya %2 boleh dimuatkan bersama baki tempahan anda — kami telah tukar %3 anda kepada %2.",
-  fixClamp: "%1: tinggal %2 sahaja sekarang — kami telah tukar %3 anda kepada %2.",
-  fixClosed: "%1: %2 — kami telah keluarkannya.",
+  fixSoldOut: "%1 baru habis — kami keluarkan dari tempahan anda.",
+  fixPoolClamp: "%1: hanya %2 boleh dimuatkan bersama baki tempahan anda — kami sudah tukar %3 anda kepada %2.",
+  fixClamp: "%1: tinggal %2 sahaja sekarang — kami sudah tukar %3 anda kepada %2.",
+  fixClosed: "%1: %2 — kami sudah keluarkan.",
 
   cancelNote: "Tukar atau batal sehingga %1 hari sebelum hari pos.",
   cancelNoteOne: "Tukar atau batal sehingga 1 hari sebelum hari pos.",
@@ -502,25 +522,25 @@ const ms = {
   confirmAddrTitle: "Sila masukkan alamat pos anda.",
   confirmAddrBody: "Kami hantar ke seluruh negara — snek anda tidak dapat dihantar tanpa alamat lengkap (jalan, kawasan, bandar & poskod).",
   confirmClosedTitle: "Tempahan untuk hari itu sudah ditutup.",
-  confirmClosedBody: "Tempahan untuk hari ini ditutup pada %1 sehari sebelum — sila pilih hari pos baharu.",
+  confirmClosedBody: "Tempahan untuk hari ini ditutup pada %1 sehari sebelum — sila pilih hari pos yang lain.",
   confirmChangedTitle: "Tempahan anda baru sahaja berubah.",
-  confirmChangedBody: "Ada snek yang habis semasa anda menempah — kami telah kemas kini troli anda mengikut apa yang tinggal.",
+  confirmChangedBody: "Ada snek yang habis semasa anda menempah — kami sudah kemas kini troli anda ikut apa yang tinggal.",
   confirmChangedSub: "Sila semak tempahan anda dan tekan Hantar tempahan sekali lagi.",
-  sendingToBakery: "Menghantar tempahan anda…",
+  sendingToBakery: "Sedang menghantar tempahan anda…",
   orderRecvTitle: "🎉 Tempahan diterima!",
-  orderRecvBody: "%1 telah menerima tempahan anda.",
-  orderRecvThanksBody: "Terima kasih %1! %2 telah menerima tempahan anda.",
+  orderRecvBody: "%1 sudah terima tempahan anda.",
+  orderRecvThanksBody: "Terima kasih %1! %2 sudah terima tempahan anda.",
   orderRecvLine: "📅 %1 · %2 · RM%3",
-  orderRecvSub: "Tempahan anda telah diterima — kami akan WhatsApp anda sebaik sahaja disahkan.",
+  orderRecvSub: "Tempahan anda sudah diterima — kami akan WhatsApp anda sebaik sahaja disahkan.",
   failTitle: "Kami tidak dapat menghantar tempahan anda buat masa ini.",
   failBody: "Jangan risau — hantar tempahan anda melalui WhatsApp supaya ia tidak hilang.",
-  failOpened: "WhatsApp telah dibuka dengan tempahan anda — tekan Hantar supaya ia tidak hilang.",
+  failOpened: "WhatsApp sudah dibuka dengan tempahan anda — tekan Hantar supaya ia tidak hilang.",
   failLink: "📲 Hantar tempahan anda melalui WhatsApp",
-  failRetry: "Sila cuba lagi sebentar lagi.",
+  failRetry: "Sila cuba sebentar lagi.",
 
   trackEnter: "Masukkan nombor tempahan anda untuk disemak.",
   trackUnavailable: "Semakan tidak tersedia buat masa ini.",
-  trackLooking: "Mencari tempahan anda…",
+  trackLooking: "Sedang cari tempahan anda…",
   trackNotFound: "Kami tidak dapat mencari tempahan #%1. Sila semak nombor dalam mesej pengesahan anda — iaitu 6 aksara selepas #.",
   orderCode: "Tempahan #%1",
   forCustomer: "Untuk %1",
@@ -529,7 +549,7 @@ const ms = {
   trkPaid: "Dibayar",
   trkBaking: "Sedang disediakan",
   trkReady: "Dibungkus",
-  trkFinal: "Telah diambil / Telah dipos",
+  trkFinal: "Sudah diambil / Sudah dipos",
   trackingNo: "Nombor penjejakan: %1",
   trackDelivery: "Jejak penghantaran anda:",
   courierCharge: "Caj kurier: %1",
@@ -549,7 +569,18 @@ const ms = {
   nextBlockedBasket: "Bakul anda untuk %1. Untuk hari lain, pilih pada kalendar di atas.",
 
   devBy: "Laman web oleh",
-  devWa: "WhatsApp pembangun",
+  devWa: "WhatsApp developer",
+
+  // Her own wording, and it carries NO "Webmaster: " prefix - deliberately, and she wrote
+  // it without one. Measured: as written it is 321.8px and holds one line in a phone's
+  // 323px; adding the prefix costs 76px and wraps it onto two. Spells "User Interface"
+  // out for the same reason the English does: "UI" is not a word a customer uses.
+  fbPh: "Suka User Interface ini? Komen & Saya akan perbaiki!",
+  fbHint: "Tekan Enter untuk hantar",
+  fbSending: "Sedang dihantar…",
+  fbThanks: "Idea anda sudah kami terima! Update terbaru akan datang tak lama lagi.",
+  fbFailed: "Maaf, tadi tak berjaya dihantar. Cuba lagi, atau WhatsApp developer.",
+  fbEmpty: "Tulis idea anda dulu ya.",
 };
 
 export const STORE = { en, zh, ms };

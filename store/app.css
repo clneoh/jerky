@@ -1021,6 +1021,75 @@ button.prod-next.off::after { content: ""; }
   color: var(--muted);
   font-weight: 500;
 }
+/* Which engine build the shop is running (v252), in the smallest type on the page and the
+   same muted grey as the credit it sits under — the developer's corner, not the shop's. */
+.dev-foot .dev-engine {
+  margin: 4px 0 0;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+/* The suggestion box under the "Website by" credit (v247). It appears only when
+   the baker has published a developer email, because it has nowhere to send the
+   words without one — a box that sends nowhere is worse than no box. */
+.fb-foot {
+  max-width: 460px;
+  margin: 14px auto 4px;
+  text-align: left;
+}
+.fb-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 11px;
+  /* One line, and the JS opens it as the words need it (see renderFeedback). Not
+     resizable by hand: a dragged corner would fight the growing it does itself,
+     and with a ceiling it scrolls rather than swallowing the whole footer. */
+  resize: none;
+  overflow-y: auto;
+  max-height: 200px;
+}
+.fb-input::placeholder { color: var(--muted); }
+.fb-input:focus {
+  outline: none;
+  border-color: var(--brown);
+  box-shadow: 0 0 0 3px rgba(196, 85, 47, .18);
+}
+/* A field nobody should ever reach. Moved off-screen rather than `display:none`:
+   a bot that fills every input still fills this one, and a hidden field is the
+   first thing a slightly cleverer one skips. */
+.fb-trap {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.fb-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+/* There is no Send button: Enter is the send (see renderFeedback). .fb-input still
+   fills this row, so the box keeps its full width. */
+.fb-say {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.fb-say.fb-done {
+  color: var(--brown-dark);
+  font-weight: 600;
+}
+.fb-say.fb-bad { color: var(--brown); }
 
 /* ---------- Sticky order bar ---------- */
 .order-bar {

@@ -134,6 +134,21 @@ test("the per-item note's link and its hint are translated in all three language
   assert.notEqual(STORE.ms.addNoteLink, STORE.en.addNoteLink, "Bahasa Malaysia is translated, not left in English");
 });
 
+// The suggestion box under the "Website by" credit (v247). Every word of it is
+// built in JS — the box, its button and the reply all come from renderFeedback —
+// so nothing tagged in the HTML would ever notice a language missing them. A
+// language that never got the placeholder would open an empty box with no hint,
+// which reads as a broken field rather than an invitation.
+test("the suggestion box is translated in all three languages", () => {
+  for (const l of LANGS) {
+    for (const key of ["fbPh", "fbHint", "fbSending", "fbThanks", "fbFailed", "fbEmpty"]) {
+      assert.ok(typeof STORE[l][key] === "string" && STORE[l][key].trim(), `${l}.${key} is present`);
+    }
+  }
+  assert.notEqual(STORE.zh.fbPh, STORE.en.fbPh, "Chinese is translated, not left in English");
+  assert.notEqual(STORE.ms.fbPh, STORE.en.fbPh, "Bahasa Malaysia is translated, not left in English");
+});
+
 test("the COD charge is worded differently from the plain one in every language", () => {
   for (const l of LANGS) {
     assert.notEqual(STORE[l].courierCod, STORE[l].courierCharge,

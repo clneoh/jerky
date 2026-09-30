@@ -1,8 +1,207 @@
-# Munchies Furkidz — change history (v54 → v246)
+# Munchies Furkidz — change history (v54 → v253)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**30 Sep 2026 — engine v253, THE FEEDBACK MAIL NOW READS IN THE SAME ORDER AS YOUR WISH-LIST
+MAIL (no database step, but the shop-feedback function must be redeployed).**
+
+**The heading block moved to the top, and the customer's words now come last.** v252 put the
+words first and the heading underneath a short rule. You asked for the wish-list mail to be the
+reference, and the wish-list mail does the opposite: it opens with what the mail is, then who it
+is about and when, and puts the content underneath. So the feedback mail now does exactly that,
+with no rule in between and no closing line:
+
+    New feedback for the shop page (Engine v253).
+
+    Project: munchies.com.my/store/
+
+    Sent: 2026-09-30 17:31
+
+    Written in English.
+
+    the words the customer typed
+
+**The language is written out as a word.** v252 printed the short code it was handed, so the
+line read "Written in en." The shop asks its questions in three languages, so the line is worth
+having — but "en" is not a word anybody reads. It says **Written in English.**, **Written in
+Malay.** or **Written in Chinese.** now, and it is left out entirely when the page did not say
+which language the customer was reading.
+
+**The subject line and the Project line are unchanged** from v252: the subject is still
+`Shop feedback · Engine v<n> · <date>`, the project is still the live address the customer was
+reading, and the time is still on your own clock in Penang. Only the order of the body and the
+wording of the language line moved.
+
+**One step on your machine.** The part of this that builds the email lives on your Supabase
+project, not on GitHub, so pushing is not enough on its own. After pushing this version,
+redeploy it once:
+
+    supabase functions deploy shop-feedback --project-ref ircwozniiyywsowamixy
+
+**30 Sep 2026 — engine v252, THE FEEDBACK MAIL SAYS WHICH SHOP AND WHICH BUILD, AND THE SHOP PAGE
+NOW SAYS WHICH BUILD IT IS RUNNING (no database step, but the shop-feedback function must be
+redeployed).**
+
+**A customer's message now arrives with the same kind of heading your wish-list mail has.**
+Before this version the email was the customer's words and nothing else, so a message saying
+"the cart is confusing" could have come from either of your shops and from any build of the
+page. Every one of these emails now carries:
+
+- **Project** — the address the customer was actually reading, for example
+  munchies.com.my/store. It is read off the live page rather than typed in anywhere, so your two
+  shops can never be confused for one another, and the second half names which page of that shop
+  the words were written on.
+- **Sent** — the date and time on **your** clock, Penang time, so "16:52" means the same thing on
+  the email, on your phone and in the backoffice.
+- **Engine** — the build the customer was looking at, both in the subject line and in the line
+  above the project, so you can tell whether a comment about the shop came from a phone that is
+  still running yesterday's copy.
+- **Written in** — the language, when the customer was reading the shop in Malay or Chinese.
+
+**And the shop itself now says which build it is running.** At the very foot of the shop page,
+under "Website by" and the developer's WhatsApp and email links, there is a new small line:
+
+    Engine v252
+
+**It is the same number your app shows on More**, and the two are read from one file rather than
+kept as two copies that could drift apart. That is the point of it: when a customer tells you
+something looks wrong, you can compare the number at the foot of their shop page with the number
+on your own More screen and know in one glance whether they are seeing the same page you are. It
+is the smallest type on the page and the same muted grey as the credit above it, in the
+developer's own corner, out of the way of everything a customer came for.
+
+**One step on your machine.** The part of this that builds the email lives on Supabase, so it
+must be redeployed once, exactly as before:
+
+    supabase functions deploy shop-feedback --project-ref ircwozniiyywsowamixy
+
+Nothing else to set up — no new secret, no new database table, no new key. The email reuses the
+same Resend account your wish list already sends with, and the same published settings row the
+shop page reads for its "Website by" line.
+
+**30 Sep 2026 — engine v251, THE SHOP'S QUESTION IN YOUR OWN WORDS (no database step, no
+redeploy, one push).**
+
+**The line at the foot of the shop now reads exactly as you wrote it.** "Webmaster: Like the
+User Interface? Tell me & I will improve it!" — your words, your punctuation, with "Tell me"
+back where you put it.
+
+**It is a measurement, not a rewrite, and this version takes the measurement in both
+directions.** A phone gives that box about 323px of room, and "the User Interface" spelled out
+costs about 150px of that on its own. Your sentence runs to about 377px, so on a phone it takes
+**two lines** — and the guard built for exactly this opens the box to show the whole question
+rather than cutting the end off it. Nothing is clipped on any phone: at 320px the box simply
+opens a little further, and the page never scrolls sideways.
+
+**The Malay is your own sentence and holds one line — as long as it keeps the shape you wrote it
+in.** It carries no "Webmaster:" prefix for that reason: the prefix would add another 76px and
+push it onto a second line. The English and Chinese still say who is asking. The Chinese needed
+no change at all — it already used the everyday word for a screen's interface.
+
+**30 Sep 2026 — engine v250, THE SHOP'S QUESTION SPELLS OUT "USER INTERFACE" (no database step,
+no redeploy, one push).**
+
+**Shorthand is out.** You looked at the built page and said it plainly — "UI should be user
+interface, ui is not a laymen term" — so the line at the foot of the shop read "Webmaster: Like
+the user interface? I'll improve it", with the Malay and Chinese equivalents.
+
+**And it stayed one line on a phone, which is what made this a measurement rather than a
+rewrite.** A phone gives that box about 323px of room, and "user interface" spelled out takes
+about 150px of it on its own. The full sentence you first wrote runs to about 373px — wider than
+the box — so its tail would have been cut off. Everything you asked for was kept: who is asking,
+the question in full words, and the promise that it gets improved. Only "Let me know" went,
+because the question mark and a box waiting to be typed in already say it.
+
+**30 Sep 2026 — engine v249, THE BOX AT THE FOOT OF THE SHOP SAYS WHO IS ASKING (no database
+step, no redeploy, one push).**
+
+The one quiet line at the foot of the shop page now introduces itself. It reads "Webmaster: Like
+this UI? Tell me, I'll make it better" — the customer types over that sentence exactly as before,
+and the whole of it still goes out as their own words when they send, with nothing to press but
+Enter.
+
+**And if a phone is narrow enough that the question does wrap anyway**, the box now opens itself
+to show the whole question instead of hiding the rest. That is the one thing this version can do
+that a shorter sentence alone could not: on any phone, in any of the three languages, the
+customer always sees the entire question rather than its first line.
+
+**30 Sep 2026 — engine v248, NOBODY HAS TO PRESS ANYTHING, AND NOBODY LOSES WHAT THEY WROTE (no
+database step, no redeploy — the same one function, one push).**
+
+Two more things you asked for on the little box at the foot of the shop.
+
+**Closing the page is now a send.** A customer who writes a sentence and then closes the shop,
+or taps a link out of it, has had their say — the words go as they leave, without them pressing
+Enter at all. **Nothing goes out while they are still on the page**, so a sentence somebody is
+midway through writing is never mailed off behind their back. Pressing Enter is still a send, and
+still shows your reply straight away.
+
+**And nothing they wrote is lost on the way.** If they step away from the box with words in it,
+or the page is closed before anything could be sent, the sentence is **kept on their own device**
+and is waiting in the box the next time they open the shop — it goes only once it has been sent.
+If a send does not go through, their words are put back, so a failure nobody was around to read
+is never a sentence lost. And **with no internet, nothing is sent at all**: the words simply wait
+on their device for the next visit instead of going down with the page.
+
+**And the Bahasa Malaysia has been rewritten to read the way Malaysians actually write.** Several
+lines on the shop were correct textbook Malay but nobody writes that way on a Malaysian website —
+"pembangun" for your developer, "telah" where anyone here would say "sudah", "Menghantar…" where a
+shop would say "Sedang dihantar…", and a reply that read like a letter from an office rather than
+from you. The words are the same promise, in the voice a Malaysian customer expects.
+
+**The Chinese is now Malaysian Chinese**, which is what your customers read. Malaysian Chinese
+read simplified characters exactly as mainland China does, so the characters stay as they are —
+what changes is the words: the items count used the mainland measure word rather than the one a
+Malaysian uses, the basket was called a shopping bag, and the two arrows on the delivery calendar
+were in **traditional** characters, which is simply the wrong script for your customers.
+Taiwanese Chinese was not used: it would mean changing every character to traditional, and your
+customers do not read that.
+
+**30 Sep 2026 — engine v247, THE SHOP FRONT NOW ASKS THE CUSTOMER WHAT THEY WOULD CHANGE (no
+database step, one new function to deploy once, one push).**
+
+You asked for a way for a customer to tell your developer what they would improve about the shop
+page, in their own words, with a reply straight away.
+
+**A single line now sits at the foot of the shop, under the "Website by" line.** It is printed
+with your own question, and the customer types over that sentence and presses **Enter**. There is
+no Send button, because you asked for none: Enter is the send. The line is one line tall and opens
+further only when the words no longer fit, so at rest the whole thing is a single quiet row at the
+foot of the page. Once there are words in the box a small grey line under it says **"Press Enter
+to send"**, so the one key that does something is never something they have to discover by
+accident.
+
+The moment the send lands, the box is replaced by your reply — **"Your idea is well taken care
+of. New updates soon!"** — so they see the answer without doing anything else. They are never
+asked for an email address, and nothing is created on your side for them.
+
+**The words come to you as an ordinary email**, at the developer address you already set in
+**Settings → Website & developer** — the same address the shop's "Website by" line shows. It
+runs on the **same email service your wish list already uses**, so there is no new account, no new
+key and no new DNS record. Each message says which page it was written on, in which of the three
+languages, and when it arrived.
+
+**There is no box until you have set that address**, because the box has nowhere to send to
+without it. That is on purpose: a box that quietly collects sentences nobody will ever read is
+worse than no box at all.
+
+**A send that did not go through says so, plainly.** If the email could not be sent the customer
+is told, in words, to try again or to use the WhatsApp link that is already drawn just above the
+box — and **their words stay in the box**, exactly as typed, so nothing they wrote is lost. A
+thank-you drawn over a message that never left would stop them trying again and nobody would ever
+find out, so that is the one thing this never does.
+
+**It speaks all three languages.** The question, the line that says how to send and the reply are
+written in English, Chinese and Bahasa Malaysia, and a customer who switches language keeps
+whatever they had half-typed and whatever reply they had already been given.
+
+**What you have to do, once.** This needs one small new function deployed in Supabase the same
+way the wish-list function was — the file is `supabase/functions/shop-feedback`. Until it is
+deployed the box still appears and still says plainly that the send did not go through. Nothing
+else is required: no database step, no new key, no new setting — it uses the developer email you
+have already saved.
 
 **30 Sep 2026 — engine v246, THE NOTES ON THE ITEMS ARE NOW UNDERLINED ON THE COMPACT LABEL TOO (no
 database step, no redeploy, one push).**

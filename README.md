@@ -1015,6 +1015,111 @@ matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestion
 now that the Google key returns one precise house-number answer, most lookups legitimately show no
 list and the pin simply lands.
 
+## Seven versions in one pass: the shop's feedback box (v247–v253)
+
+Seven engine versions, from bakery `5ba41df` (v246 — exactly where jerky sat) → `a65c462` (v253).
+**No SQL, no migration, no new secret.** Every version is one feature — a way for a customer to tell
+the developer what they would change about the shop page, in their own words — and it lives entirely
+on the shop front. It adds **three files**, one of them an Edge Function that leaves the repo and has
+to be deployed by hand (see *The owner's one step* below).
+
+The port used the same method as the v234–v246 pass, and for the same reason — the two apps are
+seven apart, so it is **one merge per file**, not seven sequential ones:
+`git merge-file -p --diff3 <jerky-file> <bakery@5ba41df:file> <bakery@a65c462:file>`. Sound because
+jerky's files are bakery@v246 plus localization deltas, so the bakery's v246 blob is a true common
+ancestor. Diffstat `1898 insertions, 31 deletions` across 11 files: seven merged clean (including
+`store/app.js`, `store/app.css`, `store/index.html`), `store-lang.js` with **eleven conflicts**, and
+three files that are new to jerky.
+
+`admin/js/version.js` is now `253`.
+
+### The eleven files
+
+| File | How |
+|---|---|
+| `admin/js/version.js` | merged — the number |
+| `store/app.js` | merged clean; three comments localized (`the baker` → `the owner`) |
+| `store/app.css` | merged clean — the foot's box |
+| `store/index.html` | merged clean — one line, `#fb-foot` |
+| `store-lang.js` | **hand-merge, eleven conflicts** |
+| `test/store-i18n.test.js` | merged clean — the six `fb*` keys per language |
+| `store/feedback.js` | **new** — the shop's network half |
+| `supabase/functions/shop-feedback/index.ts` | **new** — the mail builder |
+| `test/store-feedback.test.js` | **new** — ~40 tests |
+| `CHANGELOG.md` | jerky writes its own |
+| `changelog.pdf` | rebuilt by `marketing/build_changelog.py` |
+
+### What each version brought
+
+| | |
+|---|---|
+| **v247** | The box at the foot of the shop: one autogrowing line printed with her own question, no Send button (**Enter sends**), the reply swapped in the moment a send lands, and the words arriving as an ordinary email at the published developer address — read server-side, never from the caller. No box at all until that address is set. |
+| **v248** | Leaving the page is itself a send (`pagehide` + `fetch keepalive`, once, skipped offline), the half-typed sentence is kept as a draft on the customer's own device and put back, a failed send keeps the words in the box; and the shop's **Bahasa Malaysia rewritten** to how Malaysians actually write, with the Chinese moved to **Malaysian** Chinese (mainland measure word, "shopping bag", and traditional arrows fixed). |
+| **v249** | The line introduces itself — "Webmaster: Like this UI? Tell me, I'll make it better" — and the box opens itself when the question wraps, so its tail is never clipped. |
+| **v250** | "UI" spelled out: "Webmaster: Like the user interface? I'll improve it". A measurement, not a rewrite — the spelled-out term costs about half the box's 323px on a phone. |
+| **v251** | Her own sentence, verbatim: "Webmaster: Like the User Interface? Tell me & I will improve it!". Two lines on a phone, and the autogrow shows all of it. |
+| **v252** | Every mail now carries the same heading block the wish-list mail has — **Project** (the live address, read off the page), **Sent** (her own clock, Penang), **Engine** (in the subject too), **Written in** — and the shop page's foot prints `Engine v<n>`, read from `admin/js/version.js` so the two can never drift. |
+| **v253** | The heading block moves to the top and the customer's words come last, matching the wish-list mail's order; and the language is written out — "Written in English.", not "en". |
+
+### The eleven conflicts, and what jerky kept
+
+All eleven are in `store-lang.js` — the hand-merge surface, and the only file in this sync where the
+two shops' wording can collide. Every one resolved the same way: **keep jerky's side** (its own nouns
+and its extra keys) **and lay the bakery's v248 voice fixes onto it**.
+
+| Conflict | Resolution |
+|---|---|
+| `zh` referral | the bakery's campaign wording; jerky's own `code*` keys and `deliveryDays: "发货日"` kept |
+| `zh` `waSub` | the bakery's new sentence, formal **您** kept |
+| `zh` `calPrev` / `calNext` | the bakery's simplified 前一周 / 下一周 |
+| `zh` `orderCancelNote` (+`One`) | the bakery's reword, jerky's **发货日** noun kept |
+| `zh` `failBody` | the bakery's reword |
+| `zh` `courierCod` | 快递员 → **送货员** (the delivery person, not the bakery's courier); jerky's `postageQuoted` kept |
+| `ms` `confirmClosedBody` | jerky's **hari pos**, the bakery's "yang lain" |
+| `ms` `confirmChangedBody` | jerky's **snek**, the bakery's "sudah … ikut" |
+| `ms` `sendingToBakery` | the bakery's "Sedang"; jerky still drops "kepada pembuat kek" |
+| `ms` `orderRecvSub` | jerky's own "telah diterima" → the bakery's **sudah** |
+| `ms` `trkFinal` | jerky's **"Sudah diambil / Sudah dipos"** — "dipos", never the bakery's "dihantar" |
+
+### The three new files, and what the audit found
+
+- **`store/feedback.js`** (154 lines) — copied, then localized in two comments (the recipient is read
+  from "the **shop's** own published settings"; the envelope is signed by "this **shop's** verified
+  domain"). The file's whole security design is that it has **no `to` field**: the address is read
+  server-side from the published `storefront_config` row, so a public form can never mail an address a
+  caller named.
+- **`supabase/functions/shop-feedback/index.ts`** (204 lines) — one real identity leak was found and
+  fixed: the `from` fallback was `BakeAdmin wishes <wishlist@send.jienluv2bake.com.my>`, now
+  `Munchies Furkidz wishes <wishlist@send.munchies.com.my>`. The rest is comments ("baker" → "owner").
+  The honeypot is answered as a **success** on purpose; the engine number is dipped to digits and dots
+  before it reaches the subject; the body is sent as text.
+- **`test/store-feedback.test.js`** (914 lines) — copied **verbatim**. Under the fixture policy the
+  bakery names in a test (`jienluv2bake.com.my` as a fixture origin, bakery-voice comments) are
+  deliberate; only user-visible strings and assertions get localized, and the two it asserts on
+  (`STORE.en.fbPh`, `STORE.en.fbThanks`) are jerky's own values.
+
+### A false alarm worth knowing about
+
+A union check over the merged `store-lang.js` reports three keys missing — `trkItems`, `itemsTotal`,
+`trkTotal`. They are in the bakery and **deliberately absent here**: jerky's track card does not use
+the bakery's v199 money block, because the shop adds a flat postage that is never published, so the
+subtotal would come out RM8 too high (the reasoning is written at `store/app.js:2218`). The keys are
+supposed to be missing, and the check is right to say so.
+
+### The owner's one step
+
+The mail builder lives on Supabase, not on GitHub, so a push does not update it — and **v253 changes
+it**, which means the deploy is not optional this time:
+
+```
+supabase functions deploy shop-feedback --project-ref ircwozniiyywsowamixy
+```
+
+Nothing else: no SQL, no new secret, no new table. It reuses the `RESEND_API_KEY` and verified sending
+domain the wish list already runs on, and the developer address already published in
+**Settings → Website & developer**. Until it is deployed the box still appears and still says the send
+did not go through.
+
 ## Thirteen versions in one pass: the item note, the pin reset, the run guard, the labels (v234–v246)
 
 Thirteen engine versions, from bakery `93a87b2` (v233 — exactly where jerky sat) → `5ba41df` (v246).
