@@ -116,7 +116,7 @@ const noteBoxes = (root) => all(root).filter(
   (n) => n.tagName === "INPUT" && n.attrs && n.attrs.placeholder === NOTE_PH);
 
 // The New-order card stands on a day that is still open: on the day of delivery
-// itself today's cutoff has passed, and Add order answers with the backfill
+// itself today's cutoff has passed, and Place Order answers with the backfill
 // confirmation instead of committing — a real path, but not the one under test.
 function openNewCard(st) {
   const root = createEl("div");
@@ -153,7 +153,7 @@ test("the New-order card offers a note on the line she is adding, and saves it o
   assert.equal(noteBoxes(root)[0].value, "", "and it opens empty, not carrying anything over");
 
   type(noteBoxes(root)[0], "  no nuts  ");
-  tap(buttonByText(root, "Add order"));
+  tap(buttonByText(root, "Place Order"));
 
   const added = st.orders.find((o) => o.id !== "o1");
   assert.ok(added, "the order landed");
@@ -164,7 +164,7 @@ test("a manual order with no note writes NO key at all — the row is byte-for-b
   const st = state();
   const root = openNewCard(st);
   pickProduct(root);
-  tap(buttonByText(root, "Add order"));
+  tap(buttonByText(root, "Place Order"));
 
   const added = st.orders.find((o) => o.id !== "o1");
   assert.ok(added, "the order landed");
@@ -183,7 +183,7 @@ test("she can note a line for a product whose shop switch is off", () => {
   assert.equal(noteBoxes(root).length, 1,
     "the box is offered whatever the product's shop switch says");
   type(noteBoxes(root)[0], "write Happy Birthday");
-  tap(buttonByText(root, "Add order"));
+  tap(buttonByText(root, "Place Order"));
 
   const added = st.orders.find((o) => o.id !== "o1");
   assert.equal(added.lineNote, "write Happy Birthday");

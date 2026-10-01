@@ -305,7 +305,7 @@ test("the picked address is what the order is saved with", async () => {
 
     tap(offered(root)[0]);
     pickProduct(root);
-    tap(buttonByText(root, "Add order"));
+    tap(buttonByText(root, "Place Order"));
 
     const added = st.orders.find((o) => o.id !== "o1");
     assert.ok(added, "the order landed");
@@ -453,7 +453,7 @@ test("with the suggestion server unreachable, the order still saves with her own
     assert.equal(offered(root).length, 0);
 
     pickProduct(root);
-    tap(buttonByText(root, "Add order"));
+    tap(buttonByText(root, "Place Order"));
 
     const added = st.orders.find((o) => o.id !== "o1");
     assert.ok(added, "the order landed with no suggester at all");
@@ -473,7 +473,7 @@ test("a phone with no Shared data at all simply does not suggest", async () => {
     assert.equal(offered(root).length, 0);
 
     pickProduct(root);
-    tap(buttonByText(root, "Add order"));
+    tap(buttonByText(root, "Place Order"));
     assert.equal(st.orders.find((o) => o.id !== "o1").address, "12 Jalan Bunga",
       "and her typing is still what the order carries");
   });

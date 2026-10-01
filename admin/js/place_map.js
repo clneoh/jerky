@@ -26,7 +26,7 @@
 // arbitrates a pinch between the browser and Leaflet, and whether the zoom control's buttons
 // overlap the marker in the door card's 200px box.
 
-import { el, button, showPopup, toast } from "./ui.js";
+import { el, button, keepStill, showPopup, toast } from "./ui.js";
 import { validPlace, parseCoords, splitLabel, houseNotIn, roadNotHouse } from "./courier_place.js";
 import { geocodeAddress } from "./couriers/api.js";
 
@@ -44,6 +44,19 @@ const LOAD_MS = 9000;
 const HOME = { lat: 5.4141, lng: 100.3288, zoom: 13 };
 
 let loading = null;
+
+// Every pin map this file has built and not yet destroyed. A card that is rebuilt drops the box
+// it held without a word to this file — a changed Fulfillment, a day tapped in the order card's
+// own calendar, a pop-up refreshed, a sync pull — and the resize listener below is the only
+// thing that would ever notice. On a phone that notice arrives when the keyboard opens or
+// closes, which is not soon enough: until it does, every orphan keeps its tile layer, its
+// `window` listener, and answers resize calls for the rest of the session. So each mount sweeps
+// the set, and the sweep is asked the same question the listener asks — `isConnected === false`,
+// so a container that cannot answer never reads as gone.
+const livePins = new Set();
+function reapPins() {
+  for (const p of [...livePins]) if (p.box.isConnected === false) p.destroy();
+}
 
 // Leaflet, fetched once per page life. A failure clears the promise rather than
 // caching it, so an attempt after the signal comes back can still succeed — a cached
@@ -189,10 +202,18 @@ export function openPlacePicker({ state, title = "Put the pin on the map", hint 
     // one". Her words for it: the best match lands, the list is there to change it.
     //
     // Styled by the app's own .sugg-panel / .sugg-row — the same rows the customer
-    // suggester draws in views/orders.js — and in the normal flow rather than a floating
-    // layer, for the same reason that one is: this body scrolls, and a floating panel
-    // would be clipped at its edge.
-    const suggPanel = el("div", { class: "sugg-panel", hidden: true });
+    // suggester draws in views/orders.js — but FLOATING here (.sugg-drop) where that one
+    // sits in the flow. v255 kept it in the flow, and in the flow it takes 223 pixels the
+    // moment a lookup finds four candidates: everything under it is shoved down the card,
+    // and the only way to hold any of it still is to scroll the pop-up body by that same
+    // 223 — which throws the address field and the button under her thumb off the top.
+    // "press look up this address again make it exit the page we are working in."
+    //
+    // The reason the customer suggester cannot float is real — that body scrolls, and a
+    // floating panel is clipped at its edge — and it does not apply here: the panel is at
+    // most four rows (260px, bounded below) inside a body that is 730px of visible column,
+    // so it is never near an edge, and it scrolls itself when it is.
+    const suggPanel = el("div", { class: "sugg-panel sugg-drop", hidden: true });
     let found = [];
     // What the geocoder last called a place — the WORDS ON THE LINE AND THE ROWS, and never
     // the name of the door (v207, see the header). Kept out here so the fallback below can
@@ -254,31 +275,63 @@ export function openPlacePicker({ state, title = "Put the pin on the map", hint 
       // A row she picks is looked at the same way as the first answer (v211): "3 more below"
       // is exactly where a road-only candidate hides, so the row that moves the pin onto a
       // street says so too.
-      findStatus.textContent = `Found: ${saidPlace(p)}` + roadWords(houseNotIn(addrInput.value, p));
-      // put() is the one route that moves the pin, so the marker, the centre, the
-      // coordinates line and the enabled "Use this spot" all move together by
-      // construction — and it repaints this list, which re-derives the tick.
-      put(p, 17);
+      //
+      // THE LINE AND THE PIN MOVE TOGETHER, AND NOTHING ELSE DOES (v256). The rows float, so
+      // this tap adds no height anywhere — what is left to correct is the line, which can
+      // grow by a line and sits above the map. The anchor is the BUTTON, not the map: the
+      // button is what her thumb is on, and it is the anchor the map's view could not
+      // defend — holding the map still (v255) meant scrolling the card by the list's own
+      // height, which is what carried the button and the field off the top of it.
+      keepStill(findBtn, () => {
+        // PICKED IS ANSWERED (v256). The list floats over the map now, so leaving it up
+        // would leave the map covered — and the map is exactly what she wants next, to
+        // check the pin landed on the right door. "and 3 more below" stops being true here
+        // too, so the line goes back to naming the answer alone.
+        hideSuggestions();
+        findStatus.textContent = `Found: ${saidPlace(p)}` + roadWords(houseNotIn(addrInput.value, p));
+        // put() is the one route that moves the pin, so the marker, the centre, the
+        // coordinates line and the enabled "Use this spot" all move together by
+        // construction. It repaints this list only while it is up, which it no longer is.
+        put(p, 17);
+      });
     }
 
+    // ── her press, and the one that must not move the card ─────────────────
+    //
+    // "when i say look this address up, why the interface jump out of the page?"
+    //
+    // v255 answered that by holding the MAP still, and the answer was worse than the fault.
+    // With the list in the flow, the only way to hold the map is to scroll the pop-up body by
+    // the list's own height — 269 pixels measured at 375×812 against four candidates — and
+    // that scroll carries the address field and the BUTTON UNDER HER THUMB clean off the top
+    // of the card. Her words for it: "press look up this address again make it exit the page
+    // we are working in."
+    //
+    // So the list floats (`.sugg-drop`) and takes no space at all, and the anchor is the
+    // button she is holding — the one thing on this card that must never move. What the
+    // correction still has to do is small and always BELOW the button: the line under it,
+    // which can grow by a line. Measured on the same phone: 0 for the button, 0 for the
+    // field, 0 for the map, 0 for the pop-up's scroll, against 269 for three of the four.
     const findBtn = button("Look it up", async () => {
       const text = addrInput.value.trim();
       if (!text) { hideSuggestions(); findStatus.hidden = false; findStatus.textContent = "Type the address first, or put the pin on the map by hand."; return; }
       // Cleared before the ask rather than after it: the previous lookup's rows must
       // never be left sitting under a new lookup's answer. The pin itself stays where it
       // is until a new match arrives, so nothing jumps while she waits.
-      hideSuggestions();
-      found = [];
-      findBtn.disabled = true;
-      findStatus.hidden = false;
-      findStatus.textContent = "Looking this address up…";
+      keepStill(findBtn, () => {
+        hideSuggestions();
+        found = [];
+        findBtn.disabled = true;
+        findStatus.hidden = false;
+        findStatus.textContent = "Looking this address up…";
+      });
       const out = await geocodeAddress(state, text);
       if (!mineStill()) return;
       findBtn.disabled = false;
       if (!out.ok) {
         // A miss is a normal answer, not an error to apologise for: the map is one tap
         // away and the numbers are one field away, so this reads as an instruction.
-        findStatus.textContent = out.reason;
+        keepStill(findBtn, () => { findStatus.textContent = out.reason; });
         return;
       }
       found = out.places || [out.place];
@@ -297,12 +350,18 @@ export function openPlacePicker({ state, title = "Put the pin on the map", hint 
       // where she typed a house number and the geocoder's answer does not contain it, the pin
       // is on her street and not on her door, and the sentence her own words asked for is
       // added to the line she is already reading.
-      findStatus.textContent = (found.length > 1
-        ? `Found: ${saidPlace(out.place)} — and ${found.length - 1} more below`
-        : `Found: ${saidPlace(out.place)}`)
-        + roadWords(houseNotIn(text, out.place));
-      put(out.place, 17);
-      paintSuggestions();
+      //
+      // ONE WRAP FOR ALL THREE, because they are one answer: the line, the pin, and the list
+      // of other matches. Correcting between them would move the card three times. Only the
+      // LINE changes the card's height now that the list floats — the other two are inside it.
+      keepStill(findBtn, () => {
+        findStatus.textContent = (found.length > 1
+          ? `Found: ${saidPlace(out.place)} — and ${found.length - 1} more below`
+          : `Found: ${saidPlace(out.place)}`)
+          + roadWords(houseNotIn(text, out.place));
+        put(out.place, 17);
+        paintSuggestions();
+      });
     });
 
     // ── the spot she settles on ──────────────────────────────────────────
@@ -374,8 +433,10 @@ export function openPlacePicker({ state, title = "Put the pin on the map", hint 
       el("div", { class: "field", style: "margin-bottom:0" },
         el("label", {}, "The address you have"),
         addrInput,
-        el("div", { class: "btn-row", style: "margin-top:10px" }, findBtn),
-        suggPanel,
+        // The panel rides INSIDE the row that holds the button (.sugg-host is the row's
+        // position:relative), so `top:100%` drops it straight under the thumb she pressed
+        // and `left/right:0` makes it the width of the field rather than of the button.
+        el("div", { class: "btn-row sugg-host", style: "margin-top:10px" }, findBtn, suggPanel),
         findStatus),
       mapBox,
       mapNote,
@@ -455,6 +516,15 @@ export function mountPinMap(box, { place = null, onMove = () => {}, onFail = () 
   // jumps back to the middle of the box from under her finger. Only a door the map has never
   // shown — the one the address lookup resolves — is worth moving the view for.
   let shown = null;
+  // Registered the moment the map is ASKED for, not when its tiles arrive: a card can be
+  // rebuilt while Leaflet is still loading, and that orphan is just as real as a visible one.
+  const entry = { box, destroy };
+  livePins.add(entry);
+  // Deferred by one microtask, and that is the whole trick. The card's own rebuild calls
+  // `courierBox.replaceChildren(...buildCourierBlock())`, so the block being replaced is still
+  // on the page at this instant and a sweep now would reap nothing at all. One microtask later
+  // the caller has finished its swap, and "is this box still on the page" has an honest answer.
+  Promise.resolve().then(reapPins);
   // The card this box sits in can be closed while the tiles are still loading, and nothing
   // tells this file when that happens — the app's one pop-up layer empties itself with no
   // word to what it held. So the listener checks that its own box is still on the page
@@ -541,6 +611,7 @@ export function mountPinMap(box, { place = null, onMove = () => {}, onFail = () 
     if (map) { map.off(); map.remove(); map = null; }
     marker = null;
     shown = null;
+    livePins.delete(entry);
     // Guarded: a test shim's `window` need not carry this, and a teardown that throws would
     // take the whole screen down with it.
     if (window.removeEventListener) window.removeEventListener("resize", onResize);

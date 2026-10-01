@@ -186,7 +186,7 @@ test("the number she has typed before finds them too, however it is spaced", () 
   assert.equal(offered(root).length, 0, "a country code on its own is not a person");
 });
 
-test("a tap fills the name and the number — and Add order saves them onto the order", () => {
+test("a tap fills the name and the number — and Place Order saves them onto the order", () => {
   const st = state();
   const root = openNewCard(st);
 
@@ -202,7 +202,7 @@ test("a tap fills the name and the number — and Add order saves them onto the 
     && n.children.some((o) => o.value === "p1"));
   prodSel.value = "p1";
   (prodSel._listeners.change || []).forEach((f) => f.call(prodSel));
-  tap(buttonByText(root, "Add order"));
+  tap(buttonByText(root, "Place Order"));
 
   const added = st.orders.find((o) => o.id !== "o1" && o.id !== "o2" && o.id !== "o3");
   assert.ok(added, "the order landed");
@@ -220,7 +220,7 @@ test("a completed add starts the card clean — the next order does not open on 
     && n.children.some((o) => o.value === "p1"));
   prodSel.value = "p1";
   (prodSel._listeners.change || []).forEach((f) => f.call(prodSel));
-  tap(buttonByText(root, "Add order"));
+  tap(buttonByText(root, "Place Order"));
 
   assert.equal(nameBox(root).value, "", "the name box is empty again, not holding the person just served");
   assert.equal(waBox(root).value, "", "and so is the number");
@@ -293,7 +293,7 @@ test("a tap fills the delivery address too, with the one she delivered to last",
     && n.children.some((o) => o.value === "p1"));
   prodSel.value = "p1";
   (prodSel._listeners.change || []).forEach((f) => f.call(prodSel));
-  tap(buttonByText(root, "Add order"));
+  tap(buttonByText(root, "Place Order"));
 
   const added = st.orders.find((o) => !["o1", "o2", "o3"].includes(o.id));
   assert.ok(added, "the order landed");

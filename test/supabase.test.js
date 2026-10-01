@@ -410,7 +410,7 @@ test("syncStorefront publishes the labels, and nothing a customer must not see",
   state.codes = [
     { id: "cd_1", code: "pshop", label: "Paw Shop", kind: "shop", partnerId: "ptn_1", active: true },
     { id: "cd_2", code: "milo", label: "Milo flyer", kind: "promo", productId: "prd_1", active: true,
-      offer: { type: "pct", value: 10, minSpend: 30, from: "", to: "2026-09-30", newOnly: true } },
+      offer: { type: "pct", value: 10, minSpend: 30, from: "", to: "2027-12-31", newOnly: true } },
     { id: "cd_3", code: "gone", kind: "shop", partnerId: "ptn_1", active: false },
   ];
   const calls = [];

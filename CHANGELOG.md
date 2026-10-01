@@ -1,8 +1,116 @@
-# Munchies Furkidz — change history (v54 → v253)
+# Munchies Furkidz — change history (v54 → v259)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**1 Oct 2026 — engine v259, AN ORDER'S EDIT CARD NO LONGER CLOSES ITSELF WHEN YOU LOOK AN ADDRESS
+UP AGAIN (no database step, no redeploy, one push).**
+
+**The fault, and it is one word.** Pressing "Look this address up again" inside an order's Edit
+card found the address, wrote it onto the order, and then saved and closed the card — dropping you
+on the Orders list with no chance to ask for a delivery price. The card declares its own button
+called "Save changes", and that name silently took over the app's own saving step for the whole of
+that card's code. So the one press did two jobs: it saved, and then it closed.
+
+**The saving is kept apart from the button now.** The address is written down and the card you are
+working in stays open, with the price press still there to use.
+
+**How the cause was pinned down.** The tracking pop-up's own look-up carries the same saving step
+and was never broken, because it has no button of its own to shadow it. That difference is what
+named the fault rather than another guess at it.
+
+**1 Oct 2026 — engine v258, THE APP NOW TELLS YOU WHEN YOUR PHONE IS RUNNING AN OLD BUILD (no
+database step, no redeploy, one push).**
+
+**This is the real answer to a fault you reported five times.** The fix was in the app; your phone
+was still running an older copy of it. The site that serves your app lets a phone hold each file
+for ten minutes, and the app is a single page you leave open, so a phone could keep yesterday's
+build for as long as it stayed open. Worse, the Engine number on More reads a different file from
+the one carrying a fix, so it could vouch for a build that was not the one running — which is why
+the fault kept coming back after a fix had been published.
+
+**Two halves fix it.**
+
+- **The app re-checks its own files with the site before using its saved copy.** An unchanged file
+  costs almost nothing to check; a changed one is fetched whole. Pictures are left alone.
+- **An amber strip above the tab bar when the two differ.** It says which build is on the phone and
+  which the site is serving, in plain words, with a single "Update now" press.
+
+**It is never a dead control.** If the strip is still there after you press Update now, it stops
+offering the button and tells you to close the app completely and open it again.
+
+**30 Sep 2026 — engine v257, A PRESS ON A CONFIRMATION NO LONGER FOLDS THE CARD YOU ARE WRITING
+(no database step, no redeploy, one push).**
+
+**This was reported three times: landing back on the Orders list with a half-written order gone.**
+The + New order card folds away when you press anywhere outside it, which is meant, so a stray
+press never traps you in it. But the confirmation the card itself opens is drawn on a layer beside
+the page rather than inside it, so pressing "Reset the pin" on that confirmation counted as a press
+outside the card and folded the one you were writing — while the door's own look-up carried on and
+wrote the order.
+
+**A press landing inside the card's own confirmation now counts as a press on the card**, so the
+card stays open. A press on the page itself still folds the card, exactly as before, and a layer
+that is not showing shields nothing.
+
+**v255 and v256 both changed the pin picker's "Look it up".** The reports you sent were about the
+door block's "Look this address up again", and this is that fix.
+
+**30 Sep 2026 — engine v256, THE LIST OF MATCHING ADDRESSES FLOATS, SO A LOOK-UP STOPS THROWING
+THE CARD ABOUT (no database step, no redeploy, one push).**
+
+**The pin picker's list of other matches was sitting in the card itself, above the map.** With
+several matches the list was taller than the room it had, so everything under it was pushed down —
+carrying the box you were typing in, and the button you had just pressed, up off the top of the
+screen. That is the "it exits the page" you described.
+
+**The list floats under the button now and takes up no room at all.** Nothing below it is shoved
+anywhere: the button stays exactly where your finger left it, the card does not scroll, and only
+the one answer line moves. The list's height no longer matters — it behaves the same with two
+matches and with four.
+
+**Picking a row now closes the list**, so it stops covering the map you most likely wanted to look
+at next. The door block's own "Look this address up again" was re-measured at the same time and was
+found not to have this fault.
+
+**30 Sep 2026 — engine v255, LOOKING AN ADDRESS UP NO LONGER THROWS THE PIN CARD AROUND (no
+database step, no redeploy, one push).**
+
+**Your report: "when i say look this address up, why the interface jump out of the page?"** The
+press you meant was the pin picker's own "Look it up". With four matches the list of other
+addresses is taller than a phone's screen, and it sat in the card above the map, so the map — and
+the "Use this spot" button under it — were shoved a whole screen down and off the page. The button
+you pressed did not move at all, which is exactly why it read as the page jumping rather than as
+the list pushing things down.
+
+**The pin card now holds its place while the address is looked up**, using the same
+hold-this-still rule the delivery-price card already had: the row of buttons you are working with
+keeps its screen spot while the words below it extend downwards.
+
+**That rule now lives in one shared place**, so every screen that grows while you watch uses the
+same one and they cannot drift apart. Both of the app's scrolling areas — the page itself, and the
+inside of a pop-up — are handled.
+
+**30 Sep 2026 — engine v254, THE NEW-ORDER CARD HOLDS STILL, AND THE BUTTON NOW SAYS PLACE ORDER
+(no database step, no redeploy, one push).**
+
+**Three faults from your own report, all in the + New order card.**
+
+- **The card grew under your finger on a pin reset.** A reset can change the card's height in
+  eleven ways at once, and nothing held the screen still. The row of buttons under your thumb is
+  now what the card is pinned to, so the row keeps its place and the words below it extend
+  downwards.
+- **Maps left running after their card had gone.** Each rebuild of the price block left a live map
+  behind on a background listener, and one of them could paint over the confirmation box. They are
+  now swept away once their card has left the page.
+- **The button that finishes a new order now reads "+ Place Order".** The card's own title is still
+  "+ New order", the "+ New order" button on Home is untouched, and an order's Edit card still ends
+  on "Save changes".
+
+**Measured, not guessed.** At a 375-pixel phone the button row held to the pixel while the page
+scrolled; a press that made a map appear used to move everything below it by 210 pixels. And the
+overlap with the confirmation box measured 16 spoiled rows of 24 before the fix, none after.
 
 **30 Sep 2026 — engine v253, THE FEEDBACK MAIL NOW READS IN THE SAME ORDER AS YOUR WISH-LIST
 MAIL (no database step, but the shop-feedback function must be redeployed).**

@@ -249,7 +249,7 @@ function world(job) {
       currency: "RM",
       courier: { dispatch: "10:00" },
       supabase: { enabled: true, url: "https://proj.supabase.co", anonKey: "anon-key" },
-      storefront: { name: "Jienluv2bake", whatsapp: "60123456789" },
+      storefront: { name: "Munchies Furkidz", whatsapp: "60123456789" },
       pickupPlace: PICKUP,
     },
     products: [{ id: "p1", name: "Focaccia", price: 15, active: true }],
@@ -572,8 +572,8 @@ test("a price-only host gets [Use this fee] and no way to book, and says where t
     const text = root.textContent;
     assert.ok(!text.includes("Booking books the trip this price was quoted at"),
       "and none of the booking prose describes a press that is not here");
-    assert.match(text, /then press Add order/,
-      "the fee's destination is the card's own Add order, not a Save this card does not have");
+    assert.match(text, /then press Place Order/,
+      "the fee's destination is the card's own Place Order, not a Save this card does not have");
   } finally {
     lalamove.vehicles = realVehicles;
     lalamove.quote = realQuote;
@@ -597,8 +597,8 @@ test("a booking host still gets [Book this trip] — the two modes are told apar
     await settle();
     await settle();
     assert.ok(buttonNamed(root, "Book this trip"), "the courier screen keeps its booking press");
-    assert.ok(!root.textContent.includes("then press Add order"),
-      "and it is told what Save is, not what this app has no Add order button for");
+    assert.ok(!root.textContent.includes("then press Place Order"),
+      "and it is told what Save is, not what this app has no Place Order button for");
   } finally {
     lalamove.vehicles = realVehicles;
     lalamove.quote = realQuote;

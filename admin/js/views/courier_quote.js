@@ -45,7 +45,7 @@
 // for the active one and uses that courier's own words — its `label`, the names it
 // puts on its vehicles. No courier's name, service keys or error codes appear below.
 
-import { button, confirmDialog, el, guarded, toast } from "../ui.js";
+import { button, confirmDialog, el, guarded, keepStill, toast } from "../ui.js";
 import { todayISO } from "../dates.js";
 import {
   fmtAgo, fmtDistanceKm, fmtQuote, fmtQuoteLeft, fmtStamp, isLink, jobOf, liveJobOf,
@@ -214,10 +214,41 @@ export function courierQuoteSection({
   // exists because the press must work whether or not the price fold has ever been opened —
   // see sayDoorAnswer.
   let doorStatus = null;
+  // The row of the block's two presses (v254) — the anchor the card is held by, see keepStill.
+  let doorBtns = null;
   let doorHandle = null;
   // Read-only until she says otherwise — see mountPinMap. It is reset to locked every time
   // the block is rebuilt, so a card she opens is never already in "move" mode.
   let doorLocked = true;
+
+  // ── the card holding still under her thumb (v254) ───────────────────────────
+  //
+  // WHAT SHE REPORTED: "once i click reset pin the screen jump." The ＋ New order card is
+  // INLINE in `#view`, so the page scrolls on `document.scrollingElement` — and nothing on
+  // this path was compensating for the door block changing height under her finger.
+  // Measured at 375×812, on her own press: the answer line rewraps from three lines to two
+  // and the row she is holding moves up 15 pixels, with the scroll left at 0. Asking for a
+  // price on a card with no pin yet is worse — the 200px map appears BETWEEN the words she
+  // is reading and the buttons under her thumb, and the button she is still holding drops
+  // 210 pixels, taking the price fold down with it.
+  //
+  // THE FIX IS THE APP'S OWN RULE, not a reservation of height. Eleven separate things can
+  // change this block's size: the answer line, the words rewrapping, both button labels, the
+  // 200px map showing or hiding, the offer card, and the whole price list. Reserving room for
+  // each is eleven fresh bug surfaces and still cannot work for the price list, which really
+  // does grow. So the card takes its anchor's viewport top before a repaint and puts it back
+  // after — precisely what the orders screen does for the row the baker is acting on
+  // (orders.js:657-733) and what scenario.js does inside its own containers.
+  //
+  // SINCE v255 THE RULE ITSELF LIVES IN ui.js, as `keepStill`/`scrollerFor`, because the pin
+  // picker's own "Look it up" needed the identical correction and a second hand-written copy
+  // would be a second thing to keep in step. See the note there.
+  //
+  // WHY THE ANCHOR IS THE BUTTON ROW AND NOT THE BLOCK'S OWN TOP. Measured, and the plan had
+  // it wrong: the block's top does not move at all (`slotMovedBy: 0`, `wordsTop: 0` in both
+  // runs) — everything that changes happens BELOW it, inside the field. An anchor on the
+  // block's top would compute a delta of 0 and be a line of dead code. The button row is the
+  // row she is actually touching, and it moves by exactly the height added above it.
   // Assigned by build(), because only build() knows about the prices. Before the fold has
   // ever been opened there are no prices and nothing to say.
   let afterDoorMove = () => {};
@@ -330,7 +361,19 @@ export function courierQuoteSection({
 
   // Draws the whole block, and is safe to call any number of times: every line follows the
   // state, and the map is only ever BUILT once.
+  //
+  // EVERY ROUTE TO THIS BLOCK REACHES THE PAINT (v254): her two presses above, the drag
+  // callback in mountPinMap below, `sayDoorAnswer`'s own caller, and paintEnds, which is where
+  // `ask`, the re-lookup and every price press arrive. So this one wrapper is what holds the
+  // card still for all of them, and none of them has to know it is happening.
   function paintDoor() {
+    // Null on the very first paint, because the row does not exist until paintDoorNow makes
+    // it — and that is the right answer: a block arriving for the first time is not a block
+    // that moved under her, and there is no spot to put back.
+    keepStill(doorBtns, paintDoorNow);
+  }
+
+  function paintDoorNow() {
     if (!doorBox || !isCourierOrder) return;
 
     if (!doorWords) {
@@ -369,12 +412,15 @@ export function courierQuoteSection({
       // ONE node, never an array: replaceChildren is variadic, and an array handed to it
       // prints as "[object HTMLParagraphElement],…" with nothing left to press — the fault
       // this card shipped at v195.
+      // Held in a variable as well as in the tree (v254): this is the row the anchor rule
+      // above pins to her screen, and the row the block's own buttons live on.
+      doorBtns = el("div", { class: "btn-row", style: "margin-top:10px" }, doorBtn, lookBtn);
       doorBox.replaceChildren(
         el("div", { class: "field", style: "margin:0" },
           el("label", {}, "The door the driver is sent to"),
           doorWords,
           doorMapBox,
-          el("div", { class: "btn-row", style: "margin-top:10px" }, doorBtn, lookBtn),
+          doorBtns,
           doorStatus));
     }
 
@@ -509,9 +555,16 @@ export function courierQuoteSection({
       onFail: (why) => {
         // No map — and the door is still checkable. The coordinates above are the same fact
         // a map would have drawn, and the picker's number field is one tap away.
-        doorHandle = null;
-        doorMapBox.hidden = true;
-        doorWords.textContent += ` (The map is not available right now — ${why}. The point above is still the door.)`;
+        //
+        // Held to the same rule as the paints (v254). This one arrives on the map loader's own
+        // clock, long after the press that built the map, and it takes 200 pixels OFF the card
+        // while adding a line above them by telling her so — a change above the row she is
+        // holding, arriving with nothing else to explain it.
+        keepStill(doorBtns, () => {
+          doorHandle = null;
+          doorMapBox.hidden = true;
+          doorWords.textContent += ` (The map is not available right now — ${why}. The point above is still the door.)`;
+        });
       },
     });
   }
@@ -1160,7 +1213,7 @@ export function courierQuoteSection({
       // payer question is the thing that does.
       toast(canBook
         ? `Fee ${fmtQuote(q.amount, q.currency, cur)} put in the charge box — now choose who paid the courier and press Save. Booking a trip is separate: the charge saves without one.`
-        : `Fee ${fmtQuote(q.amount, q.currency, cur)} put in the charge box — now choose who paid the courier, then press Add order.`);
+        : `Fee ${fmtQuote(q.amount, q.currency, cur)} put in the charge box — now choose who paid the courier, then press Place Order.`);
       // Folded away so the amount it just wrote is what she is looking at, with the
       // payer question under it — which is the next thing she has to answer.
       open = false;
@@ -1451,7 +1504,7 @@ export function courierQuoteSection({
       el("p", { class: "card-sub", style: "margin:0 0 10px" },
         canBook
           ? `Prices for this delivery come from ${courier.label}'s own account. Taking a price fills the charge box, where you still choose who paid the courier — booking the trip is a separate press, and it is the Save button that writes the charge.`
-          : `Prices for this delivery come from ${courier.label}'s own account. Taking a price fills the charge box — choose who paid the courier, then press Add order. Booking the trip happens on the order itself, once it has been added.`),
+          : `Prices for this delivery come from ${courier.label}'s own account. Taking a price fills the charge box — choose who paid the courier, then press Place Order. Booking the trip happens on the order itself, once it is placed.`),
       canBook ? jobBox : null,
       endsLine,
       offerBox,

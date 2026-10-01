@@ -1045,7 +1045,7 @@ function publishSpy() {
   };
   return { posts, stop: () => { globalThis.fetch = real; } };
 }
-// One item line picked, ready for "＋ Add order" — the item row's dropdown reads its own
+// One item line picked, ready for "＋ Place Order" — the item row's dropdown reads its own
 // value, which the shim cannot type into, so it is set and then fired by hand. A product
 // option is labelled with the day's count as well as the name ("Focaccia — 10 left"), so
 // the line is found by the name it starts with.
@@ -1056,13 +1056,13 @@ function pickItem(root, productId, name) {
   sel.value = productId;
   sel._listeners.change[0].call(sel);
 }
-// Press Add order, answering the backfill question the same way she does. A day whose
+// Press Place Order, answering the backfill question the same way she does. A day whose
 // 6pm cutoff has passed asks before it takes the order, so a test that only pressed the
 // button would be testing the question rather than the add.
 function pressAdd(root) {
   const layer = layers["confirm-layer"];
   if (layer) layer.replaceChildren(); // an earlier test's dialog cannot answer this one
-  buttonByText(root, "＋ Add order")._listeners.click[0]();
+  buttonByText(root, "＋ Place Order")._listeners.click[0]();
   const yes = buttonByText(layers["confirm-layer"], "Add anyway");
   if (yes) yes._listeners.click[0]();
 }

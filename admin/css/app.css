@@ -96,6 +96,36 @@ body { min-height: 100vh; }
 .share-warn-msg { margin: 0; font-size: 12.5px; line-height: 1.45; }
 .share-warn-msg b { color: var(--amber); font-weight: 700; }
 
+/* ---------- "New version ready" strip ---------- */
+/* GitHub Pages serves the app's code with a ten-minute cache and no build
+   number in any URL, so a phone can keep running the previous build with
+   nothing on screen to say so. This strip is the one place that says it.
+   It sits directly above the tab bar rather than under the top bar: the
+   "Not sharing" strip is already sticky there, two sticky siblings at the
+   same offset would draw over each other once scrolled, and a bar at the
+   bottom is seen wherever the page happens to be scrolled to. */
+.update-bar {
+  position: fixed;
+  left: 0; right: 0;
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+  z-index: 25; /* over the page, under the tab bar (30) */
+  background: var(--amber-bg);
+  border-top: 1px solid #ecd4a5;
+  box-shadow: 0 -1px 6px rgba(120, 66, 32, .07);
+}
+.update-bar[hidden] { display: none; }
+.update-bar-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 540px;
+  margin: 0 auto;
+  padding: 8px 14px;
+}
+.update-bar-msg { flex: 1; margin: 0; font-size: 12.5px; line-height: 1.45; }
+.update-bar-msg b { color: var(--amber); font-weight: 700; }
+.update-bar .btn { flex: none; }
+
 /* ---------- Hero (Home) ---------- */
 .hero {
   position: relative;
@@ -825,6 +855,30 @@ option.tone-off { color: var(--muted); }
   overflow: hidden;
 }
 .sugg-panel[hidden] { display: none; }
+/* The pin picker's list FLOATS (v256, 30 Sep 2026). In the flow it cost the card 223
+   pixels the moment a lookup found four candidates, and there is no anchor that can
+   absorb that: holding the map still scrolls the pop-up body by the same amount and
+   throws the address field and the button under her thumb off the top. "press look up
+   this address again make it exit the page we are working in."
+
+   The panel is a child of the button's own row, which is why .sugg-host is here: the
+   row is the positioning context, so top:100% is the 10px under her thumb. It needs
+   no z-index painted by hand against the map — Leaflet's own panes are sealed inside
+   .place-map's z-index:0 (v254), so a sibling at 2 wins without a fight. max-height is
+   bounded to four rows so the body's scroll can never clip it mid-row, and it scrolls
+   itself on the rare answer that is taller. */
+.btn-row.sugg-host { position: relative; }
+.sugg-drop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin-top: 6px;
+  z-index: 2;
+  max-height: 260px;
+  overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+}
 /* A row is a finger's target, not a line of text — 36px, like every other tappable
    row in the app. Written here rather than inherited: .list-item carries the row's
    inset and its own press state, which is why it also needs the padding and the
@@ -1203,6 +1257,19 @@ option.tone-off { color: var(--muted); }
   border-radius: 12px;
   overflow: hidden;
   background: #eceae4; /* the tile layer's own ground colour, so an empty blue box is never shown */
+  /* THE MAP'S PANES DO NOT GET OUT (v254). Leaflet gives its own layers z-indexes up to
+     1000 — tiles 200, the marker 600, the zoom control's corner 1000 — and a `position:
+     relative` with `z-index: auto` on the container creates no stacking context, so all of
+     them were competing in the ROOT context against this app's fixed layers. Measured at
+     375px on her own report ("sometimes pop up like half at back layer"): the door block's
+     live map painted squarely over the lower half of the confirm dialog, her question cut
+     off mid-sentence and both buttons hidden, and a tap in that band hit
+     `a.leaflet-control-zoom-out` instead of the card. Naming a z-index here — zero is
+     enough — keeps every one of Leaflet's layers inside this box, in all four places a map
+     is drawn, and changes nothing visible inside the map itself. Do NOT try to out-rank
+     Leaflet by raising the ladder above: its control layer is 1000 and version-dependent. */
+  position: relative;
+  z-index: 0;
 }
 .place-map .leaflet-control-attribution { font-size: 10px; }
 .leaflet-container { font: inherit; }

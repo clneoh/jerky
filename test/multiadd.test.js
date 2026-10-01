@@ -125,7 +125,7 @@ test("several manual items for one customer land as a single order group", () =>
   byPlaceholder(root, "Customer name (optional)")[0].value = "Ain";
   byAttrs(root, "type", "tel")[0].value = "60123456789";
 
-  click(byText(root, "＋ Add order")[0]);
+  click(byText(root, "＋ Place Order")[0]);
 
   assert.equal(state.orders.length, 2, "two order rows (one per item)");
   const [o1, o2] = state.orders;
@@ -163,7 +163,7 @@ test("a single manual item still adds a plain order (no group)", () => {
   const row = byClass(root, "add-item")[0];
   change(row.children[0], "p1");
   byPlaceholder(root, "Customer name (optional)")[0].value = "Bee";
-  click(byText(root, "＋ Add order")[0]);
+  click(byText(root, "＋ Place Order")[0]);
 
   assert.equal(state.orders.length, 1);
   assert.equal(state.orders[0].groupId, undefined, "single item is a plain order");
@@ -216,7 +216,7 @@ test("removing an item row drops it before submit", () => {
   assert.equal(byClass(root, "add-item").length, 2, "row removed on ✕");
   assert.equal(selectedValue(byClass(root, "add-item")[0].children[0]), "p1", "kept row keeps its selection");
 
-  click(byText(root, "＋ Add order")[0]);
+  click(byText(root, "＋ Place Order")[0]);
   assert.equal(state.orders.length, 1, "only the kept row is added");
   assert.equal(state.orders[0].qty, 1);
 });
@@ -231,7 +231,7 @@ test("a manually added order freezes the product name and price it was sold at",
   const row = byClass(root, "add-item")[0];
   change(row.children[0], "p1"); // Focaccia, RM15
   byPlaceholder(root, "Customer name (optional)")[0].value = "Bee";
-  click(byText(root, "＋ Add order")[0]);
+  click(byText(root, "＋ Place Order")[0]);
 
   assert.equal(state.orders[0].productName, "Focaccia");
   assert.equal(state.orders[0].unitPrice, 15);
@@ -245,7 +245,7 @@ test("repricing or renaming a product afterwards does not rewrite the past order
   const row = byClass(root, "add-item")[0];
   change(row.children[0], "p1");
   byPlaceholder(root, "Customer name (optional)")[0].value = "Bee";
-  click(byText(root, "＋ Add order")[0]);
+  click(byText(root, "＋ Place Order")[0]);
 
   // The baker renames and reprices Focaccia on the Products screen.
   state.products[0].name = "Sea Salt Focaccia";
@@ -274,7 +274,7 @@ test("a price typed on the New order form is what that order is sold at", () => 
     /Items total: RM 12.50/, "and the row total follows what she typed");
 
   byPlaceholder(root, "Customer name (optional)")[0].value = "Bee";
-  click(byText(root, "＋ Add order")[0]);
+  click(byText(root, "＋ Place Order")[0]);
   assert.equal(state.orders[0].unitPrice, 12.5, "the order is sold at the price she typed");
   assert.equal(state.orders[0].productName, "Focaccia", "the name is still the product's");
 

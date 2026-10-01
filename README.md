@@ -1015,6 +1015,63 @@ matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestion
 now that the Google key returns one precise house-number answer, most lookups legitimately show no
 list and the pin simply lands.
 
+## Six versions in one pass: the card holds still, and the app says when it is out of date (v254–v259)
+
+Six engine versions, from bakery `a65c462` (v253 — exactly where jerky sat) → `b1a53eb` (v259).
+**`admin/`-only, no SQL, no Edge Function, no new secret, no `store/` file.** A push is the whole
+of it. Diffstat `2006 insertions, 70 deletions` across 28 files — ten under `admin/` (one new,
+`admin/js/freshness.js`), sixteen test files, `CHANGELOG.md` and the tracked `changelog.pdf`.
+
+Ported with the same **one merge per file** method as the v234–v246 and v247–v253 passes, and for
+the same reason: the two apps were six apart, so it is a single cumulative three-way merge, not six
+sequential ones —
+`git merge-file -p --diff3 <jerky-file> <bakery@a65c462:file> <bakery@b1a53eb:file>`. Sound because
+jerky's files are bakery@v253 plus localization deltas, so the bakery's v253 blob is a true common
+ancestor. **All nine edited source merges and all sixteen test merges landed clean** (zero
+conflicts), then each was audited by the matched-divergence rule: for every file, `diff merged-vs-jerky-original`
+and `diff merged-vs-bakery-head` — when the head difference count equals jerky's base difference
+count, the merge added the bakery's changes, kept jerky's divergences and leaked no bakery identity.
+
+`admin/js/version.js` is now `259`.
+
+### The ten files
+
+| File | How |
+|---|---|
+| `admin/js/freshness.js` | **New.** `parseVersion`, `deployedBuild({ fetchImpl, base })` (probes `js/version.js?...&probe=<now>` with `cache: "no-store"`), `decide({ running, deployed, tried })` and `startFreshnessWatch`. Copied verbatim — nothing in it is bakery-specific. |
+| `admin/js/version.js` | `ENGINE_VERSION` `"253"` → `"259"`. |
+| `admin/sw.js` | Fetches the app's own code with `{ cache: "no-cache" }` (`CODE = /\.(?:js\|css\|html)$/i`, `isCode`, `askNetwork` with a synchronous-throw fallback so a browser refusing the init keeps its offline cache). Images and the manifest untouched. |
+| `admin/index.html` | `<div id="update-bar" class="update-bar" hidden></div>` above `#confirm-layer`. |
+| `admin/js/app.js` | Imports `ENGINE_VERSION` and `startFreshnessWatch`; calls `startFreshnessWatch({ running: ENGINE_VERSION })` before the lock/sign-in gates. |
+| `admin/js/ui.js` | Gains `scrollerFor(node)` and `keepStill(anchor, fn)` — the shared anchor-and-delta rule, moved out of `courier_quote.js`. `scrollerFor` walks parents by hand rather than with `closest()`, because a selector the browser answers but a Node shim does not is a rule the tests cannot see. |
+| `admin/js/place_map.js` | Module-level `livePins` Set plus `reapPins()`, swept one microtask after each mount (the deferral is load-bearing: the rebuild evaluates the new block as an argument to `replaceChildren`, so at mount time the old box is still connected). The match list becomes a floating `.sugg-drop` inside `.btn-row.sugg-host`. |
+| `admin/js/views/courier_quote.js` | `paintDoor()`/`paintDoorNow()` split around `keepStill(doorBtns, …)`; the map-fail path wrapped too; the button relabelled. |
+| `admin/js/views/orders.js` | The outside-tap listener returns early on a press inside a visible `popup-layer`/`confirm-layer`/`lock-layer`; the `+ Place Order` relabels; and the v259 fix — `const save` → `const saveEdits` in `popupEditBody`, because a function-scoped `save` shadowed the `save` imported from `state.js` for the whole body. |
+| `admin/css/app.css` | `.update-bar`/`.update-bar-inner`/`.update-bar-msg`, `.btn-row.sugg-host { position: relative; }` + the `.sugg-drop` panel, and `position: relative; z-index: 0;` on `.place-map` (Leaflet sets only `position:relative; z-index:auto`, which creates no stacking context, so its layers up to 1000 competed with the fixed layers at 20–80). |
+
+### The six versions
+
+| Version | What it bought |
+|---|---|
+| **v254** | The `+ New order` card holds still through a pin reset (the button row is the anchor, so the words extend downwards); orphaned Leaflet maps are swept by `reapPins()`; and the finishing button is renamed `+ Place Order` (the card's title stays `+ New order`, and Edit still ends on Save changes). |
+| **v255** | The pin picker's own "Look it up" no longer throws the card about — the anchor-and-delta rule moves into `ui.js` as `keepStill`/`scrollerFor` and the picker's four paint sites anchor on the map box. |
+| **v256** | The match list floats under the button, so it takes no space at all and shoves nothing down; picking a row closes it. |
+| **v257** | A press on the card's own confirmation no longer folds the card — a press inside a visible overlay layer returns before the fold. |
+| **v258** | The app tells the owner when the phone is running an old build: `sw.js` revalidates its own code, and `freshness.js` shows an amber strip with **Update now** when the running and deployed versions differ; after a failed reload it stops offering the button rather than being a dead control. |
+| **v259** | An order's Edit card stops closing when "Look this address up again" is pressed — the local `save` shadowed the store import. |
+
+### Localization kept
+
+Only two test fixtures held the bakery's brand in a user-visible position and were localized:
+`test/courier-quote-card.test.js` and `test/edit-popup-relook.test.js` both carry a
+`storefront: { name: … }`, changed to `Munchies Furkidz`. Every other bakery fixture
+(`Focaccia`, `ing_flour`, `u_loaf`, `pc_*`) and bakery-voice comment stays, on purpose — see
+CLAUDE.md, *Test files keep the bakery's fixtures*.
+
+No bakery identity leaked: no `jienluv2bake`, no `hzpyblqygnntixkijeem`, no `Bakester` in any
+shipped file. Session/storage keys beginning `bakeadmin.` are deliberately unchanged — they are
+origin-scoped — including `freshness.js`'s own `TRIED_KEY = "bakeadmin.updateTried"`.
+
 ## Seven versions in one pass: the shop's feedback box (v247–v253)
 
 Seven engine versions, from bakery `5ba41df` (v246 — exactly where jerky sat) → `a65c462` (v253).

@@ -259,3 +259,63 @@ test("destroy takes the map off the page and forgets the pin, so a closed card l
   handle.setPlace({ lat: 5.5, lng: 100.5 });
   assert.equal(map.removed, true, "and a repaint arriving after the card closed does not bring it back");
 });
+
+// ── a rebuilt card does not leave the map it replaced running (v254) ───────
+//
+// WHAT SHE REPORTED, and what this section is about: "the add order is becoming unstable,
+// sometimes not sure what happen." The card rebuilds itself often — a changed Fulfillment, a
+// day tapped in its own calendar, a sync pull — and every rebuild made a FRESH door slot and
+// dropped the old one. Nothing told this file. The destroyed-on-resize listener above was the
+// only thing that would ever notice, so until the keyboard next opened or closed, each orphan
+// kept its tiles AND its `window` listener, and answered resize calls for the rest of the
+// session. One phone, one form she types in all day.
+//
+// The sweep is deferred by a microtask, and THIS test is what that deferral is for. The order
+// below is the point: the app builds the new block as an ARGUMENT to `replaceChildren`, so the
+// new map is mounted while the old box is STILL on the page, and the old box is detached only
+// afterwards. A synchronous sweep at mount time therefore reaps nothing — the orphan it is
+// looking for is still connected when it asks. So the test mounts the replacement FIRST and
+// disconnects the old box second, which is the real sequence, and `tick()` stands in for the
+// caller finishing its swap. (Written the other way round — disconnect, then mount — the test
+// passes with either version of the sweep and proves nothing about the deferral.)
+
+test("a rebuilt card does not leave the map it replaced running (v254)", async () => {
+  const leaf = makeLeaflet();
+  globalThis.window.L = leaf.L;
+
+  const first = makeEl("div");
+  mountPinMap(first, { place: DOOR });
+  await tick();
+  const map1 = leaf.rec.maps[0];
+  assert.ok(map1 && !map1.removed, "the first card's map is up");
+
+  // The replacement is built while the block it replaces is still on the page — at this instant
+  // the old box answers `isConnected` true, exactly as it does inside the app's own swap.
+  const second = makeEl("div");
+  mountPinMap(second, { place: DOOR });
+  assert.equal(first.isConnected, true,
+    "the old box is still connected while the new block is built, which is what makes the sweep's timing matter");
+  first.isConnected = false; // …and only now does replaceChildren detach it
+  await tick();
+
+  assert.equal(map1.removed, true,
+    "the map the rebuilt card left behind is destroyed, rather than kept alive answering resize calls for the rest of the session");
+  assert.ok(leaf.rec.maps[1] && !leaf.rec.maps[1].removed,
+    "and the map that replaced it is untouched — the sweep must not eat the new card's own map");
+});
+
+test("a map still on the page survives every later mount (v254)", async () => {
+  const leaf = makeLeaflet();
+  globalThis.window.L = leaf.L;
+
+  const kept = makeEl("div");
+  mountPinMap(kept, { place: DOOR });
+  await tick();
+
+  mountPinMap(makeEl("div"), { place: DOOR });
+  mountPinMap(makeEl("div"), { place: DOOR });
+  await tick();
+
+  assert.equal(leaf.rec.maps[0].removed, false,
+    "a box that is still on the page is not an orphan, however many cards are built after it");
+});

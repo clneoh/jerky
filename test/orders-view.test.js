@@ -156,7 +156,7 @@ test("opened, it reads the day on one line, then the items, then the customer", 
 
   assert.ok(itemsIdx > dayIdx, "what they want comes after the day");
   assert.ok(customerIdx > itemsIdx, "and who ordered it comes after that");
-  assert.ok(addIdx > customerIdx, "with Add order last");
+  assert.ok(addIdx > customerIdx, "with Place Order last");
 });
 
 test("the card's calendar unfolds on the day the card is on, and re-homes each time", () => {

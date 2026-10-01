@@ -333,6 +333,57 @@ export function wireRowReorder({ row, handle, boxOf, rowSelector, kin, onDrop })
   handle.addEventListener("pointercancel", finish);
 }
 
+// ── NOTHING MOVES UNDER HER THUMB ────────────────────────────────────────────
+//
+// The app's own anchor-and-delta rule, and it belongs here rather than in either of the two
+// screens that now use it, because it is a fact about the LAYERS, not about a card.
+//
+// The problem it solves, in her words, twice: "once i click reset pin the screen jump" and
+// "when i say look this address up, why the interface jump out of the page?" A press that
+// reveals an answer inserts text, rows or a map ABOVE something else, and whatever is below
+// the insertion is pushed down the screen by exactly the height added. Nothing in the browser
+// compensates for that, because the browser has no idea which part of the card she was
+// looking at.
+//
+// So: name the node she is watching, measure its screen `top`, let the repaint happen, and
+// scroll its container by however far it moved. The correction is the app's own idiom, not an
+// invention — orders.js does it for the row the baker is acting on, scenario.js for its inner
+// containers, and showPopup's refresh above for a wholesale rebuild.
+
+// WHICH container actually scrolls this node. Found BY HAND rather than with `closest()`,
+// because the app has two scrollers and a selector the browser answers but a test's stand-in
+// screen does not is a rule the tests cannot see. `.popup-body` is the pop-up's own; anything
+// else scrolls the document.
+export function scrollerFor(node) {
+  for (let n = node && node.parentNode; n; n = n.parentNode) {
+    if (n.nodeType !== 1) continue;
+    if (` ${String(n.className || "")} `.includes(" popup-body ")) return n;
+  }
+  return document.scrollingElement || document.documentElement;
+}
+
+// ONE CALL, ONE CORRECTION — and a press may set off several of these in a row, which is safe
+// because each call measures its own "before" through the scroll the last one left behind.
+// What would NOT be safe is NESTING them: an inner call would move the scroll and the outer
+// would then add its own stale delta on top, ending up twice as far from her. So this wraps
+// ONE function per call site, and the tests that drive a real press assert the anchor lands
+// back on its exact pixel — an overshoot is how nesting would show itself.
+export function keepStill(anchor, fn) {
+  // No rect to measure: the repaint runs and nothing is corrected. A stand-in screen with no
+  // layout answers this way, deliberately, and this must never be the thing that throws on a
+  // phone whose node has gone.
+  if (!anchor || !anchor.getBoundingClientRect) { fn(); return; }
+  const was = anchor.getBoundingClientRect().top;
+  fn();
+  // The anchor has to still be on the page to have a spot worth defending, and a node that
+  // left it has no viewport position at all.
+  if (!anchor.isConnected) return;
+  const scroller = scrollerFor(anchor);
+  if (!scroller) return;
+  const moved = anchor.getBoundingClientRect().top - was;
+  if (moved) scroller.scrollTop += moved;
+}
+
 // A reusable centered pop-up (used for editing an order). Layers over the whole
 // screen with a dimmed scrim; `makeBody(refresh, close)` is called to (re)fill
 // the scrollable body, so callers re-invoke `refresh()` after changing anything

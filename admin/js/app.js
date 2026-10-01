@@ -34,6 +34,8 @@ import { renderLock } from "./views/lock.js";
 import { refreshShareWarn } from "./sharewarn.js";
 import { lockEnabled } from "./pin.js";
 import { installSuggestionAccept } from "./suggest.js";
+import { ENGINE_VERSION } from "./version.js";
+import { startFreshnessWatch } from "./freshness.js";
 
 const state = loadState();
 
@@ -283,6 +285,11 @@ async function boot() {
   if (ensureSupabase(state)) save(state);
   const layer = document.getElementById("lock-layer");
   if (layer) layer.hidden = true; // hygiene: never a stale visible lock
+  // Before the gates, so a phone sitting on the lock or sign-in screen still
+  // learns it is behind. GitHub Pages caches the app's code for ten minutes
+  // with no build number in any URL, so a fix can be pushed and not arrive;
+  // this is what makes that visible instead of silent.
+  startFreshnessWatch({ running: ENGINE_VERSION });
   if (!(await passLock())) return;
   bootApp();
 }

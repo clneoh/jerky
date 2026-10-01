@@ -388,15 +388,30 @@ export function packingLabelData(state, group, style = "full") {
 // it starts shut. One document listener serves it, and a card taken off the page
 // is simply dropped from the list on the next tap — nothing has to be unhooked
 // when a rebuild replaces it. Installed from renderOrders rather than at module
-// scope, since the test shim's document has no addEventListener.
+// scope, because this module is imported by tests whose `document` is a shim, and
+// a few of those shims have no addEventListener to install onto.
 const openOrderCards = new Set();
 let orderCollapseInstalled = false;
+// The layers that sit ABOVE the page — a confirmation, a pop-up, the lock. A press
+// that lands on one of them has not landed on the page behind it, so it must not fold
+// a card: the card that opened the confirmation is the one it is asking about.
+const OVERLAY_LAYERS = ["popup-layer", "confirm-layer", "lock-layer"];
 
 function installOrderCollapseOutside() {
   if (orderCollapseInstalled || typeof document === "undefined"
       || typeof document.addEventListener !== "function") return;
   orderCollapseInstalled = true;
   document.addEventListener("pointerdown", (ev) => {
+    // A press that lands on a layer ABOVE the page — the confirmation the card
+    // itself opened, a pop-up, the lock — is not a press on the page behind it,
+    // and the card that opened it must survive it. Without this the door's
+    // "Look this address up again" asked, she tapped "Reset the pin" in the
+    // confirmation, and the order card she was writing folded out from under
+    // her while the look-up went on to write the order.
+    for (const id of OVERLAY_LAYERS) {
+      const layer = document.getElementById(id);
+      if (layer && !layer.hidden && layer.contains && layer.contains(ev.target)) return;
+    }
     for (const ctl of [...openOrderCards]) {
       if (ctl.card.isConnected === false) { openOrderCards.delete(ctl); continue; }
       if (!ctl.card.contains(ev.target)) ctl.close();
@@ -1682,7 +1697,7 @@ function orderForm(state, dateId, root, selectDate) {
       button("＋ Add another item", () => { items.push({ productId: "", qty: 1, price: null }); renderRows(); }, "ghost"),
       totalEl),
     el("div", { class: "card-sub", style: "margin:0 0 10px" },
-      "Everything in the Items list becomes one customer order — add every item, then press Add order."),
+      "Everything in the Items list becomes one customer order — add every item, then press Place Order."),
     el("div", { class: "form-grid order-sugg" },
       el("div", {}, el("label", {}, "Customer"), customer),
       suggester.panel,
@@ -1695,7 +1710,7 @@ function orderForm(state, dateId, root, selectDate) {
     el("div", { class: "card-sub", style: "margin:0 0 10px" },
       "Order date = when it was placed (defaults to today). WhatsApp is kept in your delivery history for marketing follow-ups."),
     el("div", { class: "field" }, el("label", {}, "Delivery note (optional)"), note),
-    button("＋ Add order", submit, "block primary"));
+    button("＋ Place Order", submit, "block primary"));
 
   const caret = el("span", { class: "fold-caret" }, newFormOpen ? "▾" : "▸");
   const controller = { card: null, open: false, close: null };
@@ -1978,7 +1993,13 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
   const rowsEl = el("div", {}, ...lines.map(rowFor));
   paintTotal();
 
-  const save = () => {
+  // NOT named `save`. This body already imports the STORE's `save` from state.js, and a
+  // function-scoped `const` shadows a module import for the WHOLE body — which is how the
+  // door block's `onCommit` below ("Save changes" is the other door onto the same record)
+  // came to press THIS function instead of persisting: the reset succeeded, the card saved
+  // itself, toasted "Order updated" and closed, dropping her on the Orders list with no
+  // price asked. One press, three versions of the report. See test/edit-popup-relook.test.js.
+  const saveEdits = () => {
     const chosen = lines.filter((l) => l.productId);
     if (!chosen.length) return toast("Choose a product");
     const destId = draft.deliveryDateId || curId;
@@ -2074,7 +2095,7 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       promoWrap),
     el("div", { class: "card-sub", style: "margin:0 0 10px" },
       "Hidden products are listed as \"(hidden)\" — you can still add or keep one."),
-    button("Save changes", save, "block primary"),
+    button("Save changes", saveEdits, "block primary"),
     el("div", { style: "margin-top:8px" }, button("Cancel", close, "ghost block")));
 }
 

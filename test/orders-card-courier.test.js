@@ -183,7 +183,7 @@ function chargeBox(root) {
 const trackingBox = (root) =>
   all(root).find((n) => n.tagName === "INPUT" && n.attrs && n.attrs.placeholder === "e.g. JT123456789");
 const carrierSel = (root) => selWith(root, "J&T Express");
-const addOrder = (root) => tap(buttonByText(root, "Add order"));
+const addOrder = (root) => tap(buttonByText(root, "Place Order"));
 
 // ── the trap ───────────────────────────────────────────────────────────────
 
