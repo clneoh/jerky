@@ -148,9 +148,9 @@ export function openPlacePicker({ state, title = "Put the pin on the map", hint 
       useBtn.disabled = false;
       coordsLine.textContent = pinnedAt(p);
       // The pin has moved, so which row is ticked has changed — by whatever route moved
-      // it, whether that was a row, a tap on the map, a drag or pasted numbers. Repainted
-      // from here rather than at each call site so that no route can forget, and only
-      // when the list is actually on screen.
+      // it, whether that was a row, the tap that places the first point, a drag or pasted
+      // numbers. Repainted from here rather than at each call site so that no route can
+      // forget, and only when the list is actually on screen.
       if (!suggPanel.hidden) paintSuggestions();
       if (!map || !mineStill()) return;
       if (marker) marker.setLatLng([p.lat, p.lng]);
@@ -387,6 +387,19 @@ export function openPlacePicker({ state, title = "Put the pin on the map", hint 
     // ── the fallback, and it is the way out rather than a hidden extra ───
     // Numbers she copied from anywhere: a Google Maps link, a message from the
     // customer, a place she knows by heart. courier_place.js reads all four shapes.
+    //
+    // OUT OF THE WAY UNTIL IT IS THE ANSWER (v266). This block used to stand open on every
+    // pin she dropped — four lines of fallback under a map that was working, on the one
+    // window in the app whose whole job is to be read fast at a door. Her words on it:
+    // "when i see the button, i might self have to ask, i dont know what will happen or
+    // what will happen if i din press that button, these create confusion." So it now comes
+    // out when the MAP is what failed, which is what its own line always claimed it was
+    // for, and otherwise waits behind one press that says what it is for.
+    //
+    // THE DOOR IS KEPT RATHER THAN THE BLOCK HIDDEN OUTRIGHT, and that is the whole point
+    // of the version: a Google Maps link is the most accurate point a customer ever sends,
+    // and hiding the block on a day the map works would leave nowhere to put one. Best of
+    // both: nothing on screen it does not have to explain, and no way through lost.
     const numInput = el("input", { class: "input", type: "text",
       placeholder: "5.4141, 100.3288  or a Google Maps link" });
     const numStatus = say("");
@@ -401,6 +414,30 @@ export function openPlacePicker({ state, title = "Put the pin on the map", hint 
       numStatus.textContent = "Pinned from your numbers — check it on the map if one is showing.";
       put(p, 17);
     }, "ghost");
+    const coordsBox = el("div", { class: "field coords-block", style: "margin:14px 0 0" },
+      el("label", {}, "Coordinates, if you have them"),
+      numInput,
+      // WHAT THE PRESS DOES, AND WHAT IT DOES NOT DO YET. The button fills the box's
+      // answer in and moves the pin; the Keep is the press below it, and saying so is
+      // the difference between a button she can predict and one she has to try.
+      el("div", { class: "btn-row", style: "margin-top:10px" }, numBtn),
+      numStatus,
+      el("p", { class: "card-sub", style: "margin:6px 0 0" },
+        "Press this and the pin moves to those numbers; a Google Maps link works too. "
+        + "Nothing is kept until you press Use this spot below."));
+    // Hidden through the PROPERTY, not through `el(… {hidden: true})`. Both do the same thing
+    // in a browser, but the attribute is the one thing the test shim models loosely, and a
+    // block whose hidden state could be read two ways is a block whose test proves nothing.
+    coordsBox.hidden = true;
+    const numDoor = button("Have a Google Maps link?", () => revealNumbers(), "ghost small");
+    // Shown ONCE and never hidden again while this card is up. A late tile that lands
+    // while she is typing in the box must not take the box out from under her — the
+    // app's own rule, and the reason this is not simply `coordsBox.hidden = !ok`.
+    function revealNumbers() {
+      coordsBox.hidden = false;
+      numDoor.hidden = true;
+      numInput.focus();
+    }
 
     // ── the map itself, which may not arrive ────────────────────────────
     const mapBox = el("div", { class: "place-map" });
@@ -411,7 +448,19 @@ export function openPlacePicker({ state, title = "Put the pin on the map", hint 
       if (!mineStill()) return;
       map = L.map(mapBox, { scrollWheelZoom: false, zoomControl: true }).setView([HOME.lat, HOME.lng], HOME.zoom);
       L.tileLayer(TILES, { maxZoom: 19, attribution: ATTRIB }).addTo(map);
-      map.on("click", (e) => put({ lat: e.latlng.lat, lng: e.latlng.lng }));
+      // A TAP CANNOT MOVE A PIN (v264). Her words: "click on the map should not move the pin,
+      // only dragging the pin will." Until now every touch on this box put the pin wherever the
+      // finger landed AND pulled the view onto it — two answers to one accidental contact with
+      // a 200px strip inside a card she scrolls, on a card whose own line already promises the
+      // drag ("Look the address up, then drag the pin to the exact door"). It was a second,
+      // unadvertised way to move the pin, and it is gone.
+      //
+      // WHAT IS LEFT IS THE ONE CASE IT IS THE ONLY ANSWER TO: a map with nothing on it yet.
+      // That is how this card often opens — no point on the order, so no marker, so nothing to
+      // drag — and a tap there does not MOVE a pin, because there is none: it places the first
+      // one. Every other route to a point on this map (the lookup, its rows, the coordinate
+      // box, a drag) leaves a marker behind, and from that moment a tap does nothing at all.
+      map.on("click", (e) => { if (!marker) put({ lat: e.latlng.lat, lng: e.latlng.lng }); });
       map.on("dragend", () => { if (mineStill()) map.invalidateSize(); });
       if (chosen) put(chosen, 16);
       // The box is measured once the card has been laid out. A map built inside a
@@ -425,6 +474,10 @@ export function openPlacePicker({ state, title = "Put the pin on the map", hint 
       mapNote.hidden = false;
       mapNote.textContent = `The map is not available right now (${(err && err.message) || "it could not be loaded"}). `
         + "Type the coordinates below instead — a Google Maps link works too.";
+      // THE ONE BRANCH THE BLOCK IS FOR. The sentence above has always pointed at these
+      // numbers; until v266 there was a box open under it whether or not the map had
+      // failed, so the sentence was right by accident. Now it is right by construction.
+      revealNumbers();
     });
 
     return [
@@ -440,13 +493,8 @@ export function openPlacePicker({ state, title = "Put the pin on the map", hint 
         findStatus),
       mapBox,
       mapNote,
-      el("div", { class: "field", style: "margin:14px 0 0" },
-        el("label", {}, "Coordinates, if you have them"),
-        numInput,
-        el("div", { class: "btn-row", style: "margin-top:10px" }, numBtn),
-        numStatus,
-        el("p", { class: "card-sub", style: "margin:6px 0 0" },
-          "Paste a Google Maps link, or the pair of numbers. Both are read, and this is the way through when a map will not load.")),
+      numDoor,
+      coordsBox,
       coordsLine,
       el("div", { class: "btn-row" }, useBtn),
     ];
@@ -499,7 +547,13 @@ export function openPlacePicker({ state, title = "Put the pin on the map", hint 
 // withholding it made LOOKING impossible to separate from CORRECTING. So the zoom control is
 // drawn and the gestures are live the whole time the card is up, and the lock now covers only
 // what could move the PIN: the map's own pan (a pan under a still pin would let a reach-past
-// nudge the view she was reading), the marker's drag, and the tap that places a point.
+// nudge the view she was reading) and the marker's drag.
+//
+// AND SINCE v264 THE TAP PLACES NOTHING HERE WHETHER IT IS LOCKED OR NOT — see `onTap`. The
+// lock still decides whether the drag is live; the tap stopped being a way to move a pin,
+// on her own instruction, which is why the two maps in this file now answer a touch the same
+// way. This card never draws a map with no pin on it (see paintDoorNow in views/courier_quote.js),
+// so the tap that the picker still keeps for an empty map has nothing to do here.
 export function mountPinMap(box, { place = null, onMove = () => {}, onFail = () => {} } = {}) {
   let map = null;
   let marker = null;
@@ -555,11 +609,18 @@ export function mountPinMap(box, { place = null, onMove = () => {}, onFail = () 
     onMove({ lat: at.lat, lng: at.lng });
   }
 
-  // A tap is not a way to place a pin on a map she is only looking at. It becomes one the
-  // moment she unlocks it — and on a phone it is the way that matters, because dragging a
-  // 24-pixel marker with one thumb is fiddly.
+  // A TAP ON THIS MAP MOVES NOTHING (v264). "Click on the map should not move the pin, only
+  // dragging the pin will." It used to place a point once she had pressed Move this pin, and
+  // the drag it stood in for is now the only way — one rule for both maps in this file, which
+  // is why it is written here rather than left to the two places the handler is bound.
+  //
+  // THE ONE CASE IT STILL ANSWERS: a map built with no pin at all. This card never does that
+  // (the door block hides the map when there is no point) but the contract on `mountPinMap`
+  // allows it — and there a tap does not move a pin, because there is none. It places the
+  // first one, and nothing else could, because there is nothing to drag. The same rule, and
+  // the same words, as the picker's own tap above.
   function onTap(e) {
-    if (!sharp) return;
+    if (!sharp || marker) return;
     at = { lat: e.latlng.lat, lng: e.latlng.lng };
     drop(at);
     onMove({ lat: at.lat, lng: at.lng });

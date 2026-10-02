@@ -1,8 +1,423 @@
-# Munchies Furkidz — change history (v54 → v259)
+# Munchies Furkidz — change history (v54 → v280)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**3 Oct 2026 — engine v280, THE WHOLE STATEMENT OPENS: SALES AND COST OF SALES TOO (no database
+step, nothing to upload — pushing this one is the whole of it).**
+
+**What you asked for.** You were on More → Profit, reading the statement, and asked: __"at the
+profit section, can the sales and cost of sales be clickable to reveal its journal"__. The spending
+lines had opened on a tap since 17 September; these two did not.
+
+**What you see now.** Tap **Sales** and its journal opens; tap **Cost of sales** and that one opens.
+Both read the same orders — one from the side of what the customer paid, the other from the side of
+what your recipes say those treats cost to make — so the two can never disagree about which orders
+the month held. Each row is one order line: the day it is delivered, what sold and how many, and the
+customer's own name, with the figure on the right. A product you have since renamed or deleted still
+reads as the treat that was sold, because the name is the one frozen on the order. The rows land on
+the figure you tapped, exactly. A line your recipe prices at nothing is marked "no recipe cost"
+rather than sitting there as a plain RM 0.00, and the footer counts them — that is a profit reading
+too high, the one thing worth chasing here. A month with nothing in it opens and says so.
+
+**One thing that stays a figure, not a door.** Gross profit and Net profit are worked out from the
+lines above them, so they have no rows of their own to open.
+
+**3 Oct 2026 — engine v279, THE PRINTED CARD: PRINT IT, AND THE OFFER IS FIXED (no database step,
+nothing to upload — pushing this one is the whole of it).**
+
+**What you asked for.** Of the eleven promo steps, step 6 — Print it — was the last one with nothing
+behind it, and it is the step that puts a code into a customer's hand. You asked for the printed card
+next.
+
+**What you see now, on More → Promo codes.** A **public** code's row has a **Print it** button, first
+ahead of Edit and Delete, and only where a card makes sense: on a public code, never on one that has
+**ended**, and never on one **already printed** — that one wears its "Printed — fixed" chip instead. A
+**paused** code can still be printed, because pausing is a break. Pressing it asks first, and the
+question is honest: from here the amount, who it is for, the smallest basket and the name all go on
+saying what they say, because the card in a customer's hand cannot be amended; the end date may be
+moved later (never earlier) and that is all that stays yours. **It refuses a code with no cost
+ceiling, and says why** — a card carries no number and no end date, so the ceiling is the only thing
+left bounding what the card can cost you. A code with no name is refused too.
+
+**What the card looks like.** A new tab opens on a print-sized page holding **four identical cards on
+one sheet of A4**, with a hairline guide to cut along. Each card carries your shop name and tagline,
+the offer in the customer's own words, the smallest basket if there is one, your own sentence when you
+wrote one, the rules that stay true ("First order only", "One per customer", "Not with the
+bring-a-friend welcome discount"), the code in large letters, and a square to scan. The square points
+at your shop with the code already filled in, and the same address is printed underneath in words — so
+a card that ever pointed somewhere wrong would be wrong visibly, on the paper, before anyone was handed
+it. It carries **no end date, no count and no ceiling figure** on purpose: those three are promises
+paper cannot keep. Opened by itself the page never prints a blank sheet — with no code, or an unknown
+one, it says so and offers no Print button at all. Once a code is printed you can still raise its
+ceiling, extend its end date and end it; you cannot change what it gives, who it is for, or the
+smallest basket.
+
+**3 Oct 2026 — engine v278, A CODE'S LIFE: PAUSE, END, AND WHAT PRINTING FIXES (no database step,
+nothing to upload — pushing this one is the whole of it).**
+
+**What you asked for.** The Promo codes screen had a half-finished piece: the eleven management steps
+were a plain grey box, and the Pause and End controls were not wired to anything. You chose __"Finish
+it properly"__.
+
+**Every row now says what its code's life is.** A chip on the name: **Paused**, **Ended**, or
+**Printed — fixed** (a live code wears nothing). **Pause** and **End** sit on the row under the offer,
+and they are different on purpose: Pause is a break — the shop stops offering and accepting the code,
+it switches back on any time, and nothing about the orders already carrying it changes; End is final —
+new uses stop and it cannot be switched back on. Both say what they are about to do first, including
+how many orders already hold the promise, and that they keep it either way, because ending stops new
+uses and never rewrites history.
+
+**A printed code is fixed.** Once a code is on a card in someone's hand, the offer has to go on being
+true, so a printed code refuses any change to what it gives, who it is for, the smallest basket, what
+it cannot sit beside, or its name. Two things stay open, one way round only: the end date may be moved
+later or dropped, never pulled earlier; the ceiling may be raised or removed, never lowered. The Edit
+button on such a row reads **"Update the end date and ceiling"**. A printed code cannot be deleted
+either — the tap says why, and names End instead.
+
+**The eleven steps fold.** The life of a promotion, in order, is a proper list under a fold line, and
+the fold line is the answer you came for: "1 live · 1 paused · 1 ended · RM 20.00 given away".
+Printing, step six, is the only one that cannot be undone, so it is the only shaded row, and it says
+**point of no return** in words rather than by colour alone.
+
+**3 Oct 2026 — engine v277, THE MONEY LINED UP IN ONE COLUMN (no database step, nothing to upload —
+pushing this one is the whole of it).**
+
+**What you asked for.** The day after the receipt you said: __"the format still not as clear as a
+receipt, the money have to align up"__. Asked which screen looked wrong you named the customer's
+tracking page and your own order list; asked what lining up meant, you picked **"Line up in one
+column"**.
+
+**The customer's tracking page.** The figures now line up in one right-hand column, and the
+decimal points sit on that line. **On this shop the card keeps its own shape, and that is
+deliberate.** Your shop adds a flat nationwide postage to every posted order, and that fee is never
+published, so the card cannot work out an items subtotal from the total it is given — it would be
+wrong by the postage. So the card keeps the one line it has always drawn, "what they ordered — the
+total", which cannot be wrong because it names no subtotal at all. What the card *does* name, and now
+does name, is the code the customer used: the discount is published on the order itself, so no
+working out is needed. See the v272 entry below.
+
+**The order list.** Every order row now ends with its own total, on a line of its own across the foot
+of the row, at the same right edge as every other row. Before this a row said "×2" and stopped — the
+one screen you work from all day was the one place an order's money never reached. Three things worth
+knowing: it is one figure worked out once, so the row, the receipt and the customer's message can
+never disagree; an order nobody has priced says nothing rather than "RM 0.00"; and the WhatsApp
+message is deliberately unchanged, because you were shown both ways and chose the plain lines.
+
+**3 Oct 2026 — engine v276, AN ORDER'S MONEY READS AS A RECEIPT (no database step, nothing to
+upload — pushing this one is the whole of it).**
+
+**What you asked for.** __"can the showing of promo be more streight forward, clearer, like putting
+them in an accounting format, clearly shown the working, how they add up."__ So the promo showing was
+rebuilt the way the Profit statement already reads. On both screens that show an order's money — the
+Edit pop-up and the Note / tracking card — the one run-on sentence is replaced by a receipt: Items
+total, Courier charge, Promo FRESH10, a dashed hairline, then Total.
+
+**Four things this changed.** A code that gave nothing is now a **line on the receipt reading RM
+0.00**, not left out — before, an order that carried a code which paid nothing looked identical to one
+with no code at all. The reason sits under the figures in your own terms: the basket the code wanted,
+the basket this order was, and a plain statement that the rule is a **guide**, not a gate. The
+customer's WhatsApp message says the same thing in one quiet line, "Code FRESH10 not applied: basket
+below RM 100.00", where before it said nothing. And nothing about a missed code touches the money:
+the line explains, it never deducts. An order with no code is unchanged, line for line.
+
+**3 Oct 2026 — engine v275, A DISCOUNT NOBODY EARNED (no database step, nothing to upload — pushing
+this one is the whole of it).**
+
+**What you reported.** __"the arithmatic is not rigght, the fresh10 promo code discount 10 for order
+of 100, but my order only 16, it deduct 10 and customer have to pay 6 only. if thats the case bakery
+will broke."__ You were right, and it was the worst kind of wrong: nothing crashed, nothing looked
+odd, and the app quietly took money off an order that had never earned it.
+
+**What happened.** A code has two separate things about it, and only one was being asked. The shop's
+box has always asked "is this basket big enough for this code at all?" and refuses a code below its
+smallest basket. But the arithmetic that takes the money off only ever asked "what is this offer worth
+on these goods?" — a question about the offer, not about the sale. So once a code was on an order, the
+smallest basket was never looked at again.
+
+**The fix.** The smallest basket is now asked wherever the money is worked out, which is one place —
+the same single figure the customer messages and your own screens all read. A code on an order whose
+basket never reached its smallest basket now gives nothing, and the order reads exactly as one with no
+code. The tally on your Promo codes screen counts it the same way, so such an order counts RM0 given
+and cannot eat a ceiling it never touched — though it still counts as a use, since the code did ride on
+the order. **What has not changed:** a code you have since paused, ended or used up still comes off the
+order it was actually placed on. Nothing here blocks an order or refuses a code you want to honour; it
+only stops the app doing arithmetic on a discount that was never earned.
+
+**3 Oct 2026 — engine v274, THE SHOP'S OWN SENTENCE IN THE HAND YOU PICKED (no database step, nothing
+to upload — pushing this one is the whole of it).**
+
+**You picked the chalk hand** — rounder and fatter, like chalk on a board — from five real versions
+drawn inside the shop's own strip. The amber strip at the top of the shop has two lines. The first, the
+offer and the code, is untouched: same lettering, same size, still first, because it is the part a
+customer has to act on. The **second line** — the words you wrote yourself about the code — is now set
+in the chalk hand, and a little larger than before, so it reads as your own note under the offer rather
+than a second announcement. **One limit, said plainly:** the hand is a Latin face and carries no
+Chinese characters, so a sentence you write in Chinese keeps exactly the plain lettering it has always
+had — the words are the same and nothing moves, it simply cannot wear the hand. English and Bahasa
+Malaysia wear it. The font travels inside the shop, in the shop's own folder with its licence, so
+nothing is fetched from a font company when a customer opens the page.
+
+**3 Oct 2026 — engine v273, YOUR MESSAGES IN A VOICE YOU CHOSE (no database step, nothing to upload —
+pushing this one is the whole of it).**
+
+**One limit, said plainly.** A font cannot be chosen in a WhatsApp message — WhatsApp carries no fonts
+at all, and its only four marks are bold, italics, strikethrough and monospace. So the closest thing
+that exists is making your opening line lean over. **Message style, on More → Settings**, is a card
+with one choice, and it applies to all four messages you send a customer: **Plain** — exactly what you
+send today, the default, word for word the message that went out before this card existed — or **the
+greeting leans over**, where only the first line moves, and only into italics. One switch for all four
+on purpose: four separate switches are four ways for your messages to end up opening differently from
+each other. The bold Total is not affected, and the choice travels to your other phone.
+
+**3 Oct 2026 — engine v272, THE CODE COMES OFF THE TOTAL (ONE SMALL DATABASE STEP FIRST — run it
+before you push, the order matters; nothing to upload otherwise).**
+
+**What you reported.** __"pushed. The whatsapp message still withhout the promo discount."__ You were
+right, and this time it was a design that had gone stale: since the code arrived, it rode on the order
+and every discount was taken off by you, by hand, in WhatsApp. You have now said the app should do
+that arithmetic itself, and this is that.
+
+**The code now comes off the Total** in all four places the customer reads it — the confirmation, the
+payment reminder, the "on its way" message, and their own track page — as its own line, named by the
+code, between the workings and the total, so the figure can still be added up by the person reading
+it: __Total: RM 30.00 · Promo FRESH10: -RM 10.00 · To pay: RM 20.00__ (shown here in this shop's own
+words). On your own screen the two figures you read move with it — the amount the customer owes in the
+Note / tracking window and the Order total in the Edit window — and the "Still to collect" figure on
+your Money screen follows, because it was always worked out from the same number.
+
+**What does not change.** An order with no code reads word for word as it did before. A code that has
+since been paused, ended or used up still comes off the order it was actually placed on: ending a code
+is a decision about future orders, and it never reaches back and re-prices one you have already
+promised. A code whose terms come to nothing on this order prints no line rather than -RM 0.00. A
+discount larger than the order leaves you asking for RM 0.00, never a negative. A percentage comes off
+the goods and not off the courier's charge. A free-delivery code has nothing to waive on a Collect
+order, so it says nothing.
+
+**THE DATABASE STEP — do this first, before you push.** In your Supabase SQL editor, run the file
+**supabase/promo_track.sql** (Dashboard, SQL, New query, paste, Run). It adds two columns,
+`promo_code` and `promo_rm`, to the customer tracking table. **Order matters here:** your app
+publishes a whole tracking row in one call, and if those columns do not exist yet that call is refused
+as a whole and the customer's tracking page stops updating for every order, not only the orders that
+carried a code. This is the same trap the courier charge tables set. Run the SQL once, then push. It is
+safe to run twice.
+
+**One thing that has not changed, so it does not surprise you.** Your sales and profit figures still
+count the full price of what you sold; the discount comes out of the money you actually collect, not
+out of the goods' own value. That is a real question about where a discount should sit in your books,
+and it is yours to decide.
+
+**3 Oct 2026 — engine v271, A CODE THAT KNOWS WHEN TO STOP (no database step, nothing to upload —
+pushing this one is the whole of it).**
+
+**A card has no number on it and no end date on it** — deliberately, because a date is a promise a
+card cannot keep. That left one real question: how does a code with a card stop being a good idea? Now
+you say so yourself, on the code screen. The new box, **"Stop after giving away (RM)"**, stops the
+code the moment it has given away that much money. It sits beside the order limit, and whichever runs
+out first is the end of it — so you can say "the first 5 orders, or RM50, whichever comes first".
+Leave it empty and the code has no limit at all. It works for every kind of code, including a
+percentage, which otherwise has no natural end.
+
+**Where the numbers come from matters.** They are counted from your own orders, freshly, every single
+time — not kept in a tally on the code, so the figure cannot drift. A basket counts once: a customer
+who orders three things in one go used the code once. Your screen shows how far through its limits a
+code is, and a code that has finished says so in an amber banner. The customer never sees the figure
+or the reason: they get the one sentence, "that code has been fully claimed". A code that has given
+away everything you allowed stops being advertised at the top of the shop — so after you push, **open
+the app once on your phone with a connection** and the shop will be told.
+
+**3 Oct 2026 — engine v270, THE CODE THAT WAS THERE ALL ALONG, AND A PROMO SCREEN WITH SOMETHING TO
+SAY (no database step, nothing to upload — pushing this one is the whole of it).**
+
+**What you reported.** __"i dont see the promo code fresh10 send over to app together with the
+order."__ You were right: the code had been travelling with the order since v269, but no screen ever
+showed it — and a code that arrives and cannot be read is a code that did not arrive. An order placed
+with a code now wears a small amber **FRESH10** tag beside its order number, on every row you read an
+order on: the delivery day's list, the unread inbox at the top, the search results, and the Edit order
+window. It shows the code itself and not the word "promo", because you take the money off by hand, so
+which code it was is what tells you whether it is RM10 or RM5. An order placed without a code looks
+exactly as it always did.
+
+**The shop's line now says the whole offer** — the smallest basket it works on and, when you have set
+one, the day it runs out: "Today: RM10.00 off on RM30.00 and above, until 31 October — use code
+FRESH10". And you can add your own sentence to it, in English, Chinese and Bahasa Malaysia, with a
+**Translate** button that fills the two other languages and never overwrites anything you typed. The
+code screen is now a full one: who it is for, when it runs, the smallest basket, how often it can be
+used, what it cannot be used with, and who can see it — all optional, all defaulting to the widest,
+simplest answer. **The shop now says exactly why it will not take a code** — nine plain sentences,
+including "that code ended on 30 September", which names the day so it does not read as a glitch. Two
+of those are stated rather than refused: the shop is a public page with no sign-in, so "once per
+customer" and "first order only" can only ever be a good guess, and a rule on the website must never
+block or hide a sale you take by hand.
+
+**3 Oct 2026 — engine v269, PROMO CODES, THE FIRST SLICE (no database step, nothing to upload —
+pushing this one is the whole of it).**
+
+**What is new for you.** A new screen, **Promo codes**, at the bottom of the **More** menu. You make
+a code there: the code itself, what it gives, and whether the shop may show it to everybody or you are
+giving it to one person. Three kinds of offer are in this first version — a ringgit amount off, a
+percentage off, or free delivery.
+
+**What is new for your customers.** The shop page has a **Have a code?** box. A customer types the
+code and presses **Use it**. If it is a code you made, the page says what it gives and tells them you
+will take it off when you confirm the order. And when you are running a code the shop may show, the top
+of the page carries a line naming it — for example __Today: RM10.00 off, use code FRESH10__.
+
+**The most important thing about it.** The total on the shop page **never moves**. A code does not
+change what the customer is charged; it is a note that travels with the order, and you take the money
+off by hand in WhatsApp exactly as you already do for the bring-a-friend credit. An order that used a
+code carries that code into your app. A code you made on one phone also reaches your other phone. One
+thing worth knowing about "personal" codes: a personal code is never shown on the shop page and never
+advertised, but the shop's own data is readable by anyone who looks at the page, so personal means
+**never shown** and not **secret**.
+
+**3 Oct 2026 — engine v268, FIVE PLACES THAT DISAGREED WITH EACH OTHER (no database step, nothing to
+upload — pushing this one is the whole of it).**
+
+**What you said.** __"pushed. when i schange the courier delivery to self pickup, the courier chages
+tag still there, just wondering are details well taken care of?"__ — and then the audit you asked for:
+__"pls run whole system audit for the well being of the system later"__. v267 had fixed the tag you
+could see; reading the whole system after it turned up four more places where one screen had been told
+the truth about a self-collect order and another had not, and one button that made a claim it could not
+know. They are all the same fault underneath: a fact is written on the order, and only some of the
+screens that read it ask the companion question that goes with it.
+
+**Five things, fixed together.** (1) The customer's track card was still being sent the courier's half
+of a self-collect order — a driver's name, a plate, a phone number, "on the way", a waybill — and it
+now publishes none of it. (2) The trip card counted a parked charge, and now counts only the orders
+actually going by courier. (3) Picking **Cash** or **TNG transfer** on an order wrote down how they
+paid and stopped there, so the row could wear a TNG tag while the day's till, the Money screen and the
+customer's card all still counted it as owing — it now records the payment itself, with **Not
+recorded** as the way back. (4) **Print label** vanished the moment the order was packed; it is now on
+every stage from Baked to the end. (5) **Send confirmation** turned the order green before the message
+was sent — it opens WhatsApp but does not press Send — so the button now only drafts the message, and a
+small **I have sent it** beside it is what turns Confirmed green. One extra tap on each confirmation,
+in exchange for never marking something sent that was not.
+
+**3 Oct 2026 — engine v267, A COURIER CHARGE GOES QUIET WHILE THE ORDER IS A SELF COLLECT (no database
+step, nothing to upload — pushing this one is the whole of it).**
+
+**What you said.** __"when i schange the courier delivery to self pickup, the courier chages tag still
+there, just wondering are details well taken care of?"__ and __"confirmation message still include
+courier charges"__.
+
+**What was happening.** Switching an order from Courier to Self collect never deleted the courier
+charge, on purpose — you might switch back. But nothing on the reading side ever asked whether the
+order was still going by courier. So a self-collect order went on wearing a **Courier RM 8.00** tag on
+its row, went on adding that RM8 into the customer's total in the confirmation message, in every
+WhatsApp message and on their track card, and went on being counted in **Still to collect** on your
+Money screen.
+
+**An order that is a Self collect now carries nothing for a courier to charge for.** The charge is
+parked, not thrown away: it is still written on the order, so switching **Fulfilment** back to Courier
+brings the whole thing back exactly as it was, with nothing to type again. Both courier charge cards
+say in words that the charge is recorded but not added to the customer's total while the order is a
+self collect, and that switching Fulfilment back is how it goes back to work.
+
+**3 Oct 2026 — engine v266, A BUTTON SAYS WHAT HAPPENS IF YOU PRESS IT, AND WHAT HAPPENS IF YOU DON'T
+(no database step, nothing to upload — pushing this one is the whole of it).**
+
+**What you said.** __"when i see the button, i might self have to ask, i dont know what will happen or
+what will happen if i din press that button, these create confusion"__.
+
+**What was happening.** Two places put a choice in front of you without saying what the choice cost. On
+the **shop page**, the line above the pin buttons read "Optional: drop a pin where the courier should
+stop" — which tells a customer the pin does not matter without telling them what they get if they do
+it, or lose if they skip it. It now answers both halves: skip this and the driver goes to the address
+you typed, which is fine for most houses; pin it only if the address alone will not find your door; and
+either way put the block and unit number in the address above. Written in all three languages. In your
+own **pin window**, the **Coordinates** box with its **Use these numbers** button stood open under
+every map; it now comes out only when the map cannot load, so the sentence that names it points at
+something really there. On a working map it waits behind one small button reading **Have a Google Maps
+link?**, because a Google Maps link is the most accurate point a customer ever sends you.
+
+**3 Oct 2026 — engine v265, THE CONSIGNMENT BOX IS A PARCEL'S, SO IT IS DRAWN WITH THE PARCEL (no
+database step, nothing to upload — pushing this one is the whole of it).**
+
+**What you said.** __"after i get price from lalamove, click use this fee, it closes the window, but
+user might confuse as at that page there is stick fields that user have not fill in"__. On the **+ New
+order** card the courier half drew the **Courier tracking number** box on every courier order, whatever
+kind of courier it was — and a consignment number is a parcel's, not a Lalamove trip's. So on a trip
+that box was empty, about nothing, and stood beside a finished price: that is what read as an order
+with something still to fill in. The box now belongs to the parcel, so it is drawn with the parcel and
+nowhere else. Nothing became unreachable: the parcel carrier picker is still on the card, saying **Not
+a parcel — nothing recorded** until you pick one, and a number you had already typed is never hidden.
+The Edit window and the Note / tracking box keep the layout they had.
+
+**3 Oct 2026 — engine v264, A TAP ON THE MAP DOES NOT MOVE THE PIN (no database step, nothing to
+upload — pushing this one is the whole of it).**
+
+**What you said.** __"click on the map should not move the pin, only dragging the pin will"__. A tap
+on the map no longer moves the pin; only dragging the pin itself moves it — on both maps you use to
+place a pin, the order form's pin map and the pin window. Why it matters on a phone: that map is a
+200-pixel strip inside a card you scroll, and before this any accidental touch moved the pin to
+wherever your finger landed and pulled the map onto that spot, two things at once from one touch you
+did not mean. The one place a tap still works: a map with nothing on it yet has no pin to move and
+nothing to drag, so there a tap places the first pin. The shop's own customer map was deliberately left
+alone — for a customer the map is often the only way to place their pin at all.
+
+**3 Oct 2026 — engine v263, A DAY YOU DO NOT DELIVER IS DARKER STILL (no database step, nothing to
+upload — pushing this one is the whole of it).**
+
+**What you said.** __"can make the quite day more solid?"__, asked straight after seeing v262. A day
+you do not deliver is now a solid, dark day — v262 had taken the fade off it, but it was still faint.
+It is now very nearly twice as strong again. The colour sits exactly halfway between the app's quiet
+grey and its ink, so it reads as a real day rather than a whisper, while still looking nothing like a
+day you deliver. A day you deliver is still twice as dark as a day you do not, so the two can never be
+mistaken for each other. The past grey itself is untouched, and one case is deliberately left faint: on
+a product's availability calendar, a day you have marked as selling but which you do not deliver is
+kept faded on purpose, because it means "this mark cannot become an order".
+
+**3 Oct 2026 — engine v262, A DAY YOU DO NOT DELIVER IS SOLID, AND THE PAST IS ONE GREY AT LAST (no
+database step, nothing to upload — pushing this one is the whole of it).**
+
+**What you said.** __"I still feel that the greyed and the non grey contrast is not big?"__ — and then,
+when offered the choice, make the non-grey more solid. v261 had put the shop's grey in the right place,
+but it left the older half-transparent rule standing on a day you do not deliver. That half
+transparency is applied to whatever colour the day ends up with, so the past was still being drawn in
+two shades — and worse, a past day you do not deliver came out fainter than a future day you do not,
+which is backwards. With the fade gone, a day you do not deliver is a solid, plainly readable day, and
+the past is now genuinely one shade: a past day you deliver and a past day you do not are the identical
+colour on screen. The shop's past grey itself is untouched, and anything on a past day that is telling
+you something — a delivery day's green pill, a product's green tint — keeps its own colour.
+
+**3 Oct 2026 — engine v261, EVERY CALENDAR NOW GREYS OUT A PAST DAY THE SAME WAY YOUR SHOP DOES (no
+database step, nothing to upload — pushing this one is the whole of it).**
+
+**What you asked.** __"Is all calendar passed day grey out same thru all calendar? I like the one at
+store."__ It was not. On the Orders calendar a day that had gone by came out in two different greys
+side by side in the same row — one shade for the days you deliver, a slightly different one for the
+days you do not. On the other calendars there was only one grey, but it was the app's own faded grey,
+not the shop's — and the shop's is the one you picked. A day already gone is now drawn in the shop's
+own quiet grey, flat and one shade, whether or not you deliver that day: the Orders calendar, the
+calendar inside Delivery Dates, the small calendar you open when you pick a delivery day, and the days
+you mark on a product's availability. Nothing ahead of today is touched, and anything on a past day
+that is telling you something keeps its own colour.
+
+**3 Oct 2026 — engine v260, YOUR MAILS NOW COME FROM YOUR OWN SHOP'S NAME, NOT THE APP'S (two
+functions must be uploaded — pushing alone does not change this one).**
+
+**What a customer saw.** The two mails this system sends — the wish-list mail you send out, and a
+customer's suggestion coming back to you from the shop page — each arrived with the name at the top of
+the inbox list reading **"BakeAdmin wishes"**. BakeAdmin is the app's own internal name: a word that
+appears nowhere on your homepage, nowhere in your shop, and on no label you print. It was the first
+thing a customer read from you, before they opened anything.
+
+**What they see now.** **Munchies Furkidz** — your own name, taken from your homepage title, which is
+where your brand is written down. The address the mail is actually sent from has not moved: it is the
+same verified address as before, and only the name in front of it changed.
+
+**One thing to check, because it can silently win.** If the project has a saved setting called
+`RESEND_FROM`, that setting is used instead of the name in the code, and this change would make no
+difference to what a customer sees. Run `supabase secrets list` in Terminal to see whether it is set.
+
+**Why pushing this one is not enough.** These two mails are sent by the two functions that live in
+Supabase, not by the app on your phone. Uploading the code — a push — leaves Supabase running the old
+copy. Both functions must be uploaded separately, from the repository folder: `wish-mail` and
+`shop-feedback`. This changelog cannot do that part for you.
+
+**No database step.** Nothing was added or changed in the database, and no existing setting moved.
 
 **1 Oct 2026 — engine v259, AN ORDER'S EDIT CARD NO LONGER CLOSES ITSELF WHEN YOU LOOK AN ADDRESS
 UP AGAIN (no database step, no redeploy, one push).**

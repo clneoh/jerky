@@ -773,7 +773,7 @@ test("Day one leaves everything alone when the boxes are blank, and says so", (t
 test("still to collect counts the courier charge the customer pays with the order", () => {
   const st = state();
   st.orders = [row({ status: "confirmed", paidReceived: false,
-    courierFee: 8, courierPaidBy: "customer" })];
+    courierFee: 8, courierPaidBy: "customer", fulfillment: "courier" })];
   const m = dayMoney(st, "d18");
   assert.equal(m.toCollect, 23, "the RM15 focaccia and the RM8 courier are both handed over");
   assert.equal(m.toCollectCount, 1, "and it is still one order, not two");
@@ -782,7 +782,7 @@ test("still to collect counts the courier charge the customer pays with the orde
 test("a COD charge stays out of still to collect — the courier takes it at the door", () => {
   const st = state();
   st.orders = [row({ status: "confirmed", paidReceived: false,
-    courierFee: 8, courierPaidBy: "customer", courierCod: true })];
+    courierFee: 8, courierPaidBy: "customer", courierCod: true, fulfillment: "courier" })];
   assert.equal(dayMoney(st, "d18").toCollect, 15,
     "only the bread: nobody hands her the courier's money, so counting it would promise RM23 she never sees");
 });
@@ -790,13 +790,13 @@ test("a COD charge stays out of still to collect — the courier takes it at the
 test("a charge she bore is her own cost, and never lands in what is owed to her", () => {
   const st = state();
   st.orders = [row({ status: "confirmed", paidReceived: false,
-    courierFee: 8, courierPaidBy: "me" })];
+    courierFee: 8, courierPaidBy: "me", fulfillment: "courier" })];
   assert.equal(dayMoney(st, "d18").toCollect, 15, "the customer owes the bread, not her postage");
 });
 
 test("a stray COD flag on a charge with no payer moves nothing", () => {
   const st = state();
-  st.orders = [row({ status: "confirmed", paidReceived: false, courierFee: 8, courierCod: true })];
+  st.orders = [row({ status: "confirmed", paidReceived: false, courierFee: 8, courierCod: true, fulfillment: "courier" })];
   assert.equal(dayMoney(st, "d18").toCollect, 15,
     "no payer means no charge to count — the same reading the row tag and the box make");
 });
@@ -810,7 +810,7 @@ test("an order with no courier charge reads exactly as it always has", () => {
 test("the money that has come in stays at the items — a pass-through charge is not her takings", () => {
   const st = state();
   st.orders = [row({ status: "ready", paidReceived: true, paidMethod: "cash",
-    courierFee: 8, courierPaidBy: "customer" })];
+    courierFee: 8, courierPaidBy: "customer", fulfillment: "courier" })];
   const m = dayMoney(st, "d18");
   assert.equal(m.cash, 15, "the charge arrives and leaves again, so it is never part of what her purse should hold");
   assert.equal(m.toCollect, 0, "and an order already paid is owed for nothing");
@@ -820,9 +820,9 @@ test("the Money screen's stretch counts the charge the same way a single day doe
   const st = state();
   st.orders = [
     row({ id: "a", status: "confirmed", paidReceived: false,
-      courierFee: 8, courierPaidBy: "customer" }),
+      courierFee: 8, courierPaidBy: "customer", fulfillment: "courier" }),
     row({ id: "b", deliveryDateId: "d20", deliveryDate: "2026-09-20", status: "confirmed",
-      paidReceived: false, courierFee: 8, courierPaidBy: "customer", courierCod: true }),
+      paidReceived: false, courierFee: 8, courierPaidBy: "customer", courierCod: true, fulfillment: "courier" }),
   ];
   const m = moneyBetween(st, "2026-09-18", "2026-09-20");
   assert.equal(m.toCollect, 38, "RM23 for the one paying with the order, RM15 for the COD one");
@@ -835,7 +835,7 @@ test("the Money screen's still-to-collect line shows the charge, not just the it
   const st = state();
   st.deliveryDates = [{ id: "d18", date: today }];
   st.orders = [row({ deliveryDate: today, status: "confirmed", paidReceived: false,
-    courierFee: 8, courierPaidBy: "customer" })];
+    courierFee: 8, courierPaidBy: "customer", fulfillment: "courier" })];
 
   const root = document.createElement("div");
   renderMoney(root, st);
@@ -861,7 +861,7 @@ function chargedBooks() {
   st.deliveryDates = [{ id: "d18", date: today }];
   st.orders = [row({ id: "o1bed7", deliveryDateId: "d18", deliveryDate: today,
     status: "confirmed", paidReceived: false,
-    unitPrice: 15, courierFee: 8, courierPaidBy: "me" })];
+    unitPrice: 15, courierFee: 8, courierPaidBy: "me", fulfillment: "courier" })];
   st.expenses = [{ id: "e1", date: today, amount: 8, category: "Delivery & fuel",
     method: "cash", courierFor: "1BED7", note: "" }];
   return st;

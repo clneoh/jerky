@@ -120,6 +120,13 @@ export function defaultState() {
         offerMin: 30,   // suggested minimum spend for the offer
         validDays: 30,  // how long a new code's offer runs for; "" = no expiry
       },
+      // How the four WhatsApp messages to a customer open (2 Oct 2026). WhatsApp
+      // carries no fonts — the letters come from whichever phone is reading — so the
+      // only lever is its own marks, and italics on the opening line is the whole of
+      // this choice. "plain" is word for word what every message sent before this
+      // existed; "greeting" leans the first line over and changes nothing else. One
+      // value for all four messages so they cannot open differently from each other.
+      messageStyle: "plain",
       // The production line planner (19 Sep 2026): the numbers her line is
       // measured from, typed by her on More → Production line. Seeded with the
       // ones she measured on /form/ so the screen says something true on the
@@ -209,6 +216,10 @@ export function defaultState() {
     // pageFor/publishCodes). The shared page a label falls back to is
     // settings.taster, which is not in this list.
     pages: [], // {id, name, heading, headingZh, headingMs, body, bodyZh, bodyMs, trOverride, trSrc, createdAt}
+    // Promo codes she hands out — one row per code, carrying the six rule
+    // families and the offer (see js/promo.js for the engine and the shape). A
+    // list she grows, like the credits ledger above, not a setting.
+    promoCodes: [],
   };
 }
 
@@ -402,6 +413,10 @@ function normalize(s) {
       storefront: cleanStorefront((s.settings || {}).storefront),
       referrals: { ...d.settings.referrals, ...(((s.settings || {}).referrals) || {}) },
       taster: { ...d.settings.taster, ...(((s.settings || {}).taster) || {}) },
+      // A hand-edited import must not put an unknown style in: the message builders
+      // read exactly one value, and a third one would silently send "plain" while
+      // the settings screen showed a choice she never made (2 Oct 2026).
+      messageStyle: ((s.settings || {}).messageStyle === "greeting") ? "greeting" : "plain",
       production: { ...d.settings.production, ...(((s.settings || {}).production) || {}) },
       scenario: { ...d.settings.scenario, ...(((s.settings || {}).scenario) || {}) },
       // Saved scenarios, guarded as a list: a hand-edited import that put an
@@ -444,6 +459,10 @@ function normalize(s) {
     partners: Array.isArray(s.partners) ? s.partners : [],
     codes: Array.isArray(s.codes) ? s.codes : [],
     pages: Array.isArray(s.pages) ? s.pages : [],
+    // Guarded like every other list she owns. The rows themselves are cleaned by
+    // js/promo.js on every read, so a half-synced or hand-edited record can never
+    // reach a screen or the shop un-clamped.
+    promoCodes: Array.isArray(s.promoCodes) ? s.promoCodes : [],
   };
   const consolidated = consolidateDeliveryDates(out.deliveryDates, out.orders);
   out.deliveryDates = consolidated.deliveryDates;

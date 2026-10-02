@@ -6,7 +6,7 @@
 
 import { el, button, showPopup } from "../ui.js";
 import { fmtRM } from "../state.js";
-import { monthSpan, profitBetween, expenseRows } from "../profit.js";
+import { monthSpan, profitBetween, expenseRows, tradingRows } from "../profit.js";
 import { longDate } from "../dates.js";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June",
@@ -50,6 +50,44 @@ function openExpenseJournal(state, label, from, to, monthTitle) {
         : "It will fill up on its own as you record spending under this category on the Money screen (Add an expense).")));
 }
 
+// Sales and Cost of sales are the same order lines read from two sides, so one journal
+// serves both — what the customer paid, and what those treats cost to make (2 Oct 2026:
+// "at the profit section, can the sales and cost of sales be clickable to reveal its
+// journal"). `which` is "sales" or "cost".
+function openTradingJournal(state, which, from, to, monthTitle) {
+  const cur = state.settings.currency || "RM";
+  const sales = which === "sales";
+  const name = sales ? "Sales" : "Cost of sales";
+  const rows = tradingRows(state, from, to);
+  const of = (r) => (sales ? r.sales : -r.cost);
+  const total = rows.reduce((s, r) => s + of(r), 0);
+  // The one thing a figure cannot say on its own: a line nothing could price, and a line
+  // whose recipe prices to nothing — the latter counted as nothing, which is what makes a
+  // profit read too high.
+  const rider = (r) => (sales ? (r.price == null ? "no price recorded" : "")
+    : (r.uncosted ? "no recipe cost" : ""));
+  const uncosted = rows.filter((r) => r.uncosted).length;
+  const line = (r) => el("div", { class: "info-row journal-line" },
+    el("span", { class: "j-what" },
+      [`${dayMonth(r.date)} · ${r.what}`, r.customer, rider(r)].filter(Boolean).join(" · ")),
+    el("span", { class: "info-val" }, fmtRM(of(r), cur)));
+
+  showPopup(el("div", { class: "popup-title-row" }, `${name} journal`), () => el("div", {},
+    el("p", { class: "card-sub", style: "margin:0 0 10px" }, `${name} · ${monthTitle}`),
+    rows.length
+      ? el("div", {}, ...rows.map(line))
+      // An empty month opens and says so, rather than the line being dead and reading as
+      // a broken screen — the same rule every spending line follows.
+      : el("p", { class: "card-sub" }, sales
+          ? `Nothing was sold in ${monthTitle}.`
+          : `Nothing was made for sale in ${monthTitle}.`),
+    el("div", { class: "info-row pl-total" },
+      el("span", {}, "Total"), el("span", { class: "info-val" }, fmtRM(total, cur))),
+    el("p", { class: "card-sub", style: "margin:10px 0 0" }, sales
+      ? "These are the order lines the figure above is made of, each with the customer's own name. A sale counts on the day it is DELIVERED, not the day it was ordered — the same day the day headers and the customer's calendar use. They are recorded in Orders, so a correction is made there; both screens move together, because this is the same list."
+      : `These are what those very lines cost to make, taken from your recipes — not the packs you bought, which are cash on the Money screen and stock on the shelf.${uncosted ? ` ${uncosted} line${uncosted === 1 ? "" : "s"} this month had no recipe cost and was counted as nothing, so check that product's recipe.` : ""}`)));
+}
+
 // The month on screen, as { year, month } — module scope, like the other screens'
 // own pickers, so a rebuild she did not ask for does not move the month.
 let shown = null;
@@ -63,7 +101,8 @@ export function renderProfit(root, state) {
   const cur = state.settings.currency || "RM";
   if (!shown) shown = currentMonth();
 
-  // `opens` makes a line tappable. EVERY spending line has it, including one reading 0.00:
+  // `opens` makes a line tappable. EVERY line with rows behind it has it — the spending
+  // lines, and since 2 Oct 2026 Sales and Cost of sales too — including one reading 0.00:
   // a line that looks identical to the line above but does nothing when tapped reads as a
   // broken screen, and a 0.00 figure is still a figure worth being able to look into
   // (17 Sep 2026: "in profit the expenses is not clickable, is that a bug?"). An empty
@@ -101,8 +140,12 @@ export function renderProfit(root, state) {
         (() => { const b = button("›", () => move(1), "ghost small cal-nav"); if (!canNext) b.disabled = true; return b; })()),
       el("div", { class: "card" },
         el("p", { class: "card-title" }, "Profit and loss"),
-        line("Sales", pl.sales),
-        line("Cost of sales", -pl.cost),
+        el("p", { class: "card-sub", style: "margin:0 0 2px" },
+          pl.lines ? "Trading · tap a line to see the orders behind it" : "Trading"),
+        line("Sales", pl.sales, "",
+          () => openTradingJournal(state, "sales", from, to, monthTitle)),
+        line("Cost of sales", -pl.cost, "",
+          () => openTradingJournal(state, "cost", from, to, monthTitle)),
         line("Gross profit", pl.gross, " pl-total"),
         el("p", { class: "card-sub", style: "margin:8px 0 2px" },
           pl.expensesTotal ? "Running costs · tap a line to see the spending behind it" : "Running costs"),

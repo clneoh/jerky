@@ -13,6 +13,11 @@
 // that refused to zoom out first. v238 draws the line where it belongs: the lock holds back
 // what could move the PIN, and nothing else. The zoom is live the whole time.
 //
+// AND THE SECOND REPORT, which is about the other half of "what could move the pin": "click
+// on the map should not move the pin, only dragging the pin will." Since v264 a tap places
+// nothing on a map that already carries a pin, unlocked or not — so the drag is the one
+// gesture left, and the two tests at the bottom of this file are what pin that down.
+//
 // WHAT THIS SHIM MODELS, AND WHAT IT CANNOT. `mountPinMap`'s entire contract with Leaflet is
 // two things: the OPTIONS it builds the map with, and the handler objects it enables and
 // disables afterwards. Both are recorded faithfully here — a handler object is made for each
@@ -182,7 +187,8 @@ test("the lock still holds what could move the pin, and lets both go together wh
   handle.setDraggable(true);
   assert.equal(map.dragging.enabled, true, "unlocked, the map pans");
   assert.equal(marker.dragging.enabled, true, "and the pin drags");
-  assert.equal((map.handlers.click || []).length, 1, "and a tap is now a way to place a point");
+  assert.equal((map.handlers.click || []).length, 1,
+    "and the map takes a tap — which, on a map that already carries a pin, is a handler that answers nothing (v264, below)");
 });
 
 test("re-locking takes the pan away and leaves the zoom alone (v238)", async () => {
@@ -199,21 +205,48 @@ test("re-locking takes the pan away and leaves the zoom alone (v238)", async () 
 
 // ── the pin does not move under a finger that was only looking ─────────────
 
-test("a tap on a locked map places nothing, and places a point once she unlocks it", async () => {
+test("a tap never moves the pin, locked or unlocked (v264)", async () => {
+  // Her words, and this card's whole contract since: "click on the map should not move the
+  // pin, only dragging the pin will." Written as a tap on the UNLOCKED map because that is
+  // the only state where a tap could do anything at all — locked, there is no handler to
+  // fire (asserted above), which would make a locked-only test a tautology.
   const { map, moves, handle, marker } = await mount();
   const start = { lat: marker.latlng.lat, lng: marker.latlng.lng };
 
-  // Locked there is no handler to fire — asserted above — so the way to make this a real
-  // check rather than a tautology is to unlock, tap, and read where the pin went.
   handle.setDraggable(true);
   (map.handlers.click || [])[0]({ latlng: { lat: 5.4172, lng: 100.3311 } });
-  assert.deepEqual(moves, [{ lat: 5.4172, lng: 100.3311 }], "an unlocked tap reports the point it landed on");
-  assert.notDeepEqual({ lat: marker.latlng.lat, lng: marker.latlng.lng }, start,
-    "and the pin really moved to it");
+  assert.deepEqual(moves, [], "an unlocked tap reports no move — a tap that landed on the map is not a move");
+  assert.deepEqual({ lat: marker.latlng.lat, lng: marker.latlng.lng }, start,
+    "and the pin is exactly where it was");
+
+  // The other half of the same rule, and the reason it is a guard inside the handler rather
+  // than no handler at all: the drag is now the only thing that moves this pin.
+  const drag = { target: { getLatLng: () => ({ lat: 5.5, lng: 100.4 }) } };
+  marker.handlers.dragend[0](drag);
+  assert.deepEqual(moves, [{ lat: 5.5, lng: 100.4 }], "and the drag is what moves it");
 
   handle.setDraggable(false);
   assert.equal(map.handlers.click.length, 0,
-    "re-locked, the tap handler is off the map, so the same tap can no longer place anything");
+    "re-locked, the tap handler is off the map, as it has been since v201");
+});
+
+test("a tap still places the FIRST pin, on a map that has none (v264)", async () => {
+  // The one case the tap survives, and it is not an exception to her rule: there is no pin
+  // on this map, so a tap cannot MOVE one. It places the first, which nothing else on a
+  // pin-less map could do, because there is nothing to drag. This card never opens that way
+  // (the door block hides the map when there is no point) but `place: null` is part of the
+  // contract, so it is pinned rather than assumed.
+  const { map, moves, handle, rec } = await mount({ place: null });
+  assert.equal(rec.markers.length, 0, "the map is built with no pin on it at all");
+
+  handle.setDraggable(true);
+  (map.handlers.click || [])[0]({ latlng: { lat: 5.4172, lng: 100.3311 } });
+  assert.deepEqual(moves, [{ lat: 5.4172, lng: 100.3311 }], "the tap places the first point");
+  assert.equal(rec.markers.length, 1, "and draws the pin that goes with it");
+
+  (map.handlers.click || [])[0]({ latlng: { lat: 5.6, lng: 100.5 } });
+  assert.deepEqual(moves, [{ lat: 5.4172, lng: 100.3311 }],
+    "and the very next tap moves nothing, because now there is a pin for the rule to protect");
 });
 
 test("dragging the pin does nothing while the card is only being looked at (v238)", async () => {

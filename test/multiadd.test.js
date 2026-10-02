@@ -183,7 +183,7 @@ function seededGroup(status) {
   return s;
 }
 
-test("Print label sits at Baked (to kit the order), not at Packed", () => {
+test("Print label is offered from Baked to the end of the order, and never before", () => {
   const baked = seededGroup("baking");
   const rootB = createEl("div");
   renderOrders(rootB, baked, new URLSearchParams({ date: "d1" }));
@@ -191,12 +191,29 @@ test("Print label sits at Baked (to kit the order), not at Packed", () => {
   assert.equal(byText(blockB, "Print label").length, 1, "Baked row offers Print label for kitting");
   assert.equal(byText(blockB, "Send pickup reminder").length, 0, "no pickup reminder yet at Baked");
 
+  // v268: the button used to be offered at Baked and nowhere else, so it vanished the moment
+  // the order was packed — taking with it the only way to reprint a label that tore, on an
+  // order still sitting in her kitchen.
   const packed = seededGroup("ready");
   const rootP = createEl("div");
   renderOrders(rootP, packed, new URLSearchParams({ date: "d1" }));
   const blockP = byClass(rootP, "list-item")[0];
-  assert.equal(byText(blockP, "Print label").length, 0, "Packed row no longer offers Print label");
+  assert.equal(byText(blockP, "Print label").length, 1, "Packed row still offers Print label");
   assert.equal(byText(blockP, "Send pickup reminder").length, 1, "Packed row keeps Send pickup reminder");
+
+  const done = seededGroup("delivered");
+  const rootD = createEl("div");
+  renderOrders(rootD, done, new URLSearchParams({ date: "d1" }));
+  assert.equal(byText(byClass(rootD, "list-item")[0], "Print label").length, 1,
+    "and Collected / Shipped, where a lost label is most likely to be noticed");
+
+  // Nothing before Baked: there is no bag to kit yet, so the control stays out of the way
+  // rather than sitting inert on an order that has not been baked.
+  const confirmed = seededGroup("confirmed");
+  const rootC = createEl("div");
+  renderOrders(rootC, confirmed, new URLSearchParams({ date: "d1" }));
+  assert.equal(byText(byClass(rootC, "list-item")[0], "Print label").length, 0,
+    "not offered before Baked");
 });
 
 test("removing an item row drops it before submit", () => {

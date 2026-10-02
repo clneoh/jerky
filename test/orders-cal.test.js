@@ -14,6 +14,9 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
 function createEl(tag) {
   return {
@@ -329,4 +332,171 @@ test("a screen with no delivery days at all still draws today, and offers no arr
   assert.equal(arrows(cal)[0].tagName, "SPAN", "with nowhere back");
   assert.equal(arrows(cal)[1].tagName, "SPAN", "and nowhere forward");
   assert.ok(dayCell(cal, 10).className.includes("today"), "and today is still marked");
+});
+
+// ── the past is ONE grey, the shop's own ─────────────────────────────────────
+//
+// The baker asked for the store calendar's look on every admin calendar: one
+// shade for every day already gone, whether or not the bakery delivers that day.
+// The admin grid used to answer that in two ways — .off (a half-transparent
+// --muted) for a day she does not deliver and .past (a half-transparent --muted
+// too, but at a different opacity) for a day she does — so the past came out in
+// two shades side by side in the same row. Now every past day takes `past`, and
+// `past` is the shop's flat colour.
+//
+// v261 put `past` in the right place but left `.off`'s `opacity: .6` standing, and
+// opacity multiplies whatever colour the cell finally lands on — so the test below
+// it passed while the grid still drew the past in two shades. The baker saw it
+// ("the greyed and the non grey contrast is not big") and the browser measurement
+// agreed: `.off` + `.past` composited to #ebe6df against `.past`'s own #ded6cd.
+// The last test here composites the two rules the way a browser does, which is the
+// check the first one could not make.
+
+test("every past day wears `past`, delivered or not; a future quiet day does not", () => {
+  const cal = build();
+
+  // 5 Sep is behind us and is not one of the bakery's delivery days. It used to
+  // carry only `off`, at a different opacity from the past days around it.
+  const quietPast = dayCell(cal, 5);
+  assert.ok(quietPast.className.includes("past"), "a past day she does not deliver is `past` too");
+  assert.ok(quietPast.className.includes("off"), "…and keeps `off`: it is still not a delivery day");
+
+  // 2 Sep is behind us and IS delivered — it was the only kind that looked right.
+  const delivPast = dayCell(cal, 2);
+  assert.ok(delivPast.className.includes("past"), "a past delivery day is `past`");
+  assert.ok(!delivPast.className.includes("off"), "…and is not a quiet day");
+
+  // 16 Sep is ahead of us and not delivered: the past mark must not leak forward.
+  const futureQuiet = dayCell(cal, 16);
+  assert.ok(futureQuiet.className.includes("off"), "a future day she does not deliver is `off`");
+  assert.ok(!futureQuiet.className.includes("past"), "…and is NOT `past` — nothing ahead of today is");
+});
+
+// The colour is read out of each stylesheet rather than repeated here, so the
+// admin grid and the shop can never drift to two different greys without this
+// failing. Same idiom as the email sender name in test/email-sender-name.test.js.
+const ruleBody = (css, selector) => {
+  const at = css.indexOf(`${selector} {`);
+  assert.notEqual(at, -1, `${selector} must exist`);
+  const from = at + selector.length;
+  return css.slice(css.indexOf("{", from) + 1, css.indexOf("}", from));
+};
+const colorOf = (body) => (body.match(/color\s*:\s*([^;]+)/) || [])[1]?.trim();
+
+test("the admin past grey IS the shop's past grey, flat, and declared after .off", () => {
+  const admin = read("admin/css/app.css");
+  const shop = read("store/app.css");
+
+  const shopPast = colorOf(ruleBody(shop, ".cal-cell.past"));
+  const adminPast = colorOf(ruleBody(admin, ".cal-cell.past"));
+  assert.ok(shopPast, "the shop declares a past colour to copy");
+  assert.equal(adminPast, shopPast, "the admin past grey is the shop's own colour, not a lookalike");
+
+  // Flat: the shop fades nothing, and neither may the admin — an opacity here is
+  // what made the past read as two greys depending on whether she delivers.
+  assert.equal(/opacity\s*:/.test(ruleBody(admin, ".cal-cell.past")), false,
+    "the admin past rule carries no opacity — the colour is the whole of it");
+
+  // Both selectors are two classes (0,2,0), so source order alone decides which
+  // one a past non-delivery day gets. Below .off is what makes `past` win.
+  assert.ok(admin.indexOf(".cal-cell.past {") > admin.indexOf(".cal-cell.off {"),
+    "`.cal-cell.past` is declared after `.cal-cell.off`, or a past quiet day keeps the wrong grey");
+});
+
+// Compositing, the way a browser does it: the cell's colour comes from whichever
+// rule won (`.past`, being declared later at equal specificity), and the cell's
+// opacity from whichever rule set one — and `.off` applies to the whole cell, so
+// its opacity lands on `.past`'s colour too. Rendered = opacity × colour over the
+// card the calendar sits on.
+const parseColor = (cssColor) => {
+  if (cssColor.startsWith("#")) {
+    const h = cssColor.slice(1);
+    return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  }
+  return (cssColor.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+};
+const opacityOf = (body) => {
+  const m = body.match(/opacity\s*:\s*([\d.]+)/);
+  return m ? Number(m[1]) : 1;
+};
+const over = (color, alpha, bg) => color.map((c, i) => alpha * c + (1 - alpha) * bg[i]);
+const round = (rgb) => rgb.map((c) => Math.round(c));
+
+test("a quiet day is solid, and both kinds of past day land on the same pixel", () => {
+  const admin = read("admin/css/app.css");
+  const shop = read("store/app.css");
+
+  // The quiet-day rule must not fade the cell at all. This is the assertion v261
+  // lacked: `past` carrying no opacity is not enough while the rule it ties with
+  // carries one, because opacity multiplies the colour that won.
+  const offBody = ruleBody(admin, ".cal-cell.off");
+  assert.equal(opacityOf(offBody), 1,
+    "`.cal-cell.off` carries no opacity — fading the whole cell is what put the past back into two shades");
+
+  // The card the calendar sits on — `.cal-wrap` paints `--surface`, so that is the
+  // colour every composite below is measured over. Read, not assumed.
+  const surface = (admin.match(/--surface\s*:\s*([^;]+)/) || [])[1]?.trim();
+  assert.ok(surface, "the app declares the surface the calendar sits on");
+  const card = parseColor(surface);
+
+  const pastColor = colorOf(ruleBody(admin, ".cal-cell.past"));
+  const deliveredPast = round(over(parseColor(pastColor), opacityOf(ruleBody(admin, ".cal-cell.past")), card));
+  const quietPast = round(over(parseColor(pastColor), opacityOf(offBody), card));
+  assert.deepEqual(quietPast, deliveredPast,
+    "a past day she delivers and a past day she does not are the SAME grey on screen");
+
+  // And the shop's own past cell — which carries no opacity either — must agree,
+  // or "the shop's grey" is only true of the stylesheet, not of the screen.
+  const shopPast = round(over(parseColor(colorOf(ruleBody(shop, ".cal-cell.past"))),
+    opacityOf(ruleBody(shop, ".cal-cell.past")), card));
+  assert.deepEqual(shopPast, deliveredPast, "the admin past cell paints exactly what the shop's does");
+});
+
+// ── how solid a quiet day has to be ──────────────────────────────────────────
+//
+// Removing the opacity (v262) left the quiet day at flat `--muted`, 3.50:1 against
+// the card. That was measurable progress and still not enough to look at: the baker
+// asked for it again ("can make the quite day more solid?"), and by then "solid"
+// had a number attached, so the ask is written down here as a floor rather than
+// left to the eye. The floor is 6:1 — the quiet day is not a whisper any more.
+//
+// The ceiling matters as much as the floor. A quiet day has to stay clearly lighter
+// than a delivery day, or the calendar loses the one distinction it draws in colour;
+// and on the product availability calendar the same rule separates "you can sell
+// here" (plain --ink) from "you cannot", so letting the quiet grey drift up to ink
+// would quietly delete that answer too.
+const luminance = (rgb) => {
+  const lin = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  return 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
+};
+const contrast = (a, b) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((p, q) => q - p);
+  return (hi + 0.05) / (lo + 0.05);
+};
+// The colour may be written as a literal or as a token, and this test is about the
+// ratio, not the syntax. Resolving `var(--x)` here means putting the quiet day back
+// on --muted fails on the number it should fail on, rather than on a parse error.
+const tokenOf = (css, name) => (css.match(new RegExp(`--${name}\\s*:\\s*([^;]+)`)) || [])[1]?.trim();
+const resolve = (css, value) => {
+  const ref = (value || "").trim().match(/^var\(\s*--([\w-]+)\s*\)$/);
+  return ref ? tokenOf(css, ref[1]) || "" : (value || "").trim();
+};
+
+test("a quiet day is solidly darker than the paper, and still lighter than a delivery day", () => {
+  const admin = read("admin/css/app.css");
+  const card = parseColor(tokenOf(admin, "surface"));
+  const ink = parseColor(tokenOf(admin, "ink"));
+
+  const offBody = ruleBody(admin, ".cal-cell.off");
+  const quiet = round(over(parseColor(resolve(admin, colorOf(offBody))), opacityOf(offBody), card));
+  const quietRatio = contrast(quiet, card);
+  const deliverRatio = contrast(ink, card);
+
+  assert.ok(quietRatio >= 6,
+    `a quiet day is solid against the card (measured ${quietRatio.toFixed(2)}:1) — flat --muted was 3.50:1, which is the value the baker looked at and asked to have made darker`);
+
+  // Strictly lighter than a delivery day, with room to see it: at least a full
+  // point of ratio apart, so no future nudge upward can quietly close the gap.
+  assert.ok(deliverRatio - quietRatio >= 1,
+    `a delivery day still reads as the darker of the two (quiet ${quietRatio.toFixed(2)}:1 vs delivery ${deliverRatio.toFixed(2)}:1)`);
 });

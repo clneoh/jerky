@@ -129,7 +129,7 @@ Deno.serve(async (req) => {
     message,
   ].join("\n");
 
-  const from = Deno.env.get("RESEND_FROM") || "Munchies Furkidz wishes <wishlist@send.munchies.com.my>";
+  const from = Deno.env.get("RESEND_FROM") || "Munchies Furkidz <wishlist@send.munchies.com.my>";
   console.log("[shop-feedback] sending via Resend from", from, "to", recipients.length, "recipient(s)");
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",

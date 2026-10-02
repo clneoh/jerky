@@ -13,8 +13,15 @@ import { isThumb, lineNoteOf } from "../../storefront-fields.js";
 import { effectiveCapacity, effectiveLimit, isPoolablePack, poolRemaining, totalUnitsOnDate } from "./bom.js";
 import { byId, fmtRM, newId, orderCode, orderLineName, save, stampOrderLine } from "./state.js";
 import { phoneDigits } from "./customers.js";
-import { publishCodes, publishTaster } from "./codes.js";
+// jerky's own label/landing-page publisher shares the name `publishCodes` with
+// the promo-code engine below, so it is aliased here on purpose.
+import { publishCodes as publishLabelCodes, publishTaster } from "./codes.js";
 import { customerTotal } from "./courier.js";
+// The promo-code engine. Only two things are asked of it here: what the shop may
+// advertise and judge (publishCodes), and how a code a customer typed is spelled
+// by the time it reaches an order (normCode).
+import { normCode, publishCodes } from "./promo.js";
+import { usageByCode } from "./promo-usage.js";
 // The trip on the order, read through the one helper that decides what a half-written
 // record means. NOT the courier registry: this module is imported by the channel that
 // talks to a courier (couriers/api.js reads its session token), so reaching for the
@@ -407,6 +414,12 @@ function storefrontPayload(state) {
     ? dev.emails.map((e) => String(e || "").trim()).filter(Boolean)
     : [];
   const devWa = String(dev.whatsapp || "").trim();
+  // What every code has done so far, recounted from her own orders at the moment
+  // of publishing — never read off the record, which only ever holds what the
+  // last recount wrote. The shop judges "has this been fully claimed" with these
+  // two numbers, so a code that has given away everything it was allowed stops
+  // being advertised and stops being accepted the next time she publishes.
+  const usage = usageByCode(state);
   const out = {
     whatsapp: String(sf.whatsapp || ""),
     name: String(sf.name || ""),
@@ -427,14 +440,22 @@ function storefrontPayload(state) {
     // tints off the shop. publishOccasions drops everything she typed herself.
     occasions: publishOccasions(state.occasions, todayISO()),
     // The printed QR labels and the page they open. Only the customer-readable
-    // half travels — see publishCodes / publishTaster for exactly what that is,
+    // half travels — see publishCodes in js/codes.js / publishTaster for what that is,
     // and what it deliberately is not (a shop's number, its rate, your notes).
-    codes: publishCodes(state),
+    codes: publishLabelCodes(state),
     taster: publishTaster(state),
     // Always sent, even empty, like the occasions above: an emptied tree is an
     // answer ("she deleted her last category"), and it has to take the headings
     // off a page that is already open.
     categories,
+    // The promo codes the shop may judge — and, for the public ones, advertise.
+    // Always sent, even empty, for the same reason as the two lists above: the
+    // payload replaces the whole row, so an absent key would leave the shop
+    // running yesterday's codes. A personal code is published too, because the
+    // shop can only accept one that a customer types, and the customer's own
+    // personal code is the only way its owner can use it; "personal" means never
+    // advertised, never secret. See publishCodes in js/promo.js.
+    promoCodes: publishCodes(state, (c) => usage.get(c.code) || { used: 0, given: 0 }),
   };
   // The "Website by …" credit for the homepage/store footers — name, the email
   // link(s) and the optional WhatsApp number. Published only when set; the
@@ -567,7 +588,10 @@ export function trackingSnapshot(state, group) {
   // A COD charge is published as its own column rather than folded in, because this
   // total is what the card tells them the order comes to — and the courier is about to
   // ask them for the charge at the door (19 Sep 2026).
-  const { courier: courierFee, cod: courierCod, quoted, total: totalNum } = customerTotal(state, group);
+  const {
+    courier: courierFee, cod: courierCod, quoted, total: totalNum,
+    promo: promoRm, promoCode,
+  } = customerTotal(state, group);
   const total = fmtRM(totalNum, state.settings.currency);
   // The booked trip, as the order itself remembers it. Every one of these is null on an
   // order with no trip, and the customer's card leaves its line out rather than printing
@@ -582,7 +606,13 @@ export function trackingSnapshot(state, group) {
   // NOTE: all five need supabase/courier_job.sql run once, before this build is deployed
   // (see that file). A missing column kills publishing for EVERY order silently, because
   // pushTracking swallows its errors — the same trap courier_fee.sql documents.
-  const trip = jobOf(first);
+  //
+  // GATED on the order being a courier order (v268): switching an order to Self collect
+  // deliberately KEEPS the three charge keys and the trip, because she may switch back —
+  // so the reader, not the writer, is what keeps this card honest. An order she now
+  // collects herself must not publish a driver, a plate, a phone number or a waybill to
+  // its customer. Same rule as the row's own `fulfill-tag` (see views/orders.js).
+  const trip = courier ? jobOf(first) : null;
   const driver = (trip && trip.driver) || null;
   // A parcel she posts herself (v226). It carries no driver and no live link, so its
   // half of the card is only ever the carrier's name and "collected" — which is the
@@ -597,7 +627,7 @@ export function trackingSnapshot(state, group) {
     // The courier's tracking number, as you typed it on the order. Null when there
     // is none (a collect order, or one not posted yet) — the customer's card
     // leaves the line out entirely rather than printing an empty label.
-    tracking_no: String(first.trackingNo || "").trim() || null,
+    tracking_no: (courier && String(first.trackingNo || "").trim()) || null,
     // The courier's charge, when the customer bears it. Null when they don't — you
     // pay it, or there is no charge — and the card leaves the line out rather than
     // printing an empty label. NOTE: this column needs supabase/courier_fee.sql run
@@ -624,6 +654,19 @@ export function trackingSnapshot(state, group) {
     // NOTE: this column needs supabase/postage_mode.sql run once, before this build is
     // deployed (see that file) — a missing column kills publishing for EVERY order.
     postage_quoted: quoted === true ? true : null,
+    // The promo code on the order and the ringgit it took off, so the customer's card
+    // can show the same line their WhatsApp message shows. Null on an order that
+    // carried no code, and the card then leaves the line out rather than printing an
+    // empty label — the rule tracking_no and the charge columns already follow.
+    //
+    // The AMOUNT is published rather than left for the card to work out: the code list
+    // it would need is published too, but a code she has since deleted is not on it,
+    // and a card that could not price an order it is showing would be worse than no
+    // card at all. NOTE: both columns need supabase/promo_track.sql run once, before
+    // this build is deployed (see that file) — and a missing column kills publishing
+    // for EVERY order silently, because pushTracking swallows its errors.
+    promo_code: promoCode || null,
+    promo_rm: promoRm > 0 ? promoRm : null,
     // Who is carrying it, where it has got to, and who is driving — each null when the
     // order has no trip or the trip has not told us that yet.
     //
@@ -859,6 +902,12 @@ function importIncoming(state, row) {
       // can say what kind of label it was even after she edits the code.
       promoCode: String(data.promoCode || "").trim().toUpperCase(),
       codeKind: String(data.codeKind || "").trim(),
+      // The promo code the customer typed in the shop (?promo=), or the one the
+      // standing today line named and they typed anyway. Spelled the one way the
+      // engine recognises it, because this is the string her own app will later
+      // count against the code — a stray lowercase here would make a code look
+      // unused forever. Absent on every order placed without one, like referredBy.
+      promo: normCode(data.promo),
       fulfillment: data.fulfillment === "courier" ? "courier" : "collect",
       address: String(data.address || "").trim(),
       note: String(data.note || "").trim(),

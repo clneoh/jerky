@@ -593,3 +593,180 @@ test("a label that never carried an offer says exactly that", () => {
   assert.equal(promoBlock(state).textContent,
     "🎟 MILO — a label with no offer on it.");
 });
+
+// ── v268: opening WhatsApp is not sending the message ────────────────────────
+// Pressing Send confirmation put the message into WhatsApp's box and, in the same tap,
+// marked the order SENT — so the Confirmed step went green, and so did the customer's own
+// track card, which reads the same flag (supabase.js confirmed_sent), on a message still
+// sitting unsent in that box. The press now records the draft and nothing else, and the
+// green comes from a second press she makes on her way back. Her instruction, 1 Oct 2026:
+// green only once she says it has gone.
+test("Send confirmation drafts the message; I have sent it is what turns it green", () => {
+  const state = withOrder({ status: "confirmed", confirmedSent: false });
+  const opens = [];
+  const realOpen = globalThis.window.open;
+  const realLocation = globalThis.location;
+  globalThis.window.open = (url) => { opens.push(url); };
+  globalThis.location = { origin: "https://munchies.com.my" };
+  try {
+    const root = createEl("div");
+    renderOrders(root, state, PARAMS());
+    assert.equal(opens.length, 0, "nothing opens until she presses");
+    assert.ok(buttons(root).includes("Send confirmation"), "and the press is offered");
+
+    press(root, "Send confirmation");
+    assert.equal(opens.length, 1, "the message opens in WhatsApp");
+    assert.match(opens[0], /^https:\/\/wa\.me\/60123456789\?text=/, "addressed to the customer");
+    assert.equal("confirmedSent" in state.orders[0] ? state.orders[0].confirmedSent : false, false,
+      "and the order is NOT marked sent");
+    assert.equal(state.orders[0].confirmedOpened, true, "only that the message has been drafted");
+
+    // The map keeps flashing Confirmed — nothing has gone to the customer yet.
+    const drafted = createEl("div");
+    renderOrders(drafted, state, PARAMS());
+    const waiting = all(drafted).find((n) => String(n.className).includes("oj-step")
+      && n.children[1].children[0].text === "Confirmed");
+    assert.ok(!String(waiting.className).includes("done"), "Confirmed is still waiting, not green");
+    // ... and the row asks for the half of it the app cannot see for itself.
+    assert.ok(buttons(drafted).includes("I have sent it"), "so it asks whether the message has gone");
+
+    press(drafted, "I have sent it");
+    assert.equal(state.orders[0].confirmedSent, true, "that press is what marks it sent");
+    assert.equal("confirmedOpened" in state.orders[0], false, "and the draft mark goes with it");
+
+    const sent = createEl("div");
+    renderOrders(sent, state, PARAMS());
+    const done = all(sent).find((n) => String(n.className).includes("oj-step")
+      && n.children[1].children[0].text === "Confirmed");
+    assert.ok(String(done.className).includes("done"), "Confirmed is green now");
+    assert.ok(!buttons(sent).includes("I have sent it"), "and it stops asking once it has an answer");
+  } finally {
+    globalThis.window.open = realOpen;
+    if (realLocation === undefined) delete globalThis.location;
+    else globalThis.location = realLocation;
+  }
+});
+
+test("landing on Confirmed again clears the draft, so an old draft is never answered for", () => {
+  // An order that was drafted, moved on, and then brought back to Confirmed has its
+  // Confirmed step started afresh (setStage) — so a draft mark left behind must not offer
+  // "I have sent it" for a message nobody has opened this time round.
+  const state = withOrder({ status: "baking", confirmedSent: true });
+  state.orders[0].confirmedOpened = true; // drafted during an earlier visit
+  const root = createEl("div");
+  renderOrders(root, state, PARAMS());
+
+  // The row's own status control, found by its class — the day's status filter is a
+  // select too, and carries the same stage names.
+  const stSel = all(root).find((n) => n.tagName === "SELECT" && String(n.className).includes("sel-small"));
+  assert.ok(stSel, "the row's own status control");
+  stSel.value = "confirmed";
+  stSel._listeners.change[0]();
+
+  assert.equal(state.orders[0].status, "confirmed", "the order is back on Confirmed");
+  assert.equal(state.orders[0].confirmedSent, false, "with the step started again");
+  assert.equal("confirmedOpened" in state.orders[0], false, "and the stale draft mark gone with it");
+
+  const again = createEl("div");
+  renderOrders(again, state, PARAMS());
+  assert.ok(!buttons(again).includes("I have sent it"), "so it is asking for a message to be opened, not answered for");
+  assert.ok(buttons(again).includes("Send confirmation"), "and the normal press is what it offers");
+});
+
+// ── v270: the code a customer ordered with, read where the order is read ─────
+// She reported it the day after v269: "i dont see the promo code fresh10 send over
+// to app together with the order". It had been ON the order since v269 — the shop
+// stamps it, the app's import keeps it — but nothing ever DREW it, so the one place
+// she looks for an order was the one place it did not appear. A code that arrives
+// and cannot be read is a code that did not arrive.
+const promoCodeOrder = (extra) => ({ ...STATE, orders: [{
+  id: "o1", deliveryDateId: "d7", productId: "p1", qty: 1, customerName: "Ain",
+  whatsapp: "60123456789", status: "new", source: "storefront", ...extra,
+}] });
+// The order's OWN row on the delivery day — the row this screen is worked from,
+// and the only row that carries `dataset.order`. Found by that marker rather than
+// by "anything on the page", so the chip has to be on the row she reads an order
+// on and cannot pass by turning up somewhere else on the screen.
+const dayRow = (root) => all(root).find((n) => n.dataset && n.dataset.order === "o1");
+const promoTags = (n) =>
+  all(n).filter((c) => String(c.className).split(/\s+/).includes("promo-tag"));
+
+test("an order placed with a code says WHICH code, on the row she reads it on", () => {
+  const root = createEl("div");
+  renderOrders(root, promoCodeOrder({ promo: "FRESH10" }), PARAMS());
+
+  const row = dayRow(root);
+  assert.ok(row, "the order's own row is on the screen");
+  const tags = promoTags(row);
+  assert.equal(tags.length, 1, "the code travels onto the row, rather than sitting in her data unseen");
+  assert.equal(tags[0].children[0].text, "🎟 FRESH10",
+    "and the row names the code itself — she takes the money off by hand, so which code it was is what tells her how much");
+});
+
+test("a code is read back in the one spelling the engine recognises it by", () => {
+  const root = createEl("div");
+  renderOrders(root, promoCodeOrder({ promo: "  fresh10 " }), PARAMS());
+  assert.equal(promoTags(dayRow(root))[0].children[0].text, "🎟 FRESH10",
+    "however an older record spelled it, the row cannot show two spellings of one code");
+});
+
+test("an order with no code shows no chip, so its row is the row this screen always drew", () => {
+  for (const extra of [{}, { promo: "" }, { promo: undefined }]) {
+    const root = createEl("div");
+    renderOrders(root, promoCodeOrder(extra), PARAMS());
+    assert.equal(promoTags(dayRow(root)).length, 0,
+      `${JSON.stringify(extra)} — a row with nothing to say about a code says nothing`);
+  }
+});
+
+// ── v277: the order's own money, on the row ──────────────────────────────────
+// Her report, 2 Oct 2026, on the v276 receipt: "the format still not as clear as a
+// receipt, the money have to align up" — and, asked where, "non at all in the order
+// list". The list she works from all day was the one surface an order's total never
+// reached, so a row read "×2" and stopped. Every row now ends with its total in one
+// right-hand column, in the app's own label-and-figure shape (.info-row / .info-val),
+// so a list of orders can be read down the figures the way a column of receipts can.
+const moneyRows = (n) =>
+  all(n).filter((c) => String(c.className).split(/\s+/).includes("li-money"));
+
+const priced = (extra) => {
+  const st = promoCodeOrder(extra);
+  st.products = [{ ...STATE.products[0], price: 15 }];
+  return st;
+};
+
+test("every order row carries its own total, so the money is on the list she works from", () => {
+  const root = createEl("div");
+  renderOrders(root, priced({}), PARAMS());
+
+  const row = dayRow(root);
+  const lines = moneyRows(row);
+  assert.equal(lines.length, 1, "one row of money on the order's own row — no more, no fewer");
+  const [label, figure] = lines[0].children;
+  assert.equal(label.textContent, "Order total", "the words on the left, the same ones every order uses");
+  assert.equal(figure.textContent, "RM 15.00",
+    "and the figure is the order's own — 1 × RM15, the same sum the receipt in the pop-up prices");
+});
+
+test("the money is a line of its OWN, not a chip wedged in beside the qty", () => {
+  const root = createEl("div");
+  renderOrders(root, priced({ promo: "FRESH10" }), PARAMS());
+
+  const row = dayRow(root);
+  const line = moneyRows(row)[0];
+  assert.ok(row.children.includes(line),
+    "the money row hangs directly off the LIST ITEM, not off .li-right — beside the chips it would sit at whatever x they happened to leave free, and a list of orders would read as a ragged edge instead of a column");
+  assert.ok(String(line.className).includes("info-row"),
+    "and it is the app's own .info-row, so an order's money on the list, in the pop-ups, on the Money screen and in the Profit statement are all one shape");
+  assert.ok(String(line.children[1].className).includes("info-val"),
+    "with the figure in the app's own .info-val, which is what right-aligns it");
+});
+
+test("an order nobody has priced says nothing, rather than claiming it is worth nothing", () => {
+  const st = promoCodeOrder({});
+  st.products = [{ ...STATE.products[0], price: undefined }];
+  const root = createEl("div");
+  renderOrders(root, st, PARAMS());
+  assert.equal(moneyRows(dayRow(root)).length, 0,
+    "an unpriced order is not an order worth RM 0.00 — the row would be the app inventing a figure");
+});

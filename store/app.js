@@ -18,6 +18,10 @@ import { sendFeedback, loadDraft, saveDraft } from "./feedback.js";
 // read her phone and know which build the shop is running — and the address fed back with
 // a customer's words names it too. One number, one file, no second copy to forget.
 import { ENGINE_VERSION } from "../admin/js/version.js";
+// The promo-code engine, shared with the backoffice so a code the shop accepts is
+// exactly a code her app recognises. It is a leaf module (imports nothing), which
+// is why the shop can take it without pulling the backoffice's storage in.
+import { codeNameOk, evaluate, findCode, minimumOf, normCode, normalizeCode, offerOf, shortfallOf, stoppedBy, worthOf } from "../admin/js/promo.js";
 
 // Day/month short names per site language. English is today's authoring default;
 // fmtDay and the "Posting days" info card read by the visitor's language so a
@@ -28,6 +32,13 @@ const DAYS_ZH = ["周日", "周一", "周二", "周三", "周四", "周五", "�
 const MONTHS_ZH = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"];
 const DAYS_MS = ["Ahad", "Isnin", "Selasa", "Rabu", "Khamis", "Jumaat", "Sabtu"];
 const MONTHS_MS = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"];
+// Full month names, for the one sentence that has to read as prose rather than as
+// a calendar cell: "That code ended on 30 September." A shorthand "30 Sep" reads
+// as a data label, and this line is the one place a date has to sound like a
+// sentence the bakery is saying. Chinese needs no second table — 9月30日 is
+// already the full form.
+const MONTHS_EN_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const MONTHS_MS_LONG = ["Januari", "Februari", "Mac", "April", "Mei", "Jun", "Julai", "Ogos", "September", "Oktober", "November", "Disember"];
 
 // Single-letter column headings for the calendar's top row. Kept separate from
 // DAYS_* because those are three-letter names ("Mon") and the Chinese ones are
@@ -54,6 +65,13 @@ let repaintForLang = null;
 // data-i18n words. Called by renderBar, so every basket change repaints them.
 // Null until render() has run.
 let repaintCode = null;
+
+// Set from inside render() too: redraws the promo line and the code box's own
+// line. Needed because the published codes arrive ASYNCHRONOUSLY, after the page
+// has already drawn — the storefront row is fetched once at boot, and a customer
+// looking at the top of the page would otherwise never see the offer. Null until
+// render() has run.
+let repaintPromo = null;
 
 // Fill %1, %2, … placeholders left-to-right.
 function sub(s) {
@@ -247,6 +265,181 @@ function codeInfo(cfg, code) {
   return list.find((c) => c && String(c.code || "").toUpperCase() === code) || null;
 }
 
+// The `promo` query string on a printed card's link (?promo=FRESH10) is the code
+// the customer was handed. Read the one way the engine spells a code. A card
+// carries no number and no date, so the code is all it has to carry.
+export function parsePromo(search) {
+  return tidyCode(new URLSearchParams(String(search || "")).get("promo"));
+}
+
+function currentPromo() {
+  return (typeof location !== "undefined" && location.search)
+    ? parsePromo(location.search) : "";
+}
+
+// What the customer typed, cleaned the way the engine spells a code. Forgiving on
+// purpose: "fresh 10", "Fresh-10" and "FRESH10" are the same code to the shop,
+// because a customer reading a card off a phone should not lose a discount to a
+// space. The rules themselves stay strict — being relaxed about typing is the
+// shop's job, not the engine's.
+function tidyCode(t) {
+  return String(t || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+}
+
+// The offer in words, built from the engine's PARTS rather than a sentence it
+// handed back — the engine answers in data (see js/promo.js), and every word the
+// customer reads is a translated string from store-lang.js.
+function offerWords(w) {
+  if (w.kind === "delivery") return t("promoFreeDelivery");
+  if (w.kind === "pct") {
+    const pct = sub(t("promoOffPercent"), w.value);
+    return w.cap > 0 ? sub(t("promoOffPercentCap"), pct, `RM${w.cap.toFixed(2)}`) : pct;
+  }
+  return sub(t("promoOffAmount"), `RM${w.value.toFixed(2)}`);
+}
+
+// Everything the offer carries that a customer has to know before they type it:
+// what comes off, the smallest basket it works on, and when it runs out. The
+// standing line and the accepted box both read from here, so a code with a
+// minimum or an end date never reads as though it had neither.
+//
+// The minimum is wrapped on FIRST, so the end date lands on the outside: "RM10
+// off on RM30 and above, until 31 October" rather than "…until 31 October on
+// RM30 and above", which reads as though the dates were the condition.
+export function clauseWords(code) {
+  let w = offerWords(offerOf(code));
+  const min = minimumOf(code);
+  if (min > 0) w = sub(t("promoOnMin"), w, `RM${min.toFixed(2)}`);
+  const to = code && code.when && code.when.to;
+  if (to) {
+    const day = dayWords(to);
+    if (day) w = sub(t("promoUntil"), w, day);
+  }
+  return w;
+}
+
+// The bakery's OWN sentence about a code, in the reader's language, or "" when
+// she has not written one. Blank 中文/BM falls back to the English she wrote,
+// the same way the storefront policy text does — a line in English is more use
+// to a Chinese-reading customer than no line at all.
+export function ownWords(code, lang = loadLang()) {
+  if (!code) return "";
+  const en = String(code.say || "").trim();
+  if (lang === "zh") return String(code.sayZh || "").trim() || en;
+  if (lang === "ms") return String(code.sayMs || "").trim() || en;
+  return en;
+}
+
+// Which words each of the engine's reasons gets. One table, so a reason added to
+// the engine can never arrive on the page unworded — a language test walks every
+// value here and insists it exists in all three dictionaries, with its
+// placeholder. Everything not named falls to promoNo, the plain line that is
+// always true: a code that cannot be used, messaged about, sorted out by hand.
+const REFUSAL_KEY = {
+  unknown: "promoUnknown",
+  paused: "promoPaused",
+  ended: "promoEnded",
+  notYet: "promoNotYet",
+  claimed: "promoClaimed",
+  clash: "promoClash",
+  small: "promoSmall",
+};
+
+// What the shop makes of the engine's answer. Pure data — no words, no document —
+// so the Node tests can press every reason through it without a browser.
+//
+// Three outcomes:
+//   "ok"   — the code is on the order and stated plainly.
+//   "soft" — the code is on the order AND stated with its caveat. Two reasons can
+//            only ever be a guess on a page with no login: "one per customer" and
+//            "first orders only", read from what this phone remembers, and wrong
+//            on a new phone or a cleared browser. Her standing rule is that a
+//            website rule must never block or hide a sale she takes by hand, so
+//            the shop says what it knows and leaves the real check to her — the
+//            same division of labour the bring-a-friend credit already uses.
+//   "no"   — nothing is stamped on the order, and the customer is told why.
+//
+// A "small" basket is the only reason with a way forward, so the engine asks it
+// last — see evaluate(); this table must never be read as the order of the
+// checks.
+export function shopVerdict(r) {
+  if (r && r.ok) return { kind: "ok", key: "promoAccepted" };
+  const fail = (r && r.fail) || "unknown";
+  if (fail === "used") return { kind: "soft", key: "promoAcceptedUsed", fail };
+  if (fail === "firstOnly") return { kind: "soft", key: "promoAcceptedFirst", fail };
+  // "Ended" and "hasn't started yet" are the two reasons whose whole point is
+  // naming the day, and a date is the only thing that stops them reading as a
+  // glitch. With no date to name there is nothing to say beyond the plain line.
+  const dated = fail === "ended" || fail === "notYet";
+  const on = r && typeof r.on === "string" ? r.on : "";
+  if (dated && !/^\d{4}-\d{2}-\d{2}$/.test(on)) return { kind: "no", key: "promoNo", fail };
+  return { kind: "no", key: REFUSAL_KEY[fail] || "promoNo", fail, on, short: r && r.short };
+}
+
+// The shop's answer for a code it STATES but never gates on — "one per customer" and
+// "first orders only", the two it can only ever guess at. The code goes on the order
+// exactly as if it had passed, because the real check is hers, in the app.
+//
+// One thing overrides the caveat: the basket. A code the customer qualified for on
+// every other count but whose smallest basket this basket never reached is ON the
+// order and gives NOTHING for it — the app deducts nothing (see awardOf in
+// js/promo.js). So the shop must not promise money it will not hand over. It says the
+// one line the customer can act on instead — "Add RM84 more to use it" — and the order
+// still goes through with the code still riding on it, unchanged.
+//
+// Pure — no words, no document — so the Node tests press it directly, the same reason
+// shopVerdict above is exported.
+export function softVerdict(key, typed, total, codes = []) {
+  const c = findCode(codes, typed);
+  const short = c ? shortfallOf(c, total) : 0;
+  if (c && short > 0) {
+    return { kind: "soft", key: "promoSmall", fail: "small", code: c.code, short, offer: null, caveat: true };
+  }
+  return {
+    kind: "soft",
+    key,
+    // findCode is asked for the engine's own spelling of the name: a card typed as
+    // "fresh 10" is stamped "FRESH10".
+    code: c ? c.code : normCode(typed),
+    offer: c ? worthOf(c, total, 0) : null,
+    caveat: true,
+  };
+}
+
+// What THIS phone remembers about its own ordering. Not a login, and never
+// presented as one: it is a guess, kept because a customer who has just used a
+// code should not be told it is going spare. It only ever changes what the shop
+// SAYS — it never stops an order being placed. Absent or unreadable reads as a
+// brand-new phone, which is the safe direction: the shop states the caveat and
+// takes the order either way.
+const MEMO_KEY = "munchies.shop.v1";
+
+export function shopMemo(store) {
+  const ls = store || (typeof localStorage !== "undefined" ? localStorage : null);
+  const none = { orders: 0, codes: [] };
+  if (!ls) return none;
+  try {
+    const raw = JSON.parse(ls.getItem(MEMO_KEY) || "{}") || {};
+    const codes = Array.isArray(raw.codes) ? raw.codes.map(normCode).filter(Boolean) : [];
+    const orders = Number.isInteger(raw.orders) && raw.orders > 0 ? raw.orders : 0;
+    return { orders, codes };
+  } catch { return none; }
+}
+
+// One more order on this phone, and the code it carried if it carried one.
+// Called only after the bakery's app has ACCEPTED the order: an order that fell
+// back to WhatsApp was never recorded anywhere, and claiming it here would tell
+// the next customer a code had been used when nothing says it was.
+export function rememberShopOrder(code, store) {
+  const ls = store || (typeof localStorage !== "undefined" ? localStorage : null);
+  const memo = shopMemo(ls);
+  const next = { orders: memo.orders + 1, codes: memo.codes.slice() };
+  const c = normCode(code);
+  if (c && !next.codes.includes(c)) next.codes.push(c);
+  try { if (ls) ls.setItem(MEMO_KEY, JSON.stringify(next)); } catch { /* best effort */ }
+  return next;
+}
+
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -328,6 +521,20 @@ export function dateKey(d) {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
+// A single date as words — "30 September" — for a sentence that has to name one:
+// "That code ended on 30 September." Takes the engine's own ISO spelling (the
+// same YYYY-MM-DD key everything else uses), and answers "" for anything that is
+// not a date, so a caller can tell "no date" from "the first of January". A
+// refusal built around a date is never printed with a hole where the date goes.
+export function dayWords(iso, lang = loadLang()) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ""));
+  if (!m) return "";
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (lang === "zh") return `${MONTHS_ZH[d.getMonth()]}${d.getDate()}日`;
+  if (lang === "ms") return `${d.getDate()} ${MONTHS_MS_LONG[d.getMonth()]}`;
+  return `${d.getDate()} ${MONTHS_EN_LONG[d.getMonth()]}`;
+}
+
 // Which dates the calendar offers. When the backoffice has published real delivery
 // dates (rows dated today or later), those win — including dates that don't
 // match the configured weekday pattern (e.g. an extra Thursday the baker added
@@ -370,6 +577,10 @@ export function buildMessage(cfg, order) {
   }
   if (order.customer) msg += `\n👤 ${order.customer}`;
   if (order.note) msg += `\n📝 ${order.note}`;
+  // The promo code the customer used, when they used one. Guarded, so an order
+  // without a code produces byte-for-byte the message this page has always
+  // produced — the bakery's own test asserts that message word for word.
+  if (order.promo) msg += `\n🎟 ${order.promo}`;
   return msg;
 }
 
@@ -515,6 +726,22 @@ export function mergeStorefront(base, remote) {
         }
         return row;
       });
+  }
+  // The promo codes the baker has published, judged by the SAME engine the code
+  // box uses (admin/js/promo.js) — so a code the page accepts is exactly a code
+  // that engine recognises, never two nearly-identical rules that can disagree.
+  //
+  // Replaced WHOLESALE, like the occasions and categories above: the app
+  // publishes a complete snapshot every time, so an empty list is a real
+  // instruction ("she deleted her last code") and has to clear the codes a code
+  // box on an already-open page would otherwise keep accepting. A row that is
+  // not a well-formed code is DROPPED rather than drawn, so a malformed one can
+  // never reach the page and never be offered to a customer.
+  if (Array.isArray(remote.promoCodes)) {
+    out.promoCodes = remote.promoCodes
+      .filter((c) => c && typeof c === "object" && codeNameOk(c.code))
+      .slice(0, 200)
+      .map(normalizeCode);
   }
   // The developer credit shown in the store footer (and on the homepage) — set
   // once in the app's Settings and republished. Hidden until both exist.
@@ -1080,6 +1307,176 @@ export function render() {
   // A product's date rules (closes X days before delivery / a from–to window)
   // compare each delivery date to today, so its reference is fixed at load.
   const todayKey = dateKey(new Date());
+
+  // ── Promo code ────────────────────────────────────────────────────────────
+  // The standing offer line above the menu, and the code box beside the referral
+  // banner. ONE judgement stands behind both — admin/js/promo.js — and the shop
+  // never takes money off the total: an accepted code is STATED, carried on the
+  // order, and the bakery subtracts it by hand in WhatsApp, exactly as she does
+  // for the bring-a-friend credit. So nothing here can refuse a sale: an order
+  // goes through with or without a code, and a code this page does not recognise
+  // is simply not stamped on it.
+  //
+  // Declared up here rather than beside the wiring below because renderBar() can
+  // run on the very first paint (reconcileCart fixes a cart the moment the
+  // availability data lands) and renderBar ends by repainting these lines.
+  let promoApplied = "";   // the accepted code, or "" — only this is stamped
+  let promoRefusal = null; // {key, on, short} of the last refusal, cleared on a good code
+
+  const promoInput = document.getElementById("promo-input");
+  const promoSay = document.getElementById("promo-say");
+  const promoToday = document.getElementById("promo-today");
+  const promoOffer = document.getElementById("promo-offer");
+  const promoWords = document.getElementById("promo-words");
+  const promoClear = document.getElementById("promo-clear");
+
+  // What the basket comes to right now. The same sum renderBar shows in the bar,
+  // asked separately because the promo lines need it whether or not the bar is
+  // being redrawn, and a percentage's money has to be worked out against it.
+  function cartTotal() {
+    let total = 0;
+    for (const [n, q] of cart) {
+      const p = CONFIG.products.find((x) => x.name === n);
+      if (p) total += q * p.price;
+    }
+    return total;
+  }
+
+  function publishedCodes() {
+    return Array.isArray(CONFIG.promoCodes) ? CONFIG.promoCodes : [];
+  }
+
+  // The code the shop is willing to ADVERTISE today: public, switched on, inside
+  // its dates, and not already given away. Asked through the engine's own
+  // stoppedBy, so the standing line and the code box can never disagree about
+  // what "still running" means. A personal code is never shown here — being
+  // unadvertised is the whole of what "personal" buys (see publishCodes).
+  function standingCode() {
+    const today = dateKey(new Date());
+    return publishedCodes().find((c) => c.vis === "public" && !stoppedBy(c, today)) || null;
+  }
+
+  function say(key, className, ...args) {
+    if (!promoSay) return;
+    promoSay.textContent = sub(t(key), ...args);
+    promoSay.className = `card-sub promo-say ${className}`;
+    promoSay.hidden = false;
+  }
+
+  // The words for a refusal, built here because this is where the date and the
+  // shortfall can be spelled in the customer's own language.
+  function refusalArgs(v) {
+    if (v.fail === "ended" || v.fail === "notYet") return [dayWords(v.on)];
+    if (v.fail === "small") return [`RM${(Number(v.short) || 0).toFixed(2)}`];
+    return [];
+  }
+
+  // Everything the engine needs to judge a code for THIS customer: the day, the
+  // basket, and the three things only this phone can answer — what it remembers
+  // about its own orders, and whether a referral credit is riding on the order
+  // (the bring-a-friend welcome discount and a "not beside the credit" code are
+  // the same money, so a code that says it cannot sit beside it must see it).
+  //
+  // The delivery fee is the one input the shop genuinely does not have: she
+  // quotes carriage by hand, so a free-delivery code is worth its words and
+  // nothing is subtracted here. 0 is the honest answer, not a placeholder.
+  function judgeCtx(total) {
+    const memo = shopMemo();
+    return {
+      today: dateKey(new Date()),
+      total,
+      deliveryFee: 0,
+      usedCodes: memo.codes,
+      isNew: memo.orders === 0,
+      creditApplied: !!currentVia(),
+    };
+  }
+
+  // One verdict, so the box and every repaint can never disagree: hand the engine
+  // a typed code and the whole context, and say what the shop makes of it.
+  function judge(typed, total) {
+    const codes = publishedCodes();
+    const r = evaluate(codes, typed, judgeCtx(total));
+    const v = shopVerdict(r);
+    if (v.kind === "ok") {
+      return { kind: "ok", key: v.key, code: r.code.code, offer: r.offer, delivery: r.delivery };
+    }
+    if (v.kind === "soft") return softVerdict(v.key, typed, total, codes);
+    return { kind: "no", key: v.key, fail: v.fail, on: v.on, short: v.short };
+  }
+
+  // Redraw both lines. Called on every cart change (renderBar) because the basket
+  // is part of the judgement: a percentage's money moves with the total, and so
+  // does whether a minimum is met. Nothing here touches what the customer has
+  // typed into the box — only the line under it.
+  function paintPromo(total) {
+    // An accepted code is re-judged every time, for the same reason. If it stops
+    // qualifying — she ended it while the page was open, or the basket fell below
+    // its minimum — it stops being applied, because the shop must never state a
+    // discount it can no longer honour. The order still goes through either way.
+    //
+    // A code the customer has already used on this phone, or one that is for first
+    // orders only, comes back "soft" here for the same reason it did when it was
+    // typed: it is on the order, with its caveat.
+    let got = null;
+    if (promoApplied) {
+      const j = judge(promoApplied, total);
+      if (j.kind === "no") { promoApplied = ""; promoRefusal = j; }
+      else got = j;
+    }
+
+    if (promoToday) {
+      // The standing line stands down for a code the customer ACTUALLY GOT — one
+      // code per order, and the accepted line under the box is what says so.
+      //
+      // It stands down only then. A code the page REFUSED is not on the order, so
+      // nothing is being swapped and there is no second code to avoid offering —
+      // and taking the day's offer off the screen because the customer mistyped
+      // would hide a real sale behind their own typo. The refusal stays, and the
+      // standing line stays there to tell them the code they were looking for.
+      const c = promoApplied ? null : standingCode();
+      promoToday.hidden = !c;
+      if (promoOffer) promoOffer.textContent = c ? sub(t("promoToday"), clauseWords(c), c.code) : "";
+      // Her own sentence, underneath the app's line and never instead of it: the
+      // app's line is what names the code, and a customer who cannot type the
+      // code cannot use it. A code she has written nothing for shows one line,
+      // exactly as it did before she could write anything.
+      if (promoWords) {
+        const own = c ? ownWords(c) : "";
+        promoWords.hidden = !own;
+        promoWords.textContent = own;
+      }
+    }
+    if (promoSay) promoSay.hidden = true;
+    // A code the shop is stating-but-not-gating can still be one the basket is too
+    // small for. It is on the order either way, but it will give nothing for it, so
+    // the customer gets the line they can act on — "Add RM84 more to use it" — and
+    // not an offer that will never be honoured.
+    if (got && got.short) say(got.key, "bad", ...refusalArgs(got));
+    else if (got && got.offer) say(got.key, "good", offerWords(got.offer), got.code);
+    else if (promoRefusal) say(promoRefusal.key, "bad", ...refusalArgs(promoRefusal));
+    if (promoClear) promoClear.hidden = !promoApplied;
+  }
+
+  function applyTyped() {
+    if (!promoInput) return;
+    const typed = tidyCode(promoInput.value);
+    const total = cartTotal();
+    if (!typed) {
+      promoApplied = ""; promoRefusal = null;
+    } else {
+      const j = judge(typed, total);
+      if (j.kind === "no") {
+        promoApplied = "";
+        promoRefusal = j;
+      } else {
+        promoApplied = j.code;
+        promoRefusal = null;
+        promoInput.value = j.code; // shown back spelled as the engine knows it
+      }
+    }
+    paintPromo(total);
+  }
 
   const renderMenu = () => {
     const byProduct = prodAvail && selected ? prodAvail[selected] || {} : {};
@@ -1779,6 +2176,10 @@ export function render() {
             // moment a label's offer line and note can first be drawn. Without
             // this the page showed nothing until something else repainted it.
             if (repaintCode) repaintCode();
+            // The codes arrive with this row, long after the page first drew, so
+            // the standing line and any code already in the box are redrawn here
+            // rather than waiting for the customer to touch something.
+            if (repaintPromo) repaintPromo();
           } catch { /* corrupt config → keep the local one */ }
         }
       }
@@ -1853,6 +2254,10 @@ export function render() {
     // config (which is what carries the codes) arrives. So this is the one hook
     // the label line and the note under it need.
     if (repaintCode) repaintCode();
+    // The promo lines ride on the same repaint, because the basket is part of
+    // their judgement: a percentage's money moves with the total, and so does
+    // whether a code's minimum is met.
+    paintPromo(total);
     return total;
   }
 
@@ -1967,6 +2372,12 @@ export function render() {
       order.promoCode = usedInfo.code;
       order.codeKind = usedInfo.kind;
     }
+    // The promo code the customer had ACCEPTED, when they had one. Only an
+    // accepted code is ever written — a code the page refused is not recorded,
+    // and never stopped the order. Written only when there is one, the same
+    // "absent means nothing" spelling as the referral stamp above, so an order
+    // placed without a code posts the payload this page has always posted.
+    if (promoApplied) order.promo = promoApplied;
     // A value pack draws its base out of the shared pool in whole pieces, but
     // the pack itself is already one top-level `lines` entry — so the base
     // pieces it consumes travel here, separate from `lines`. The database
@@ -1995,6 +2406,12 @@ export function render() {
       // the customer is told it's received but not yet accepted: it lands as a
       // New order and only becomes Confirmed when the baker confirms it (which
       // is also when the customer gets the WhatsApp confirmation).
+      //
+      // What this phone now remembers about its own ordering. Written here, on
+      // the one path where the order really landed — an order that fell back to
+      // WhatsApp reached no record at all, and counting it would tell the next
+      // customer a code had been used when nothing says it had.
+      rememberShopOrder(promoApplied);
       cart.clear();
       // …and with it every note typed against it, or the next customer's first
       // look at the menu would open with the last person's words sitting in the
@@ -2011,6 +2428,11 @@ export function render() {
       // scanned label's code is in the link, not this box, so it survives.
       const codeBox = document.getElementById("code-input");
       if (codeBox) codeBox.value = "";
+      // The promo code went ON the order, so it comes off the page — the next customer
+      // must not find the last one's discount sitting in the box, already applied
+      // and about to be stamped on an order it was never meant for.
+      promoApplied = ""; promoRefusal = null;
+      if (promoInput) promoInput.value = "";
       // Reset to Post (nationwide) — the default — for the next customer.
       const fulfillEl = document.getElementById("fulfillment");
       if (fulfillEl) {
@@ -2071,7 +2493,31 @@ export function render() {
     renderCodeBanner(CONFIG);
     renderCodeNote(CONFIG, basketTotal());
   };
+  // The promo box's own wiring. Bound here rather than beside the state above so
+  // the listeners are attached once, after the page has drawn.
+  if (promoInput) {
+    promoInput.addEventListener("input", () => { promoRefusal = null; paintPromo(cartTotal()); });
+    promoInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); applyTyped(); }
+    });
+  }
+  const promoBtn = document.getElementById("promo-apply");
+  if (promoBtn) promoBtn.addEventListener("click", applyTyped);
+  if (promoClear) promoClear.addEventListener("click", () => {
+    promoApplied = ""; promoRefusal = null;
+    if (promoInput) promoInput.value = "";
+    paintPromo(cartTotal());
+  });
+  repaintPromo = () => paintPromo(cartTotal());
+
   renderBar();
+
+  // A card's own link (?promo=FRESH10) arrives with the code already in it, so
+  // the customer never has to retype what they were handed. Read once, at boot.
+  if (promoInput && currentPromo()) {
+    promoInput.value = currentPromo();
+    applyTyped();
+  }
 
   // What a language switch repaints, in place. Nothing here re-reads the
   // network: the tagged static HTML and the title (applyTo), the header + info
@@ -2301,6 +2747,17 @@ function paintTrack() {
       : row.postage_quoted
         ? el("p", { class: "track-note track-fee" }, t("postageQuoted"))
         : null,
+    // The promo code they used, named under the charge and above the total — the same
+    // line their WhatsApp message carries, so a total that has already come down by the
+    // discount explains itself instead of looking wrong (v272). BOTH the code and the
+    // amount are published on the order, so this line is drawn from the order's own
+    // figures and never worked out here — a code she has since deleted still names
+    // itself on the order it was actually used on. Absent on every order with no code.
+    row.promo_rm > 0 && row.promo_code
+      ? el("p", { class: "track-note track-promo" }, sub(
+          t("promoLine"), row.promo_code,
+          `RM${Number(row.promo_rm).toFixed(2)}`))
+      : null,
     el("p", {}, `${row.items} — ${row.total}`),
   ]);
   const kids = [
@@ -2365,7 +2822,7 @@ export async function trackOrder(code) {
     // card cannot tell an order whose delivery cost is still to be quoted from one
     // with nothing left to pay, and would quietly say neither.
     const res = await fetch(
-      `${base}/rest/v1/order_tracking?select=status,confirmed_sent,paid_received,delivery,items,total,tracking_no,courier_fee,courier_cod,postage_quoted,customer,updated_at,courier_name,courier_phase,courier_driver,courier_plate,courier_phone&code=eq.${clean}&limit=1`,
+      `${base}/rest/v1/order_tracking?select=status,confirmed_sent,paid_received,delivery,items,total,tracking_no,courier_fee,courier_cod,postage_quoted,promo_code,promo_rm,customer,updated_at,courier_name,courier_phase,courier_driver,courier_plate,courier_phone&code=eq.${clean}&limit=1`,
       { headers: { apikey: sb.anonKey }, cache: "no-store" });
     const rows = res.ok ? await res.json() : null;
     const row = Array.isArray(rows) && rows[0];

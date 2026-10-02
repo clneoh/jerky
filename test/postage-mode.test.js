@@ -94,7 +94,8 @@ test("the flat fee applies to a posted order — and only while the switch is of
 test("quote mode: a posted order with no charge owes the items alone, and says so", () => {
   const st = state({ postageMode: "quote" });
   const parts = customerTotal(st, groupOf(st));
-  assert.deepEqual(parts, { items: 30, courier: 0, cod: 0, postage: 0, quoted: true, total: 30 },
+  assert.deepEqual(parts, { items: 30, courier: 0, cod: 0, postage: 0, quoted: true,
+    promo: 0, promoCode: "", notApplied: "", promoMinimum: 0, total: 30 },
     "no delivery figure is invented, and the total is not silently the whole cost");
   assert.deepEqual(moneyLines(st, parts), [
     "Total: RM 30.00",

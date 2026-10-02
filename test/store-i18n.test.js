@@ -108,6 +108,16 @@ test("the closed-product reason and the basket notes are keyed in all three lang
     // a customer on her own posting day that she does not post that day.
     calMiss: ["%1"],
     calClose: ["%1"],
+    // The code, and what it took off (v272, 2 Oct 2026). Drawn on this shop's own track
+    // card as one line of words, like the courier charge beside it: the card still draws
+    // no money block (its flat nationwide postage is never published, so a subtotal
+    // worked out from the published total would be wrong by that fee — see paintTrack in
+    // store/app.js), but the discount itself IS published on the order, so naming it is
+    // exact and needs no working out. Each language must keep BOTH placeholders: a
+    // translation that dropped %1 would print "Promo: -RM 10.00" without naming which
+    // code it was, and one that dropped %2 would name the code and never say what came
+    // off the total.
+    promoLine: ["%1", "%2"],
   };
   for (const [key, phs] of Object.entries(holders)) {
     for (const l of LANGS) {
@@ -147,6 +157,16 @@ test("the suggestion box is translated in all three languages", () => {
   }
   assert.notEqual(STORE.zh.fbPh, STORE.en.fbPh, "Chinese is translated, not left in English");
   assert.notEqual(STORE.ms.fbPh, STORE.en.fbPh, "Bahasa Malaysia is translated, not left in English");
+});
+
+test("the promo line is translated, not left in English", () => {
+  // The line is only ever read by a customer, and only on an order that carried a code,
+  // so a language left in English would sit inside an otherwise translated card and read
+  // as a machine's line rather than the bakery's.
+  for (const l of LANGS.slice(1)) {
+    assert.ok(STORE[l].promoLine.trim(), `${l}.promoLine is present`);
+    assert.notEqual(STORE[l].promoLine, STORE.en.promoLine, `${l} is translated, not left in English`);
+  }
 });
 
 test("the COD charge is worded differently from the plain one in every language", () => {

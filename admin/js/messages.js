@@ -11,6 +11,22 @@ import { shortDate } from "./dates.js";
 import { customerTotal, moneyLines } from "./courier.js";
 import { trackingLine, windowSuffix } from "./courier_job.js";
 
+// The opening line, in the voice she chose on Settings (2 Oct 2026). WhatsApp
+// carries no fonts at all — the letters always come from the customer's own phone
+// — so the only lever over how her words land is its four marks, and a pair of
+// underscores drawn as italics is the whole of this choice. It lives here, in the
+// one file every message builder already shares, so the confirmation, the payment
+// reminder, "on its way" and "ready" cannot lean over differently from each other.
+//
+// "plain" returns the line untouched, so a bakery that never opens the setting
+// sends byte for byte what it sent before this existed. The marks go TIGHT against
+// the words: a space inside the pair leaves the underscores showing as literal
+// characters on some phones.
+export function greeting(state, line) {
+  const style = (state && state.settings && state.settings.messageStyle) || "plain";
+  return style === "greeting" ? `_${line}_` : line;
+}
+
 function basics(state, group, trackUrl) {
   const orders = (group && group.orders) || [];
   const first = orders[0];
@@ -65,7 +81,7 @@ export function buildPaymentReminder(state, group, trackUrl) {
   if (!b || !b.recipient) return null;
   // Mirrors the confirmation's layout (greeting, then the order code on its own
   // line) so every WhatsApp message leads with the same scannable #CODE.
-  let msg = `Hi ${b.first.customerName || ""}! A friendly reminder from ${b.bakery} about your order.\n`;
+  let msg = `${greeting(state, `Hi ${b.first.customerName || ""}! A friendly reminder from ${b.bakery} about your order.`)}\n`;
   msg += `Order #${orderCode(b.first)}\n`;
   msg += `Delivery: ${b.date} - ${b.fulfillment}\n`;
   msg += `Items: ${b.items}\n`;
@@ -91,7 +107,7 @@ export function buildPaymentReminder(state, group, trackUrl) {
 export function buildShippedMessage(state, group, trackUrl) {
   const b = basics(state, group, trackUrl);
   if (!b || !b.recipient) return null;
-  let msg = `Hi ${b.first.customerName || ""}! Your order from ${b.bakery} is on its way.\n`;
+  let msg = `${greeting(state, `Hi ${b.first.customerName || ""}! Your order from ${b.bakery} is on its way.`)}\n`;
   msg += `Order #${orderCode(b.first)}\n`;
   msg += `Delivery: ${b.date} - ${b.fulfillment}\n`;
   msg += `Items: ${b.items}\n`;
@@ -117,7 +133,7 @@ export function buildShippedMessage(state, group, trackUrl) {
 export function buildPickupReminder(state, group, trackUrl) {
   const b = basics(state, group, trackUrl);
   if (!b || !b.recipient) return null;
-  let msg = `Hi ${b.first.customerName || ""}! Good news from ${b.bakery} - your order is ready.\n`;
+  let msg = `${greeting(state, `Hi ${b.first.customerName || ""}! Good news from ${b.bakery} - your order is ready.`)}\n`;
   msg += `Order #${orderCode(b.first)}\n`;
   msg += b.courier
     ? `Packed and will be posted to you on ${b.date}.\n`

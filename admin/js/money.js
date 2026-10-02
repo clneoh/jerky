@@ -42,8 +42,16 @@ export function groupValue(state, group) {
 // Paid · TNG button is pressed (paidReceived). An order from before those flags
 // existed has none, which reads as collected — the same rule the journey map has
 // always used, so an old order does not suddenly look unpaid.
+//
+// `true` is the money itself, so it stands on its own (v268). The stage is only how a
+// MISSING answer is read, never a veto over a stated one: a payment she recorded before
+// the order reached the paying stage — the box on the order takes a method at any stage
+// — is money she has, and every screen that counts money has to agree about it. Before
+// this the record sat in the order while the day's till, the row's tag and the
+// customer's card all went on saying it was owed.
 export function isCollected(group) {
   const first = firstOf(group);
+  if (first.paidReceived === true) return true;
   const at = STAGES.indexOf(String(first.status || "new"));
   return at >= PAID_STAGE && first.paidReceived !== false;
 }

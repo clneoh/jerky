@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { profitBetween, monthSpan, orderDay, lineCost, expenseRows } = await import("../admin/js/profit.js");
+const { profitBetween, monthSpan, orderDay, lineCost, expenseRows, tradingRows } = await import("../admin/js/profit.js");
 const { classOfCategory, categoryLabels, DEFAULT_CATEGORIES } = await import("../admin/js/accounts.js");
 
 // Flour at 1 sen a gram; a Focaccia's recipe uses 100 g, so a loaf costs RM1.00 to
@@ -274,6 +274,76 @@ test("a category she deleted still opens, because its rows still count", () => {
     "so the line she can see has a journal she can open");
 });
 
+// ── Sales and Cost of sales open too (v280) ───────────────────────────────────
+// 2 Oct 2026: "at the profit section, can the sales and cost of sales be clickable to
+// reveal its journal". Both lines are made of the same order rows, so one journal serves
+// them — and it has to add up to the line, the way the spending journals do.
+test("the trading journal adds up to both lines it is opened from", () => {
+  const st = state();
+  st.orders = [
+    order({ id: "o1", qty: 2 }),                                  // 2 × RM15 = RM30, RM2.00 to bake
+    order({ id: "o2", qty: 1, unitPrice: 12.5 }),                 // 1 × RM12.50 = RM12.50, RM1.00
+  ];
+  const rows = tradingRows(st, "2026-09-01", "2026-09-30");
+  const pl = profitBetween(st, "2026-09-01", "2026-09-30");
+
+  assert.equal(rows.reduce((s, r) => s + r.sales, 0), pl.sales,
+    "the sales journal adds up to the Sales line");
+  assert.equal(rows.reduce((s, r) => s + r.cost, 0), pl.cost,
+    "and the same rows add up to Cost of sales — one list read from two sides");
+});
+
+test("a trading row names what was sold, how many, and who bought it", () => {
+  const st = state();
+  st.orders = [order({ qty: 3, customerName: "Aisyah" })];
+  const [r] = tradingRows(st, "2026-09-01", "2026-09-30");
+  assert.equal(r.what, "Focaccia × 3", "the product, with the quantity sold");
+  assert.equal(r.customer, "Aisyah", "and the customer it went to");
+  assert.equal(r.date, "2026-09-10", "on the day it is delivered");
+});
+
+test("a frozen name is what the journal calls the loaf, not the live one", () => {
+  const st = state();
+  st.products[0].name = "Focaccia (renamed)";
+  st.orders = [order({ productName: "Focaccia", qty: 1 })];
+  const [r] = tradingRows(st, "2026-09-01", "2026-09-30");
+  assert.equal(r.what, "Focaccia × 1",
+    "a product renamed after the sale still reads as the loaf that was sold");
+});
+
+test("a trading journal is this month, oldest first, like a book", () => {
+  const st = state();
+  st.orders = [
+    order({ id: "later", deliveryDate: "2026-09-20" }),
+    order({ id: "aug", deliveryDate: "2026-08-31" }),
+    order({ id: "earlier", deliveryDate: "2026-09-02" }),
+    order({ id: "oct", deliveryDate: "2026-10-01" }),
+  ];
+  assert.deepEqual(tradingRows(st, "2026-09-01", "2026-09-30").map((r) => r.id),
+    ["earlier", "later"], "the month's two, in the order she lived them");
+});
+
+test("a line with no recipe cost is marked, not silently reading zero", () => {
+  const st = state();
+  st.products.push({ id: "p0", name: "Mystery loaf", price: 20, active: true, recipe: [] });
+  st.orders = [order({ id: "priced" }), order({ id: "bare", productId: "p0", qty: 1 })];
+  const rows = tradingRows(st, "2026-09-01", "2026-09-30");
+  assert.equal(rows.find((r) => r.id === "bare").uncosted, true,
+    "a recipe that prices to nothing is flagged, so a 0.00 row is never read as a missing one");
+  assert.equal(rows.find((r) => r.id === "bare").sales, 20,
+    "and it still counts as a sale — the money came in");
+  assert.equal(rows.find((r) => r.id === "priced").uncosted, false);
+});
+
+test("a line nothing can price is marked as unpriced, not as free", () => {
+  const st = state();
+  st.products[0].price = ""; // she sells it, but no menu price is set anywhere
+  st.orders = [order({ qty: 2 })];
+  const [r] = tradingRows(st, "2026-09-01", "2026-09-30");
+  assert.equal(r.price, null, "no price anywhere is null, not 0 — the distinction the app keeps");
+  assert.equal(r.sales, 0, "and the line counts as nothing, as profitBetween counts it");
+});
+
 // ── every spending line opens, empty or not (v114) ────────────────────────────
 // "in profit the expenses is not clickable, is that a bug?" (17 Sep 2026). A line reading
 // 0.00 was deliberately dead, but it looked EXACTLY like the live line above it — so a tap
@@ -347,6 +417,64 @@ test("the journal behind a line adds up to the figure on the statement", () => {
   assert.match(all, /Packaging — bags/, "the total names the category each row belongs to");
   assert.match(all, /Utilities/, "including one with no note of its own");
   assert.ok(all.includes("RM -75.00"), "and ends on the month's whole spending: 18 + 12 + 45");
+});
+
+test("Sales and Cost of sales open, and each lands on its own line's figure", () => {
+  const walkAll = screenOf();
+  const st = state();
+  const now = new Date();
+  const { from } = monthSpan(now.getFullYear(), now.getMonth());
+  st.deliveryDates = [{ id: "d1", date: from }];
+  st.orders = [
+    order({ id: "o1", deliveryDate: from, qty: 2, customerName: "Aisyah" }),
+    order({ id: "o2", deliveryDate: from, qty: 1, customerName: "Wei", unitPrice: 12.5 }),
+  ];
+
+  const root = document.createElement("div");
+  renderProfit(root, st);
+  const line = (label) => walkAll(root).find((n) => String(n.className).includes("pl-row")
+    && n.children[0].textContent === label);
+  const pop = () => walkAll(document.getElementById("popup-layer")).map((n) => n.textContent).join(" ");
+
+  assert.ok(String(line("Sales").className).includes("tappable"), "Sales opens");
+  assert.ok(String(line("Cost of sales").className).includes("tappable"), "and so does Cost of sales");
+  assert.ok(!String(line("Gross profit").className).includes("tappable"),
+    "while the statement's own totals stay figures, not doors — gross and net alike");
+  assert.equal(line("Sales").children[1].textContent, "RM 42.50");
+
+  line("Sales")._listeners.click.forEach((f) => f());
+  const sales = pop();
+  assert.match(sales, /Sales journal/);
+  assert.match(sales, /Focaccia × 2 · Aisyah/, "each row names what sold, how many, and to whom");
+  assert.match(sales, /Focaccia × 1 · Wei/);
+  assert.ok(sales.includes("RM 42.50"), "and the journal lands on the Sales line's own figure");
+  assert.match(sales, /RM 12.50/, "the second sale at the price she sold it at");
+
+  document.getElementById("popup-layer").replaceChildren(); // close the first book
+  line("Cost of sales")._listeners.click.forEach((f) => f());
+  const cost = pop();
+  assert.match(cost, /Cost of sales journal/);
+  assert.ok(cost.includes("RM -3.00"), "2 loaves + 1 loaf at RM1.00 each to bake");
+  assert.ok(!cost.includes("RM 42.50"), "and the cost side quotes the cost, not the sale");
+});
+
+test("an empty trading journal opens and says so, like every spending line", () => {
+  const walkAll = screenOf();
+  const st = state();
+  const now = new Date();
+  const { from } = monthSpan(now.getFullYear(), now.getMonth());
+  st.deliveryDates = [{ id: "d1", date: from }]; // a month with nothing in it
+
+  const root = document.createElement("div");
+  renderProfit(root, st);
+  const line = (label) => walkAll(root).find((n) => String(n.className).includes("pl-row")
+    && n.children[0].textContent === label);
+  assert.equal(line("Sales").children[1].textContent, "RM 0.00");
+
+  line("Sales")._listeners.click.forEach((f) => f());
+  const text = walkAll(document.getElementById("popup-layer")).map((n) => n.textContent).join(" ");
+  assert.match(text, /Nothing was sold in /, "the empty line names itself and the month");
+  assert.match(text, /RM 0\.00/, "and still lands on a total of nothing rather than going dead");
 });
 
 // ── the month arrows (v115) ──────────────────────────────────────────────────

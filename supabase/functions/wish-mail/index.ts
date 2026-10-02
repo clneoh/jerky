@@ -81,7 +81,7 @@ Deno.serve(async (req) => {
   }
   const recipients = to.slice(0, 5); // cap: never mail more than a dev list
 
-  const from = Deno.env.get("RESEND_FROM") || "Munchies Furkidz wishes <wishlist@send.munchies.com.my>";
+  const from = Deno.env.get("RESEND_FROM") || "Munchies Furkidz <wishlist@send.munchies.com.my>";
   console.log("[wish-mail] sending via Resend from", from, "to", recipients.length, "recipient(s)");
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",

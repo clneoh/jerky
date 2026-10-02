@@ -39,6 +39,9 @@ const LISTS = {
   deposits: "deposits", // money in from your own pocket — same on every phone
   credits: "credits", // bring-a-friend ledger rows
   occasions: "occasions", // delivery-calendar reminder marks
+  // A promo code made on one phone has to exist on the other, or a card she
+  // prints and hands out works on the phone that made it and nowhere else.
+  promoCodes: "promoCodes",
   customers: "customers", // customer profiles (pet name/photo, likes, notes)
   partners: "partners", // the shops you hand samples to — a shop added on one phone must exist on the other
   codes: "codes", // printed QR labels — the label you print on one phone must be readable on the other
@@ -239,6 +242,12 @@ function recordPayload(kind, rec) {
       ...(hasPostage ? { postageRM: sf.postageRM } : {}),
       ...(hasPostageMode ? { postageMode: sf.postageMode } : {}),
       production: rec.production || {}, // the line planner's numbers — both phones bake from them
+      // How the four customer messages open (2 Oct 2026), carried only once she has
+      // chosen the leaning greeting — the same guard as the keys below and for the
+      // same reason: every phone holds "plain" from the day it is set up, so carrying
+      // the default always would let a phone that never touched the choice push it
+      // over the phone that did.
+      ...(rec.messageStyle === "greeting" ? { messageStyle: "greeting" } : {}),
       // The scenario she has built, only once she has built one — same guard as
       // the two lists below: a phone that never opened the planner must not push
       // an empty scenario over the one she designed on the other phone.
@@ -356,7 +365,7 @@ function recordPayload(kind, rec) {
 // happened to stamp the row newest, and rule 1 must let her EMPTY the four that
 // can be emptied without that reading as ignorance.
 const GUARDED = ["scenario", "scenarios", "tasks", "wishList", "boardAcks", "developer", "pickupPlace",
-  "categories", "payMethods", "mailingAddress", "personNames", "personCalls"];
+  "categories", "payMethods", "mailingAddress", "personNames", "personCalls", "messageStyle"];
 
 // `production` — the numbers on More → Production line — is guarded by the same
 // three rules but cannot be judged the same way, and it was the one key left
@@ -390,8 +399,14 @@ const GUARDED_ALL = [...GUARDED, "production"];
 // for one: an address she cleared has to travel as `""` rather than go silent and
 // be handed straight back by rule 2. `personCalls` is deliberately NOT here — its
 // empty is the default the app already reads, so it has nothing to say.
+//
+// v273 puts `messageStyle` here on the mailingAddress test, and it is the second
+// plain STRING: that key's guard carries it only once the greeting leans over, so
+// choosing Plain again would otherwise go out as silence, rule 2 would read that
+// as a phone that had never chosen, and the leaning greeting would come straight
+// back from the other phone.
 const SPEAK_EMPTY = ["scenarios", "boardAcks", "developer",
-  "categories", "payMethods", "mailingAddress", "personNames"];
+  "categories", "payMethods", "mailingAddress", "personNames", "messageStyle"];
 
 function has(obj, k) {
   return Object.prototype.hasOwnProperty.call(obj, k);

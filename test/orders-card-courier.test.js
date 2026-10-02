@@ -40,7 +40,17 @@ function createEl(tag) {
     // "null" on the screen. A shim that dropped it would render a card with the defect
     // already removed, and the "no stray null" assertion below would pass over anything.
     replaceChildren(...cs) {
-      for (const old of this.children) if (old && old.nodeType === 1) old.parentNode = null;
+      for (const old of this.children) if (old && old.nodeType === 1) {
+        old.parentNode = null;
+        // A real DOM blurs whatever it detaches from the page — and it blurs the focused
+        // DESCENDANT of a detached wrapper just as surely as the detached node itself.
+        // Without this the shim is FORGIVING in the one direction that matters here: a
+        // repaint that throws her out of the box she is typing in would look exactly like
+        // a clean one.
+        if (globalThis.document && old.contains(globalThis.document.activeElement)) {
+          globalThis.document.activeElement = globalThis.document.body;
+        }
+      }
       this.children = cs.map((c) => (c && c.nodeType ? c : { nodeType: 3, text: String(c) }));
       for (const c of this.children) if (c.nodeType === 1) c.parentNode = this;
     },
@@ -50,8 +60,13 @@ function createEl(tag) {
     getAttribute(k) { return this.attrs[k]; },
     querySelector: () => null,
     querySelectorAll: () => [],
-    contains: () => false,
-    focus() {}, click() {},
+    // A real `Node.contains` walks the subtree, and the blur rule above leans on it.
+    contains(n) {
+      if (!n) return false;
+      if (n === this) return true;
+      return this.children.some((c) => c.nodeType === 1 && c.contains(n));
+    },
+    focus() { globalThis.document.activeElement = this; }, click() {},
   };
   Object.defineProperty(node, "textContent", {
     get() { return this.children.map((c) => (c.nodeType === 3 ? c.text : c.textContent)).join(""); },
@@ -102,6 +117,10 @@ globalThis.Date = MockDate;
 
 const { renderOrders } = await import("../admin/js/views/orders.js");
 const { orderCode } = await import("../admin/js/state.js");
+// The fee press below is driven through the card's REAL price section, so it needs the
+// courier the card actually asks and the key a saved door is kept under.
+const { keyOf } = await import("../admin/js/customers.js");
+const { lalamove } = await import("../admin/js/couriers/lalamove.js");
 
 const CARRIER = { id: "pc1", name: "J&T Express" };
 
@@ -283,6 +302,9 @@ test("an amount with nobody down as the payer is refused, and leaves no half-wri
 test("a tracking number typed on the card is on the order", () => {
   const st = state();
   const root = pickProduct(pickCourier(openCard(st)), 1);
+  // A consignment number is a parcel's, so the box is under the carrier she posts it
+  // with (v265) — the same flow as it always was, one press earlier.
+  choose(carrierSel(root), CARRIER.id);
   type(trackingBox(root), "JT123456789");
   addOrder(root);
   assert.equal(st.orders[0].trackingNo, "JT123456789");
@@ -312,6 +334,99 @@ test("a self-collect order records no parcel", () => {
   assert.equal("parcel" in st.orders[0], false);
 });
 
+// ── the tracking box is a parcel's, and drawn only where a parcel is (v265) ─
+//
+// Her report, in her own words: "after i get price from lalamove, click use this fee, it
+// closes the window, but user might confuse as at that page there is stick fields that
+// user have not fill in, maybe that field or button should not be there? this create
+// confuse." The field she meant is the Courier tracking number box: a Lalamove TRIP uses
+// no consignment number, so on that order it was an empty box standing beside a finished
+// price, and it read as an order with something still to do.
+
+test("a courier order that is not a parcel carries no empty consignment box", () => {
+  const st = state();
+  const root = pickProduct(pickCourier(openCard(st)), 1);
+
+  assert.equal(trackingBox(root), undefined,
+    "no parcel is in play, so no box asks for a consignment number");
+  assert.ok(carrierSel(root), "while the carrier she posts a parcel with is still there to name");
+
+  // Naming the carrier IS posting it as a parcel — and the box arrives with the choice,
+  // under it, which is the whole of what changed.
+  choose(carrierSel(root), CARRIER.id);
+  assert.ok(trackingBox(root), "naming a carrier is what brings the consignment box out");
+
+  choose(carrierSel(root), "");
+  assert.equal(trackingBox(root), undefined,
+    "and taking the carrier back leaves the card as bare as it found it");
+});
+
+test("swapping carrier keeps the consignment box she is typing in", () => {
+  const st = state();
+  st.parcelCouriers.push({ id: "pc2", name: "Ninja Van" });
+  const root = pickProduct(pickCourier(openCard(st)), 1);
+
+  choose(carrierSel(root), CARRIER.id);
+  const box = trackingBox(root);
+  box.focus();                       // she tapped into it, the way a finger does
+  type(box, "JT123456789");
+
+  // She changes her mind about who carries it. The box says nothing about WHICH carrier,
+  // so it does not need rebuilding — and rebuilding it detaches the input, which in a real
+  // browser blurs it out from under her mid-typing.
+  choose(selWith(root, "Ninja Van"), "pc2");
+  assert.equal(document.activeElement, box,
+    "the consignment box is still the one she is typing in, not a fresh copy beside it");
+  assert.equal(trackingBox(root).value, "JT123456789", "still holding what she typed");
+});
+
+// The control she named, driven on the host she named it in. test/courier-quote-card.test.js
+// presses [Use this fee] on the price section STANDING ALONE; nothing pressed it inside the
+// ＋ New order card, which is the card her report is about.
+const settle = () => new Promise((r) => setTimeout(r, 0));
+
+test("after [Use this fee] on the card, what is left standing under the price is not an empty box", async () => {
+  const st = state();
+  // Nothing is priced without both doors: the bakery's own spot, and the customer's. Both
+  // are given rather than stubbed away, so the press runs the real path.
+  st.settings.pickupPlace = { lat: 5.42, lng: 100.33, label: "The bakery" };
+  const root = pickProduct(pickCourier(openCard(st)), 1);
+  type(all(root).find((n) => n.tagName === "INPUT"
+    && n.attrs.placeholder === "e.g. 012-345 6789"), "012-345 6789");
+  st.customers.push({
+    key: keyOf({ whatsapp: "012-345 6789" }),
+    place: { lat: 3.1, lng: 101.6, label: "12 Jalan Bunga" },
+  });
+
+  // The one thing stood in for is the price itself — what this test is about is the card
+  // the press leaves behind, not the courier's arithmetic.
+  const realVehicles = lalamove.vehicles;
+  const realQuote = lalamove.quote;
+  lalamove.vehicles = async () => ({ ok: true, vehicles: [{ key: "MOTORCYCLE" }] });
+  lalamove.quote = async () => ({ ok: true, quotes: [{
+    id: "q1", name: "Motorcycle", amount: 14, currency: "MYR", distanceKm: 2.4,
+    expiresAt: new Date(Date.now() + 30 * 60000).toISOString(), expiryFrom: "policy",
+  }], failed: [] });
+  try {
+    // Opening the fold is the press that prices — build() ends by asking.
+    tap(buttonByText(root, "Get a delivery price"));
+    for (let i = 0; i < 4; i += 1) await settle();
+
+    const use = buttonByText(root, "Use this fee");
+    assert.ok(use, "the card really has a price on it, or nothing below is a measurement");
+    tap(use);
+
+    assert.equal(chargeBox(root).value, "14", "the fee landed in the charge box");
+    assert.equal(trackingBox(root), undefined,
+      "and no empty consignment box is left under it for her to fill in");
+    assert.match(lastToast(), /who paid the courier/,
+      "the card names what is actually left to do instead");
+  } finally {
+    lalamove.vehicles = realVehicles;
+    lalamove.quote = realQuote;
+  }
+});
+
 // ── the block only exists when it should ───────────────────────────────────
 
 test("the courier fields are there for a courier order and gone again the moment it is not", () => {
@@ -324,7 +439,7 @@ test("the courier fields are there for a courier order and gone again the moment
 
   pickCourier(root);
   assert.ok(chargeBox(root), "choosing Post (nationwide) unfolds the charge box");
-  assert.ok(trackingBox(root), "and the tracking number");
+  assert.ok(carrierSel(root), "and the parcel half, which is what brings the tracking number with it");
   assert.ok(all(root).find((n) => n.tagName === "TEXTAREA"
     && n.attrs.placeholder === "Postal address (for posting)"), "and the address");
 

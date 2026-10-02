@@ -643,6 +643,37 @@ export function renderSettings(root, state) {
       el("p", { class: "card-sub", style: "margin:4px 0 0" },
         "Customer share messages live on More → Customers — open a customer to copy theirs. Give credit appears on a referred order in Orders.")));
 
+  // ── Message style (2 Oct 2026) ──────────────────────────────────────────
+  // WhatsApp carries no fonts — the letters always come from the customer's own
+  // phone — so the only lever over how her words land is WhatsApp's own marks, and
+  // leaning the opening line over is the whole of this choice. The note under the
+  // picker is re-worded in place rather than re-rendered, so a save does not throw
+  // her back to the top of Settings.
+  const msNote = el("p", { class: "card-sub", style: "margin:6px 0 0" });
+  const msNoteFor = (style) => (style === "greeting"
+    ? "The opening line arrives leaning over. Everything below it — the order code, the items, the money — is untouched."
+    : "Every message goes out word for word as it does today.");
+  msNote.textContent = msNoteFor(cur.messageStyle);
+
+  const msSelect = el("select", { class: "input",
+    onchange: () => {
+      // Anything that is not exactly "greeting" is Plain — the same reading the
+      // message builders and the importer make, so the three can never disagree.
+      cur.messageStyle = msSelect.value === "greeting" ? "greeting" : "plain";
+      msNote.textContent = msNoteFor(cur.messageStyle);
+      save(state); maybeSync(state); toast("Saved");
+    } },
+    el("option", { value: "plain", selected: cur.messageStyle !== "greeting" },
+      "Plain — exactly what you send today"),
+    el("option", { value: "greeting", selected: cur.messageStyle === "greeting" },
+      "The greeting leans over"));
+
+  const messageCard = el("div", { class: "card" },
+    el("h3", { style: "margin:0 0 4px" }, "Message style"),
+    el("p", { class: "card-sub", style: "margin:0 0 10px" },
+      "How the four WhatsApp messages to a customer open — the confirmation, the payment reminder, \"on its way\" and \"ready\". WhatsApp has no fonts: the letters come from the customer's own phone, and the only marks it carries are bold, italics, strikethrough and monospace. So this leans the opening line over and nothing else moves."),
+    el("div", { class: "field" }, el("label", {}, "Opening line"), msSelect, msNote));
+
   const sampleCard = (!state.products.length && !state.ingredients.length)
     ? el("div", { class: "card" },
         el("h3", { style: "margin:0 0 4px" }, "Try sample data"),
@@ -652,7 +683,11 @@ export function renderSettings(root, state) {
           button("Load sample data", () => loadSample(state), "soft")))
     : null;
 
-  root.replaceChildren(daysCard, lockCard, storefrontCard, postageCard, devCard, referralsCard, mailingCard, courierCard, supabaseCard, sharedCard, backupCard, dangerCard, ...(sampleCard ? [sampleCard] : []));
+  // The sample-data card is optional — replaceChildren is not el(), and would
+  // print a literal "null" at the foot of Settings for every owner who has any
+  // product or ingredient, so it is spread only when it exists (19 Sep 2026).
+  root.replaceChildren(daysCard, lockCard, storefrontCard, messageCard, postageCard, devCard, referralsCard, mailingCard, courierCard, supabaseCard, sharedCard, backupCard, dangerCard,
+    ...(sampleCard ? [sampleCard] : []));
 
   function doImport(e) {
     const file = e.target.files && e.target.files[0];

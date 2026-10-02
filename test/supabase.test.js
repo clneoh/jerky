@@ -1118,6 +1118,54 @@ test("trackingSnapshot includes the courier address in delivery", () => {
   assert.ok(snap.delivery.includes("12 Jalan Bunga, Penang"));
 });
 
+// ── v268: a parked courier record is published to NOBODY ─────────────────────
+// Switching an order to Self collect deliberately keeps its three charge keys AND its
+// booked trip, because she may switch back without retyping any of it (v267). That is a
+// record kept FOR HER — so every reader has to ask whether the order is actually going by
+// courier, and this one did not. A customer whose order she had decided to hand over
+// themselves was still being shown a driver's name, his plate, his phone number, his
+// waybill and "on the way" on their own track card.
+test("trackingSnapshot: a self-collect order publishes none of the courier's half", () => {
+  const state = makeState();
+  state.products = [{ id: "prd_1", name: "Focaccia", price: 15, active: true }];
+  const date = state.deliveryDates[0];
+  const parked = {
+    id: "ord_1", groupId: "ordg_112233445566", deliveryDateId: date.id, productId: "prd_1", qty: 1,
+    customerName: "Ain", status: "ready", createdAt: "2026-09-01T14:32:00",
+    fulfillment: "collect",
+    address: "12 Jalan Bunga, Penang",
+    trackingNo: "JT123456789",
+    courierFee: 8, courierPaidBy: "customer",
+    courierJob: {
+      jobId: "J1", phase: "on_way", amount: 8,
+      driver: { name: "Ah Meng", plate: "PQQ 1234", phone: "60123456789" },
+    },
+  };
+  const snap = trackingSnapshot(state, { orders: [parked] });
+
+  assert.equal(snap.tracking_no, null, "no waybill for an order nobody is posting");
+  assert.equal(snap.courier_driver, null, "and nobody to name");
+  assert.equal(snap.courier_plate, null);
+  assert.equal(snap.courier_phone, null, "and nobody to ring");
+  assert.equal(snap.courier_phase, null, "and no journey she never booked");
+  assert.equal(snap.courier_name, null, "and no carrier holding a box she did not post");
+  assert.equal(snap.courier_fee, null, "the parked charge is not money the customer owes");
+  assert.equal(snap.courier_cod, null);
+  assert.ok(snap.delivery.includes("Collect (local)"), "and it says how they are getting it");
+  assert.ok(!snap.delivery.includes("12 Jalan Bunga"), "with no delivery address for a hand-over");
+  assert.equal(snap.total, "RM 15.00", "the items only — the parked charge is not in their total");
+
+  // The counterfactual, in one line: the SAME order, sent the SAME way, is published whole
+  // the moment it is really going by courier.
+  const sent = trackingSnapshot(state, { orders: [{ ...parked, fulfillment: "courier" }] });
+  assert.equal(sent.tracking_no, "JT123456789", "a courier order keeps its waybill");
+  assert.equal(sent.courier_driver, "Ah Meng", "and its driver, plate and number reach the customer");
+  assert.equal(sent.courier_plate, "PQQ 1234");
+  assert.equal(sent.courier_phone, "60123456789");
+  assert.equal(sent.courier_phase, "on_way");
+  assert.equal(sent.courier_fee, 8, "and the charge they bear is named again");
+});
+
 // ── a parcel she posted herself (v226) ───────────────────────────────────────
 // The second KIND of courier has no driver and no live link, so its whole half of
 // the customer's card is the carrier's name and one neutral word. `collected` is

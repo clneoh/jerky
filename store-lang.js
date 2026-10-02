@@ -29,6 +29,46 @@ const en = {
   codeUnknown: "We don't know that code — check the letters and try again.",
   codeNotePlain: "Saved — that code has no discount on it.",
   deliveryDays: "Posting days",
+
+  // Promo codes (v269). The offer is composed in store/app.js out of the engine's
+  // PARTS — kind and value — so a percentage, an amount and free delivery each
+  // read naturally here rather than being an English sentence handed over whole.
+  promoLabel: "Have a code?",
+  promoPh: "e.g. FRESH10",
+  promoApply: "Use it",
+  promoRemove: "Remove the code",
+  // The standing line at the top of the shop. It NAMES the code, because typing
+  // it is what puts it on the order — the shop never takes the money off itself.
+  promoToday: "Today: %1 — use code %2",
+  promoAccepted: "%1 — code %2 is on. We'll take it off when we confirm your order.",
+  // The two the shop can only ever GUESS at, because a public page has no login
+  // and knows nobody: "one per customer" and "first orders only" can only be
+  // remembered by this phone, and a new phone or a cleared browser remembers
+  // nothing. So the code still goes on the order and you settle it by
+  // hand — these two say the code is on AND that we will confirm it, rather than
+  // refusing a discount on a guess.
+  promoAcceptedUsed: "%1 — code %2 is on. It's one per customer, so we'll confirm it when we take your order.",
+  promoAcceptedFirst: "%1 — code %2 is on. It's for a first order, so we'll confirm it when we take your order.",
+  promoUnknown: "We don't know that code — check the letters and try again.",
+  // Every other reason a code can be turned down, each in its own words. %1 is a
+  // date for the two that name one, and the amount still needed for the last.
+  promoPaused: "That code is on hold — it isn't available at the moment.",
+  promoEnded: "That code ended on %1 — it's no longer available.",
+  promoNotYet: "That code hasn't started yet — it starts on %1.",
+  promoClaimed: "That code has been fully claimed — all of it has been used.",
+  promoClash: "That code can't be used with the welcome discount you already have — message us and we'll sort it out.",
+  promoSmall: "Not quite enough yet — add %1 more to use it.",
+  // Until each reason has its own wording, anything else the rules refuse says
+  // this. Deliberately not "we don't know that code", which would be untrue.
+  promoNo: "That code can't be used at the moment — message us and we'll sort it out.",
+  promoFreeDelivery: "Free delivery",
+  promoOffAmount: "%1 off",
+  promoOffPercent: "%1% off",
+  promoOffPercentCap: "%1, up to %2",
+  promoOnMin: "%1 on %2 and above",
+  // Appended only when the code has an end date, so the standing line says when
+  // the offer runs out instead of the customer finding out at the box.
+  promoUntil: "%1, until %2",
   orderBy: "Order by",
   beforeVal: "%1 the day before posting",
   madeToOrder: "Made to order · closes %1 the day before",
@@ -48,7 +88,7 @@ const en = {
   addressSub: "We post nationwide — your treats are made on the day you pick and posted to this address.",
   // The door pin (v197). Optional in every sense: with no pin the order goes
   // exactly as it always has, and you pin the door yourself.
-  pinHint: "Optional: drop a pin where the courier should stop — the guard house or your block's entrance. Put the block and unit number in the address above.",
+  pinHint: "Skip this and the driver goes to the address you typed — that is fine for most houses. Pin it only if the address alone will not find your door: a condo block, a guard house. Either way, put the block and unit number in the address above.",
   pinHere: "Use my location",
   pinOnMap: "Pin on the map",
   pinSet: "Pin set — the courier will drive to the spot you marked.",
@@ -212,6 +252,10 @@ const en = {
   // WhatsApp confirmation says at the same moment, because the two are read side by
   // side and one of them understating the cost would be worse than neither saying it.
   postageQuoted: "Postage: quoted separately - we'll message you the exact amount",
+  // The promo code on the order and what it took off, %1 the code and %2 the ringgit —
+  // the same line the customer's WhatsApp message carries, so the two can be read side
+  // by side without disagreeing (v272).
+  promoLine: "Promo %1: -%2",
   // The booked trip, as the courier's own reply last said. %1 is one of a handful of
   // NEUTRAL phase words below rather than the courier's own vocabulary — the backoffice
   // publishes the phase, this page owns the words, so no company's status list is
@@ -267,6 +311,29 @@ const zh = {
   codeUnknown: "找不到这个优惠码 —— 请检查字母后再试。",
   codeNotePlain: "已记录 —— 这个优惠码没有折扣。",
   deliveryDays: "发货日",
+
+  promoLabel: "有优惠码吗？",
+  promoPh: "例如 FRESH10",
+  promoApply: "使用",
+  promoRemove: "移除优惠码",
+  promoToday: "今日优惠：%1 — 输入优惠码 %2",
+  promoAccepted: "%1 — 已套用优惠码 %2，我们确认订单时会为你扣减。",
+  promoAcceptedUsed: "%1 — 已套用优惠码 %2。此码每人限用一次，我们确认订单时会为你核实。",
+  promoAcceptedFirst: "%1 — 已套用优惠码 %2。此码只限首次下单，我们确认订单时会为你核实。",
+  promoUnknown: "我们找不到这个优惠码 — 请检查字母后再试一次。",
+  promoPaused: "此优惠码已暂停 — 暂时无法使用。",
+  promoEnded: "此优惠码已于 %1 结束 — 不再有效。",
+  promoNotYet: "此优惠码还没开始 — 将于 %1 生效。",
+  promoClaimed: "此优惠码已全数用完 — 名额已被领完。",
+  promoClash: "此优惠码不能与你已享有的迎新优惠同时使用 — 请联络我们，我们帮你处理。",
+  promoSmall: "还差一点 — 再加 %1 即可使用。",
+  promoNo: "这个优惠码暂时无法使用 — 请联络我们，我们帮你处理。",
+  promoFreeDelivery: "免运费",
+  promoOffAmount: "减 %1",
+  promoOffPercent: "减 %1%",
+  promoOffPercentCap: "%1，最多 %2",
+  promoOnMin: "满 %2 可享 %1",
+  promoUntil: "%1，%2 截止",
   orderBy: "下单截止",
   beforeVal: "发货日前一天%1前",
   madeToOrder: "按订单制作 · 发货日前一天%1截单",
@@ -284,7 +351,7 @@ const zh = {
   addressLabel: "邮寄地址",
   addressPh: "完整地址 — 街道、地区、市镇与邮编",
   addressSub: "我们提供全马邮寄——您的零食会在所选发货日制作，并寄往这个地址。",
-  pinHint: "（可选）在地图上标出司机应该停下的地方——保安亭或你那一座的入口。座号和门牌号码请写在上面的地址栏。",
+  pinHint: "不标记也可以 — 司机会去上面填写的地址，大多数房子这样就可以了。只有当地址本身找不到你家门时才需要标记：公寓楼、保安亭。无论是否标记，都请把座号和门牌号码写在上面。",
   pinHere: "使用我的位置",
   pinOnMap: "在地图上标记",
   pinSet: "已标记位置 — 司机会前往你标记的地点。",
@@ -390,6 +457,7 @@ const zh = {
   courierCharge: "快递费：%1",
   courierCod: "快递费：%1 - 货到付款，收货时付给送货员",
   postageQuoted: "邮费：另行报价 — 我们会把准确金额发给你",
+  promoLine: "优惠码 %1：-%2",
   tripStatus: "配送：%1",
   tripFinding: "正在寻找司机",
   tripOnTheWay: "司机在路上",
@@ -432,6 +500,29 @@ const ms = {
   codeUnknown: "Kami tidak kenal kod itu — semak hurufnya dan cuba lagi.",
   codeNotePlain: "Disimpan — kod itu tiada diskaun.",
   deliveryDays: "Hari pos",
+
+  promoLabel: "Ada kod?",
+  promoPh: "cth. FRESH10",
+  promoApply: "Guna",
+  promoRemove: "Buang kod",
+  promoToday: "Hari ini: %1 — guna kod %2",
+  promoAccepted: "%1 — kod %2 telah digunakan. Kami akan tolakkan apabila kami sahkan tempahan anda.",
+  promoAcceptedUsed: "%1 — kod %2 telah digunakan. Satu sahaja setiap pelanggan, jadi kami akan sahkan apabila kami ambil tempahan anda.",
+  promoAcceptedFirst: "%1 — kod %2 telah digunakan. Kod ini untuk tempahan pertama, jadi kami akan sahkan apabila kami ambil tempahan anda.",
+  promoUnknown: "Kami tidak kenal kod itu — semak hurufnya dan cuba lagi.",
+  promoPaused: "Kod itu sedang ditahan — ia tidak tersedia buat masa ini.",
+  promoEnded: "Kod itu tamat pada %1 — ia tidak lagi tersedia.",
+  promoNotYet: "Kod itu belum bermula — ia bermula pada %1.",
+  promoClaimed: "Kod itu telah habis diambil — semuanya telah digunakan.",
+  promoClash: "Kod itu tidak boleh digunakan bersama diskaun sambutan yang anda sudah ada — hubungi kami dan kami akan uruskannya.",
+  promoSmall: "Belum cukup lagi — tambah %1 lagi untuk menggunakannya.",
+  promoNo: "Kod itu tidak boleh digunakan buat masa ini — hubungi kami dan kami akan uruskannya.",
+  promoFreeDelivery: "Penghantaran percuma",
+  promoOffAmount: "Potongan %1",
+  promoOffPercent: "Potongan %1%",
+  promoOffPercentCap: "%1, sehingga %2",
+  promoOnMin: "%1 untuk %2 ke atas",
+  promoUntil: "%1, sehingga %2",
   orderBy: "Tempahan ditutup",
   beforeVal: "%1 sehari sebelum hari pos",
   madeToOrder: "Dibuat mengikut tempahan · tutup %1 sehari sebelum",
@@ -449,7 +540,7 @@ const ms = {
   addressLabel: "Alamat pos",
   addressPh: "Alamat lengkap — jalan, kawasan, bandar & poskod",
   addressSub: "Kami hantar ke seluruh negara — snek anda dibuat pada hari yang anda pilih dan dihantar ke alamat ini.",
-  pinHint: "Pilihan: tandakan tempat kurier patut berhenti — pondok pengawal atau pintu masuk blok anda. Tulis nombor blok dan unit di ruang alamat di atas.",
+  pinHint: "Tak tandakan pun boleh — kurier akan pergi ke alamat yang anda taip, dan itu memadai untuk kebanyakan rumah. Tanda hanya jika alamat itu sahaja tidak cukup untuk mencari pintu anda: blok kondominium, pondok pengawal. Sama ada anda tandakan atau tidak, tulis nombor blok dan unit di ruang alamat di atas.",
   pinHere: "Guna lokasi saya",
   pinOnMap: "Tanda pada peta",
   pinSet: "Lokasi ditanda — kurier akan pergi ke tempat yang anda tandakan.",
@@ -555,6 +646,7 @@ const ms = {
   courierCharge: "Caj kurier: %1",
   courierCod: "Caj kurier: %1 - COD, bayar kepada kurier semasa penghantaran",
   postageQuoted: "Pos: disebut berasingan — kami akan beritahu jumlah tepat kepada anda",
+  promoLine: "Kod %1: -%2",
   tripStatus: "Penghantaran: %1",
   tripFinding: "Sedang mencari pemandu",
   tripOnTheWay: "Pemandu dalam perjalanan",

@@ -6,6 +6,12 @@
   <meta name="theme-color" content="#c4552f">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>Order · Munchies Furkidz</title>
+  <!-- The chalk hand used by the bakery's own sentence in the shelf strip (v274).
+       Fetched before the stylesheet so it is already in flight when app.css asks
+       for it, and `crossorigin` because a font is always a CORS request even from
+       our own origin — without it the browser fetches the file twice. -->
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+        href="fonts/ShantellSans-Regular-latin.woff2">
   <link rel="stylesheet" href="app.css">
   <link rel="icon" type="image/svg+xml" href="../images/favicon-cat.svg">
 </head>
@@ -36,6 +42,21 @@
   </header>
 
   <main class="view">
+    <!-- The code the shop is running today, at the top of the page and under the
+         shop name (v269). A statement, never a control: it names the code so the
+         customer can type it, and the bakery still takes the money off by hand in
+         WhatsApp. Filled by the shop from the codes the app published; empty and
+         hidden until there is a public code running.
+
+         Two lines: the shop's own sentence, which always names the code; and
+         under it the bakery's own words, in her language (v270). Hers is extra,
+         never instead — a strip that stopped naming the code would be telling a
+         customer about a discount they cannot ask for. -->
+    <div id="promo-today" class="promo-today" hidden>
+      <p id="promo-offer" class="promo-offer"></p>
+      <p id="promo-words" class="promo-words" hidden></p>
+    </div>
+
     <div id="referral-banner" class="referral-banner" hidden data-i18n="referral">
       🎁 You were referred — you have a welcome discount on your first order
     </div>
@@ -62,6 +83,22 @@
         <button id="code-btn" class="track-btn" data-i18n="codeApply">Apply</button>
       </div>
     </section>
+
+    <!-- Where a code the customer was handed goes. Rendered always, so a card
+         still works when the shop is not advertising anything that day. -->
+    <div class="card promo-box">
+      <div class="field">
+        <label for="promo-input" data-i18n="promoLabel">Have a code?</label>
+        <div class="promo-row">
+          <input id="promo-input" class="input" type="text" autocapitalize="characters"
+                 autocomplete="off" autocorrect="off" spellcheck="false"
+                 data-i18n-ph="promoPh" placeholder="e.g. FRESH10">
+          <button id="promo-apply" class="promo-apply" type="button" data-i18n="promoApply">Use it</button>
+        </div>
+        <p id="promo-say" class="card-sub promo-say" hidden></p>
+        <button id="promo-clear" class="promo-clear" type="button" hidden data-i18n="promoRemove">Remove the code</button>
+      </div>
+    </div>
 
     <section class="card info">
       <p class="info-row"><strong data-i18n="deliveryDays">Posting days</strong><span id="delivery-days" class="info-val"></span></p>
@@ -102,7 +139,7 @@
              data-i18n tags and the dictionary's English-must-match-the-markup rule in
              test/store-i18n.test.js is untouched. -->
         <div class="addr-list" id="addr-list" hidden></div>
-        <p class="card-sub pin-hint" data-i18n="pinHint">Optional: drop a pin where the courier should stop — the guard house or your block's entrance. Put the block and unit number in the address above.</p>
+        <p class="card-sub pin-hint" data-i18n="pinHint">Skip this and the driver goes to the address you typed — that is fine for most houses. Pin it only if the address alone will not find your door: a condo block, a guard house. Either way, put the block and unit number in the address above.</p>
         <div class="pin-row">
           <button type="button" id="pin-here" class="pin-btn" data-i18n="pinHere">Use my location</button>
           <button type="button" id="pin-map" class="pin-btn" data-i18n="pinOnMap">Pin on the map</button>

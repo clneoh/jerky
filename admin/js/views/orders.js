@@ -2,7 +2,7 @@
 
 import { addDays, deliveryStatus, fmtPlaced, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
 import { capacityStatus, dayCapacityParts, dayRuleRows, parseDayDelta, productRemaining, saveDayAdjustments } from "../bom.js";
-import { dayMoney, groupValue } from "../money.js";
+import { dayMoney, groupValue, isCollected } from "../money.js";
 import { el, button, select, fillMeter, emptyState, confirmDialog, toast, showPopup } from "../ui.js";
 import { dateField } from "../datepicker.js";
 import { DOW, WINDOW_WEEKS, deliveryWindow, occColour, occForDate, rollingWeeks,
@@ -20,7 +20,7 @@ import { strictestCancelDays } from "../../../store/pool.js";
 import { buildConfirmation } from "../confirm.js";
 import { buildPaymentReminder, buildPickupReminder, buildShippedMessage } from "../messages.js";
 import { maybePublishTracking, maybeSync, publishTracking } from "../supabase.js";
-import { writeCourierCharge, courierFeeOf, courierPayerOf, courierCodOf } from "../courier.js";
+import { writeCourierCharge, courierFeeOf, courierPayerOf, courierCodOf, isCourierOrder, codeMissed, codeNotApplied, customerTotal, receiptNote, receiptRows, promoOn, promoValue } from "../courier.js";
 import { methodsOf } from "../accounts.js";
 import { schemeOf, referralFlag, giveCredits, validCredits, markOneUsed, referrerName } from "../referrals.js";
 import { promoOf, KIND_LABEL, offerLine } from "../codes.js";
@@ -36,6 +36,10 @@ import { attachProfiles, customerNameMatches, customerRowName, syncContactFromOr
 // The half-typed address suggestions (v228). Reached through the same channel the
 // pin's lookup uses, so the Google key stays on the server and never touches this page.
 import { suggestAddresses } from "../couriers/api.js";
+// The one spelling a promo code is recognised by (v270). An order's own code is
+// read back through it, so a stray lowercase in some older record cannot make two
+// spellings of one code look like two codes on the row.
+import { normCode } from "../promo.js";
 
 let orderStatusFilter = "";
 // Text in the "Find an order" box at the top of the Orders screen (empty = box
@@ -91,6 +95,9 @@ const STATUSES = [
 // Where the money stage sits in that list. Used to tell "past Paid" from "on Paid", so a
 // regular who pays at the counter has no Paid step on their route at all.
 const PAID_AT = STATUSES.findIndex(([id]) => id === "paid");
+// Where the label's stage sits: from Baked onwards there is a bag to kit, and the order
+// label is offered at all of them rather than only on Baked itself (v268).
+const BAKED_AT = STATUSES.findIndex(([id]) => id === "baking");
 // Paid and everything after it: moving an order into any of these without the money recorded
 // means that order is owed money, not that it was paid.
 const STAGES_AT_OR_PAST_PAID = STATUSES.slice(PAID_AT).map(([id]) => id);
@@ -581,7 +588,11 @@ export function deliveryCal({ state, days, getActiveId, view, onPick, noteMisses
       // she does not deliver would be the one day on the grid with no way to be
       // read (the customer's shop page names that day too).
       if (!dateId) {
-        const cls = `cal-cell off${iso === today ? " today" : ""}${box}`;
+        // A day already gone takes `past` on top of `off`, so the whole past — the
+        // days she delivers and the days she does not — is the shop's one grey.
+        // Without this the past came out in two shades: .off at .6 for the days she
+        // does not deliver, .past for the days she does.
+        const cls = `cal-cell off${past ? " past" : ""}${iso === today ? " today" : ""}${box}`;
         // A day already gone is asked nothing: there is nothing left to add to it,
         // and the past is reviewed in the list below, not on the grid.
         const askable = noteMisses && !past;
@@ -816,6 +827,7 @@ export function newOrdersInbox(state, selectDate, root) {
     const main = el("div", { class: "li-main" },
       el("div", { class: "li-title" }, title, orderCodeTag(first),
         referredTag(first),
+        promoTag(first),
         g.orders.some((o) => o.source === "storefront") ? el("span", { class: "src-tag" }, "storefront") : null),
       el("div", { class: "li-sub" }, sub));
     const meta = el("div", { class: "li-right" },
@@ -882,6 +894,7 @@ function orderFinderEl(state, root, selectDate, body) {
     const main = el("div", { class: "li-main" },
       el("div", { class: "li-title" }, items.join(" + "), orderCodeTag(first),
         referredTag(first),
+        promoTag(first),
         group.orders.some((o) => o.source === "storefront")
           ? el("span", { class: "src-tag" }, "storefront") : null),
       el("div", { class: "li-sub" }, sub));
@@ -1193,6 +1206,36 @@ function referredTag(order) {
   return waNumber(order && order.referredBy)
     ? el("span", { class: "ref-tag" }, "🎁 referred")
     : null;
+}
+
+// A small "🎟 FRESH10" chip on every row the order is read on (v270). The code a
+// customer ordered with arrives on the order and, until now, stayed inside her
+// data where she could not see it — she reported exactly that: "i dont see the
+// promo code fresh10 send over to app together with the order". Drawn only when
+// the order carries one, so every order without a code is the row this screen
+// drew before.
+//
+// The code ITSELF, not the word "promo": she takes the discount off by hand in
+// WhatsApp, and which code it was is what tells her how much — FRESH10 and
+// AUNTY5 are different amounts, so a chip that named neither would send her into
+// the order to look it up, which is the trip this chip exists to save.
+function promoTag(order) {
+  const code = normCode(order && order.promo);
+  return code ? el("span", { class: "promo-tag" }, `🎟 ${code}`) : null;
+}
+
+// An order's money as a RECEIPT (v276) — one row per fact, words left, figure right,
+// a rule above the Total. Drawn from the shared rows in courier.js, so the two screens
+// that show an order's money (the Edit form and the Note / tracking card) and the
+// customer's own message are all listing the same sum. `parts` is whatever the caller
+// priced — a saved order, or the lines she is typing.
+function receiptEls(state, parts) {
+  const rows = receiptRows(state, parts).map((r) =>
+    el("div", { class: "info-row" + (r.total ? " pl-total" : "") },
+      el("span", {}, r.note ? `${r.label} — ${r.note}` : r.label),
+      el("span", { class: "info-val" }, r.value)));
+  const note = receiptNote(state, parts);
+  return note ? [...rows, el("p", { class: "hint", style: "margin:6px 0 0" }, note)] : rows;
 }
 
 // The price box on an order line, shared by the ＋ New order card and the Edit
@@ -1622,7 +1665,7 @@ function orderForm(state, dateId, root, selectDate) {
 
   // ── the courier's half of the order ──────────────────────────────────────
   // Everything a courier order needs that the card used to be missing: the address, the
-  // tracking number, the parcel, the charge and a price. They unfold only when Fulfillment
+  // parcel, its tracking number, the charge and a price. They unfold only when Fulfillment
   // says Courier delivery, and that is the point — the card no longer has to be added and
   // then reopened under Edit to become a courier order (v237).
   //
@@ -1636,21 +1679,51 @@ function orderForm(state, dateId, root, selectDate) {
   // here, because the customer suggester writes into it: it holds `address`, and the
   // suggestion panel belongs under it. Everything else in the block is fresh each build.
   //
-  // The parcel's carrier picker repaints ITSELF (`paintParcel` below) rather than the whole
-  // block, so naming a carrier cannot throw away the charge she has just typed — the same
-  // rule courier_pay_questions already follows for its own two questions.
+  // The parcel's carrier picker repaints ITSELF (`paintParcel` below), and the tracking box
+  // with it, rather than the whole block, so naming a carrier cannot throw away the charge
+  // she has just typed — the same rule courier_pay_questions already follows for its own two
+  // questions.
   const courierBox = el("div", {});
   function buildCourierBlock() {
     const parcelSlot = el("div", {});
-    function paintParcel() {
-      const p = parcelSection({ state, group: { orders: [draft] }, draft, refresh: paintParcel });
-      parcelSlot.replaceChildren(...(p ? [p] : []));
-    }
+    const trackingSlot = el("div", {});
     const charge = courierControls(state, draft, () => {});
     courierCharge = charge;
     const tracking = el("input", { class: "input", placeholder: "e.g. JT123456789",
       autocomplete: "off", value: draft.trackingNo,
       oninput: function () { draft.trackingNo = this.value; } });
+    // The tracking box is a PARCEL's box, so it is drawn only where a parcel is in
+    // play: a carrier named, a number already in it (she typed one under a carrier,
+    // or a booked trip's own share link was written into it), or a booked trip
+    // owning the order. Asking Lalamove for a fee and taking it is a TRIP — and the
+    // empty box left standing beside the finished price is what read as an order
+    // still to fill in (v265). It comes back the moment it has something to say.
+    function trackingApplies() {
+      return !!draft.carrierId
+        || !!String(draft.trackingNo || "").trim()
+        || !!jobOf(draft);
+    }
+    const trackingField = el("div", { class: "field" },
+      el("label", {}, "Courier tracking number (optional)"), tracking,
+      el("p", { class: "hint" }, "For a parcel this is the consignment number the carrier gave you."));
+    // Only touched when the answer CHANGES. `paintParcel` runs on every carrier pick, and
+    // a `replaceChildren` that re-inserts the box would detach the input she is typing in —
+    // a repaint must not move her. `null` so the first paint always draws the real state.
+    let trackingShown = null;
+    function paintParcel() {
+      const p = parcelSection({
+        state, group: { orders: [draft] }, draft, refresh: paintParcel,
+        // This block draws the box UNDER the parcel section, and under nothing at all
+        // until a carrier is named — so the hint must not point at a box that is not
+        // there.
+        consignmentWhere: null,
+      });
+      parcelSlot.replaceChildren(...(p ? [p] : []));
+      if (trackingApplies() !== trackingShown) {
+        trackingShown = trackingApplies();
+        trackingSlot.replaceChildren(...(trackingShown ? [trackingField] : []));
+      }
+    }
     // A fresh slot every build: a hoisted one would still be holding the Leaflet mount
     // from the previous block.
     const doorSlot = el("div", {});
@@ -1669,10 +1742,8 @@ function orderForm(state, dateId, root, selectDate) {
         address,
         addressSug.panel),
       doorSlot,
-      el("div", { class: "field" },
-        el("label", {}, "Courier tracking number (optional)"), tracking,
-        el("p", { class: "hint" }, "For a parcel this is the consignment number the carrier gave you.")),
       parcelSlot,
+      trackingSlot,
       charge.el,
       quote,
     ];
@@ -1839,7 +1910,8 @@ function openEditPopup(state, group, dateId, root) {
 
   const title = el("div", { class: "popup-title-row" },
     "Edit order",
-    orderCodeTag(first));
+    orderCodeTag(first),
+    promoTag(first));
   showPopup(title, (refresh, close) => popupEditBody(state, date, group, first, lines, draft, refresh, close, root, dateId));
 }
 
@@ -1913,9 +1985,9 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
   const deliveryNotes = el("div", { class: "card-sub", style: "margin:6px 0 0" },
     ...moveNoteLines(state, group, curId).map((t) => el("p", { style: "margin:2px 0" }, t)));
 
-  const totalEl = el("p", { class: "card-sub", style: "margin:8px 0 0" });
+  const totalEl = el("div", { class: "receipt", style: "margin:8px 0 0" });
   // The label the order came in on, filled by paintTotal below: it is given the
-  // very sum the "Order total:" line shows, so the two can never disagree while
+  // very sum the total above it is built from, so the two can never disagree while
   // she is editing the items.
   const promoWrap = el("div", {});
   // A charge the customer bears belongs in this total, because this is the number she
@@ -1929,26 +2001,53 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
   // Read off the charge's own controls rather than off the saved order, so this figure
   // follows the fee box as she types it here — the form can change the charge now, and a
   // total that only moved after a save would be a figure she cannot check (19 Sep 2026).
+  // Whether this order is going by courier, as the draft has it right now — the
+  // fulfilment select above repaints this whole body, so this follows her answer live.
+  //
+  // A charge recorded while the order WAS a courier delivery is not deleted when she
+  // switches to self collect, deliberately: she may switch back, and re-typing a fee is
+  // not something an app should ask of her. So the block is PARKED and NAMED rather than
+  // silently hidden — the same choice v265 made for a recorded parcel — and it stays
+  // reachable, because the way she deletes a charge is the payer box under it.
+  const courierOrder = draft.fulfillment === "courier";
+  const parkedCharge = !courierOrder && (courierFeeOf(first) > 0 || !!courierPayerOf(first));
+  const showCharge = courierOrder || parkedCharge;
+
   function paintTotal() {
     const priced = lines.filter((l) => l.productId && l.price != null);
-    const itemsTotal = priced.reduce((acc, l) => acc + l.qty * Number(l.price), 0);
-    const cur = state.settings.currency;
-    const { fee, who, collect } = charge.read();
+    const itemsTotal = priced.reduce((sum, l) => sum + l.qty * Number(l.price), 0);
+    // Read off the draft's fulfilment rather than off the charge's own controls, because
+    // this total is the CUSTOMER's and a self-collect order has no courier for a charge
+    // to reach them through (1 Oct 2026).
+    const { fee, who, collect } = courierOrder
+      ? charge.read() : { fee: 0, who: "", collect: false };
     const courierCharge = who === "customer" ? fee : 0;
     const courierCod = who === "customer" && collect;
     const here = courierCod ? 0 : courierCharge;
-    totalEl.textContent = priced.length
-      ? `Order total: ${fmtRM(itemsTotal + here, cur)}`
-        + (courierCharge
-          ? courierCod
-            ? ` — items total ${fmtRM(itemsTotal, cur)}, plus ${fmtRM(courierCharge, cur)} collected by the courier on delivery`
-            : ` — items total ${fmtRM(itemsTotal, cur)} + courier charge ${fmtRM(courierCharge, cur)}`
-          : "")
-      : "";
-    // The promo label compares against the items alone — a courier charge is delivery,
-    // not spend on product, and the offer's minimum is about the treats (20 Sep 2026).
-    const promo = promoBlockEl(state, group, itemsTotal);
-    promoWrap.replaceChildren(...(promo ? [promo] : []));
+    // The code, valued against the DRAFT's own basket and the charge this form is
+    // currently showing — not against the saved order, so the figure moves with the
+    // lines as she types them, exactly as the items total above it does.
+    const promo = promoValue(state, first.promo, itemsTotal, courierCharge);
+    const off = promo.money;
+    // The same question the message answers, asked of the DRAFT's basket rather than the
+    // saved order's, so this card explains a code that gave nothing exactly as the
+    // customer's confirmation will (v276).
+    const missed = off > 0 ? null : codeMissed(state, first.promo, itemsTotal);
+    totalEl.replaceChildren(...(priced.length ? receiptEls(state, {
+      items: itemsTotal,
+      courier: here,
+      cod: courierCod ? courierCharge : 0,
+      promo: off,
+      promoCode: off ? promo.code : "",
+      notApplied: missed ? missed.code : "",
+      promoMinimum: missed ? missed.minimum : 0,
+      total: Math.max(0, itemsTotal + here - off),
+    }) : []));
+    // The label the order came in on compares against the items alone — a courier charge
+    // is delivery, not spend on product, and the offer's minimum is about the treats
+    // (20 Sep 2026).
+    const labelPromo = promoBlockEl(state, group, itemsTotal);
+    promoWrap.replaceChildren(...(labelPromo ? [labelPromo] : []));
   }
   // The courier charge, asked for here as well as in the Note / tracking box (19 Sep
   // 2026): the charge is part of what this order is, and Edit is where she changes what
@@ -2006,6 +2105,15 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     if (!destId || !byId(state.deliveryDates, destId)) return toast("Choose a delivery day");
     // This door refuses a charge with no payer in the same words the Note / tracking card
     // uses — one shared answer, so the two cannot drift apart. See courierControls.problem.
+    //
+    // Asked on a self-collect order too, and that is not the same thing as standing in
+    // front of an order she takes by hand: this guard can only speak when there is an
+    // amount in the box with no owner, and the box is on screen whenever that is true —
+    // an amount is either one the order already carried (which parks the box open) or one
+    // she has just typed into it. What it stops is not the order, it is the OTHER half of
+    // her own 27 Sep 2026 report: a Save that says "Order updated" having written nothing,
+    // because an amount with no payer is not a charge. Letting a self-collect order skip
+    // it would drop that fault back in for those orders alone (1 Oct 2026).
     const whyCharge = charge.problem();
     if (whyCharge) return toast(whyCharge);
     applyPopupEdits(state, date, group, first, chosen, {
@@ -2019,6 +2127,12 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       // four answers have to be written together: the amount, who bore it, whether the
       // courier collects it, and how SHE paid it decide an order row AND an expense row,
       // and a charge written half-way is a charge that disagrees with itself.
+      //
+      // Written even on a self-collect order, because a parked charge is still HER
+      // record of what she paid or was owed, and the only way she deletes one is the
+      // payer box under it (`problem`'s carve-out). The box opens on what the order
+      // already says, so an untouched Save writes back exactly what was there — the
+      // charge is neither applied nor lost by switching the fulfilment over (1 Oct 2026).
       courier: charge.read(),
       // The parcel travels beside the charge and for the same reason: it is a nested
       // object, and the row fields above are copied onto every line of an order group
@@ -2065,7 +2179,11 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       tracking,
       el("p", { class: "hint" }, "For a parcel this is the consignment number the carrier gave you.")),
     parcelSection({ state, group, draft, refresh }),
-    charge.el,
+    // Drawn for a courier order as it always was, and also for a self-collect order that
+    // still carries a charge — so a parked charge is never invisible to the only person
+    // who can settle it (1 Oct 2026).
+    parkedCharge ? parkedChargeNote(state, first) : null,
+    showCharge ? charge.el : null,
     // Same price section as the Note / tracking box carries, for the same reason that
     // box carries the charge: the fee is part of what this order IS, so both doors to
     // the charge open on the same way of filling it in (25 Sep 2026). Booking a trip
@@ -2074,8 +2192,19 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     // order on Save, and a booking the card never heard about would be undone by the
     // next Save. A booked trip is saved the moment it is booked rather than on Save:
     // a real vehicle on a real road must not be discardable by closing a form.
-    courierQuoteSection({
-      state, orders: [first], onUseFee: (q) => charge.set(q.amount), doorSlot,
+    //
+    // Asked for only when there is something for it to do (1 Oct 2026): a self-collect
+    // order has no delivery to price, which is already why the ＋ New order card drops
+    // this whole block the moment she picks Self collect. A BOOKED TRIP is the exception
+    // and stays reachable however the order leaves — the card that cancels the trip lives
+    // in here, and a trip she cannot call off is worse than a price she cannot ask for.
+    //
+    // [Use this fee] follows the box it fills: offered whenever the charge box is on
+    // screen, because a tap that writes into a box nobody can see is the fault this app
+    // keeps finding (v266). It is null when the box is not drawn, and a null `onUseFee`
+    // is how courierQuoteSection already knows not to offer the button at all.
+    showCharge || jobOf(first) ? courierQuoteSection({
+      state, orders: [first], onUseFee: showCharge ? (q) => charge.set(q.amount) : null, doorSlot,
       onCollected: onCollectedMove(state, group, root, dateId),
       onCommit: (o) => {
         draft.trackingNo = String((o && o.trackingNo) || "");
@@ -2084,7 +2213,7 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
         maybeSync(state);
         maybePublishTracking(state, group);
       },
-    }),
+    }) : null,
     el("div", { class: "field", style: "margin-top:10px" },
       el("label", {}, "Items"),
       el("p", { class: "card-sub", style: "margin:0 0 6px" },
@@ -2612,6 +2741,31 @@ function courierControls(state, first, onChange = () => {}) {
   };
 }
 
+// A charge recorded while the order WAS a courier delivery, on an order she has since
+// switched to self collect (1 Oct 2026). It is not deleted by the switch, deliberately —
+// she may switch back — so it is NAMED, in the one wording both pop-ups use, rather than
+// left to be met as a tag that no longer means anything.
+//
+// It says what the charge is doing and nothing more. It is NOT a warning and it gates
+// nothing: the box under it stays fully usable, because the way she deletes a charge is
+// the payer box inside it (see courierControls.problem's carve-out).
+function parkedChargeNote(state, first) {
+  const fee = courierFeeOf(first);
+  const who = courierPayerOf(first);
+  if (!fee && !who) return null;
+  const cur = state.settings.currency;
+  return el("p", { class: "card-sub parked-charge", style: "margin:0" },
+    (fee
+      ? `A courier charge of ${fmtRM(fee, cur)} is recorded on this order from when it was a courier delivery`
+      : "A courier charge is recorded on this order from when it was a courier delivery")
+    + ". While the order is a self collect it is not added to the customer's total and it is"
+    + " not on any message, but it is still on the order."
+    + (who === "me"
+      ? " The Delivery & fuel entry it put on your books is still there — take it out on the Money screen if the courier was never actually paid."
+      : "")
+    + " Switch Fulfillment back to Courier delivery to put it back to work.");
+}
+
 // ── A parcel she books herself (v226) ───────────────────────────────────────
 // The second KIND of courier. Not a vehicle for a journey the app prices and
 // books, but a box she hands to J&T / Ninja Van / Line Clear and the app only
@@ -2632,7 +2786,12 @@ function courierControls(state, first, onChange = () => {}) {
 // The advisory below names a line that is not marked parcel-able and gates
 // NOTHING: it still offers the carrier and the hand-over, because no app rule may
 // block or hide a sale she takes by hand.
-function parcelSection({ state, group, draft, refresh }) {
+// `consignmentWhere` says which way the tracking box lies from here: both pop-ups
+// draw it ABOVE this section, the + New order card draws it BELOW. The hint is the
+// same sentence in all three, so it has to be told — and a host that draws no box
+// beside this section at all (the card, until a carrier is named) passes null and
+// the sentence simply stops before the pointer.
+function parcelSection({ state, group, draft, refresh, consignmentWhere = "above" }) {
   const first = (group && group.orders && group.orders[0]) || null;
   if (!first) return null;
   if (draft.fulfillment !== "courier") return null;
@@ -2694,7 +2853,8 @@ function parcelSection({ state, group, draft, refresh }) {
     carrierSel,
     el("p", { class: "hint" },
       carriers.length
-        ? "For a parcel you post yourself — J&T, Ninja Van, Line Clear. The consignment number goes in the tracking box above."
+        ? "For a parcel you post yourself — J&T, Ninja Van, Line Clear."
+          + (consignmentWhere ? ` The consignment number goes in the tracking box ${consignmentWhere}.` : "")
         : "No carriers yet. Add who you post parcels with under More → Parcel couriers, then record one here."),
     handedEl,
     advisory);
@@ -2739,24 +2899,44 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
       // What the customer ends up owing, repainted as she types: the items, plus the
       // charge when THEY bear it. A charge she bears is her own cost and never reaches
       // this number. Without this line the fee box shows no consequence of its own
-      // (19 Sep 2026).
-      const custTotal = el("p", { class: "card-sub", style: "margin:10px 0 0" });
+      // (19 Sep 2026). Drawn as the receipt (v276) rather than as one run-on sentence.
+      const custTotal = el("div", { class: "receipt", style: "margin:10px 0 0" });
       const itemsTotal = groupValue(state, group);
+      // The code this order carried, and what it took off — read here rather than by
+      // customerTotal, because this line repaints as she types the charge and has to
+      // agree with the message the same repaint will let her send (v272).
+      const promo = promoOn(state, group.orders);
+      // The same code's failure to pay out, so this card explains it exactly as the
+      // customer's confirmation will (v276).
+      const missed = promo.money > 0 ? null : codeNotApplied(state, group.orders);
+      // The same three facts the Edit form works out, read off the SAVED order because
+      // this box has no fulfilment control of its own — the order's fulfilment is not one
+      // of the things this card is for. See the Edit form's block for what they mean.
+      const courierOrder = isCourierOrder(first);
+      const parkedCharge = !courierOrder && (courierFeeOf(first) > 0 || !!courierPayerOf(first));
+      const showCharge = courierOrder || parkedCharge;
       function paintCustTotal() {
-        const cur = state.settings.currency;
-        const { fee, who, collect } = charge.read();
+        const { fee, who, collect } = courierOrder
+          ? charge.read() : { fee: 0, who: "", collect: false };
         const theirs = who === "customer" ? fee : 0;
         // A COD charge is still money they owe, but it is not money SHE collects — the
         // courier takes it at the door — so it is named under the total rather than
         // added into it, or she would ask for the same RM8 the courier is asking for
         // (19 Sep 2026).
         const cod = who === "customer" && collect ? theirs : 0;
-        custTotal.textContent = `The customer owes ${fmtRM(itemsTotal + theirs - cod, cur)}`
-          + (theirs
-            ? cod
-              ? ` — items total ${fmtRM(itemsTotal, cur)}, plus ${fmtRM(cod, cur)} collected by the courier on delivery`
-              : ` — items total ${fmtRM(itemsTotal, cur)} + courier charge ${fmtRM(theirs, cur)}`
-            : "");
+        // The promo comes off what they owe here exactly as it does in the message they
+        // are sent, so the two figures she can read side by side are the same figure.
+        const off = promo.money;
+        custTotal.replaceChildren(...receiptEls(state, {
+          items: itemsTotal,
+          courier: theirs - cod,
+          cod,
+          promo: off,
+          promoCode: off ? promo.code : "",
+          notApplied: missed ? missed.code : "",
+          promoMinimum: missed ? missed.minimum : 0,
+          total: Math.max(0, itemsTotal + theirs - cod - off),
+        }));
       }
       // The charge's questions, built by the shared block so this box and the Edit form
       // cannot word or write them differently. It repaints only itself when the payer
@@ -2772,6 +2952,14 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
         { value: "cash", label: "Cash" },
         { value: "tng", label: "TNG transfer" },
       ], first.paidMethod || "", () => {});
+      // What the choice does, said where the choice is made (v268). The box is named
+      // "Paid by the customer", so picking a method is a claim that they HAVE paid —
+      // and it now writes exactly what the Paid · Cash / Paid · TNG buttons write, so
+      // the two ways in cannot record two different halves of the same fact. The way
+      // back is named too: this is the only control that can un-record a payment marked
+      // by mistake, since the buttons disappear once the money is in.
+      const paidHint = el("p", { class: "hint" },
+        "Cash or TNG records that the money is received, and how — the same as pressing Paid · Cash / Paid · TNG on the row. Not recorded clears it and brings those two buttons back.");
       paintCustTotal();
       // Where the price section draws the door block (v201): the TOP of this card, above the
       // note. Her report was that this box gives her no way to see the address or the pin
@@ -2787,7 +2975,8 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
           el("label", {}, "Courier tracking number (optional)"), tracking,
           el("p", { class: "hint" }, "For a parcel this is the consignment number the carrier gave you.")),
         parcelSection({ state, group, draft, refresh }),
-        charge.el,
+        parkedCharge ? parkedChargeNote(state, first) : null,
+        showCharge ? charge.el : null,
         // The price, folded away until she asks for it (25 Sep 2026). It lives INSIDE
         // this card rather than in a pop-up of its own, because the app has one pop-up
         // layer: a second card would replace this one and take the charge box, the note
@@ -2799,8 +2988,13 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
         // captured the tracking number when it opened — so `onCommit` puts the new value
         // back into the box she is looking at. Without it, the Save below would write
         // its own stale number over the link the customer was about to be sent.
-        courierQuoteSection({
-          state, orders: [first], onUseFee: (q) => charge.set(q.amount), doorSlot,
+        // Asked for only when there is something for it to do, exactly as in the Edit
+        // form — and [Use this fee] follows the box it fills, because no box on screen
+        // means no button that writes into one (1 Oct 2026). A booked trip keeps this
+        // card reachable whatever the order's fulfilment says, because the control that
+        // cancels the trip lives in it.
+        showCharge || jobOf(first) ? courierQuoteSection({
+          state, orders: [first], onUseFee: showCharge ? (q) => charge.set(q.amount) : null, doorSlot,
           onCollected: onCollectedMove(state, group, root, dateId),
           onCommit: (o) => {
             tracking.value = String((o && o.trackingNo) || "");
@@ -2808,11 +3002,21 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
             maybeSync(state);
             maybePublishTracking(state, group);
           },
-        }),
+        }) : null,
         custTotal,
-        el("div", { class: "field" }, el("label", {}, "Paid by the customer"), paidSel),
+        el("div", { class: "field" },
+          el("label", {}, "Paid by the customer"), paidSel, paidHint),
+        // The card's own explanation, and it has to match what the card is showing (1 Oct
+        // 2026): a self-collect order used to be told what a courier charge does to the
+        // customer's total and their messages, on the same screen where the charge had
+        // stopped doing any of it. A courier order reads exactly as it always did.
         el("p", { class: "card-sub", style: "margin:0 0 10px" },
-          "A courier charge the customer pays is added to their total, and named on their confirmation, their messages and their track card. Marked COD the courier collects it from them on delivery instead, so it stays out of the total and is named under it - that way nobody is asked for the same money twice. One you pay becomes a Delivery & fuel expense and comes off your profit. The tracking number goes onto the customer's track card and into the posted message. The charge and the tracking number are both under Edit as well, so you can change them wherever you are - and deleting the courier's line on the Money screen takes the charge off this order with it. Anything else - the delivery day, the customer, the address, the items - is under Edit."),
+          (courierOrder
+            ? "A courier charge the customer pays is added to their total, and named on their confirmation, their messages and their track card. Marked COD the courier collects it from them on delivery instead, so it stays out of the total and is named under it - that way nobody is asked for the same money twice. One you pay becomes a Delivery & fuel expense and comes off your profit. The charge and the tracking number are both under Edit as well, so you can change them wherever you are - and deleting the courier's line on the Money screen takes the charge off this order with it. "
+            : showCharge
+              ? "The charge box above is parked: this order leaves by self collect, so nothing about it reaches the customer and it is not on the confirmation, the messages or the track card. Clear who paid the courier to take it off the order entirely, or switch the order back to Post (nationwide) under Edit. "
+              : "")
+          + "The tracking number goes onto the customer's track card and into the posted message. Anything else - the delivery day, the customer, the address, the items - is under Edit."),
         el("div", { class: "popup-actions" },
           button("Cancel", close, "ghost"),
           button("Save", () => {
@@ -2833,14 +3037,43 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
             // REFUSED, NOT DROPPED, when an amount is sitting there with no payer: see
             // courierControls.problem. Asked BEFORE the note and the tracking number are
             // written too, so a refused Save leaves the whole card exactly as she left it.
+            //
+            // A self-collect order asks it too, for the same reason the Edit form does:
+            // the guard can only speak when there is an amount in the box with no owner,
+            // and the box is on screen whenever that is true — so it is never refusing a
+            // Save over something she cannot see, and skipping it here would let this box
+            // answer "Order updated" for a write it did not make (1 Oct 2026).
             const why = charge.problem();
             if (why) return toast(why);
             const answers = charge.read();
+            // "Paid by the customer" RECORDS the payment; it does not merely label one
+            // (v268). A method now writes the same three keys the Paid · Cash / Paid · TNG
+            // buttons write, and the row's tag is gated on the same rule those buttons
+            // feed. Before this the box wrote only `paidMethod`, so a row could wear a
+            // "TNG" tag while the journey strip and the Money screen still counted that
+            // order as owing money — one screen saying paid, two saying unpaid.
+            //
+            // "Not recorded" is the way BACK, so a payment marked by mistake is not a
+            // one-way door: at or past the paying stage it writes the app's own "still
+            // owed" flag (false — what picking Paid in the dropdown writes), which brings
+            // the Paid · Cash / Paid · TNG buttons back to the row. Before that stage the
+            // flag goes entirely instead, because `false` there would be a claim about
+            // money nobody has been asked for yet (17 Sep 2026 — the same rule setStage
+            // follows).
+            const paidAtNow = new Date().toISOString();
             for (const o of group.orders) {
               o.note = note.value.trim();
               o.trackingNo = number;
-              if (method) o.paidMethod = method;
-              else delete o.paidMethod; // "Not recorded" is the absent key, as everywhere
+              if (method) {
+                o.paidReceived = true;
+                o.paidMethod = method;
+                o.paidAt = o.paidAt || paidAtNow; // stamped once — the day the money landed
+              } else {
+                delete o.paidMethod;
+                delete o.paidAt;
+                if (STAGES_AT_OR_PAST_PAID.includes(o.status)) o.paidReceived = false;
+                else delete o.paidReceived;
+              }
             }
             // The charge's own three keys and the books follow the payer: her own charge
             // becomes a Delivery & fuel expense row, the customer's leaves her books
@@ -3034,7 +3267,13 @@ function setStage(state, group, nextStatus, opts = {}) {
     // finished: it only turns green when Send confirmation / the Paid
     // button is pressed. Orders saved before these fields existed have no
     // flag, which reads as already done.
-    if (nextStatus === "confirmed") o.confirmedSent = false;
+    // ... and the DRAFT mark goes with it (v268): arriving on Confirmed means this
+    // message has not been written yet, so a draft left behind from the last time the
+    // order sat here must not offer "I have sent it" for a message nobody has opened.
+    if (nextStatus === "confirmed") {
+      o.confirmedSent = false;
+      delete o.confirmedOpened;
+    }
     // Stepping PAST Paid without the money recorded says so on the order: a regular who
     // pays at the counter goes Confirmed -> Baked, and that order owes money. Without
     // this the flag would stay absent, which reads as "already paid" (the rule that keeps
@@ -3180,11 +3419,20 @@ function orderGroupRow(state, group, root, dateId) {
   // The stage's WhatsApp action(s). Each message carries the order code, and the
   // buttons that only send a message need a number on the order.
   if (status === "confirmed") {
+    // The message is drafted, not sent (v268): the press opens WhatsApp and records that
+    // much, and the row asks for the one thing the app cannot see by itself. Until she
+    // says so the Confirmed dot stays amber, and the customer's card agrees — the same
+    // flag feeds both (supabase.js confirmed_sent).
+    const drafted = first.confirmedSent === false && first.confirmedOpened === true;
     const sendBtn = button("Send confirmation", () =>
-      sendOrderWhatsApp(state, group, { builder: buildConfirmation, markSent: true, doneMsg: "Confirmation drafted — press Send in WhatsApp", root, dateId }),
-      "soft small");
+      sendOrderWhatsApp(state, group, { builder: buildConfirmation, markOpened: true,
+        doneMsg: "Confirmation drafted — press Send in WhatsApp, then tell me it has gone", root, dateId }),
+      drafted ? "ghost small" : "soft small");
     if (!first.whatsapp) sendBtn.disabled = true;
     actions.push(sendBtn);
+    if (drafted) {
+      actions.push(button("I have sent it", () => markConfirmationSent(state, group, root, dateId), "small primary"));
+    }
   } else if (status === "paid") {
     const remindBtn = button("Send payment reminder", () =>
       sendOrderWhatsApp(state, group, { builder: buildPaymentReminder, doneMsg: "Payment reminder drafted — press Send in WhatsApp", root, dateId }),
@@ -3192,9 +3440,11 @@ function orderGroupRow(state, group, root, dateId) {
     if (!first.whatsapp) remindBtn.disabled = true;
     actions.push(remindBtn);
   } else if (status === "baking") {
-    // Print the label at Preparing — the baker needs it in hand to kit the order
-    // (stick it on the pouch/box as the items go in), before it is marked Packed.
-    actions.push(button("Print label", () => openLabelPrint(state, group), "ghost small"));
+    // Nothing of its own. Print label sits below, for every stage from Preparing
+    // onwards (v268) — it used to be offered at Preparing and nowhere else, so the one
+    // control that prints the slip for the pouch vanishes the moment the order was
+    // packed, including for the order still in her hand, with nothing on the row to say
+    // where it went.
   } else if (status === "ready") {
     // How this order leaves decides what she tells the customer: a parcel goes on
     // its way (with its tracking number), a collect order is ready to fetch.
@@ -3217,11 +3467,21 @@ function orderGroupRow(state, group, root, dateId) {
   // hands over the money when they collect — so the buttons stay on until the payment lands,
   // wherever the order has got to (17 Sep 2026). They go the moment it is recorded, which is
   // when the Cash / TNG tag appears beside the row.
-  const atOrPastPaid = STATUSES.findIndex(([id]) => id === status) >= PAID_AT;
+  const stageAt = STATUSES.findIndex(([id]) => id === status);
+  const atOrPastPaid = stageAt >= PAID_AT;
   if (atOrPastPaid && first.paidReceived === false) {
     actions.push(
       button("Paid · Cash", () => markPaid(state, group, root, dateId, "cash"), "small primary"),
       button("Paid · TNG", () => markPaid(state, group, root, dateId, "tng"), "small primary"));
+  }
+  // Print label, from Baked onwards rather than only while the order sits on Baked (v268).
+  // The slip goes out with the bag — a label that tore, or one printed before she had
+  // finished packing, needs a second one, and the order it belongs to is often still in
+  // her kitchen at Packed. Printing it again says nothing about the stage, so nothing
+  // here is a claim about the order; before Baked there is no bag to kit, so it is not
+  // offered at all.
+  if (stageAt >= BAKED_AT) {
+    actions.push(button("Print label", () => openLabelPrint(state, group), "ghost small"));
   }
   // The Undo sits with the other things she can do to this order, and before the ✕ so
   // the box that deletes the row stays the last press on the line where it has always
@@ -3268,6 +3528,23 @@ function orderGroupRow(state, group, root, dateId) {
         + " — this row moved itself. Put it back if that is not right.")
     : null;
 
+  // The order's own money, on the row (v277). Her report, 2 Oct 2026: the money is "non at
+  // all in the order list". Every row now ends with its total in the same right-hand
+  // column as every other row, so a list of orders can be read down the figures the way a
+  // column of receipts can — "the money have to align up ... line up in one column".
+  //
+  // It is the SAME figure the receipt in the Edit / Note pop-ups and the customer's own
+  // message quote, because all three read one customerTotal: an order the row prices at
+  // RM38 and the pop-up prices at RM35 would be the class of fault this whole version is
+  // about. Drawn only when the order has been priced at all — an unpriced row is not an
+  // order worth nothing, and "RM 0.00" beside it would be the app inventing a figure.
+  const orderMoney = customerTotal(state, group);
+  const totalLine = orderMoney.items > 0
+    ? el("div", { class: "info-row li-money" },
+        el("span", {}, "Order total"),
+        el("span", { class: "info-val" }, fmtRM(orderMoney.total, state.settings.currency)))
+    : null;
+
   // The row is tagged with its first item's id; the group id rides along so the
   // inbox tap can still find this row when its own item is not the first one.
   const rowAttrs = { class: "list-item", dataset: { order: first.id } };
@@ -3277,6 +3554,7 @@ function orderGroupRow(state, group, root, dateId) {
   return el("div", rowAttrs,
     el("div", { class: "li-main" },
       el("div", { class: "li-title" }, title, orderCodeTag(first),
+        promoTag(first),
         orders.some((o) => o.source === "storefront") ? el("span", { class: "src-tag" }, "storefront") : null),
       (multi || anyNote)
         ? el("div", { class: "li-sub" }, orders.flatMap((o, i) =>
@@ -3289,7 +3567,15 @@ function orderGroupRow(state, group, root, dateId) {
       autoNote),
     el("div", { class: "li-right" },
       el("span", { class: "qty-chip" }, `×${qtyTotal}`),
-      first.paidMethod
+      // Both halves, and the second one is the app's own question rather than a guess
+      // from the row (v268): a method AND the money actually in (isCollected — the same
+      // rule the journey strip, the Money screen and the tally all read). The tag used to
+      // rest on `paidMethod` alone, so a method written without the money — a row recorded
+      // before this version's box learned to write the payment, or one she had since set
+      // back to Not recorded — still dressed the row as paid while every other screen said
+      // it owed money. A method with the money not in is a note about HOW it will come,
+      // and that belongs in the pop-up, not on a row that reads as settled.
+      first.paidMethod && isCollected(group)
         ? el("span", { class: `paid-tag${first.paidMethod === "tng" ? " tng" : ""}` },
             first.paidMethod === "cash" ? "Cash" : "TNG")
         : null,
@@ -3301,7 +3587,14 @@ function orderGroupRow(state, group, root, dateId) {
       // amount says nothing about who owes it, and the tag used to fill the blank in as
       // "customer" — a claim she never made, on a row it could not be removed from
       // (19 Sep 2026).
-      courierFeeOf(first) && courierPayerOf(first)
+      //
+      // And the order has to be going by courier, which is the third thing the tag needs
+      // (1 Oct 2026). The three charge keys are not cleared when she switches to self
+      // collect — she may switch back — so they outlive the fulfilment they were recorded
+      // for, and the row kept a "Courier RM8.00 · customer" tag on an order with no
+      // courier in it. That was her report: "when i schange the courier delivery to self
+      // pickup, the courier chages tag still there".
+      courierFeeOf(first) && courierPayerOf(first) && isCourierOrder(first)
         ? el("span", { class: `paid-tag courier${courierPayerOf(first) === "me" ? " mine" : ""}` },
             `Courier ${fmtRM(courierFeeOf(first), state.settings.currency)} · ${courierPayerOf(first) === "me" ? "me" : "customer"}`
             // ... and, for a customer-borne charge, which way it reaches her — so she
@@ -3311,6 +3604,7 @@ function orderGroupRow(state, group, root, dateId) {
         : null,
       stSel,
       ...actions),
+    totalLine,
     orderJourneyEl(first),
     referralBlockEl(state, group, root, dateId),
     promoBlockEl(state, group));
@@ -3471,23 +3765,49 @@ function trackUrlFor(order) {
   return `${location.origin}/store/?track=${orderCode(order)}`;
 }
 
-// Open WhatsApp with the built message for this order. When markSent is set the
-// stage also counts as done (Send confirmation finishes Confirmed), so the row's
-// map moves the amber dot to the next step.
-function sendOrderWhatsApp(state, group, { builder, markSent = false, doneMsg, root, dateId }) {
+// Open WhatsApp with the built message for this order. When `markOpened` is set the press
+// also records that the message was DRAFTED (order.confirmedOpened) — and nothing more.
+//
+// Opening WhatsApp is not sending the message (v268). The Confirmed step turns green only
+// from the row's own "I have sent it"; until then the app counts the confirmation as
+// outstanding, which is what it is. Before this, pressing Send confirmation lit the step
+// green — and lit the customer's own track card with it, which reads the same flag — on a
+// message that was still sitting unsent in WhatsApp's box.
+//
+// Nothing is published here either: a draft changes nothing the customer can see, and the
+// stage that put this order on Confirmed already published its own card (stageWritten).
+function sendOrderWhatsApp(state, group, { builder, markOpened = false, doneMsg, root, dateId }) {
   const first = group.orders[0];
   if (!first || !first.whatsapp) return;
   const built = builder(state, group, trackUrlFor(first));
   if (!built || !built.recipient) return;
   window.open(`https://wa.me/${built.recipient}?text=${encodeURIComponent(built.message)}`, "_blank");
-  if (markSent) {
-    for (const o of group.orders) o.confirmedSent = true;
+  if (markOpened) {
+    for (const o of group.orders) o.confirmedOpened = true;
     save(state);
     maybeSync(state);
-    publishTracking(state, group); // Confirmed now green on the customer's track card too
   }
   anchorRowId = first.id;
   toast(doneMsg);
+  renderAll(root, state, new URLSearchParams({ date: dateId }));
+}
+
+// The confirmation has actually gone — the half of it the app cannot know on its own
+// (v268). This is the press that turns the step green, on her row and on the customer's
+// track card behind the same flag, and it is the only thing that may say the message was
+// sent. Putting the order back onto Confirmed clears both marks (setStage), so sending a
+// second one is never blocked by the first.
+function markConfirmationSent(state, group, root, dateId) {
+  for (const o of group.orders) {
+    o.confirmedSent = true;
+    delete o.confirmedOpened; // the draft it stood for is done with
+  }
+  const first = firstOf(group);
+  if (first) anchorRowId = first.id;
+  save(state);
+  maybeSync(state);
+  publishTracking(state, group); // Confirmed now green on the customer's track card too
+  toast("Confirmation sent");
   renderAll(root, state, new URLSearchParams({ date: dateId }));
 }
 

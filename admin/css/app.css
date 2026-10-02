@@ -835,6 +835,16 @@ option.tone-off { color: var(--muted); }
 .list-item .li-title > span:last-child { overflow-wrap: anywhere; }
 .list-item .li-sub { font-size: 13px; color: var(--muted); }
 .list-item .li-right { display: flex; align-items: center; gap: 8px; row-gap: 6px; flex-wrap: wrap; }
+/* An order's own total, on the row (v277). It takes a LINE OF ITS OWN the full width of
+   the row, which is what makes the figures a column: laid beside .li-right it would sit at
+   whatever x the row's chips happened to leave free, and a list of orders would read as a
+   ragged edge instead of a column. Her report, 2 Oct 2026: the money is "non at all in the
+   order list ... the money have to align up". It reuses the app's own label-and-figure row
+   (.info-row / .info-val), so an order's money on the list, in the pop-ups, on the Money
+   screen and in the Profit statement are all one shape. */
+.list-item .li-money { flex: 1 1 100%; margin: 3px 0 0; font-size: 13px; }
+.list-item .li-money > span:first-child { color: var(--muted); }
+.list-item .li-money > .info-val { font-weight: 700; color: var(--ink); }
 
 /* ---------- Customer suggestions under the name box ---------- */
 /* Typing a name in an order form offers the people you have already served (18 Sep
@@ -981,6 +991,102 @@ option.tone-off { color: var(--muted); }
 .st-chip.valid { background: var(--green-bg); color: var(--green); }
 .st-chip.used { background: var(--gray-bg); color: var(--muted); }
 .st-chip.expired { background: var(--gray-bg); color: var(--muted); text-decoration: line-through; }
+.st-chip.frozen { background: var(--amber-bg); color: var(--amber); }
+.st-chip.paused { background: var(--gray-bg); color: var(--ink); }
+/* A life chip sits BESIDE the code's name (v278), so it needs the gap the name's own
+   margin cannot give it — and a hair of lift to sit on the serif's baseline. */
+.card-title .st-chip { margin-left: 6px; vertical-align: 1px; }
+
+/* ---------- A code's life (v278) ----------
+   Steps nine and ten of the eleven — Pause and End — on the row where she manages
+   the code. They get a LINE OF THEIR OWN under the row rather than joining Edit and
+   Delete in .li-right, because four chips wrapping in a right-hand column reads as
+   a jumble and buries the one pair that is about the code's life rather than its
+   wording. Alike rows keep behaving alike: a live code shows Pause and End, a paused
+   one shows Resume and End, and an ended one shows neither, because there is nothing
+   left to press. */
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+/* ---------- The eleven steps (v278) ----------
+   The life of a promotion, in the order she would do it, folded away above her own
+   codes. The folding line is drawn as a bare button RESET TO NOTHING — it must not
+   look like one of the app's .btn chips, because it is not an action, it is the
+   handle on a list — but a bare <button> carries the browser's own grey box and a
+   20px hit height, which is what shipped half-styled in v277. So the reset is
+   explicit, and the 36px minimum is the same tap floor every other control in this
+   app holds to. */
+.steps-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+  width: 100%;
+  min-height: 36px;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.steps-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.steps-name { font-family: var(--serif); font-size: 16px; font-weight: 700; }
+/* Where her codes actually are — the answer, not a label. It gets the full width of
+   its own row so a figure can never be cut short. */
+.steps-line { font-size: 13px; color: var(--muted); }
+.steps-arrow { flex: 0 0 auto; color: var(--muted); font-size: 13px; }
+
+.steps { list-style: none; counter-reset: step; margin: 12px 0 0; padding: 0; }
+.steps li {
+  counter-increment: step;
+  position: relative;
+  margin: 0 0 10px;
+  padding-left: 28px;
+}
+.steps li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 1px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--brown-soft);
+  color: var(--brown-dark);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+.steps li b { display: block; font-size: 14px; }
+/* The detail is prose, not emphasis: <i> here is a marker in the tree, not italics. */
+.steps li i { display: block; font-style: normal; font-size: 12px; color: var(--muted); margin-top: 2px; }
+/* Step 6 is the only row that cannot be undone, so it is the only row shaded. */
+.steps li.gate {
+  background: var(--amber-bg);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px 8px 38px;
+  margin-bottom: 8px;
+}
+.steps li.gate::before { left: 10px; top: 10px; background: var(--amber-bg); color: var(--amber); }
+.gate-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--amber);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+
 .credit-row {
   display: flex;
   align-items: center;
@@ -1549,6 +1655,25 @@ option.tone-off { color: var(--muted); }
   border-radius: 999px;
   vertical-align: 2px;
 }
+/* The promo code an order was placed with (v270), in the tags' family so it reads
+   as one more thing about this order rather than a warning. Its own colour, amber,
+   because it is the one tag that names money she still has to take off by hand —
+   and monospace, like the order's own #code, so the two read as codes rather than
+   as words. */
+.promo-tag {
+  display: inline-block;
+  margin-left: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .2px;
+  color: var(--amber, #b26a16);
+  background: var(--amber-bg, #fdf1dc);
+  padding: 1px 7px;
+  border-radius: 999px;
+  vertical-align: 2px;
+  white-space: nowrap;
+}
 .fulfill-tag {
   display: inline-block;
   margin-left: 6px;
@@ -1595,6 +1720,20 @@ option.tone-off { color: var(--muted); }
    Without this the two spans ran together as plain text — "Cash inRM 30.00". */
 .info-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 4px 0; font-size: 14px; }
 .info-row > span:first-child { min-width: 0; }
+/* An order's money as a RECEIPT (v276): the words on the left, the figure on the
+   right, and a rule above the Total. It replaces a run-on sentence she had to unpick
+   ("The customer owes RM24.00 — items total RM16.00 + courier charge RM8.00 ..."), and
+   it reuses the label-and-figure row the Profit statement already draws, so an order's
+   money and her books are read the same way. The label wraps rather than overflowing —
+   a COD rider is a long line — and the figure never shrinks or wraps. */
+.receipt { font-size: 14px; }
+.receipt .info-row { margin: 3px 0; }
+.receipt .info-row > span:first-child { flex: 1 1 auto; }
+.receipt .info-row > .info-val { flex: 0 0 auto; white-space: nowrap; padding-left: 10px; }
+/* The line under the receipt that says why a code gave nothing. It is a note ABOUT the
+   figures, not another figure, so it drops to the app's hint size and tone — at the rows'
+   own 14px it read as one more line of the sum. */
+.receipt .hint { font-size: 12px; color: var(--muted); }
 /* A ✕ sitting inside one of these rows stays a small chip, not a full-size button. */
 .info-row .btn.small { padding: 2px 8px; min-height: 0; line-height: 1.3; }
 .info-val { font-variant-numeric: tabular-nums; }
@@ -2055,7 +2194,6 @@ option.tone-off { color: var(--muted); }
 .cal-cell.tappable { cursor: pointer; }
 .cal-cell.tappable:active { background: var(--gray-bg); }
 .cal-cell.sel { background: var(--brown); color: #fff; font-weight: 700; }
-.cal-cell.past { color: var(--muted); opacity: .5; }
 /* Today is not a box. A hard 1.5px outline read as a second, smaller square inside
    the cell, so today breathes instead — a soft halo in the brand colour. A day
    with its own fill (a delivery pill, a chosen day) keeps that fill instead; an
@@ -2110,7 +2248,42 @@ option.tone-off { color: var(--muted); }
   padding: 8px 8px 6px;
   margin: 0 0 10px;
 }
-.cal-cell.off { color: var(--muted); opacity: .6; }
+/* A day you do not deliver. It was --muted at 60% opacity, and that
+   half-transparency was the whole reason the past would not sit still: opacity
+   multiplies whatever colour the cell finally lands on, so a past day that was
+   ALSO a quiet day came out lighter than one she does deliver, and every quiet
+   day washed out to within a whisker of the paper (measured: #c2b4a7, 1.98:1
+   against the card, versus a delivery day's 13.45:1). Dropping the opacity left
+   it at flat --muted, which was only 3.50:1 — plainly there, but still faint
+   enough that she asked for it to be more solid.
+   The colour is now HALFWAY between --muted and --ink (#9a8471 and #3b2a1f give
+   #6b5748), so a day she does not deliver is a solid day in its own right:
+   6.71:1 against the card, very nearly twice the old value, while still sitting
+   at half a delivery day's 13.45:1 so the two never read as the same thing. On
+   the product availability calendar the same rule has to keep "you can sell here"
+   (plain --ink, 13.45:1) apart from "you cannot" — and it still does: 6.71
+   against 13.45 is a clear step, not a smear.
+   Re-derive it if either token moves: mix the two channels, half and half.
+   Keeping the cell free of any opacity also leaves .past free to land as ONE
+   colour on every cell it touches. */
+.cal-cell.off { color: #6b5748; }
+/* A day already gone wears the SHOP's past grey, flat and one shade. It used to be
+   a half-transparent --muted here, and a past day that was ALSO a day she does not
+   deliver carried only .off — a different grey at .6 — so the past came out in two
+   shades side by side in the same grid. The colour is the store calendar's own
+   (#ded6cd on store/app.css's .cal-cell.past; both apps share --bg #fbf4ea, so it
+   lands identically), and test/orders-cal.test.js reads it from there rather than
+   repeating it, so the two can never drift apart.
+   "One shade" only became literally true once .off stopped carrying an opacity —
+   while it did, .off+.past composited to #ebe6df against .past's own #ded6cd, so
+   the two-ways-to-be-past survived the first fix (v262 finished it).
+   Declared BELOW .off on purpose: both selectors are two classes, so source order
+   is the only thing that lets a past day win the tie and take this colour instead.
+   A fill that MEANS something still keeps its own colour — the green pill on one
+   of her delivery dates (.added .num wins on specificity) and the green tint on a
+   day a product sells (.avail-on is declared further down and so wins on order) —
+   because those answer a question the screen is asking. */
+.cal-cell.past { color: #ded6cd; }
 /* Every day here is one height. A delivery day is taller because its booking count
    sits under the number, and a plain day left at the app's usual 34px held its
    number — and any mark washed behind it — 6px higher than the delivery days beside
@@ -2400,8 +2573,8 @@ option.tone-off { color: var(--muted); }
    rules above and the .cal-* grid rules below, so a day looks the same here as
    it does on Delivery Dates; only what "on" means is new: a green tint over the
    days that sell, and a green heading for a weekday marked right across the
-   month. A day you do not deliver is dimmed (.cal-cell.off) but stays
-   visible — a mark there is allowed, it just never becomes an order. */
+   month. A day you do not deliver is quiet (.cal-cell.off) but stays
+   plainly visible — a mark there is allowed, it just never becomes an order. */
 .avail-head { min-width: 0; }
 .avail-head-end { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .avail-sum {

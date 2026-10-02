@@ -17,7 +17,7 @@
 // you take back out is DRAWINGS; both move cash, neither changes profit. That is
 // why "My own withdrawal" is its own class here even though it lives in the same
 // money-out list as the rest.
-import { byId, orderLinePrice } from "./state.js";
+import { byId, orderLineName, orderLinePrice } from "./state.js";
 import { costOf } from "./bom.js";
 import { categoriesOf, classOfCategory } from "./accounts.js";
 
@@ -133,6 +133,44 @@ export function expenseRows(state, from, to, label = null) {
       category,
       method: e.method || "",
       amount: Number(e.amount) || 0,
+    });
+  }
+  rows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  return rows;
+}
+
+// The orders behind a trading line (2 Oct 2026: "at the profit section, can the sales and
+// cost of sales be clickable to reveal its journal"). Sales and Cost of sales are the same
+// order lines read from two sides — what the customer paid, and what the recipe says those
+// treats cost to make — so ONE function feeds both journals and the two can never disagree
+// about which orders the month held.
+//
+// A sale counts on the day it is DELIVERED, the same day profitBetween counts it, so the
+// rows always add up to the line above them, exactly as expenseRows does.
+export function tradingRows(state, from, to) {
+  const rows = [];
+  for (const o of state.orders || []) {
+    if (!o || !inRange(orderDay(state, o), from, to)) continue;
+    const qty = Number(o.qty) || 0;
+    const price = orderLinePrice(state, o);
+    const cost = lineCost(state, o);
+    rows.push({
+      id: o.id,
+      date: orderDay(state, o),
+      // What was sold and how many, named as the order froze it — so a product she has
+      // since renamed or deleted still reads as the treat that was actually sold.
+      what: `${orderLineName(state, o)}${qty ? ` × ${qty}` : ""}`,
+      customer: String(o.customerName || "").trim(),
+      qty,
+      // null when nothing can price the line, so the journal can say "no price" rather
+      // than print a confident RM 0.00. The same distinction orderLinePrice exists to keep.
+      price,
+      sales: qty * (price == null ? 0 : price),
+      cost,
+      // A line whose recipe prices to nothing is counted as nothing, which is what makes a
+      // profit read too high. The journal marks it, so a 0.00 row is never mistaken for a
+      // row that failed to load.
+      uncosted: !cost,
     });
   }
   rows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));

@@ -1015,6 +1015,112 @@ matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestion
 now that the Google key returns one precise house-number answer, most lookups legitimately show no
 list and the pin simply lands.
 
+## Twenty-one versions in one pass: promo codes, the printed card, and the money in one column (v260–v280)
+
+Twenty-one engine versions, from bakery `ac2d06e` (v259 — exactly where jerky sat) → `290c14d`
+(v280). **One SQL script, and two Edge Functions to re-upload.** Diffstat on the bakery side
+`9615 insertions, 206 deletions` across 58 files; the port lands as `admin/` + `store/` + `test/`
+changes here, with nothing in `marketing/` but rebuilt PDFs.
+
+Ported with the standing method — one cumulative three-way merge per file, never `cp` +
+`git apply --reject`:
+`git merge-file -p --diff3 <jerky-file> <bakery@ac2d06e:file> <bakery@290c14d:file>`.
+Sound because jerky's files are bakery@v259 plus localization deltas, so the bakery's v259 blob is a
+true common ancestor. Each merged file was then audited by the matched-divergence rule: `diff merged
+-vs-jerky-original` and `diff merged-vs-bakery-head`; when the head difference count equals jerky's
+base difference count, the merge added the bakery's changes, kept jerky's divergences and leaked no
+bakery identity.
+
+`admin/js/version.js` is now `280`. Suite **2677 pass / 0 fail**.
+
+### The one database step, and the two deploys
+
+- **`supabase/promo_track.sql` must be run BEFORE this build reaches a phone.** It adds
+  `order_tracking.promo_code` and `order_tracking.promo_rm`. The backoffice publishes a customer's
+  **whole tracking row in one call**, so one unrecognised column rejects the call as a whole — every
+  customer's track card stops updating, not only the orders that carried a code. Same trap
+  `courier_fee.sql` documents. Idempotent, so running it twice is harmless.
+- **v260 changes both Edge Functions**, so `wish-mail` and `shop-feedback` must each be re-uploaded
+  — a push does not do it. Run `supabase functions deploy <name> --project-ref ircwozniiyywsowamixy`
+  **from the repo folder**, and prove it with `supabase functions list`. `RESEND_FROM` beats the code
+  if that secret is ever set, so check `supabase secrets list` too.
+- **No new secret.** `shop-feedback` and `wish-mail` keep reusing `RESEND_API_KEY` and the verified
+  `send.munchies.com.my` domain.
+
+### The new files
+
+| File | What it is |
+|---|---|
+| `admin/js/promo.js` | The code engine: `normalizeCode`/`normCode`, `findCode`, `offerOf`, `worthOf`, `minimumOf`, `shortfallOf`, `stoppedBy`, `evaluate`, `publishCodes`, plus the printed-card freeze (`frozenProblem`). Pure data — no DOM, no storage, no clock — so the shop and the backoffice judge a code with exactly the same rules. |
+| `admin/js/promo-usage.js` | `usageByCode(state)` — what each code has done so far, **recounted from her own orders** every time it is asked, never read off a tally that could drift. A basket counts once. |
+| `admin/js/promo-card.js` | The printed card's pure data (`cardFields()`) and its page (`renderCard()`, `boot()`). Four identical cards on one A4 sheet, no end date and no count on the paper. |
+| `admin/js/views/promo.js` | The **Promo codes** screen under More: the eleven-step life of a promotion, Pause / End, the ceiling box, and Print it. |
+| `admin/promo-card.html` | The print-sized page the card is drawn on. |
+| `supabase/promo_track.sql` | The two `order_tracking` columns above. |
+| `store/fonts/` | ShantellSans (regular, latin subset) and its OFL licence — the shop's own "chalk" hand, **inside the shop's folder**, so nothing is fetched from a font company when a customer opens the page. |
+
+### The two bakery files deliberately NOT taken
+
+- `admin/js/qr.js` and `test/qr.test.js` — the bakery's QR encoder is a **new** file in this range,
+  but jerky already has its own (`admin/js/qr.js`, from the taster/QR-label work, exporting
+  `qrMatrix`/`qrSvg`/`qrPngBytes`). The bakery's `qrSvg(text, opts)` takes **text**; jerky's
+  `qrSvg(matrix, opts)` takes a **matrix**. `promo-card.js` calls `qrSvg(qrMatrix(url), …)` — the
+  jerky-local adaptation — so the card works without either file being swapped.
+- `test/store-track-money.test.js` — bakery-only, and it asserts the bakery's own money block on the
+  track card, which this shop deliberately does not draw (see the v277 row below).
+
+### The versions
+
+| Version | What it bought |
+|---|---|
+| **v260** | Both Resend mails are sent under the shop's own name (`Munchies Furkidz`), not the app's internal one. Taken from the homepage `<title>`; a new `test/email-sender-name.test.js` derives the expected brand so a rebrand fails the test. **Deploy step.** |
+| **v261** | Every admin calendar greys a past day in the shop's own flat grey. Ported **below** jerky's own `.cal-cell.off` rule, since jerky's `.past` sits above `.off` (the bakery's is the other way round). |
+| **v262** | The one-declaration completion: `.cal-cell.off`'s `opacity: .6` is dropped, so the past is genuinely one shade and a quiet day is readable. **Ported with v261 and v263 as one piece** — v261 alone is a half-fix. |
+| **v263** | `.cal-cell.off`'s colour moves to a solid contrast (the ratio, not the hex): a quiet day clears 6:1 against the card while staying a full ratio point lighter than `--ink`. |
+| **v264** | A tap on the map no longer moves the pin; only dragging it does. **Kept**: a tap still places the first pin on an empty map, and the shop's customer map is untouched (for a customer the map is often the only way to place a pin at all). |
+| **v265** | The consignment box belongs to a parcel, so it is drawn with the parcel and not left empty under a finished delivery price. Ported **with `consignmentWhere`'s default `"above"` intact**, which keeps the Edit and Note/tracking pop-ups byte-identical. |
+| **v266** | A button says what happens if you press it **and** what happens if you don't. Moves `store-lang.js`'s `pinHint` in all three languages **and** the inline English at `store/index.html:74`, which `test/store-i18n.test.js` forces to equal `STORE.en.pinHint` exactly. |
+| **v267** | A courier charge goes quiet (parked, not deleted) while the order is a Self collect. |
+| **v268** | Five places that disagreed with each other after v267: the published tracking snapshot no longer hands a self-collect customer a driver, plate, phone or waybill; a parked charge no longer counts against a booked trip; Cash / TNG records the payment and not just the method; Print label runs from Baked to the end; and a confirmation goes green only after **I have sent it**. |
+| **v269** | Promo codes, first slice: the **Promo codes** screen, the shop's **Have a code?** box, and the standing offer line. The total on the shop page never moves — the code is a note that travels with the order. |
+| **v270** | The code becomes visible: an amber code tag on every order row, the shop's line names the whole offer, and the code screen becomes full (who / when / smallest basket / how often / what it cannot sit with / who can see it). Nine plain reasons the shop will not take a code. |
+| **v271** | A code knows when to stop: **Stop after giving away (RM)**, counted fresh from her own orders, whichever limit is reached first. |
+| **v272** | The code comes off the total. A new SQL script (`promo_track.sql`) publishes `promo_code` and `promo_rm` on the order, and the three WhatsApp messages print `Promo FRESH10: -RM10.00` between the workings and `To pay`. |
+| **v273** | Message style (More → Settings): one switch for all four customer messages — **Plain** (the default) or **the greeting leans over** (italics only, since WhatsApp carries no fonts). |
+| **v274** | The shop's own sentence in the chalk hand (ShantellSans), on the amber strip's second line only. Latin-only face, so an English or BM sentence wears it and a Chinese one keeps its plain lettering. |
+| **v275** | A discount nobody earned: the smallest basket is now asked wherever the money is worked out, so an order that never reached it gets nothing off. |
+| **v276** | An order's money reads as a receipt on her own two screens (the Edit pop-up and the Note / tracking card), and a code that gave nothing is a named RM 0.00 line rather than silence. |
+| **v277** | The money lines up in one column — **on jerky's Orders list only**. See the deliberate divergence below. |
+| **v278** | A code's life: Pause and End, a printed code is fixed (the end date may only move later, the ceiling only up), and the eleven steps fold into one line. |
+| **v279** | The printed card: **Print it** on a public code, refusing one with no cost ceiling and saying why. Four cards on one A4 sheet, each pointing at the shop with the code filled in, and carrying no date, no count and no ceiling figure. |
+| **v280** | The whole statement opens: tap **Sales** or **Cost of sales** on More → Profit and read the order lines behind the figure, from one shared `tradingRows()` so the two journals can never disagree. Gross profit and Net profit stay figures, not doors. |
+
+### Deliberate divergences kept
+
+- **The customer's track card keeps its single money line.** The bakery's v277 lines the track
+  card's money into a right-hand column, working out an items subtotal as *published total less the
+  courier's charge*. That is true on the bakery, where a charge is the only thing between the two.
+  This shop also adds a **flat nationwide postage that is deliberately never published**, so the
+  card would subtract nothing and print an items total RM8 too high — a figure the customer's own
+  WhatsApp message contradicts. The card therefore keeps its one line, *"what they ordered — the
+  total"*, which cannot be wrong because it names no subtotal at all.
+- **The promo line on that card IS drawn (v272).** The discount is published on the order itself as
+  `promo_rm`, so naming it needs no working out and cannot be wrong. The line sits above the total,
+  exactly as the courier charge does, so a total that has already come down explains itself. Both
+  `promo_code` and `promo_rm` are named in the track lookup's PostgREST `select` — PostgREST returns
+  only the columns listed, so a column left out of that list is silently absent from the card.
+- **The courier charge is not nudged.** The courier stays a ported, tested, switched-off secondary
+  choice; nothing about her orders, money or labels changes until she sets one up.
+
+### Localization kept
+
+Nothing in this range needed a user-visible string reworded beyond the shop's own `pinHint` (v266),
+which arrived already written for this shop in all three languages. Every bakery fixture
+(`Focaccia`, `ing_flour`, `u_loaf`, `pc_*`) and bakery-voice comment stays, on purpose — see
+CLAUDE.md, *Test files keep the bakery's fixtures*. No bakery identity leaked into a shipped file:
+no `jienluv2bake`, no `hzpyblqygnntixkijeem`, no `Bakester`. Storage keys beginning `bakeadmin.`
+are deliberately unchanged — they are origin-scoped.
+
 ## Six versions in one pass: the card holds still, and the app says when it is out of date (v254–v259)
 
 Six engine versions, from bakery `a65c462` (v253 — exactly where jerky sat) → `b1a53eb` (v259).

@@ -12,6 +12,26 @@
   --radius: 16px;
   --serif: "Iowan Old Style", "Palatino Linotype", Georgia, "Times New Roman", serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --hand: "Shantell Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* The chalk hand for the bakery's own sentence in the shelf strip (v274). It is
+   a Latin face - it carries no Chinese characters at all - so a sentence written
+   in Chinese falls through to the system font, character by character, exactly
+   as it looked before this file existed. That is the honest limit, not a fault.
+
+   Shipped from our own folder rather than fetched from a font service, so the
+   shop has no third-party request and the letters are the same on every phone.
+   The file is the Latin subset of Shantell Sans Regular, kerning intact; the
+   licence (OFL) sits beside it in fonts/OFL.txt. `swap` shows the system face
+   first and swaps in the hand when it arrives, so a slow download never blanks
+   the line. */
+@font-face {
+  font-family: "Shantell Sans";
+  src: url("fonts/ShantellSans-Regular-latin.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
 }
 
 * { box-sizing: border-box; }
@@ -1178,3 +1198,89 @@ button.prod-next.off::after { content: ""; }
   line-height: 1.45;
   text-align: center;
 }
+
+/* ---------- Promo code (v269) ---------- */
+
+/* The standing offer, at the top of the shop. A STATEMENT of what is on right
+   now, not a control, so it wears the referral strip's shape. Amber rather than
+   green: green is already the referral's "you were given something", and a
+   referred customer can see both strips at once. */
+.promo-today {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #fdf3e3;
+  border: 1px solid #f0dcb8;
+  color: #8a5a12;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-align: center;
+}
+.promo-today p { margin: 0; }
+/* The bakery's own words, inside the same strip but quieter than the offer and
+   the code it sits under — those are what a customer has to act on.
+
+   Her sentence is set in the chalk hand at 16px (v274), not the 13px the strip's
+   own text uses: it is a sentence a customer reads, and at 13px a handwriting
+   face on a phone loses the strokes that make it a hand at all. The offer line
+   above it keeps the strip's 13px system lettering, so the thing to act on still
+   leads. */
+.promo-today .promo-words {
+  margin-top: 5px;
+  font-family: var(--hand);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+.promo-words[hidden] { display: none; }
+
+.promo-box { margin: 0 0 16px; }
+.promo-box .field { margin-bottom: 0; }
+
+/* The box and its button on one line, the box taking whatever room is left so a
+   long code is never clipped off the right. */
+.promo-row { display: flex; gap: 8px; align-items: stretch; }
+.promo-row .input { flex: 1 1 auto; min-width: 0; text-transform: uppercase; }
+.promo-apply {
+  flex: 0 0 auto;
+  min-height: 46px;
+  padding: 0 16px;
+  border: 1px solid var(--brown);
+  border-radius: 12px;
+  background: var(--brown);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.promo-apply:active { transform: translateY(1px); }
+
+/* The answer under the box. Green when the code is on, the brand red when it is
+   not — the same yes/no pairing the referral strip and the suggestion box use,
+   so "no" reads as "no" at a glance instead of having to be read out. */
+.promo-say.good { color: #2f6b2f; font-weight: 600; }
+.promo-say.bad { color: var(--brown); }
+
+/* Removing a code is a quiet undo, not a second action, so it is a text link at
+   the same 36px target as the per-item note's. */
+.promo-clear {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0;
+  margin-top: 2px;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--brown-dark);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+/* `hidden` has to win here. A rule of ours that sets `display` beats the browser's
+   own rule for [hidden], so without this the Remove link is drawn on a page where
+   no code has been used — a control offering to remove nothing. */
+.promo-clear[hidden] { display: none; }
