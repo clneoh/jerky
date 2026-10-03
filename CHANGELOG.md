@@ -1,8 +1,42 @@
-# Munchies Furkidz — change history (v54 → v280)
+# Munchies Furkidz — change history (v54 → v281)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**3 Oct 2026 — engine v281, THE STATEMENT SAYS WHAT KIND OF COST IT IS SHOWING (no database step,
+nothing to upload — pushing this one is the whole of it).**
+
+**Why.** You asked whether Cost of sales is really your recipe's ingredient cost — the theoretical
+figure — rather than money you had spent. It is, and the screen did not say so where the figure is.
+It only said a part of it in the small print underneath, and nothing at all about the part that
+matters most: that the cost is read from your recipe and your ingredient prices __as they stand
+today__.
+
+**What you see now, on More → Profit.** A short line sits under **Gross profit**, inside the
+statement, in the same quiet grey as the other notes:
+
+- **"Cost of sales is built from the recipe and the ingredient prices you have recorded, read as they
+  stand today — so editing a recipe or a price moves past months too. It is not what you actually
+  spent. Gross profit is therefore a guide to your pricing, not your bank balance — the Money screen
+  is where the cash is."**
+
+Two things that follow from it, now said on the screen rather than left for you to work out:
+
+- **A month that has already closed can still move.** If you fix a recipe, or update what an
+  ingredient costs, the Cost of sales of a past month changes with it, and so does that month's gross
+  profit. The sold price never moves — that is frozen on the order — but the cost side is read fresh
+  every time you look.
+- **Gross profit and Net profit are a plan, not a bank balance.** What you really spent is cash, and
+  the Money screen is where you check it. A gap between the two is normal and not a fault.
+
+**The small print at the bottom changed too**, so the two do not repeat each other. It now leads with
+the cash half — a pack bought today is cash on the Money screen and stock on the shelf, and only
+becomes cost of sales as the treats made from it are sold.
+
+**What did not change.** No figure moved. The Sales journal, the Cost of sales journal, the month
+arrows and every spending line behave exactly as they did in v280. This is words on the screen,
+nothing else.
 
 **3 Oct 2026 — engine v280, THE WHOLE STATEMENT OPENS: SALES AND COST OF SALES TOO (no database
 step, nothing to upload — pushing this one is the whole of it).**

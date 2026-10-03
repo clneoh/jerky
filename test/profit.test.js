@@ -477,6 +477,33 @@ test("an empty trading journal opens and says so, like every spending line", () 
   assert.match(text, /RM 0\.00/, "and still lands on a total of nothing rather than going dead");
 });
 
+// ── the statement says which kind of cost it is showing (v281) ────────────────
+// Cost of sales is a RECIPE cost, read from the recipe and the ingredient prices as they
+// stand TODAY — not money she actually spent — so editing either one shifts a month that
+// has already closed. It is said on the screen because a figure that disagrees with the
+// Money screen and does not explain itself reads as a fault (3 Oct 2026).
+test("the statement says Cost of sales is a recipe cost, read from today's figures", () => {
+  const walkAll = screenOf();
+  const st = state();
+  const now = new Date();
+  const { from } = monthSpan(now.getFullYear(), now.getMonth());
+  st.deliveryDates = [{ id: "d1", date: from }];
+  st.orders = [order({ deliveryDate: from, qty: 2 })];
+
+  const root = document.createElement("div");
+  renderProfit(root, st);
+  const text = walkAll(root).map((n) => n.textContent).join(" ");
+
+  assert.match(text, /built from the recipe and the ingredient prices you have recorded/,
+    "the screen says what the cost figure is made of");
+  assert.match(text, /as they stand today/,
+    "and that it is read fresh, so editing a recipe or a price moves past months too");
+  assert.match(text, /not what you actually spent/,
+    "so the figure is never read as money she paid out");
+  assert.match(text, /the Money screen is where the cash is/,
+    "and she is sent to the screen that does hold the cash");
+});
+
 // ── the month arrows (v115) ──────────────────────────────────────────────────
 // "the profit month can move earlier but cannot move later" (17 Sep 2026). The arrows'
 // state was worked out once when the screen was opened and then reused on every redraw, so

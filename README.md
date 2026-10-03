@@ -1015,6 +1015,29 @@ matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestion
 now that the Google key returns one precise house-number answer, most lookups legitimately show no
 list and the pin simply lands.
 
+## One version: the profit statement says which kind of cost it is showing (v281)
+
+One engine version, from bakery `290c14d` (v280 — exactly where jerky sat) → `81dbab6` (v281).
+**Code-only — no SQL, no Edge Function, no new secret, nothing to run on the phones.** One source
+file (`admin/js/views/profit.js`), a comment block, one new paragraph and a reworded footer; plus
+`admin/js/version.js` → `281`, one test in `test/profit.test.js`, and this record.
+
+Ported with the same one-file three-way merge against the bakery's own v280 blob. One conflict, in
+the footer line, and it was the localization: the bakery's rewrite dropped the clause jerky had
+relabelled ("what the making cost, from your recipes — so"), and the incoming sentence carries two
+bakery words jerky does not use — **"bread"** and **"deliver"**. Resolved to jerky's vocabulary:
+*"…becomes cost of sales as the **treats** made from it are sold. Sales are counted by the day you
+**post**."* The new Gross-profit note is bread-neutral and was taken verbatim. Audit: the merged file
+differs from the bakery head in exactly **8 lines — the four localizations jerky already carried**,
+the same count as its divergence from the base, so nothing leaked and nothing was dropped.
+
+**What it says.** Cost of sales is a **recipe** cost, read from the recipe and the ingredient prices
+*as they stand today* — so editing either one moves a month that has already closed. The screen now
+says so where the figure is, in the quiet grey under **Gross profit**, and sends her to the Money
+screen for the cash. The bottom footer was reworded so the two do not repeat each other: a pack
+bought today is cash on the Money screen and stock on the shelf, becoming cost of sales only as the
+treats made from it are sold. **No figure moved.** Suite **2677 → 2678 pass / 0 fail**.
+
 ## Twenty-one versions in one pass: promo codes, the printed card, and the money in one column (v260–v280)
 
 Twenty-one engine versions, from bakery `ac2d06e` (v259 — exactly where jerky sat) → `290c14d`

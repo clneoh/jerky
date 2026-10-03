@@ -147,6 +147,16 @@ export function renderProfit(root, state) {
         line("Cost of sales", -pl.cost, "",
           () => openTradingJournal(state, "cost", from, to, monthTitle)),
         line("Gross profit", pl.gross, " pl-total"),
+        // The one thing the figures cannot say for themselves, said where the figures are
+        // (3 Oct 2026). Cost of sales is a RECIPE cost, and it is read from the recipe and
+        // the ingredient prices as they stand TODAY — so editing either one moves a month
+        // that has already closed. That is what makes gross profit a guide to pricing
+        // rather than a bank balance, which is the reading she needs if she compares this
+        // screen against Money and finds they disagree. The bottom footer already says the
+        // cash half (a pack bought today is not costed all at once); this says the other
+        // half, so neither repeats the other.
+        el("p", { class: "card-sub", style: "margin:8px 0 0" },
+          "Cost of sales is built from the recipe and the ingredient prices you have recorded, read as they stand today — so editing a recipe or a price moves past months too. It is not what you actually spent. Gross profit is therefore a guide to your pricing, not your bank balance — the Money screen is where the cash is."),
         el("p", { class: "card-sub", style: "margin:8px 0 2px" },
           pl.expensesTotal ? "Running costs · tap a line to see the spending behind it" : "Running costs"),
         ...pl.expenses.map((e) => line(e.label, -e.amount, "",
@@ -166,7 +176,7 @@ export function renderProfit(root, state) {
         line("Drawings you took out", -pl.drawings),
         line("In the business so far this month", pl.capital - pl.drawings, " pl-total")),
       el("p", { class: "card-sub", style: "margin:0 2px" },
-        `Ingredient cost is what the making cost, from your recipes — so a pack bought today counts as the treats made from it are sold, not all at once. Sales are counted by the day you post. ${pl.uncosted ? `${pl.uncosted} line${pl.uncosted === 1 ? "" : "s"} this month had no recipe cost and was counted as nothing — check that product's recipe. ` : ""}Your own unpaid hours are not costed on their own: either pay yourself a Salary (you), with EPF and SOCSO as their own category, or mark Labour as a not-bought ingredient (More → Ingredients) and put the hours into the recipes. Count them one way, never both.`),
+        `A pack bought today is not costed all at once — it is cash on the Money screen and stock on the shelf, and becomes cost of sales as the treats made from it are sold. Sales are counted by the day you post. ${pl.uncosted ? `${pl.uncosted} line${pl.uncosted === 1 ? "" : "s"} this month had no recipe cost and was counted as nothing — check that product's recipe. ` : ""}Your own unpaid hours are not costed on their own: either pay yourself a Salary (you), with EPF and SOCSO as their own category, or mark Labour as a not-bought ingredient (More → Ingredients) and put the hours into the recipes. Count them one way, never both.`),
     );
   };
 
