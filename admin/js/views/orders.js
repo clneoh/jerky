@@ -23,7 +23,6 @@ import { maybePublishTracking, maybeSync, publishTracking } from "../supabase.js
 import { writeCourierCharge, courierFeeOf, courierPayerOf, courierCodOf, isCourierOrder, codeMissed, codeNotApplied, customerTotal, receiptNote, receiptRows, promoOn, promoValue } from "../courier.js";
 import { methodsOf } from "../accounts.js";
 import { schemeOf, referralFlag, giveCredits, validCredits, markOneUsed, referrerName } from "../referrals.js";
-import { promoOf, KIND_LABEL, offerLine } from "../codes.js";
 import { adjustForStatus } from "../stock.js";
 import { customerList, keyOf } from "../customers.js";
 import { strictNumber } from "../courier_place.js";
@@ -1986,10 +1985,6 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     ...moveNoteLines(state, group, curId).map((t) => el("p", { style: "margin:2px 0" }, t)));
 
   const totalEl = el("div", { class: "receipt", style: "margin:8px 0 0" });
-  // The label the order came in on, filled by paintTotal below: it is given the
-  // very sum the total above it is built from, so the two can never disagree while
-  // she is editing the items.
-  const promoWrap = el("div", {});
   // A charge the customer bears belongs in this total, because this is the number she
   // reads to know what the order is worth. Named when it is there, so a figure RM8
   // above the items explains itself rather than looking like a mistake; a charge SHE
@@ -2043,11 +2038,6 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       promoMinimum: missed ? missed.minimum : 0,
       total: Math.max(0, itemsTotal + here - off),
     }) : []));
-    // The label the order came in on compares against the items alone — a courier charge
-    // is delivery, not spend on product, and the offer's minimum is about the treats
-    // (20 Sep 2026).
-    const labelPromo = promoBlockEl(state, group, itemsTotal);
-    promoWrap.replaceChildren(...(labelPromo ? [labelPromo] : []));
   }
   // The courier charge, asked for here as well as in the Note / tracking box (19 Sep
   // 2026): the charge is part of what this order is, and Edit is where she changes what
@@ -2220,8 +2210,7 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
         "The price beside each item is what THIS order is sold at. Change it here and the confirmation, every later message and the customer's total follow it — your menu price is untouched."),
       rowsEl,
       button("＋ Add another item", () => { lines.push({ productId: "", qty: 1, price: null }); refresh(); }, "ghost"),
-      totalEl,
-      promoWrap),
+      totalEl),
     el("div", { class: "card-sub", style: "margin:0 0 10px" },
       "Hidden products are listed as \"(hidden)\" — you can still add or keep one."),
     button("Save changes", saveEdits, "block primary"),
@@ -3606,8 +3595,7 @@ function orderGroupRow(state, group, root, dateId) {
       ...actions),
     totalLine,
     orderJourneyEl(first),
-    referralBlockEl(state, group, root, dateId),
-    promoBlockEl(state, group));
+    referralBlockEl(state, group, root, dateId));
 }
 
 // ---- bring-a-friend (order row) ------------------------------------------
@@ -3634,59 +3622,6 @@ function referralBlockEl(state, group, root, dateId) {
 
 function refNote(text) {
   return el("p", { class: "card-sub", style: "margin:0 0 6px" }, text);
-}
-
-// ---- the label an order came in on ---------------------------------------
-// What to take off, never what the app has taken off: the customer's page states
-// the offer and deliberately does not apply it, so the figure she quotes back on
-// WhatsApp is hers to decide — the same way a bring-a-friend credit is applied.
-//
-// Shown on the row and in the Edit pop-up, because the pop-up is where she fixes
-// the items. There it is handed the pop-up's OWN total, so the "under the
-// minimum" line can never disagree with the "Order total:" line right above it.
-//
-// The code is resolved live from the code list (see promoOf), so a label she has
-// since renamed or retired still reads right — and a label she can no longer
-// honour is still said out loud rather than leaving a blank.
-function promoBlockEl(state, group, total) {
-  const p = promoOf(state, group, todayISO(), total);
-  if (!p) return null;
-  const cur = p.cur;
-  const named = p.name && p.name !== p.code ? ` — ${p.name}` : "";
-  const parts = [];
-  if (p.gone) {
-    parts.push(refNote(`🎟 ${p.code} — no longer in your code list (${aKind(p.kind)}).` +
-      " The order still records it."));
-  } else if (p.retired) {
-    parts.push(refNote(`🎟 ${p.code}${named} — you retired this code. The order still records it.`));
-  } else if (!p.live) {
-    // offerLine already ends on "ended" for an offer whose date has passed.
-    const off = offerLine(p.offer, cur, todayISO());
-    parts.push(refNote(off
-      ? `🎟 ${p.code}${named} — ${off} — nothing to take off.`
-      : `🎟 ${p.code}${named} — a label with no offer on it.`));
-  } else {
-    parts.push(refNote(`🎟 ${p.code}${named} — ${offerLine(p.live, cur, todayISO())}` +
-      " — take it off when you confirm."));
-    // Warnings only while the offer is live: a verdict on a code she can no
-    // longer honour is one she cannot act on.
-    if (!p.newCustomer) {
-      parts.push(refNote(el("span", { class: "promo-warn" },
-        "⚠️ Not a new customer — this offer is for new customers only.")));
-    }
-    if (!p.overMin) {
-      parts.push(refNote(el("span", { class: "promo-warn" },
-        `⚠️ This order is ${fmtRM(p.total, cur)} — under the ${fmtRM(Number(p.live.minSpend) || 0, cur)} minimum.`)));
-    }
-  }
-  return el("div", { class: "promo-block" }, ...parts);
-}
-
-// "a shop label" / "an offer label" — the kind she picked when the code was made,
-// which the order keeps even after the code itself is gone.
-function aKind(kind) {
-  const word = String(KIND_LABEL[kind] || "plain").toLowerCase();
-  return `${/^[aeiou]/.test(word) ? "an" : "a"} ${word} label`;
 }
 
 function referralOfferEl(state, group, scheme, root, dateId) {

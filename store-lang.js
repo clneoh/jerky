@@ -11,23 +11,6 @@ const en = {
   titleWord: "Order",
   homeLink: "🏠 Our homepage",
   referral: "🎁 You were referred — you have a welcome discount on your first order",
-  // The scanned-label banner. Its words mirror what the owner states on a label
-  // (offerLine in admin/js/codes.js) so the page and the card agree.
-  codeOff: "%1 off",
-  codeMin: "on %1 and above",
-  codeNew: "new customers only",
-  codeUntil: "valid until %1",
-  codeFrom: "from %1",
-  // The "have a code?" box, and the line under the label banner saying what
-  // happens to the offer. The note is built in JS (its words carry the basket's
-  // own figure), so its strings live here rather than in index.html.
-  codeHave: "Have a code? Enter it here.",
-  codePh: "e.g. K3X9",
-  codeApply: "Apply",
-  codeNoteLater: "We'll take this off when we confirm on WhatsApp — the total shown is before the discount.",
-  codeNoteAdd: "Add %1 more to use it.",
-  codeUnknown: "We don't know that code — check the letters and try again.",
-  codeNotePlain: "Saved — that code has no discount on it.",
   deliveryDays: "Posting days",
 
   // Promo codes (v269). The offer is composed in store/app.js out of the engine's
@@ -298,18 +281,6 @@ const zh = {
   titleWord: "订购",
   homeLink: "🏠 我们的主页",
   referral: "🎁 朋友介绍的 — 首次下单有优惠！",
-  codeOff: "折扣 %1",
-  codeMin: "消费 %1 以上",
-  codeNew: "仅限新客户",
-  codeUntil: "有效期至 %1",
-  codeFrom: "来自 %1",
-  codeHave: "有优惠码？在此输入。",
-  codePh: "例如 K3X9",
-  codeApply: "使用",
-  codeNoteLater: "我们会在 WhatsApp 确认订单时为您扣减 —— 目前显示的总额尚未扣除优惠。",
-  codeNoteAdd: "再消费 %1 即可使用。",
-  codeUnknown: "找不到这个优惠码 —— 请检查字母后再试。",
-  codeNotePlain: "已记录 —— 这个优惠码没有折扣。",
   deliveryDays: "发货日",
 
   promoLabel: "有优惠码吗？",
@@ -487,18 +458,6 @@ const ms = {
   titleWord: "Tempahan",
   homeLink: "🏠 Laman utama kami",
   referral: "🎁 Anda dirujuk — anda ada diskaun sambutan untuk tempahan pertama",
-  codeOff: "Diskaun %1",
-  codeMin: "pembelian %1 ke atas",
-  codeNew: "pelanggan baharu sahaja",
-  codeUntil: "sah sehingga %1",
-  codeFrom: "daripada %1",
-  codeHave: "Ada kod? Masukkan di sini.",
-  codePh: "cth. K3X9",
-  codeApply: "Guna",
-  codeNoteLater: "Kami akan tolak diskaun ini semasa mengesahkan di WhatsApp — jumlah yang dipaparkan belum ditolak diskaun.",
-  codeNoteAdd: "Tambah %1 lagi untuk menggunakannya.",
-  codeUnknown: "Kami tidak kenal kod itu — semak hurufnya dan cuba lagi.",
-  codeNotePlain: "Disimpan — kod itu tiada diskaun.",
   deliveryDays: "Hari pos",
 
   promoLabel: "Ada kod?",

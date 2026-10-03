@@ -60,17 +60,10 @@ function t(key) { return pick(STORE, loadLang(), key); }
 // pause you feel on a phone). Null until render() has run.
 let repaintForLang = null;
 
-// Set from inside render(): repaints the label line and the note under it, which
-// are built from the cart's total and from the published codes rather than from
-// data-i18n words. Called by renderBar, so every basket change repaints them.
-// Null until render() has run.
-let repaintCode = null;
-
-// Set from inside render() too: redraws the promo line and the code box's own
-// line. Needed because the published codes arrive ASYNCHRONOUSLY, after the page
-// has already drawn — the storefront row is fetched once at boot, and a customer
-// looking at the top of the page would otherwise never see the offer. Null until
-// render() has run.
+// Set from inside render() too: redraws the promo line. Needed because the
+// published codes arrive ASYNCHRONOUSLY, after the page has already drawn — the
+// storefront row is fetched once at boot, and a customer looking at the top of
+// the page would otherwise never see the offer. Null until render() has run.
 let repaintPromo = null;
 
 // Fill %1, %2, … placeholders left-to-right.
@@ -220,49 +213,6 @@ export function parseVia(search) {
 function currentVia() {
   return (typeof location !== "undefined" && location.search)
     ? parseVia(location.search) : "";
-}
-
-// The `c` query string (?c=K3X9) is the code on the printed label the customer
-// scanned. Kept as typed (upper-cased) so it matches the code she created; the
-// page then looks it up in the published list. An unknown or retired code simply
-// matches nothing — the shop still works, it just says nothing about an offer.
-export function parseCode(search) {
-  const raw = new URLSearchParams(String(search || "")).get("c");
-  return String(raw || "").trim().toUpperCase();
-}
-
-// The code the printed label's own link carried. Only a page load can set it, so
-// it is read fresh rather than cached.
-export function urlCode() {
-  return (typeof location !== "undefined" && location.search)
-    ? parseCode(location.search) : "";
-}
-
-// What the customer has put in the box themselves, or "" when it is empty. Read
-// as a value of its own rather than as "the code in force": whether the box holds
-// anything is what tells the page the customer did this on purpose — including
-// when they typed the very code the label's link already carried, which is a
-// question and deserves an answer.
-export function boxCode() {
-  const box = (typeof document !== "undefined" && document.getElementById)
-    ? document.getElementById("code-input") : null;
-  return box && box.value != null ? String(box.value).trim().toUpperCase() : "";
-}
-
-// The code in force on this page: what the customer typed in the box, else the
-// label's own code from the link. One reader for the offer line, the note under
-// it and the order stamp, so all three can never disagree. A customer who came in
-// on a label and types nothing keeps that label; typing another code replaces it,
-// and clearing the box and applying puts the label back.
-export function currentCode() {
-  return boxCode() || urlCode();
-}
-
-// The published record for the code in the address bar, or null. Read from the
-// storefront config the app already fetched — the shop never invents a code.
-function codeInfo(cfg, code) {
-  const list = Array.isArray(cfg && cfg.codes) ? cfg.codes : [];
-  return list.find((c) => c && String(c.code || "").toUpperCase() === code) || null;
 }
 
 // The `promo` query string on a printed card's link (?promo=FRESH10) is the code
@@ -753,59 +703,6 @@ export function mergeStorefront(base, remote) {
   if (typeof remote.developerWhatsapp === "string" && remote.developerWhatsapp.trim()) {
     out.developerWhatsapp = remote.developerWhatsapp.trim();
   }
-  // The printed QR labels. Published by the app, but every row is re-checked here
-  // on the shop's own terms rather than trusted: a malformed row is dropped, and
-  // an offer is only kept when it is a real type with a positive amount, so a
-  // half-written record can never put a wrong number in front of a customer.
-  // Replaced wholesale (like occasions) — the app publishes a complete snapshot,
-  // so retiring a code really does take it off a page that is already open.
-  if (Array.isArray(remote.codes)) {
-    const ISO = /^\d{4}-\d{2}-\d{2}$/;
-    const KINDS = ["shop", "promo", "intro", "plain"];
-    out.codes = remote.codes
-      .filter((c) => c && typeof c === "object" && String(c.code || "").trim())
-      .map((c) => {
-        const row = {
-          code: String(c.code).trim().toUpperCase(),
-          kind: KINDS.includes(String(c.kind || "")) ? String(c.kind) : "plain",
-        };
-        // The label's own words for the landing page (heading/body + 中文/BM), and
-        // the two names the shop's banner states. Each is only carried when it was
-        // really written — a blank is what lets /taster/ fall back to its own line.
-        const wordy = ["heading", "body", "headingZh", "bodyZh", "headingMs", "bodyMs"];
-        for (const k of [...wordy, "partnerName", "productName"]) {
-          const v = c && typeof c[k] === "string" && c[k].trim();
-          if (v) row[k] = c[k].trim();
-        }
-        const o = c && c.offer;
-        const type = o && String(o.type || "");
-        const value = o && Number(o.value);
-        if (type && (type === "rm" || type === "pct") && value > 0) {
-          row.offer = {
-            type,
-            value,
-            minSpend: Math.max(0, Number(o.minSpend) || 0),
-            to: o && ISO.test(String(o.to || "")) ? String(o.to) : "",
-            newOnly: !!(o && o.newOnly === true),
-            cur: String((o && o.cur) || "").trim() || "RM",
-          };
-        }
-        return row;
-      });
-  }
-  // The landing page's own copy. Strings only, kept when non-empty, so a blank box
-  // in the app leaves this page's own fallback wording in place rather than
-  // blanking a line a customer is reading.
-  if (remote.taster && typeof remote.taster === "object") {
-    const t = {};
-    for (const k of ["heading", "headingZh", "headingMs", "body", "bodyZh", "bodyMs", "instagram", "shop"]) {
-      const v = remote.taster[k];
-      if (typeof v === "string" && v.trim()) t[k] = v.trim();
-    }
-    if (remote.taster.askPet === false) t.askPet = false;
-    if (remote.taster.follow === false) t.follow = false;
-    out.taster = t;
-  }
   return out;
 }
 
@@ -1192,94 +1089,6 @@ function renderReferralBanner() {
   const box = document.getElementById("referral-banner");
   if (!box) return;
   box.hidden = !currentVia();
-}
-
-// The offer a label still actually carries today, or null. The app publishes an
-// offer only while it was live when she last published it, and a code's start date
-// is deliberately never published — so the one thing this page can check for
-// itself is that the end date has not gone by while the settings sat there. The
-// landing page applies the same rule (taster/app.js offerWords); both the offer
-// line and the note below it read this, so the two can never disagree.
-export function liveCodeOffer(info, today = dateKey(new Date())) {
-  const off = info && info.offer;
-  if (!off) return null;
-  if (off.to && today > off.to) return null;
-  return off;
-}
-
-// A visited label (?c=…) sees what that label offered, in words. It is stated,
-// never applied: the shop does not touch the total. The amount is hers to give
-// when she confirms on WhatsApp and can see the whole order — the same rule the
-// referral line above follows, so the customer is never told one thing by the
-// label and another by the sum. A retired code, or one whose offer has run out,
-// shows nothing at all: the link still opens, the shop just says nothing extra.
-function renderCodeBanner(cfg) {
-  const box = document.getElementById("code-banner");
-  if (!box) return;
-  const code = currentCode();
-  const info = code ? codeInfo(cfg, code) : null;
-  const offer = liveCodeOffer(info);
-  const parts = [];
-  if (offer) {
-    const cur = offer.cur || "RM";
-    const amount = offer.type === "pct"
-      ? `${offer.value}%`
-      : `${cur}${offer.value}`;
-    parts.push(t("codeOff").replace("%1", amount));
-    if (offer.minSpend > 0) parts.push(t("codeMin").replace("%1", `${cur}${offer.minSpend}`));
-    if (offer.newOnly) parts.push(t("codeNew"));
-    if (offer.to) parts.push(t("codeUntil").replace("%1", shortDay(offer.to)));
-  } else if (info && info.partnerName) {
-    // A shop's label with no offer still says where the treat came from.
-    parts.push(t("codeFrom").replace("%1", info.partnerName));
-  }
-  // Blank it as well as hide it: a hidden node that still holds the last code's
-  // offer is one line-change away from showing a customer a sentence about a
-  // label they never scanned.
-  if (!parts.length) { box.textContent = ""; box.hidden = true; return; }
-  box.textContent = `🎁 ${parts.join(" · ")}`;
-  box.hidden = false;
-}
-
-// What happens to the offer the label promises, said under it. Two things are
-// stated and one is worked out, and none of them touches the total: the money
-// comes off by hand at the WhatsApp confirmation, so the customer is never told
-// one thing by the label and another by the sum. The one subtraction the page
-// does make is the shortfall, and it is measured off the bar's own total (never a
-// fresh sum) so this line can never disagree with the number on screen.
-//
-// A code the page cannot use is answered when the customer typed it — they acted
-// and the page owed them an answer — and left silent when it came off a scanned
-// link, where the label is already in someone's hand and the link still opens.
-function renderCodeNote(cfg, total) {
-  const box = document.getElementById("code-note");
-  if (!box) return;
-  const code = currentCode();
-  // Whether the box holds anything, not whether it differs from the link: typing
-  // the label's own code in is still the customer asking, and still deserves the
-  // answer a scanned label does not need.
-  const typed = boxCode() !== "";
-  const say = (text) => {
-    const show = Boolean(text) && typed;
-    box.textContent = show ? text : "";
-    box.hidden = !show;
-  };
-  if (!code) { box.textContent = ""; box.hidden = true; return; }
-  const info = codeInfo(cfg, code);
-  if (!info) { say(t("codeUnknown")); return; }
-  const offer = liveCodeOffer(info);
-  // A label with no live offer: nothing to promise. A shop's label already spoke
-  // through the banner, so only the typed path needs an answer here.
-  if (!offer) { say(info.partnerName ? "" : t("codeNotePlain")); return; }
-  const cur = offer.cur || "RM";
-  const min = Number(offer.minSpend) || 0;
-  if (min > 0 && total < min) {
-    box.textContent = sub(t("codeNoteAdd"), `${cur}${(min - total).toFixed(2)}`);
-    box.hidden = false;
-    return;
-  }
-  box.textContent = t("codeNoteLater");
-  box.hidden = false;
 }
 
 export function render() {
@@ -2172,10 +1981,6 @@ export function render() {
           try {
             Object.assign(CONFIG, mergeStorefront(CONFIG, JSON.parse(cfgText)));
             renderStatic(CONFIG);
-            // The codes live only here — config.js ships none — so this is the
-            // moment a label's offer line and note can first be drawn. Without
-            // this the page showed nothing until something else repainted it.
-            if (repaintCode) repaintCode();
             // The codes arrive with this row, long after the page first drew, so
             // the standing line and any code already in the box are redrawn here
             // rather than waiting for the customer to touch something.
@@ -2251,12 +2056,9 @@ export function render() {
     document.getElementById("order-btn").disabled = count === 0;
     // Every basket change lands here — the stepper, a cart fix, a language
     // switch, an order placed, the boot paint, and the moment the published
-    // config (which is what carries the codes) arrives. So this is the one hook
-    // the label line and the note under it need.
-    if (repaintCode) repaintCode();
-    // The promo lines ride on the same repaint, because the basket is part of
-    // their judgement: a percentage's money moves with the total, and so does
-    // whether a code's minimum is met.
+    // config (which is what carries the codes) arrives. The promo lines ride on
+    // this repaint, because the basket is part of their judgement: a percentage's
+    // money moves with the total, and so does whether a code's minimum is met.
     paintPromo(total);
     return total;
   }
@@ -2355,23 +2157,6 @@ export function render() {
     // came through. You decide (new vs repeat) and apply the discount.
     const via = currentVia();
     if (via) order.referredBy = via;
-    // The label the customer came in on — off its link, or typed in the box —
-    // stamped on the order so the "Shops & codes" screen can count what that one
-    // label brought in, and so the order row can show you which offer was
-    // promised when you come to confirm it. Kept only when the code really is one
-    // the app published: a made-up code must not land in the books as a label that
-    // never existed. The stamp records which label, not which discount — a code
-    // whose offer has since ended still stamps.
-    //
-    // Only the code and its kind travel. The shop behind it is read back from the
-    // code record, so a shop renamed later is named right everywhere, and the
-    // order never carries a second, disagreeing copy of it.
-    const used = currentCode();
-    const usedInfo = used ? codeInfo(CONFIG, used) : null;
-    if (usedInfo) {
-      order.promoCode = usedInfo.code;
-      order.codeKind = usedInfo.kind;
-    }
     // The promo code the customer had ACCEPTED, when they had one. Only an
     // accepted code is ever written — a code the page refused is not recorded,
     // and never stopped the order. Written only when there is one, the same
@@ -2424,10 +2209,6 @@ export function render() {
       document.getElementById("whatsapp-input").value = "";
       document.getElementById("address-input").value = "";
       document.getElementById("note-input").value = "";
-      // Clear the typed code too, so the next customer does not inherit it. A
-      // scanned label's code is in the link, not this box, so it survives.
-      const codeBox = document.getElementById("code-input");
-      if (codeBox) codeBox.value = "";
       // The promo code went ON the order, so it comes off the page — the next customer
       // must not find the last one's discount sitting in the box, already applied
       // and about to be stamped on an order it was never meant for.
@@ -2485,14 +2266,6 @@ export function render() {
     }
   };
 
-  // Assigned before the boot paint below, which is the first call that shows the
-  // customer a total — and therefore the first that can show them the note. The
-  // earlier renderBar() calls (from reconcileCart and rerender) run while this is
-  // still null and skip harmlessly; they run again here.
-  repaintCode = () => {
-    renderCodeBanner(CONFIG);
-    renderCodeNote(CONFIG, basketTotal());
-  };
   // The promo box's own wiring. Bound here rather than beside the state above so
   // the listeners are attached once, after the page has drawn.
   if (promoInput) {
@@ -3261,32 +3034,12 @@ function wireTrack() {
   }
 }
 
-// The "have a code?" box. A label's link carries its code already, so the box is
-// for the customer who was told the code aloud or copied it off a card — it is
-// shown either way, because a customer who did scan a label may still want to see
-// what they are holding. Typing a code replaces the link's code.
-//
-// Applying is a button press or Enter, exactly like the track box above: no
-// keystroke handler (a half-typed code matches nothing and would flicker an
-// error) and no blur handler (tapping a product mid-type must not tell a customer
-// their code is wrong).
-function wireCodeBox() {
-  const input = document.getElementById("code-input");
-  const btn = document.getElementById("code-btn");
-  if (!input || !btn) return;
-  const go = () => { if (repaintCode) repaintCode(); };
-  btn.addEventListener("click", go);
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
-}
-
 render();
 renderReferralBanner();
-renderCodeBanner(CONFIG);
 wireFulfillment();
 wirePin();
 wireLookup();
 wireTrack();
-wireCodeBox();
 
 // ── Site language (EN / 中文 / BM) ────────────────────────────────────────
 

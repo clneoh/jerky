@@ -13,9 +13,6 @@ import { isThumb, lineNoteOf } from "../../storefront-fields.js";
 import { effectiveCapacity, effectiveLimit, isPoolablePack, poolRemaining, totalUnitsOnDate } from "./bom.js";
 import { byId, fmtRM, newId, orderCode, orderLineName, save, stampOrderLine } from "./state.js";
 import { phoneDigits } from "./customers.js";
-// jerky's own label/landing-page publisher shares the name `publishCodes` with
-// the promo-code engine below, so it is aliased here on purpose.
-import { publishCodes as publishLabelCodes, publishTaster } from "./codes.js";
 import { customerTotal } from "./courier.js";
 // The promo-code engine. Only two things are asked of it here: what the shop may
 // advertise and judge (publishCodes), and how a code a customer typed is spelled
@@ -439,11 +436,6 @@ function storefrontPayload(state) {
     // sent, even as an empty list, so deleting her last mark really does take the
     // tints off the shop. publishOccasions drops everything she typed herself.
     occasions: publishOccasions(state.occasions, todayISO()),
-    // The printed QR labels and the page they open. Only the customer-readable
-    // half travels — see publishCodes in js/codes.js / publishTaster for what that is,
-    // and what it deliberately is not (a shop's number, its rate, your notes).
-    codes: publishLabelCodes(state),
-    taster: publishTaster(state),
     // Always sent, even empty, like the occasions above: an emptied tree is an
     // answer ("she deleted her last category"), and it has to take the headings
     // off a page that is already open.
@@ -895,13 +887,6 @@ function importIncoming(state, row) {
       // either way, so a "+" can never split a customer in two.
       whatsapp: phoneDigits(data.whatsapp) || String(data.whatsapp || "").trim(),
       referredBy: String(data.referredBy || "").trim(), // the ?via= link stamp
-      // The label the customer scanned, saved on every row of the order so a
-      // "Shops & codes" card can count what that one label brought in. Without
-      // this line the stamp the shop sends is silently dropped on import, and
-      // every code would report zero forever. `codeKind` rides along so a card
-      // can say what kind of label it was even after she edits the code.
-      promoCode: String(data.promoCode || "").trim().toUpperCase(),
-      codeKind: String(data.codeKind || "").trim(),
       // The promo code the customer typed in the shop (?promo=), or the one the
       // standing today line named and they typed anyway. Spelled the one way the
       // engine recognises it, because this is the string her own app will later
@@ -1036,37 +1021,3 @@ export async function pendingReviewCount(state) {
   }
 }
 
-// Visits to the landing page, newest first. Visits live only in the cloud (the
-// public page may add one and nobody anonymous may read them back), so this is a
-// signed-in read, like the reviews above.
-//
-// Capped at the most recent page of rows on purpose. A visit count is a "roughly
-// how many people saw this label" number, and asking for every row ever would
-// make the screen slower every month for no better answer. The cap is named so
-// the screen can say when it has been reached, rather than quietly under-reporting.
-export const VISIT_LIMIT = 2000;
-
-export async function pullVisits(state) {
-  const c = cfg(state);
-  if (!ready(c)) return { ok: false, reason: "Supabase not configured", rows: [], capped: false };
-  try {
-    const res = await fetch(
-      `${c.url}/rest/v1/taster_visits?select=code,pet,lang,created_at`
-      + `&order=created_at.desc&limit=${VISIT_LIMIT}`,
-      { headers: await reviewAuth(c) });
-    if (!res.ok) {
-      // A missing table is the one failure worth naming: it means the SQL has not
-      // been run yet, which she can fix in a minute and would otherwise read as
-      // "the feature is broken".
-      const reason = res.status === 404 || res.status === 400
-        ? "Visits need the one-time SQL (supabase/taster_visits.sql)"
-        : `Visits failed to load (HTTP ${res.status})`;
-      return { ok: false, reason, rows: [], capped: false };
-    }
-    const rows = await res.json().catch(() => []);
-    const list = Array.isArray(rows) ? rows : [];
-    return { ok: true, rows: list, capped: list.length >= VISIT_LIMIT };
-  } catch (err) {
-    return { ok: false, reason: reviewErr(err, "Couldn't reach Supabase"), rows: [], capped: false };
-  }
-}

@@ -419,283 +419,6 @@ The one shared root module is `availability.js` — the pure sell-day rules
   Products starts it folded to **＋ New product**. Same fold-head/fold-body/outside-tap
   wiring as the ＋ New order card.
 
-## Sales codes & QR labels: shops, promotions, bring-a-friend (built here, no engine bump)
-
-The reseller/sample programme: a shop hands a customer a free sample whose card
-carries a QR, the customer scans it, lands on a branded page, and the order that
-follows is attributed back to that shop. **A QR is deliberately not single-purpose** —
-the same mechanism carries a product promotion and a bring-a-friend introduction, so a
-new idea is a new *code*, not a change to the app. Every printed label also carries a
-tiny human-readable code (`K3X9`) beside the square, so two labels can be told apart by
-eye.
-
-**Built in jerky, so `version.js` does NOT move** — the engine number describes the
-*shared* engine, and the Guide screen promises both apps show the same one. The bakery
-has none of this; `qr.js` and the codes model are business-neutral, so the sync playbook
-could carry it there later (that would be a real engine bump).
-
-### One code, four kinds
-
-`admin/js/codes.js` is the model. `KINDS` are `shop` / `promo` / `intro` / `plain`,
-with `kindOf(c)` defaulting an unlabelled code to `plain`; `CODE_ALPHABET`
-(`23456789ABCDEFGHJKMNPQRSTUVWXYZ` — no `0`/`1`/`I`/`L`/`O`) and `CODE_LENGTH` (5) drive
-`makeCode(state)`, which avoids collisions with codes already in the list. A kind decides
-only what a label *says*; nothing downstream branches on it except the published record.
-
-- `tasterUrl(code, origin)` → `<origin>/taster/?c=CODE`; `shopUrl(code, origin)` →
-  `<origin>/store/?c=CODE`; `labelUrl(code, origin)` is `tasterUrl` **plus**
-  `&via=<waNumber(referrerDigits)>` for an `intro` code only — which is how a
-  bring-a-friend label reuses the existing `?via=` credit engine **unchanged** (it
-  stamps `order.referredBy`, nothing more).
-- `offerLine` / `offerText` / `offerMinText` state an offer in the same words the shop
-  banner uses, so a customer meets one sentence, not two.
-- `codeStats(state, code, today)` counts a code's orders and sales;
-  `codeCustomers(state, code)` lists who it brought. `sheetLabels(state, codes)` builds
-  the printed label sheet.
-- `visitTally(rows)` → `{ total, byCode: Map, pets: {dog, cat, none} }`. A row with no
-  code counts towards the total only, so a page opened without a label is still counted
-  as a visit but is never attributed to a label.
-
-### The encoder
-
-`admin/js/qr.js` is hand-written and dependency-free — house convention: no `package.json`,
-no CDN at runtime. `qrMatrix(text)` returns the boolean matrix (byte mode, ECC M,
-versions 1–10); `qrSvg(matrix, options)` returns a **string**; `qrPngBytes(matrix, options)`
-returns a `Uint8Array`. Both renderers take an options object (`size`, `margin`, `dark`,
-`light`) and are pure — every canvas/blob call sits behind a click handler, so the ~29
-test files that each re-define `createEl` inline are never asked to draw one.
-
-### The screen
-
-`admin/js/views/codes.js` (`#/codes`, More → **🏪 Shops & codes**) has four cards: the
-landing page's own copy (English + 中文 + BM, the products pattern — type English once,
-translate the rest); **Your pages** (one set of words per promotion or activity); the
-**shops** (partner contact, commission rate, samples given); and the **codes**, each with
-a QR preview, a PNG download, the printed label sheet, an "open what the customer sees"
-link and its own counts. Two more sections follow: **Label visits** and, above them all,
-a **📷 Scan a label** button.
-
-**Landing pages: the middle layer.** `state.pages[]` (beside `state.codes`) holds one
-record per activity — `{id, name, heading, headingZh, headingMs, body, bodyZh, bodyMs,
-trOverride, trSrc, createdAt}`, the same six copy keys and the same translation
-provenance a label or a product carries, which is what lets `isOverridden` / `markManual`
-and the whole `copyLine` / `fillAll` / `regenOne` machinery work on a page with no new
-translation code. A label names one with `code.pageId` (`""` = the shared page).
-
-The three layers resolve **at publish time, inside `publishCodes`** — not at render time:
-
-```js
-const out = { code, kind };
-pageLines(pageOf(state, c), out);   // layer 2: the page the label picked
-pageLines(c, out);                  // layer 3: the label's own line wins
-```
-
-so the published shape is unchanged and **neither `/taster/` nor `store/app.js` needed an
-edit** (`pageLines` writes only non-blank keys, so a blank line falls through rather than
-blanking — and `pageId` itself is never published, so the customer's page still sees one
-flat shape). `pageOf(state, code)` returns the page or **null**: a label whose page was
-deleted falls back rather than breaking, which is why `codeDraft` blanks a `pageId` that
-no longer resolves. `pageStats(state, pageId)` counts the labels on a page, shown on the
-row and in the delete confirm. `linesFor(state, code, shared)` is the *base* — `shared`
-with the page laid over it, **not** including the label's own line: it answers "what does
-the page say", which is exactly what an empty box falls back to, so the greyed hint is
-the line a customer would really read and a page's blank line shows the shared page's
-line rather than an empty box.
-
-`pageDraft(page)` is exported and pure for the same reason `codeDraft` is (below). A page
-editor is the same `copyTarget` machinery pointed at a page record; `persist` is again a
-no-op and its `redraw` writes the name box back **before** `refresh()`.
-
-**One label's own words.** The same two lines exist twice — on the shared page, and
-optionally on one label. Both are drawn by one `copyLine(target, en, label, max)` against
-a small **copy target** (`{obj, shared, persist, redraw}`), so the boxes, the translating,
-the `is-mine` mark and the `↻` cannot drift apart between the two places. `obj` is where
-the words live (`settings.taster`, a page, or the code being edited); `shared` is the
-**merged base** (`linesFor(state, draft, t)` — the shared page with the label's page over
-it), shown as the **placeholder** in every empty box so a blank box visibly reads as the
-line a customer will actually get; `persist` keeps what was typed — a **no-op inside the
-code or page pop-up**, whose Save is the only writer; `redraw` repaints whatever holds the
-boxes. `sharedHint(target, key, fallback)` resolves a hint as that base's *same language*
-line, then its English, then the box's own label. Clearing a box calls `markManual` (not
-`markAuto`): on a label a blank box means *"the page says this line"*, which is a
-decision, so `Fill 中文 / BM` must not put a translation back into it.
-
-The code pop-up's group is folded behind a module flag (`codeCopyOpen`, the `copyOpen`
-pattern). Its `redraw` is `() => { keepTyped(); refresh(); }` — **`keepTyped()` first**,
-because `showPopup`'s `refresh()` rebuilds the label and code boxes from `draft`, and
-those two are only synced on a kind change and on save: a refresh without it would revert
-a label she had just typed. `saveIt` deletes a blank copy key from **both** the new row
-and the record it replaces — an assign only adds or overwrites, so a line she deleted
-would otherwise stay on the label and still be published.
-
-**`codeDraft(code, state, t, today)`** builds the working copy the pop-up edits, and it is
-exported and pure because one rule in it is easy to get wrong and invisible when it is.
-A label's `trOverride` is an **array** of variant names, so copying it with an object
-spread hands back `{"0":"headingZh","1":"headingMs"}` — and `isOverridden()` only reads an
-array, so **every box she had typed by hand would quietly read as machine text again and
-the next `Fill 中文 / BM` would overwrite her words**. It copies with
-`Array.isArray(code.trOverride) ? [...code.trOverride] : []`, and copies the offer and
-`trSrc` alongside it, so nothing typed in the pop-up and then abandoned can mark the
-record underneath. `test/codes-draft.test.js` holds the rule (including a record carrying
-the wrong shape, which must not leak through).
-
-Each translated box in the code pop-up also carries a visible **`.qr-trans-lang` tag**
-(`中文` / `BM`). It cannot be inferred from the placeholder: on a label the placeholder is
-the shared page's line for that language, so a line whose shared translation is blank would
-leave the 中文 and BM boxes showing the same English. The same reason the products editor
-prints a `LANG_LABEL`.
-
-The visits card is the only card on the screen that needs Supabase, so it uses the
-Reviews card's shape — `pullVisits(state)` returning `{ ok, reason, rows, capped }`, an
-early return when `!ok` naming the reason plus a **Try again** button, and the unmount
-hook. `VISIT_LIMIT` is 2000 rows; 404/400 means the one-time SQL has not been run.
-`reviewErr(err, fallback)` surfaces a dead host's own `"Failed to fetch"` — deliberately
-matching the Reviews card rather than diverging.
-
-**Scanning** (`openScan`) offers the camera **where the browser supports it** —
-`navigator.mediaDevices.getUserMedia` *and* `"BarcodeDetector" in window`, i.e. Chrome/
-Edge on Android and desktop, **not iPhone Safari**. The typed box is therefore always
-present beside it, never a fallback you have to find. `codeFromScan(raw)` pulls the code
-out of a scanned URL's `?c=` (and accepts a bare `K3X9` if she ever prints one that way).
-The popup has **no on-close hook** (`ui.js`'s `showPopup` draws its own ✕), so the camera
-loop detects its own teardown by polling `video.isConnected`.
-
-### The landing page
-
-`taster/` is a standalone page (`index.html`, `app.js`, `app.css`, plus the root
-`taster-lang.js` for its fixed chrome). It reads `?c=` and `?via=`, paints from its own
-fallback copy, then `loadPublished()` fetches the **same `storefront_config` row the shop
-reads** and merges `remote.taster` / `remote.codes` in — so the words are hers to change
-on the Shops & codes screen with no redeploy. It states the label's offer (`offerWords`,
-hidden once `to` has passed), asks dog-or-cat, records the visit, and links on to
-`/store/?c=CODE` (via `storeLink`, which keeps both stamps). Its stylesheet is
-self-contained but reads the store's tokens, so the two pages look like one business.
-`app.css` is mobile-first: the page is almost always opened by a phone pointed at a square.
-
-`codeCopy(shared, info)` is what makes a label's own words work: it lays the label's
-non-blank `heading`/`body` (+`Zh`/`Ms`) over the shared copy and hands the result to the
-same `copyFor`, so **each language falls back on its own** — a label that wrote only an
-English heading still reads the shared page's Chinese line for that heading, rather than
-blanking it or mixing languages. It is pure and returns a fresh object, so the shared copy
-is never written through. A label with nothing of its own is therefore byte-identical to
-the shared page.
-
-Both halves of the published payload are built by `publishTaster(state)` and
-`publishCodes(state, today)` in `admin/js/codes.js`, which share one private `pageLines(src,
-out)` — **the same shape in both places is the whole mechanism**, because it is what lets
-`codeCopy` treat an absent key as "the shared page says it". **Both are deliberately
-narrow** — a customer may see a code, what it offers, the shop's *name* and those two
-lines, never its WhatsApp number, commission or notes.
-
-### The order chain
-
-`store/app.js` gains `parseCode`/`currentCode`/`codeInfo` beside the existing `?via=`
-pair, `renderCodeBanner(cfg)` (a `#code-banner` in `store/index.html` beside the referral
-banner, which **blanks as well as hides** so a stale code's words cannot linger), and the
-stamp at order build: `order.promoCode` + `order.codeKind`, **only when the code really
-is one the app published** — a made-up `?c=` must not land in the books as a label that
-never existed. Only the code and its kind travel; the shop behind it is read back from
-the record, so a renamed shop is named right everywhere.
-
-`admin/js/supabase.js`'s `importIncoming` then carries `promoCode` and `codeKind`
-**through the whitelist** — without that the stamp is silently dropped and every code
-would report zero forever. **No SQL is needed for the stamp**: `incoming_orders` is
-`(id, data text, status, created_at)`, so the whole order rides as one JSON blob and a
-new field costs nothing (`referredBy` works the same way).
-
-### The one SQL she runs
-
-`supabase/taster_visits.sql` — one small table (`code` ≤16 chars, `pet` in `''`/`dog`/
-`cat`, `lang` in `en`/`zh`/`ms`) with **RLS on, an anon INSERT policy only and an
-authenticated SELECT policy only**. That asymmetry is the whole privacy story: the public
-page can add a visit and nobody anonymous can read one back, while the admin sends a
-Bearer token (`reviewAuth`) and sees the counts. Until she runs it, labels print and scan
-normally and only the counts are missing — the card says so instead of going blank.
-
-### State & sync
-
-`state.partners[]`, `state.codes[]` and `state.pages[]` are new lists (all three in
-`sync.js`'s `LISTS` so her two phones agree — a label points at a page by id, so the page
-has to exist on both phones or the label silently reads the shared page on the one that
-never got it), and `state.settings.taster` rides the `recordPayload("settings")`
-whitelist with the same gated spread the `tasks` entry uses. **All of them must be in
-`state.js`'s `normalize()` or they are dropped on load.** `isNewCustomer(state, group)`
-generalises `referralFlag` — "new" is the same thing she described: a WhatsApp number
-that has never bought before — and backs every code marked `newOnly`.
-
-**The money stays hers, deliberately.** The shop never computes a discount: it freezes
-`lines[].price` and the admin stamps it as `unitPrice`, which Money and Profit read. A
-silent storefront discount would rewrite recorded revenue and profit. So the landing page
-and the shop banner *state* the offer and the admin *tells her what to apply* when she
-confirms on WhatsApp — exactly how the existing referral credit works.
-
-### A customer puts the code in themselves
-
-`#code-section` in `store/index.html` is a **"Have a code?"** box on every visit, even to
-a customer who arrived on a label's own link. `currentCode()` splits into two readers:
-
-```js
-export function boxCode() {          // what the customer typed, or ""
-  const box = document.getElementById("code-input");
-  return box && box.value != null ? String(box.value).trim().toUpperCase() : "";
-}
-export function urlCode() {          // what the printed label's link carried
-  return location.search ? parseCode(location.search) : "";
-}
-export function currentCode() { return boxCode() || urlCode(); }
-```
-
-**Box wins over URL**, so typing *replaces* the label's code and clearing the box and
-pressing Apply puts it back. The three readers — the banner, the note and the order stamp —
-all go through `currentCode()`, so they can never disagree.
-
-The distinction that matters is **whether the box holds anything**, not whether it differs
-from the link: `renderCodeNote`'s `typed` test is `boxCode() !== ""`. Typing the label's own
-code in is still the customer asking a question, and still deserves the answer a silent
-scan does not need. A code the app never published stays silent when it came from the link
-(the label is already in someone's hand) and is answered when it was typed —
-`codeUnknown`. The stamp keeps its `if (usedInfo)` gate, so a made-up code still lands
-nowhere.
-
-`wireCodeBox()` copies `wireTrack()` exactly: click handler plus Enter on the box, and
-**deliberately no `input` or `blur` handler** — a half-typed code matches nothing, and a
-customer half-way through typing must not be told they are wrong because they tapped a
-product.
-
-### The note under the offer
-
-`liveCodeOffer(info, today)` is shared by the banner and the note, so an offer that has run
-out goes quiet in both. `renderCodeNote(cfg, total)` then says one of four things, and takes
-`total` from `renderBar`'s own hoisted `basketTotal()` — never a fresh sum, so the note can
-never contradict the number on screen. The note prints the **offer** and the **shortfall**
-(`codeNoteAdd`, the only subtraction the page ever makes) and never the computed discount: a
-"RM2.20 off" the customer read would be a figure she then has to honour on a basket they may
-still edit. `newOnly` is restated nowhere here — the shop cannot check it and must not imply
-that it did.
-
-### What the order tells her
-
-`promoOf(state, group, today, total)` in `admin/js/codes.js` is the pure resolver behind the
-🎟 line; `promoBlockEl` in `admin/js/views/orders.js` renders it, on the order row **and**
-in the Edit pop-up. Two design points carry it:
-
-- **The code is resolved live through `findCode`**, never denormalised onto the order — an
-  order carries only `promoCode` + `codeKind`, so a label renamed later reads right here and a
-  code she has since deleted still leaves the kind the order recorded. The name is the label's
-  own (`codeLabel` — her label, else the code): a code record keeps only the *ids* of the shop
-  and product it was made for, whose names are written onto the published payload for the
-  customer's page and never stored, so naming them from here would read a shape the app does
-  not write.
-- **`overMin` and `newCustomer` read `true` when they do not apply**, so the view only ever
-  tests for a *warning*. `newCustomer` is the whole reason validation splits: "new customers
-  only" needs every other order in the book, which only the admin has. A number-less order
-  gets no verdict at all (`keyable`) rather than the wrong one — a warning she cannot act on
-  is worse than none.
-
-The pop-up passes `paintTotal`'s own sum as the fourth argument, which is why `total` exists:
-mid-edit, a minimum warning measured off the saved items would disagree with the "Order
-total:" line directly above it, and it tracks a `+`/`−` tap live.
-
 ## The cut-off time, in words (21 Sep 2026, no engine bump)
 
 The order page's info card read **"Order by 18:00 the day before"**. It now reads
@@ -2259,14 +1982,6 @@ write it**, and **Cloud backups** stores dated snapshot copies under the same
 row-level security (signed-in bakers only). Backup files and the app login
 password are stored in the app's local storage on her phone.
 
-**Sales codes** publish the narrow half of a label to the storefront config: the
-code, its kind, the offer and the shop's **name** — never a shop's WhatsApp number,
-its commission rate or her notes about it. **Label visits** (`taster_visits`) are
-deliberately one-way: **anon may INSERT and nothing else**, and only an authenticated
-read returns rows — so a customer's page can add a visit and nobody anonymous can read
-one back, while her own phones (which send a Bearer token) see the counts. The landing
-page holds no account and no cookie; it records only the code, the pet and the language.
-
 ## Tests
 
 ```bash
@@ -2314,10 +2029,6 @@ store/lookup.js     address lookup — asks her own Supabase function, never a p
 store/pin_map.js    the map the customer drops a pin on (customer's own door as a point)
 storefront-fields.js  the shared field whitelist both publish paths import (root module)
 store-lang.js       order-page dictionary (en / zh / ms)
-taster-lang.js      landing-page dictionary (en / zh / ms) — its heading/body come from the shared copy instead
-taster/index.html   the page a printed label's QR opens (/taster/?c=CODE)
-taster/app.js       landing page: ?c= / ?via=, published copy, the offer, dog-or-cat, the visit
-taster/app.css      landing-page styling (self-contained; reads the store's tokens)
 
 admin/ — backoffice app (/admin/):
   index.html          entry (bottom nav shell)
@@ -2326,9 +2037,6 @@ admin/ — backoffice app (/admin/):
   js/state.js         schema, localStorage load/save, ids, formatting, order-line snapshot
   js/dates.js         posting dates, cut-off, countdown (pure)
   js/qr.js            QR encoder — matrix / SVG string / PNG bytes, no DOM, no deps (pure)
-  js/codes.js         sales codes: kinds, makeCode, the URLs, the offer sentence,
-                      the landing-page layer (pageOf / pageStats / linesFor),
-                      the published half (publishCodes / publishTaster), visitTally (pure)
   js/money.js         what came in — cash / TNG / still to collect (pure)
   js/courier.js       the courier charge, who bore it, and the customer's total —
                       the flat postage it replaces, the COD split, apply / clear (pure)
@@ -2372,7 +2080,6 @@ supabase/storefront.sql     run once in Supabase SQL editor (storefront config +
 supabase/reviews.sql        run once in Supabase SQL editor (homepage reviews + photo bucket)
 supabase/tracking.sql       run once in Supabase SQL editor (order tracking)
 supabase/track_no.sql       run once — adds order_tracking.tracking_no (v97; folded into tracking.sql)
-supabase/taster_visits.sql  run once — one table for label visits; anon INSERT only, authenticated SELECT only
 supabase/courier_fee.sql    run once — adds order_tracking.courier_fee (v124; see courier_cod.sql)
 supabase/courier_cod.sql    run once — adds order_tracking.courier_cod (v124)
 supabase/courier_job.sql    run once — the table behind booking a courier job from the app

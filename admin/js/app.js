@@ -25,7 +25,6 @@ import { renderReviews } from "./views/reviews.js";
 import { renderMore } from "./views/more.js";
 import { renderMoney } from "./views/money.js";
 import { renderProfit } from "./views/profit.js";
-import { renderCodes } from "./views/codes.js";
 import { renderGuide } from "./views/guide.js";
 import { renderProduction } from "./views/production.js";
 import { renderDeliveryRun } from "./views/delivery_run.js";
@@ -59,7 +58,6 @@ const routes = {
   "/run":       { title: "Delivery run", tab: "more", render: renderDeliveryRun },
   "/money":     { title: "Money",      tab: "more",      render: renderMoney },
   "/profit":    { title: "Profit",     tab: "more",      render: renderProfit },
-  "/codes":     { title: "Shops & codes", tab: "more",    render: renderCodes },
   "/production":{ title: "Production line", tab: "more", render: renderProduction },
   "/scenario":  { title: "Scenario planner", tab: "more", render: renderScenario },
   "/units":     { title: "Units",      tab: "more",      render: renderUnits },

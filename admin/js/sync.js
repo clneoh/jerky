@@ -43,9 +43,6 @@ const LISTS = {
   // prints and hands out works on the phone that made it and nowhere else.
   promoCodes: "promoCodes",
   customers: "customers", // customer profiles (pet name/photo, likes, notes)
-  partners: "partners", // the shops you hand samples to — a shop added on one phone must exist on the other
-  codes: "codes", // printed QR labels — the label you print on one phone must be readable on the other
-  pages: "pages", // landing pages — a page a label points at has to exist on the other phone too
 };
 const SETTINGS_KEY = "settings:default";
 
@@ -109,18 +106,14 @@ export function sharingState(state, signedIn) {
 // `storefront` is absent too, but not by oversight: it reaches the customer page
 // through its own publish path, not through this row.
 //
-// This app adds three guarded keys of its own to the same rule, all carried only
-// once this phone has an opinion: `taster` (the landing-page words, guarded by
-// tasterSet below), `postageRM` (the flat nationwide-post fee, guarded by the
-// phone's own `storefront.postageSet` flag — a phone still sitting at the default
-// must not overwrite what she set on the other phone) and `postageMode` (whether
-// posted orders carry that fee at all or are quoted by courier, guarded by its own
-// `storefront.postageModeSet` — a phone that has never touched the switch must not
-// push its default "flat" over "quote" chosen on the other phone). Its lists — including the
-// shops, the printed QR labels and the landing pages a label points at — ride
-// LISTS below, which is load-bearing rather than tidiness: a label points at a
-// page by id, so a page missing on this phone would silently make every label on
-// it read the shared page's words instead.
+// This app adds two guarded keys of its own to the same rule, all carried only
+// once this phone has an opinion: `postageRM` (the flat nationwide-post fee,
+// guarded by the phone's own `storefront.postageSet` flag — a phone still sitting
+// at the default must not overwrite what she set on the other phone) and
+// `postageMode` (whether posted orders carry that fee at all or are quoted by
+// courier, guarded by its own `storefront.postageModeSet` — a phone that has never
+// touched the switch must not push its default "flat" over "quote" chosen on the
+// other phone). Its lists ride LISTS below.
 // Developer contact helpers for the settings record: whether it has been set at
 // all, and the trimmed {name, emails} shape the cloud should carry.
 function devOf(rec) {
@@ -131,24 +124,6 @@ function devSet(rec) {
   return Boolean(String(d.name || "").trim())
     || (Array.isArray(d.emails) && d.emails.some((e) => String(e).trim()))
     || Boolean(String(d.whatsapp || "").trim());
-}
-// The landing-page copy is only worth pushing once she has actually changed it.
-// Same guard as the developer credit: a phone sitting on the factory defaults
-// must not push them over the customised copy she typed on the other phone.
-function tasterOf(rec) {
-  return (rec.taster && typeof rec.taster === "object") ? rec.taster : {};
-}
-function tasterSet(rec) {
-  const t = tasterOf(rec);
-  for (const k of ["heading", "headingZh", "headingMs", "body", "bodyZh", "bodyMs"]) {
-    if (String(t[k] || "").trim()) return true;
-  }
-  const on = (v) => v !== false; // askPet / follow default to on
-  return !on(t.askPet) || !on(t.follow)
-    || String(t.offerType || "rm") !== "rm"
-    || Number(t.offerValue ?? 5) !== 5
-    || Number(t.offerMin ?? 30) !== 30
-    || Number(t.validDays ?? 30) !== 30;
 }
 // The board's acknowledgement ticks — the green coaches on /production — are the
 // one guarded key that is an OBJECT rather than a list, so it needs a helper of
@@ -274,9 +249,6 @@ function recordPayload(kind, rec) {
       // is typed — a phone that never set it must not push an empty one over
       // the other phone's (last-write-wins would clobber it).
       ...(devSet(rec) ? { developer: cleanDeveloperForSync(rec.developer) } : {}),
-      // The taster landing-page copy and its default offer, only once she has
-      // changed something — same guard again, because this merges wholesale.
-      ...(tasterSet(rec) ? { taster: tasterOf(rec) } : {}),
       // Where the courier collects from (25 Sep 2026), only once the bakery's pin
       // is on the map — the same guard as the developer above and for the same
       // reason: a phone that has never pinned it must not push a null over the pin

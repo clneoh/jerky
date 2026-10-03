@@ -33,7 +33,6 @@ export function renderMore(root, state) {
     menuItem("#/units", "📐 Units", "g, kg, L — how packs compare"),
     menuItem("#/product-categories", "🗂 Categories", "The headings your shop lists products under"),
     menuItem("#/reviews", "⭐ Reviews", "Approve & remove homepage reviews"),
-    menuItem("#/codes", "🏬 Shops & codes", "Sample shops, printed QR labels and offers"),
     menuItem("#/promo", "🎟 Promo codes", "Codes your customers type in the shop"),
     menuItem("#/settings", "⚙️ Settings", "Defaults, backup, transfer"));
 

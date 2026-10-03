@@ -4,6 +4,31 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**3 Oct 2026 — no new engine (still v281), THE "SHOPS & CODES" SCREEN IS RETIRED (nothing to run,
+nothing to upload — pushing this one is the whole of it).**
+
+**Why.** The More menu carried two code screens side by side — **Shops & codes** (the pet shops you
+hand samples to, the printed QR labels, the page a scan opened, and the scan counts) and **Promo
+codes** (the codes a customer types at the shop). You said the promo code was meant to replace the
+other and only one should survive. That is now so: **Promo codes stays exactly as it is; Shops &
+codes is gone.**
+
+**What went.** The **Shops & codes** screen; the pet-shop sample list; the printed QR labels and the
+page a scan opened (the whole stand-alone landing page); the **Label visits** counts; the "Scan a
+label" camera; and the line an order carried when a customer had arrived by scanning a card. The
+shop page no longer states a scanned label's offer, because there are no labels any more. An order
+the customer typed a **promo** code onto is untouched by any of this.
+
+**What stayed, and it is the part that matters.** Everything on **Promo codes**: making a code,
+what it gives, whether the shop may show it, pausing and ending it, the printed promo card with its
+QR, the "Have a code?" box on the shop, and the code coming off the total. Bring-a-friend, the
+delivery calendar, and every order's own record are untouched too — only the label/QR-label side
+has gone.
+
+**What you must do.** Nothing but push. There is no SQL to paste, no Edge Function to upload and
+nothing to change on the phones. You confirmed no QR labels are out with any shop, so no card in
+anyone's hand breaks — the addresses those labels used to open are simply gone.
+
 **3 Oct 2026 — engine v281, THE STATEMENT SAYS WHAT KIND OF COST IT IS SHOWING (no database step,
 nothing to upload — pushing this one is the whole of it).**
 
