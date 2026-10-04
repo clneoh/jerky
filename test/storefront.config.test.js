@@ -29,6 +29,12 @@ globalThis.document = {
   querySelector: () => null,
   querySelectorAll: () => [],
   body: createEl("body"),
+  // The REAL document has these. A shim without them is not a smaller DOM, it is a
+  // different one: the shop registers a visibilitychange listener at start-up (v292),
+  // and a missing method is a TypeError at import — every store test dies at once.
+  _docListeners: {},
+  addEventListener(t, f) { (this._docListeners[t] ||= []).push(f); },
+  removeEventListener() {},
 };
 globalThis.window = { open() {} };
 const realFetch = globalThis.fetch;
@@ -80,7 +86,8 @@ globalThis.fetch = async (url) => {
   return { ok: true, json: async () => [] }; // availability + product_availability
 };
 
-const { mergeStorefront, placeOrder } = await import("../store/app.js");
+const { mergeStorefront, placeOrder, labelOpenToCount, labelOpenCounter, postLabelOpen } =
+  await import("../store/app.js");
 const { CONFIG } = await import("../store/config.js");
 
 const settle = async () => {
@@ -444,5 +451,95 @@ test("mergeStorefront adopts a product's thumbnail, dropping junk and anything o
   for (const bad of ["Blanks", "NotAnImage", "WrongType", "Huge", "Absent"]) {
     assert.equal("thumb" in by(bad), false,
       `${bad}: the shop drops it rather than drawing a broken or heavy image`);
+  }
+});
+
+// ── v288: counting a label being opened ─────────────────────────────────────
+//
+// A label's QR and the link she copies into WhatsApp both land on ?promo=CODE, and this is
+// how many times that happened. Her reason, in her own words elsewhere: she can already see
+// what a code SOLD, and a label nobody picked up and a label that was read forty times are
+// different problems needing different answers.
+//
+// The first test here is the one that would have shipped as a bug.
+
+test("a page counts its label ONCE, however often the shop re-fetches (v288)", () => {
+  // `refresh()` runs again every 30 seconds while the page is open. Without the latch, one
+  // customer leaving the shop open would mint a visit every half minute, and a label that
+  // sold nothing would read as a triumph. This is the whole reason the counter is a factory
+  // with its own memory rather than a bare function.
+  const posts = [];
+  const count = labelOpenCounter((code, cfg) => posts.push({ code, cfg }));
+  const cfg = { url: "https://x.supabase.co", anonKey: "anon" };
+  const codes = [{ code: "FRESH10" }];
+
+  assert.equal(count("?promo=FRESH10", codes, cfg), "FRESH10", "the first load counts it");
+  assert.deepEqual(posts.map((p) => p.code), ["FRESH10"]);
+  for (let i = 0; i < 5; i += 1) count("?promo=FRESH10", codes, cfg);
+  assert.equal(posts.length, 1, "and twenty-nine more refreshes count nothing — five here");
+});
+
+test("a label is counted only when the shop actually accepts the code", () => {
+  const posts = [];
+  const count = labelOpenCounter((code) => posts.push(code));
+  const cfg = { url: "https://x.supabase.co", anonKey: "anon" };
+  const codes = [{ code: "FRESH10" }];
+
+  assert.equal(count("", codes, cfg), "", "no ?promo= at all is an ordinary visit");
+  assert.equal(count("?promo=NOTACODE", codes, cfg), "",
+    "a code this shop does not carry is not counted — a typo or a guess must not reach her numbers");
+  assert.equal(count("?promo=fresh10", codes, cfg), "FRESH10",
+    "the code is matched the way the shop matches it: case folded, whitespace gone");
+  assert.deepEqual(posts, ["FRESH10"], "and only that one was ever sent");
+});
+
+test("nothing is sent when Supabase is not configured", () => {
+  const posts = [];
+  const count = labelOpenCounter((code) => posts.push(code));
+  const codes = [{ code: "FRESH10" }];
+  assert.equal(count("?promo=FRESH10", codes, { url: "", anonKey: "" }), "");
+  assert.equal(count("?promo=FRESH10", codes, { url: "https://x.supabase.co", anonKey: "" }), "");
+  assert.equal(count("?promo=FRESH10", codes, null), "");
+  assert.deepEqual(posts, [], "the shop simply has nowhere to write it");
+});
+
+test("the judgement itself is pure, so the latch can never hide a bad code", () => {
+  // The counter answers "" both for "already counted" and for "not this shop's code", and a
+  // test that only ever asked the counter could not tell those apart. This asks the rule.
+  const cfg = { url: "https://x.supabase.co", anonKey: "anon" };
+  assert.equal(labelOpenToCount("?promo=FRESH10", [{ code: "FRESH10" }], cfg), "FRESH10");
+  assert.equal(labelOpenToCount("?promo=FRESH10", [{ code: "OTHER" }], cfg), "");
+});
+
+test("an open is POSTed to promo_visits with the code alone, and never throws", async () => {
+  let call = null;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => { call = { url, opts }; return { ok: true }; };
+  try {
+    await postLabelOpen("FRESH10", { url: "https://x.supabase.co/", anonKey: "anon" });
+    assert.ok(call.url.startsWith("https://x.supabase.co/rest/v1/promo_visits"), call.url);
+    assert.equal(call.opts.method, "POST");
+    assert.equal(call.opts.headers.apikey, "anon");
+    // INSERT-only RLS: asking for the row back would be a read, and reading is not granted.
+    assert.equal(call.opts.headers.Prefer, "return=minimal");
+    assert.deepEqual(JSON.parse(call.opts.body), [{ code: "FRESH10" }],
+      "the code and nothing else — no phone, no address, nothing about the customer");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("a visit that cannot be recorded is swallowed, never thrown into the page", async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("offline"); };
+  try {
+    await postLabelOpen("FRESH10", { url: "https://x.supabase.co", anonKey: "anon" });
+    let rejected = false;
+    try {
+      await postLabelOpen("FRESH10", { url: "not a url at all", anonKey: "anon" });
+    } catch { rejected = true; }
+    assert.equal(rejected, false, "even a nonsense address resolves rather than rejecting");
+  } finally {
+    globalThis.fetch = realFetch;
   }
 });

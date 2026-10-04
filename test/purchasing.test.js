@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import {
   toBaseQty, chosenSupplier, priceItems, groupItemsBySupplier,
   priceEntryLabels, buildSupplierOrderText, fmtStockAmount, belowReserve,
-  notPurchasedNames,
+  notPurchasedNames, amendItem, newBuyLine,
 } from "../admin/js/purchasing.js";
 
 const UOMS = [
@@ -103,6 +103,15 @@ test("priceItems rounds a priced ingredient up to whole packs with pack-based co
   assert.equal(it.estCost, 50);
   assert.equal(it.supplier, "Mydin");
   assert.equal(it.supplierWhatsapp, "6012345678");
+  // v285: the line keeps the PRICE it priced at, not only the total that price produced.
+  // Without these a saved list could not say what it had cost per pack — which is what made
+  // "I need the PO to be amendable" impossible: there was nothing on the line to correct.
+  assert.equal(it.packPrice, 25, "the pack price itself is kept");
+  assert.equal(it.packQty, 4000, "with the pack size the list buys");
+  assert.equal(it.packUomId, "g");
+  assert.equal(it.packUomName, "g");
+  assert.equal(it.cookBase, 1);
+  assert.notEqual(it.loose, true, "a supplier line is not a loose estimate");
 });
 
 test("pack math runs ONCE on the combined total of several days, never per day", () => {
@@ -136,6 +145,93 @@ test("an ingredient without a supplier price stays loose at its unit cost", () =
   assert.equal(it.buyText, null);
   assert.equal(it.estCost, 40.8);
   assert.equal(it.needText, "6800g");
+  // v285: a loose line says so, and carries a price the amend card can show — per COOKING
+  // unit, which is a different kind of number from a pack price. The amend card labels the
+  // two differently rather than pretending they are the same thing.
+  assert.equal(it.loose, true);
+  assert.equal(it.packPrice, 0.006);
+  assert.equal(it.packs, 6800, "its amount is in cooking units, not packs");
+});
+
+// ── v285: correcting a line at the shop ─────────────────────────────────────
+// "same supplier price change and we decide to buy more, i would like to change the price
+// and the qty." amendItem is that correction, and it is pure so it runs here.
+
+function priced() {
+  const st = makeState([ingredient({
+    supplierPrices: [{ supplierId: "s_mydin", qty: 4000, uomId: "g", price: 25 }],
+  })]);
+  return [st, priceItems(st, [bomItem({ ingredientId: "ing_f", totalQty: 6800, unit: "g" })])[0]];
+}
+
+test("amendItem re-prices a line from the shelf and everything derived follows it", () => {
+  const [st, it] = priced();
+  const at = amendItem(st, it, { packs: 3, packPrice: 27.5 });
+  assert.equal(at.packs, 3);
+  assert.equal(at.packPrice, 27.5);
+  assert.equal(at.estCost, 82.5, "3 × RM 27.50, NOT the price it was generated at");
+  assert.equal(at.addBase, 12000, "stock still lands as whole packs of the same size");
+  assert.equal(at.buyText, "3 × 4000g", "and the row she reads says the same three packs");
+});
+
+test("amendItem takes a line down to nothing without leaving a broken row behind", () => {
+  const [st, it] = priced();
+  const none = amendItem(st, it, { packs: 0, packPrice: 25 });
+  assert.equal(none.estCost, 0);
+  assert.equal(none.addBase, 0, "nothing bought means nothing added to stock");
+  assert.equal(none.buyText, "0 × 4000g", "it reads as zero packs, not as a missing value");
+});
+
+test("amendItem never touches the pack GEOMETRY — only how many and what each cost", () => {
+  // The list buys the pack it chose at generate time. Correcting the count must not quietly
+  // change which pack is bought, or the stock that lands would stop matching the pack price
+  // she was just quoted.
+  const [st, it] = priced();
+  const at = amendItem(st, it, { packs: 2, packPrice: 25 });
+  assert.equal(at.packQty, 4000);
+  assert.equal(at.packUomId, "g");
+  assert.equal(at.addBase, 8000);
+});
+
+test("amendItem on a loose line counts cooking units, not packs", () => {
+  const st = makeState([ingredient({ costPerUnit: 0.006, supplierPrices: [] })]);
+  const it = priceItems(st, [bomItem({ ingredientId: "ing_f", totalQty: 6800, unit: "g", costPerUnit: 0.006 })])[0];
+  const at = amendItem(st, it, { packs: 9000, packPrice: 0.007 });
+  assert.equal(at.addBase, 9000, "9,000 g goes on the shelf");
+  assert.equal(at.estCost, 63, "9,000 g × RM 0.007");
+  assert.equal(at.buyText, "9000g");
+});
+
+test("amendItem refuses a garbage number rather than poisoning the line", () => {
+  const [st, it] = priced();
+  const junk = amendItem(st, it, { packs: Number.NaN, packPrice: "abc" });
+  assert.equal(junk.packs, 0);
+  assert.equal(junk.packPrice, 0);
+  assert.equal(junk.estCost, 0);
+});
+
+test("a line added by hand comes in as one pack at the supplier's own price", () => {
+  const st = makeState([ingredient({
+    supplierPrices: [{ supplierId: "s_mydin", qty: 4000, uomId: "g", price: 25 }],
+  })]);
+  const line = newBuyLine(st, st.ingredients[0]);
+  assert.equal(line.packs, 1);
+  assert.equal(line.packPrice, 25, "priced from chosenSupplier, not typed by hand");
+  assert.equal(line.estCost, 25);
+  assert.equal(line.addBase, 4000);
+  assert.equal(line.supplier, "Mydin");
+  assert.equal(line.totalQty, 0, "it answers no recipe need — she simply bought it");
+});
+
+test("a hand-added ingredient with no supplier price comes in loose, not broken", () => {
+  const st = makeState([ingredient({ costPerUnit: 0.006, supplierPrices: [] })]);
+  const line = newBuyLine(st, st.ingredients[0]);
+  assert.equal(line.loose, true);
+  assert.equal(line.packPrice, 0.006, "the fallback cost, unrounded — it is a RATE, not money");
+  // The line total IS money, so it rounds to the cent like every other figure in this app.
+  const more = amendItem(st, line, { packs: 1000, packPrice: 0.006 });
+  assert.equal(more.estCost, 6, "1,000 g × RM 0.006");
+  assert.equal(more.addBase, 1000);
 });
 
 test("groupItemsBySupplier orders suppliers alphabetically with no-supplier last", () => {

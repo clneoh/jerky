@@ -1,8 +1,773 @@
-# Munchies Furkidz — change history (v54 → v281)
+# Munchies Furkidz — change history (v54 → v297)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**04 Oct 2026 — engine v297, THE OFFERS REALLY FLIP, WITH DOTS, AND A CLICK NO LONGER
+FREEZES THEM (no database step, nothing to upload — pushing this one is the whole of it).**
+
+**Why.** Three things in one message, and the third was a fault of mine. Her words:
+__"I dont like the flip, the flip should be 3D flip, and also i came with a flaw, once we put mouse
+over it or click it, the flip stop, there should be 2 dot if there is 2 message, 3 dot if 3
+message. move the mouse outside the window, the flip should be back"__
+
+**1 — The flip is properly 3D now.** v296 turned both panels through the **same** arc — the old one
+out one way, the new one in from where it had just left — which mirrors them the whole time and
+reads as a vertical **squash**. Now the offer being replaced tips **away over the top** while the
+next rises from **below**. Two panels turning through opposite arcs is a card turning over; that
+one difference is the whole of it.
+
+**2 — One dot per offer.** Two messages, two dots; three messages, three dots; **one message, no
+dots at all** — the same rule that already leaves the turn unarmed, because one offer is a
+statement. Pressing a dot goes straight to that offer, and **does not stop the turn**.
+
+**3 — The flaw you found, and it was mine.** v292 paused the flip for **twenty seconds on any
+click**. It was meant as the only pause a phone had, but it was a **clock, not the pointer** — so
+clicking the strip trapped it for twenty seconds, and moving the mouse away could not release it.
+That is exactly the symptom you described. **The pointer being over the strip is now the whole of
+the pause**, so moving the mouse out — of the strip, or out of the window entirely — always starts
+it again.
+
+**4 — I read your own design skill, which I should have done before touching this, and it caught
+four things I had wrong:**
+
+- **The dots were 22 pixels across. WCAG 2.5.8's floor is 24.** They are 28 now — the dot you see
+  is still the same size as the ones on your homepage, and it is the button around it that carries
+  the size.
+- **They had no focus ring**, so anyone tabbing to them could not see where they were. They have
+  one.
+- **The turn used the same easing both ways.** Your skill says __ease-out coming in, ease-in going
+  out__ — that is what it does now, and it is the difference between a turn that settles and one
+  that just stops.
+- **The turn was 420 milliseconds**, just outside the 250–400 band your skill names for a change
+  like this. It is **380** now.
+
+**One thing I did NOT change, and it is yours to call.** Your skill asks for body text to be pushed
+toward **7:1 contrast** because your customers read it on a phone in Malaysian daylight. The offer
+line sits at **5.3:1** — comfortably past the 4.5:1 that is required, but short of that goal.
+Getting to 7:1 means darkening the amber text noticeably, which is a change to how the strip
+looks. Say the word and it is one line.
+
+**What I could not check from here, said plainly.** The preview pane was off-screen the whole time,
+and **a hidden page does not run animations at all** — so I could verify __where__ each panel ends up
+(it is the opposite side, which is the 3D fact) but **I could not watch the turn itself**. Please
+look at it on your phone. Everything else was measured: the strip holds **169.4 pixels** and the
+page below it **380.1**, identical on every single turn, so the dots have not brought the jumping
+back.
+
+**Your data is untouched, and there is nothing to run.** No database step, no upload, no key. The
+shop's page and nothing else. The suite is 2,635 tests, all green. Proved live on the real shop
+page at a phone width: **26 checks**, including that a click no longer freezes the turn, that a
+pointer leaving the window starts it again, that pressing a dot goes to that offer without
+stopping the turn, and that the two panels sit on opposite sides.
+
+**04 Oct 2026 — engine v296, THE OFFERS FLIP RATHER THAN FADE (no database step, nothing
+to upload — pushing this one is the whole of it).**
+
+**Why.** Your question, straight after v295 landed: __"can the flip be an animation"__.
+Until now the offers cross-faded into each other. Now they actually **turn**.
+
+**What you see.** Each offer is a panel that **turns a quarter-turn into place**: the one
+leaving tips away from you while the next swings up to face you. Straight on when it
+settles, so it stays perfectly readable — it is the change between them that moves, never
+the text you are reading.
+
+**How the two halves stay out of each other's way.** Both panels travel through the same
+angle as they swap, so if they faded at the same rate you would catch them **both
+half-turned and half-visible in the middle** — which reads as a smudge rather than as a
+turn. So the one leaving fades out quickly, in about a sixth of a second, and is gone
+before it is half-way round; the one arriving holds its fade back until the turn is nearly
+finished, then comes up. Two timing rules, no timer in the script.
+
+**The height fix from v295 is untouched, and I checked rather than assumed.** A turn is
+paint-only — it cannot change how tall anything is — but the same measurement was run
+again with the animation in place, taken **mid-turn** rather than at rest: the strip holds
+**135.4 pixels** and the page below it stays at **346.1**, exactly as before. So it flips
+without the page moving.
+
+**If a customer has asked their phone for less movement**, the offers still change — they
+simply arrive facing them, with no turn. That setting has been respected here since v292
+and still is.
+
+**One thing to watch, and it is yours to tune.** The turn takes about four tenths of a
+second out of every 1.5 seconds, so the words sit still for about a second. Whether that
+is the right balance is much easier to judge on the real shop than in a description — if
+it feels busy, say so, and either the turn gets quicker or the 1.5 seconds gets longer.
+
+**Your data is untouched, and there is nothing to run.** No database step, no upload, no
+key. The shop's page and nothing else: no order, product, ingredient, price, posting day or
+promo code is touched. The suite is 2,631 tests, all green. Proved live on the real shop
+page at a phone width — 14 checks, all passing, measured mid-turn — and the turn itself was
+frozen part-way round in a browser and looked at, to be sure it is a real turn and not a
+squash.
+
+**04 Oct 2026 — engine v295, THE SHOP'S OFFER STRIP STOPS MOVING THE PAGE (no database
+step, nothing to upload — pushing this one is the whole of it).**
+
+**Why.** Your report, two codes running: __"when the message switch, the page is like
+jumping up and down repeatedly… The window should be fix, base on the tallest message."__
+You were right, and it was mine to fix — **v292 caused it.**
+
+**What was wrong.** The strip is only as tall as the message it is showing. When one of
+your codes carries a sentence of your own and the other does not, those are **two
+different heights** — so every time the strip turned, it grew or shrank and **everything
+below it moved with it**. Measured on the fault, on a real browser at phone width: the
+strip swung between **40.8 and 135.4 pixels** and dragged the whole page up and down by
+almost a hundred pixels, every second and a half, for as long as a customer stayed on the
+page.
+
+**What it does now.**
+
+- **The strip is exactly as tall as your TALLEST message, and never changes.** Every
+  running offer is drawn at once and stacked under each other; only the current one is
+  lit. The box is sized by the longest, so a short offer simply sits inside it. Measured
+  again with the fix: the strip holds **135.4 pixels** and the page below it stays put at
+  **346.1**, through turn after turn.
+- **It turns every 1.5 seconds**, your number.
+- **Pointing at it still stops it**, and a press on a phone still holds it — both unchanged.
+- **The slight dimming is gentler** now that the offers come round twice as fast, so the
+  words are readable for most of the time they are up.
+
+**One thing worth knowing about the 1.5 seconds.** A two-line message — the offer plus a
+sentence of yours — gives a customer about a second and a half to read it before it goes.
+That is quick. It is exactly what you asked for and it is one number to change, so if it
+turns out to be too fast once you watch it with real customers, say so.
+
+**One more thing it fixes, quietly.** The lit offer now says which one it is to a screen
+reader, and the others are marked as behind it — previously, with all the offers in the
+strip, a reader could have taken all of them in turn as though they were one message.
+
+**Your data is untouched, and there is nothing to run.** No database step, no upload, no
+key. This is the shop's page and nothing else: no order, product, ingredient, price, bake
+day or promo code is touched, and no code's terms change. The suite is 2,630 tests, all
+green. Proved live on the real shop page at a phone width: 14 checks, including that the
+strip's height is identical on every turn, that the page under it never moves, and that
+the box measures the same whichever offer is lit. The fault was then put back on purpose —
+the strip immediately swung 94.6 pixels and the checks went red — which is what proves the
+measurement can see it.
+
+**04 Oct 2026 — engine v294, THE INVOICE NUMBER IS THE ORDER'S OWN CODE (no database
+step, nothing to upload — pushing this one is the whole of it).**
+
+**Why.** Your words, the day v293 shipped: __"for the invoice, i think we can use the
+order code as invoice number"__. You were right, and it turns out to be **simpler and
+safer** than the running number v293 gave you.
+
+**What an invoice is numbered with now.** The order's own code — **Invoice #A3F9C2** —
+which is the same six characters already on that order's row, in the confirmation
+message, in the payment reminder and on the customer's tracking card. **One order, one
+reference, everywhere.**
+
+**Three things that got better, and they are the reason this is a real improvement and
+not just a preference.**
+
+- **No two phones can ever take the same number.** The order code is unique by
+  construction. The running number v293 used had one case where that was not guaranteed,
+  and it had to be explained and accepted.
+- **Pressing Invoice now writes nothing at all.** v293 stamped a number onto the order the
+  first time you opened its invoice. There is no number to stamp now, so the press only
+  reads — nothing on the order moves, and there is nothing to keep in step between your
+  two phones.
+- **There is no number for you to look up.** A reprint is the same invoice because the
+  number was never stored in the first place.
+
+**The trade-off, said plainly rather than discovered later.** The code is **not
+sequential**: nothing on an invoice says how many you have issued, or which of two
+invoices came first. And two different orders could in principle draw the same six
+characters — that is the same risk the order tag has carried everywhere since the shop
+was built, and it is unchanged by this version.
+
+**Please read the v293 entry below with this in mind.** Everything in it still holds
+except the number: the letterhead, the items at the price they were sold at, the courier
+charge, the code taken off, the Total, Print and Share. Where that entry describes a
+running number that goes up one each time, **this entry replaces it.**
+
+**Your data is untouched, and there is nothing to run.** No database step, no upload, no
+key. This version **removes** the two fields v293 could write onto an order, and writes
+neither of them — an order you invoice is not touched at all, and no order, product,
+ingredient or price is rewritten. The suite is 2,625 tests, all green. Proved live on the
+real Orders screen at a phone width: 21 checks, including that the invoice number is the
+order's own code, that making an invoice writes nothing onto the order, that opening it
+twice is the same invoice, and that the paper carries your letterhead with your shop's
+name said once.
+
+**04 Oct 2026 — engine v293, AN INVOICE FOR A CUSTOMER (no database step, nothing
+to upload — pushing this one is the whole of it).**
+
+**Why.** Your words: __"And customer need an invoice"__. Asked what it should carry,
+you chose __"One order, one invoice"__ and __"Yes — name, address, a number"__.
+
+**What you see now, on Orders → any order → Invoice** (beside Edit and Note / tracking).
+
+- **A card opens with the invoice on it**, and **Print** and **Share** underneath —
+  the same two presses every other book in the app has. Share hands it over as a
+  **PDF file**, so it goes into WhatsApp as a document the customer can keep.
+- **It carries your real address at the top.** That address already exists — it is
+  the one you typed for the Mailing labels in Settings, the same block that prints
+  as FROM on a parcel. So an invoice and a parcel can never show two different
+  addresses for one shop, and **there is nothing new to type**.
+- **One order, one invoice.** The number is given the first time you open it and is
+  never given again: open the same order next year and it is the same invoice, with
+  the same number and the same date.
+  **__(Superseded by v294, 04 Oct 2026: the number is now the order's own code —
+  Invoice #A3F9C2 — so there is no number to give, nothing is written onto the order,
+  and the two-phone caveat below no longer applies at all. Read the v294 entry at the
+  top of this page.)__**
+- **The order's own code prints beside the number** — __Invoice 0007 · Order
+  #A3F9C2__ — which is what a real invoice does, and it means two invoices could
+  never be confused for one another.
+  **__(v294: the code is no longer beside the number — it IS the number.)__**
+
+**What the paper says.** Your name and address, then **Invoice 0007 · Order #A3F9C2 ·
+the date the order was placed**, then one row per item as **4 × Focaccia** with the
+line total in the money column, the **courier charge** when the customer bears it, the
+**code taken off as a minus row** named after the code, and finally the **Total**.
+
+**Why the figures can never disagree with anything else.** Every figure on the invoice
+is read from the one function your confirmation message, your tracking card and your
+order rows already read, and the item names and prices are the ones **frozen onto the
+order** — so an invoice for an old order never shows a product you have since renamed
+or today's price. An invoice cannot state a sum the rest of the app contradicts.
+
+**The one limit, said plainly rather than hidden.** Your two phones hold one shared
+copy of your business, and a running invoice counter kept in Settings would be
+**overwritten by whichever phone saved last** — numbers would repeat or skip without
+warning. So the number is written **on the order itself**, which is a record of its
+own and cannot be lost. The consequence: **two phones issuing an invoice in the same
+instant could take the same number.** Nothing is lost when that happens — both
+invoices exist, each on its own order — and the order code tells them apart. With one
+person and two phones it is vanishingly unlikely, and the alternative would be an
+invoice you cannot write without the internet, which is worse for a home business.
+**__(Superseded by v294, 04 Oct 2026: the order's own code IS the number now, so this
+whole limit is gone — there is no counter to share, and pressing Invoice writes nothing
+at all. Read the v294 entry at the top of this page.)__**
+
+**What is deliberately NOT on it.** Your customer's per-item note is not printed — it
+is a production instruction, not a line item. Say the word if you would rather it were,
+and it is a one-line change.
+
+**Your data is untouched, and there is nothing to run.** No database step, no upload,
+no key. Two fields are added to an order **only when you press Invoice on it** — an
+order you never invoice is not touched at all, and no order, product, ingredient or
+price is rewritten. The suite is 2,627 tests, all green. Proved live on the real
+Orders screen at a phone width: 22 checks, including that the Total is the customer's
+own total to the cent, that the number is written on every row of the cart, that
+opening the invoice a second time is the same invoice, that Print really reaches the
+printer, and that your address block never says your shop's name twice.
+
+**04 Oct 2026 — engine v292, THE SHOP'S OFFERS TURN INSTEAD OF HIDING (no
+database step, nothing to upload — pushing this one is the whole of it).**
+
+**Why.** Your words: __"the public code shown in shop, if more than one hide behind
+each other, we need a carousel, where it message turn, put the mouse over it stop
+rotate."__ And you were reading it exactly right. The shop's offer line took the
+**first** live public code and quietly dropped every other one — so a week when you
+were running three offers, your shop was advertising one of them and hiding two
+behind it.
+
+**What your customers see now, at the top of the shop.**
+
+- **Every code you have running takes its turn.** About six seconds each, then the
+  next one — the same pace as the reviews carousel on your homepage.
+- **The words fade; the strip does not.** The amber box stays exactly where it is
+  and only the line inside it changes. The whole box blinking off and on would read
+  as a broken page rather than as a second offer.
+- **Point at it and it stops.** It waits while the pointer is over it and starts
+  again when you move away.
+- **On a phone, a tap holds it still for about twenty seconds** — long enough to
+  read a long offer — and then it carries on by itself. A tap can never leave the
+  strip stuck on one offer.
+- **A background tab stops it**, and it starts again when the tab comes back.
+- **With only one code running, nothing turns at all** — no movement, and literally
+  no timer running. One offer is a statement, not a one-slide carousel.
+- **And if a customer has asked their phone for less movement**, the words still
+  change so they see every offer — they simply change without fading. The setting is
+  about movement, not about hiding things from them.
+
+**Which code shows first, and what counts as running.** The first one you published.
+A code is advertised only if it is public, switched on, inside its dates and not
+used up — asked through the same rule the code box already uses, so the standing
+line and the box can never disagree about what "still running" means. A **personal**
+code is never advertised; being unadvertised is the whole of what personal buys.
+If you pause or end a code while someone is looking at the shop, the strip picks up
+the change on its own and does not leave them reading an offer that has gone.
+
+**Your data is untouched, and there is nothing to run.** No database step, no
+upload, no key. This version changes the shop's page and nothing else — your orders,
+products, ingredients, prices, posting days and promo codes are exactly as they were,
+and no code's terms are changed by it. The suite is 2,611 tests, all green. Proved
+live against the real shop page: 50 checks across three states — three codes
+running, one code running, and three codes with reduced motion — including that the
+turn wraps at the end, that hovering and pressing both stop it, that it starts
+again by itself after a press, that a hidden tab stops it, and that the amber strip
+itself is never faded.
+
+**04 Oct 2026 — engine v291, A REWARD YOU CAN ACTUALLY HAND OVER (no database
+step, nothing to upload — pushing this one is the whole of it).**
+
+**Why.** You asked the question that made this version: __"how do we exercise their
+reward, if the reward is only written text?"__ Until now the reward was a sentence on
+the customer — you read it and settled up by hand, and the app neither reminded you
+nor remembered what you had given. Nothing said **when** a reward had come round.
+
+**What you see now, on More → Customers → open a customer.**
+
+- **The reward is a card of its own on their record**, in amber so it does not
+  read as the green bring-a-friend ledger below it.
+- **It says what they brought in, and what is due.** __"9 brought in · every 5 · 1
+  due"__ — the count is from your own orders, recounted every time, so nothing can
+  double-count.
+- **A Given button records the hand-over.** Their card then says __"1 given"__ with
+  the date, so the next time you open them you can see what you have already settled.
+- **Undo last takes a press back**, if you tapped it twice or they returned it.
+
+**Their reward, and its number, are two separate boxes.** Your sentence stays exactly
+as you wrote it — __"a free loaf for every five friends"__. Beside it is a number box,
+**"Given every … customers brought in"**. Nothing is ever read out of your sentence:
+a parser that misread "every five" would tell you a partner is owed a loaf you never
+agreed to. Leave the number empty if it is not a set figure — the app still counts
+what they brought in, it just never calls one due.
+
+**What counts as "brought in" is one number, whichever way they work.** A friend with
+a share link and a partner with a code are counted the same way, and a person can be
+both — so the count is the union of the two, never their sum. A cart that carried both
+a link and a code counts **once**. And a friend who had **already ordered from you**
+is not a new customer here, exactly as the Give-credit button has always judged it.
+
+**Every hand-over is its own record, and that is deliberate.** Both your phones hold
+one shared copy of your business. A "rewards given" tally kept as a single number
+would be **overwritten by whichever phone saved last** — one phone's hand-over would
+vanish in silence. One record per hand-over cannot lose an update. It is the same
+reason your credit ledger is a list.
+
+**Nothing is ever blocked.** The Given button is offered whether or not the app's
+arithmetic says a reward is due — you may settle a favour early, or hand one over for
+a reason the app cannot see. The count is information, never a gate.
+
+**Your data is untouched, and there is nothing to run.** No database step, no upload,
+no new key. This version adds one new list and touches nothing you already have: your
+orders, products, ingredients, prices, posting days and saved plans are exactly as they
+were. The suite is 2,607 tests, all green. Proved live at a phone width: 29 checks,
+including that a cart carrying both a link and a code counts once, that a second
+hand-over is recorded rather than replacing the first, that Undo takes back exactly
+one, and that the number box really reaches the customer's record.
+
+**04 Oct 2026 — engine v290, YOU CAN ADD A CUSTOMER YOURSELF, AND READ YOUR
+REMARK ON THE LIST (no database step, nothing to upload — pushing this one is the
+whole of it).**
+
+**Why.** Two things, and they arrived together. **A partner who has never ordered
+from you had nowhere to live** — until now a person existed only by placing an
+order, so a partner you recruited to hand out labels could not be named as a promo
+code's owner. And you wanted to **read your note about someone without opening
+them**.
+
+**What you see now, on More → Customers.**
+
+- **A "New customer" card.** Add someone by hand — a partner, or a friend who sends
+  people your way. **A name or a number is enough**; everything else (their reward,
+  their note, a photo) is written exactly where it always was.
+- **They appear under their own heading: "Added by hand — no orders yet"**, at the
+  bottom of the list, with a count. Their card opens like anyone else's, and
+  fine-tuning their reward works there too.
+- **Your remark now shows on the row itself**, so you can read it without opening
+  anyone — in your own words, on one line, whichever is longest clipped with the
+  full note still one tap away.
+
+**The important part, and why they are in the same list rather than a separate one.**
+Your customer list stays what it was — **people who have ordered**, with their spend
+and their last order — and the people you added simply sit underneath, grouped.
+They are counted, they export to the CSV, they can be messaged in bulk, and **they
+are offered by the name box when you take an order**. That last one matters most: if
+they had been kept in a list of their own, the day your partner finally ordered the
+app would have offered you nothing, you would have typed the name and number by
+hand, and that one person would have become **two records** — one keyed by name, one
+by number, for good. **The moment they order they move up into the list proper, by
+themselves.**
+
+**Two things that would have read as faults.** A hand-added person has no orders,
+and their row would have said **"0 orders · 0 units · about RM 0.00"** — the shape
+this app uses for a broken screen. It now says what is true: __"Added by hand — no
+orders yet"__. And opening their card said __"This customer's orders were removed"__,
+which is untrue of someone who never had any, and reads as lost data. It now says
+they have not ordered yet.
+
+**No database step and nothing to upload** — `admin/` only.
+
+**04 Oct 2026 — engine v289, A NAMED REWARD, AND A CODE THAT NAMES ITS PERSON
+(no database step, nothing to upload — pushing this one is the whole of it).**
+
+**Why.** Two schemes, one missing half each. The **bring-a-friend** link is for a
+casual advocate and costs you nothing to hand out — but its reward could only ever
+be a flat **RM3**, the same for everyone, set once in Settings. And a **promo code**
+was anonymous: its orders and its label's opens were counted, but not __whose__ they
+were, so a partner's label couldn't be told from anyone else's.
+
+**Both stay, and the difference between them is the thing you hand over** — a __link__
+for a friend, which travels and costs nothing; a __code and a label__ for a partner who
+prints brochures and runs their own marketing.
+
+**What you see now, in two places.**
+
+- **On a customer's card** — a line you write yourself: **Reward**, e.g. __"a free
+  loaf for every five friends"__. Not a number, because a partner may be owed a loaf,
+  a favour, or an arrangement of their own. It sits in the profile block, above the
+  bring-a-friend block, so it shows **whether or not that person has a WhatsApp
+  number** — the casual friend-to-friend advocate is exactly the one who may not.
+  The RM3 and 90-day settings are untouched and still the defaults.
+- **On a promo code** — a new choice: **Whose code is this**. Pick a customer and
+  their name appears on the code's row as __Aunty Bee's code__, beside "public —
+  shown in the shop". Their label now tells itself apart from anyone else's, and the
+  code's own count and opens are their tally.
+
+**THE THING TO KNOW: their name is never published.** The data your shop is given is
+readable by anyone holding its public key. A code's person is kept in your own app —
+**never** sent to the shop, and **never** printed on the label. The label stays
+impersonal, which is right for a piece of paper handed to whoever walks past.
+
+**What the reward is, and is not, said plainly.** It is a **label you apply by hand**,
+exactly like the credits. The app names it and counts what that person brought in; it
+does **not** total what you owe, and it does not track what you have already given.
+That is the trade for being able to write __"a free loaf"__ instead of a figure.
+
+**No database step and nothing to upload** — `admin/` only.
+
+**04 Oct 2026 — engine v288, HOW MANY TIMES EACH LABEL WAS OPENED.**
+**⚠️ THIS ONE HAS A DATABASE STEP — run `supabase/promo_visits.sql` once, see
+the box below.**
+
+**Why.** You could already see what a code **sold**, worked out from your own
+orders. What you could not see is whether the label was **picked up at all** —
+and those are different problems needing different answers. __"Nobody followed the
+link"__ means print more cards, or hand them out somewhere else. __"Forty people
+followed it and two bought"__ means the card is fine and the offer needs work.
+
+**What you see now.** On **More → Promo codes**, each code's row shows **how many
+times its link was opened**, and under that a strip of the **last 28 days, one bar
+a day** — so a label going cold is visible at a glance rather than something you
+have to work out from a date list. A day with no opens is a faint stub rather than
+a gap, so "quiet" never reads as "no data". A code the app __did__ get an answer for
+and which nobody has opened yet says **"Not opened yet"** in words — that zero is
+real and worth knowing.
+
+**What the number is, and what it is not — please read this part.**
+
+- It counts **opens, not people**. You chose that: a reload counts again, and a
+  phone that leaves the page open counts once. It is a **pulse for alive-versus-
+  cold**, not a headcount.
+- **Sharing the link in WhatsApp or Facebook adds an open with nobody behind it** —
+  those apps fetch a link to draw the preview. And your own testing counts.
+- **A customer who types the code at the shop, with no link, is not counted.** This
+  measures the CARDS, not the code in general.
+- The app will not show a figure it does not have. If Supabase cannot be reached,
+  the row is left **exactly as it was** rather than showing a zero — because a zero
+  here is a claim ("nobody opened your label") and it must not be made on the
+  strength of a request that never came back.
+
+**⚙️ The one step, and it is yours: run `supabase/promo_visits.sql` once.** Open
+**Supabase → your project → SQL Editor → New query**, paste the whole file, press
+**Run**. It is safe to run more than once. **You can run it before or after you
+push** — if you push first, nothing breaks: the shop's page simply fails to record
+opens until the table exists, quietly, and the Promo screen shows no count. (Your
+own browser's console will show a **404** while the table is missing. That is the
+missing table, not a fault, and no customer ever sees it.)
+
+**What was built, and why it is shaped this way.** One row is stored per open. The
+shop page records it in the background and never waits for it — a visit that cannot
+be recorded must not slow a customer down or change a word on the page. **The shop
+counts an open once per page load**, which matters more than it sounds: that page
+re-reads its settings every 30 seconds while it is open, so without that rule a
+single customer leaving the tab open would have added an open every half-minute and
+a label that sold nothing would have read as a triumph. Measured live: the settings
+were re-read **7 times in one minute and the open was recorded exactly once**.
+
+**No SQL runs on its own and nothing is uploaded** — the Edge Functions are untouched.
+
+**04 Oct 2026 — engine v287, EVERY CODE HAS A LABEL, AND PRINTING NO LONGER
+FREEZES IT (no database step, nothing to upload — pushing this one is the whole
+of it).**
+
+**Why.** In your words: __"instead of printed card, i think something like what we
+have in shop and code is more useful, we have QRs, some active some retired, when
+a promo code come together with a QR, when you tab on label, you are allow to copy,
+print."__ Until now the only QR in the app was drawn on a **separate printed-card
+page**, reached by a **Print it** press that was a deliberate point of no return —
+it froze the offer permanently. There was no copy, and no QR anywhere on screen.
+
+**Every code now has a label, on its own row.** Under **More → Promo codes**, each
+code carries **its own QR**, so the list reads as a set of labels with the life
+chips saying which are still going. **Tap the label** and it opens: the QR drawn
+large enough to hold another phone up to, the link in words, **Copy link**, and
+**Print it**. The square is built from the very address the printed card uses, so a
+label and a card always point at one place — and **Copy link** pastes straight into
+WhatsApp, where the shop opens with the code already in the box.
+
+**A retired code keeps its label.** An **ended** code still shows its QR and still
+offers **Copy link** — a dead link is worth being able to look at — but it is **not
+offered a print**, because a label with an ended code in it would not work. It says
+so rather than simply hiding the button.
+
+**Printing no longer freezes anything.** Until this version, the first print pinned
+the offer for good: the amount, who it is for, the smallest basket, what it cannot
+sit beside and the name all stopped moving, an end date could only be moved later, a
+ceiling could only be raised, and the code could not be deleted at all. **All of
+that is gone.** Print and copy as often as you like, change the offer whenever you
+like, and **retire a label by ending the code** — which is what ending was always
+for: it stops new uses and leaves orders already placed with what they were promised.
+There is no new thing to learn; **End** is the retirement, and **Pause** is the
+reversible version of it.
+
+**The one thing to know, and the app says it on the label itself.** A label already
+in someone's hand is honoured at whatever the offer says when the customer **orders**,
+not when they picked it up. So if you print a hundred cards and then change the offer,
+those cards give the new offer. That is the trade, and it is better to read it here
+than to find out from a customer.
+
+**What has NOT changed.** A code still needs a **name** and a **cost ceiling** before
+it can be given a label — a label carries no number and no end date, so the ceiling is
+the only thing bounding what it can cost you. Editing a code still cannot reach back
+into an order that already used it: every order keeps the code as it was written when
+the customer typed it.
+
+**No database step and nothing to upload.** This is `admin/` only — no SQL, no Edge
+Function, no key. Pushing it is the whole of it.
+
+**03 Oct 2026 — engine v286, A SUGGESTED PROMO CODE YOU CAN READ OFF A CARD (no
+database step, nothing to upload — pushing this one is the whole of it).**
+
+**Why.** You asked me to compare your promo codes with the printed-label codes
+munchies used to run and see if there was anything worth taking. There was one
+thing, and it is small: a code is read by eye **twice** — you type it when you make
+it, and the customer types it off the printed card. The pairs people get wrong
+doing that are **0 and O**, and **1 and I or L**. Your codes were allowed to
+contain any of them.
+
+**What you see now.** On **More → Promo codes**, the **New code** card has a
+**Suggest one** button beside the code box. Press it and the box fills with a code
+such as `PCX68` — five characters drawn from an alphabet with no **0**, **O**,
+**1**, **I** or **L** in it, so there is nothing on the card to misread.
+
+**Nothing is chosen for you.** The box is still yours to type in, and the button
+only fills it — type over it, or ignore it and type your own code as you always
+have. **Every code you already have keeps working exactly as it did**, including
+ones with those characters in them: a code that is already printed cannot be
+renamed, and none of them were touched.
+
+**It will not hand you a name you already use.** Before suggesting, it checks
+every code on the list and never offers one that is spoken for — two codes sharing
+a name is the one thing the shop could not recover from, because it would take the
+wrong amount off.
+
+**The button leaves the room to the box.** The code box asks for a sensible minimum
+width; if the screen is wide enough they sit on one line, and if it is not the
+button drops below and the box takes the whole width. Either way the box is never
+the part that gets squeezed — measured at a 375-pixel phone screen the box is 181
+pixels beside the button, and on anything narrower it is 208 or more.
+
+**Where this came from.** Munchies' printed-label codes carried the same idea, and
+their comment names the reason exactly: __"a customer or the owner may type the code
+by hand off a printed label, and those pairs are the ones people get wrong."__ This
+is the only piece of theirs worth taking; the rest of theirs is a printed-label
+pipeline for shops, which you do not have. **No database step and nothing to
+upload.**
+
+**03 Oct 2026 — engine v285, THE SHOPPING LIST CAN BE CORRECTED AT THE SHOP, AND
+AN INGREDIENT KEEPS ITS PRICES (no database step, nothing to upload — pushing
+this one is the whole of it).**
+
+**Why.** In your words: __"PO, say it is created an base on the po we go shopping,
+same supplier price change and we decide to buy more, i would like to change the
+price and the qty, i need the PO to be amendable, ingredient price journaled,
+ingredient price updated accordingly. So an ingredient need a journals."__ A saved
+shopping list was frozen the moment it was saved. So when you got to the supplier
+and the price had moved, or you decided to take more, there was nowhere to put
+it — and the app's idea of what that ingredient costs stayed wrong until you
+remembered to go and correct it on another screen.
+
+**The list is now amendable — until you tap Bought.** On a saved list you now
+have an **Amend** press. It opens the list with two boxes per line: **how many
+packs** you took, and **what each pack cost**. Change either and the line's total
+and the list's total follow as you type. You can also **Remove** a line you
+didn't take, **add a line** for something you picked up that wasn't on the list,
+and — if the shelf already covered something — press **buy some** on it to decide
+to stock up anyway.
+
+**Once you tap Bought, the list is what happened.** That is deliberate. Bought has
+already put the packs on your shelf and asked you what you paid, so correcting the
+list afterwards would mean unpicking both. Amend is offered only while the list is
+still un-bought; the correction belongs at the shop, which is where you are when
+you discover it.
+
+**Your ingredient follows the price you actually paid.** Change a price on the
+list, save, and the app writes that price onto the ingredient — so your recipes,
+your product costs, and your next shopping list all use it, with nothing else to
+set. The app tells you it did it rather than doing it quietly.
+
+**And every price move is now recorded.** Open an ingredient and, once its price
+has moved at least once, it carries a **Journal** press. It lists **only the
+moments the price moved, newest last**, each row saying what it moved to and what
+it was before — and with **the price you are on now at the top**, because a list of
+changes on its own never says where you ended up. Buying the same thing again at
+the same price is stock, not news, so it is not listed. The journal prints and
+shares like every other book in the app, including as a PDF.
+
+**Why a journal matters here.** Your Profit screen reads Cost of sales from your
+recipes and the ingredient prices as they stand **today** — so changing a price
+moves months that have already closed. That has always been true and the screen
+says so; what was missing was any record of **when** a price moved, and this is it.
+
+**A fault found and fixed while building this.** The **"What did you pay?"** box
+you get after tapping Bought was **never pre-filled** with your list's total. It
+had been reading the total from the wrong place since the box was built, so it
+always opened blank and its sentence never named the figure. It is now filled in
+from the list's own total, which is also what makes amending worth doing.
+
+**What did not change.** Nothing that was already saved was rewritten, no figure
+moved on its own, and the money is still recorded exactly where and when it always
+was — at Bought, from the account you choose in that box. A list's own totals
+still pre-fill that box. **No database step and nothing to upload.**
+
+**03 Oct 2026 — engine v284, A LONG COURIER LINK NO LONGER RUNS OFF THE CARD
+(no database step, nothing to upload — pushing this one is the whole of it).**
+
+**Why.** A booked trip came back with a long tracking link — one unbroken run of about 150
+characters, with no spaces anywhere in it. Your customer's card draws that link as
+a **rounded button**, and a button cannot break a word it cannot find a space in.
+So the link stayed one enormous line and grew straight out of the card and off the
+screen.
+
+**What you see now.** The link stays **inside** the card. It wraps onto as many
+lines as it needs, and the button grows downwards instead of sideways. Nothing
+else about the card moved: the wording, the order of the lines, the money and the
+progress line are all exactly as they were, and the link still opens the courier's
+own page in a new tab.
+
+**A short link is untouched.** Measured on the card at a 375-pixel phone screen:
+a short link such as `https://track.jt.com.my/A3F9C2` is still exactly the **38
+pixels** tall it has always been, because the button's own floor and its centring
+are unchanged. Only a link long enough to need a second line behaves differently.
+
+**Measured before and after, on an order.** The order's link is 131
+characters. Before: it ran past the card's right edge and off the screen. After:
+it wraps to five lines, its right edge sits at 344 against the card's 361, and the
+page no longer scrolls sideways — the page's own scroll width equals the phone's
+width. **Your backoffice card was never affected**: the booked-trip card on your
+own screen already carried this rule, so both of your screens now stop a long link
+the same way.
+
+**Where else that link is drawn — checked, not assumed.** You asked me to check
+everywhere it lives, so I did. The link is stored once, on the order, and reaches
+your customer in three places: the **customer's track card** (the one that was
+broken — fixed here); the **shipped WhatsApp message**, which carries it as plain
+text that WhatsApp wraps in the chat itself, so it was never at risk; and your
+**own booked-trip card**, which was already right. The delivery-run screen only
+mentions it in a passing message, and the orders list draws it as a number to read
+out rather than a link, so neither of those can overflow.
+
+**No database step, and nothing to upload.** This is one style rule in the shop's
+stylesheet — no SQL, no Edge Function, no key, and your
+data is untouched. Pushing it is the whole of it.
+
+**03 Oct 2026 — engine v283, SHARE SENDS THE JOURNAL AS A PDF FILE (no database
+step, nothing to upload — pushing this one is the whole of it).**
+
+**Why.** You pressed Share on a journal and the share sheet opened **without
+WhatsApp in it**. Nothing was broken — a phone is handed a journal as ordinary
+text, and WhatsApp does not offer itself for a bare block of text. It does offer
+itself for a **file**. You said to make it share by PDF, and that is what this is.
+
+**What you see now.** The **Share** button does the same thing it always did, and
+what comes out of it is different: the journal arrives in the chat as a **PDF
+document** — `Cash journal.pdf`, `Profit and loss.pdf` — which you can open, keep,
+forward and print again. It is listed for Mail, Notes and Save to Files exactly as
+before, and WhatsApp is on that list now.
+
+**Worked out with your phone, in this order.** The app asks the phone what it can
+take rather than assuming:
+
+- The phone can share a file — you get the **PDF**, which is what happens on yours.
+- The phone says it can share, but not a file — you get the journal as **text**,
+  so it still leaves the app rather than nothing happening.
+- The phone has no share sheet at all — the **PDF is saved to the phone** and a
+  short message says so. You send it from WhatsApp yourself.
+- Even saving is impossible — the journal is **copied** instead, with a message
+  saying so.
+
+**If you open the share sheet and change your mind**, closing it does nothing
+else. Nothing is copied and nothing is saved behind your back, at any of those
+four steps. A cancel is your decision, not a fault.
+
+**What is on the document.** Your shop name as a letterhead, the journal's name
+and the stretch it covers, every row and every total in the same words and the
+same order as the screen, the note that explains the figures, and along the bottom
+`From More → Profit · printed 3 Oct 2026`. Money that went out reads `-RM 12.00`.
+A long journal runs onto a second page, which says at the top what it continues.
+A4, black on white, 20 mm margins. It is about 3 KB — small enough for any chat.
+
+**Print has not changed.** The Print button still opens the phone's own print
+sheet, and **Save as PDF** is still a choice inside it.
+
+**What did not change.** No figure moved and no rule about your money changed. The
+screen is identical. The document is a fourth rendering of the same journal the
+screen, the paper and the sent message already shared, so the figure in the file
+is the figure on the screen, to the cent.
+
+**03 Oct 2026 — engine v282, EVERY JOURNAL CAN LEAVE THE SCREEN: PRINT IT OR SEND
+IT (no database step, nothing to upload — pushing this one is the whole of it).**
+
+**What you asked for.** You were reading a journal and said: __"those journals in
+profits and other journals should be printable and able to be shared"__. Until
+now a journal existed only inside the pop-up you were scrolling. You could read
+it, and there was no way to hand it to anyone or keep it.
+
+**What you see now.** Every journal in the app wears the same two buttons, in the
+same order, under its last line:
+
+- **Print** — the phone's own print sheet opens with the journal on it. That is
+  also where **Save as PDF** lives, so a journal can leave as a file.
+- **Share** — the phone's own share sheet opens with the journal as plain text,
+  ready to go straight into WhatsApp, Mail or Notes.
+  - A phone with no share sheet — or a share that fails for any other reason —
+    **copies the journal instead** and says so in a short message. You paste it
+    wherever you want it. The fallback carries exactly the same text the share
+    sheet would have been handed.
+  - **If you open the share sheet and change your mind**, closing it does nothing
+    else. The journal is not copied behind your back. A cancel is your decision,
+    not a fault.
+  - __Superseded the next day by v283: the phone is handed a PDF file now, not
+    plain text, because WhatsApp was not appearing in the share sheet.__
+
+**Where the two buttons are.** Every book in the app:
+
+- **More → Profit** — the Sales journal, the Cost of sales journal, and every
+  spending category's journal, including Total expenses.
+- **More → Profit** — the **Profit and loss** statement itself. You chose that
+  the whole statement gets the pair and not only the journals: Sales down to Net
+  profit, with its two notes underneath. A journal on its own is half a document,
+  and this is the other half.
+- **More → Money** — one method's book, opened either from its row on the screen
+  or from **Books**. In Books, only the book you have opened can print; the list
+  underneath never does.
+
+**What the printed sheet says.** Your shop name as a letterhead, then what the
+journal is and the stretch it covers; every row and every total, in the same words
+and the same order as the screen; a line in the journal's own words saying what
+the figures mean and where they come from; and along the bottom, `From More →
+Profit · printed 3 Oct 2026`. The statement's sheet carries the Cost of sales note
+as well, because anyone reading Gross profit needs it. It is plain black on white.
+
+**One rule this build rests on.** The screen, the paper and the sent message are
+three renderings of **one** description of the journal. They cannot disagree about
+a row or a total: whatever figure is on the screen is on the paper to the cent, and
+the same figure is in the message.
+
+**On the phone.** Pressing Print opens the phone's real print dialog — the same one
+any other app uses — and **Save as PDF** is a choice inside it. Choosing a printer
+there is the only way to see the true paper; the sheet itself is built by the app.
+
+**What did not change.** No figure moved, and no rule about your money changed.
+Every pop-up looks as it did; the two new buttons sit under the last line of each.
 
 **3 Oct 2026 — no new engine (still v281), THE "SHOPS & CODES" SCREEN IS RETIRED (nothing to run,
 nothing to upload — pushing this one is the whole of it).**

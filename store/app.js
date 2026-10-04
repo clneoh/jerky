@@ -66,6 +66,77 @@ let repaintForLang = null;
 // the page would otherwise never see the offer. Null until render() has run.
 let repaintPromo = null;
 
+/* ── Counting a label being opened (v288) ──────────────────────────────────────
+   A label's QR — and the link she copies into WhatsApp — land here carrying `?promo=CODE`.
+   This records that open, so she can tell "nobody picked the label up" from "forty did and two
+   of them bought". Those are different problems and they need different answers: print more
+   labels, or change the offer.
+
+   IT COUNTS ONLY A CODE THIS SHOP ALREADY ACCEPTS. That is a PRODUCT rule, not a security
+   control: this page ships the public key, so anyone determined can post to the table whatever
+   we do here. What it buys is that a typo in a url, a stranger's guess and a crawler inventing
+   addresses never reach her numbers.
+
+   AND IT NEVER TOUCHES THE SHOP. Fire and forget, ten seconds at the most, every failure
+   swallowed — a visit that cannot be recorded must not slow a customer down or change a single
+   word on the page.                                                                     */
+
+// Whether this page load should count an open, as a pure answer: the code to count, or "" for
+// no. Exported because it is the whole of the judgement and worth holding to without booting
+// the shop — an absent ?promo=, an unknown code and a missing config all have to answer "".
+export function labelOpenToCount(search, codes, cfg) {
+  const url = String((cfg && cfg.url) || "").trim();
+  const key = String((cfg && cfg.anonKey) || "").trim();
+  if (!url || !key) return "";
+  const code = parsePromo(search);
+  if (!code) return "";
+  return (codes || []).some((x) => normCode(x && x.code) === code) ? code : "";
+}
+
+// ONE LATCH PER PAGE LOAD, and the latch is the whole point. `refresh()` runs again every 30
+// seconds while the shop is open, so without it a single customer leaving the tab open would
+// mint a visit every half minute and a label that sold nothing would read as a triumph. A
+// RELOAD is a new page load and counts again — that is her choice, and exactly why the number
+// is a pulse for alive-versus-cold rather than a headcount.
+//
+// A factory rather than a module-level boolean so the rule can be held to in a test.
+export function labelOpenCounter(doPost) {
+  let counted = false;
+  return (search, codes, cfg) => {
+    if (counted) return "";
+    const code = labelOpenToCount(search, codes, cfg);
+    if (!code) return "";
+    // Latched only HERE, past every guard: the codes arrive asynchronously, so a refresh that
+    // runs before them must be free to count on the one that does have them.
+    counted = true;
+    doPost(code, cfg);
+    return code;
+  };
+}
+
+// The POST itself. Exported so its url, its headers and its payload can be read in a test.
+export function postLabelOpen(code, cfg) {
+  const base = String(cfg.url).replace(/\/+$/, "");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  return fetch(`${base}/rest/v1/promo_visits`, {
+    method: "POST",
+    headers: {
+      apikey: cfg.anonKey,
+      "Content-Type": "application/json",
+      // INSERT-only RLS: asking for the row back would be a read, and reading is not granted.
+      Prefer: "return=minimal",
+    },
+    body: JSON.stringify([{ code }]),
+    signal: controller.signal,
+  }).catch(() => {}).finally(() => clearTimeout(timer));
+}
+
+// Module scope, NOT inside render(): render() can run more than once, and a latch that reset
+// with it would count the same open twice. Nothing about the customer is kept — one boolean
+// for the life of the tab.
+const countLabelOpen = labelOpenCounter(postLabelOpen);
+
 // Fill %1, %2, … placeholders left-to-right.
 function sub(s) {
   const args = Array.prototype.slice.call(arguments, 1);
@@ -266,6 +337,39 @@ export function clauseWords(code) {
     if (day) w = sub(t("promoUntil"), w, day);
   }
   return w;
+}
+
+// ── The standing offers, and how they turn (v292) ───────────────────────────
+//
+// EVERY code the shop is willing to advertise today — public, switched on,
+// inside its dates, and not already given away — in the order she published
+// them. Asked through the engine's own `stoppedBy`, so the standing line and the
+// code box can never disagree about what "still running" means.
+//
+// This was a `.find()` until v292: the FIRST live public code was shown and every
+// other one was dropped without a word. A bakery advertising three offers was
+// advertising one.
+export function standingToday(codes, today) {
+  const list = Array.isArray(codes) ? codes : [];
+  return list.filter((c) => c && c.vis === "public" && !stoppedBy(c, today));
+}
+
+// Which code the turn shows next. The only rule is the clamp: a position that is
+// no longer in the list — because she paused a code while the page was open —
+// starts again from the first rather than wrapping into a hole and drawing
+// nothing. One offer needs no special case: `(0 + 1) % 1` is 0 on its own.
+export function standingNext(total, at) {
+  const n = Number(total) || 0;
+  const i = Number(at) || 0;
+  if (i < 0 || i >= n) return 0;
+  return (i + 1) % n;
+}
+
+// Whether the strip turns AT ALL. One offer is not a carousel with one slide, it
+// is a statement — so no timer is armed for it, where the homepage's own carousel
+// arms one and ticks every six seconds to no effect. Zero offers is not a strip.
+export function turnsAtAll(count) {
+  return Number(count) > 1;
 }
 
 // The bakery's OWN sentence about a code, in the reader's language, or "" when
@@ -1135,9 +1239,167 @@ export function render() {
   const promoInput = document.getElementById("promo-input");
   const promoSay = document.getElementById("promo-say");
   const promoToday = document.getElementById("promo-today");
-  const promoOffer = document.getElementById("promo-offer");
-  const promoWords = document.getElementById("promo-words");
+  const promoRotor = document.getElementById("promo-rotor");
+  const promoDots = document.getElementById("promo-dots");
   const promoClear = document.getElementById("promo-clear");
+
+  // ── The standing offers, and how they turn (v292; the jump fixed in v295) ──
+  //
+  // More than one code can be running at once, and the strip used to show only the
+  // first. Now they turn. The pattern is the homepage's own carousel
+  // (reviews.js buildCarousel) — stop while the pointer is over it, stop while the
+  // tab is hidden, and under two items nothing moves — with these deliberate
+  // differences, each for a reason:
+  //
+  //   · A FADE IN PLACE, not a sliding track. That carousel slides review CARDS;
+  //     this is one line of message, and sliding a single line sideways reads as
+  //     a glitch rather than as a second offer.
+  //   · With ONE code the timer is never armed at all. The homepage arms its
+  //     interval even for a single slide, where it ticks to no effect.
+  //   · A PRESS holds it still for a while. There is no hover on a phone, so a
+  //     tap is the only pause a customer there has — and a pause that ended the
+  //     moment the finger came up would be no pause at all. It starts again by
+  //     itself, so a tap can never leave the strip stuck on one offer.
+  //   · 1.5 seconds between offers, which is her number, not the homepage's six.
+  //
+  // ★ EVERY OFFER IS DRAWN AT ONCE, STACKED, AND ONLY THE CURRENT ONE IS LIT (v295).
+  //
+  // v292 wrote each offer into ONE pair of lines as the turn came round, so the strip
+  // was exactly as tall as the message it happened to be showing. Two codes where only
+  // one carries a sentence of her own are two different heights — so every turn made
+  // the whole page below the strip jump. Her words: "when the message switch, the page
+  // is like jumping up and down repeatedly… The window should be fix, base on the
+  // tallest message."
+  //
+  // So the offers are built as slides and STACKED IN ONE GRID CELL. A grid row is as
+  // tall as its tallest item, which makes the strip exactly as tall as the TALLEST
+  // message — worked out by the browser, at whatever font, language and text size the
+  // customer actually has, with no number of ours that can go stale. Turning then only
+  // moves which slide is lit, and nothing under the strip moves at all.
+  const TURN_MS = 1500;
+
+  let turnTimer = null;
+  let liveCodes = [];   // what the strip is turning through right now
+  let shownCodes = [];  // ...and what it was turning through when it last drew
+  let codeAt = 0;       // which of them is on screen
+  let overStrip = false;
+  let slides = [];      // one per offer, all in the strip at once
+  let dots = [];        // ...and one dot per offer, under them
+  let litAt = -1;       // which slide is lit, so a repaint can skip a pointless repaint
+
+  // Whether the offers may turn RIGHT NOW. Read fresh on every tick rather than tearing
+  // the timer down and rebuilding it on every hover, so a pointer moving over the strip
+  // can never leave two timers running.
+  //
+  // ⚠️ THERE IS DELIBERATELY NO PRESS-HOLD HERE (v297). v292 paused the turn for twenty
+  // seconds on any `pointerdown`, meant as the only pause a phone had. It was a trap: a
+  // CUSTOMER WHO CLICKED THE STRIP — or a dot on it — froze it for twenty seconds, and
+  // moving the pointer away could not release it, because the hold was a clock rather than
+  // the pointer. Her report: "once we put mouse over it or click it, the flip stop… move
+  // the mouse outside the window, the flip should be back." The pointer being OVER the
+  // strip is the whole of the pause now, so leaving always starts it again.
+  function mayTurn() {
+    return !document.hidden && !overStrip;
+  }
+
+  // One offer, as its own slide. Two lines: the app's line, which names the code, and
+  // her own sentence underneath it when she has written one — never instead of it, because
+  // a customer who cannot type the code cannot use it. A code she has written nothing for
+  // is simply a SHORTER slide; it does not make the strip shorter, because the tallest one
+  // decides that.
+  function slideEl(c) {
+    const own = ownWords(c);
+    return el("div", { class: "promo-slide" },
+      el("p", { class: "promo-offer" }, sub(t("promoToday"), clauseWords(c), c.code)),
+      own ? el("p", { class: "promo-words" }, own) : null);
+  }
+
+  // Build the whole set at once, and light the first. Called only when the offers
+  // themselves have changed — a repaint from the cart must not rebuild the slides, or
+  // the cross-fade would restart under a customer who did nothing.
+  function buildSlides(list) {
+    slides = list.map(slideEl);
+    if (promoRotor) promoRotor.replaceChildren(...slides);
+    // HER ASK: "there should be 2 dot if there is 2 message, 3 dot if 3 message." One dot
+    // per offer, under the strip — and none at all for a single offer, which is the same
+    // rule that leaves the timer unarmed: one offer is a statement, not a carousel.
+    dots = list.map((c, i) => el("button", {
+      class: "promo-dot", type: "button",
+      "aria-label": `${i + 1} / ${list.length}`,
+      // A dot is a way IN, never a way to stop: pressing one goes to that offer and lets
+      // the turn carry on. It used to also freeze the strip for twenty seconds — see mayTurn.
+      onclick: () => { showSlide(i); armTurn(); },
+    }));
+    if (promoDots) promoDots.replaceChildren(...dots);
+    litAt = -1;
+  }
+
+  // Light one slide and extinguish the rest. The wording is drawn once, at build time and
+  // never again — this only moves a class, which is what makes the strip's height
+  // unmovable: nothing here can change how tall the content is.
+  //
+  // ★ THE LEAVING OFFER GOES OUT THE OPPOSITE DOOR (v297). Every other slide waits edge-on
+  // at `rotateX(90deg)` and rises to meet the reader; the one that has just been replaced
+  // is sent to `rotateX(-90deg)` instead. Two panels turning through the SAME arc is a
+  // squash; two turning through opposite arcs is a flip, and this is the whole of what
+  // makes it read as 3D. Her words: "the flip should be 3D flip".
+  function showSlide(at) {
+    codeAt = at;
+    const i = Number(at) || 0;
+    if (i === litAt && slides.length) return;
+    litAt = i;
+    const n = slides.length;
+    const left = n > 1 ? (i - 1 + n) % n : -1;
+    slides.forEach((s, k) => {
+      s.classList.toggle("is-on", k === i);
+      s.classList.toggle("is-left", k === left);
+      // The offers nobody is reading must not be read aloud either. They are stacked
+      // behind the lit one, so a screen reader would otherwise take all of them in turn.
+      s.setAttribute("aria-hidden", k === i ? "false" : "true");
+    });
+    dots.forEach((d, k) => d.classList.toggle("is-on", k === i));
+  }
+
+  // Stand the turning down. There is no fade to undo any more — the cross-fade is a CSS
+  // transition on the slides themselves, so a repaint landing mid-turn cannot leave a
+  // blank strip behind.
+  function stopTurn() {
+    if (turnTimer) { clearInterval(turnTimer); turnTimer = null; }
+  }
+
+  // Arm the turning from scratch. Called on every repaint, so there is never a
+  // second timer — and no timer at all when there is nothing to turn to.
+  function armTurn() {
+    stopTurn();
+    if (!promoToday || !turnsAtAll(liveCodes.length)) return;
+    turnTimer = setInterval(() => {
+      if (!mayTurn()) return;
+      showSlide(standingNext(liveCodes.length, codeAt));
+    }, TURN_MS);
+  }
+
+  // A repaint must not throw the code the customer is reading back to the top of
+  // the list. The order is kept while the offers themselves are unchanged; the
+  // day one is added, ended or paused, the strip starts again from the first.
+  function sameOffers(a, b) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i].code !== b[i].code) return false;
+    return true;
+  }
+
+  if (promoToday) {
+    promoToday.addEventListener("pointerenter", () => { overStrip = true; });
+    promoToday.addEventListener("pointerleave", () => { overStrip = false; });
+    // Belt and braces for the exact case she reported — "move the mouse outside the window,
+    // the flip should be back". A pointer that leaves the whole document without passing
+    // through the strip's own leave event must not leave the turn held for ever.
+    document.addEventListener("pointerleave", () => { overStrip = false; });
+    document.addEventListener("pointercancel", () => { overStrip = false; });
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) stopTurn();
+      else armTurn();
+    });
+  }
 
   // What the basket comes to right now. The same sum renderBar shows in the bar,
   // asked separately because the promo lines need it whether or not the bar is
@@ -1160,9 +1422,14 @@ export function render() {
   // stoppedBy, so the standing line and the code box can never disagree about
   // what "still running" means. A personal code is never shown here — being
   // unadvertised is the whole of what "personal" buys (see publishCodes).
-  function standingCode() {
-    const today = dateKey(new Date());
-    return publishedCodes().find((c) => c.vis === "public" && !stoppedBy(c, today)) || null;
+  //
+  // EVERY ONE OF THEM, not just the first (v292). This was `.find()`, which took
+  // the first live public code and dropped the rest without a word — so a bakery
+  // running three offers advertised one and hid two behind it. The turning is
+  // below; this is only the choosing, and it is pure so it is judged here rather
+  // than by looking at a phone.
+  function standingCodes() {
+    return standingToday(publishedCodes(), dateKey(new Date()));
   }
 
   function say(key, className, ...args) {
@@ -1243,17 +1510,29 @@ export function render() {
       // and taking the day's offer off the screen because the customer mistyped
       // would hide a real sale behind their own typo. The refusal stays, and the
       // standing line stays there to tell them the code they were looking for.
-      const c = promoApplied ? null : standingCode();
-      promoToday.hidden = !c;
-      if (promoOffer) promoOffer.textContent = c ? sub(t("promoToday"), clauseWords(c), c.code) : "";
-      // Her own sentence, underneath the app's line and never instead of it: the
-      // app's line is what names the code, and a customer who cannot type the
-      // code cannot use it. A code she has written nothing for shows one line,
-      // exactly as it did before she could write anything.
-      if (promoWords) {
-        const own = c ? ownWords(c) : "";
-        promoWords.hidden = !own;
-        promoWords.textContent = own;
+      const list = promoApplied ? [] : standingCodes();
+      // Keep the offer the customer is already reading across a repaint — this runs
+      // on every cart change — and start from the top only when the offers themselves
+      // have changed. The SLIDES are rebuilt only then too: rebuilding them on every
+      // cart change would restart their cross-fade under a customer who did nothing.
+      const changed = !sameOffers(list, shownCodes);
+      if (changed) codeAt = 0;
+      liveCodes = list;
+      shownCodes = list.slice();
+      promoToday.hidden = !list.length;
+      if (!list.length) {
+        stopTurn();
+        if (promoRotor) promoRotor.replaceChildren();
+        if (promoDots) promoDots.replaceChildren();
+        slides = [];
+        dots = [];
+        litAt = -1;
+        codeAt = 0;
+      } else {
+        if (changed || !slides.length) buildSlides(list);
+        if (codeAt >= list.length) codeAt = 0;
+        showSlide(codeAt);
+        armTurn();
       }
     }
     if (promoSay) promoSay.hidden = true;
@@ -1985,6 +2264,11 @@ export function render() {
             // the standing line and any code already in the box are redrawn here
             // rather than waiting for the customer to touch something.
             if (repaintPromo) repaintPromo();
+            // The codes are in hand NOW, which is the first moment a visit can be judged
+            // against them (v288). Called here and nowhere else, so the count can only ever
+            // follow the arrival of the list it is checked against — and latched inside, so
+            // the 30-second poll below cannot count the same open again.
+            countLabelOpen(location.search, publishedCodes(), CONFIG.supabase);
           } catch { /* corrupt config → keep the local one */ }
         }
       }

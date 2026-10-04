@@ -35,6 +35,8 @@ import { attachProfiles, customerNameMatches, customerRowName, syncContactFromOr
 // The half-typed address suggestions (v228). Reached through the same channel the
 // pin's lookup uses, so the Google key stays on the server and never touches this page.
 import { suggestAddresses } from "../couriers/api.js";
+import { bakeryName, journalBodyEl, journalButtons } from "../journal.js";
+import { invoiceCurrency, invoiceNo, invoiceSheet } from "../invoice.js";
 // The one spelling a promo code is recognised by (v270). An order's own code is
 // read back through it, so a stray lowercase in some older record cannot make two
 // spellings of one code look like two codes on the row.
@@ -2849,6 +2851,43 @@ function parcelSection({ state, group, draft, refresh, consignmentWhere = "above
     advisory);
 }
 
+// One order, one invoice (v293, numbered by the order's own code since v294).
+//
+// It is a `journalSheet`, so Print, Share and the PDF into WhatsApp are the same presses
+// every other book in the app already has — and the money is `customerTotal`, the ONE
+// order-money function the confirmation message, the tracking card and the row itself
+// read, so an invoice cannot state a sum those three contradict.
+//
+// ★ THE NUMBER IS THE ORDER'S OWN CODE — her words: __"for the invoice, i think we can use
+// the order code as invoice number"__. That is why this function WRITES NOTHING: the v293
+// draft stamped a running number onto the order on first use, and had to carry the caveat
+// that two phones issuing in the same instant could take the same one. There is nothing to
+// assign now, so pressing Invoice touches no record at all, and an invoice for an old order
+// reads the same number it always did because the number was never stored. See js/invoice.js
+// for the whole of that reasoning, and for the trade-off it states rather than hides.
+function openInvoice(state, group) {
+  const first = (group && group.orders && group.orders[0]) || null;
+  // A press that cannot do its job says so rather than opening an empty page. An order
+  // with no items is not an order, and there is nothing on it to invoice.
+  if (!first) return toast("This order has nothing on it to invoice");
+
+  const cur = invoiceCurrency(state);
+  const sheet = invoiceSheet(state, group, {
+    bakery: bakeryName(state),
+    from: String((state.settings && state.settings.mailingAddress) || ""),
+  });
+
+  showPopup(`Invoice #${invoiceNo(group)}`, (refresh, close) => el("div", {},
+    // `journalBodyEl` deliberately does not draw a sheet's subtitle — every other journal
+    // leans on the section wording above its card — so the person this invoice is for, and
+    // the day the order was placed, are said here on the screen, while the sheet keeps the
+    // date for the paper and the PDF.
+    el("p", { class: "card-sub", style: "margin:0 0 10px" },
+      `${String(first.customerName || "").trim() || "No name"} · placed ${longDate(first.orderDate || first.createdAt)}`),
+    journalBodyEl(sheet, cur),
+    el("div", { class: "popup-actions" }, ...journalButtons(sheet, cur))));
+}
+
 // The two things she most often needs to change once an order is placed: its note,
 // and the courier's tracking number (16 Sep 2026). They get their own small pop-up
 // behind their own button, so a one-line change never means scrolling the whole
@@ -3403,6 +3442,12 @@ function orderGroupRow(state, group, root, dateId) {
   actions.push(button("Note / tracking", () => {
     anchorRowId = first.id;
     openNoteTrackingPopup(state, group, first, dateId, root);
+  }, "ghost small"));
+  // One order, one invoice (v293). Beside Edit and Note / tracking, where the things she
+  // can do to one order already live.
+  actions.push(button("Invoice", () => {
+    anchorRowId = first.id;
+    openInvoice(state, group);
   }, "ghost small"));
 
   // The stage's WhatsApp action(s). Each message carries the order code, and the

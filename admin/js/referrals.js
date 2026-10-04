@@ -10,7 +10,8 @@
 // decider: one tap Give credit / Skip. She applies the actual RM amounts herself
 // when she confirms each order on WhatsApp.
 
-import { fmtRM, isNewCustomer, newId, orderCode, round2, waNumber } from "./state.js";
+import { fmtRM, groupOrders, isNewCustomer, newId, orderCode, round2, waNumber } from "./state.js";
+import { codesOf, normCode } from "./promo.js";
 import { addDays, todayISO } from "./dates.js";
 import { nameFor, servingFor } from "../../i18n.js";
 import { FOLLOWUP, fmtFollowup } from "./followup-lang.js";
@@ -321,4 +322,111 @@ export function addManualCredit(state, { whatsapp, name = "", amountRM, validDay
   };
   (state.credits ||= []).push(credit);
   return credit;
+}
+
+// ── the reward, exercised (v291) ───────────────────────────────────────────
+//
+// The reward itself is her own words on the profile (`reward`) plus a NUMBER
+// (`rewardEvery`). The number is its own box and is NEVER parsed out of her
+// sentence: a parser that misread "every five friends" would tell her a partner
+// is owed a loaf she is not, and every one of these is settled by hand.
+//
+// This section derives two things and records one:
+//   · broughtIn — how many people the advocate actually brought, recounted from
+//                 her own orders every time, so nothing can ever double-count.
+//   · grants    — how many rewards she has already handed over. RECORDS, one per
+//                 hand-out, so two phones can never overwrite each other's.
+//
+// WHICH IS THE WHOLE POINT OF THE SHAPE. A count kept on the profile would be a
+// single value under the sync layer's last-write-wins, so the phone that saved
+// last would silently discard the other's grant. A LIST of records cannot lose
+// an update — the same reason the credit ledger above is a list.
+
+// The carts an advocate is responsible for, as a Set of group keys.
+//
+// THE TWO TIERS ARE ONE UNION, not two sums, because the same person can be in
+// both — a friend who shared a link AND a partner whose code is on a card — and
+// one cart could arrive carrying both. Counting each tier separately would let
+// that cart count twice.
+function broughtGroups(state, digits, theirCodes) {
+  const out = new Set();
+  for (const group of groupOrders((state && state.orders) || [])) {
+    const first = (group.orders || [])[0];
+    if (!first) continue;
+    const byCode = theirCodes.size > 0 && theirCodes.has(normCode(first.promo));
+    // `referralFlag` is the SAME rule the Give-credit button reads, so a cart
+    // that only counts as "existing" there cannot count as a new customer here.
+    const byLink = !!digits && waNumber(first.referredBy) === digits
+      && referralFlag(state, group) === "new";
+    if (byCode || byLink) out.add(String(first.groupId || first.id || ""));
+  }
+  return out;
+}
+
+// How many people this advocate brought in — one number whether they arrived as
+// a friend with a link or a partner with a code. Identity is the DIGITS for a
+// link (that is what `referredBy` holds) and the profile's own stable `id` for a
+// code (v289: `keyOf` moves when a number is corrected, so it cannot hold this).
+export function broughtIn(state, { whatsapp = "", profileId = "" } = {}) {
+  const digits = waNumber(whatsapp);
+  const theirCodes = new Set(
+    (profileId ? codesOf(state) : [])
+      .filter((c) => c.holder && c.holder.id === profileId && c.code)
+      .map((c) => c.code));
+  if (!digits && !theirCodes.size) return 0;
+  return broughtGroups(state, digits, theirCodes).size;
+}
+
+// Every reward handed to this person, newest first — so the Undo press beside
+// the count always undoes the last thing she did.
+export function rewardGrants(state, profileId) {
+  const id = String(profileId || "");
+  if (!id) return [];
+  return (state.rewards || [])
+    .filter((x) => x && x.profileId === id)
+    .sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
+}
+
+// Everything the profile card needs, in one place: what they brought in, how
+// many they have been given, and how many are due.
+//
+// `every` of 0 means she has not set a number ("a favour, whenever") — the words
+// still show and the count is still honest, there is simply nothing to divide by
+// and so nothing is ever due. `due` never goes negative: giving early is allowed
+// and settles the favour, it does not put her in the customer's debt.
+export function rewardStanding(state, profile, { whatsapp = "" } = {}) {
+  const every = Math.floor(Number((profile && profile.rewardEvery) || 0)) || 0;
+  const came = broughtIn(state, { whatsapp, profileId: (profile && profile.id) || "" });
+  const grants = rewardGrants(state, (profile && profile.id) || "");
+  const earned = every > 0 ? Math.floor(came / every) : 0;
+  return { every, came, given: grants.length, earned, due: Math.max(0, earned - grants.length), grants };
+}
+
+// Hand over a reward: push ONE record. `came` snapshots what they had brought in
+// at that moment, so the record still reads honestly after later orders arrive
+// and the count has moved on.
+export function giveReward(state, { profileId, holder = "", holderName = "", what = "", came = 0, note = "" }, now = new Date().toISOString()) {
+  const id = String(profileId || "");
+  if (!id) return null;
+  const rec = {
+    id: newId("rwd"),
+    profileId: id,
+    holder: waNumber(holder) || "",
+    holderName: String(holderName || "").trim(),
+    what: String(what || "").trim(),
+    came: Math.max(0, Math.floor(Number(came) || 0)),
+    at: now,
+    note: String(note || "").trim(),
+  };
+  (state.rewards ||= []).push(rec);
+  return rec;
+}
+
+// Take a hand-out back — a mis-tap, or a reward handed over and then returned.
+export function removeRewardGrant(state, id) {
+  const want = String(id || "");
+  if (!want) return false;
+  const before = (state.rewards || []).length;
+  state.rewards = (state.rewards || []).filter((x) => !x || x.id !== want);
+  return state.rewards.length < before;
 }

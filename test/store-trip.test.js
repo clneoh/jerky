@@ -65,6 +65,12 @@ globalThis.document = {
   querySelectorAll: () => [],
   documentElement: createEl("html"),
   body: createEl("body"),
+  // The REAL document has these. A shim without them is not a smaller DOM, it is a
+  // different one: the shop registers a visibilitychange listener at start-up (v292),
+  // and a missing method is a TypeError at import — every store test dies at once.
+  _docListeners: {},
+  addEventListener(t, f) { (this._docListeners[t] ||= []).push(f); },
+  removeEventListener() {},
 };
 globalThis.window = { open() {} };
 Object.defineProperty(globalThis, "navigator", {
@@ -330,4 +336,17 @@ test("the card's two links are as tall as everything else the customer taps", ()
   assert.match(body, /box-sizing:\s*border-box/, "and the floor is the whole box, not the content inside it");
   assert.match(body, /display:\s*inline-flex/, "with the word centred in it");
   assert.match(body, /align-items:\s*center/, "and not left sitting at the top");
+  // ── v284: AND THE WORD ITSELF MAY BREAK ────────────────────────────────────
+  // Her report, 3 Oct 2026: *"the lalamove link is very long and go out of bound."* A
+  // courier's share link is one unbroken run of about 150 characters, and an inline-flex
+  // box cannot break one — so the pill grew straight past the card and off the screen.
+  // Measured on the drawn card at 375 pixels with her own order: the link is 131
+  // characters, wraps to five lines inside a card whose right edge is 361, and the page's
+  // scrollWidth stays 375 instead of running wide.
+  // `anywhere` and NOT `break-word`: only `anywhere` also lowers the box's minimum width,
+  // and that is the half that lets the pill fit the card at all — `break-word` would still
+  // let the box refuse to shrink. This is the same rule her own backoffice already carries
+  // on `.job-link`, so both of her screens stop a long link the same way.
+  assert.match(body, /overflow-wrap:\s*anywhere/,
+    "a long unbroken link must be able to break, or the pill walks out of the card");
 });

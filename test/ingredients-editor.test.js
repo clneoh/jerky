@@ -64,7 +64,7 @@ globalThis.localStorage = {
   removeItem: (k) => store.delete(k),
 };
 
-import { renderIngredients } from "../admin/js/views/ingredients.js";
+import { renderIngredients, priceSheet } from "../admin/js/views/ingredients.js";
 
 // A state with just enough to render the Ingredients master: a weight unit to
 // cook in, no suppliers/products, and no ingredients yet.
@@ -259,4 +259,82 @@ test("unticking the switch on an edit takes the flag back off the ingredient", (
   fire(walk(layer).find((n) => n.tagName === "BUTTON" && textOf(n).trim() === "Update ingredient"));
 
   assert.equal(state.ingredients[0].notPurchased, undefined, "the key goes, rather than being saved as false");
+});
+
+// ── v285: the ingredient's own price journal ────────────────────────────────
+// *"ingredient price journaled … So an ingredient need a journals."*
+
+function journalledIng(over = {}) {
+  return {
+    id: "ing_f", name: "Strong flour", unit: "g", uomId: "u_g", costPerUnit: 0.001,
+    supplierPrices: [{ supplierId: "s_mydin", qty: 3000, uomId: "u_g", price: 27.5 }],
+    priceLog: [
+      { at: "2026-10-03", supplierId: "s_mydin", supplierName: "Mydin", qty: 3000,
+        uomId: "u_g", uomName: "g", price: 27.5, was: 25.5, poId: "po_1", source: "po" },
+      { at: "2026-09-12", supplierId: "s_mydin", supplierName: "Mydin", qty: 3000,
+        uomId: "u_g", uomName: "g", price: 25.5, was: 24, poId: "po_0", source: "po" },
+    ],
+    ...over,
+  };
+}
+
+test("the Journal press is offered only once a price has actually moved", () => {
+  const state = freshState();
+  state.ingredients.push({ id: "ing_f", name: "Strong flour", unit: "g", uomId: "u_g", costPerUnit: 0.001 });
+  const cardOf = (root) => walk(root).find((n) =>
+    String(n.className).includes("card") && textOf(n).includes("Strong flour"));
+  const journalBtn = (root) => walk(cardOf(root))
+    .find((n) => n.tagName === "BUTTON" && textOf(n).trim() === "Journal");
+
+  assert.ok(!journalBtn(render(state)),
+    "an ingredient whose price has never moved has no journal, so it offers none");
+
+  state.ingredients[0].priceLog = journalledIng().priceLog;
+  assert.ok(journalBtn(render(state)), "and once it has moved, the journal is there");
+});
+
+test("the price journal lists the moves oldest first, with the price now at the top", () => {
+  const state = freshState();
+  state.suppliers = [{ id: "s_mydin", name: "Mydin", active: true }];
+  const sheet = priceSheet(state, journalledIng());
+
+  assert.equal(sheet.lines.length, 2, "one row per move, and nothing else — no purchases");
+  assert.ok(sheet.lines[0].what.startsWith("12 Sep 2026"),
+    "oldest first, so the page reads as a history rather than a feed");
+  assert.equal(sheet.lines[0].amount, 25.5, "each row carries the price it moved TO");
+  assert.equal(sheet.lines[1].amount, 27.5);
+  assert.ok(sheet.lines[0].what.includes("was RM 24.00"),
+    "and says what it was before, which is the whole point of a price journal");
+  assert.match(sheet.subtitle, /Price now: RM 27\.50 per 3000g pack · Mydin/,
+    "the price she is actually on, at the top — the half a movement list alone would lose");
+  assert.equal(sheet.totals.length, 0, "a price history has no total to add up");
+});
+
+test("an ingredient that has never moved a price draws the sheet's empty line, not a blank page", () => {
+  const state = freshState();
+  const sheet = priceSheet(state, journalledIng({ priceLog: [] }));
+  assert.equal(sheet.lines.length, 0);
+  assert.match(sheet.empty, /No price change recorded yet/);
+  assert.match(sheet.subtitle, /Price now:/);
+});
+
+test("opening the journal shows the price now on the SCREEN, not only on the page", () => {
+  // `journalBodyEl` deliberately does not draw a sheet's subtitle — every other journal leans
+  // on the section wording above its card. But her answer was "only when the price moves,
+  // PLUS TODAY", and a movement list cannot carry "today" by itself: without this line the
+  // screen would show the history and never the price she is actually on.
+  const state = freshState();
+  state.suppliers = [{ id: "s_mydin", name: "Mydin", active: true }];
+  state.ingredients.push(journalledIng());
+
+  const root = render(state);
+  const card = walk(root).find((n) => String(n.className).includes("card") && textOf(n).includes("Strong flour"));
+  fire(walk(card).find((n) => n.tagName === "BUTTON" && textOf(n).trim() === "Journal"));
+
+  const layer = registry["popup-layer"];
+  assert.match(textOf(layer), /Price now: RM 27\.50 per 3000g pack · Mydin/,
+    "the price she is on is on the card");
+  assert.ok(textOf(layer).includes("was RM 25.50"), "and so is what it moved from");
+  assert.ok(walk(layer).find((n) => n.tagName === "BUTTON" && textOf(n).trim() === "Print"),
+    "and the journal leaves the screen like every other one");
 });

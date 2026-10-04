@@ -534,3 +534,94 @@ test("the month arrows let her come back forward after stepping back", () => {
   press(arrows(root)[1]);
   assert.equal(title(root), thisMonth, "pressing it there does nothing at all");
 });
+
+// ── the statement can leave the screen (v282) ─────────────────────────────────
+// "those journals in profits and other journals should be printable and able to be shared"
+// (3 Oct 2026). She chose that the Profit and loss card gets the pair too — a journal alone
+// is half a document. What this pins is that what leaves is the WHOLE statement, and that
+// every figure on the paper is the figure on the screen, not a second sum of the books.
+test("the Profit and loss card prints and shares the whole statement, figure for figure", async () => {
+  const walkAll = screenOf();
+  const st = state();
+  const now = new Date();
+  const { from } = monthSpan(now.getFullYear(), now.getMonth());
+  st.deliveryDates = [{ id: "d1", date: from }];
+  st.orders = [order({ deliveryDate: from, qty: 2, customerName: "Aisyah" })];
+  st.expenses = [{ id: "e1", date: from, amount: 18, category: "Packaging", method: "Cash" }];
+
+  const root = document.createElement("div");
+  renderProfit(root, st);
+
+  // The pair sits under the statement card herself, not floating at the foot of the screen.
+  const card = walkAll(root).find((n) => String(n.className).includes("card")
+    && String(n.children?.[0]?.textContent || "") === "Profit and loss");
+  assert.ok(card, "the Profit and loss card is there");
+  const press = (label) => walkAll(card).find((n) => n.tagName === "BUTTON" && String(n.textContent).trim() === label);
+  assert.ok(press("Print"), "the card wears the same pair every journal wears");
+  assert.ok(press("Share"));
+
+  let shared = null;
+  globalThis.navigator.share = (p) => { shared = p; return Promise.resolve(); };
+  try {
+    await press("Share")._listeners.click[0]();
+    assert.equal(shared.title, "Profit and loss");
+
+    // Every line of the statement, at the figure the screen is showing — read off the
+    // screen's own rows, so a paper that quietly dropped or re-summed one cannot pass.
+    const onScreen = Object.fromEntries(
+      rowsOf(root).map((r) => [r.slice(0, r.lastIndexOf("=")), r.slice(r.lastIndexOf("=") + 1)]));
+    for (const label of ["Sales", "Cost of sales", "Gross profit", "Total expenses", "Net profit"]) {
+      const onPaper = shared.text.split("\n").find((l) => l.startsWith(label));
+      assert.ok(onPaper, `${label} reaches the paper`);
+      assert.ok(onPaper.endsWith(onScreen[label]),
+        `${label}: the paper says "${onPaper}" where the screen says "${onScreen[label]}"`);
+    }
+
+    // A page has no section wording to lean on, so where trading ends has to be said.
+    assert.ok(shared.text.split("\n").includes("Running costs"),
+      "Running costs is a heading of its own, with no figure padded onto it");
+    assert.match(shared.text, /^Packaging\s+RM -18\.00$/m, "and the running costs are listed under it");
+
+    // The reader of Gross profit on paper needs the same warning the screen gives.
+    assert.match(shared.text, /built from the recipe and the ingredient prices you have recorded/,
+      "the statement explains its own cost figure on paper too");
+    assert.match(shared.text, /the Money screen is where the cash is/);
+  } finally { delete globalThis.navigator.share; }
+});
+
+test("every journal behind a statement line wears the pair, and shares its own book", async () => {
+  const walkAll = screenOf();
+  const st = state();
+  const now = new Date();
+  const { from } = monthSpan(now.getFullYear(), now.getMonth());
+  st.deliveryDates = [{ id: "d1", date: from }];
+  st.orders = [order({ deliveryDate: from, qty: 2, customerName: "Aisyah" })];
+  st.expenses = [{ id: "e1", date: from, amount: 18, category: "Packaging", method: "Cash", note: "2 boxes" }];
+
+  const root = document.createElement("div");
+  renderProfit(root, st);
+  const line = (label) => walkAll(root).find((n) => String(n.className).includes("pl-row")
+    && n.children[0].textContent === label);
+  const popup = () => walkAll(document.getElementById("popup-layer"));
+  const press = (label) => popup().find((n) => n.tagName === "BUTTON" && String(n.textContent).trim() === label);
+
+  // Every door on the statement — a category, the Total, and both trading lines.
+  for (const label of ["Packaging", "Total expenses", "Sales", "Cost of sales"]) {
+    document.getElementById("popup-layer").replaceChildren();
+    line(label)._listeners.click.forEach((f) => f());
+    assert.ok(press("Print") && press("Share"), `${label}'s journal wears the same two presses`);
+  }
+
+  let shared = null;
+  globalThis.navigator.share = (p) => { shared = p; return Promise.resolve(); };
+  try {
+    document.getElementById("popup-layer").replaceChildren();
+    line("Sales")._listeners.click.forEach((f) => f());
+    await press("Share")._listeners.click[0]();
+    assert.equal(shared.title, "Sales journal");
+    assert.match(shared.text, /Focaccia × 2 · Aisyah/, "what leaves is the journal she opened");
+    assert.ok(shared.text.split("\n").find((l) => l.startsWith("Total")).endsWith("RM 30.00"),
+      "and it lands on that line's own figure");
+    assert.match(shared.text, /From More → Profit\./, "with where it came from on it");
+  } finally { delete globalThis.navigator.share; }
+});

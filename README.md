@@ -738,6 +738,45 @@ matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestion
 now that the Google key returns one precise house-number answer, most lookups legitimately show no
 list and the pin simply lands.
 
+## Sixteen versions in one pass: the journals, the invoice, the shop's offer strip, and code labels (v282–v297)
+
+Bakery `81dbab6` (v281 — exactly where jerky sat) → `4bf08a2` (v297), ported with the same
+one-file three-way merge per file: `git merge-file -p --diff3 <jerky> <bakery@81dbab6:file>
+<bakery@4bf08a2:file>`. **61 files, 6,557 insertions. Fifteen conflicts across six files, every one
+of them the usual localization** (`home-lang.js`, `index.html`, `CHANGELOG.md`, `admin/js/referrals.js`,
+`admin/js/supabase.js`, `admin/js/views/profit.js`); `store/app.js` merged clean. Suite **2535 → 2664
+pass / 0 fail**; every changed module ESM-parsed.
+
+**What each version brought, oldest first.** **v282–v283** a **journal** for any money screen — print
+it, or Share it as a PDF file (`admin/js/journal.js`, `admin/js/pdf.js`, new); **v284** a long
+courier link wraps inside the customer's card instead of running off it; **v285** the shopping list
+can be corrected at the shop, and an ingredient keeps its **price history** (`admin/js/prices.js`,
+new); **v286** a **suggested promo code** you can read off a card; **v287** every code gains a
+**label** (the words printed beside the QR), and printing no longer freezes an offer; **v288** how
+many times each **label's link was opened**; **v289** a **named reward** on a customer, and a code
+that names its person; **v290** you can **add a customer yourself**; **v291** a reward is counted, and
+you can record that you gave it; **v292** and **v295–v297** the shop's **offer strip** turns through
+the offers instead of hiding them behind each other, holds the height of the **tallest** message so
+the page stops jumping, and turns as a real 3D flip with one **dot per offer** — the pointer being
+over the strip is now the whole of the pause, so moving the mouse away always starts it again;
+**v293–v294** an **invoice** for a customer (`admin/js/invoice.js`, new), one order at a time, and the
+invoice number is the order's own code.
+
+**The one database step.** `supabase/promo_visits.sql` — one paste in the SQL editor **before**
+pushing, or the label open-counts the new Promo screen reads will simply not appear. Nothing else is
+new: no Edge Function, no key.
+
+**Localization.** `admin/js/journal.js` fell back to the name *"Jienluv2bake"* → **"Munchies
+Furkidz"**; `admin/js/views/promo.js` had the bakery's domain hard-coded in two QR links →
+`munchies.com.my`. The new changelog entries were localized (bake day → posting day, baker → you,
+the bakery → your shop). `home-lang.js` and `index.html` kept jerky's own homepage throughout — the
+bakery's edits to them were its own content (bake days, Sungai Ara, the Lalamove area), which jerky
+replaces with its own.
+
+**One bakery file deliberately NOT taken:** `test/store-track-money.test.js` (bakery-only — it
+asserts a money block jerky's shop deliberately does not draw, since jerky's flat postage is never
+published).
+
 ## One version: the profit statement says which kind of cost it is showing (v281)
 
 One engine version, from bakery `290c14d` (v280 — exactly where jerky sat) → `81dbab6` (v281).

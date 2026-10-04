@@ -9,6 +9,7 @@ import {
   referrerName, referralFlag, creditRows, validCredits, creditStatus,
   giveCredits, markOneUsed, markCreditUsed, setCreditExpiry, removeCredit,
   addManualCredit, ROLE_LABEL,
+  broughtIn, rewardStanding, rewardGrants, giveReward, removeRewardGrant,
 } from "../admin/js/referrals.js";
 import { addDays, todayISO } from "../admin/js/dates.js";
 
@@ -398,4 +399,124 @@ test("a product passed as just its name still localizes around the sentences, wi
 test("ROLE_LABEL covers the two credit kinds", () => {
   assert.equal(ROLE_LABEL.reward, "Referral credit");
   assert.equal(ROLE_LABEL.friendOff, "Friend's discount");
+});
+
+// ── v291: the reward she can actually exercise ──────────────────────────────
+//
+// She asked the question this section answers: "how do we exercise their reward,
+// if the reward is only written text?" The reward stays her own words; what is
+// added is a NUMBER to divide by and a RECORD per hand-out.
+
+// A promo code owned by a person, in the shape codesOf() reads.
+function ownedCode(ownerId, name, code) {
+  return { id: "pc_" + code, code, state: "live", vis: "public", holder: { id: ownerId, name } };
+}
+
+test("broughtIn counts a link friend and a code partner, and never one cart twice", () => {
+  const st = baseState();
+  st.promoCodes = [ownedCode("cus_partner", "Mei", "PARTY")];
+  // The partner's own cart, carrying their code.
+  st.orders.push(order({ id: "aaaa01", groupId: "g000001", whatsapp: "60111000001", promo: "PARTY" }));
+  // A NEW friend through the partner's link — the other tier.
+  st.orders.push(order({ id: "aaaa02", groupId: "g000002", whatsapp: "60111000002", referredBy: "60139876543" }));
+  // ...and one cart carrying BOTH tiers at once, which is why the two are a UNION and not two sums.
+  st.orders.push(order({ id: "aaaa03", groupId: "g000003", whatsapp: "60111000003", promo: "party", referredBy: "60139876543" }));
+
+  assert.equal(broughtIn(st, { whatsapp: "60139876543", profileId: "cus_partner" }), 3,
+    "three carts, and the one carrying both tiers counted ONCE rather than twice");
+});
+
+test("broughtIn never counts a friend who had already ordered", () => {
+  // The same rule the Give-credit button reads (referralFlag). If these two ever
+  // disagreed, a friend the app refused to credit would still eat a loaf.
+  const st = baseState();
+  st.orders.push(order({ id: "bbbb01", groupId: "g010001", whatsapp: "60111000009", createdAt: "2026-08-01T08:00:00.000Z" }));
+  st.orders.push(order({ id: "bbbb02", groupId: "g010002", whatsapp: "60111000009", referredBy: "60139876543" }));
+  assert.equal(broughtIn(st, { whatsapp: "60139876543" }), 0,
+    "an existing customer is not a new one");
+});
+
+test("broughtIn ignores another partner's code", () => {
+  const st = baseState();
+  st.promoCodes = [ownedCode("cus_me", "Mei", "MINE1"), ownedCode("cus_other", "Sam", "THEIR")];
+  st.orders.push(order({ id: "dddd01", groupId: "g030001", whatsapp: "60111000011", promo: "THEIR" }));
+  assert.equal(broughtIn(st, { profileId: "cus_me" }), 0, "somebody else's code is somebody else's customer");
+  st.orders.push(order({ id: "dddd02", groupId: "g030002", whatsapp: "60111000012", promo: "MINE1" }));
+  assert.equal(broughtIn(st, { profileId: "cus_me" }), 1);
+});
+
+test("rewardStanding divides what they brought in by her number, and counts what is given", () => {
+  const st = baseState();
+  const prof = { id: "cus_p", key: "60139876543", whatsapp: "60139876543", reward: "a free loaf", rewardEvery: 5 };
+  for (let i = 0; i < 7; i++) {
+    st.orders.push(order({
+      id: "cccc000" + i, groupId: "g02000" + i,
+      whatsapp: "6011100000" + i, referredBy: "60139876543",
+    }));
+  }
+  const s1 = rewardStanding(st, prof, { whatsapp: "60139876543" });
+  assert.equal(s1.came, 7);
+  assert.equal(s1.every, 5);
+  assert.equal(s1.earned, 1, "seven brought in is one reward at every five");
+  assert.equal(s1.due, 1);
+  assert.equal(s1.given, 0);
+
+  giveReward(st, { profileId: "cus_p", holder: "60139876543", what: "a free loaf", came: 7 });
+  const s2 = rewardStanding(st, prof, { whatsapp: "60139876543" });
+  assert.equal(s2.given, 1);
+  assert.equal(s2.due, 0, "settled — and it never goes negative");
+});
+
+test("a reward with no number set is never called due", () => {
+  // "a favour, whenever" is a real arrangement. There is nothing to divide by,
+  // so the count is still shown and nothing is ever promised.
+  const st = baseState();
+  st.orders.push(order({ id: "eeee01", groupId: "g040001", whatsapp: "60111000021", referredBy: "60139876543" }));
+  st.orders.push(order({ id: "eeee02", groupId: "g040002", whatsapp: "60111000022", referredBy: "60139876543" }));
+  const s = rewardStanding(st, { id: "cus_f", reward: "a favour, whenever" }, { whatsapp: "60139876543" });
+  assert.equal(s.came, 2, "the count is still honest");
+  assert.equal(s.every, 0);
+  assert.equal(s.due, 0, "but nothing is ever due without a number to divide by");
+});
+
+test("every hand-out is its OWN record, so neither phone can overwrite the other's", () => {
+  // WHY THIS IS A LIST AND NOT A NUMBER. A count kept on the profile would be one
+  // value under the sync layer's last-write-wins — the phone that saved last would
+  // discard the other's grant in silence. Records cannot lose an update.
+  const st = baseState();
+  const a = giveReward(st, { profileId: "cus_p", what: "a free loaf", came: 5 }, "2026-09-01T00:00:00.000Z");
+  const b = giveReward(st, { profileId: "cus_p", what: "a free loaf", came: 12 }, "2026-09-08T00:00:00.000Z");
+  assert.notEqual(a.id, b.id);
+  assert.equal(st.rewards.length, 2, "two grants are two records, not one number");
+  assert.deepEqual(rewardGrants(st, "cus_p").map((g) => g.id), [b.id, a.id],
+    "newest first, so the Undo press takes back the last thing she did");
+  assert.deepEqual(rewardGrants(st, "cus_someone_else"), [], "one person's grants are not another's");
+  assert.deepEqual(rewardGrants(st, ""), [], "no profile id, no grants");
+});
+
+test("a hand-out records what they had brought in at the time", () => {
+  // The snapshot matters: a later order moves the live count on, and the record
+  // must still read honestly afterwards.
+  const st = baseState();
+  giveReward(st, { profileId: "cus_p", holderName: "Mei", what: "a free loaf", came: 5 });
+  const [g] = st.rewards;
+  assert.equal(g.came, 5);
+  assert.equal(g.holderName, "Mei");
+  assert.equal(g.what, "a free loaf");
+});
+
+test("a hand-out needs a person to belong to", () => {
+  const st = baseState();
+  assert.equal(giveReward(st, { profileId: "", what: "a free loaf" }), null);
+  assert.equal((st.rewards || []).length, 0, "and nothing is written for nobody");
+});
+
+test("a hand-out can be taken back", () => {
+  const st = baseState();
+  const a = giveReward(st, { profileId: "cus_p" }, "2026-09-01T00:00:00.000Z");
+  giveReward(st, { profileId: "cus_p" }, "2026-09-08T00:00:00.000Z");
+  assert.equal(removeRewardGrant(st, a.id), true);
+  assert.equal(st.rewards.length, 1, "only the one she took back went");
+  assert.equal(removeRewardGrant(st, a.id), false, "and taking it back twice does nothing");
+  assert.equal(removeRewardGrant(st, ""), false, "a blank id removes nothing");
 });

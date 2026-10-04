@@ -8,8 +8,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  blankCode, codeNameOk, codeProblem, codesOf, evaluate, findCode, minimumOf,
-  normCode, normalizeCode, offerOf, publishCodes, SAY_MAX, stoppedBy, worthOf,
+  blankCode, CODE_ALPHABET, CODE_LENGTH, codeNameOk, codeProblem, codesOf, evaluate,
+  findCode, makeCode, minimumOf, normCode, normalizeCode, offerOf, publishCodes,
+  SAY_MAX, stoppedBy, worthOf,
 } from "../admin/js/promo.js";
 
 const TODAY = "2026-10-02";
@@ -92,7 +93,6 @@ test("every family has a no-opinion default, so a record that predates a family 
   for (const family of ["state", "vis", "who", "when", "basket", "gives", "often", "beside"]) {
     assert.deepEqual(c[family], b[family], `${family} was left without its no-opinion default`);
   }
-  assert.equal(c.frozen, false);
   assert.equal(c.used, 0);
   assert.equal(c.given, 0);
 });
@@ -348,4 +348,106 @@ test("her own sentence can never change what a code is called", () => {
   assert.equal(c.code, "FRESH10", "the sentence is not spliced into the name");
   assert.equal(codeProblem([], code({ code: "AB", say: "Ask us for the good code" })).fail, "shape",
     "and a name too short to read off a card is still refused, however nice the sentence is");
+});
+
+// ── v286: a suggested code the customer can read off a card ──────────────────
+
+test("a suggested code is drawn from an alphabet with no pair people mix up", () => {
+  // The code is read by eye twice — she types it when she makes it, and the customer types it
+  // off the printed card. 0/O, 1/I and 1/L are the pairs that go wrong doing that, so the
+  // alphabet carries none of them.
+  for (const ch of "0O1IL") {
+    assert.ok(!CODE_ALPHABET.includes(ch), `${ch} must not be in the suggested alphabet`);
+  }
+  assert.equal(CODE_ALPHABET.length, 31, "31 characters: the ten digits minus 0 and 1, and A-Z minus I, L and O");
+  assert.equal(new Set(CODE_ALPHABET).size, CODE_ALPHABET.length, "and no character twice");
+});
+
+test("makeCode returns a code that is readable, typed-sized, and passes the shape rule", () => {
+  for (let i = 0; i < 200; i += 1) {
+    const c = makeCode([]);
+    assert.equal(c.length, CODE_LENGTH);
+    for (const ch of c) assert.ok(CODE_ALPHABET.includes(ch), `${c} carries ${ch}`);
+    assert.ok(codeNameOk(c), `${c} must be a code she could actually save`);
+  }
+});
+
+test("makeCode never hands back a name that is already taken", () => {
+  // The one fault the shop could not recover from: two codes sharing a name would take the
+  // wrong amount off.
+  //
+  // THE DRAW IS PINNED, and that is the whole point of this test. Left random it passes even
+  // with the check deleted, because a five-character code is almost never one of the two or
+  // three names a fixture holds — an assertion that cannot fail is not an assertion. Pinning
+  // it makes the taken name exactly the one the generator would otherwise hand back.
+  Object.defineProperty(globalThis.crypto, "getRandomValues", {
+    value: (buf) => { for (let i = 0; i < buf.length; i += 1) buf[i] = 0; return buf; },
+    configurable: true, writable: true,
+  });
+  try {
+    const wouldBe = "22222";
+    assert.equal(makeCode([]), wouldBe, "with the draw pinned, this is the code it would give");
+    assert.notEqual(makeCode([wouldBe]), wouldBe, "so a name already spoken for is refused");
+    assert.notEqual(makeCode([{ code: wouldBe }]), wouldBe, "and a RECORD is read as its own code");
+    assert.notEqual(makeCode([` ${wouldBe.toLowerCase()} `]), wouldBe, "however carelessly it was stored");
+  } finally {
+    delete globalThis.crypto.getRandomValues;
+  }
+});
+
+test("when the alphabet is exhausted it LENGTHENS rather than repeating a name", () => {
+  // 31^5 is 28.6 million, so a real app never reaches this — but if the source of randomness
+  // is stuck, the honest answer is a longer code, never a duplicate. Pinning the randomness
+  // proves the branch without pretending we can exhaust the space.
+  // `globalThis.crypto` itself is getter-only, but the method on it can be shadowed — and
+  // removed again afterwards, so nothing else in the run sees a pinned draw.
+  const frozen = "22222";                      // every draw lands on the alphabet's first letter
+  Object.defineProperty(globalThis.crypto, "getRandomValues", {
+    value: (buf) => { for (let i = 0; i < buf.length; i += 1) buf[i] = 0; return buf; },
+    configurable: true, writable: true,
+  });
+  try {
+    assert.equal(makeCode([]), frozen, "with the draw pinned, the first suggestion is deterministic");
+    const escaped = makeCode([frozen, "22222222"]);
+    assert.ok(escaped.length > CODE_LENGTH, "and it grows rather than handing back a name in use");
+    assert.ok(!escaped.includes("0") && !escaped.includes("1"));
+  } finally {
+    delete globalThis.crypto.getRandomValues;
+  }
+  assert.notEqual(makeCode([]), "", "and the real source of randomness is back");
+});
+
+// ── v289: a code that belongs to a person ────────────────────────────────────
+
+test("EVERY family blankCode names, the normaliser must name back", () => {
+  // THE TEST THAT MAKES A FORGOTTEN LIST FAIL INSTEAD OF HIDE. `normalizeCode` rebuilds an
+  // explicit object literal, so a field added to blankCode() and not to it is STRIPPED on the
+  // next read — the feature is simply dead, and every other test stays green because the shape
+  // test above iterates a hardcoded family list that does not know about the new field.
+  // This one cannot be fooled that way: it holds the two shapes against each other.
+  // `id` is the one deliberate difference: blankCode() carries none — the editor assigns one —
+  // and the normaliser always answers with one, because the row has to be addressable. Anything
+  // ELSE that differs is a field this pair disagrees about, which is the fault being caught.
+  assert.deepEqual(normalizeCode(blankCode()), { id: "", ...blankCode() },
+    "a field blankCode() declares must survive a normalise, or it is silently dead");
+});
+
+test("a code's holder round-trips, so a partner's label stays theirs", () => {
+  const c = normalizeCode({ ...blankCode(), code: "CAFE5", holder: { id: "cus_1", name: "Cafe Aunty" } });
+  assert.deepEqual(c.holder, { id: "cus_1", name: "Cafe Aunty" });
+  assert.deepEqual(normalizeCode({ ...blankCode(), code: "PLAIN1" }).holder, { id: "", name: "" },
+    "a code that belongs to nobody is nobody — not undefined, so a screen never has to ask");
+});
+
+test("a code that belongs to someone NEVER publishes their name", () => {
+  // The row publishCodes builds is WORLD-READABLE — anyone holding the shop's public key can
+  // read it. A holder's name is the baker's own customer book, so it must not be in there, ever.
+  // This is the invariant, not a comment: adding `holder` to publishCodes turns this red.
+  const state = { promoCodes: [code({ code: "CAFE5", holder: { id: "cus_1", name: "Cafe Aunty" } })] };
+  const out = publishCodes(state);
+  const json = JSON.stringify(out);
+  assert.equal("holder" in out[0], false, "the holder key is not published at all");
+  assert.ok(!json.includes("Cafe Aunty"), "and the person's name is nowhere in the payload");
+  assert.ok(!json.includes("cus_1"), "nor the profile id");
+  assert.equal(out[0].code, "CAFE5", "while the code itself is published as always");
 });

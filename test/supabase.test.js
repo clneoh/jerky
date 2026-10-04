@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateUpcomingDates } from "../admin/js/dates.js";
-import { computeSlots, computeProductSlots, syncAvailability, login, syncStorefront, pullIncoming, publishTracking, maybePublishTracking, forgetPublishedCards, trackingSnapshot, refreshStorefront, pendingReviewCount } from "../admin/js/supabase.js";
+import { computeSlots, computeProductSlots, syncAvailability, login, syncStorefront, pullIncoming, publishTracking, maybePublishTracking, forgetPublishedCards, trackingSnapshot, refreshStorefront, pendingReviewCount, fetchPromoVisits } from "../admin/js/supabase.js";
 import { groupOrders, orderCode } from "../admin/js/state.js";
 
 const realFetch = globalThis.fetch;
@@ -1760,6 +1760,112 @@ test("a publish the server refused is not remembered as done", async () => {
     await maybePublishTracking(state, group);
     assert.equal(trackingCalls(calls).length, 2,
       "the rejected write is tried again rather than counted as published");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+// ── fetchPromoVisits — "how many times was each label opened" (v288) ──────────
+// Opens live in the cloud and nowhere else, so this is the only number that says whether a
+// label is being picked up at all — the order counts beside it say what a code SOLD, which
+// is a different question. `{ok:false}` means "don't know", and the screen then shows
+// NOTHING: a zero here would be the positive claim "nobody opened your label".
+
+function visitsState() {
+  const state = makeState();
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
+  return state;
+}
+
+const visitsFetch = (rows, calls = []) => async (url, opts) => {
+  calls.push({ url, opts });
+  if (url.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+  if (url.includes("/rest/v1/promo_visit_days")) return { ok: true, json: async () => rows };
+  return { ok: false, status: 404, json: async () => ({}) };
+};
+
+test("fetchPromoVisits says nothing when Supabase isn't configured (no fetch)", async () => {
+  let called = false;
+  globalThis.fetch = async () => { called = true; return { ok: true, json: async () => [] }; };
+  try {
+    const out = await fetchPromoVisits(makeState(), [{ code: "FRESH10" }]);
+    assert.equal(out.ok, false);
+    assert.equal(called, false, "it does not even ask");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("fetchPromoVisits totals the days and keeps the day-by-day shape", async () => {
+  const calls = [];
+  globalThis.fetch = visitsFetch([
+    { code: "FRESH10", day: "2026-10-01", n: 3 },
+    { code: "FRESH10", day: "2026-10-02", n: 5 },
+    { code: "RAYA5", day: "2026-10-01", n: 1 },
+  ], calls);
+  try {
+    const out = await fetchPromoVisits(visitsState(), [{ code: "FRESH10" }, { code: "RAYA5" }]);
+    assert.equal(out.ok, true);
+    assert.equal(out.byCode.get("FRESH10").total, 8, "the total is the days added up");
+    assert.equal(out.byCode.get("FRESH10").days.get("2026-10-02"), 5, "and the days are kept");
+    assert.equal(out.byCode.get("RAYA5").total, 1);
+    const q = calls.find((c) => c.url.includes("promo_visit_days"));
+    assert.ok(q, "asked the daily view, not the raw table — the raw rows would be every open ever");
+    assert.ok(q.url.includes("code=in.(FRESH10,RAYA5)"), q.url);
+    assert.equal(q.opts.headers.apikey, "anon");
+    assert.equal(q.opts.headers.Authorization, "Bearer tok", "the baker's own login reads her opens");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("a code with no opens yet is simply absent, not an error", async () => {
+  globalThis.fetch = visitsFetch([{ code: "FRESH10", day: "2026-10-01", n: 2 }]);
+  try {
+    const out = await fetchPromoVisits(visitsState(), [{ code: "FRESH10" }, { code: "RAYA5" }]);
+    assert.equal(out.ok, true);
+    assert.equal(out.byCode.has("RAYA5"), false, "no rows means no entry");
+    assert.equal(out.byCode.get("FRESH10").total, 2);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("fetchPromoVisits says 'don't know' rather than zero when the cloud refuses", async () => {
+  globalThis.fetch = async (url) => {
+    if (url.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    if (url.includes("promo_visit_days")) return { ok: false, status: 404, json: async () => ({}) };
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
+  try {
+    const out = await fetchPromoVisits(visitsState(), [{ code: "FRESH10" }]);
+    assert.equal(out.ok, false, "404 — most likely the sql file has not been run yet");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("an unreadable body is a don't-know too, never a crash", async () => {
+  globalThis.fetch = async (url) => {
+    if (url.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    if (url.includes("promo_visit_days")) return { ok: true, json: async () => ({ nope: true }) };
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
+  try {
+    assert.equal((await fetchPromoVisits(visitsState(), [{ code: "FRESH10" }])).ok, false);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("no codes on screen means nothing to ask about", async () => {
+  let called = false;
+  globalThis.fetch = async () => { called = true; return { ok: true, json: async () => [] }; };
+  try {
+    const out = await fetchPromoVisits(visitsState(), []);
+    assert.equal(out.ok, true);
+    assert.equal(out.byCode.size, 0);
+    assert.equal(called, false, "an empty list is answered without a request");
   } finally {
     globalThis.fetch = realFetch;
   }

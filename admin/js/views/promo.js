@@ -17,16 +17,22 @@
 // standing line always stands down for it, so such a control could never refuse
 // anything. A control that can never refuse is a control that does nothing.
 
-import { el, button, emptyState, confirmDialog, showPopup, toast } from "../ui.js";
+import { el, button, copyText, emptyState, confirmDialog, showPopup, toast } from "../ui.js";
+import { qrSvg } from "../qr.js";
+import { shopLink } from "../promo-card.js";
 import { fmtRM, newId, save } from "../state.js";
-import { todayISO, longDate } from "../dates.js";
-import { maybeSyncStorefront } from "../supabase.js";
+import { todayISO, toISODate, longDate } from "../dates.js";
+import { fetchPromoVisits, maybeSyncStorefront } from "../supabase.js";
 import { translateTo, translateAllowed } from "../translate.js";
-import { blankCode, codeProblem, freezeProblem, frozenProblem, normalizeCode, offerOf, SAY_MAX, stoppedBy } from "../promo.js";
+import { blankCode, codeProblem, codesOf, labelProblem, makeCode, normalizeCode, offerOf, SAY_MAX, stoppedBy } from "../promo.js";
 import { usageByCode, usageOf } from "../promo-usage.js";
 
 export function renderPromoCodes(root, state) {
   renderAll(root, state);
+  // How many times each label was OPENED is a cloud fact, and this screen is drawn
+  // synchronously — so each code's card carries an empty slot and this fills it when the
+  // answer lands. Nothing is awaited and nothing blocks the paint.
+  fillVisitSlots(root, state);
 }
 
 function renderAll(root, state) {
@@ -40,6 +46,75 @@ function renderAll(root, state) {
     stepsCard(state),
     el("h2", { class: "section" }, `Promo codes (${list.length})`),
     ...rows);
+}
+
+/* ── How many times a label was opened (v288) ──────────────────────────────────
+   The bakery's own words for why this number exists: she can already see what a code SOLD,
+   recounted from her own orders, but not whether the label was picked up at all. Those are
+   different problems — print more labels, or change the offer — and until now she could not
+   tell them apart.
+
+   NOTHING IS SHOWN UNTIL THE CLOUD ANSWERS. A failed or unfinished read leaves the slot
+   empty, the same bargain `pendingReviewCount` strikes on the Home screen: a zero here is a
+   positive claim ("nobody opened your label") and this screen must not make it on the
+   strength of a request that never came back. A code the cloud DID answer about and which
+   has no opens yet says so in words — that zero is real and worth seeing.
+
+   THE RUN TOKEN IS THE UNMOUNT GUARD. Every render bumps `visitsRun`; a reply carrying an
+   older number is dropped, so a slow answer from a screen she has left can never paint into
+   the one she is looking at. */
+let visitsRun = 0;
+const VISIT_STRIP_DAYS = 28;
+
+async function fillVisitSlots(root, state) {
+  const run = (visitsRun += 1);
+  const codes = codesOf(state);
+  const out = await fetchPromoVisits(state, codes);
+  if (run !== visitsRun) return;                 // a later render has taken over
+  if (!out.ok) return;                           // say nothing rather than a false zero
+  // A class selector and `dataset`, not `[data-visits]` and `getAttribute` — the second pair
+  // works in a browser and reads as undefined under the tests' own DOM stand-in, which is the
+  // kind of shim gap that once printed the word "null" onto a real receipt.
+  const slots = root.querySelectorAll ? root.querySelectorAll(".visit-slot") : [];
+  for (const slot of slots) {
+    if (!slot || slot.isConnected === false) continue;
+    const code = String((slot.dataset || {}).visits || "");
+    slot.replaceChildren(...visitLines(code ? out.byCode.get(code) : null));
+  }
+}
+
+function visitLines(entry) {
+  const total = Number(entry && entry.total) || 0;
+  if (!total) {
+    return [el("p", { class: "hint" }, "Not opened yet — nobody has followed this label's link.")];
+  }
+  return [
+    el("p", { class: "hint" }, `Opened ${total} time${total === 1 ? "" : "s"}`),
+    visitStrip(entry),
+  ];
+}
+
+// The last four weeks, a bar a day. She asked to see a code going cold, and a run of low
+// bars says that faster than a list of dates does. A day with no opens is a faint stub
+// rather than a gap, so "quiet" never reads as "no data".
+function visitStrip(entry) {
+  const today = new Date(`${todayISO()}T00:00:00`);
+  const days = [];
+  for (let back = VISIT_STRIP_DAYS - 1; back >= 0; back -= 1) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - back);
+    const iso = toISODate(d);
+    days.push({ iso, n: Number((entry.days || new Map()).get(iso)) || 0 });
+  }
+  const peak = Math.max(1, ...days.map((x) => x.n));
+  const bars = days.map((x) => el("span", {
+    class: x.n ? "visit-bar" : "visit-bar quiet",
+    style: `height:${x.n ? Math.max(4, Math.round((x.n / peak) * 24)) : 2}px`,
+    title: `${x.iso} — ${x.n} open${x.n === 1 ? "" : "s"}`,
+  }));
+  return el("div", { class: "visit-strip-row" },
+    el("span", { class: "visit-cap" }, "opens, last 28 days"),
+    el("span", { class: "visit-strip" }, ...bars));
 }
 
 /* THE ELEVEN STEPS (v277). The whole life of a promotion, in the order she would
@@ -63,7 +138,7 @@ const STEPS = [
   ["Say who may see it", "Public, so it can be printed and can appear in the shop's own line; or personal, so it only works when typed and is never advertised. This is a decision, not a default."],
   ["Set the cost ceiling", "The most you will ever give away on this code. When it is reached, the code stops itself."],
   ["Test it on your own phone", "A test code behaves exactly like the live one but only works for your number. Walk the shop, read the line it produces, and read at least one refusal — so you have seen the words before a customer ever does."],
-  ["Print it, if it is public", "This is the point of no return. From here the offer is frozen, and only the end date can move — and only later."],
+  ["Print it, if it is public", "This opens the label: print it as often as you like, and copy the link to paste into WhatsApp. Nothing is fixed by printing — the offer stays editable, and a code is retired by ending it."],
   ["Launch it", "The promise is written down against the code, dated. A public code starts appearing in the shop's line by itself."],
   ["Watch it", "The screen shows the orders it brought, the customers, and how much has been given away against your ceiling."],
   ["Pause it if you must", "Always available, and it tells you how many orders are already holding the promise before you press it."],
@@ -116,7 +191,7 @@ function stepsCard(state) {
       "The life of a promotion, in the order you would actually do it. Nothing here is a press — pause and end are on each code below."),
     body,
     el("p", { class: "hint", style: "margin:4px 0 0" },
-      "One of the eleven has nothing to press yet: there is no test code for step 5. The printed card for step 6 is the Print it press on a public code's row below, and the freezes and the brakes that follow it are all live here."));
+      "One of the eleven has nothing to press yet: there is no test code for step 5. The label for step 6 is the QR on a public code's row below — tap it to copy or print — and the brakes that follow are all live here."));
 }
 
 // A code as she typed it, cleaned the one way the engine recognises it: no stray
@@ -174,32 +249,18 @@ function codeProblemWords(p) {
   }
 }
 
-// The engine's freeze reasons, in her words. Each one names the thing on the card
-// that would stop being true, and the two that are about direction say which way
-// is still allowed — because "you cannot move the end date" is wrong and would
-// send her looking for a press that does not exist. Moving it LATER is always
-// allowed; it is only being pulled back that is refused.
-function frozenProblemWords(p, code) {
-  switch (p.fail) {
-    case "frozenName": return `${code.code} is printed, so the name stays ${code.code}. Make a new code if you need a different name.`;
-    case "frozenGives": return "What it gives is on the card, so it cannot change — the card still says what it said.";
-    case "frozenWho": return "Who it is for is on the card, so it cannot change.";
-    case "frozenBasket": return "The smallest basket is on the card, so it cannot change.";
-    case "frozenBeside": return "What it cannot be used with is part of the offer on the card, so it cannot change.";
-    case "frozenDates": return "A printed code's end date can only be moved later, never pulled earlier, and a code with no end date cannot be given one. Being generous with someone holding a card cannot hurt them; taking it back can.";
-    case "frozenCeiling": return "A printed code's ceiling can only be raised, never lowered. If the launch is going well you can allow it more — you cannot give it less.";
-    default: return "That change would re-write an offer that is already printed on a card.";
-  }
-}
-
-// Why a code cannot be printed yet, in her words. Both of these are refusals of
-// the CARD, not of the code — the code is fine and keeps working; it is the paper
+// Why a code cannot have a label yet, in her words. Both of these are refusals of
+// the PAPER, not of the code — the code is fine and keeps working; it is the label
 // that cannot be made honest yet. So both say what to do instead of just no.
-function freezeWords(p) {
+//
+// "Raise or lower it at any time" is deliberate (v287): with the freeze gone the
+// ceiling is hers to move BOTH ways, and the old sentence — "it can never be
+// lowered once the card is out" — would send her hunting for a rule that is gone.
+function labelWords(p) {
   switch (p.fail) {
-    case "noCeiling": return "Set a cost ceiling first — that is step 4, on this code's own row. A card carries no number and no end date, so the ceiling is the only thing left bounding what it can cost you: without one, a launch that takes off has nothing to stop it. Raise the ceiling any time afterwards; it can never be lowered once the card is out.";
-    case "freezeNoCode": return "Give the code a name first — a card that prints no code is a card the shop cannot accept.";
-    default: return "That code cannot be printed as it stands.";
+    case "noCeiling": return "Set a cost ceiling first — that is step 4, on this code's own row. A label carries no number and no end date, so the ceiling is the only thing left bounding what it can cost you: without one, a launch that takes off has nothing to stop it. You can raise or lower it at any time.";
+    case "labelNoCode": return "Give the code a name first — a label that prints no code is one the shop cannot accept.";
+    default: return "That code cannot be given a label as it stands.";
   }
 }
 
@@ -208,7 +269,6 @@ function freezeWords(p) {
 // had quietly stopped being offered — so the state is stated rather than implied.
 function stateChips(c) {
   const chips = [];
-  if (c.frozen) chips.push(el("span", { class: "st-chip frozen" }, "Printed — fixed"));
   if (c.state === "paused") chips.push(el("span", { class: "st-chip paused" }, "Paused"));
   if (c.state === "ended") chips.push(el("span", { class: "st-chip expired" }, "Ended"));
   return chips;
@@ -278,20 +338,19 @@ function endCode(state, rec, c, root, used) {
     { danger: true, yesLabel: "End it" });
 }
 
-/* STEP SIX, THE POINT OF NO RETURN. The press both makes the card and freezes the
-   offer, in that order, because the card page reads the frozen code out of her own
-   saved state — so the save has to have landed before the page opens, or the paper
-   would draw an offer that is not the one the app now holds.
+/* THE PRINT PRESS (step six). It saves nothing and freezes nothing — it just opens
+   the card page for this code.
 
-   Nothing is lost by a mis-press: the card only exists once she prints it, and
-   closing a tab prints nothing. But the freeze is real, and it is undone only by
-   making a new code — so the confirmation names what is about to be fixed, and
-   names what is still hers to move, before either happens.
+   IT USED TO BE "THE POINT OF NO RETURN". Until v287 printing pinned the offer for
+   good, and the confirmation spelled out what was about to stop being changeable.
+   The owner removed that on 4 Oct 2026: a label is printed and copied as often as
+   she likes, the offer stays editable, and a label is RETIRED instead — by ending
+   the code, which already meant "new uses stop, orders already placed keep what
+   they were promised". So there is nothing left to confirm, and this is a plain
+   press again.
 
-   The button that leads here is only drawn for a public code that is neither
-   printed nor ended (step 3 decides who may see it, step 6 is only about the ones
-   that may be seen), so this function's own gate is a second check rather than the
-   only one — the engine's rule holds whichever screen ever calls it.             */
+   The gate that remains is the engine's: a label needs a name and a cost ceiling,
+   because a label carries no number. `labelProblem` holds it whichever screen calls. */
 function ceilingSentence(c) {
   const n = c.often.type === "quota" ? Number(c.often.n) : 0;
   const rm = Number(c.often.maxRM) || 0;
@@ -300,23 +359,60 @@ function ceilingSentence(c) {
   if (rm > 0) bits.push(`${fmtRM(rm)} given away`);
   if (!bits.length) return "";
   const at = bits.length > 1 ? `${bits[0]} or ${bits[1]}, whichever is reached first` : bits[0];
-  return ` The card will not say it, but the code stops itself at ${at} — you can raise that later, never lower it.`;
+  return ` The label does not say it, but the code stops itself at ${at} — you can raise or lower that at any time.`;
 }
 
-function printCode(state, rec, c, root) {
-  const problem = freezeProblem(rec);
-  if (problem) return toast(freezeWords(problem));
-  confirmDialog(
-    `Print "${c.code}" on a card? This is the point of no return. From here the offer is frozen: the amount, who it is for, the smallest basket and the name all go on saying what they say, because the card in the customer's hand cannot be amended. What the card does not say is still yours to move — the end date later, never earlier, and nothing else.${ceilingSentence(c)}`,
-    () => {
-      rec.frozen = true;
-      // Save first, open second: the card page reads the frozen code back out of
-      // her own stored state, so a card drawn before the save would be drawn from
-      // the code as it was — the one thing this press must never do.
-      commit(state, root, `${c.code} printed — the offer is fixed`);
-      window.open(`promo-card.html?code=${encodeURIComponent(c.code)}`, "_blank");
-    },
-    { yesLabel: "Print it" });
+function printCode(state, c) {
+  const problem = labelProblem(c);
+  if (problem) return toast(labelWords(problem));
+  window.open(`promo-card.html?code=${encodeURIComponent(c.code)}`, "_blank");
+}
+
+/* ── THE LABEL (v287) ──────────────────────────────────────────────────────────
+   One per code: its QR, on the row, and a press that opens it to be copied or
+   printed. Her words: *"we have QRs, some active some retired, when a promo code
+   come together with a QR, when you tab on label, you are allow to copy, print."*
+
+   The QR carries exactly the link the shop already accepts —
+   `../store/?promo=CODE`, built by `shopLink` (promo-card.js), the same function the
+   printed card uses — so a label made here and a card made there point at one URL.
+
+   A QR on its own does not say it can be pressed, so it carries the word **Label**
+   under it. That is the whole of its affordance: it looks like a label, it is
+   captioned Label, and it opens when tapped. */
+function labelEl(state, c) {
+  const url = shopLink(c.code, "https://munchies.com.my/admin/index.html");
+  const svg = qrSvg(url, { quiet: 2, dark: "#2b1d14", light: "#ffffff" });
+  const box = el("div", {
+    class: "label-qr", role: "button", tabindex: "0",
+    "aria-label": `Label for ${c.code} — open it to copy the link or print it`,
+    onclick: () => openLabel(state, c),
+  },
+    svg ? el("div", { class: "label-qr-svg", html: svg }) : el("div", { class: "label-qr-fail" }, "QR"),
+    el("span", { class: "label-qr-cap" }, "Label"));
+  return box;
+}
+
+function openLabel(state, c) {
+  const url = shopLink(c.code, "https://munchies.com.my/admin/index.html");
+  const svg = qrSvg(url, { quiet: 2, dark: "#2b1d14", light: "#ffffff" });
+  const retired = c.state === "ended";
+  showPopup(el("div", { class: "popup-title-row" }, `Label — ${c.code}`), () => el("div", {},
+    el("div", { class: "label-big" }, svg ? el("div", { class: "label-qr-svg", html: svg }) : null),
+    el("p", { class: "card-sub", style: "margin:10px 0 0" },
+      [clauseWords(c), ...rulesWords(c)].join(" · ")),
+    el("p", { class: "hint", style: "margin:6px 0 0" }, url),
+    el("p", { class: "hint", style: "margin:8px 0 0" },
+      "A label can be printed or copied as often as you like, and the offer stays editable. If you change it, a label already in someone's hand is honoured at whatever the code says when they order."),
+    // Printing a retired label would hand out a dead code, so it is not offered — and
+    // it SAYS so rather than leaving a press that is simply missing.
+    retired
+      ? el("p", { class: "hint", style: "margin:8px 0 0" },
+          "This code has ended, so there is nothing to print — a label with an ended code would not work. Copy the link if you want to look at what it says. Make a NEW code if you want to run this offer again.")
+      : null,
+    el("div", { class: "popup-actions" },
+      button("Copy link", () => copyText(url, "Link copied — paste it into WhatsApp"), "soft"),
+      retired ? null : button("Print it", () => printCode(state, c), "primary"))));
 }
 
 function buildCodeEditor(state, code) {
@@ -330,6 +426,13 @@ function buildCodeEditor(state, code) {
     class: "input", placeholder: "e.g. FRESH10", autocapitalize: "characters",
     value: seed.code,
   });
+  // A code the customer can read off a card without having to guess (v286). It only fills the
+  // box in — she can type over it, and can go on typing her own codes exactly as before. It
+  // avoids the codes already in use, because a card that carries a name already meaning
+  // something else would take the wrong amount off.
+  const suggest = button("Suggest one", () => {
+    name.value = makeCode(state.promoCodes || []);
+  }, "soft");
   const kind = el("select", { class: "input" },
     el("option", { value: "rm", selected: seed.gives.type === "rm" }, "Ringgit off"),
     el("option", { value: "pct", selected: seed.gives.type === "pct" }, "Percent off"),
@@ -374,6 +477,27 @@ function buildCodeEditor(state, code) {
   const beside = el("select", { class: "input" },
     el("option", { value: "anything", selected: seed.beside.type === "anything" }, "Nothing in particular"),
     el("option", { value: "nocredit", selected: seed.beside.type === "nocredit" }, "Not with the bring-a-friend credit"));
+  // WHO THIS CODE BELONGS TO (v289). A bring-a-friend LINK is for a casual, friend-to-friend
+  // advocate and costs nothing to issue; a CODE and a LABEL is for a formal partner who prints
+  // brochures and runs marketing. Naming that partner here is what makes their label
+  // attributable: the code's own `used` count and its label's opens become their tally, with
+  // nothing new to track.
+  //
+  // The picker lists the CUSTOMER PROFILES — the synced record per person (`state.customers`),
+  // not the customer list, which is derived from orders and has no id to tie to. A name and
+  // number are shown from the store, so the id is what travels and the name is what she reads.
+  const personLabel = (pp) => String(pp.name || "").trim()
+    || String(pp.whatsapp || "").trim()
+    || "Unnamed customer";
+  const people = (Array.isArray(state.customers) ? state.customers : [])
+    .filter((pp) => pp && pp.id)
+    .sort((a, b) => personLabel(a).localeCompare(personLabel(b)));
+  const holder = el("select", { class: "input" },
+    el("option", { value: "", selected: !(seed.holder && seed.holder.id) },
+      people.length ? "Nobody — this code stands on its own" : "Nobody — no customers to name yet"),
+    ...people.map((pp) => el("option", {
+      value: pp.id, selected: !!(seed.holder && seed.holder.id === pp.id),
+    }, personLabel(pp))));
   const vis = el("select", { class: "input" },
     el("option", { value: "public", selected: seed.vis === "public" }, "Public — shown in the shop"),
     el("option", { value: "personal", selected: seed.vis === "personal" }, "Personal — never shown"));
@@ -431,23 +555,26 @@ function buildCodeEditor(state, code) {
     };
     rec.beside = { type: beside.value };
     rec.vis = vis.value;
+    // WHO THIS CODE BELONGS TO (v289). Stored as the PROFILE'S ID, never its key and never just
+    // the name — a key moves when a WhatsApp number is corrected and collapses when two people
+    // share a name, and a name can be retyped. The name is frozen beside it so the row still
+    // reads as who it was even if the profile is later renamed or merged away.
+    const chosen = people.find((pp) => pp.id === holder.value) || null;
+    rec.holder = { id: chosen ? chosen.id : "", name: chosen ? personLabel(chosen) : "" };
     rec.say = say.value.trim();
     rec.sayZh = sayZh.value.trim();
     rec.sayMs = sayMs.value.trim();
     const problem = codeProblem(state.promoCodes, rec, code ? code.id : "");
     if (problem) return { error: codeProblemWords(problem) };
     const record = normalizeCode({ ...rec, id: rec.id });
-    // PRINTING PINS THE PROMISE (v278). Once a card is in someone's hand the offer
-    // on it has to go on being true, so a frozen code refuses any change to what it
-    // gives, who it is for, the smallest basket, what it sits beside, or its name —
-    // and refuses having its end date pulled earlier or its ceiling lowered. The
-    // engine holds the rule (frozenProblem); this only turns its reason into words.
-    // Checked HERE, with the other validation, rather than in the Update press, so
-    // anything that ever saves a code gets the same answer.
-    if (code && code.frozen) {
-      const frozen = frozenProblem(code, record);
-      if (frozen) return { error: frozenProblemWords(frozen, code) };
-    }
+    // NOTHING HERE REFUSES A CHANGE ON ACCOUNT OF A LABEL HAVING BEEN PRINTED (v287).
+    // Until then a printed code was frozen — the name, what it gives, who it is for,
+    // the smallest basket, what it sits beside, its end date and its ceiling all
+    // stopped moving, and that rule was checked HERE so anything that ever saved a
+    // code got the same answer. The owner removed it: a label is printed and copied
+    // as often as she likes, the offer stays editable, and a label is retired by
+    // ending the code. What is left is `codeProblem` above, which is about the code
+    // being usable at all rather than about paper.
     return { record };
   }
 
@@ -469,14 +596,15 @@ function buildCodeEditor(state, code) {
     toast(filled ? "Translated — edit it if you like" : "Nothing to translate");
   }
 
-  return { name, kind, who, from, to, basket, often, beside, vis, say, sayZh, sayMs,
+  return { name, suggest, holder, kind, who, from, to, basket, often, beside, vis, say, sayZh, sayMs,
     valueField, capField, basketField, oftenField, ceilingField, translateSay, collect };
 }
 
 function editorFields(editor) {
   return [
-    el("div", { class: "field" }, el("label", {}, "Code"), editor.name,
-      el("p", { class: "hint" }, "What the customer types. Letters and numbers only, so it reads easily off a card — FRESH10, not FRESH 10.")),
+    el("div", { class: "field" }, el("label", {}, "Code"),
+      el("div", { class: "code-row" }, editor.name, editor.suggest),
+      el("p", { class: "hint" }, "What the customer types. Letters and numbers only, so it reads easily off a card — FRESH10, not FRESH 10. The Suggest one button makes a code with no 0, O, 1, I or L in it, because those are the characters people mix up when they read a code off a card and type it in. Your own codes are unaffected — it only fills the box in, and you can type over it.")),
     el("div", { class: "field" }, el("label", {}, "What it gives"), editor.kind),
     el("div", { class: "form-grid" }, editor.valueField, editor.capField),
     el("div", { class: "form-grid" },
@@ -492,6 +620,8 @@ function editorFields(editor) {
     editor.ceilingField,
     el("div", { class: "field" }, el("label", {}, "What it cannot be used with"), editor.beside,
       el("p", { class: "hint" }, "The bring-a-friend welcome discount comes out of the same money as a code that gives ringgit off, so this stops the two stacking on one order.")),
+    el("div", { class: "field" }, el("label", {}, "🎁 Whose code is this"), editor.holder,
+      el("p", { class: "hint" }, "For a partner or a friend who hands your labels out — a shop, a friend running their own marketing. Naming them is what makes their label tell itself apart from anyone else's: their orders and their label's opens are counted against this code, and it is what you look at when their reward comes round. Leave it as Nobody for a plain promotion you hand out yourself. Their name is never published to the shop — it stays in your own app.")),
     el("div", { class: "field" }, el("label", {}, "Who can see it"), editor.vis,
       el("p", { class: "hint" }, "Public codes are put on the shop page for everyone. Personal codes are never advertised — you give the code to one person — but they still work when typed, and anyone who reads the page's own data can see them, so the limit is that they are never shown, not that they are secret.")),
     el("div", { class: "field" }, el("label", {}, "What the shop says about it (optional)"), editor.say,
@@ -530,17 +660,20 @@ function openEditCodePopup(state, code, root) {
   showPopup(el("div", { class: "popup-title-row" }, `Edit ${code.code}`), (refresh, close) => {
     return el("div", {},
       ...editorFields(editor),
-      // A printed code's promise is fixed, so the note under the fields says WHAT is
-      // still hers to move rather than leaving her to find out by being refused, and
-      // the button names the two things it will actually save (v278). An unprinted
-      // code keeps the note it has always had.
+      // One note now, not two (v287): there is no printed-and-fixed code any more, so
+      // the sentence about what a label pins down has nowhere left to be true. What
+      // remains is the one thing an edit has always promised — it cannot reach back
+      // into an order that already used the code.
+      //
+      // AND THE SECOND HALF OF THAT SENTENCE IS THE TRADE SHE MADE. With printing no
+      // longer freezing an offer, a label already in someone's hand is honoured at
+      // whatever the code says when they ORDER. She is told that here, where she is
+      // about to change one — told, never stopped: no rule blocks the edit.
       el("p", { class: "hint" },
-        code.frozen
-          ? "This code is printed on a card, so its offer is fixed: not the amount, not who it is for, not the smallest basket, not the name. What the card does not say can still move — the end date later, the ceiling up. Either way, changing a code never changes an order that already used it."
-          : "Changing what a code gives does not change an order that already used it. Every order keeps the code as it was written when the customer typed it."),
+        "Changing what a code gives does not change an order that already used it — every order keeps the code as it was written when the customer typed it. It does change what a label handed out LAST WEEK will give, because a label is priced when the customer orders, not when they picked it up."),
       el("div", { class: "popup-actions" },
         button("Cancel", close, "ghost"),
-        button(code.frozen ? "Update the end date and ceiling" : "Update code", () => {
+        button("Update code", () => {
           const { error, record } = editor.collect();
           if (error) return toast(error);
           Object.assign(code, record);
@@ -601,7 +734,12 @@ function codeCard(state, code, root) {
   const brakes = lifeButtons(state, code, c, root, u.used);
   return el("div", { class: "card" },
     el("div", { class: "card-row" },
-      el("div", { style: "min-width:0" },
+      // THE LABEL, on the row (v287). Her words: *"we have QRs, some active some
+      // retired … when you tab on label, you are allow to copy, print"*. It is drawn
+      // from the code's own QR and takes its own press, so the list reads as a set of
+      // labels with the life chips saying which are still going.
+      labelEl(state, c),
+      el("div", { style: "min-width:0;flex:1 1 auto" },
         // The code's LIFE sits beside its name, where a paused or ended code used to
         // look exactly like a live one (v278). The chips say what the row cannot say
         // on its own, and they say it before the offer rather than after it.
@@ -609,36 +747,39 @@ function codeCard(state, code, root) {
         el("p", { class: "card-sub" }, [clauseWords(c), ...rulesWords(c)].join(" · ")),
         el("p", { class: "hint" },
           [c.vis === "personal" ? "personal — never shown" : "public — shown in the shop",
+            // WHOSE CODE THIS IS, on her own screen only (v289). It is deliberately NOT on the
+            // printed label and NOT in what the shop publishes — see publishCodes in promo.js.
+            // The name is the one frozen on the code, so it reads right even if the profile has
+            // been renamed or merged away since.
+            c.holder && c.holder.name ? `🎁 ${c.holder.name}'s code` : "",
             c.say ? "your own words" : "",
             useWords(c, u)]
             .filter(Boolean).join(" · "))),
       el("div", { class: "li-right" },
-        // Step 6 on the row itself. A card is a public thing, so a personal code
-        // is never offered one; an ended code has nothing left to print; and a
-        // code that is already printed says so in its chip instead.
-        c.vis === "public" && !c.frozen && c.state !== "ended"
-          ? button("Print it", () => printCode(state, code, c, root), "ghost small")
+        // Step 6 on the row itself. A label is a public thing, so a personal code is
+        // never offered one, and an ended code has nothing left worth printing — but
+        // the press is still there for a paused one, because pausing is reversible and
+        // she may well print again once she switches it back on. (v287: a code that has
+        // been printed is no longer excluded — printing no longer pins anything.)
+        c.vis === "public" && c.state !== "ended"
+          ? button("Print it", () => printCode(state, c), "ghost small")
           : null,
         button("Edit", () => openEditCodePopup(state, code, root), "ghost small"),
         button("Delete", () => deleteCode(state, code, root, u.used), "ghost small"))),
     brakes.length ? el("div", { class: "row-actions" }, ...brakes) : null,
-    c.frozen
-      ? el("p", { class: "hint", style: "margin:8px 0 0" },
-          "Printed on a card, so the offer is fixed. What the card does not say can still move — the end date later, the ceiling up — and nothing else can.")
-      : null,
+    // Where the OPENS land (v288). Drawn empty and filled later, because that number lives in
+    // the cloud and this screen is drawn synchronously — and left empty for good when the
+    // cloud cannot be reached, so a failure reads as "not known" rather than as "nobody".
+    el("div", { class: "visit-slot", dataset: { visits: c.code } }),
     claimed ? el("p", { class: "warn" }, claimedWords(c, claimed)) : null);
 }
 
 function deleteCode(state, code, root, used) {
-  // A printed code is never deleted (v278): a card in someone's hand would simply
-  // stop working, with nothing to explain why, and the row would be gone so she
-  // could not even see that was what happened. The tap is not dead — it says why and
-  // names the press that does the job, because ending stops new uses and leaves the
-  // card honest, which is the thing deleting cannot do.
-  if (code.frozen) {
-    return toast(`${code.code} is printed, so it cannot be deleted — a card in someone's hand would just stop working. End it instead: that stops new uses and leaves the card honest.`);
-  }
-  // Otherwise deleting is allowed even when orders carry the code, and that is safe
+  // A code with a label printed is no longer refused a delete (v287). It used to be,
+  // because a card in someone's hand would simply stop working with nothing to explain
+  // why — but the answer to that is to END the code, not to forbid the delete, and the
+  // confirm below already says so when orders carry it. Deleting is still allowed even
+  // then, and that is safe
   // rather than careless: the code was written onto each order when the shop sent it,
   // so those orders keep reading correctly and keep showing her what she owes. What
   // deleting really does is stop the shop accepting it.

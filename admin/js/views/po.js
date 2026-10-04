@@ -359,7 +359,7 @@ function previewCard(state, chosen, bom, needsReview) {
     el("p", { class: "po-snapshot-note" },
       multi
         ? "Generating saves ONE snapshot of these days to PO History — each becomes \"✓ saved\" and drops out of the default list."
-        : "Generating saves an immutable snapshot to PO History. Changing orders later won't change it."));
+        : "Generating saves this list to PO History. Changing orders later won't change it — and once you're at the shop you can correct the prices and the amounts there until you tap Bought."));
 }
 
 function emptyPreview(state, chosen, needsReview) {

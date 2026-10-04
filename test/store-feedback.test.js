@@ -420,6 +420,12 @@ globalThis.document = {
   querySelector: () => null,
   querySelectorAll: () => [],
   body: createEl("body"),
+  // The REAL document has these. A shim without them is not a smaller DOM, it is a
+  // different one: the shop registers a visibilitychange listener at start-up (v292),
+  // and a missing method is a TypeError at import — every store test dies at once.
+  _docListeners: {},
+  addEventListener(t, f) { (this._docListeners[t] ||= []).push(f); },
+  removeEventListener() {},
 };
 // The window, with the one event the box listens for on it: `pagehide`, which is how a
 // browser tells the page it is being left — and the moment the auto-send fires.

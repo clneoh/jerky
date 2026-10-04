@@ -91,6 +91,7 @@ const en = {
   s5t: "CONFIRM & PAY",
   s5d: "WhatsApp + TNG ♡",
 
+
   // Postage
   postTitle: "POSTAGE",
   postBoxTitle: "POST — NATIONWIDE",
@@ -98,6 +99,7 @@ const en = {
   postFee: "Orders are packed on your chosen day and posted to you. A flat postage fee is added per order and confirmed with you on WhatsApp.",
   waBoxTitle: "WHATSAPP ORDERS",
   waBoxLine: "Prefer to order directly? Message us on WhatsApp — we'll put your order together and confirm everything with you.",
+
 
   // Reviews
   rvTitle: "WHAT CUSTOMERS SAY",
@@ -216,6 +218,7 @@ const zh = {
   s3d: "按袋或按包",
   s4t: "填写收件地址",
   s4d: "全马邮寄",
+
   s5t: "确认并付款",
   s5d: "WhatsApp + TNG ♡",
 
@@ -225,6 +228,7 @@ const zh = {
   postFee: "订单会在您选定的发货日打包并寄出。每笔订单会收取一笔固定邮费，并在 WhatsApp 上与您确认。",
   waBoxTitle: "WHATSAPP 下单",
   waBoxLine: "想直接下单？在 WhatsApp 联系我们即可——我们会帮您搭配好订单，并与您逐项确认。",
+
 
   rvTitle: "顾客怎么说",
   rvSub: "来自毛孩爸妈的真实评价——欢迎用英语、中文或马来文书写。",
@@ -336,6 +340,7 @@ const ms = {
   s1t: "PILIH HARI POS",
   s1d: "Isnin / Rabu / Jumaat",
   s2t: "PILIH SNEK ANDA",
+
   s2d: "Pilih kegemaran anda",
   s3t: "TETAPKAN KUANTITI",
   s3d: "Pek & bungkus",
@@ -344,12 +349,14 @@ const ms = {
   s5t: "SAHKAN & BAYAR",
   s5d: "WhatsApp + TNG ♡",
 
+
   postTitle: "POS",
   postBoxTitle: "POS — SELURUH NEGARA",
   postDays: "ISNIN / RABU / JUMAAT",
   postFee: "Pesanan dibungkus pada hari pilihan anda dan dihantar kepada anda. Caj pos tetap ditambah bagi setiap pesanan dan disahkan bersama anda melalui WhatsApp.",
   waBoxTitle: "TEMPAHAN WHATSAPP",
   waBoxLine: "Lebih suka menempah terus? Hantar mesej kepada kami di WhatsApp — kami akan sediakan pesanan anda dan sahkan semuanya bersama anda.",
+
 
   rvTitle: "APA KATA PELANGGAN",
   rvSub: "Kata-kata sebenar daripada anak bulu yang gembira (dan manusia mereka) — ulasan dialu-alukan dalam Bahasa Inggeris, Mandarin (中文) atau Bahasa Malaysia.",

@@ -26,6 +26,12 @@ globalThis.document = {
   querySelector: () => null,
   querySelectorAll: () => [],
   body: createEl("body"),
+  // The REAL document has these. A shim without them is not a smaller DOM, it is a
+  // different one: the shop registers a visibilitychange listener at start-up (v292),
+  // and a missing method is a TypeError at import — every store test dies at once.
+  _docListeners: {},
+  addEventListener(t, f) { (this._docListeners[t] ||= []).push(f); },
+  removeEventListener() {},
 };
 globalThis.window = { open() {} };
 

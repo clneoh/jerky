@@ -50,3 +50,53 @@
   }
   body.label-print .label-sheet.style-mailing { max-width: 110mm; }
 }
+
+/* Printing a journal, or the profit statement, shows ONLY that sheet (3 Oct 2026). Scoped to
+   body.journal-print, which is added only for the instant of printing — like label-print
+   above — so a purchase order or a packing label is never affected by it.
+
+   The sheet is built into .print-layer, a node app.css keeps hidden on screen. That is why
+   this block is so short: it has one job, show the layer and hide the app. No ancestor
+   gymnastics, and the same rule serves a book read inside the Books pop-up (where every other
+   method's book is on screen too) and the Profit and loss card, which is not a pop-up at all.
+   Nothing here writes a colour the paper cannot print: plain black on white, ruled in black. */
+@media print {
+  body.journal-print > *:not(.print-layer) { display: none !important; }
+
+  body.journal-print .print-layer {
+    display: block !important;
+    position: static;
+    background: none;
+    padding: 0;
+    margin: 0;
+  }
+  body.journal-print .journal-sheet {
+    max-width: 180mm;
+    margin: 0 auto;
+    color: #000;
+    page-break-inside: avoid;
+  }
+
+  body.journal-print .js-head { border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 10px; }
+  body.journal-print .js-bakery { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 2px; }
+  /* The letterhead an invoice needs (v293). Quieter than the name above it and the title
+     below: it is an address, and it must not compete with either. */
+  body.journal-print .js-from { font-size: 10px; color: #444; margin: 0; line-height: 1.35; }
+  body.journal-print .js-from + .js-title { margin-top: 6px; }
+  body.journal-print .js-title { font-size: 20px; margin: 0; }
+  body.journal-print .js-sub { font-size: 13px; margin: 2px 0 0; }
+  /* Where trading ends and the running costs begin. The screen leans on the wording above
+     its card; a page has nothing to lean on, so the sheet says it in a heading of its own. */
+  body.journal-print .js-section { font-weight: 600; margin: 12px 0 2px; }
+  body.journal-print .journal-line .info-val { padding-left: 16px; }
+  body.journal-print .info-row.pl-total,
+  body.journal-print .info-row.pl-net { border-top: 1px solid #000; padding-top: 4px; margin-top: 4px; }
+  body.journal-print .info-row.pl-net .info-val { font-weight: 700; }
+  body.journal-print .js-note { font-size: 11px; margin: 10px 0 0; }
+  body.journal-print .js-foot {
+    font-size: 10px;
+    margin: 10px 0 0;
+    border-top: 1px solid #ccc;
+    padding-top: 4px;
+  }
+}

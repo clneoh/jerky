@@ -80,8 +80,9 @@ export function usageByCode(state) {
 // over: an order row carries the code's name and not the code's terms, so if she
 // EDITS what a code gives, every past order is recounted at the new terms. The
 // ringgit figure therefore means "what this code would have given away, at what
-// it gives now" — and it is the reason a printed code is frozen rather than
-// left editable (see the freeze rule).
+// it gives now". That was once the reason a printed code was frozen rather than
+// left editable; the freeze went in v287 and this stayed, because it is the
+// honest reading either way — say so rather than count a number nobody can check.
 export function usageOf(state, code) {
   const c = normalizeCode(code);
   if (!c.code) return NONE();

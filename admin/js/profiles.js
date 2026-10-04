@@ -56,6 +56,19 @@ function repointCredits(state, fromWhatsapp, toWhatsapp, name) {
   }
 }
 
+// Reward hand-outs key on the profile's own stable `id` (v291), so joining two
+// records that are one person has to carry them across — otherwise the absorbed
+// person's hand-outs would be left pointing at a row that no longer exists and
+// the merged customer's reward would read as never given.
+function repointRewards(state, from, to) {
+  const fromId = String((from && from.id) || "");
+  const toId = String((to && to.id) || "");
+  if (!fromId || !toId || fromId === toId) return;
+  for (const g of state.rewards || []) {
+    if (g && g.profileId === fromId) g.profileId = toId;
+  }
+}
+
 // Two profiles landing on one key means the same person now exists twice. The
 // profile being edited wins on the contact details and keeps the fields it
 // already has; the duplicate only fills the blanks in, then goes.
@@ -68,7 +81,7 @@ function mergeDuplicateProfiles(state, base) {
   const list = state.customers || [];
   const clash = list.find((p) => p !== base && p && p.key === base.key);
   if (!clash) return;
-  for (const f of ["dogName", "dogPhoto", "likes", "avoid", "notes", "place"]) {
+  for (const f of ["dogName", "dogPhoto", "likes", "avoid", "notes", "place", "reward", "rewardEvery"]) {
     if (!base[f] && clash[f]) base[f] = clash[f];
   }
   const i = list.indexOf(clash);
@@ -87,7 +100,7 @@ function touchedAt(p) {
 // edited by anyone, so the only rule that cannot lose what you know is "never
 // throw away a value only one of them has".
 function foldProfileInto(base, other) {
-  for (const f of ["name", "whatsapp", "dogName", "dogPhoto", "likes", "avoid", "notes", "place"]) {
+  for (const f of ["name", "whatsapp", "dogName", "dogPhoto", "likes", "avoid", "notes", "place", "reward", "rewardEvery"]) {
     if (!base[f] && other[f]) base[f] = other[f];
   }
   if (other.createdAt && (!base.createdAt || other.createdAt < base.createdAt)) {
@@ -185,6 +198,7 @@ export function mergeCustomers(state, keepKey, absorbKey) {
 
   if (keepProf && absorbProf) {
     foldProfileInto(keepProf, absorbProf);
+    repointRewards(state, absorbProf, keepProf);
     const i = (state.customers || []).indexOf(absorbProf);
     if (i >= 0) state.customers.splice(i, 1);
   }
@@ -308,6 +322,23 @@ export function upsertProfile(state, draft, fromKey) {
   base.likes = String(draft.likes || "").trim();
   base.avoid = String(draft.avoid || "").trim();
   base.notes = String(draft.notes || "").trim();
+  // WHAT THIS ADVOCATE GETS, IN HER OWN WORDS (v289). "Not just as plain as rm3" — a partner may
+  // be owed a free loaf, a favour, or a different arrangement entirely, and a number cannot hold
+  // that. It is free text on purpose and it totals NOTHING: the app names the reward and counts
+  // what they brought in; she settles up herself, exactly as she does with the credit ledger.
+  //
+  // IT IS ALSO ONE OF FOUR LISTS. A field this record does not name is DROPPED — here, and in
+  // mergeDuplicateProfiles and foldProfileInto below — and it would be dropped silently, with
+  // every test still green, because nothing asserts the shape of a profile the way
+  // test/promo.test.js asserts the shape of a code. See the round-trip test in
+  // test/profiles.test.js: that is what makes the next forgotten list fail instead of hide.
+  base.reward = String(draft.reward || "").trim();
+  // THE NUMBER BESIDE HER WORDS (v291). "a free loaf for every five friends" is her sentence and
+  // stays exactly as she typed it; this is the five, in its own box. Nothing is ever parsed out of
+  // her sentence — a parser that misread "every five" would tell her a partner is owed a loaf she
+  // is not. 0 means she has not set one, and nothing is then ever due (rewardStanding).
+  const every = Math.floor(Number(draft.rewardEvery));
+  base.rewardEvery = Number.isFinite(every) && every > 0 ? every : 0;
   base.updatedAt = now;
 
   if (!list.some((p) => p.id === base.id)) list.push(base);
@@ -385,6 +416,11 @@ export function customerMatches(row, query) {
   const fields = [
     row && row.name, row && row.whatsapp,
     hay.dogName, hay.likes, hay.avoid, hay.notes,
+    // The reward she wrote is free text and was not searchable until v291 — so
+    // "who gets a free loaf?" had no answer. The NUMBER beside it is deliberately
+    // NOT here: a query of "5" would then match everyone whose reward runs every
+    // five, which is noise rather than a person.
+    hay.reward,
     row && row.fav,
   ];
   if (fields.some((f) => cleanTxt(f).includes(q))) return true;

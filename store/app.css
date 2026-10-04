@@ -972,13 +972,25 @@ button.prod-next.off::after { content: ""; }
    is 37 to 48. The two controls that matter most at the door were the two smallest
    targets on the page, found by measuring rather than by reading the rule. So the pill
    takes the page's own floor and centres its word in it, instead of growing with the
-   text. */
+   text.
+
+   AND THE WORD ITSELF MAY BREAK (v284). Her report, 3 Oct 2026: *"the lalamove link is
+   very long and go out of bound."* A courier's share link is one unbroken run of about
+   150 characters, and an inline-flex box cannot break one — the pill simply grew past
+   the card and off the screen. `overflow-wrap: anywhere` is the rule that fixes it, and
+   it is the same one her own backoffice already carries on `.job-link`, so the customer's
+   card and her own screen stop a long link the same way. `anywhere` and not `break-word`:
+   it is the one that also lowers the box's minimum width, which is what lets the pill fit
+   the card at all. The vertical padding exists so that a wrapped word has room inside the
+   pill; a one-line pill is still exactly the 38 pixels measured above, because min-height
+   wins and the word stays centred. */
 .track-result a {
   display: inline-flex;
   align-items: center;
   min-height: 38px;
-  padding: 0 14px;
+  padding: 6px 14px;
   box-sizing: border-box;
+  overflow-wrap: anywhere;
   border-radius: 999px;
   background: var(--brown-soft);
   color: var(--brown-dark);
@@ -1218,6 +1230,105 @@ button.prod-next.off::after { content: ""; }
   text-align: center;
 }
 .promo-today p { margin: 0; }
+/* ---------- The offers turn, and the strip holds its height (v292, v295) ----------
+
+   EVERY offer is in the strip at once, stacked on top of each other in ONE grid cell,
+   and only the current one is lit. A grid row is as tall as its tallest item, so the
+   strip is exactly as tall as the TALLEST message and stays that height for ever — the
+   browser works it out, at whatever font, language and text size the customer actually
+   has, with no measurement of ours that can go stale.
+
+   WHY IT IS BUILT THIS WAY. v292 wrote each offer into ONE pair of lines as the turn
+   came round, so the strip was as tall as whichever message it happened to be showing.
+   Two codes where only one carries a sentence of her own are two different heights, so
+   every turn made the whole page below jump. Her words: "when the message switch, the
+   page is like jumping up and down repeatedly… The window should be fix, base on the
+   tallest message."
+
+   The turn is these rules and nothing else — no timer in the script, so a repaint landing
+   mid-turn cannot leave a blank strip behind.
+
+   ---------- And the turn is a 3D FLIP (v296, made properly 3D in v297) ----------
+   Her asks, in order: "can the flip be an animation", then "the flip should be 3D flip".
+
+   An offer nobody is reading waits a quarter-turn AWAY — `rotateX(90deg)`, edge-on to the
+   reader — and being lit brings it round to face them. That much was v296.
+
+   ★ WHAT MAKES IT 3D IS THE OPPOSITE DOOR (v297). v296 sent BOTH panels through the SAME
+   arc: the old one 0 → −90, the new one −90 → 0. They mirrored each other all the way, which
+   reads as a vertical SQUASH, not a flip. Now the one that has just been replaced is sent to
+   `rotateX(-90deg)` instead — it tips AWAY over the top while the next rises from BELOW —
+   and two panels turning through opposite arcs is a card turning over. That is the `.is-left`
+   rule below, and it is the whole of the difference.
+
+   The fade timings still differ on purpose: both panels are on screen at once, so the one
+   leaving is gone quickly (.16s) and the one arriving holds its fade back until it is most
+   of the way round. Equal fades would put two half-turned messages on screen at once.
+
+   `transform` and `opacity` are paint-only, so NONE of this can change the strip's height —
+   the guarantee above holds with the animation as it did without it. */
+.promo-rotor { display: grid; perspective: 450px; }
+.promo-slide {
+  grid-area: 1 / 1;      /* every slide lands in the same cell, so the tallest sets the height */
+  opacity: 0;
+  transform: rotateX(90deg);          /* waiting below, edge-on */
+  transform-origin: center center;
+  backface-visibility: hidden;
+  pointer-events: none;  /* an unlit slide sits behind the lit one; it must never catch a tap */
+  /* LEAVING: gone quickly, so it never lingers behind the one arriving, and it LEAVES on an
+     ease-in — the easing the house skill names for anything going out (ease-out for coming in).
+     Sitting inside the 250–400ms band that reads as correct for a page-level state change. */
+  transition: transform .38s cubic-bezier(.4, 0, 1, 1), opacity .16s ease;
+}
+.promo-slide.is-on {
+  opacity: 1;
+  transform: rotateX(0deg);
+  pointer-events: auto;
+  /* ARRIVING: an ease-out to settle on, and the words held back until the turn is most of
+     the way round. */
+  transition: transform .38s cubic-bezier(0, 0, .2, 1), opacity .3s ease .14s;
+}
+/* The offer that has just been replaced: out the other door, over the top. This rule must
+   stay AFTER `.promo-slide` and is more specific than it, so it wins on its own. */
+.promo-slide.is-left { transform: rotateX(-90deg); }
+
+/* One dot per offer, under the box (v297). Her ask: "there should be 2 dot if there is 2
+   message, 3 dot if 3 message."
+
+   ⚠️ SIZED AND COLOURED TO THE HOUSE RULES, not to hand. The hit area is 28px because WCAG
+   2.5.8's floor is 24×24 CSS px and the first draft of this shipped 22px — under the floor.
+   The dot itself is 10px, matching the reviews carousel on her homepage, so nothing about
+   the look changes; the button around it is what carries the size.
+
+   The colours are picked to clear 3:1 against the strip, because a dot is a UI element and
+   3:1 is the standard for one — the soft cream the homepage uses does not reach it. And the
+   lit dot is BOTH darker and larger, because a position shown by colour alone is one of the
+   mistakes the house skill names. */
+.promo-dots { display: flex; justify-content: center; gap: 4px; margin-top: 6px; }
+.promo-dots:empty { display: none; }
+.promo-dot {
+  width: 28px; height: 28px;           /* WCAG 2.5.8 floor is 24; this clears it */
+  padding: 0; border: 0; background: none; cursor: pointer;
+  display: grid; place-items: center;
+  border-radius: 999px;
+}
+.promo-dot::before {
+  content: "";
+  width: 10px; height: 10px; border-radius: 999px;
+  background: #a8763a;                 /* 3.6:1 on the strip — over the 3:1 a UI element owes */
+  transition: transform .18s ease, background-color .18s ease;
+}
+.promo-dot.is-on::before { background: #8a5a12; transform: scale(1.5); }   /* 5.3:1, and bigger */
+/* A ring of at least 2px at 3:1, which the house skill requires on everything interactive
+   and which these buttons had none of. */
+.promo-dot:focus-visible { outline: 2px solid #8a5a12; outline-offset: 2px; }
+
+/* The setting is about MOTION, not about information: a customer who asks for less
+   movement still gets every offer — it simply arrives facing them, with no turn. */
+@media (prefers-reduced-motion: reduce) {
+  .promo-slide, .promo-slide.is-on { transition: none; }
+  .promo-dot::before { transition: none; }
+}
 /* The bakery's own words, inside the same strip but quieter than the offer and
    the code it sits under — those are what a customer has to act on.
 

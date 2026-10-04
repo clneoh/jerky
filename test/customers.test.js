@@ -165,3 +165,55 @@ test("customerList supports sorting by name, orders, units, phone", () => {
   assert.equal(customerList(st, "phone")[2].name, "Zoe");  // no phone last
   assert.equal(customerList(st, "recent")[0].name, "Ali"); // ordered most recently (09-08)
 });
+
+// ── v290: people she added by hand ──────────────────────────────────────────
+
+test("a customer she added by hand is in the book, with no orders", () => {
+  const st = state([]);
+  st.customers = [{ id: "cus_1", key: "cafe aunty", name: "Cafe Aunty", whatsapp: "" }];
+  const rows = customerList(st);
+  assert.equal(rows.length, 1, "the book is not empty just because nothing has been ordered yet");
+  assert.equal(rows[0].name, "Cafe Aunty");
+  assert.equal(rows[0].orders, 0);
+  assert.equal(rows[0].units, 0);
+  assert.equal(rows[0].totalSpend, 0);
+  assert.equal(rows[0].fav, null);
+  assert.equal(rows[0].manual, true, "marked, so the list can draw her under her own heading");
+  assert.equal(rows[0]._key, "cafe aunty", "keyed as her orders will be, so she joins them later");
+});
+
+test("a profile that matches an order is NOT drawn a second time", () => {
+  const st = state([{ id: "o1", qty: 2, customerName: "Aunty Bee", whatsapp: "6012-111" }]);
+  st.customers = [{ id: "cus_1", key: "6012111", name: "Aunty Bee", whatsapp: "6012-111" }];
+  const rows = customerList(st);
+  assert.equal(rows.length, 1, "one person, one row");
+  assert.equal(rows[0].orders, 1);
+  assert.equal(rows[0].manual, undefined, "and they are not marked as hand-added");
+});
+
+test("a STALE profile key is matched by the person, not by the key", () => {
+  // The profile was saved when this person had no number, so it is keyed by NAME. Their order has
+  // since gained one, so the row is keyed by DIGITS. Matching on the stored key would draw them
+  // twice — once as a customer, once as hand-added.
+  const st = state([{ id: "o1", qty: 2, customerName: "Aunty Bee", whatsapp: "6012-111" }]);
+  st.customers = [{ id: "cus_1", key: "aunty bee", name: "Aunty Bee", whatsapp: "6012-111" }];
+  const rows = customerList(st);
+  assert.equal(rows.length, 1, "one person, one row — even though the stored key has gone stale");
+  assert.equal(rows[0].orders, 1);
+});
+
+test("THE ONE THAT MATTERS: someone added by hand who then orders is ONE person", () => {
+  // The failure the obvious design — a second, separate list — would have caused. Kept outside the
+  // book, she would not be offered by the order form's own name suggestions, so the order would be
+  // typed fresh, key by DIGITS, and the hand-added record would stay keyed by NAME. One person,
+  // two records, for good.
+  const st = state([]);
+  st.customers = [{ id: "cus_1", key: "60123456789", name: "Cafe Aunty", whatsapp: "60123456789" }];
+  assert.equal(customerList(st).length, 1, "she is in the book before she ever orders");
+
+  st.orders = [{ id: "o1", qty: 3, customerName: "Cafe Aunty", whatsapp: "60123456789", orderDate: "2026-10-04" }];
+  const rows = customerList(st);
+  assert.equal(rows.length, 1, "and STILL one person after she orders — never two");
+  assert.equal(rows[0].orders, 1, "now with her order counted");
+  assert.equal(rows[0].manual, undefined, "and no longer drawn as hand-added");
+});

@@ -273,6 +273,184 @@ test("tapping Bought adds the packs to stock once and replaces the button with a
   assert.ok(findBtn(root, "Regenerate"), "the other actions stay available");
 });
 
+// --- v285: the list is amendable at the shop --------------------------------
+
+// Every line the amend card edits carries these; boughtItem() above predates them.
+function pricedItem(over = {}) {
+  return {
+    ...boughtItem(),
+    supplierId: "s_mydin", packPrice: 25.5, packQty: 1000, packUomId: "u_g",
+    packUomName: "g", cookBase: 1, ...over,
+  };
+}
+
+function amendInputs(layer) {
+  return walk(layer).filter((n) => n.nodeType === 1 && String(n.className).includes("amend-num"));
+}
+
+function typeInto(node, value) {
+  node.value = String(value);
+  for (const f of node._listeners.input || []) f();
+}
+
+function openAmend(state, po) {
+  const root = mountHistory(state, `po=${po.id}`);
+  fireClick(findBtn(root, "Amend"));
+  return { root, layer: registry["popup-layer"] };
+}
+
+test("the What-did-you-pay box is pre-filled from the list's own summary total", () => {
+  // This had NEVER worked. A snapshot carries its estimate as `summary.buyTotal`, and the box
+  // read a top-level `po.buyTotal` no snapshot has ever had — so on every real shopping list
+  // it opened blank and its sentence dropped the "the list came to RM…" half. The earlier
+  // tests missed it because they set `po.buyTotal` by hand instead of saving a list.
+  const state = freshState();
+  const po = addPO(state, "p1", ["del_a"]);
+  po.items = [boughtItem()];
+  po.summary = { totalUnits: 1, totalEstCost: 76.5, buyTotal: 76.5 };
+
+  const root = mountHistory(state, "po=p1");
+  fireClick(findBtn(root, "Bought ✓ — add to stock"));
+
+  const layer = registry["popup-layer"];
+  const amount = walk(layer).find((n) => n.nodeType === 1 && String(n.className).includes("input"));
+  assert.ok(amount, "the amount box is on screen");
+  assert.equal(amount.value, "76.5", "pre-filled from summary.buyTotal, not left blank");
+  assert.ok(textOf(layer).includes("the list came to"), "and the sentence names the total");
+});
+
+test("Amend is offered while the list is un-bought, and gone once it is bought", () => {
+  const state = freshState();
+  const po = addPO(state, "p1", ["del_a"]);
+  po.items = [pricedItem()];
+
+  const root = mountHistory(state, "po=p1");
+  assert.ok(findBtn(root, "Amend"), "she can correct the list at the shop");
+
+  fireClick(findBtn(root, "Bought ✓ — add to stock"));
+  assert.ok(!findBtn(root, "Amend"),
+    "once the packs are on the shelf the list records what happened, it is not edited");
+});
+
+test("amending rewrites the line and the list total, and leaves the day fingerprints alone", () => {
+  const state = freshState();
+  const po = addPO(state, "p1", ["del_a"], { accurate: true });
+  po.items = [pricedItem()];
+  po.summary = { totalUnits: 1, totalEstCost: 76.5, buyTotal: 76.5 };
+  const datesBefore = JSON.stringify(po.dates);
+  const stampedAt = po.generatedAt;
+
+  const { layer } = openAmend(state, po);
+  const boxes = amendInputs(layer);
+  assert.equal(boxes.length, 2, "the packs box and the price box, one line");
+  assert.equal(boxes[0].value, "3", "the packs it was generated with");
+  assert.equal(boxes[1].value, "25.5", "and the price it was generated at");
+
+  typeInto(boxes[1], 30);
+  fireClick(findBtn(layer, "Save the corrected list"));
+
+  assert.equal(po.items[0].packPrice, 30, "the corrected price is on the saved line");
+  assert.equal(po.items[0].estCost, 90, "3 packs × RM 30");
+  assert.equal(po.summary.buyTotal, 90, "and both summary totals follow it");
+  assert.equal(po.summary.totalEstCost, 90);
+  assert.equal(JSON.stringify(po.dates), datesBefore,
+    "dates[].fp is UNTOUCHED — the 'orders changed' rounds are matched against it");
+  assert.equal(po.generatedAt, stampedAt,
+    "and generatedAt is kept, because coveringPO sorts snapshots on it");
+  assert.ok(po.amendedAt, "while the correction is stamped so the card can say it happened");
+  assert.equal(typeof po.items[0]._pricedAt, "undefined", "the working field is never saved");
+});
+
+test("a price corrected at the shop is written onto the ingredient and journaled", () => {
+  const state = freshState();
+  state.suppliers = [{ id: "s_mydin", name: "Mydin", active: true }];
+  state.ingredients[0].supplierPrices = [{ supplierId: "s_mydin", qty: 1000, uomId: "u_g", price: 25.5 }];
+  const po = addPO(state, "p1", ["del_a"]);
+  po.items = [pricedItem()];
+  po.summary = { totalUnits: 1, totalEstCost: 76.5, buyTotal: 76.5 };
+
+  const { layer } = openAmend(state, po);
+  typeInto(amendInputs(layer)[1], 30);
+  fireClick(findBtn(layer, "Save the corrected list"));
+
+  assert.equal(state.ingredients[0].supplierPrices[0].price, 30,
+    "the ingredient now costs what she actually paid");
+  assert.equal(state.ingredients[0].priceLog.length, 1, "and the move is on its journal");
+  assert.equal(state.ingredients[0].priceLog[0].was, 25.5);
+  assert.equal(state.ingredients[0].priceLog[0].price, 30);
+  assert.equal(state.ingredients[0].priceLog[0].poId, po.id, "naming the trip that moved it");
+});
+
+test("a line she did NOT reprice leaves the ingredient alone", () => {
+  // The one that would quietly undo her: a price she has since corrected by hand must not be
+  // stamped back to a stale value just because she opened the card and pressed Save.
+  const state = freshState();
+  state.suppliers = [{ id: "s_mydin", name: "Mydin", active: true }];
+  state.ingredients[0].supplierPrices = [{ supplierId: "s_mydin", qty: 1000, uomId: "u_g", price: 33 }];
+  const po = addPO(state, "p1", ["del_a"]);
+  po.items = [pricedItem()];
+  po.summary = { totalUnits: 1, totalEstCost: 76.5, buyTotal: 76.5 };
+
+  const { layer } = openAmend(state, po);
+  typeInto(amendInputs(layer)[0], 4);            // ONLY the packs move
+  fireClick(findBtn(layer, "Save the corrected list"));
+
+  assert.equal(po.items[0].packs, 4, "the count she changed is saved");
+  assert.equal(po.items[0].estCost, 102, "4 × the price the list was built at");
+  assert.equal(state.ingredients[0].supplierPrices[0].price, 33,
+    "and the ingredient keeps the price she corrected by hand");
+  assert.equal((state.ingredients[0].priceLog || []).length, 0, "no movement to record");
+});
+
+test("the amend card will not offer an ingredient that is already on the list", () => {
+  // applyBought sums by ingredient id, so a second line would not double the STOCK — but it
+  // would show her the same shopping twice and price it twice, and a list that reads as two of
+  // something is a list she cannot trust.
+  const state = freshState();
+  const po = addPO(state, "p1", ["del_a"]);
+  po.items = [pricedItem()];
+
+  const { layer } = openAmend(state, po);
+  assert.ok(textOf(layer).includes("Everything you can buy is already on this list."),
+    "the only ingredient is already on it, so there is nothing to add");
+});
+
+test("a line the shelf already covers is shown, not dropped, and can still be bought", () => {
+  const state = freshState();
+  const po = addPO(state, "p1", ["del_a"]);
+  po.items = [pricedItem({ covered: true, packs: 0, addBase: 0, buyText: null })];
+  po.summary = { totalUnits: 1, totalEstCost: 0, buyTotal: 0 };
+
+  const { layer } = openAmend(state, po);
+  assert.ok(textOf(layer).includes("already on your shelf"),
+    "the line is still drawn, so nothing looks forgotten");
+  assert.equal(amendInputs(layer).length, 0, "it has no pack to edit, so it offers none");
+  const buy = findBtn(layer, "＋ buy some");
+  assert.ok(buy, "and it is not a dead end");
+
+  fireClick(buy);
+  const boxes = amendInputs(registry["popup-layer"]);
+  assert.equal(boxes.length, 2, "it becomes an ordinary line, priced from the supplier");
+});
+
+test("dropping a line takes it off the saved list", () => {
+  const state = freshState();
+  state.ingredients.push({ id: "ing_s", name: "Salt", unit: "g", uomId: "u_g", costPerUnit: 0.002 });
+  const po = addPO(state, "p1", ["del_a"]);
+  po.items = [pricedItem(), pricedItem({ ingredientId: "ing_s", ingredientName: "Salt" })];
+  po.summary = { totalUnits: 1, totalEstCost: 153, buyTotal: 153 };
+
+  const { layer } = openAmend(state, po);
+  const removes = walk(layer)
+    .filter((n) => n.nodeType === 1 && n.tagName === "BUTTON" && textOf(n).trim() === "Remove");
+  assert.equal(removes.length, 2, "one per line, and none of them the card's own ✕");
+  fireClick(removes[1]);                                  // take the Salt line off
+  fireClick(findBtn(registry["popup-layer"], "Save the corrected list"));
+
+  assert.equal(po.items.length, 1, "only the line she kept is on the saved list");
+  assert.equal(po.items[0].ingredientId, "ing_f", "and it is the one she did not remove");
+});
+
 test("a legacy snapshot saved before stock carries no buy amounts, so no Bought button", () => {
   const state = freshState();
   const po = addPO(state, "p1", ["del_a"]);

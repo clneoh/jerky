@@ -267,3 +267,16 @@ test("renderCard draws the fields it was handed, not a code it went looking for"
     assert.ok(!/\d{4}-\d{2}-\d{2}/.test(card.textContent), "no date reaches the paper");
   }
 });
+
+test("the card never names the person a code belongs to (v289)", () => {
+  // The card is a piece of paper handed to whoever walks past it, and a code may now belong to a
+  // named partner. The card stays IMPERSONAL on purpose, for the same reason it carries no count:
+  // it is one code handed to many people, and it goes out into the world.
+  const f = fieldsOf({ holder: { id: "cus_1", name: "Cafe Aunty" } });
+  const shown = JSON.stringify(f);
+  assert.ok(!shown.includes("Cafe Aunty"), `the card must not carry the holder's name: ${shown}`);
+  assert.ok(!shown.includes("cus_1"), "nor the profile id");
+  // AND THE CARD IS OTHERWISE UNCHANGED — the same fields, whatever the code is tied to.
+  assert.deepEqual(Object.keys(f).sort(), Object.keys(fieldsOf()).sort(),
+    "a code belonging to someone prints exactly the card a code belonging to nobody prints");
+});

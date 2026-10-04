@@ -927,6 +927,18 @@ option.tone-off { color: var(--muted); }
   overflow: hidden;
 }
 .customer-avatar.sm { width: 24px; height: 24px; font-size: 14px; }
+/* ---------- A customer's own remark, on the list row (v290) ---------- */
+/* She asked to read the Note without opening anyone. It is free text — "Anything to remember" can
+   be a whole sentence — so it is clamped to ONE line here, and the whole of it is still one tap
+   away in the profile card. Without the clamp a chatty note would grow the row to four lines and
+   bury the list it sits in, which is the opposite of what a remark on a list is for. */
+.li-sub.li-note {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-style: italic;
+}
 
 /* The "get to know this customer" card at the top of the history pop-up. */
 .profile-card {
@@ -957,6 +969,22 @@ option.tone-off { color: var(--muted); }
 .pin-offer .btn-row { gap: 6px; margin-top: 8px; }
 .pin-offer .btn-row .btn { flex: 0 1 auto; }
 
+/* ---------- The reward, exercised (v291) ----------
+   Under the profile top inside the customer card. It carries her own words, the
+   count against them, and a press — so it is a block with its own edges rather
+   than one more line of the profile facts. Tinted like the offer it is, but in
+   the amber the app already uses for a code's tag, so it never reads as the
+   green "bring-a-friend" ledger below it. */
+.reward-block {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  background: var(--brown-soft);
+  border-radius: 10px;
+}
+.reward-block .reward-line { margin: 0; font-weight: 600; font-size: 14px; }
+.reward-block .btn-row { gap: 6px; margin: 0; }
+.reward-block .card-sub { margin: 0; }
+
 /* ---------- Bring-a-friend ---------- */
 .ref-block {
   flex: 1 1 100%;
@@ -980,7 +1008,6 @@ option.tone-off { color: var(--muted); }
 .st-chip.valid { background: var(--green-bg); color: var(--green); }
 .st-chip.used { background: var(--gray-bg); color: var(--muted); }
 .st-chip.expired { background: var(--gray-bg); color: var(--muted); text-decoration: line-through; }
-.st-chip.frozen { background: var(--amber-bg); color: var(--amber); }
 .st-chip.paused { background: var(--gray-bg); color: var(--ink); }
 /* A life chip sits BESIDE the code's name (v278), so it needs the gap the name's own
    margin cannot give it — and a hair of lift to sit on the serif's baseline. */
@@ -1203,6 +1230,93 @@ option.tone-off { color: var(--muted); }
 .po-sup-sub { font-weight: 700; color: var(--brown-dark); }
 .po-buy { font-weight: 600; }
 .po-need { font-size: 12px; font-weight: 400; color: var(--muted); }
+
+/* ---------- How many times a label was opened (v288) ---------- */
+/* A bar a day for the last four weeks, under the count. She asked to see a code going cold,
+   and a run of low bars says that faster than a list of dates does.
+   A day with NO opens is a faint stub rather than a gap: a missing bar would read as a day
+   the app has no data for, which is a different thing from a day nobody came. */
+.visit-slot:empty { display: none; }
+.visit-strip-row { display: flex; align-items: flex-end; gap: 8px; margin-top: 6px; }
+.visit-cap { font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.visit-strip { display: flex; align-items: flex-end; gap: 1px; flex: 1 1 auto; min-width: 0; height: 26px; }
+.visit-bar { flex: 1 1 0; min-width: 2px; background: var(--brown-dark); border-radius: 1px 1px 0 0; }
+.visit-bar.quiet { background: var(--line); }
+
+/* ---------- A code's LABEL (v287) ---------- */
+/* One QR per code, on its row, so the Promo screen reads as a set of labels with the
+   life chips saying which are still going. It carries the word "Label" under it,
+   because a QR alone does not say it can be pressed — and it IS a press: tapping it
+   opens the label to be copied or printed.
+
+   THE ROW ONE IS A THUMBNAIL, NOT A SCANNER TARGET, and that is a measurement rather
+   than a preference. A code's link is ~50 characters, which is a 33-module QR; at this
+   size that is under two pixels a module, and no phone camera resolves that. Its job is
+   to tell one label from another in a list — the big one in the detail is the one to
+   hold a phone up to, and it is drawn at 200px for exactly that reason.
+   `crispEdges` matters at this size: it stops the browser feathering a module into the
+   quiet zone, which is what turns a small QR into a smudge. */
+.label-qr {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+.label-qr:active { background: #f9efe6; }
+.label-qr-svg { width: 64px; height: 64px; }
+.label-qr-svg svg { display: block; width: 100%; height: 100%; shape-rendering: crispEdges; }
+.label-qr-cap { font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.label-qr-fail { width: 64px; height: 64px; display: grid; place-items: center; color: var(--muted); font-size: 11px; }
+.label-big { display: flex; justify-content: center; padding: 8px 0 0; }
+.label-big .label-qr-svg { width: 200px; height: 200px; }
+
+/* ---------- The code box and its Suggest one button (v286) ---------- */
+/* They share a line, and the BOX keeps the room: she is usually typing her own code, and the
+   suggestion is the occasional convenience rather than the main event, so the button is a fixed
+   width and the box takes what is left.
+   AND THE LINE WRAPS. Measured on a narrow screen the fixed-width button squeezed the box down
+   to 71 pixels — a box too small to read a code back in, which is the very fault this version
+   exists to prevent. So the box asks for 180 pixels of basis: give it that and they share a
+   line, do not and the button drops below and the box takes the whole width. Either way the box
+   is never the thing that gets crushed. */
+.code-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+.code-row .input { flex: 1 1 180px; min-width: 0; max-width: 100%; }
+.code-row .btn { flex: 0 0 auto; }
+
+/* ---------- Amending a shopping list at the shop (v285) ---------- */
+/* One line per row: what it is on the left, the two numbers she changes beside each other,
+   the line's own total under them, and the ✕ that takes it off the list. A grid rather than
+   a flex row so the ✕ stays pinned to the top-right corner whatever the name wraps to, and
+   the fields take the full width underneath — at 375 pixels three columns will not fit, and
+   squashing them is how a number input ends up too small to hit. */
+.amend-rows { display: flex; flex-direction: column; gap: 10px; }
+.amend-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.amend-name { grid-column: 1; min-width: 0; font-weight: 600; }
+.amend-drop { grid-column: 2; grid-row: 1; }
+/* A line the shelf already covers: nothing to change, so it reads quieter than the rest. */
+.amend-covered { background: var(--surface-2, #faf7f3); }
+.amend-sub { font-size: 12px; font-weight: 400; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+.amend-fields { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.amend-field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+.amend-num { width: 104px; min-height: 36px; font-size: 15px; }
+.amend-line { flex: 1 1 auto; text-align: right; font-weight: 700; align-self: center;
+              font-variant-numeric: tabular-nums; color: var(--brown-dark); }
+.amend-total { margin: 12px 0 0; font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
+.amend-add { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+.amend-pick { flex: 1 1 auto; min-width: 0; min-height: 36px; }
 
 /* ---------- Empty ---------- */
 .empty { text-align: center; padding: 36px 16px; color: var(--muted); }
@@ -1729,6 +1843,12 @@ option.tone-off { color: var(--muted); }
 /* A journal line: the words take the room they need, the figure never shrinks. */
 .journal-line .j-what { flex: 1 1 auto; min-width: 0; }
 .journal-line .info-val { flex: 0 0 auto; white-space: nowrap; padding-left: 10px; }
+
+/* Where a journal is built for the printer, and ONLY for the printer (3 Oct 2026). The sheet
+   is drawn into this node at the instant Print is pressed and the node is emptied again
+   immediately after, so on screen there is normally nothing in it at all — and while it is
+   full, for that instant, it must still not appear. print.css is the only thing that shows it. */
+.print-layer { display: none; }
 /* A settings row that opens an editor when tapped (the two money lists, v108). */
 .info-row.tappable { cursor: pointer; border-radius: 8px; }
 .info-row.tappable:active { background: var(--gray-bg); }

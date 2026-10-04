@@ -13,6 +13,7 @@ import { entryForm, newEntryChip } from "./accountsEditor.js";
 // stock count typed here lands as the same number of grams the On-hand line shows.
 import { currentUomId, cookingFamilyOf } from "./ingredients.js";
 import { dateField } from "../datepicker.js";
+import { journalSheet, journalBodyEl, journalButtons, bakeryName } from "../journal.js";
 import { longDate, todayISO, weekdayName } from "../dates.js";
 import { clearCourierCharge } from "../courier.js";
 import { maybePublishTracking, maybeSync } from "../supabase.js";
@@ -46,44 +47,49 @@ function spanFor(which) {
   return { from, to: today, label: from === today ? `${weekdayName(today)}, ${dayMonth(today)}` : `${dayMonth(from)} – ${dayMonth(today)}` };
 }
 
-// One method's book, as a block: every movement that way in the stretch, in order,
-// ending on what it should hold. Built as a block rather than a pop-up so it can be
-// shown in two places — as a book of its own, and inside the Books list, where opening a
-// second window would wipe the list she is reading (the app has one shared pop-up layer).
-function journalBody(state, method, from, to, label) {
-  const cur = state.settings.currency || "RM";
+// One method's book, as a description the screen and the paper both read. The rows come from
+// ONE call to `journalFor`, so a book that leaves the screen cannot disagree with the book on
+// it about a single movement (3 Oct 2026).
+//
+// The direction travels with the row rather than in the amount's sign: the Money screen writes
+// "−RM 30.00" where a statement line writes "RM -30.00", and the sheet has to be able to say
+// which of the two it is looking at, or the paper would read differently from the screen.
+function bookSheet(state, method, from, to, label) {
   const j = journalFor(state, method, from, to);
   const where = isCash(method) ? "what should be in your purse"
     : isTng(method) ? "what should be on your phone"
       : "kept out of the purse and phone figures, because the money did not move through either";
-  // The label takes what room it needs and wraps; the figure never shrinks or
-  // collides with it — a journal line that reads "BeeRM 30.00" is no use to anyone.
-  const line = (r) => el("div", { class: "info-row journal-line" },
-    el("span", { class: "j-what" }, `${dayMonth(r.date)} · ${r.what}`),
-    el("span", { class: "info-val" }, `${r.dir === "in" ? "" : "−"}${fmtRM(r.amount, cur)}`));
-
-  return el("div", {},
-    j.rows.length
-      ? el("div", {}, ...j.rows.map(line))
-      : el("p", { class: "card-sub" }, "Nothing moved this way in this stretch."),
-    el("div", { class: "info-row pl-total" },
-      el("span", {}, "In"), el("span", { class: "info-val" }, fmtRM(j.inTotal, cur))),
-    el("div", { class: "info-row pl-total" },
-      el("span", {}, "Out"), el("span", { class: "info-val" }, fmtRM(-j.outTotal, cur))),
-    el("div", { class: "info-row pl-net" },
-      el("span", {}, "Net"), el("span", { class: "info-val" }, fmtRM(j.net, cur))),
-    el("p", { class: "card-sub", style: "margin:10px 0 0" },
-      `${label} is ${where}. Every order paid that way, everything you spent out of it and anything of your own you put in is listed above — the same rows the totals on the Money screen are made of.`));
+  return journalSheet({
+    title: `${label} journal`,
+    subtitle: label,
+    lines: j.rows.map((r) => ({
+      what: `${dayMonth(r.date)} · ${r.what}`,
+      amount: r.amount,
+      dir: r.dir === "in" ? "" : "out",
+    })),
+    totals: [
+      { label: "In", amount: j.inTotal, cls: "pl-total" },
+      { label: "Out", amount: -j.outTotal, cls: "pl-total" },
+      { label: "Net", amount: j.net, cls: "pl-net" },
+    ],
+    empty: "Nothing moved this way in this stretch.",
+    note: `${label} is ${where}. Every order paid that way, everything you spent out of it and anything of your own you put in is listed above — the same rows the totals on the Money screen are made of.`,
+    where: "More → Money",
+    bakery: bakeryName(state),
+  });
 }
 
 // One method's book on its own, opened by tapping a money row — "how can i see the TnG
 // journal and the Cash journal?" (16 Sep 2026) — because those rows are already the
-// totals of exactly these movements.
+// totals of exactly these movements. It leaves the screen the way every other journal does.
 function openJournal(state, method, from, to, label) {
+  const cur = state.settings.currency || "RM";
+  const sheet = bookSheet(state, method, from, to, label);
   showPopup(el("div", { class: "popup-title-row" }, `${label} journal`),
     () => el("div", {},
       el("p", { class: "card-sub", style: "margin:0 0 10px" }, label),
-      journalBody(state, method, from, to, label)));
+      journalBodyEl(sheet, cur),
+      el("div", { class: "popup-actions" }, ...journalButtons(sheet, cur))));
 }
 
 // Day one — where she stands when the books begin (17 Sep 2026: "we need to enter opening
@@ -218,13 +224,19 @@ function openBooks(state, from, to, stretchLabel) {
     const lines = labels.flatMap((m) => {
       const j = journalFor(state, m, from, to);
       const isOpen = open === m;
+      const sheet = isOpen ? bookSheet(state, m, from, to, m) : null;
       return [
         el("div", { class: `info-row tappable${isOpen ? " book-open" : ""}`,
           onclick: () => { open = isOpen ? null : m; draw(); } },
           el("span", {}, m),
           el("span", { class: "info-val" }, fmtRM(j.net, cur),
             el("span", { class: "muted", style: "margin-left:6px" }, isOpen ? "close" : "book"))),
-        isOpen ? el("div", { class: "book-page" }, journalBody(state, m, from, to, m)) : null,
+        // The Print and Share pair belongs to the OPEN book and lives inside its own page —
+        // the list underneath holds every method's book, and only the one she has opened
+        // should reach paper (3 Oct 2026).
+        isOpen ? el("div", { class: "book-page" },
+          journalBodyEl(sheet, cur),
+          el("div", { class: "popup-actions" }, ...journalButtons(sheet, cur))) : null,
       ];
     }).filter((n) => n != null);
 

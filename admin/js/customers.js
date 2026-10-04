@@ -116,6 +116,46 @@ export function customerList(state, sort = "recent", filter = "all", today = "")
     delete r.addrOn;
   }
 
+  // ── PEOPLE SHE ADDED HERSELF (v290) ────────────────────────────────────────
+  //
+  // The book is built from ORDERS, so someone who has never ordered has no row anywhere — and a
+  // partner she recruited to hand labels out is exactly that person. They get a row of their own,
+  // all zeros and marked `manual`, so every screen that reads the book sees them: the count at the
+  // top, the CSV, the bulk-message picker, the duplicate-join picker, and — the one that matters
+  // most — the order form's own name suggestions.
+  //
+  // KEEPING THEM IN A SEPARATE LIST WOULD HAVE BEEN THE OBVIOUS WAY TO DRAW THIS, AND THE WRONG
+  // ONE. The day that partner finally orders, the form would have offered her nothing, so she
+  // would have retyped the name and number by hand; the order would then key by DIGITS while the
+  // hand-added record stayed keyed by NAME. One person, two records, for good. They are drawn
+  // under their own heading instead — the grouping is the view's, not the data's.
+  //
+  // MATCHED BY A RE-DERIVED keyOf, never by the profile's own `key`. A stored key can lag: a
+  // name-keyed profile whose order later gained a number keeps the old key (see canonicaliseCustomers
+  // in profiles.js), and matching on `p.key` alone would draw that person twice — once as a
+  // customer and once as hand-added.
+  const known = new Set(rows.map((r) => r._key));
+  for (const p of (Array.isArray(state.customers) ? state.customers : [])) {
+    if (!p) continue;
+    const key = keyOf({ whatsapp: p.whatsapp, customerName: p.name }) || p.key;
+    if (!key || known.has(key)) continue;
+    // Two profiles reducing to one key draw ONE row, exactly as two orders for one person do.
+    known.add(key);
+    rows.push({
+      _key: key,
+      name: String(p.name || "").trim() || "(no name)",
+      whatsapp: String(p.whatsapp || "").trim(),
+      orders: 0,
+      units: 0,
+      totalSpend: 0,
+      fav: null,
+      last: "",
+      lastOrdered: "",
+      lastAddress: "",
+      manual: true,
+    });
+  }
+
   const cutoff = today ? daysAgoISO(today, 30) : "";
   if (filter === "phone") {
     rows = rows.filter((r) => r.whatsapp);

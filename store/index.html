@@ -53,8 +53,13 @@
          never instead — a strip that stopped naming the code would be telling a
          customer about a discount they cannot ask for. -->
     <div id="promo-today" class="promo-today" hidden>
-      <p id="promo-offer" class="promo-offer"></p>
-      <p id="promo-words" class="promo-words" hidden></p>
+      <!-- Both empty on purpose: the slides and the dots are built by the script. The slides
+           are stacked in one grid cell so the strip is as tall as the TALLEST message and
+           cannot change height as they turn (v295); the dots sit UNDER that box, one per
+           offer, and add a fixed height of their own. A static line here would be a second
+           copy of an offer the script is about to draw. -->
+      <div id="promo-rotor" class="promo-rotor"></div>
+      <div id="promo-dots" class="promo-dots"></div>
     </div>
 
     <div id="referral-banner" class="referral-banner" hidden data-i18n="referral">

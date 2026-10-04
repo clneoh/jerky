@@ -45,6 +45,12 @@ globalThis.document = {
   querySelector: () => null,
   querySelectorAll: () => [],
   body: createEl("body"),
+  // The REAL document has these. A shim without them is not a smaller DOM, it is a
+  // different one: the shop registers a visibilitychange listener at start-up (v292),
+  // and a missing method is a TypeError at import — every store test dies at once.
+  _docListeners: {},
+  addEventListener(t, f) { (this._docListeners[t] ||= []).push(f); },
+  removeEventListener() {},
 };
 globalThis.window = { open() {} };
 
@@ -57,7 +63,7 @@ const { strictestCancelDays } = await import("../store/pool.js");
 const { CONFIG } = await import("../store/config.js");
 // v270: the shop's own line and its refusals, kept as pure functions so they are
 // judged here rather than by looking at a phone.
-const { clauseWords, dayWords, ownWords, rememberShopOrder, shopMemo, shopVerdict, softVerdict } = await import("../store/app.js");
+const { clauseWords, dayWords, ownWords, rememberShopOrder, shopMemo, shopVerdict, softVerdict, standingToday, standingNext, turnsAtAll } = await import("../store/app.js");
 const { STORE } = await import("../store-lang.js");
 
 // The cut-off time as the page prints it: the app stores it 24-hour (Settings'
@@ -784,6 +790,83 @@ test("mergeStorefront keeps codes it can read and drops the ones it cannot", () 
   assert.deepEqual(mergeStorefront({ promoCodes: [{ code: "OLD1" }] }, { promoCodes: [] }).promoCodes, []);
   // A payload that says nothing about codes leaves the key alone.
   assert.equal(mergeStorefront({ promoCodes: [{ code: "OLD1" }] }, { name: "X" }).promoCodes[0].code, "OLD1");
+});
+
+// ── v292: the shop's standing offers, and how they turn ─────────────────────
+//
+// The strip used to `.find()` the FIRST live public code and drop the rest
+// without a word, so a bakery advertising three offers was advertising one.
+// `standingToday` and `standingNext` are pure, so the shop's own rule is judged
+// here rather than by looking at a phone.
+
+// A code the shop would happily advertise, with the two rule families that can
+// stop it overridden per test.
+const stand = (over = {}) => ({
+  code: "FRESH10", vis: "public", state: "live",
+  when: { from: "", to: "" }, often: { type: "unlimited", n: 0, maxRM: 0 }, used: 0, given: 0,
+  ...over,
+});
+const TODAY = "2026-10-04";
+
+test("the strip advertises EVERY live public code, not just the first", () => {
+  const codes = [stand({ code: "ONE" }), stand({ code: "TWO" }), stand({ code: "THREE" })];
+  assert.deepEqual(standingToday(codes, TODAY).map((c) => c.code), ["ONE", "TWO", "THREE"],
+    "all three are running, so all three are advertised — this is the fault v292 fixed");
+  // The order is her publishing order, so the first code the strip shows is the
+  // one she put first rather than whichever the filter happened to meet.
+  assert.deepEqual(standingToday([stand({ code: "B" }), stand({ code: "A" })], TODAY).map((c) => c.code),
+    ["B", "A"]);
+});
+
+test("a code that is not running is never advertised", () => {
+  const dropped = [
+    ["personal", stand({ vis: "personal" })],                        // unadvertised is the whole of what "personal" buys
+    ["paused", stand({ state: "paused" })],
+    ["ended", stand({ state: "ended" })],
+    ["not yet", stand({ when: { from: "2026-11-01", to: "" } })],
+    ["out of date", stand({ when: { from: "", to: "2026-09-30" } })],
+    ["used up", stand({ often: { type: "quota", n: 3, maxRM: 0 }, used: 3 })],
+    ["over its ceiling", stand({ often: { type: "unlimited", n: 0, maxRM: 50 }, given: 50 })],
+    ["junk", null],
+  ];
+  for (const [why, c] of dropped) {
+    assert.deepEqual(standingToday([c], TODAY), [], `${why} must not be advertised`);
+  }
+  // ...and the good one beside a bad one still gets through, so this is a filter
+  // and not a stop-at-the-first-problem.
+  assert.deepEqual(standingToday([stand({ vis: "personal" }), stand({ code: "OK" })], TODAY).map((c) => c.code),
+    ["OK"]);
+  // A code running till TODAY is still running — the same "still valid on its
+  // last day" rule creditStatus keeps, asked of the engine rather than restated.
+  assert.equal(standingToday([stand({ when: { from: "", to: TODAY } })], TODAY).length, 1);
+});
+
+test("the turn wraps, and one offer never moves", () => {
+  assert.equal(standingNext(3, 0), 1);
+  assert.equal(standingNext(3, 1), 2);
+  assert.equal(standingNext(3, 2), 0, "the third turns back to the first");
+  assert.equal(standingNext(2, 0), 1);
+  assert.equal(standingNext(2, 1), 0);
+  // One offer is a statement, not a one-slide carousel: it stays put because
+  // `(0 + 1) % 1` is 0, and the shop never arms a timer for it at all.
+  assert.equal(standingNext(1, 0), 0);
+  assert.equal(standingNext(0, 0), 0);
+  // A list that shrank under the timer — she paused a code while the page was open
+  // — clamps rather than wrapping into a hole and drawing nothing.
+  assert.equal(standingNext(3, 9), 0);
+  assert.equal(standingNext(3, -1), 0);
+});
+
+test("the shop arms its timer only when there is something to turn to", () => {
+  // The one place this deliberately differs from the homepage's own carousel,
+  // which arms an interval even for a single slide where it then ticks every six
+  // seconds to no effect.
+  assert.equal(turnsAtAll(0), false, "no offers, no strip, no timer");
+  assert.equal(turnsAtAll(1), false, "a lone offer is stated, not turned");
+  assert.equal(turnsAtAll(2), true);
+  assert.equal(turnsAtAll(3), true);
+  assert.equal(turnsAtAll("2"), true, "a count that arrives as text still counts");
+  assert.equal(turnsAtAll(undefined), false);
 });
 
 test("mergeStorefront sorts occasions by start date and trims the label", () => {

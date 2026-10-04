@@ -942,3 +942,83 @@ test("deleting an ordinary expense leaves every order alone", () => {
   assert.equal(st.orders[0].courierFee, 8,
     "nor did an unrelated delete reach into an order — only a row that names its order may clear one");
 });
+
+// ── a book can leave the screen (v282) ───────────────────────────────────────
+// "those journals in profits and other journals should be printable and able to be shared"
+// (3 Oct 2026). What matters is that what leaves is the SAME book — the same rows and the
+// same closing figures — read off one description rather than a second walk through her
+// money, which is how a screen and a page start disagreeing.
+test("a money book can be printed and shared, and what leaves is the book she is reading", async () => {
+  const today = todayISO();
+  const st = state();
+  st.deliveryDates = [{ id: "d18", date: today }];
+  st.orders = [row({ status: "ready", paidReceived: true, paidMethod: "cash",
+    paidAt: `${today}T09:00:00.000Z`, unitPrice: 15, customerName: "Aisyah" })];
+  st.expenses = [{ id: "e1", date: today, amount: 18, category: "Packaging", method: "cash", note: "2 boxes" }];
+
+  const root = document.createElement("div");
+  renderMoney(root, st);
+  const cashRow = allOf(root).filter((n) => String(n.className).includes("info-row"))
+    .find((r) => String(r.children?.[0]?.textContent || "") === "Cash out");
+  cashRow._listeners.click.forEach((f) => f());
+
+  const pop = screen["popup-layer"];
+  const press = (label) => allOf(pop).find((n) => n.tagName === "BUTTON" && n.textContent.trim() === label);
+  assert.ok(press("Print"), "the book wears the same pair every journal wears");
+  assert.ok(press("Share"));
+
+  let shared = null;
+  globalThis.navigator.share = (p) => { shared = p; return Promise.resolve(); };
+  try {
+    await press("Share")._listeners.click[0]();
+    assert.equal(shared.title, "Cash journal");
+    assert.match(shared.text, /Order #\S+ — Aisyah/, "every movement, as the book shows it");
+    assert.match(shared.text, /Packaging — 2 boxes/);
+    assert.match(shared.text, /−RM 18\.00/,
+      "money that left writes its direction before the figure, exactly as the screen writes it");
+    assert.match(shared.text, /^In\s+RM 15\.00$/m, "and it closes on the same In");
+    assert.match(shared.text, /^Out\s+RM -18\.00$/m, "the same Out");
+    assert.match(shared.text, /^Net\s+RM -3\.00$/m, "and the same Net she can see behind the sheet");
+  } finally { delete globalThis.navigator.share; }
+});
+
+test("only the OPEN book in the Books list can print — the list itself never does", () => {
+  const today = todayISO();
+  const st = state();
+  st.settings.payMethods = ["Cash", "TNG", "Loan", "Personal Pocket Kean"];
+  st.deliveryDates = [{ id: "d18", date: today }];
+  st.orders = [row({ status: "ready", paidReceived: true, paidMethod: "cash",
+    paidAt: `${today}T09:00:00.000Z`, unitPrice: 15 })];
+
+  const root = document.createElement("div");
+  renderMoney(root, st);
+  const open = allOf(root).find((n) => n.tagName === "BUTTON" && n.textContent.trim() === "Open");
+  open._listeners.click.forEach((f) => f());
+
+  let printed = 0;
+  globalThis.window = { print() { printed += 1; }, addEventListener() {}, removeEventListener() {} };
+  try {
+    const form = screen["popup-layer"];
+    assert.equal(allOf(form).some((n) => String(n.textContent || "").includes("Cash journal")), false,
+      "no book is open yet, so there is nothing to print");
+
+    const kean = allOf(form).filter((n) => String(n.className).includes("info-row"))
+      .find((r) => r.children[0].textContent === "Personal Pocket Kean");
+    kean._listeners.click.forEach((f) => f());
+
+    const press = (label) => allOf(screen["popup-layer"])
+      .find((n) => n.tagName === "BUTTON" && n.textContent.trim() === label);
+    assert.ok(press("Print"), "the book she has opened wears the pair");
+    press("Print")._listeners.click[0]();
+    assert.equal(printed, 1, "and pressing it prints");
+
+    // What reaches paper is her pocket's book — not the four-method list around it.
+    const sheet = allOf(document.body).filter((n) => String(n.className).includes("journal-sheet"));
+    assert.equal(sheet.length, 1, "one sheet, built away from the list");
+    const onPaper = allOf(sheet[0]).map((n) => String(n.textContent || "")).join(" ");
+    assert.match(onPaper, /Personal Pocket Kean journal/);
+    assert.equal(/Cash journal|Loan journal|TNG journal/.test(onPaper), false,
+      "and every other method's book stays on the screen where it belongs");
+    assert.equal(/book$/.test(onPaper), false, "the 'book' chips that open them do not print either");
+  } finally { delete globalThis.window; }
+});

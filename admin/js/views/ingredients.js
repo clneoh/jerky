@@ -6,7 +6,10 @@
 
 import { el, button, select, emptyState, confirmDialog, showPopup, toast } from "../ui.js";
 import { byId, fmtRM, newId, round2, save } from "../state.js";
-import { fmtStockAmount, priceEntryLabels, belowReserve } from "../purchasing.js";
+import { fmtStockAmount, priceEntryLabels, belowReserve, chosenSupplier, trimNum } from "../purchasing.js";
+import { logPriceMoves, priceLogOf } from "../prices.js";
+import { longDate } from "../dates.js";
+import { bakeryName, journalBodyEl, journalButtons, journalSheet } from "../journal.js";
 
 export function renderIngredients(root, state) {
   renderAll(root, state);
@@ -265,9 +268,16 @@ function openEditIngredientPopup(state, ing, root) {
         button("Update ingredient", () => {
           const { error, values, drop } = editor.collect();
           if (error) return toast(error);
+          // A price corrected HERE is a price that moved, and the journal has to be told (v285).
+          // A log that only ever held the moves made from a shopping list would be titled as
+          // this ingredient's price history while quietly missing the rest of it.
+          const before = Array.isArray(ing.supplierPrices)
+            ? ing.supplierPrices.map((e) => ({ ...e }))
+            : [];
           Object.assign(ing, values);
           for (const k of drop || []) delete ing[k];
-          toast("Ingredient updated");
+          const moved = logPriceMoves(ing, before);
+          toast(moved.length ? `Ingredient updated — ${moved.length} price change recorded` : "Ingredient updated");
           save(state);
           close();
           renderAll(root, state);
@@ -322,7 +332,68 @@ function ingredientCard(state, ing, root) {
         usedBy.length ? el("p", { class: "po-breakdown" }, `Used in: ${usedBy.join(", ")}`) : null),
       el("div", { class: "li-right" },
         button("Edit", () => openEditIngredientPopup(state, ing, root), "ghost small"),
+        // Her ask, 3 Oct 2026: *"ingredient price journaled … So an ingredient need a
+        // journals."* Offered only once there is something in it — a Journal press that
+        // opened an empty page would read as a fault rather than as nothing having happened.
+        priceLogOf(ing).length
+          ? button("Journal", () => openPriceJournal(state, ing), "ghost small")
+          : null,
         button(usedBy.length ? "Hide" : "Delete", () => deleteIngredient(state, ing, usedBy.length > 0, root), "ghost small"))));
+}
+
+// ── The ingredient's price journal (v285) ────────────────────────────────────
+//
+// Only the MOVEMENTS are listed — her choice: *"only when the price moves, plus today"*.
+// Buying the same thing at the same price again is stock, not news, so it is not here.
+//
+// Built on the same `journalSheet()` every other book in this app uses, so the screen, the
+// paper, the shared text and the PDF (v283) are four readings of ONE description and cannot
+// disagree about a row or a figure. Print and Share come with it for free.
+function priceNowText(state, ing) {
+  const cur = state.settings.currency || "RM";
+  const c = chosenSupplier(state, ing);
+  if (c) return `${fmtRM(c.price, cur)} per ${trimNum(c.qty)}${c.uomName} pack · ${c.name}`;
+  const per = Number(ing.costPerUnit) || 0;
+  return per > 0
+    ? `${fmtRM(per, cur)} per ${ing.unit || "unit"} — your fallback cost`
+    : "no price on file yet";
+}
+
+export function priceSheet(state, ing) {
+  const cur = state.settings.currency || "RM";
+  // Oldest first, so the page reads as a history rather than a feed. The log itself is newest
+  // first, which is right for a record and wrong for a book.
+  const log = priceLogOf(ing).slice().reverse();
+  return journalSheet({
+    title: `${ing.name} — price`,
+    subtitle: `Price now: ${priceNowText(state, ing)}`,
+    lines: log.map((e) => ({
+      what: `${longDate(e.at)} · ${e.supplierName || "no supplier"} · ${trimNum(e.qty)}${e.uomName} pack · was ${e.was == null ? "not on file" : fmtRM(e.was, cur)}`,
+      amount: e.price,
+    })),
+    totals: [],
+    empty: "No price change recorded yet.",
+    note: "Every time this ingredient's price moved — what it moved to, and what it was before. Buying it again at the same price is not a change, so it is not listed. The price the app uses for recipes and costs is the one at the top.",
+    where: "Ingredients",
+    bakery: bakeryName(state),
+  });
+}
+
+function openPriceJournal(state, ing) {
+  const cur = state.settings.currency || "RM";
+  const sheet = priceSheet(state, ing);
+  showPopup(el("div", { class: "popup-title-row" }, `${ing.name} — price`),
+    () => el("div", {},
+      // THE PRICE NOW, ON SCREEN AND NOT ONLY ON PAPER. `journalBodyEl` deliberately does not
+      // draw a sheet's subtitle — every other journal leans on the section wording above its
+      // card — but her answer was "only when the price moves, PLUS TODAY", and "today" is the
+      // half a movement list cannot carry by itself. So the card says it in its own line, the
+      // same way the Money and Profit journals label their books, while the sheet keeps its
+      // subtitle so the printed page and the PDF say it too.
+      el("p", { class: "card-sub", style: "margin:0 0 10px" },
+        `Price now: ${priceNowText(state, ing)}`),
+      journalBodyEl(sheet, cur),
+      el("div", { class: "popup-actions" }, ...journalButtons(sheet, cur))));
 }
 
 // Set how much of an ingredient is on the shelf ("On hand"), or the level she

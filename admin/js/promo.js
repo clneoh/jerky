@@ -42,6 +42,55 @@ export function codeNameOk(s) {
   return /^[A-Z0-9]{3,16}$/.test(normCode(s));
 }
 
+// ── v286: a suggested code the customer can read off a card ──────────────────
+//
+// A code is read by eye TWICE: she types it when she makes it, and the customer types it off
+// the printed card. The pairs people get wrong doing that are 0/O, 1/I and 1/L — a customer
+// holding a card that says `FRESH1O` has no way to know which one it is. So a SUGGESTED code
+// is cut from an alphabet with none of those five characters in it.
+//
+// NOTHING IS FORCED BY THIS. The box stays hers to type into, and every code that already
+// exists keeps working exactly as it did — the shape rule (codeNameOk) is unchanged and still
+// allows the look-alikes, because a code she has already printed cannot be renamed.
+export const CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+export const CODE_LENGTH = 5;
+
+function randomChars(n) {
+  const out = [];
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    const buf = new Uint8Array(n);
+    crypto.getRandomValues(buf);
+    for (let i = 0; i < n; i += 1) out.push(CODE_ALPHABET[buf[i] % CODE_ALPHABET.length]);
+    return out.join("");
+  }
+  // The same fallback the rest of the app uses, so nothing here depends on crypto existing.
+  for (let i = 0; i < n; i += 1) {
+    out.push(CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]);
+  }
+  return out.join("");
+}
+
+// A fresh code that is not already in use. `taken` may be a list of codes or a list of code
+// RECORDS — the two shapes this app hands it — and the only thing that matters is that a
+// printed card is never given a name that already means something else: two codes sharing one
+// name is the fault the shop cannot recover from, because it would take the wrong amount off.
+export function makeCode(taken = []) {
+  const used = new Set(
+    [...(taken || [])].map((c) => normCode((c && c.code) || c || "")),
+  );
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const c = randomChars(CODE_LENGTH);
+    if (!used.has(c)) return c;
+  }
+  // 31^5 is 28.6 million, so reaching here means `taken` is not what we think it is. A longer
+  // code is the honest answer — never hand back one that is already in use.
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const c = randomChars(CODE_LENGTH + 3);
+    if (!used.has(c)) return c;
+  }
+  return randomChars(CODE_LENGTH + 6);
+}
+
 // A brand-new code, every family at its no-opinion default. The one exception is
 // "when" — a code with no start date starts the day it is made, so the default
 // from-date is filled by the caller, not here (this file never reads the clock).
@@ -63,13 +112,28 @@ export function blankCode() {
     code: "",
     state: "live", // live | paused | ended
     vis: "public", // public = may be advertised; personal = never advertised
-    frozen: false, // printed: the offer can no longer be re-written
     who: { type: "all" }, // all | first
     when: { from: "", to: "" }, // ISO dates; to "" = no end date
     basket: { type: "none", amount: 0 }, // none | amount
     gives: { type: "rm", value: 0, cap: 0 }, // rm | pct | delivery
     often: { type: "unlimited", n: 0, maxRM: 0 }, // unlimited | once | quota
     beside: { type: "anything" }, // anything | nocredit
+    // WHOSE CODE THIS IS (v289). A formal partner prints labels and runs marketing, and this is
+    // what makes their label attributable — the code's own `used` count and its label's opens
+    // become that person's tally, with nothing new to track. `who` above is a CLASS of buyer
+    // ("anyone" / "a first order only"), never a person; this is the person.
+    //
+    // `id` IS THE PROFILE'S OWN ID, NOT ITS `key`. A key MOVES: correcting a customer's WhatsApp
+    // number re-keys them, a name-only customer who gains a number flips from name to digits, and
+    // two people sharing a name with no number collapse onto ONE key — which would bind two
+    // different printed codes to one shared person. A profile id is issued once, survives a
+    // re-key, and survives a merge.
+    //
+    // `name` IS FROZEN BESIDE IT, the way orderLineName freezes a sold product's name: a profile
+    // she later renames or merges away still reads as who it was when the code was made.
+    //
+    // AND IT IS DELIBERATELY NEVER PUBLISHED — see publishCodes. The shop's row is world-readable.
+    holder: { id: "", name: "" },
     say: "",   // her own sentence for the shop, or "" for the shop's own words
     sayZh: "",
     sayMs: "",
@@ -115,7 +179,6 @@ export function normalizeCode(rec) {
     code: normCode(src.code),
     state: pick(src.state, ["live", "paused", "ended"], b.state),
     vis: pick(src.vis, ["public", "personal"], b.vis),
-    frozen: src.frozen === true,
     who: { type: pick(who.type, ["all", "first"], b.who.type) },
     when: { from: iso(when.from), to: iso(when.to) },
     basket: {
@@ -137,6 +200,14 @@ export function normalizeCode(rec) {
       maxRM: money(often.maxRM),
     },
     beside: { type: pick(beside.type, ["anything", "nocredit"], b.beside.type) },
+    // THE FOURTH LIST. A field blankCode names but this does not is STRIPPED here, on the next
+    // read — and nothing would fail, because the shape test in test/promo.test.js iterates a
+    // hardcoded family list that does not include this one. The round-trip test added with it
+    // (deepEqual of normalizeCode(blankCode()) against blankCode()) is what makes a future
+    // forgotten list turn red instead of quietly killing the feature.
+    //
+    // `name` is capped like her own sentence: it is a person's name, not a paragraph.
+    holder: { id: String((src.holder && src.holder.id) || ""), name: words(src.holder && src.holder.name) },
     say: words(src.say),
     sayZh: words(src.sayZh),
     sayMs: words(src.sayMs),
@@ -302,11 +373,15 @@ export function publishCodes(state, counts = null) {
     // no counter the record's own numbers stand, so a test or a second business
     // can publish a hand-made list unchanged.
     const n = typeof counts === "function" ? counts(c) : null;
+    // THIS LIST IS DELIBERATE AND `holder` IS NOT IN IT (v289). A code may belong to a named
+    // customer, and that name is the baker's own customer book — while the row this builds is
+    // PUBLISHED and world-readable, so anyone holding the shop's public key could read it.
+    // Adding `holder` here would put her customers' names on the open internet. It stays on her
+    // own screen, on the admin's code card, and nowhere else. test/promo.test.js holds it there.
     return {
       code: c.code,
       state: c.state,
       vis: c.vis,
-      frozen: c.frozen,
       used: n ? n.used : c.used,
       given: n ? n.given : c.given,
       who: c.who,
@@ -352,81 +427,36 @@ export function codeProblem(list, rec, selfId = "") {
   return null;
 }
 
-// A date range that has moved BACKWARDS — a promise taken away rather than
-// extended. Generosity has no direction problem: an end date can be dropped
-// altogether (a code that never runs out is the most generous it can be) and a
-// start date can be brought forward, but setting an end date where there was
-// none, pulling one earlier, or pushing a start date later all refuse someone
-// holding a card today.
-function datesNarrowed(b, a) {
-  if (b.to ? (a.to && a.to < b.to) : Boolean(a.to)) return true;
-  if (b.from ? (a.from && a.from > b.from) : Boolean(a.from)) return true;
-  return false;
-}
+/* THE GATE ON A LABEL — the only rule left about handing a code out.
 
-// A ceiling that has moved DOWN. 0 means "no limit at all" — the top of the
-// scale on both bounds, the order count and the ringgit total — so raising a
-// ceiling, or removing it, is always allowed and lowering one never is. A
-// ceiling is deliberately not printed on the card, which is exactly why it is
-// hers to raise: a launch that is going well can be allowed to run longer, and
-// nobody holding a card is any worse off for it.
-function ceilingNarrowed(b, a) {
-  const n = (o) => (o.type === "quota" ? Number(o.n) || 0 : 0);
-  const rm = (o) => Number(o.maxRM) || 0;
-  const down = (was, now) => (was === 0 ? now > 0 : now > 0 && now < was);
-  return down(n(b), n(a)) || down(rm(b), rm(a));
-}
-
-/* WHAT A PRINTED CODE MAY STILL CHANGE. Once a card is in someone's hand it goes
-   on saying what it said, so the offer on it is frozen: the name, what it gives,
-   who it is for, the smallest basket and what it cannot sit beside can never be
-   re-written. Only two things may still move, and only one way — the end date
-   later, the ceiling up — because being generous with someone holding a card
-   cannot hurt them and taking something back can.
-
-   Everything that is NOT the promise stays hers: her own sentence for the shop,
-   who may see it, and whether the code is live, paused or ended. Pausing and
-   ending are the two brakes, and a rule that froze them would leave her with a
-   code she could neither stop nor restart.
-
-   Takes the code as it WAS and as it is about to be, and answers with a machine
-   reason or null — never a sentence, so a screen can word it and a second
-   business can word it differently. An unfrozen code is never refused: the whole
-   of this rule is about what printing pins down.                              */
-export function frozenProblem(before, after) {
-  const b = normalizeCode(before);
-  const a = normalizeCode(after);
-  if (!b.frozen) return null;
-  if (a.code !== b.code) return { fail: "frozenName" };
-  if (a.gives.type !== b.gives.type || a.gives.value !== b.gives.value || a.gives.cap !== b.gives.cap) {
-    return { fail: "frozenGives" };
-  }
-  if (a.who.type !== b.who.type) return { fail: "frozenWho" };
-  if (a.basket.type !== b.basket.type || a.basket.amount !== b.basket.amount) return { fail: "frozenBasket" };
-  if (a.beside.type !== b.beside.type) return { fail: "frozenBeside" };
-  if (datesNarrowed(b.when, a.when)) return { fail: "frozenDates" };
-  if (ceilingNarrowed(b.often, a.often)) return { fail: "frozenCeiling" };
-  return null;
-}
-
-/* THE GATE ON PRINTING, which is a different question from frozenProblem above.
-
-   frozenProblem asks "may an ALREADY printed code change". This asks "may this
-   code be printed at all" — the step before. The answer turns on one thing: a
-   card carries no number and no end date (a date is a promise the card could not
+   A label carries no number and no end date (a date is a promise it could not
    keep, and a count is one it could not count), so the ceiling is the only bound
-   the card leaves standing. A code with no ceiling would go out on paper with
-   nothing at all stopping what it can cost her, and paper cannot be recalled.
+   it leaves standing. A code with no ceiling would go out on paper — or into a
+   message — with nothing at all stopping what it can cost her.
 
-   Zero means NO LIMIT here, not a small one — it is the top of the scale rather
+   Zero means NO LIMIT here, not a small one: it is the top of the scale rather
    than the bottom, which is why the test is `<= 0` on both bounds and why setting
    either one is enough to pass.
 
-   A code with no name is refused too: a card that prints no code is a card the
-   shop cannot accept, so the name is checked before the ceiling.                */
-export function freezeProblem(rec) {
+   A code with no name is refused too: a label that prints no code is one the shop
+   cannot accept, so the name is checked before the ceiling.
+
+   WHAT USED TO BE HERE, and why it is not (v278 → v286, removed v287). Printing
+   once froze a code for good — the name, what it gives, who it is for, the
+   smallest basket and what it cannot sit beside could never be re-written, and
+   only the end date (later) and the ceiling (up) could move. The owner removed
+   that on 4 Oct 2026: a label is now printed and copied as often as she likes,
+   the offer stays editable, and a label is RETIRED instead. Retiring already
+   existed — `ended` stops new uses while orders already placed keep what they
+   were promised, and `paused` is the reversible version — so nothing new was
+   needed for it.
+
+   The one consequence, which the screen, the guide and the changelog all say out
+   loud rather than hide: a label already in someone's hand is honoured at
+   whatever the offer says when they ORDER, not when they picked it up.        */
+export function labelProblem(rec) {
   const c = normalizeCode(rec);
-  if (!c.code) return { fail: "freezeNoCode" };
+  if (!c.code) return { fail: "labelNoCode" };
   const n = c.often.type === "quota" ? Number(c.often.n) || 0 : 0;
   const rm = Number(c.often.maxRM) || 0;
   if (n <= 0 && rm <= 0) return { fail: "noCeiling" };

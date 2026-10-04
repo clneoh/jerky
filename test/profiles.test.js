@@ -486,3 +486,119 @@ test("mergeCustomers refuses to join a person to themselves", () => {
   assert.equal(mergeCustomers(st, "6012111", ""), null);
   assert.equal(customerList(st).length, 1, "and nothing moved");
 });
+
+// ── v289: an advocate's reward, in the baker's own words ─────────────────────
+
+test("a reward survives a save, and survives a merge", () => {
+  const st = state([], []);
+  const first = upsertProfile(st, {
+    name: "Aunty Bee", whatsapp: "6012-111", reward: "a free loaf for every five friends",
+    rewardEvery: "5",
+  });
+  assert.equal(first.reward, "a free loaf for every five friends", "saved with the rest of the profile");
+  assert.equal(first.rewardEvery, 5, "and the number beside it, as a number — she typed 5");
+
+  const again = upsertProfile(st, {
+    id: first.id, name: "Aunty Bee", whatsapp: "6012-111",
+    reward: "a free loaf for every five friends", likes: "banana", rewardEvery: 5,
+  });
+  assert.equal(again.reward, "a free loaf for every five friends", "and a later save keeps it");
+  assert.equal(again.rewardEvery, 5, "the number too");
+
+  // THE MERGE IS WHERE A LIST LIKE THIS GETS FORGOTTEN. mergeDuplicateProfiles fills only the
+  // fields IT names, so a reward living on the duplicate would be dropped without a word — the
+  // record still saves, the screen still draws, and the reward is simply gone.
+  const st2 = state([], [
+    { id: "cus_a", key: "6012111", createdAt: "2026-01-01T00:00:00.000Z",
+      name: "Aunty Bee", whatsapp: "6012111", reward: "a free loaf for every five friends", rewardEvery: 5 },
+    { id: "cus_b", key: "6012111", createdAt: "2026-01-02T00:00:00.000Z",
+      name: "Aunty Bee", whatsapp: "6012111" },
+  ]);
+  const kept = upsertProfile(st2, { id: "cus_b", name: "Aunty Bee", whatsapp: "6012111" });
+  assert.equal(kept.reward, "a free loaf for every five friends",
+    "the merge fills the blank from the duplicate rather than losing it");
+  assert.equal(kept.rewardEvery, 5, "and the number with it — a 0 is blank, so the fold still fills it");
+  assert.equal(st2.customers.length, 1, "and the two really did merge");
+});
+
+test("a reward's number is cleared by emptying the box, and junk never becomes a promise", () => {
+  // The number is what the app DIVIDES BY, so it has one job: never be wrong. A
+  // half-typed or hand-edited value clamps to 0 (no opinion), never to something
+  // that would tell her a partner is owed a loaf she never agreed to.
+  const st = state([], []);
+  const p = upsertProfile(st, { name: "Aunty Bee", whatsapp: "6012111", rewardEvery: 5 });
+  assert.equal(p.rewardEvery, 5);
+  assert.equal(upsertProfile(st, { id: p.id, name: "Aunty Bee", whatsapp: "6012111", rewardEvery: "" }).rewardEvery,
+    0, "an emptied box means she cleared it");
+  assert.equal(upsertProfile(st, { id: p.id, name: "Aunty Bee", whatsapp: "6012111", rewardEvery: "every five" }).rewardEvery,
+    0, "words never parse into a number");
+  assert.equal(upsertProfile(st, { id: p.id, name: "Aunty Bee", whatsapp: "6012111", rewardEvery: -3 }).rewardEvery,
+    0, "a negative would make the count meaningless");
+  assert.equal(upsertProfile(st, { id: p.id, name: "Aunty Bee", whatsapp: "6012111", rewardEvery: "2.7" }).rewardEvery,
+    2, "a fraction floors to the customers it actually takes");
+});
+
+test("the THIRD list — a fold — keeps the number beside the reward too", () => {
+  // `foldProfileInto` is reached by canonicaliseCustomers when two saved records
+  // collapse onto one key, and it is a SEPARATE list of field names from the two
+  // the test above covers. A field named in only some of them is dropped in
+  // silence: the record still saves and the screen still draws.
+  const st = state([], [
+    { id: "cus_a", key: "6012111", createdAt: "2026-01-01T00:00:00.000Z",
+      name: "Aunty Bee", whatsapp: "6012111" },
+    // The same person saved a second time with the number, under a spacing that
+    // canonicalises onto the first record's key.
+    { id: "cus_b", key: "6012-111", createdAt: "2026-01-02T00:00:00.000Z",
+      name: "Aunty Bee", whatsapp: "6012-111", reward: "a free loaf", rewardEvery: 5 },
+  ]);
+  canonicaliseCustomers(st);
+  assert.equal(st.customers.length, 1, "the two records collapsed onto one key");
+  assert.equal(st.customers[0].rewardEvery, 5, "and the fold filled the number rather than dropping it");
+  assert.equal(st.customers[0].reward, "a free loaf", "the words too");
+});
+
+test("joining two records carries their reward hand-outs across", () => {
+  // A grant belongs to the PERSON, and it keys on the profile's stable id. Without
+  // the repoint the absorbed person's hand-outs would be left pointing at a row
+  // that no longer exists — and their reward would read as never given.
+  const st = state([], [
+    { id: "cus_keep", key: "6012111", createdAt: "2026-01-01T00:00:00.000Z",
+      name: "Aunty Bee", whatsapp: "6012111" },
+    { id: "cus_dup", key: "6012222", createdAt: "2026-01-02T00:00:00.000Z",
+      name: "Bee", whatsapp: "6012222" },
+  ]);
+  st.rewards = [
+    { id: "rwd_1", profileId: "cus_dup", at: "2026-09-01T00:00:00.000Z" },
+    { id: "rwd_2", profileId: "cus_other", at: "2026-09-02T00:00:00.000Z" },
+  ];
+  mergeCustomers(st, "6012111", "6012222");
+  assert.equal(st.rewards[0].profileId, "cus_keep", "the hand-out follows the person, not the row that went");
+  assert.equal(st.rewards[1].profileId, "cus_other", "and nobody else's grant was touched");
+});
+
+test("the finder can find a reward she wrote", () => {
+  // The reward is free text she typed to remind herself who gets what, so it
+  // belongs in the haystack the Customers search box reads. It was not until v291.
+  const row = { _key: "6012111", name: "Aunty Bee", whatsapp: "6012111",
+    profile: { reward: "a free loaf for every five friends" } };
+  assert.equal(customerMatches(row, "free loaf"), true, "what she promised is searchable");
+  assert.equal(customerMatches(row, "every five"), true);
+  assert.equal(customerMatches(row, "focaccia"), false);
+});
+
+test("a code's tie survives the customer's number being corrected", () => {
+  // WHY A CODE STORES THE PROFILE'S ID AND NOT ITS KEY. Correcting a customer's WhatsApp number
+  // RE-KEYS them — so a code holding the old key would quietly stop pointing at anybody. The id
+  // is issued once and never moves.
+  const st = state([], []);
+  const before = upsertProfile(st, { name: "Aunty Bee", whatsapp: "6012-111" });
+  const id = before.id;
+  // Captured FIRST: upsertProfile edits the record in place, so reading `before.key` afterwards
+  // reads the record as it is now and would compare a value with itself.
+  const keyBefore = before.key;
+
+  const after = upsertProfile(st, { id, name: "Aunty Bee", whatsapp: "6012-999" });
+  assert.equal(after.id, id, "the id is issued once and survives the re-key");
+  assert.equal(after.key, "6012999", "the key follows the corrected number");
+  assert.notEqual(after.key, keyBefore, "so the KEY moves — which is exactly what a code must not store");
+});

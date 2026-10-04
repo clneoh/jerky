@@ -1,27 +1,33 @@
 // promo-card.js — the printed card a customer takes home (v279, step 6 of 11).
 //
-// This is the other end of the code she hands out. On the screen, printing a code
-// freezes its offer; on paper, this page is what the customer actually holds — the
-// bakery's name, what the code gives, the code itself, and a way back to the shop
-// without typing anything.
+// This is the other end of the code she hands out. The screen draws the same label as
+// a QR you can copy or print (v287); on paper, this page is what the customer actually
+// holds — the bakery's name, what the code gives, the code itself, and a way back to
+// the shop without typing anything.
 //
-// WHAT THE CARD DELIBERATELY DOES NOT CARRY, and why. No end date and no count.
-// A card is a promise in someone else's hand that cannot be amended or called
-// back, so both of those are promises it could not keep: a date is one she might
-// have to move, and "the first fifty orders" is one the card cannot count. The
-// offer itself is frozen the moment this card prints (see frozenProblem in
-// promo.js), so everything that IS on the card goes on being true.
+// WHAT THE CARD DELIBERATELY DOES NOT CARRY, and why. No end date and no count. A card
+// is a promise in someone else's hand, so both of those are promises it could not keep:
+// a date is one she might have to move, and "the first fifty orders" is one the card
+// cannot count.
 //
-// The ceiling IS the reason the freeze has a gate: with no number and no date,
-// the only thing left bounding what a card can cost is her own ceiling, so a code
-// with no ceiling is refused a card rather than printed with one (freezeProblem).
+// IT NO LONGER FREEZES ANYTHING (v287). Until then, printing a card pinned the offer for
+// good — the name, what it gives, who it is for and the smallest basket all stopped
+// moving, because a card in someone's hand could not be amended. The owner removed that
+// on 4 Oct 2026: a label is printed and copied as often as she likes, the offer stays
+// editable, and a label is retired by ENDING the code instead. What that costs is said
+// out loud on the screen, in the changelog and in the guide: a card already handed out
+// is honoured at whatever the code says when the customer ORDERS, not when they took it.
+//
+// The ceiling is still the gate. With no number and no date on the paper, the ceiling is
+// the only thing bounding what a card can cost her, so a code with no ceiling is refused
+// a label rather than printed with one (labelProblem).
 //
 // The square is drawn here, not fetched: qr.js is a hand-written encoder, so the
 // card needs no library, no image file and no network, and prints crisply at any
 // size because it is a path rather than a picture.
 //
 // SPLIT ON PURPOSE. cardFields() is pure data — no DOM, no storage, no clock — so
-// the round-trip test can hold every field of a frozen code against the card in
+// the round-trip test can hold every field of a code against the card in
 // Node, with no browser. renderCard() and boot() are the page.
 
 import { el } from "./ui.js";
@@ -53,7 +59,7 @@ export function shopLink(code, base) {
   return new URL(`../store/?promo=${encodeURIComponent(normCode(code))}`, base).href;
 }
 
-/* EVERY FIELD THE CARD CARRIES, as data. The test holds this against a frozen
+/* EVERY FIELD THE CARD CARRIES, as data. The test holds this against a
    code and fails if a family is missing — a card that omits what the shop judges
    is a card that disagrees with the shop — and equally fails if a date or a count
    ever appears here, because those are the two promises the paper cannot keep.
@@ -139,7 +145,7 @@ export function renderNotice(root, wanted, reason) {
   root.replaceChildren(el("div", { class: "notice" },
     el("p", {}, lines[reason] || lines.nocode),
     el("p", { class: "hint" },
-      "Nothing has been changed. Printing is the only thing that freezes an offer, and nothing was printed.")));
+      "Nothing has been changed, and nothing was printed. A label can be printed as often as you like.")));
 }
 
 // The page. Kept out of module scope so this file can be imported in Node (the

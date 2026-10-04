@@ -138,6 +138,14 @@ export function priceItems(state, bomItems, { reserve = true } = {}) {
     if (safety > 0 && openBase > 0) out.reserveText = `keep ${fmtStockAmount(state, ingredient, safety)} on hand`;
     const c = ingredient ? chosenSupplier(state, ingredient) : null;
     if (!c) {
+      // A line with no supplier price is the LOOSE estimate — an amount in the ingredient's
+      // own cooking unit priced at the fallback cost (v285 marks it so the amend pop-up
+      // knows it may change the price and the amount but has no pack to change, and so the
+      // write-back knows there is no supplier entry to move).
+      out.loose = true;
+      out.cookBase = cookBase;
+      out.packs = cookBase > 0 ? openBase / cookBase : 0;
+      out.packPrice = Number(item.costPerUnit) || 0;
       out.addBase = Math.max(0, openBase);
       out.estCost = round2((openBase / cookBase) * (Number(item.costPerUnit) || 0));
       if (openBase <= 0) out.covered = true;
@@ -156,12 +164,94 @@ export function priceItems(state, bomItems, { reserve = true } = {}) {
     out.supplier = c.name;
     out.supplierWhatsapp = c.whatsapp;
     out.packs = packs;
+    // The PRICE ITSELF, kept on the line (v285). Until this, a snapshot remembered only
+    // `packs` and the line total it produced, so a saved list could not say what it had
+    // priced at, let alone let her correct it at the shop. These five are what amendItem()
+    // needs to re-price a line without asking the ingredient again.
+    out.packPrice = c.price;
+    out.packQty = c.qty;
+    out.packUomId = c.uomId;
+    out.packUomName = c.uomName;
+    out.cookBase = cookBase;
     out.packDisplay = `${trimNum(c.qty)}${c.uomName}`;
     out.buyText = `${packs} × ${out.packDisplay}`;
     out.addBase = packs * packBase;
     out.estCost = round2(packs * c.price);
     return out;
   }).filter(Boolean); // the not-a-purchase rows, dropped above
+}
+
+// ── v285: correcting a line at the shop ──────────────────────────────────────
+//
+// Her story: the list is saved, she walks into the supplier, the price has moved and she
+// decides to buy more. `amendItem` is that correction, and it is pure so it runs under Node.
+//
+// It is deliberately NOT priceItems(): that one ASKS the ingredient what a thing costs and
+// works out how many packs the bakes need. This one takes the numbers she read off the shelf
+// and makes the line agree with them. The pack GEOMETRY is never touched — the list still
+// buys the same pack — only the count of them, the price of one, and everything derived.
+//
+// `packs` means whole packs on a supplier line, and the amount in the cooking unit on a loose
+// line, because that is what each kind of line actually buys. The pop-up labels each
+// accordingly rather than pretending the two are the same number.
+export function amendItem(state, item, { packs, packPrice } = {}) {
+  const src = item || {};
+  const out = { ...src };
+  const count = Math.max(0, Number(packs != null ? packs : src.packs) || 0);
+  const price = Math.max(0, Number(packPrice != null ? packPrice : src.packPrice) || 0);
+  out.packs = count;
+  out.packPrice = price;
+
+  if (src.loose === true) {
+    const cookBase = Number(src.cookBase) || 1;
+    out.addBase = count * cookBase;
+    out.estCost = round2(count * price);
+    out.buyText = `${trimNum(count)}${src.unit || ""}`;
+    if (out.addBase > 0) delete out.covered;
+    return out;
+  }
+
+  const packBase = toBaseQty(state.uoms || [], src.packUomId, src.packQty);
+  out.packDisplay = `${trimNum(src.packQty)}${src.packUomName || ""}`;
+  out.buyText = `${trimNum(count)} × ${out.packDisplay}`;
+  out.addBase = packBase > 0 ? count * packBase : 0;
+  out.estCost = round2(count * price);
+  if (out.addBase > 0) delete out.covered;
+  return out;
+}
+
+// A line for something she picked up that the bakes never asked for — an ingredient added by
+// hand on the amend pop-up. It has no recipe need behind it, so there is no need to work out:
+// one pack, priced from the same chosenSupplier() the rest of the list used, and she changes
+// the count from there. With no supplier price the line comes back loose, priced at the
+// ingredient's fallback cost, exactly as any other unsupplied line is.
+export function newBuyLine(state, ingredient) {
+  const cook = cookingUnit(state.uoms || [], ingredient);
+  const cookBase = cook ? Number(cook.toBase) || 1 : 1;
+  const base = {
+    ingredientId: ingredient.id,
+    ingredientName: ingredient.name,
+    unit: ingredient.unit,
+    cookBase,
+    totalQty: 0,
+    needBase: 0,
+    onHand: Math.max(0, Number(ingredient.onHand) || 0),
+  };
+  const c = chosenSupplier(state, ingredient);
+  if (!c) {
+    return amendItem(state, { ...base, loose: true, packPrice: Number(ingredient.costPerUnit) || 0, packs: 1 }, {});
+  }
+  return amendItem(state, {
+    ...base,
+    supplierId: c.supplierId,
+    supplier: c.name,
+    supplierWhatsapp: c.whatsapp,
+    packQty: c.qty,
+    packUomId: c.uomId,
+    packUomName: c.uomName,
+    packPrice: c.price,
+    packs: 1,
+  }, {});
 }
 
 // The ingredients a list left out because they are not bought — so the list can say

@@ -1020,4 +1020,49 @@ export async function pendingReviewCount(state) {
     return null;
   }
 }
+// HOW MANY TIMES EACH LABEL'S LINK WAS OPENED (v288). The shop counts an open; this reads the
+// counts back. A label is a piece of paper or a pasted link, and this is the ONLY number that
+// says whether one is being picked up at all — the order counts on the Promo screen say what a
+// code SOLD, which is a different question and can be zero for a reason that has nothing to do
+// with the offer.
+//
+// Returns `{ ok: true, byCode }`, where byCode maps a code to `{ total, days }` — `days` being
+// a Map of 'YYYY-MM-DD' to that day's count — or `{ ok: false }` when Supabase is not configured
+// or not reachable. Callers then show NOTHING rather than a zero, the same bargain
+// pendingReviewCount above strikes: a zero on this screen is a positive claim ("nobody opened
+// your label") and it must not be made on the strength of a request that never got an answer.
+//
+// The days come from the `promo_visit_days` view, which counts per code per DAY in Malaysian
+// time. Reading the raw rows instead would mean pulling every open ever recorded just to add
+// them up — fine at three opens, seconds of JSON at three thousand — and the total is the sum
+// of the days, so one small read answers both halves of what she asked for.
+export async function fetchPromoVisits(state, codes) {
+  const c = cfg(state);
+  if (!ready(c)) return { ok: false, reason: "Supabase not configured" };
+  const wanted = [...(codes || [])]
+    .map((x) => normCode((x && x.code) || x || ""))
+    .filter(Boolean);
+  if (!wanted.length) return { ok: true, byCode: new Map() };
+  try {
+    const res = await fetch(
+      `${c.url}/rest/v1/promo_visit_days?select=code,day,n&code=in.(${wanted.join(",")})`,
+      { headers: await reviewAuth(c) });
+    if (!res.ok) return { ok: false, reason: `Supabase said ${res.status}` };
+    const rows = await res.json().catch(() => null);
+    if (!Array.isArray(rows)) return { ok: false, reason: "Supabase sent something unreadable" };
+    const byCode = new Map();
+    for (const r of rows) {
+      const code = normCode(r && r.code);
+      if (!code) continue;
+      const entry = byCode.get(code) || { total: 0, days: new Map() };
+      const n = Number(r.n) || 0;
+      entry.total += n;
+      if (r.day) entry.days.set(String(r.day), n);
+      byCode.set(code, entry);
+    }
+    return { ok: true, byCode };
+  } catch {
+    return { ok: false, reason: "Couldn't reach Supabase" };
+  }
+}
 
