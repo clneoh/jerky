@@ -387,6 +387,43 @@ h2.section {
 }
 h2.section:first-child { margin-top: 0; }
 
+/* ★ THE TWO WAYS AN ORDER LEAVES, SAID APART (v309).
+   Her report, and it was a fair one: on one card she could see "Parcel carrier", "EasyParcel",
+   "Courier charge" and "Get a delivery price" with nothing saying which belonged to which - and
+   she read the two the wrong way round. They are two different companies doing two different jobs:
+   a VAN inside Penang today, or a PARCEL posted nationwide over a few days.
+
+   It is a RULE WITH A NAME, not a bare line. A hairline at this app's line colour is a faint tint
+   nobody reads as a boundary, and a boundary nobody notices would not have answered her - the name
+   carries it and the line only says where the name belongs. Thicker than a card border on purpose
+   (2px), so a divider inside a card reads as a join rather than as another box. */
+h3.courier-kind {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 22px 0 10px;
+  padding-top: 12px;
+  /* ⚠️ THE RULE IS `--muted`, NOT THE CARD'S OWN `--line`, AND THAT IS A DELIBERATE STEP UP.
+     `--line` (#f0e2d2) measures about 1.2:1 against the surface — a faint tint that disappears on
+     a phone in daylight, which is exactly where she reads this. A boundary she cannot see would
+     not have answered her. `--muted` clears the 3:1 the standard asks of a UI edge, and at 2px it
+     still reads as a join inside a card rather than as another box. */
+  border-top: 2px solid var(--muted);
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+}
+h3.courier-kind .kind-what {
+  font-size: 12px;
+  font-weight: 400;
+  /* ⚠️ NOT `--muted`, WHICH AT 12px IS ONLY ABOUT 3.5:1 — UNDER THE 4.5:1 FLOOR THAT APPLIES TO
+     TEXT. A tint of `--ink` toward the surface keeps it in the same brown family and clears the
+     floor with room to spare, which is the point of a line you are meant to read. */
+  color: color-mix(in oklab, var(--ink) 70%, var(--surface));
+}
+
 /* A category heading INSIDE one of the Products screen's own lists: "On the
    shop" is the h2 above it, "Food" is this. A step down from that heading and a
    step up from a card's own sub-line, so the three levels read in order —
@@ -865,6 +902,20 @@ option.tone-off { color: var(--muted); }
   overflow: hidden;
 }
 .sugg-panel[hidden] { display: none; }
+/* ★ WHEN THE SUGGESTIONS CANNOT WORK AT ALL, SAY SO IN THE PLACE THEY WOULD HAVE BEEN (v311).
+   Her report: "the suggestion list never appear" - true, and the app never said why, because a
+   failed ask simply hid this panel. A feature that is off and does not say so reads exactly like
+   a feature that is broken.
+   Deliberately a LINE and not a button: there is nothing here to press, and it must not look like
+   a suggestion she can tap. `--muted` would be under the 4.5:1 text floor at this size, so it uses
+   a tint of the ink, the same correction v309 made for the kind headings. */
+.sugg-note {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: color-mix(in oklab, var(--ink) 70%, var(--surface));
+}
 /* The pin picker's list FLOATS (v256, 30 Sep 2026). In the flow it cost the card 223
    pixels the moment a lookup found four candidates, and there is no anchor that can
    absorb that: holding the map still scrolls the pop-up body by the same amount and

@@ -34,9 +34,14 @@ import { courierQuoteSection } from "./courier_quote.js";
 import { attachProfiles, customerNameMatches, customerRowName, syncContactFromOrder } from "../profiles.js";
 // The half-typed address suggestions (v228). Reached through the same channel the
 // pin's lookup uses, so the Google key stays on the server and never touches this page.
-import { suggestAddresses } from "../couriers/api.js";
 import { bakeryName, journalBodyEl, journalButtons } from "../journal.js";
 import { invoiceCurrency, invoiceNo, invoiceSheet } from "../invoice.js";
+import { orderPointName, pointChoices, setOrderPoint } from "../points.js";
+// ★ THE PARCEL SEAM (v307). `parcels.js` is pure — it reads her own mailing block and the
+// order into the two parties EasyParcel wants, and says what is missing. `parcels/api.js` is
+// the one channel to the `parcel` function, where the key lives.
+import { balanceNote, missingFrom, parcelContent, rateLines, receiverFrom, senderFrom } from "../parcels.js";
+import { parcelBalance, parcelBook, parcelHello, parcelRates } from "../parcels/api.js";
 // The one spelling a promo code is recognised by (v270). An order's own code is
 // read back through it, so a stray lowercase in some older record cannot make two
 // spellings of one code look like two codes on the row.
@@ -319,7 +324,11 @@ export function packingLabelData(state, group, style = "full") {
   const dateStr = (dateEl && dateEl.date) || first.deliveryDate || "";
   const dateLine = dateStr ? shortDate(dateStr) : "";
   const courier = first.fulfillment === "courier";
-  const method = courier ? "Post (nationwide)" : "Collect (local)";
+  // WHICH PLACE, on the label too (v299). A collection from the kitchen reads exactly as it
+  // always has; a collection from a Point names it, because a label that says only "Collect"
+  // tells whoever is packing the bag nothing about where the bag is going.
+  const pointName = courier ? "" : orderPointName(state, first);
+  const method = courier ? "Post (nationwide)" : (pointName ? `Collect (local) · ${pointName}` : "Collect (local)");
   const customer = String(first.customerName || "").trim();
   const note = String(first.note || "").trim();
   const address = courier ? String(first.address || "").trim() : "";
@@ -1352,94 +1361,7 @@ function suggestedAddress(row, input) {
   return String((row && row.lastAddress) || "").trim();
 }
 
-// ── the address box asks Google as she types (v228) ─────────────────────────
-//
-// v227 fills the delivery address from HER OWN history, which cannot help a customer
-// she has never served — and a NEW customer is precisely the case she wanted help
-// with ("if it is a new customer, i need help to key in the address"). This is the
-// other half: while she types, Google is asked what she might be typing, and she taps
-// a full address with its postcode instead of pecking the whole thing into a phone.
-//
-// NOTHING HERE CAN BLOCK ANYTHING, and that is the load-bearing property. The input's
-// own `oninput` still does `draft.address = this.value` synchronously and
-// unconditionally, exactly as it did before this version existed; this block only gets
-// told about the keystroke afterwards. A failure therefore shows nothing at all, a save
-// never waits on the network, and an order with no signal saves exactly as it always
-// has. Anything this file ever grows that gates a save on a suggestion would be a
-// regression against that, not a feature.
-//
-// A TAP REPLACES THE BOX — the OPPOSITE of v227's rule, deliberately. v227's
-// never-overwrite rule protects a delivery from being moved by a SIDE EFFECT (picking
-// a customer). Here the tap IS the instruction, so the box must become the address she
-// picked.
-const ADDRESS_MIN_CHARS = 4; // mirrors MIN_QUERY in supabase/functions/courier/suggest.ts
-const ADDRESS_WAIT_MS = 400; // the pause after her last keystroke before Google is asked
-
-// The one ask in flight, and it is at MODULE scope on purpose. Both forms are rebuilt
-// while she is typing — the Edit pop-up on a fulfillment change, the New-order card on a
-// sync pull — and each rebuild strands the previous suggester's closure. A closure can
-// still hold a live timer and a live request, and a rebuild is not a reason for either to
-// stop. So every build clears the pending timer and bumps this counter, and every answer
-// checks it before it speaks.
-//
-// IT HOLDS NO DOM, and it must not: `applyPopupEdits` copies draft fields onto the order
-// rows with Object.assign, so anything parked on `draft` would be written onto her orders
-// as a field of its own. A number and a timer id are not draft fields.
-const addrAsk = { gen: 0, timer: 0 };
-
-// Modal-private helper for both address boxes. Returns { panel, typed }.
-function addressSuggester(state, onPick) {
-  // The marker is how a test names THIS panel rather than the customer one above it:
-  // `.sugg-panel` is a shared style worn by three different lists, so it identifies a
-  // look, not a panel.
-  const panel = el("div", { class: "sugg-panel", "data-sugg": "address", hidden: true });
-  let asked = ""; // the one query slot: the last thing actually sent, never a map
-
-  // Supersede everything older the moment this form is built.
-  clearTimeout(addrAsk.timer);
-  addrAsk.timer = 0;
-  addrAsk.gen += 1;
-
-  // Close the list and retire anything in flight. The generation bump is what makes a
-  // late answer DROP its words rather than paint them under her thumb after she has
-  // already moved on — which is the whole reason this is not simply `panel.hidden`.
-  const hide = () => {
-    addrAsk.gen += 1;
-    clearTimeout(addrAsk.timer);
-    addrAsk.timer = 0;
-    panel.hidden = true;
-    panel.replaceChildren();
-  };
-
-  const ask = async (q) => {
-    const mine = ++addrAsk.gen;
-    asked = q; // recorded when SENT, so a repeat of the same words costs no second request
-    const out = await suggestAddresses(state, q);
-    // Superseded while it was in flight — she has typed on, tapped, or the form was
-    // rebuilt. Discard the answer; do not speak it.
-    if (mine !== addrAsk.gen) return;
-    if (!out.ok || !out.places.length) { hide(); return; }
-    panel.replaceChildren(...out.places.map((p) => el("button", {
-      class: "list-item sugg-row", type: "button",
-      onclick: () => { hide(); onPick(p.text); },
-    },
-      el("div", { class: "li-main" },
-        el("div", { class: "li-title" }, el("span", {}, p.text))))));
-    panel.hidden = false;
-  };
-
-  const typed = (text) => {
-    const q = String(text || "").trim();
-    if (q.length < ADDRESS_MIN_CHARS) { hide(); return; }
-    // The same words she paused on last time are already answered. Keep what is
-    // showing rather than spend a request to be told the same thing.
-    if (q === asked) return;
-    hide(); // whatever is on screen belongs to the previous words, so it goes now
-    addrAsk.timer = setTimeout(() => { ask(q); }, ADDRESS_WAIT_MS);
-  };
-
-  return { panel, typed };
-}
+import { addressSuggester } from "../address_suggest.js";
 
 // The manual "＋ Add order" card, always at the top of a delivery date. Takes
 // several items at once — they become ONE customer order (a shared group), the
@@ -1463,6 +1385,9 @@ function orderForm(state, dateId, root, selectDate) {
     customerName: "", whatsapp: "",
     fulfillment: "collect", address: "", note: "", orderDate: todayISO(),
     trackingNo: "", carrierId: "", handedAt: "",
+    // Which Self collection Point this order collects from, or "" for her own kitchen (v303).
+    // A collection is the only thing that can have one, so a switch to Courier clears it.
+    pointId: "",
     items: [{ productId: "", qty: 1, price: null }],
   });
   // The day is the SCREEN's, not the draft's: picking one switches the screen, because
@@ -1497,7 +1422,23 @@ function orderForm(state, dateId, root, selectDate) {
     oninput: function () { draft.whatsapp = this.value; } });
   const fulfillmentSel = select(
     [{ value: "collect", label: "Collect (local)" }, { value: "courier", label: "Post (nationwide)" }],
-    draft.fulfillment, function () { draft.fulfillment = this.value; paintCourier(); });
+    draft.fulfillment, function () {
+      draft.fulfillment = this.value;
+      // A courier order is not collected anywhere, so switching to Courier drops the Point
+      // rather than leaving one hidden behind a choice she has moved away from (v303).
+      if (this.value === "courier") draft.pointId = "";
+      paintCourier();
+      paintPoint();
+    });
+  // ★ WHERE IT COLLECTS FROM (v303). Her own ＋ New order card is how she records an order
+  // taken over the phone or in a chat, and before this there was NO way to say "this one is
+  // collecting at Farlim" — so a hand-taken order could never be a Point order at all: not
+  // on the run, not in the Point's fee, not named to the customer. The shop has offered the
+  // same list to customers since v299; this is the same list, in the same order, for the
+  // orders that never went through the shop.
+  const pointSel = select(
+    pointChoices(state).map((c) => ({ value: c.id, label: c.name })),
+    draft.pointId, function () { draft.pointId = this.value; });
   // The address box also offers what she might be typing, from Google (v228). A tap
   // writes BOTH the draft (what the other controls read) and the box (what she sees),
   // the same pair the customer suggestion writes.
@@ -1621,14 +1562,16 @@ function orderForm(state, dateId, root, selectDate) {
       shared.trackingNo = draft.trackingNo.trim();
       shared.parcel = { carrierId: draft.carrierId, handedAt: draft.handedAt };
     }
+    // A courier order carries no Point, whatever the picker still holds behind it.
+    const pointId = fulfillment === "courier" ? "" : draft.pointId;
     if (picked.length === 1) {
       // The line's own note rides with it (v236); `noteText` beside it is the
       // ORDER-level note, which is a different thing and stays exactly as it was.
       addNew(state, date, picked[0].productId, picked[0].qty, picked[0].price ?? null,
         customerName, phone, fulfillment, addressText, noteText,
-        lineNoteOf(picked[0].note), placed, shared, root);
+        lineNoteOf(picked[0].note), placed, shared, pointId, root);
     } else {
-      addGroupNew(state, date, picked, customerName, phone, fulfillment, addressText, noteText, placed, shared, root);
+      addGroupNew(state, date, picked, customerName, phone, fulfillment, addressText, noteText, placed, shared, pointId, root);
     }
   };
 
@@ -1685,6 +1628,19 @@ function orderForm(state, dateId, root, selectDate) {
   // she has just typed — the same rule courier_pay_questions already follows for its own two
   // questions.
   const courierBox = el("div", {});
+  // The mirror of it for a collection (v303): the courier's half unfolds under the Fulfillment
+  // choice, and this does the same for the other choice. Hidden entirely when she has no Point
+  // open — a picker whose only entry is her own kitchen would be a control that does nothing,
+  // which this app treats as a bug.
+  const pointField = el("div", { class: "field", hidden: true },
+    el("label", {}, "Collect from"),
+    pointSel,
+    el("p", { class: "hint" },
+      "Your kitchen is the default. A Self collection Point is somewhere your kitchen is not — and an order collecting at one goes on the Delivery run to that Point, with the fee you set there."));
+  function paintPoint() {
+    pointField.hidden = draft.fulfillment === "courier" || pointChoices(state).length < 2;
+    pointSel.value = draft.pointId;
+  }
   function buildCourierBlock() {
     const parcelSlot = el("div", {});
     const trackingSlot = el("div", {});
@@ -1743,8 +1699,10 @@ function orderForm(state, dateId, root, selectDate) {
         address,
         addressSug.panel),
       doorSlot,
+      courierKind("parcel"),
       parcelSlot,
       trackingSlot,
+      courierKind("van"),
       charge.el,
       quote,
     ];
@@ -1754,6 +1712,7 @@ function orderForm(state, dateId, root, selectDate) {
     courierBox.replaceChildren(...(draft.fulfillment === "courier" ? buildCourierBlock() : []));
   }
   paintCourier();
+  paintPoint();
 
   // Shut until its title is tapped: the card stands on every delivery day and is not what
   // the screen is for day to day. Inside, the DAY comes first but as a single line, then
@@ -1779,6 +1738,7 @@ function orderForm(state, dateId, root, selectDate) {
     // The courier's half, unfolding under the Fulfillment choice above it (v237) — the
     // address and the suggester's panel with it, which is why the grid no longer holds it.
     courierBox,
+    pointField,
     el("div", { class: "card-sub", style: "margin:0 0 10px" },
       "Order date = when it was placed (defaults to today). WhatsApp is kept in your delivery history for marketing follow-ups."),
     el("div", { class: "field" }, el("label", {}, "Delivery note (optional)"), note),
@@ -1896,6 +1856,9 @@ function openEditPopup(state, group, dateId, root) {
     customerName: first.customerName || "",
     whatsapp: waNumber(first.whatsapp || ""),
     fulfillment: first.fulfillment || "collect",
+    // The Point this order collects from, read off its first row — "" is her own kitchen,
+    // which is what an order with no Point has always meant (v303).
+    pointId: first.pointId || "",
     address: first.address || "",
     note: first.note || "",
     trackingNo: first.trackingNo || "",
@@ -1944,7 +1907,17 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
   // the day calendar below already does.
   const fulfillmentSel = select(
     [{ value: "collect", label: "Collect (local)" }, { value: "courier", label: "Post (nationwide)" }],
-    draft.fulfillment, function () { draft.fulfillment = this.value; refresh(); });
+    draft.fulfillment, function () {
+      draft.fulfillment = this.value;
+      if (this.value === "courier") draft.pointId = "";   // see the New order card (v303)
+      refresh();
+    });
+  // ★ WHERE IT COLLECTS FROM (v303), the same list the ＋ New order card offers and the same
+  // one the shop shows a customer. An order she took over the phone could not be given a Point
+  // at all before this, so it could never be collected anywhere but her own kitchen.
+  const pointSel = select(
+    pointChoices(state).map((c) => ({ value: c.id, label: c.name })),
+    draft.pointId, function () { draft.pointId = this.value; });
   // The same box, the same suggester (v228). This form is rebuilt in place by
   // `refresh()` above, which strands the closure below and starts a fresh one — the
   // module-level counter in addressSuggester is what stops the stranded one speaking.
@@ -2112,6 +2085,10 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       customerName: customer.value.trim(),
       whatsapp: waNumber(whatsapp.value.trim()),
       fulfillment: fulfillmentSel.value,
+      // Where it collects from, pulled out of `shared` explicitly in applyPopupEdits — like the
+      // charge and the parcel, it is a fact about the ORDER that is written by its own function
+      // and must never be copied onto the rows as a field of its own (v303).
+      pointId: fulfillmentSel.value === "courier" ? "" : draft.pointId,
       address: address.value.trim(),
       note: note.value.trim(),
       trackingNo: tracking.value.trim(),
@@ -2165,15 +2142,24 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       // is never clipped by the Edit pop-up's scrolling body.
       addressSug.panel),
     doorSlot,
+    // Hidden for a courier order and when she has no Point open — a picker whose only entry is
+    // her own kitchen is a control that does nothing (v303).
+    el("div", { class: "field", hidden: draft.fulfillment === "courier" || pointChoices(state).length < 2 },
+      el("label", {}, "Collect from"),
+      pointSel,
+      el("p", { class: "hint" },
+        "Your kitchen is the default. An order collecting at a Point goes on the Delivery run to that Point, with the fee you set there.")),
     el("div", { class: "field" }, el("label", {}, "Delivery note (optional)"), note),
+    draft.fulfillment === "courier" && !jobOf(first) ? courierKind("parcel") : null,
     el("div", { class: "field" },
       el("label", {}, "Courier tracking number (optional)"),
       tracking,
       el("p", { class: "hint" }, "For a parcel this is the consignment number the carrier gave you.")),
-    parcelSection({ state, group, draft, refresh }),
+    parcelSection({ state, group, draft, refresh, withApi: true }),
     // Drawn for a courier order as it always was, and also for a self-collect order that
     // still carries a charge — so a parked charge is never invisible to the only person
     // who can settle it (1 Oct 2026).
+    showCharge || jobOf(first) ? courierKind("van") : null,
     parkedCharge ? parkedChargeNote(state, first) : null,
     showCharge ? charge.el : null,
     // Same price section as the Note / tracking box carries, for the same reason that
@@ -2256,7 +2242,7 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
   // there would be saved onto every row as a field of its own. The parcel (v226) is the
   // second such record, and is destructured here for exactly the same reason — miss this
   // line and every line of a multi-item order gets saved with its own copy of the parcel.
-  const { courier = null, parcel = null, ...fields } = shared;
+  const { courier = null, parcel = null, pointId = "", ...fields } = shared;
   const dest = byId(state.deliveryDates, fields.deliveryDateId) || date;
   if (!dest) return toast("Choose a delivery day");
   // The capacity guard follows the order to its destination. Capacity is derived
@@ -2351,6 +2337,11 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
     // customer. `parcel` is null only for a caller that does not ask for it (and for a
     // collect order, where parcelSection draws nothing), which then leaves it alone.
     if (parcel) writeParcel(state, first, keptRows, parcel);
+    // ★ WHERE THE ORDER COLLECTS FROM (v303). Written for every kept row — the rows kept from
+    // before and the rows she has just added — through the one function that owns the rule,
+    // because choosing her KITCHEN has to CLEAR both fields rather than leave an order pointing
+    // at a Point that exists and has no name.
+    for (const o of keptRows) setOrderPoint(state, o, pointId);
     // Every kept row now sits on the destination day, with deliveryDateId and
     // the deliveryDate snapshot written together (self-heals a split group).
     moveOrderGroup(group, dest);
@@ -2376,7 +2367,7 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
   }
 }
 
-function addNew(state, date, productId, qty, price, customerName, whatsapp, fulfillment, address, note, lineNote, orderDate, shared, root) {
+function addNew(state, date, productId, qty, price, customerName, whatsapp, fulfillment, address, note, lineNote, orderDate, shared, pointId, root) {
   const cap = capacityStatus(state, date.id);
   const newTotal = cap.total + qty;
   const st = deliveryStatus(date.date, state.settings);
@@ -2405,6 +2396,9 @@ function addNew(state, date, productId, qty, price, customerName, whatsapp, fulf
       createdAt: new Date().toISOString(),
     };
     stampOrderLine(row, byId(state.products, productId));
+    // ★ WHERE IT COLLECTS FROM (v303), through the one function that owns the rule, so the
+    // Point's name is frozen onto the order exactly as the shop's own path freezes it.
+    setOrderPoint(state, row, pointId);
     if (Number.isFinite(Number(price))) row.unitPrice = Number(price); // the typed price wins
     // The customer's words for THIS item (v236). Written only when there are
     // words, so a line nobody noted carries no key at all and an order she takes
@@ -2448,7 +2442,7 @@ function addNew(state, date, productId, qty, price, customerName, whatsapp, fulf
 // list shows one block with one status and the group shares one order code
 // (orderCode uses groupId || id), exactly like a multi-item storefront order.
 // The capacity/backfill checks run against the combined quantity.
-function addGroupNew(state, date, items, customerName, whatsapp, fulfillment, address, note, orderDate, shared, root) {
+function addGroupNew(state, date, items, customerName, whatsapp, fulfillment, address, note, orderDate, shared, pointId, root) {
   const totalQty = items.reduce((s, it) => s + it.qty, 0);
   const cap = capacityStatus(state, date.id);
   const newTotal = cap.total + totalQty;
@@ -2479,6 +2473,9 @@ function addGroupNew(state, date, items, customerName, whatsapp, fulfillment, ad
         createdAt,
       };
       stampOrderLine(row, byId(state.products, it.productId));
+      // See addNew — on EVERY row, because a row she edits or re-splits later must not be
+      // the one that forgot where it was going.
+      setOrderPoint(state, row, pointId);
       if (Number.isFinite(Number(it.price))) row.unitPrice = Number(it.price);
       // Per ROW, from that row's own item — a group of three items may have a note
       // on one of them and none on the others, so this can never be a value shared
@@ -2782,7 +2779,7 @@ function parkedChargeNote(state, first) {
 // same sentence in all three, so it has to be told — and a host that draws no box
 // beside this section at all (the card, until a carrier is named) passes null and
 // the sentence simply stops before the pointer.
-function parcelSection({ state, group, draft, refresh, consignmentWhere = "above" }) {
+function parcelSection({ state, group, draft, refresh, consignmentWhere = "above", withApi = false }) {
   const first = (group && group.orders && group.orders[0]) || null;
   if (!first) return null;
   if (draft.fulfillment !== "courier") return null;
@@ -2848,7 +2845,265 @@ function parcelSection({ state, group, draft, refresh, consignmentWhere = "above
           + (consignmentWhere ? ` The consignment number goes in the tracking box ${consignmentWhere}.` : "")
         : "No carriers yet. Add who you post parcels with under More → Parcel couriers, then record one here."),
     handedEl,
-    advisory);
+    advisory,
+    // ⚠️ ONLY WHERE THE ORDER IS EDITED IN FULL (v307). The Note / tracking card is three
+    // fields on purpose — "the note, the number and the courier's charge, nothing else to
+    // scroll past" — and a price list from a courier is not a note. Posting a parcel is a
+    // deliberate thing she does to an order, so it lives where the order is looked at whole.
+    withApi ? parcelApiBlock({ state, group, draft, refresh }) : null);
+}
+
+// ── ★ EasyParcel, on the order it belongs to (v307) ─────────────────────────
+//
+// ⚠️ THE PRICE IS ASKED ONCE AND EVERY COURIER COMES BACK WITH IT. That is the whole reason
+// this exists rather than her comparing two websites by hand: one call, every carrier
+// EasyParcel has, for THIS parcel to THIS postcode at THIS weight. The rows are sorted
+// cheapest first, and the cheapest is NOT chosen for her — which carrier to use is her
+// decision, and the reason to show several is that the cheapest is not always the one wanted.
+//
+// ⚠️ AND IT SPENDS HER WALLET, which is why Booking asks first and says the price in the
+// question. EasyParcel is PREPAID: a booking with too little credit fails with the parcel
+// already packed, so the balance is shown beside the price rather than found out afterwards.
+//
+// NOTHING HERE IS REQUIRED. An order can still be posted by hand exactly as it was in v226 —
+// record the carrier, type the consignment number. This is offered beside that, never instead
+// of it, which is the same shape the Lalamove price card has.
+// "a, b and c" — the way the missing list reads on screen. No "and" for one, and a comma for
+// two, because "your a and their b" is what she is looking at.
+function listWords(items) {
+  const list = (Array.isArray(items) ? items : []).filter(Boolean);
+  if (list.length < 2) return list[0] || "";
+  return `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
+}
+
+// ★ THE TWO WAYS AN ORDER LEAVES, NAMED — AND NAMED IN ONE PLACE (v309, made app-wide in v310).
+//
+// Her first report: on one card she could see "Parcel carrier", "EasyParcel", "Courier charge" and
+// "Get a delivery price" with nothing saying which belonged to which — and she read the two the
+// wrong way round, which is the proof the card did not say. Her second report: the divider had to
+// be the SAME on every card, not only the one she happened to open.
+//
+// ⚠️ THE WORDS AND THE LOOK LIVE HERE; THE CARDS PLACE IT. That split is deliberate and was
+// learned the hard way: drawing the parcel heading inside `parcelSection` put it BELOW the
+// consignment number on the Edit card — the number is a field the card draws just above the block,
+// so the heading landed in the middle of its own group and orphaned the number. A heading belongs
+// above everything it covers, and only the card knows where its own fields are.
+//
+// So there are three call sites (the Edit card, the Note / tracking card and the ＋ New order
+// card) and ONE definition. What keeps them honest is the harness, which opens all three cards and
+// compares their headings — two headings on each is not the check; the SAME two is.
+//
+// ⚠️ AND THE NAME SAYS WHAT IT DOES, NEVER "KIND 1" OR "KIND 2". Those are this codebase's words
+// for the two kinds of courier and they mean nothing on her screen; what she needs to know is that
+// one of them is a van today and the other is a parcel over a few days.
+const COURIER_KINDS = {
+  parcel: ["Post a parcel", "Nationwide, a few days"],
+  van: ["Send a van", "Today, inside Penang"],
+};
+
+function courierKind(which) {
+  const [name, what] = COURIER_KINDS[which] || ["", ""];
+  return el("h3", { class: "courier-kind" },
+    el("span", {}, name),
+    el("span", { class: "kind-what" }, what));
+}
+
+function parcelApiBlock({ state, group, draft, refresh }) {
+  const first = (group && group.orders && group.orders[0]) || null;
+  if (!first) return null;
+
+  // ⚠️ THIS BLOCK REPAINTS ITSELF AND NOT THE CARD. `refresh()` rebuilds the WHOLE pop-up, and
+  // this block asks the server something as soon as it is drawn — so calling it here would be a
+  // repaint arriving at an unpredictable moment while she is working further down the same card.
+  // That is not a theory: it stranded the door block's own pending look-up when it was first
+  // written (test/edit-popup-relook.test.js caught it), which is the "a repaint must not move
+  // her" rule at the level of one card. Every other block in this file paints itself for the
+  // same reason — `paintCourier`, `paintParcel`, `paintPoint`.
+  const wrap = el("div", { class: "field" });
+  // ⚠️ THE NULLS ARE FILTERED HERE, AND THE REAL DOM IS WHY (v311). `body()` is a list with
+  // `? : null` branches in it, and **`replaceChildren(null)` inserts a TEXT NODE reading the word
+  // "null"** — it does not skip it. That is the same trap `showPopup` documents for a list passed
+  // as one argument, and it was ON HER SCREEN: a stray "null" under the weight box and three of
+  // them beside the buttons.
+  //
+  // **EVERY NODE TEST PASSED WHILE IT WAS BROKEN**, because the test shims' `replaceChildren`
+  // filters nulls for you — a forgiving shim hiding a real fault, which is the v226 lesson word for
+  // word. It took a screenshot of the real page to see it.
+  const paint = () => wrap.replaceChildren(...body().filter(Boolean));
+
+  // ★ WHETHER IT IS SET UP AT ALL, ASKED ONCE AND SAID PLAINLY (v308).
+  //
+  // ⚠️ WITHOUT THIS THE BLOCK READS AS BROKEN RATHER THAN AS OFF. Every press in it can only
+  // ever answer "EasyParcel is not set up yet", and a press whose only answer is always the same
+  // sentence is the shape this app treats as a bug (feedback-affordances). Her own words when she
+  // decided not to sign up: it should "read as off rather than broken".
+  //
+  // `undefined` means nobody has asked yet, `null` means the question is in flight, and an object
+  // is the answer — so a repaint during the ask cannot ask a second time.
+  if (draft.parcelSetup === undefined) {
+    draft.parcelSetup = null;
+    parcelHello(state).then((out) => {
+      draft.parcelSetup = out.ok ? { env: String(out.env || "demo") } : { reason: String(out.reason || "") };
+      paint();
+    });
+  }
+
+  function body() {
+    if (draft.parcelSetup === null) {
+      return [el("label", {}, "EasyParcel"),
+        el("p", { class: "card-sub", style: "margin:0" }, "Checking whether EasyParcel is set up…")];
+    }
+    // NOT SET UP: no weight box, no price, no Book — nothing that could be pressed and do nothing.
+    // What is left is the one thing worth saying, and it is reassuring rather than apologetic:
+    // posting a parcel by hand is the way this app has always posted one, and it still is.
+    if (draft.parcelSetup.reason) {
+      return [el("label", {}, "EasyParcel"),
+        el("p", { class: "card-sub", style: "margin:0" },
+          "Not set up yet — and nothing here is needed to post a parcel by hand. Record the carrier above and type the consignment number, exactly as before."),
+        el("p", { class: "hint" }, draft.parcelSetup.reason)];
+    }
+
+  const rates = Array.isArray(draft.parcelRates) ? draft.parcelRates : null;
+  const lines = rateLines(rates);
+  const picked = draft.parcelRate || null;
+  const status = el("p", { class: "card-sub", style: "margin:8px 0 0" },
+    draft.parcelSaid || "");
+
+  const weigh = el("input", { class: "input", type: "number", inputmode: "decimal",
+    step: "0.1", min: "0", style: "max-width:120px",
+    value: draft.parcelKg ? String(draft.parcelKg) : "",
+    oninput: function () { draft.parcelKg = this.value; } });
+
+  // What the two ends look like to EasyParcel, and what is still missing. Worked out here so
+  // the press can say WHAT is missing rather than that something is.
+  // ⚠️ THE OWNER GOES IN FRONT OF THE LIST, NOT IN FRONT OF EVERY ITEM. "EasyParcel needs your
+  // name, phone number and street address" is a sentence; mapping each label on its own gives
+  // "their a street address", which is what this said on screen until the harness read it.
+  const parties = () => {
+    const send = senderFrom(state.settings);
+    const to = receiverFrom(first);
+    const mine = missingFrom(send);
+    const theirs = missingFrom(to);
+    const parts = [];
+    if (mine.length) parts.push(`your ${listWords(mine)}`);
+    if (theirs.length) parts.push(`the customer's ${listWords(theirs)}`);
+    return { send, to, missing: parts };
+  };
+  const parcelBox = () => ({ weightKg: Number(draft.parcelKg) || 0 });
+
+  const payload = () => {
+    const { send, to } = parties();
+    return {
+      pick: send, send: to, box: parcelBox(),
+      reference: orderCode(first),
+      content: parcelContent(first, state),
+      // The value a carrier insures against: what the customer actually paid, through the one
+      // order-money function every other screen reads.
+      valueRM: Math.max(0, Number(customerTotal(state, group).total) || 0),
+    };
+  };
+
+  const checkPrice = async () => {
+    const { missing } = parties();
+    if (missing.length) { draft.parcelSaid = `Before a price can be asked for, EasyParcel needs ${listWords(missing)}.`; paint(); return; }
+    if (!(Number(draft.parcelKg) > 0)) { draft.parcelSaid = "How much does the parcel weigh? EasyParcel prices by weight, so it needs a number."; paint(); return; }
+    draft.parcelSaid = "Asking EasyParcel…";
+    draft.parcelRates = null;
+    draft.parcelRate = null;
+    paint();
+    const out = await parcelRates(state, payload());
+    if (!out.ok) { draft.parcelSaid = out.reason; paint(); return; }
+    draft.parcelRates = out.rates;
+    draft.parcelSaid = "";
+    paint();
+  };
+
+  const checkBalance = async () => {
+    draft.parcelSaid = "Checking your balance…";
+    paint();
+    const out = await parcelBalance(state);
+    draft.parcelSaid = out.ok ? "" : out.reason;
+    draft.parcelBalance = out.ok ? out.balanceRM : null;
+    paint();
+  };
+
+  const book = (rate) => {
+    const cost = Number(rate.priceRM) || 0;
+    confirmDialog(
+      `Book this parcel with ${rate.courierName} for RM${cost.toFixed(2)}?`,
+      async () => {
+        draft.parcelSaid = "Booking…";
+        refresh();
+        const out = await parcelBook(state, { ...payload(), courier: rate.courierName, dropoff: !!rate.dropoff });
+        if (!out.ok) { draft.parcelSaid = out.reason; refresh(); return; }
+        const done = (out.booked || [])[0];
+        if (!done) {
+          // ⚠️ A REFUSAL IS ITS OWN SENTENCE. "Insufficient Credit" is a wallet problem she can
+          // fix in a minute, and it is said as a wallet problem rather than as a failure.
+          draft.parcelSaid = (out.failed && out.failed[0] && out.failed[0].reason)
+            || "EasyParcel took the call but did not book it. Nothing has been charged — check the order before trying again.";
+          refresh();
+          return;
+        }
+        // ⚠️ SAVED AT ONCE, NOT ON SAVE. A booking is money spent and a courier coming — the
+        // same rule a booked trip already follows ("a real vehicle on a real road must not be
+        // discardable by closing a form"). Left on the draft, closing the card would leave her
+        // charged for a parcel with no consignment number on the order and no way to find it.
+        const rows = (group && group.orders) || [first];
+        for (const o of rows) o.trackingNo = done.awb;
+        draft.trackingNo = done.awb;
+        // ⚠️ THE CARRIER RECORD IS NOT TOUCHED. It is HER record of who she posts with, and
+        // EasyParcel's name for a service is not her list's entry — writing "SPX" where her
+        // list says "Ninja Van" would put a carrier on the customer's card that she never
+        // chose. She can pick it in the box above in one press if she wants it named.
+        save(state);
+        maybeSync(state);
+        draft.parcelSaid = `Booked with ${rate.courierName} — RM${cost.toFixed(2)} paid from your EasyParcel credit. Consignment number ${done.awb}, and it is in the tracking box above.`;
+        draft.parcelRates = null;
+        draft.parcelRate = null;
+        toast(`Parcel booked — ${done.awb}`);
+        refresh();
+      },
+      { yesLabel: `Book for RM${cost.toFixed(2)}` });
+  };
+
+  const rowFor = (r) => {
+    const on = picked && picked.courierName === r.courierName && picked.priceRM === r.priceRM;
+    return el("button", {
+      class: `point-opt${on ? " active" : ""}`, type: "button",
+      onclick: () => { draft.parcelRate = r; paint(); },
+    },
+      el("span", { class: "point-name" }, `${r.courierName} — RM${r.priceRM.toFixed(2)}`),
+      el("span", { class: "point-sub" },
+        [r.serviceName, r.delivery, r.dropoff ? "drop off" : "", r.pickup ? "they collect" : "", r.cheapest ? "cheapest" : ""]
+          .filter(Boolean).join(" · ")));
+  };
+
+  const { missing } = parties();
+  const balance = Number.isFinite(Number(draft.parcelBalance)) ? Number(draft.parcelBalance) : null;
+
+    return [
+    el("label", {}, "EasyParcel"),
+    el("p", { class: "hint" },
+      "Ask every carrier they use what this parcel costs. Booking pays from your EasyParcel credit — nothing here is required, and posting it by hand still works exactly as before."),
+    el("div", { class: "field" }, el("label", {}, "Parcel weight (kg)"), weigh),
+    missing.length
+      ? el("p", { class: "card-sub", style: "margin:0" }, `EasyParcel needs ${listWords(missing)} before it can price this.`)
+      : null,
+    el("div", { class: "btn-row" },
+      button("Check the price", checkPrice, "soft small"),
+      button(balance === null ? "Check my balance" : "Refresh my balance", checkBalance, "ghost small")),
+    balance === null ? null : el("p", { class: "card-sub", style: "margin:6px 0 0" },
+      balanceNote(balance, picked ? picked.priceRM : 0)),
+    lines.length ? el("div", { class: "point-list", style: "margin-top:8px" }, ...lines.map(rowFor)) : null,
+    picked
+      ? el("div", { class: "btn-row" }, button(`Book it — RM${Number(picked.priceRM).toFixed(2)}`, () => book(picked), "primary small"))
+      : null,
+    status];
+  }
+
+  paint();
+  return wrap;
 }
 
 // One order, one invoice (v293, numbered by the order's own code since v294).
@@ -2999,10 +3254,16 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
       return el("div", {},
         doorSlot,
         el("div", { class: "field" }, el("label", {}, "Delivery note (optional)"), note),
+        // ★ THE SAME TWO HEADINGS AS EVERY OTHER CARD, from ONE definition (v310). This card
+        // carries BOTH kinds too — a parcel carrier and a courier charge — so it gets the same
+        // divide. Her second report was exactly this: consistent over the app, not only on the
+        // card she happened to open.
+        courierOrder && !jobOf(first) ? courierKind("parcel") : null,
         el("div", { class: "field" },
           el("label", {}, "Courier tracking number (optional)"), tracking,
           el("p", { class: "hint" }, "For a parcel this is the consignment number the carrier gave you.")),
         parcelSection({ state, group, draft, refresh }),
+        showCharge || jobOf(first) ? courierKind("van") : null,
         parkedCharge ? parkedChargeNote(state, first) : null,
         showCharge ? charge.el : null,
         // The price, folded away until she asks for it (25 Sep 2026). It lives INSIDE
@@ -3425,6 +3686,11 @@ function orderGroupRow(state, group, root, dateId) {
 
   const status = first.status || "new";
   const courier = first.fulfillment === "courier";
+  // WHERE a collection order goes (v299) — the name frozen on the order, or the live Point
+  // while it still exists. Read ONCE here and reused, so the row and its label cannot
+  // disagree; empty for a courier order, and for a kitchen collection, which is what every
+  // order placed before this version is.
+  const pointName = courier ? "" : orderPointName(state, first);
   // The courier moved this row and has not been put back (v190). Read here rather than
   // lower down, because the Undo press belongs in the row's own button line beside the
   // other things she can do to this order — and because the note under the row and the
@@ -3526,7 +3792,11 @@ function orderGroupRow(state, group, root, dateId) {
   const placedLine = el("div", { class: "li-sub" },
     `Placed ${fmtPlaced(first.createdAt, first.orderDate)}`,
     el("span", { class: `fulfill-tag${courier ? " courier" : ""}` }, courier ? "Post (nationwide)" : "Collect (local)"),
-    courier && String(first.address || "").trim() ? el("span", { class: "fulfill-sub" }, String(first.address).trim()) : null);
+    courier && String(first.address || "").trim() ? el("span", { class: "fulfill-sub" }, String(first.address).trim()) : null,
+    // Where a COLLECTION order goes (v299), said on the row the same way a courier's delivery
+    // address is: it is the thing the row is opened to answer. Drawn only when there is a
+    // Point, so every kitchen collection reads byte-for-byte as it did before this version.
+    pointName ? el("span", { class: "fulfill-sub" }, pointName) : null);
   // The parcel she recorded (v226), said on the row itself rather than left to the
   // pop-up: it is the answer to "has this gone?", which is the question the row is
   // looked at for. Drawn only when a parcel exists, so every order that is not one

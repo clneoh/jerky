@@ -9,7 +9,8 @@
 import { byId, orderCode, orderLineName, waNumber } from "./state.js";
 import { shortDate } from "./dates.js";
 import { customerTotal, moneyLines } from "./courier.js";
-import { trackingLine, windowSuffix } from "./courier_job.js";
+import { fulfillmentText, orderPointName } from "./points.js";
+import { promisedWindowSuffix, trackingLine } from "./courier_job.js";
 
 // The opening line, in the voice she chose on Settings (2 Oct 2026). WhatsApp
 // carries no fonts at all — the letters always come from the customer's own phone
@@ -49,12 +50,14 @@ function basics(state, group, trackUrl) {
   // The day, and the window the van will come in when the order is on a consolidated run
   // (v191). Every message below quotes THIS one string, so the window appears in the
   // payment reminder, the shipped message and the pickup message at once and none of them
-  // can word the promise differently from the others. windowSuffix is the publishing gate
+  // can word the promise differently from the others. promisedWindowSuffix is the publishing gate
   // and answers "" for a window that could not be typed, so a half-filled promise cannot
   // be sent to a customer.
-  const date = `${del ? shortDate(del.date) : String(first.deliveryDate || "")}${windowSuffix(first)}`;
+  const date = `${del ? shortDate(del.date) : String(first.deliveryDate || "")}${promisedWindowSuffix(state, first)}`;
   const courier = first.fulfillment === "courier";
-  const fulfillment = courier ? "Post (nationwide)" : "Collect (local)";
+  // The same ONE wording the confirmation uses (v299), so the four messages and the
+  // confirmation cannot tell a customer two different things about where to go.
+  const fulfillment = fulfillmentText(state, first);
   const sf = (state.settings && state.settings.storefront) || {};
   const bakery = sf.name || "";
   const qr = String(sf.tngQr || "").trim();
@@ -135,9 +138,19 @@ export function buildPickupReminder(state, group, trackUrl) {
   if (!b || !b.recipient) return null;
   let msg = `${greeting(state, `Hi ${b.first.customerName || ""}! Good news from ${b.bakery} - your order is ready.`)}\n`;
   msg += `Order #${orderCode(b.first)}\n`;
+  // ★ AND WHERE TO COLLECT IT (v304). This line said "ready for pickup" and named no place at
+  // all, so a customer collecting at a Point was told their order was ready and never where to
+  // go — while the confirmation, the payment reminder and the shipped message all named it. v299
+  // claimed all four later messages named the Point; three of them did, and this one did not.
+  //
+  // The place comes from HER OWN record, frozen onto the order when it was taken, and the KITCHEN
+  // keeps the word it has always had — "ready for pickup" IS the kitchen, and it needs no name.
+  const place = b.courier ? "" : orderPointName(state, b.first);
   msg += b.courier
     ? `Packed and will be posted to you on ${b.date}.\n`
-    : `Packed and ready for collection on ${b.date}.\n`;
+    : place
+      ? `Packed and ready to collect from ${place} on ${b.date}.\n`
+      : `Packed and ready for collection on ${b.date}.\n`;
   msg += `\nTrack your order: ${b.trackUrl}`;
   return { recipient: b.recipient, message: msg };
 }

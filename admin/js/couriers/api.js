@@ -42,14 +42,20 @@ export function courierFunctionUrl(state) {
 }
 
 // The two reasons a call can never be made, said the way she would have to fix them.
+// ⚠️ `setup: true` MARKS A PROBLEM SHE HAS TO FIX, RATHER THAN ONE THAT WILL PASS (v311). The
+// two below and every 401/500 the function answers are the function's own stated "SETUP problem"
+// — no session, a key it does not have — and they do not come right by waiting. A CALLER THAT CAN
+// TELL THE DIFFERENCE CAN SAY SO ONCE instead of hiding a feature and leaving her to wonder, which
+// is exactly what the address suggestions did until this. A network failure is deliberately NOT
+// marked: that one passes on its own and a line about it under a field she is typing in is noise.
 function channelProblem(state) {
   if (!courierFunctionUrl(state)) {
-    return "Shared data is not set up on this phone, so there is nothing to ask the courier from.";
+    return { reason: "Shared data is not set up on this phone, so there is nothing to ask the courier from.", setup: true };
   }
   if (!cachedToken()) {
-    return "Shared data is not signed in. Turn it on and sign in first — your courier's key is kept safe on the server, so the app can only reach it through your account.";
+    return { reason: "Shared data is not signed in. Turn it on and sign in first — your courier's key is kept safe on the server, so the app can only reach it through your account.", setup: true };
   }
-  return "";
+  return null;
 }
 
 // One call to the courier function. Never throws.
@@ -60,7 +66,7 @@ function channelProblem(state) {
 // more to her than "something went wrong".
 export async function callCourier(state, { action, provider = "", payload = {}, timeoutMs = 25000 } = {}) {
   const problem = channelProblem(state);
-  if (problem) return { ok: false, reason: problem };
+  if (problem) return { ok: false, ...problem };
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -78,7 +84,9 @@ export async function callCourier(state, { action, provider = "", payload = {}, 
     try { body = await res.json(); } catch { body = null; }
     if (!res.ok) {
       const said = body && typeof body === "object" ? (body.reason || body.error) : "";
-      return { ok: false, reason: String(said || `The courier service answered with an error (HTTP ${res.status}).`) };
+      // The function's own contract: 401 and 500 are SETUP problems, never a business failure.
+      const setup = res.status === 401 || res.status === 500;
+      return { ok: false, setup, reason: String(said || `The courier service answered with an error (HTTP ${res.status}).`) };
     }
     if (!body || typeof body !== "object") {
       return { ok: false, reason: "The courier service answered with something that could not be read." };

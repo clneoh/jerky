@@ -1346,6 +1346,42 @@ button.prod-next.off::after { content: ""; }
 }
 .promo-words[hidden] { display: none; }
 
+/* ---------- Where a Self collect order is collected from (v299) ----------
+
+   One row per place, the kitchen first, the Points below it. The chosen row takes the
+   brand's orange edge — the same "this one is on" the buttons and the promo box already
+   use, so nothing here needs learning. Each row is a button and is comfortably taller than
+   a thumb's target, because on a phone this is the last thing a customer taps before
+   paying. */
+.point-list { display: grid; gap: 8px; }
+.point-opt {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  font: inherit;
+  cursor: pointer;
+}
+.point-opt.active {
+  border-color: var(--brown);
+  border-width: 2px;
+  padding: 9px 11px;
+  background: var(--brown-soft);
+}
+/* A Point whose smallest basket this basket has not reached (v306). PARKED, NOT HIDDEN: it
+   stays on the page with the reason in its own line, because a choice that vanished below RM30
+   would read as a broken page rather than as the baker's own rule — and a customer can act on a
+   shortfall they can see. It is drawn quiet rather than dimmed to nothing, so it still reads. */
+.point-opt.short { background: var(--bg); border-style: dashed; }
+.point-opt.short .point-name { color: var(--muted); }
+.point-opt.short .point-sub { color: var(--brown); }
+
+.point-name { display: block; font-weight: 700; font-size: 14px; color: var(--ink); }
+.point-sub { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+
 .promo-box { margin: 0 0 16px; }
 .promo-box .field { margin-bottom: 0; }
 

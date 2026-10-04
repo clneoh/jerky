@@ -223,15 +223,15 @@ function world() {
       { id: "o1", groupId: "g1", deliveryDateId: "d1", fulfillment: "courier",
         status: "paid", createdAt: "2026-09-20T02:00:00.000Z",
         address: "1 Jalan A", whatsapp: "+60 12-111 1111", customerName: "Ain",
-        productId: "p1", qty: 2 },
+        productId: "p1", productName: "Focaccia", qty: 2 },
       { id: "o2", groupId: "g1", deliveryDateId: "d1", fulfillment: "courier",
         status: "paid", createdAt: "2026-09-20T02:00:00.000Z",
         address: "1 Jalan A", whatsapp: "+60 12-111 1111", customerName: "Ain",
-        productId: "p1", qty: 1 },
+        productId: "p1", productName: "Focaccia", qty: 1 },
       { id: "o3", groupId: "g2", deliveryDateId: "d1", fulfillment: "courier",
         status: "paid", createdAt: "2026-09-20T03:00:00.000Z",
         address: "9 Jalan B", whatsapp: "+60 12-222 2222", customerName: "Bala",
-        productId: "p1", qty: 3 },
+        productId: "p1", productName: "Focaccia", qty: 3 },
     ],
     ingredients: [], occasions: [], expenses: [],
   };
@@ -264,7 +264,7 @@ function withThirdCustomer(st) {
   st.orders.push({ id: "o4", groupId: "g3", deliveryDateId: "d1", fulfillment: "courier",
     status: "paid", createdAt: "2026-09-20T04:00:00.000Z",
     address: "5 Jalan C", whatsapp: "+60 12-333 3333", customerName: "Chandra",
-    productId: "p1", qty: 1 });
+    productId: "p1", productName: "Focaccia", qty: 1 });
   st.customers.push({ id: "cus_3", key: keyOf(st.orders[3]), name: "Chandra",
     whatsapp: "+60 12-333 3333", place: { lat: 5.44, lng: 100.35, label: "Chandra's door" } });
   return st;
@@ -633,6 +633,41 @@ test("a run prices ONE drop per customer, however many lines their order holds",
     "the collection day and time she set, turned into the UTC instant the API wants");
 });
 
+test("★ a Point prices ONE drop for the whole Point, not one per customer", async () => {
+  // ⚠️ THE TEST THAT PROVES THE MONEY. Two customers collecting at Farlim are ONE place a van
+  // goes — and the courier bills a fee per drop, so a trip built one-drop-per-customer charges
+  // her TWICE for one stop. Read on the WIRE, because the wire is where the money is; reading
+  // the trip object back would not catch it.
+  const st = worldWithPoint(["g1", "g2"]);
+  const wire = stubCourier();
+  const { root } = openRun(st);
+  press(buttonByText(root, "Price this run"));
+  await settle();
+
+  const asks = wire.sent.filter((b) => b.action === "quote");
+  assert.equal(asks.length, 1, "one price request for the whole run");
+  assert.equal(asks[0].payload.drops.length, 1,
+    "ONE drop for the Point, however many customers collect there");
+  assert.deepEqual(asks[0].payload.drops.map((d) => d.address),
+    ["Lebuhraya Thean Teik, 11500 Air Itam"],
+    "and it is the POINT's own door, never a customer's house");
+});
+
+test("a Point and a doorstep price two drops, in the order they are ticked", async () => {
+  // The mixed run she wants: one Point carrying a customer, and another customer whose own
+  // door the van goes to. Two drops — and neither customer counted twice.
+  const st = worldWithPoint(["g1"]);
+  const wire = stubCourier();
+  const { root } = openRun(st);
+  press(buttonByText(root, "Price this run"));
+  await settle();
+  const asks = wire.sent.filter((b) => b.action === "quote");
+  assert.equal(asks[0].payload.drops.length, 2, "the Point and the doorstep");
+  assert.deepEqual(asks[0].payload.drops.map((d) => d.address).sort(),
+    ["9 Jalan B", "Lebuhraya Thean Teik, 11500 Air Itam"].sort(),
+    "the Point's own door and the other customer's");
+});
+
 test("the load beside the price counts doorsteps and items, not rows", async () => {
   const st = world();
   const wire = stubCourier();
@@ -650,6 +685,94 @@ test("one customer of three does not need three ticks", async () => {
   const ticks = all(root).filter((n) => n.tagName === "INPUT" && String(n.className).includes("run-tick"));
   assert.equal(ticks.length, 2, "one tick per customer, never per order line");
   assert.ok(ticks.every((t) => t.checked), "and the whole day is on to begin with");
+});
+
+// ── v301: a Self collection Point is ONE STOP ──────────────────────────────
+
+// A day where customers collect from a Point instead of having their own door. Built on
+// `world()` so everything else about it — the pinned doors, the prices, the wire — is the
+// fixture every other test already trusts.
+function worldWithPoint(groupsAtPoint) {
+  const st = world();
+  st.points = [{
+    id: "pt_farlim", name: "Farlim, Air Itam", address: "Lebuhraya Thean Teik, 11500 Air Itam",
+    receiver: "Aunty Lim", phone: "60123456789", feeRM: 0.5, paused: false,
+    createdAt: "2026-10-12T00:00:00.000Z",
+    place: { lat: 5.4, lng: 100.28, label: "Farlim, Air Itam" },
+  }];
+  for (const o of st.orders) {
+    if (!groupsAtPoint.includes(o.groupId)) continue;
+    // ⚠️ A REAL POINT ORDER IS `fulfillment: "collect"`, NOT `"courier"`. Choosing a Self
+    // collection Point in the shop never moves the Self collect / Courier choice — only
+    // `pointId` and the frozen name ride along on the order.
+    //
+    // THIS FIXTURE USED TO LEAVE THEM AS COURIER, which is a pairing the shop has never
+    // produced, and that is why it hid a real fault for a whole version: the run screen's own
+    // day filter asked `fulfillment === "courier"`, so every real Point order was dropped
+    // before the row logic ever saw one and the screen said "Nothing to run yet" over a
+    // customer waiting to collect at Farlim. A fixture that cannot happen is not a test.
+    o.fulfillment = "collect";
+    o.pointId = "pt_farlim";
+  }
+  return st;
+}
+
+test("two customers collecting at one Point are ONE stop, not two", async () => {
+  // The whole reason Points exist: four bags at Farlim are one journey a van makes, and a
+  // trip built one-per-customer would send the same van back to the same shop and be billed
+  // a stop fee for each one. Read off the LOAD LINE, because that is what the price is asked
+  // for and what a booking carries.
+  const st = worldWithPoint(["g1", "g2"]);
+  stubCourier();
+  const { root } = openRun(st);
+
+  const ticks = all(root).filter((n) => n.tagName === "INPUT" && String(n.className).includes("run-tick"));
+  assert.equal(ticks.length, 1, "ONE tick for the Point, however many customers collect there");
+  assert.ok(ticks[0].checked, "and it is on with the rest of the day");
+
+  const read = all(root).find((n) => String(n.className).includes("run-load"));
+  assert.ok(read.textContent.startsWith("1 stop"), `one stop at one Point — read "${read.textContent}"`);
+  assert.ok(read.textContent.includes("6 items"), "while every line of bread is still counted");
+});
+
+test("the Point's row says what it is, and how much it is carrying", async () => {
+  const st = worldWithPoint(["g1", "g2"]);
+  stubCourier();
+  const { root } = openRun(st);
+
+  const row = all(root).find((n) => String(n.className).includes("run-row-point"));
+  assert.ok(row, "the Point gets a row of its own, marked as one");
+  assert.ok(row.textContent.includes("Farlim, Air Itam"), "named as the Point");
+  assert.ok(row.textContent.includes("2 orders collecting here"),
+    `and says how many orders it is carrying — read "${row.textContent}"`);
+  // A Point is a PLACE, so the customer's own name must not be on it — the bread is going to
+  // Farlim and the customer is meeting it there.
+  assert.equal(row.textContent.includes("Ain"), false, "no customer's name on a Point's row");
+});
+
+test("a Point and a doorstep are two stops, and neither is counted twice", async () => {
+  // The mixed run she actually wants: a Point carrying one customer, and another customer
+  // whose own door the van goes to. Two stops — and if the Point's customer were counted
+  // twice the load would read three.
+  const st = worldWithPoint(["g1"]);   // only Ain collects at the Point
+  stubCourier();
+  const { root } = openRun(st);
+
+  const ticks = all(root).filter((n) => n.tagName === "INPUT" && String(n.className).includes("run-tick"));
+  assert.equal(ticks.length, 2, "the Point row and the doorstep row");
+  const read = all(root).find((n) => String(n.className).includes("run-load"));
+  assert.ok(read.textContent.startsWith("2 stops"), `two stops — read "${read.textContent}"`);
+  assert.ok(read.textContent.includes("6 items"), "and still six focaccia");
+  assert.equal(all(root).filter((n) => String(n.className).includes("run-row-point")).length, 1);
+});
+
+test("a Point with nobody collecting there is not on the run at all", async () => {
+  const st = worldWithPoint([]);   // the Point exists, but no order went to it
+  stubCourier();
+  const { root } = openRun(st);
+  assert.equal(all(root).filter((n) => String(n.className).includes("run-row-point")).length, 0);
+  const ticks = all(root).filter((n) => n.tagName === "INPUT" && String(n.className).includes("run-tick"));
+  assert.equal(ticks.length, 2, "the day is exactly the two customers it always was");
 });
 
 test("one row's own tick moves the count and the bulk press with it", async () => {
@@ -1613,4 +1736,97 @@ test("the booked customer is still priced and loaded with the rest of the day (v
   assert.ok(read.textContent.startsWith("1 stop"), `one door on this run — read "${read.textContent}"`);
   assert.ok(read.textContent.includes("3 items"), "and the focaccia that go to that one door");
   assert.doesNotMatch(read.textContent, /6 items/, "the booked customer's order is not on the van");
+});
+
+// ── v302: A REAL POINT ORDER REACHES THE RUN ────────────────────────────────
+//
+// The tests above all ride `worldWithPoint`, and until v302 that fixture left the Point's
+// orders as `fulfillment: "courier"` — which the SHOP HAS NEVER PRODUCED. Choosing a Point
+// leaves the order "collect" and only adds pointId. So the run screen's day filter, which
+// asked `fulfillment === "courier"`, dropped every real Point order before the rows were
+// built, and the whole of v301's row work was unreachable. The fixture is now honest, and
+// these three tests say what the screen has to do about it.
+
+test("an order COLLECTING at a Point is on the run, not 'nothing to run yet' (v302)", () => {
+  // The exact report, in miniature: a customer chose to collect at Farlim, nobody is having
+  // anything delivered, and the screen must still offer the trip — the bread has to get there.
+  const st = worldWithPoint(["g1", "g2"]);
+  assert.equal(st.orders.every((o) => o.fulfillment === "collect"), true,
+    "the fixture is modelling what the shop really writes");
+  stubCourier();
+  const { root } = openRun(st);
+  assert.equal(/Nothing to run yet/.test(String(root.textContent)), false,
+    "a day of collections at a Point is still a day with something to run");
+  const ticks = all(root).filter((n) => n.tagName === "INPUT" && String(n.className).includes("run-tick"));
+  assert.equal(ticks.length, 1, "one stop for the Point");
+});
+
+test("a collection from the KITCHEN is still not on the run (v302)", () => {
+  // The half a careless fix breaks. She hands kitchen collections over herself, so sweeping
+  // them onto a van would price a vehicle for bread that never leaves the counter.
+  const st = worldWithPoint(["g1", "g2"]);
+  for (const o of st.orders) { delete o.pointId; }   // collect, but at the kitchen
+  stubCourier();
+  const { root } = openRun(st);
+  assert.match(String(root.textContent), /Nothing to run yet/,
+    "a collection at the kitchen is not a trip");
+});
+
+test("the day's own label counts STOPS, not the orders behind them (v302)", () => {
+  // It read "2 courier orders" over a day carrying nothing but collections at one Point.
+  // A label describing the day she is about to open has to describe it with the number she
+  // is about to see.
+  const st = worldWithPoint(["g1", "g2"]);
+  stubCourier();
+  const { root } = openRun(st);
+  const t = String(root.textContent).replace(/\s+/g, " ");
+  assert.match(t, /1 stop\b/, `the day is one stop — read "${t.slice(0, 200)}"`);
+  assert.equal(/courier order/.test(t), false, "and never calls a collection a courier order");
+});
+
+// ── v305: WHEN THEY CAN COLLECT, on the row ─────────────────────────────────
+// Her ask, and it is the one number this screen was missing. The hours she sets on the Point
+// (v304) decide when the bread has to BE THERE and handed over, so a trip booked for the wrong
+// part of the day is visible here rather than a day later — on the screen where she is about to
+// spend money on a van.
+
+test("a Point's row says when they can collect (v305)", () => {
+  const st = worldWithPoint(["g1", "g2"]);
+  st.points[0].collectWindow = "14:00-18:00";
+  stubCourier();
+  const { root } = openRun(st);
+
+  const row = all(root).find((n) => String(n.className).includes("run-row-point"));
+  assert.ok(/collect 2-6 pm/.test(row.textContent),
+    `the hours are on the row — read "${row.textContent}"`);
+  // AFTER the address and BEFORE the bread: where, then when, then what.
+  const said = String(row.textContent).replace(/\s+/g, " ");
+  assert.ok(said.indexOf("Lebuhraya Thean Teik") < said.indexOf("collect 2-6 pm"));
+  assert.ok(said.indexOf("collect 2-6 pm") < said.indexOf("Focaccia"),
+    "when sits between where and what");
+});
+
+test("a Point with no hours set says nothing about the time (v305)", () => {
+  // The card already says she has not set any; repeating it on every run row would be noise on
+  // the screen she reads while working.
+  const st = worldWithPoint(["g1", "g2"]);
+  assert.equal(String(st.points[0].collectWindow || ""), "", "the fixture has none");
+  stubCourier();
+  const { root } = openRun(st);
+  const row = all(root).find((n) => String(n.className).includes("run-row-point"));
+  assert.ok(!/collect \d/.test(row.textContent), `no time claimed — read "${row.textContent}"`);
+});
+
+test("a customer's own doorstep never claims collection hours (v305)", () => {
+  // Only a Point is a place with hours. A doorstep's row is unchanged, and the Point's hours
+  // must not leak onto it because the screen has learned about windows.
+  const st = worldWithPoint(["g1"]);
+  st.points[0].collectWindow = "14:00-18:00";
+  stubCourier();
+  const { root } = openRun(st);
+  const rows = all(root).filter((n) => String(n.className).includes("run-row")
+    && !String(n.className).includes("run-row-point"));
+  assert.equal(rows.length, 1, "Bala's own door is the other row");
+  assert.ok(!/collect \d/.test(rows[0].textContent),
+    `his doorstep has no hours — read "${rows[0].textContent}"`);
 });

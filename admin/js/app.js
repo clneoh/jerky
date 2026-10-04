@@ -13,6 +13,7 @@ import { renderUnits } from "./views/units.js";
 import { renderSuppliers } from "./views/suppliers.js";
 import { renderProductCategories } from "./views/productCategories.js";
 import { renderParcelCouriers } from "./views/parcelCouriers.js";
+import { renderPoints } from "./views/points.js";
 import { renderPromoCodes } from "./views/promo.js";
 import { renderOrders } from "./views/orders.js";
 import { renderProducts } from "./views/products.js";
@@ -54,6 +55,7 @@ const routes = {
   "/customers": { title: "Customers", tab: "customers", render: renderCustomers },
   "/deliveries":{ title: "Delivery Dates", tab: "more", render: renderDeliveries },
   "/parcel-couriers":{ title: "Parcel couriers", tab: "more", render: renderParcelCouriers },
+  "/points":    { title: "Self collection Points", tab: "more", render: renderPoints },
   "/promo":     { title: "Promo codes", tab: "more",    render: renderPromoCodes },
   "/run":       { title: "Delivery run", tab: "more", render: renderDeliveryRun },
   "/money":     { title: "Money",      tab: "more",      render: renderMoney },

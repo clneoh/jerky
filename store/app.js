@@ -21,6 +21,7 @@ import { ENGINE_VERSION } from "../admin/js/version.js";
 // The promo-code engine, shared with the backoffice so a code the shop accepts is
 // exactly a code her app recognises. It is a leaf module (imports nothing), which
 // is why the shop can take it without pulling the backoffice's storage in.
+import { pointMinOrder, pointShortfall } from "../admin/js/points.js";
 import { codeNameOk, evaluate, findCode, minimumOf, normCode, normalizeCode, offerOf, shortfallOf, stoppedBy, worthOf } from "../admin/js/promo.js";
 
 // Day/month short names per site language. English is today's authoring default;
@@ -676,6 +677,31 @@ export function mergeStorefront(base, remote) {
         && o.to >= o.from && COLOURS.includes(o.colour))
       .map((o) => ({ label: o.label.trim(), from: o.from, to: o.to, colour: o.colour }))
       .sort((a, b) => a.from.localeCompare(b.from));
+  }
+  // The Self collection Points she has open (v299). Replaced WHOLESALE, like the occasions and
+  // the promo codes: the app publishes a complete snapshot, so an empty list is a real
+  // instruction — "she has no Points open" — and has to take a Point off a page that is already
+  // showing it.
+  //
+  // ⚠️ THE ID, THE NAME AND THE SMALLEST BASKET arrive, and nothing else. The receiver, their
+  // phone, the fee and the address never leave her app — the shop is public, and the message
+  // that tells a customer where to go is built from HER copy. So the shop validates what it gets
+  // down to exactly these fields, which is also what makes a malformed row unable to reach the
+  // page.
+  //
+  // The smallest basket is the opposite of private (v306): it is what the customer has to know
+  // BEFORE choosing, and without it this page could only take an order the Point does not want.
+  // A missing or unreadable `min` is 0 — NO minimum — because a rule the shop invented would
+  // refuse an order nobody asked it to refuse.
+  if (Array.isArray(remote.points)) {
+    out.points = remote.points
+      .filter((p) => p && typeof p === "object"
+        && String(p.id || "").trim() && String(p.name || "").trim())
+      .map((p) => {
+        const min = Number(p.minOrderRM);
+        return { id: String(p.id).trim(), name: String(p.name).trim(),
+          minOrderRM: Number.isFinite(min) && min > 0 ? min : 0 };
+      });
   }
   if (Array.isArray(remote.products)) {
     const products = remote.products
@@ -2264,6 +2290,12 @@ export function render() {
             // the standing line and any code already in the box are redrawn here
             // rather than waiting for the customer to touch something.
             if (repaintPromo) repaintPromo();
+            // The Points arrive with this row too, long after the page first drew, so the
+            // Collect-from list is built here rather than waiting for the customer to touch
+            // the fulfilment picker. Before this moment she has none open as far as the page
+            // knows, and the field stays hidden — which is why a shop with no Points is
+            // unchanged.
+            refreshPointList();
             // The codes are in hand NOW, which is the first moment a visit can be judged
             // against them (v288). Called here and nowhere else, so the count can only ever
             // follow the arrival of the list it is checked against — and latched inside, so
@@ -2344,6 +2376,10 @@ export function render() {
     // this repaint, because the basket is part of their judgement: a percentage's
     // money moves with the total, and so does whether a code's minimum is met.
     paintPromo(total);
+    // ★ AND THE COLLECT-FROM LIST, for the same reason and on the same repaint (v306): whether a
+    // Point will take this basket is part of the basket's judgement, so a customer who adds an
+    // item watches Farlim become choosable — and one who removes one watches it say why not.
+    refreshPointList(total);
     return total;
   }
 
@@ -2421,8 +2457,14 @@ export function render() {
       date: selected,
       lines,
       total,
-      fulfillment,
-      address,
+      fulfillment: (document.getElementById("fulfillment") || {})._value || "collect",
+      // WHERE a collection order is collected from (v299). The kitchen is the EMPTY id — it is
+      // not a Point and has no record — and the NAME rides beside the id so that deleting the
+      // Point later never rewrites where this order went. A courier order carries neither.
+      pointId: (document.getElementById("fulfillment") || {})._pointId || "",
+      pointName: (document.getElementById("fulfillment") || {})._pointName || "",
+      address: document.getElementById("address-input").value.trim(),
+
       note: document.getElementById("note-input").value.trim(),
       createdAt: new Date().toISOString(),
     };
@@ -2891,8 +2933,92 @@ export async function trackOrder(code) {
   }
 }
 
-// Wire the Self collect / Courier picker. The choice is stored on the wrapper
-// node so the order handler reads it back; courier reveals the address field.
+// The Self collection Points she has open (v299), exactly as the shop was given them. Guarded
+// like the codes next door: the storefront lands asynchronously, so before it does there is
+// nothing to offer and the shop must look exactly as it did before this version.
+function publishedPoints() {
+  return Array.isArray(CONFIG.points) ? CONFIG.points : [];
+}
+
+// Where a Self collect order is collected FROM, as rows a customer picks between.
+//
+// ★ THE KITCHEN IS ALWAYS FIRST AND IS NOT A POINT. It has no record, no fee and no life, and
+// the EMPTY id is exactly how an order says "collect from the bakery" — which is also what
+// every order placed before this version means, so nothing needs migrating.
+//
+// The whole field is hidden while she has no Point open, so a shop that never uses them is
+// byte-for-byte the shop it was.
+function renderPointList(wrap, total = 0) {
+  const field = document.getElementById("point-field");
+  const list = document.getElementById("point-list");
+  if (!field || !list || !wrap) return;
+  const points = publishedPoints();
+  field.hidden = points.length === 0;
+  if (!points.length) { list.replaceChildren(); return; }
+
+  const choose = (id, name) => {
+    wrap._pointId = id;
+    wrap._pointName = name;
+    for (const b of list.children) {
+      if (b && b.classList) b.classList.toggle("active", (b.dataset.pointId || "") === id);
+    }
+  };
+  // ★ A SHORT BASKET IS SHOWN AND REFUSED, not hidden (v306). `short` is a POINT that asks for a
+  // smallest basket this basket has not reached: it stays on the page with the reason in its own
+  // line, because a Point that simply vanished below RM30 would read as a broken page rather than
+  // as her rule — and the customer can act on a shortfall they can see.
+  //
+  // The rule is HERS, typed on her own Point, so the shop honours it rather than merely stating
+  // it: this is not the app's own rule being turned into a gate, which is the thing her standing
+  // instruction forbids.
+  const row = (id, name, sub, { short = false } = {}) => {
+    const b = el("button", {
+      class: `point-opt${short ? " short" : ""}`, type: "button", "data-point-id": id,
+      onclick: () => {
+        if (short) { showConfirm([el("p", { class: "confirm-title" }, name),
+          el("p", { class: "confirm-body" }, sub)], "warn"); return; }
+        choose(id, name);
+      },
+    }, el("span", { class: "point-name" }, name), el("span", { class: "point-sub" }, sub));
+    return b;
+  };
+
+  const basket = Number(total) || 0;
+  const judged = points.map((p) => {
+    const need = pointShortfall(p, basket);
+    return { p, short: need > 0, need };
+  });
+
+  list.replaceChildren(
+    row("", t("ourKitchen"), t("kitchenSub")),
+    ...judged.map(({ p, short, need }) => row(p.id, p.name,
+      short ? sub(t("pointMin"), pointMinOrder(p).toFixed(2), basket.toFixed(2)) : t("pointSub"), { short })));
+
+  // ⚠️ A POINT SHE PAUSED OR DELETED MUST NOT STAY CHOSEN. A customer may have picked it
+  // before she took it off, and the shop cannot then post an order to a place she is no
+  // longer offering — so a choice that is no longer open falls back to the kitchen, which is
+  // always there. Re-applied on every repaint, so the picker and the order cannot disagree.
+  const want = String(wrap._pointId || "");
+  // ⚠️ AND A CHOICE THAT IS NO LONGER OPEN FALLS BACK — now including one whose SMALLEST BASKET
+  // the basket has dropped below. A customer who chose Farlim at RM40 and then removed an item is
+  // not left holding a Point they can no longer use: the picker goes back to the kitchen and the
+  // Point says why. Re-applied on every repaint, so the picker and the order cannot disagree.
+  const open = judged.find((j) => j.p.id === want && !j.short);
+  choose(open ? want : "", open ? open.p.name : t("ourKitchen"));
+}
+
+function refreshPointList(total = 0) {
+  const wrap = document.getElementById("fulfillment");
+  const field = document.getElementById("point-field");
+  renderPointList(wrap, total);
+  // Only a COLLECTION order chooses where, and only when she has a Point open. The empty
+  // field hides itself, so this never leaves a labelled box with nothing in it.
+  if (field) field.hidden = !wrap || wrap._value === "courier" || !publishedPoints().length;
+}
+
+// Wire the Self collect / Courier picker. The choice is stored on the wrapper node so the
+// order handler reads it back; courier reveals the address field, collecting reveals the
+// list of places to collect from.
 function wireFulfillment() {
   const wrap = document.getElementById("fulfillment");
   if (!wrap) return;
@@ -2902,6 +3028,7 @@ function wireFulfillment() {
     for (const b of buttons) b.classList.toggle("active", b.dataset.fulfillment === value);
     const addr = document.getElementById("address-field");
     if (addr) addr.hidden = value !== "courier";
+    refreshPointList();
   };
   for (const b of buttons) b.addEventListener("click", () => apply(b.dataset.fulfillment));
   apply("courier"); // reflect the static HTML's default active button

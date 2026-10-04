@@ -9,6 +9,7 @@ import { dayListLabel, dayName, deliveryStatus, generateUpcomingDates, longDate,
 import { effectiveCapacity, totalUnitsOnDate } from "../bom.js";
 import { el, button, confirmDialog, showPopup, toast } from "../ui.js";
 import { groupOrders, newId, save } from "../state.js";
+import { needsVan, stopKeyOf } from "../courier_job.js";
 import { maybeSync, maybeSyncStorefront } from "../supabase.js";
 import {
   DOW, OCC_COLOURS, addMonth, monthLabel, monthWeeks,
@@ -815,15 +816,24 @@ function dateCard(state, date) {
         button("Del", () => deleteDate(state, date), "ghost small"))));
 }
 
-// How many customers on this day are being delivered by courier — one per ORDER GROUP, the
-// same grouping the run screen counts stops with, so the number on this button is the
-// number of doorsteps it will find and never the number of order lines behind them.
+// How many STOPS this day's run will find — the number the run screen itself will count, so
+// the badge can never promise a different number of doorsteps than the screen has rows.
+//
+// ⚠️ THIS MUST ASK THE RUN'S OWN RULE. It used to count courier groups, which agreed with the
+// run screen only while the run believed the same thing; both of them skipped every Self
+// collection Point order (v302). Two readings of one rule is how they came apart, so the rule
+// and the key both live in courier_job.js and are read from there.
+//
+// A Point CARRIES several customers' orders and is ONE stop, so this counts distinct stop
+// keys rather than groups — the badge is counting doorsteps, not people and not order lines.
 function courierOn(state, dateId) {
   const want = String(dateId || "");
-  let n = 0;
+  const stops = new Set();
   for (const g of groupOrders(state.orders || [])) {
     const first = g.orders[0];
-    if (first && first.fulfillment === "courier" && String(first.deliveryDateId || "") === want) n++;
+    if (!needsVan(state, first)) continue;
+    if (String(first.deliveryDateId || "") !== want) continue;
+    stops.add(stopKeyOf(state, g));
   }
-  return n;
+  return stops.size;
 }

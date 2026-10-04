@@ -84,3 +84,59 @@ test("without a published QR the pay line still appears but no image URL", () =>
 test("empty group returns null", () => {
   assert.equal(buildConfirmation(state(), { orders: [] }, "https://bake.app/store/?track=x"), null);
 });
+
+// ── v304: what a customer collecting at a Point is told ─────────────────────
+// v299 made the confirmation and all four messages name the Point, and it was only ever tested
+// through `fulfillmentText` — the helper — rather than through the builders a customer actually
+// receives. This drives the real confirmation for a Point order, and pins the three things the
+// discussion said the customer must be told: WHERE, the ADDRESS, and WHEN.
+//
+// Her choice for the window (2026-10-04, from three offered): it belongs to the PLACE, typed
+// once on the Point — never the van's arrival window, which is when the bread gets there.
+
+const FARLIM = {
+  id: "pt_farlim", name: "Farlim, Air Itam", address: "Lebuhraya Thean Teik, 11500 Air Itam",
+  receiver: "Aunty Lim", phone: "60123456789", feeRM: 0.5, paused: false,
+  createdAt: "2026-08-12T00:00:00.000Z", collectWindow: "14:00-18:00",
+  place: { lat: 5.4, lng: 100.28, label: "Farlim" },
+};
+const atPoint = (extra = {}) => ({ orders: [{
+  id: "ord_ab12cd34ef56", groupId: "ordg_112233445566",
+  deliveryDateId: "d1", fulfillment: "collect", pointId: "pt_farlim", pointName: "Farlim, Air Itam",
+  whatsapp: "+60 12-345 6789", customerName: "Aunty Bee",
+  productId: "p1", qty: 2,
+  // The run that takes the bread to the Point stamps its own arrival window on the order (v302).
+  // The customer must not be told it — it is when the van gets there, not when they can collect.
+  deliveryWindow: "10:00-12:00",
+  ...extra,
+} ] });
+
+test("a customer collecting at a Point is told the place, the address AND when (v304)", () => {
+  const built = buildConfirmation(state({ points: [FARLIM] }), atPoint(), "");
+  assert.ok(built.message.includes("Collect (local) at Farlim, Air Itam"), "WHERE — named");
+  assert.ok(built.message.includes("Where: Lebuhraya Thean Teik, 11500 Air Itam"), "and the address");
+  assert.ok(built.message.includes("collect 2-6 pm"), "and WHEN — the place's own hours");
+  assert.ok(!built.message.includes("10-12"), "never the van's arrival window");
+});
+
+test("a Point with no hours set promises the day and says nothing about a time (v304)", () => {
+  const noHours = { ...FARLIM, collectWindow: "" };
+  const built = buildConfirmation(state({ points: [noHours] }), atPoint(), "");
+  assert.ok(built.message.includes("Collect (local) at Farlim, Air Itam"), "still told where to go");
+  assert.ok(!/collect \d/.test(built.message), "and nothing about a time");
+  assert.ok(!built.message.includes("10-12"), "nor the van's window, even though the order carries one");
+});
+
+test("a courier order at this stage is unchanged — its van is booked later (v304)", () => {
+  // The window rides the day's own words, so the confirmation gains nothing for a courier order
+  // that has no trip yet. If this ever gains a time, something has started promising the van
+  // before it was booked.
+  const group = { orders: [{ id: "ord_aa11bb22cc33", groupId: "ordg_99", deliveryDateId: "d1",
+    fulfillment: "courier", whatsapp: "+60 12-345 6789", customerName: "Bala",
+    address: "9 Jalan B", productId: "p1", qty: 1 }] };
+  const built = buildConfirmation(state(), group, "");
+  const line = built.message.split("\n").find((l) => l.startsWith("Delivery:"));
+  assert.ok(line.includes("Delivery: Mon, 7 Sep - Post (nationwide)"), `read "${line}"`);
+  assert.ok(!/collect \d|\d\s*-\s*\d+\s*(am|pm)/.test(line),
+    "no time invented for a van that has not been booked — the window is stamped at booking");
+});

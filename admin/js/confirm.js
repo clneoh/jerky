@@ -16,6 +16,8 @@
 import { byId, orderCode, orderLineName, waNumber } from "./state.js";
 import { shortDate } from "./dates.js";
 import { customerTotal, moneyLines } from "./courier.js";
+import { fulfillmentText, pointAddressFor } from "./points.js";
+import { promisedWindowSuffix } from "./courier_job.js";
 // The one place the opening line is worded, so the confirmation cannot lean over
 // while the three later messages do not (2 Oct 2026).
 import { greeting } from "./messages.js";
@@ -46,11 +48,23 @@ export function buildConfirmation(state, group, trackUrl) {
 
 
   const del = byId(state.deliveryDates, first.deliveryDateId);
-  const date = del ? shortDate(del.date) : String(first.deliveryDate || "");
+  // The day, and the promise that comes with it (v304): a collection at a Point carries the
+  // place's own collection hours. A courier order has no window yet at this stage - the van is
+  // booked later - so this changes nothing for one and the customer is told when to come.
+  const date = `${del ? shortDate(del.date) : String(first.deliveryDate || "")}`
+    + promisedWindowSuffix(state, first);
   const courier = first.fulfillment === "courier";
-  const fulfillment = courier ? "Post (nationwide)" : "Collect (local)";
-  const address = courier && String(first.address || "").trim()
-    ? `\nAddress: ${String(first.address).trim()}` : "";
+  // ONE wording for how the order reaches them (v299) — the confirmation and every later
+  // message read the same helper, so a customer cannot be told two different things.
+  const fulfillment = fulfillmentText(state, first);
+  // The address means two different things and both are said: a COURIER order carries the
+  // customer's own delivery address, while a collection at a Point needs the address of the
+  // PLACE — which lives on her Point, not on the order.
+  const deliveryAddr = courier ? String(first.address || "").trim() : "";
+  const collectAddr = courier ? "" : pointAddressFor(state, first);
+  const address = deliveryAddr ? `\nAddress: ${deliveryAddr}`
+    : collectAddr ? `\nWhere: ${collectAddr}` : "";
+
 
   const sf = (state.settings && state.settings.storefront) || {};
   const bakery = sf.name || "";

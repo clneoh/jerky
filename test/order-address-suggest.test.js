@@ -80,6 +80,7 @@ class MockDate extends RealDate {
 globalThis.Date = MockDate;
 
 const { renderOrders } = await import("../admin/js/views/orders.js");
+const { renderPoints } = await import("../admin/js/views/points.js");
 
 // ── the wire ───────────────────────────────────────────────────────────────
 //
@@ -114,6 +115,13 @@ function stubWire() {
     refuse(i, reason = "The address suggester could not be reached.") {
       const [p] = pending.splice(i, 1);
       p.resolve(reply({ ok: false, reason }));
+    },
+    // ⚠️ AND THE WAY THE REAL FUNCTION ANSWERS WHEN THE SUGGESTER IS SWITCHED OFF (v311): a
+    // reason on a 200, marked `setup` because it will not pass by itself. The distinction between
+    // these two is the whole of v311 — one is said out loud, the other is not.
+    refuseSetup(i, reason = "Address suggestions are not set up on the server yet.") {
+      const [p] = pending.splice(i, 1);
+      p.resolve(reply({ ok: false, setup: true, reason }));
     },
     drain() { while (pending.length) pending.pop().resolve(reply({ ok: true, places: [] })); },
     restore() { globalThis.fetch = real; },
@@ -462,7 +470,7 @@ test("with the suggestion server unreachable, the order still saves with her own
   } finally { globalThis.fetch = real; }
 });
 
-test("a phone with no Shared data at all simply does not suggest", async () => {
+test("a phone with no Shared data at all does not suggest — AND NOW SAYS SO (v311)", async () => {
   const st = state();
   st.settings.supabase = null; // never set up
   await withWire(async (wire) => {
@@ -470,7 +478,11 @@ test("a phone with no Shared data at all simply does not suggest", async () => {
     type(addrBox(root), "12 Jalan Bunga");
     await afterPause();
     assert.equal(wire.asks.length, 0, "there is nothing to ask the suggester from");
-    assert.equal(offered(root).length, 0);
+    assert.equal(rowsOn(root).length, 0, "and nothing is offered to tap");
+    // ⚠️ THIS USED TO ASSERT SILENCE, and that silence IS her report. A box that never suggests
+    // and never says why reads as broken; the app knows the reason, so it says it.
+    assert.equal(noteOn(root).length, 1, "one line, saying why there are no suggestions");
+    assert.match(noteOn(root)[0], /Shared data/, "in the app's own words for the problem");
 
     pickProduct(root);
     tap(buttonByText(root, "Place Order"));
@@ -502,5 +514,75 @@ test("nothing the suggester needs is parked on the draft, so nothing lands on he
     assert.deepEqual(stray, [], `the order carries no suggestion state, but has ${stray.join(", ")}`);
     assert.equal(saved.address, "12, Jalan Bunga, 11200 George Town, Malaysia");
     return root;
+  });
+});
+
+// ── v311: WHEN SUGGESTIONS CANNOT WORK, SAY SO ──────────────────────────────
+// Her report: "the suggestion list never appear". It was true, and the app never said why — a
+// failed ask called `hide()` and the box went quiet, so a phone whose suggestions were not set up
+// looked exactly like a phone that simply had nothing to offer.
+//
+// ⚠️ THE TWO FAILURES ARE NOT THE SAME THING, and only one of them is worth a sentence:
+//   • a SETUP problem (no session, no key) does not come right, so it is said ONCE; and once it
+//     has been said nothing more is asked, rather than spending a request per keystroke for the
+//     rest of the form to be told the same thing;
+//   • a NETWORK failure passes on its own, so it stays silent — a line about the signal under a
+//     box she is typing in is noise, and the feature comes back by itself.
+
+// The line said where the suggestions would have been. Read through `deepText` because a
+// paragraph's words live in a TEXT NODE child.
+const deepText = (n) => (n.nodeType === 3 ? String(n.text)
+  : (n.children || []).map(deepText).join("")).trim();
+// ⚠️ AND WHAT IS TAPPABLE IS NOT THE SAME AS WHAT IS IN THE PANEL (v311). The panel now holds
+// either suggestion rows or the one line saying why there are none — so a count of its children
+// would call the explanation a suggestion.
+const rowsOn = (root) => ((addressPanel(root) || {}).children || [])
+  .filter((n) => String(n.className || "").includes("sugg-row"));
+const noteOn = (root) => ((addressPanel(root) || {}).children || [])
+  .filter((n) => String(n.className || "").includes("sugg-note"))
+  .map((n) => deepText(n));
+
+test("a server that cannot suggest at all SAYS SO, once, where the list would have been (v311)", async () => {
+  await withWire(async (wire) => {
+    const root = openNewCard(state());
+    const box = addrBox(root);
+    type(box, "Lebuhraya Thean Teik");
+    await afterPause();
+    // The function's own contract: 500 is a SETUP problem, and its words are the reason.
+    wire.refuseSetup(0, "Address suggestions are not set up on the server yet.");
+    await afterPause();
+
+    const said = noteOn(root);
+    assert.equal(said.length, 1, `exactly one line, and it is not a suggestion row — read ${JSON.stringify(said)}`);
+    assert.match(said[0], /not set up on the server yet/, "in the server's own words");
+    assert.equal(rowsOn(root).length, 0, "and it is NOT offered as something she can tap");
+    assert.equal(box.value, "Lebuhraya Thean Teik", "and her own typing is untouched");
+
+    // ⚠️ AND NOTHING MORE IS ASKED. A request per keystroke to be told the same thing is a phone
+    // on one bar doing work for nothing — and the line must not flicker away either.
+    const before = wire.asks.length;
+    type(box, "Lebuhraya Thean Teik 4");
+    await afterPause();
+    assert.equal(wire.asks.length, before, "no second ask once the answer is known");
+    assert.equal(noteOn(root).length, 1, "and the line is still there while she carries on typing");
+  });
+});
+
+test("a failure that will pass on its own stays SILENT (v311)", async () => {
+  // A phone on one bar is not a setup problem, and the box must not grow a line about it.
+  await withWire(async (wire) => {
+    const root = openNewCard(state());
+    const box = addrBox(root);
+    type(box, "Lebuhraya Thean Teik");
+    await afterPause();
+    wire.refuse(0, "Couldn't reach the courier service.");
+    await afterPause();
+    assert.deepEqual(noteOn(root), [], "nothing is said about a signal");
+    assert.equal(rowsOn(root).length, 0, "and nothing is offered");
+    // And it asks again next time, because this one is worth retrying.
+    const before = wire.asks.length;
+    type(box, "Lebuhraya Thean Teik 4");
+    await afterPause();
+    assert.equal(wire.asks.length, before + 1, "a transient failure is retried");
   });
 });

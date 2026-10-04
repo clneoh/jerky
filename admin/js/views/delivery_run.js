@@ -62,14 +62,17 @@ import {
   fmtPlace, houseNotIn, pickupPlace, roadNotHouse, setDropPlace,
 } from "../courier_place.js";
 import { openPlacePicker } from "../place_map.js";
+import { pointById, pointPlace, pointWindowText } from "../points.js";
+import { openPointPinPicker } from "./points.js";
 import { courierPayQuestions } from "./orders.js";
 // A parcel recorded on the order (v226) is never swept into a van run — see runDays.
 import { parcelOf } from "../parcel.js";
 import {
-  fmtDistanceKm, fmtQuote, fmtQuoteLeft, fmtWindow, liveJobOf, liveJobProblem, loadOf,
-  quoteExpired, runLimitProblem, savingOf, scheduleAtUTC, stampTrip, tripCalledOff, tripOf,
-  tripProblem, windowAt, windowProblem,
+  fmtDistanceKm, fmtQuote, fmtQuoteLeft, liveJobOf, liveJobProblem, loadOf,
+  needsVan, quoteExpired, runLimitProblem, savingOf, scheduleAtUTC, stampTrip, stopKeyOf,
+  tripCalledOff, tripOf, tripProblem,
 } from "../courier_job.js";
+import { fmtWindow, windowAt, windowProblem } from "../time_window.js";
 
 // One separate-trip price is one request, and the courier allows two requests a second.
 // Firing eight of them together would be refused as a burst — which would read to her as
@@ -98,7 +101,7 @@ export function renderDeliveryRun(root, state, params) {
       el("div", { class: "card" },
         el("h2", {}, "Delivery run"),
         emptyState("Nothing to run yet",
-          "A run carries several orders on one trip. It needs courier orders on a delivery day — open an order, press Edit, and switch its delivery to courier.")));
+          "A run carries several orders on one trip. It needs an order going out by courier, or one being collected at a Self collection Point, on a delivery day. A collection from your own kitchen is handed over by you, so it never needs a van.")));
     return;
   }
 
@@ -125,10 +128,15 @@ export function renderDeliveryRun(root, state, params) {
   // a booking or a repaint. Only the two boxes below them — the customer list and the
   // prices — are ever redrawn.
 
+  // The day's own label counts STOPS, not people and not order lines — the same count the
+  // list below draws and the same one the Delivery dates screen's "Run (N)" badge shows, so
+  // the day she picks is described with the number she is about to see. It read "2 courier
+  // orders" over a day carrying nothing but collections at a Point (v302).
+  const stopCount = (groups) => new Set(groups.map((g) => stopKeyOf(state, g))).size;
   const daySel = select(
     days.map((d) => ({
       value: d.id,
-      label: `${shortDate(d.date)} — ${d.groups.length} courier order${d.groups.length === 1 ? "" : "s"}`,
+      label: `${shortDate(d.date)} — ${stopCount(d.groups)} stop${stopCount(d.groups) === 1 ? "" : "s"}`,
     })),
     dayId,
     () => { dayId = daySel.value; refreshDay(); },
@@ -165,16 +173,58 @@ export function renderDeliveryRun(root, state, params) {
     return days.find((d) => d.id === dayId) || days[0];
   }
 
-  // One entry per GROUP, and that is the correction that matters most on this screen: a
-  // customer who ordered three things is one doorstep.
-  function tickedGroups() {
+  // ★ A ROW ON THIS SCREEN IS ONE STOP (v301), and that is the correction this version makes.
+  //
+  // A customer who ordered three things is one doorstep — that was v191's correction. Now a
+  // SELF COLLECTION POINT carrying four customers' orders is ALSO one stop, which is the whole
+  // reason Points exist: four bags at Farlim is one place a van goes, not four.
+  //
+  // Every group that went to the same Point is gathered into one row here, BEFORE anything is
+  // ticked, priced or counted, so everything downstream asks the ROWS and cannot disagree with
+  // what the trip is actually made of. A group with no Point keeps a row to itself, so a run
+  // with no Points on it behaves exactly as it always has.
+  function rowsNow() {
     const day = dayRowNow();
     if (!day) return [];
-    return day.groups.filter((g) => ticked.has(groupKey(g)));
+    const byStop = new Map();
+    const rows = [];
+    for (const g of day.groups) {
+      // The key comes from `stopKeyOf` and nowhere else. A ticked set, the price's own
+      // identity and the "put this customer on the run" path all name a row by this key, so
+      // a second way of spelling it is a row that is on the trip and not on the screen.
+      const key = stopKeyOf(state, g);
+      let row = byStop.get(key);
+      if (!row) {
+        row = { key, pointId: key.startsWith("point:") ? key.slice(6) : "", groups: [] };
+        byStop.set(key, row);
+        rows.push(row);
+      }
+      row.groups.push(g);
+    }
+    return rows;
   }
 
+  // The rows she has ticked. The key is the row's, so a Point is ticked as ONE thing.
+  function tickedRows() {
+    return rowsNow().filter((r) => ticked.has(r.key));
+  }
+
+  // The groups behind those rows, for anything that counts people or bread — the load, the
+  // per-customer pay, and the message. Flattened rather than changed, so those all keep
+  // working exactly as they did.
+  function tickedGroups() {
+    return tickedRows().flatMap((r) => r.groups);
+  }
+
+  // EVERY ORDER on the ticked rows — not one per row — because this is what the DOUBLE-BOOKING
+  // guard is asked about (`liveJobProblem`), and a Point is booked if ANY customer in it is
+  // already on a van. One order per row would walk straight past a Point whose second customer
+  // has a trip running, and put that Point on a second van: the v242 fault, at a place.
+  //
+  // ⚠️ THE TRIP IS NOT BUILT FROM THIS. It is built one representative per ROW, in `askBody` —
+  // the two lists are deliberately different lengths, and confusing them is the fault.
   function tickedOrders() {
-    return tickedGroups().map((g) => g.orders[0]).filter(Boolean);
+    return tickedGroups().flatMap((g) => g.orders).filter(Boolean);
   }
 
   // A CUSTOMER WHO ALREADY HAS A TRIP RUNNING (v242). They stay on the list — she asked to be
@@ -185,27 +235,31 @@ export function renderDeliveryRun(root, state, params) {
   // The tick itself stays LIVE. Her instruction, twice over: guide, never a gate. If she ticks a
   // booked customer anyway the app honours it and refuses at the Book press instead, with the
   // reason on screen — which is why the row has to SAY it is booked rather than go inert.
-  function bookedGroups() {
-    const day = dayRowNow();
-    return day ? day.groups.filter((g) => liveJobOf(g.orders[0])) : [];
+  // A row is "already on a trip" when ANY customer in it is — a Point whose orders include a
+  // customer already riding a van is a place a driver is on the way to, and sweeping the rest
+  // of that Point onto a second van would be the v242 fault at a place instead of a door.
+  const rowIsBooked = (r) => r.groups.some((g) => liveJobOf(g.orders[0]));
+
+  function bookedRows() {
+    return rowsNow().filter(rowIsBooked);
   }
 
-  function tickableGroups() {
-    const day = dayRowNow();
-    return day ? day.groups.filter((g) => !liveJobOf(g.orders[0])) : [];
+  function tickableRows() {
+    return rowsNow().filter((r) => !rowIsBooked(r));
   }
 
-  // Asked of the TICKABLE groups only, so the bulk press still flips its label over a booked
+  // Asked of the TICKABLE rows only, so the bulk press still flips its label over a booked
   // row even though that row is not its to tick.
   function allTicked() {
-    const gs = tickableGroups();
-    return gs.length > 0 && gs.every((g) => ticked.has(groupKey(g)));
+    const rs = tickableRows();
+    return rs.length > 0 && rs.every((r) => ticked.has(r.key));
   }
 
   // The identity of the SET that was priced, so a price can be tied to the exact list it
-  // was asked for rather than to a count that two different lists can share.
+  // was asked for rather than to a count that two different lists can share. The row keys,
+  // because a row is what was ticked.
   function codesNow() {
-    return tickedGroups().map(groupKey).sort().join("|");
+    return tickedRows().map((r) => r.key).sort().join("|");
   }
 
   function stale() {
@@ -228,7 +282,7 @@ export function renderDeliveryRun(root, state, params) {
   function pickTicked() {
     const day = dayRowNow();
     // Every tickable customer on, and a booked one left OFF (v242) — tickableGroups, above.
-    ticked = new Set(tickableGroups().map(groupKey));
+    ticked = new Set(tickableRows().map((r) => r.key));
     if (day) pickupDay.value = String(day.date || "");
   }
 
@@ -259,7 +313,7 @@ export function renderDeliveryRun(root, state, params) {
   // correct them WITHOUT rebuilding the rows, which would throw away the row under her finger.
   const headTitle = el("span", { class: "run-head-title" });
   const headBtn = button("Tick them all", () => {
-    ticked = allTicked() ? new Set() : new Set(tickableGroups().map(groupKey));
+    ticked = allTicked() ? new Set() : new Set(tickableRows().map((r) => r.key));
     compare = {};
     paintList();
     paintLoad();
@@ -270,31 +324,44 @@ export function renderDeliveryRun(root, state, params) {
   function paintHead() {
     const day = dayRowNow();
     if (!day) return;
-    const booked = bookedGroups().length;
+    const booked = bookedRows().length;
     // The count keeps its old shape and only gains a note, so a day with nothing booked reads
     // exactly as it always did. The booked ones are named because the denominator counts them:
     // a list whose head said "2 of 3" over three visible rows would be the app losing a customer.
-    headTitle.textContent = `Who is on the run — ${ticked.size} of ${day.groups.length}`
+    headTitle.textContent = `Who is on the run — ${ticked.size} of ${rowsNow().length}`
       + (booked ? ` · ${booked} already booked` : "");
     headBtn.textContent = allTicked() ? "Untick them all" : "Tick them all";
     // A press that would change nothing is inert rather than silently doing nothing: on a day
     // where every order is booked there is nothing for it to tick, and a live-looking button
     // that answers no tap is the shape of fault she has reported before.
-    headBtn.disabled = !allTicked() && ticked.size === tickableGroups().length;
+    headBtn.disabled = !allTicked() && ticked.size === tickableRows().length;
   }
 
   function paintList() {
     const day = dayRowNow();
     if (!day) { listBox.replaceChildren(); return; }
-    const rows = day.groups.flatMap((g) => {
-      const first = g.orders[0];
-      const key = groupKey(g);
+    // flatMap, NOT map: each row hands back `[row, ...tail]` — the row itself plus any blocks
+    // that belong under it — and a plain map would leave those as nested arrays, which the DOM
+    // then converts with String() into the words "[object HTMLElement]".
+    const rows = rowsNow().flatMap((r) => {
+      // ★ A POINT ROW IS A PLACE, NOT A PERSON (v301). Its door is the Point's own pin, the
+      // name on the row is the Point's, and the customer's own name and delivery address have
+      // nothing to do with it — the bread is going to Farlim, and the customer is meeting it
+      // there. The row also has to say HOW MANY orders it is carrying, because that count is
+      // the whole reason it is one row instead of four.
+      const isPoint = !!r.pointId;
+      const point = isPoint ? pointById(state, r.pointId) : null;
+      const first = r.groups[0].orders[0];
+      const key = r.key;
       // THE DOOR — the point this run is priced at and a driver is sent to. v209: where the
       // customer dropped a pin of their own, that pin is the door, even if a door of hers
-      // still exists for them; only a door she placed with her own hand outranks it.
-      const place = doorSpotOf(state, first);
+      // still exists for them; only a door she placed with her own hand outranks it. A Point
+      // has no customer pin to weigh: its own pin IS the door.
+      const place = isPoint ? pointPlace(point) : doorSpotOf(state, first);
       const tick = el("input", { type: "checkbox", class: "run-tick",
-        "aria-label": `Send ${nameOf(first)} on this run` });
+        "aria-label": isPoint
+          ? `Send the orders collecting at ${rowName(state, r)} on this run`
+          : `Send ${nameOf(first)} on this run` });
       tick.checked = ticked.has(key);
       tick.addEventListener("change", () => {
         if (tick.checked) ticked.add(key); else ticked.delete(key);
@@ -307,36 +374,57 @@ export function renderDeliveryRun(root, state, params) {
         paintPay();
         paintPrices();
       });
-      const what = g.orders.map((o) => `${String(o.productName || "item").trim()} ×${Number(o.qty) || 0}`).join("  ·  ");
+      const what = r.groups.flatMap((g) => g.orders)
+        .map((o) => `${String(o.productName || "item").trim()} ×${Number(o.qty) || 0}`).join("  ·  ");
       // AND A DOOR THAT IS ONLY THE ROAD SAYS SO ON ITS OWN ROW TOO (v211), in the SHORT form:
       // the row already leads with the address on the order, house number and all, so the tag
       // is all it needs — and this is the screen where a run of several doorsteps is read at
       // once, which is exactly where a street wearing a house's name would be missed. Only her
       // own door can carry the stamp (a lookup is what writes one), so where the customer's own
       // pin is the door there is nothing to warn about and nothing is said.
-      const road = doorIsTheirs(state, first) ? "" : doorRoadOf(state, first);
+      const road = (!isPoint && !doorIsTheirs(state, first)) ? doorRoadOf(state, first) : "";
       const where = place
         ? fmtPlace(place) + (road ? ` — ${roadNotHouse(road, { short: true })}` : "")
-        : dropAddress(first)
-          ? `${dropAddress(first)} — doorstep not pinned`
-          : "no delivery address on this order yet";
-      const row = el("div", { class: "run-row" },
+        : (isPoint
+          ? (String((point && point.address) || "").trim()
+            ? `${String(point.address).trim()} — Point not pinned`
+            : "this Point is not pinned yet")
+          : dropAddress(first)
+            ? `${dropAddress(first)} — doorstep not pinned`
+            : "no delivery address on this order yet");
+      // HOW MANY ORDERS THIS STOP IS CARRYING. On a Point row it leads, because "4 orders" is
+      // what makes it one stop; on a customer's row it has always been the bread itself.
+      const carried = isPoint
+        ? `${r.groups.length} order${r.groups.length === 1 ? "" : "s"} collecting here`
+        : "";
+      // ★ WHEN THEY CAN COLLECT, on the row (v305). Her ask, and it is the one number this screen
+      // was missing: the hours she set on the Point (v304) decide when the bread has to be THERE
+      // and handed over, so a trip booked for the wrong part of the day is visible here rather
+      // than a day later. Silent when she has not set any — the card already says so, and a row
+      // that repeats "no hours" on every run is noise on the screen she reads while working.
+      const hours = isPoint ? pointWindowText(point) : "";
+      const row = el("div", { class: `run-row${isPoint ? " run-row-point" : ""}` },
         el("label", { class: "run-who" },
           tick,
           el("span", { class: "run-words" },
-            el("span", { class: "run-name" }, nameOf(first)),
-            el("span", { class: "run-sub" }, [where, what].filter(Boolean).join(" · ")))),
-        place ? null : button("Put it on the map", () => pinDoorstep(first), "ghost small"));
+            el("span", { class: "run-name" }, isPoint ? rowName(state, r) : nameOf(first)),
+            el("span", { class: "run-sub" }, [carried, where, hours ? `collect ${hours}` : "", what].filter(Boolean).join(" · ")))),
+        // A Point is pinned on its own card, where the pin belongs to the PLACE — not from
+        // here, where the press would look like it pinned this run's version of it.
+        isPoint
+          ? (place ? null : button("Pin the Point", () => openPointPinPicker(state, point, () => { paintList(); paintLoad(); }), "ghost small"))
+          : (place ? null : button("Put it on the map", () => pinDoorstep(first), "ghost small")));
       // ALREADY ON A TRIP (v242). Her report: a customer whose courier booking is already made
       // must never be swept onto a second van. The block sits OUTSIDE the row's <label> for the
       // same reason the door offer below does — a press in there would tick the customer rather
       // than call the trip off. The tick itself stays LIVE (her instruction, twice over: guide,
       // never a gate) and the words carry the warning instead, with the one press that turns
       // this row back into an ordinary one.
-      const job = liveJobOf(first);
+      const bookedGroup = r.groups.find((g) => liveJobOf(g.orders[0]));
+      const job = bookedGroup ? liveJobOf(bookedGroup.orders[0]) : null;
       const holder = job ? (courierByKey(job.provider) || courier) : null;
       const offBtn = job
-        ? button("Call off the trip and add to this run", () => callOffTrip(g, job, holder), "ghost small")
+        ? button("Call off the trip and add to this run", () => callOffTrip(bookedGroup, job, holder), "ghost small")
         : null;
       // Greyed while a courier call of any kind is in flight, so the press cannot be taken twice.
       if (offBtn) offBtn.disabled = Boolean(busy);
@@ -353,7 +441,9 @@ export function renderDeliveryRun(root, state, params) {
       //
       // ONE CONTROL, TWO DIRECTIONS (v209): with the customer's own pin normally the door in
       // force, the press on offer can as easily be the door SHE keeps. `which` says which.
-      const offer = doorSwitchOf(state, first);
+      // A POINT HAS NO CUSTOMER PIN TO WEIGH — the question this block asks is "whose door is
+      // in force, the one you keep or the one they dropped", and at a Point neither exists.
+      const offer = isPoint ? null : doorSwitchOf(state, first);
       // `which: "customer"` means HER door is the one in force and the pin they dropped is the
       // alternative, so the words and the press both split on this one flag and nothing else.
       const theirs = Boolean(offer && offer.which === "customer");
@@ -448,7 +538,9 @@ export function renderDeliveryRun(root, state, params) {
     // customer's order edited and re-split later does not keep a trip that is no longer running.
     // Then the customer joins the run, which is the whole point of the press.
     stampTrip(g.orders, tripCalledOff(job), holder.label);
-    ticked.add(groupKey(g));
+    // The same key a row is built with, so a customer collecting at a Point really does join
+    // the run rather than being ticked under a name no row answers to.
+    ticked.add(stopKeyOf(state, g));
     // The standing price describes a list that has just changed, so it is thrown away rather
     // than left standing beside a run it no longer prices.
     priceAgain();
@@ -501,9 +593,13 @@ export function renderDeliveryRun(root, state, params) {
   // ── the load, which is shown and never judged ─────────────────────────
 
   function paintLoad() {
-    const groups = tickedGroups();
-    const load = loadOf(state, groups);
-    if (!groups.length) {
+    // ONE SYNTHETIC GROUP PER ROW, carrying every order of every customer in it. `loadOf`
+    // counts its stops as the number of things handed to it, so this is what makes "stops"
+    // mean STOPS: four orders at one Point are one stop, not four — while the bread is still
+    // counted line by line, because the synthetic group holds all of them.
+    const rows = tickedRows().map((r) => ({ orders: r.groups.flatMap((g) => g.orders) }));
+    const load = loadOf(state, rows);
+    if (!rows.length) {
       loadLine.replaceChildren("Nothing is ticked, so there is no load to count.");
       return;
     }
@@ -587,8 +683,9 @@ export function renderDeliveryRun(root, state, params) {
 
   async function ask() {
     if (busy || !root.isConnected) return;
-    const groups = tickedGroups();
-    if (!groups.length) { toast("Tick at least one customer — a run has to carry somebody."); return; }
+    // ★ ROWS, not customers (v301). A row is one STOP, and the trip is built from stops.
+    const rows = tickedRows();
+    if (!rows.length) { toast("Tick at least one customer — a run has to carry somebody."); return; }
     const problem = windowProblem(winFrom.value, winTo.value);
     if (problem) { statusLine.textContent = problem; return; }
 
@@ -600,13 +697,13 @@ export function renderDeliveryRun(root, state, params) {
     await guarded({
       btn: askBtn,
       hold: (v) => { busy = v; },
-      work: () => askBody(groups),
+      work: () => askBody(rows),
       said: (s) => { statusLine.textContent = s; },
       trouble: "The price could not be asked for, and nothing has been priced",
     });
   }
 
-  async function askBody(groups) {
+  async function askBody(rows) {
     busy = true;
     askBtn.disabled = true;
     priceAgain();
@@ -626,7 +723,11 @@ export function renderDeliveryRun(root, state, params) {
     //    AND A CUSTOMER WHO LEFT A PIN OF THEIR OWN IS NOT LOOKED UP AT ALL (v208) —
     //    their point IS the door, exactly as on the single-order card. Same reason, and
     //    it is the same bug: a lookup moves the dot off their door and onto the street.
-    const unplaced = groups.filter((g) => !dropPlaceOf(state, g.orders[0]));
+    // A POINT HAS NO ADDRESS TO LOOK UP FROM HERE — it is pinned on the Points screen, where
+    // the pin belongs to the place. Sweeping it in would look up the Point's address and
+    // write the answer as a CUSTOMER's door, which is the v209 fault in a new coat.
+    const unplaced = rows.filter((r) => !r.pointId).flatMap((r) => r.groups)
+      .filter((g) => !dropPlaceOf(state, g.orders[0]));
     for (let i = 0; i < unplaced.length; i++) {
       const first = unplaced[i].orders[0];
       const words = dropAddress(first);
@@ -675,8 +776,9 @@ export function renderDeliveryRun(root, state, params) {
       return;
     }
 
-    // ONE ROW PER GROUP, which is the shape the courier's own stop list needs.
-    const trip = tripOf(state, groups.map((g) => g.orders[0]), { scheduleAt: schedule() });
+    // ONE ORDER PER ROW, which is what makes the trip have one stop per POINT: `tripOf`
+    // builds a stop from each order it is handed, and a Point's stop is the Point.
+    const trip = tripOf(state, rows.map((r) => r.groups[0].orders[0]), { scheduleAt: schedule() });
     const missing = tripProblem(trip);
     if (missing) {
       busy = false;
@@ -701,7 +803,7 @@ export function renderDeliveryRun(root, state, params) {
       quotes: out.quotes || [],
       failed: out.failed || [],
       codes: codesNow(),
-      stops: groups.length,
+      stops: tickedRows().length,
     };
     paintPay();
     paintPrices();
@@ -752,12 +854,12 @@ export function renderDeliveryRun(root, state, params) {
       whyNode,
       moved ? el("p", { class: "run-warn", style: "margin:10px 0 0" }, moved) : null,
       blocked ? el("p", { class: "card-sub", style: "margin:8px 0 0" }, blocked) : null,
-      runLimitProblem(tickedGroups().length)
-        ? el("p", { class: "card-sub", style: "margin:8px 0 0" }, runLimitProblem(tickedGroups().length))
+      runLimitProblem(tickedRows().length)
+        ? el("p", { class: "card-sub", style: "margin:8px 0 0" }, runLimitProblem(tickedRows().length))
         : null,
       quotes.length ? el("p", { class: "card-sub", style: "margin:12px 0 0" },
-        `Booking books the whole run as ONE ${courier.label} trip: one vehicle, ${tickedGroups().length} doorstep${tickedGroups().length === 1 ? "" : "s"}, ` +
-        (tickedGroups().length === 1
+        `Booking books the whole run as ONE ${courier.label} trip: one vehicle, ${tickedRows().length} stop${tickedRows().length === 1 ? "" : "s"}, ` +
+        (tickedRows().length === 1
           ? "and the trip's own share link, which goes on that customer's track card and message. "
           : `and the trip's ONE share link is deliberately kept OFF the customers' own track cards and messages — it opens the whole journey, so it would show each of them the other doorsteps (v218). A single-customer run keeps its link, because there is nobody else in it. `) +
         "Booking writes each order's charge into its box — their own doorstep's cost when the customer bears it, your apportioned part of the run's fee when you do — with the payer, the method and the COD answer you set below, and saves it there and then. A real vehicle is on a real road the moment the press returns, so there is nothing to discard by walking away.") : null,
@@ -852,17 +954,19 @@ export function renderDeliveryRun(root, state, params) {
   // Every doorstep or nothing: a sum missing one trip is smaller than the truth, so a saving
   // worked out from it — or a customer's charge — would be this screen making a number up.
   async function priceSeparately(service, onProgress) {
-    const groups = tickedGroups();
+    // ROWS again, and for the same reason: what is priced separately is what the van is
+    // sent to, and a Point is one of those.
+    const rows = tickedRows();
     const scheduleAt = priced.trip.scheduleAt;
     const amounts = [];
     let reason = "";
-    if (onProgress) onProgress(0, groups.length);
-    for (let i = 0; i < groups.length; i++) {
+    if (onProgress) onProgress(0, rows.length);
+    for (let i = 0; i < rows.length; i++) {
       if (i) await wait(SEPARATE_GAP_MS);
       if (!root.isConnected) return { ok: false, reason: "" };
       // ONE ROW PER GROUP again — the same correction as the run's own trip, and the same
       // pinned doors it was priced from.
-      const one = tripOf(state, [groups[i].orders[0]], { scheduleAt });
+      const one = tripOf(state, [rows[i].groups[0].orders[0]], { scheduleAt });
       const out = await courier.quote(state, one, { services: [service], scheduleAt });
       if (!root.isConnected) return { ok: false, reason: "" };
       if (!out.ok) { reason = out.reason; break; }
@@ -873,9 +977,9 @@ export function renderDeliveryRun(root, state, params) {
         break;
       }
       amounts.push(hit.amount);
-      if (onProgress) onProgress(amounts.length, groups.length);
+      if (onProgress) onProgress(amounts.length, rows.length);
     }
-    if (reason || amounts.length !== groups.length) {
+    if (reason || amounts.length !== rows.length) {
       return { ok: false, reason: reason || "One of these doorsteps could not be priced on its own." };
     }
     return { ok: true, amounts };
@@ -888,7 +992,7 @@ export function renderDeliveryRun(root, state, params) {
     // dead-control fault as the presses above, said in a different place (v217). So the row
     // is resolved on the way out whatever happened.
     try {
-      compare[service] = { state: "busy", done: 0, total: tickedGroups().length };
+      compare[service] = { state: "busy", done: 0, total: tickedRows().length };
       paintPrices();
       await compareTripsNow(service);
     } catch (err) {
@@ -1064,7 +1168,7 @@ export function renderDeliveryRun(root, state, params) {
     el("div", { class: "card" },
       el("h2", {}, "Delivery run"),
       el("p", { class: "card-sub" },
-        `One vehicle, ${courier.label}'s own fare, several doorsteps. A multi-stop trip is charged as one base fare plus a fee for each extra stop, so the run below is priced as one trip — and can be compared against the same doorsteps sent one at a time, which is the money this screen is for.`),
+        `One vehicle, ${courier.label}'s own fare, several stops. A multi-stop trip is charged as one base fare plus a fee for each extra stop, so the run below is priced as one trip — and can be compared against the same stops sent one at a time, which is the money this screen is for. A stop is a customer's door, or a Self collection Point carrying several customers' orders.`),
       el("div", { class: "field", style: "margin-top:12px" },
         el("label", {}, "The delivery day"), daySel),
       listBox,
@@ -1113,16 +1217,23 @@ export function renderDeliveryRun(root, state, params) {
 
 // ── reading the day ─────────────────────────────────────────────────────
 
-// Every saved delivery day that has at least one courier order on it, soonest first.
+// Every saved delivery day that has at least one order needing a van on it, soonest first.
 //
-// A day with a single courier order is included on purpose: sending one order by courier is
-// an ordinary thing to do, it is priced as an ordinary one-stop trip, and hiding the day
-// would leave her no way to book it from here.
+// A day with a single order is included on purpose: sending one order by courier is an
+// ordinary thing to do, it is priced as an ordinary one-stop trip, and hiding the day would
+// leave her no way to book it from here.
+//
+// ⚠️ `needsVan`, NOT `fulfillment === "courier"` (v302). That test is what made this screen
+// say "Nothing to run yet" while a customer's order sat waiting to be collected at Farlim:
+// choosing a Self collection Point in the shop leaves `fulfillment` as `"collect"`, so every
+// Point order was filtered out HERE, before the row logic below could ever see one. The rule
+// lives in courier_job.js because the Delivery dates screen's own "Run (N)" button asks it
+// too, and two readings of one rule is exactly how they came apart.
 function runDays(state) {
   const byDay = new Map();
   for (const g of groupOrders(state.orders || [])) {
     const first = g.orders[0];
-    if (!first || first.fulfillment !== "courier") continue;
+    if (!needsVan(state, first)) continue;
     // A parcel she posts herself (v226) does NOT go on a van run. It goes to the
     // carrier's counter or pickup, so a run that swept it in would be pricing a
     // vehicle for a box that is already on its way — and the customer, who is being
@@ -1151,13 +1262,17 @@ function defaultDay(days) {
   return ((ahead || days[days.length - 1] || days[0] || {}).id) || "";
 }
 
-// A group's identity for ticking. It is the key `groupOrders` itself groups on — the same
-// key, not a second reading of it derived from the order code — so two rows can never be
-// ticked as one customer, or one customer counted twice on a run.
-function groupKey(g) {
-  const first = g && g.orders && g.orders[0];
-  if (!first) return "";
-  return String(first.groupId || first.id || "");
+// A group's identity for ticking — `stopKeyOf`, in courier_job.js, because the Delivery dates
+// screen's "Run (N)" button counts the same stops and must land on the same number. It groups
+// on the key `groupOrders` itself groups on, not a second reading of it derived from the order
+// code, so two rows can never be ticked as one customer or one customer counted twice.
+
+// WHAT A STOP ROW IS CALLED. A customer's row has always been their name; a Point's row is
+// the Point — and it is read from the LIVE Point rather than off the order, because a Point
+// she has since renamed should read as it is called now, on the screen she is working on.
+function rowName(st, r) {
+  const point = r && r.pointId ? pointById(st, r.pointId) : null;
+  return point ? point.name : nameOf(r.groups[0].orders[0]);
 }
 
 function nameOf(order) {

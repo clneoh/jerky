@@ -1,8 +1,633 @@
-# Munchies Furkidz — change history (v54 → v297)
+# Munchies Furkidz — change history (v54 → v311)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**05 Oct 2026 — engine v311, THE ADDRESS BOX SAYS WHY IT ISN'T SUGGESTING (ONE STEP FOR YOU, BELOW —
+the app side is a push, the reason needs a redeploy).**
+
+**Why.** Your words: __"why sometimes in add order or edit order, the address is not auto complete,
+and the map dont show?"__ — and then, precisely: __"the suggestion list never appear"__. **It was
+true, and the app never said why. It knew, and stayed quiet.**
+
+**★ WHAT WAS HAPPENING.** The suggestions are a Google feature that has to be switched on, and the
+server deliberately answered a switched-off one with **a plain "no" and no error** — its own words:
+__"this reaches her as a box that simply does not suggest, which is exactly what it did before this
+version existed."__ That reads well until the feature __does__ exist and **never works**: a box that
+never suggests and never explains itself is indistinguishable from a broken box.
+
+**What you see now.** When the suggestions cannot work, the box says so, in the place the list would
+have been:
+
+  **Address suggestions are switched off — Google refused the request. The Google key needs Places
+  API (New) enabled and allowed.**
+
+**★ AND IT SAYS IT ONCE, THEN STOPS ASKING.** A line under a field she is typing in must not flicker,
+and a phone must not spend a request per keystroke to be told the same thing. And the box now
+**marks the difference between the two kinds of failure**: something you must fix (not signed in;
+the Google key not allowed to use Places) is **said out loud**; a signal dropping out is **not**,
+because that one passes on its own and the suggestions come back by themselves.
+
+**⚠️ THE ONE THING THIS NEEDS FROM YOU: the __reason__ travels in the server's answer, so the `courier`
+function has to be uploaded again.** The exact line is in the commit notes below. **Until it is
+uploaded the box stays exactly as it is today.** Nothing else changes, and nothing is broken by
+uploading it.
+
+**⚠️ AND THE SCREENSHOT FOUND A SECOND FAULT THAT HAD ALREADY SHIPPED — a real one, mine, and this
+one is worth reading.** Looking at the real card, the EasyParcel block was printing the **literal
+word "null"** under the weight box and **three more beside its buttons**. The block builds its own
+contents as a list with optional parts in it, and **`replaceChildren(null)` does not skip a null — it
+inserts a text node reading "null".** **Every one of the 2,758 tests passed while it was on your
+screen**, because the test shims quietly filter nulls for you. **A forgiving stub hid a real fault**
+— the same lesson as v226, word for word. It is fixed, and the real-browser check that would have
+caught it is now in place and was watched going red.
+
+**Your data is untouched.** No SQL, no order, product, price or posting day touched. The suite is
+**2,758 tests, all green**, and the real card now runs **41 checks** on the Orders screen and **9**
+on the address box.
+
+**04 Oct 2026 — engine v310, THE SAME DIVIDE ON EVERY CARD (no database step, nothing to upload —
+pushing this one is the whole of it).**
+
+**Why.** Your words, right behind v309: __"the drawing of line between parcel and lalamove should be
+consistent over the app"__. You were only half-served — v309 put the two headings on the **Edit**
+card and nowhere else.
+
+**★ THREE CARDS CARRY BOTH KINDS, SO ALL THREE NOW SAY THE SAME TWO THINGS.** The **Edit** card, the
+**Note / tracking** card, and the **＋ New order** card each draw **Post a parcel** over the parcel
+fields and **Send a van** over the van fields — **from one definition**, so the words cannot drift
+apart. **Two headings on each is not the check; the same two is**, and that is exactly what the new
+test compares.
+
+**⚠️ AND THE WAY I GOT IT WRONG FIRST IS WORTH KNOWING, because it is the kind of thing that would
+have looked fine on paper.** I tried putting the heading __inside__ the parcel block, so that no card
+could ever forget it. **That put it BELOW the consignment number on the Edit card** — the number is
+a field the card itself draws just above that block — so the heading landed in the middle of its own
+group and left the number stranded above it. The test caught it. **The words can be shared; the
+position cannot**, because only the card knows where its own fields are.
+
+**Your data is untouched, and there is nothing to run.** No SQL, no upload, no key. No order,
+product, price or posting day is touched, and no field moved on any card. The suite is **2,756 tests,
+all green**, and the real Orders screen now runs **40 checks** — including that each heading sits
+above its own fields in document order, that neither one says "kind 1", and that **all three cards
+show the same two.**
+
+**04 Oct 2026 — engine v309, THE TWO WAYS AN ORDER LEAVES ARE SAID APART (no database step,
+nothing to upload — pushing this one is the whole of it).**
+
+**Why.** Your words: __"what i see is easy parcel is kind 1, lalamove is kind 2, but the interface
+din draw a clean border between them, so it is quite confusing for user"__. **The first half of that
+sentence is the proof.** You had the two the wrong way round — which you could only do because the
+card never told you which was which. Four labels sat next to each other — **Parcel carrier**,
+**EasyParcel**, **Courier charge**, **Get a delivery price** — with nothing saying what belonged to
+what.
+
+**What changed.** The card now draws a **rule with a name on it**, twice:
+
+  **Post a parcel**  __Nationwide, a few days__
+  — the consignment number, the parcel carrier, and EasyParcel
+
+  **Send a van**  __Today, locally__
+  — the courier charge, who paid it, and **Get a delivery price**
+
+**⚠️ AND THE NAME SAYS WHAT IT DOES, NEVER "KIND 1" OR "KIND 2".** Those are this app's own words
+for the two kinds of courier and they mean nothing on your screen. What you need to know is that one
+of them is a van today and the other is a parcel over a few days — so that is what it says. **Nothing
+moved:** every field is exactly where it was, and each heading went above the fields it already sat
+on, so a heading can never end up announcing the other one's controls.
+
+**⚠️ TWO THINGS I MEASURED RATHER THAN GUESSED, and both would have failed quietly.** My first rule
+used the card's own line colour — **1.25:1 against the surface**, a faint tint that disappears on a
+phone in Malaysian daylight, which is exactly where you read it. **A boundary you cannot see would not
+have answered you.** It is now **3.5:1**, which clears the 3:1 the standard asks of an interface
+edge. And the small grey beside the name — __"Nationwide, a few days"__ — was **3.5:1**, **under the
+4.5:1 that applies to any text**; it is now **5.69:1**. Both were measured in the browser by reading
+the rendered pixels, not worked out on paper.
+
+**Your data is untouched, and there is nothing to run.** No SQL, no upload, no key. No order,
+product, price or posting day is touched, and no field moved on any card. The suite is **2,756 tests,
+all green**, and the real Edit card now runs **36 checks** — including that each heading sits above
+its own fields in document order, and that neither one says "kind 1".
+
+**04 Oct 2026 — engine v308, THE EASYPARCEL BLOCK READS AS OFF, NOT AS BROKEN (no database step,
+nothing to upload — pushing this one is the whole of it).**
+
+**Why.** You looked at EasyParcel's top-up offer and found the thing that decides this: **only an
+account topped up by RM500 enjoys integration.** For a shop that posts the occasional parcel that
+is the wrong money, so **you decided not to sign up** — and you were right. This version is the
+consequence: the EasyParcel block now says so plainly instead of sitting there looking broken.
+
+**What changed.** The block asks the server once, when it opens, whether EasyParcel is set up. If it
+is not, you now get one short paragraph rather than a set of controls that can only ever fail:
+
+  **EasyParcel** — Not set up yet — and nothing here is needed to post a parcel by hand. Record the
+  carrier above and type the consignment number, exactly as before.
+  EasyParcel is not set up yet — its key has not been saved on the server.
+
+**⚠️ AND IT OFFERS NO PRESS AT ALL IN THAT STATE.** No weight box, no "Check the price", no
+"Book it". A button whose only possible answer is the same sentence every time is the shape of a
+dead control, and this app treats a dead control as a bug — so when it is off, it is off.
+
+**The important half is the reassurance, not the apology:** nothing is missing. Posting a parcel by
+hand is how this app has always posted one — record the carrier, type the consignment number — and
+that is completely unchanged. **The API was only ever going to save you the retyping.**
+
+**⚠️ AND A REAL FAULT THIS FOUND, WHICH IS THE PART WORTH KEEPING.** The first attempt had the block
+call the pop-up's own repaint when its answer came back. **That repaint arrived at an unpredictable
+moment while she was working further down the same card — and stranded the door block's own pending
+look-up.** A test caught it (a pin the card had just found was thrown away). **Every other block in
+this app paints ITSELF and leaves the card alone** — `paintCourier`, `paintParcel`, `paintPoint` —
+and this block now does the same. One repaint of the whole card, on the booking, because that one
+changes the tracking box above it.
+
+**Your data is untouched, and there is nothing to run.** No SQL, no upload, no key, no account. No
+order, product, price or posting day is touched. The suite is **2,756 tests, all green**, and the real
+Edit card now runs **29 checks** — including five that can only be answered with the key absent,
+which is how it will be for you.
+
+**04 Oct 2026 — engine v307, THE EASYPARCEL SEAM (no database step in the app — but ONE
+one-time step for you, below).**
+
+**Why.** You asked to compare Ninja Van and SPX, and the honest answer turned out to be that
+**you do not integrate with a carrier — you integrate with an aggregator.** Ninja Van's own API
+is not self-serve (you must have an account, ask their sales team by email for even a sandbox,
+and production keys come only after an "integration audit" with sample orders). SPX has no public
+direct API at all for someone who is not a Shopee seller. **EasyParcel carries both** — along with
+J&T, Pos Laju and DHL — and its API **is** self-serve, with a free demo environment. That is the
+same choice you made back on 28 September: __"record first, the booking API after / EasyParcel
+behind that API"__.
+
+**★ WHAT YOU GET: ONE PRESS, EVERY CARRIER, PRICED FOR THIS PARCEL.** On an order's **Edit** card
+there is now an **EasyParcel** block. Type the parcel's weight, press **Check the price**, and
+every carrier they use comes back with a price for **that parcel, to that postcode, at that
+weight** — cheapest first, with the delivery time and whether they collect or you drop off:
+
+  **J&T Express — RM6.20** · J&T Standard · 3-5 working day(s) · drop off · they collect · cheapest
+  **SPX — RM7.10** · SPX Express · 3-4 working day(s) · drop off · they collect
+  **Ninjavan — RM9.40** · Ninja Van Standard · 2-3 working day(s) · they collect
+
+**That is the comparison you asked for, done per parcel instead of guessed at from a blog post.**
+The cheapest is marked but **never chosen for you** — which carrier to use is your call, and the
+reason to show several is that the cheapest is not always the one you want.
+
+**★ AND YOUR WALLET IS WARNED BEFORE, NOT AFTER.** EasyParcel is **prepaid**: a booking with too
+little credit fails **with the parcel already packed**. So the balance is shown beside the price,
+and when it is short it says so plainly — __"Your EasyParcel balance is RM4.20 and this parcel
+costs RM6.20 — top it up before booking, or the booking will fail with the parcel already
+packed."__ When a booking does come back refused, **their own words are shown** — "Insufficient
+Credit" — rather than a generic failure.
+
+**★ BOOKING SAYS THE PRICE AND THEN PAYS IT.** Pressing Book asks first, naming the courier and the
+amount — __"Book this parcel with SPX for RM7.10?"__ — and only then books and pays in one call.
+**The consignment number is SAVED AT ONCE**, not left waiting for a Save that may never come: the
+same rule your booked trips already follow, because a parcel that has been paid for must not be
+discardable by closing a card. It lands in the tracking box, where every screen already reads it.
+
+**WHAT THIS DOES NOT DO, said plainly rather than discovered.**
+
+- **It does not write the consignment number onto the customer's card by itself** — it goes in the
+  tracking box, exactly as a parcel you booked by hand does.
+- **It does not pick your carrier record for you.** EasyParcel's name for a service is not your
+  own list's entry, so booking fills in the number and leaves the carrier box alone — one press
+  above if you want it named.
+- **It is not required.** Posting a parcel by hand still works exactly as it did — record the
+  carrier, type the number. This is offered beside that, never instead of it.
+- **Dry and sealed only, unchanged.** Fresh focaccia and anything frozen are still not parcels.
+
+**⚠️ ONE THING ONLY YOU CAN DO, and it is a signup, not a key in chat.** Sign up at
+easyparcel.my, complete the account verification, and register the key for API access — their
+three steps. Then the key is stored **on the server** (never in the app, never in a browser) with
+two Terminal commands, which are written at the top of the new function. Until that is done the
+block says so in words and nothing else changes. **Set it to DEMO first** — the demo host books a
+parcel nobody collects, which is how you can try the whole thing before a sen is spent.
+
+**Your data is untouched, and there is nothing to run in the app.** No SQL, no upload. No order,
+product, price or posting day is touched, and every screen behaves exactly as it did. The suite is
+**2,756 tests, all green**, including **thirty-six** new ones — the wire format against
+EasyParcel's own 55-page document, the address reading, and the seam end to end on the real card.
+
+**04 Oct 2026 — engine v306, THE SMALLEST BASKET A POINT WILL TAKE (no database step, nothing to
+upload — pushing this one is the whole of it).**
+
+**Why.** Your ask: __"the per-point minimum order, this should be switchable"__. It is exactly
+that — **per Point, and switchable**, on the Point's own card.
+
+**★ THE SWITCH, AND WHERE IT COMES FROM.** On a Point you now get **Minimum order** with two
+choices — **No minimum** and **Only on a basket of at least** — and the second one opens a
+**Smallest basket (RM)** box. That is the SAME switch the Promo codes screen has used since v269,
+because a minimum is a minimum and learning a second shape for one idea is how two screens come to
+mean two different things by one word. **You picked ringgit**, out of the two units offered, so
+"a basket of RM30" means the same thing everywhere in the app.
+
+**⚠️ EVERY POINT STARTS WITH NO MINIMUM**, which is where they already are and what you asked for
+when this whole feature was being discussed — __"keep it as simple as possible, say no minimum for
+self collect order"__. The card says so plainly: **No minimum order — one loaf still goes.**
+
+**On your card.** Each Point's row now reads **Minimum order RM30.00**, or the sentence above.
+
+**In your shop.** A Point whose smallest basket the customer has not reached is **PARKED, NOT
+HIDDEN** — it stays on the page with the reason in its own line:
+
+  **Farlim, Air Itam**
+  Needs a basket of RM30.00 or more — yours is RM15.00 so far
+
+Tapping it says the same sentence rather than silently doing nothing, and **the moment their basket
+reaches RM30 the Point opens up — on the same repaint, with no reload.** Add a loaf and watch it;
+take one back and it parks again, **and a Point they had already chosen falls back to your
+kitchen**, because the shop cannot post an order to a Point whose basket is not met.
+
+**⚠️ THIS IS YOUR RULE, SO THE SHOP HONOURS IT — and that is not the same as a gate.** The thing
+your standing instruction forbids is a rule **the app invents** (a closed day, a sold-out line)
+standing between you and a sale. A smallest basket is a rule **you typed on your own Point**, so
+enforcing it is the shop doing what you asked. **Nothing on your own side is blocked:** an order you
+take over the phone for one loaf at Farlim is yours to take, and the app will not argue.
+
+**⚠️ AND ONLY WHAT THE SHOP NEEDS LEAVES YOUR APP.** The Point's smallest basket is now published
+along with its id and name — **the receiver, their phone, the fee and the address still never do**.
+A smallest basket is the opposite of private: it is exactly what the customer has to know __before__
+choosing, and without it the page could only take an order the Point does not want.
+
+**Your data is untouched, and there is nothing to run.** No database step, no upload, no key. Every
+Point you already have carries no minimum, so **every one of them behaves exactly as it did
+yesterday** — proved rather than asserted: the shop's own v299 checks still pass, 20 of 20, with
+Points published that have no minimum at all. The suite is **2,720 tests, all green**, including
+eight new ones, and every one was watched going red with the fault put back.
+
+**04 Oct 2026 — engine v305, THE HOURS ON THE RUN ROW (no database step, nothing to upload —
+pushing this one is the whole of it).**
+
+**Why.** Your ask, and it is the one number the Delivery run was missing. The collection hours you
+set on a Point decide **when the treats has to BE THERE and handed over** — so a trip booked for the
+wrong part of the day should be visible on the screen where you spend the money on a van, not
+discovered a day later.
+
+**What you see.** A Point's row on the run now reads:
+
+  **Farlim, Air Itam** — 2 orders collecting here · Lebuhraya Thean Teik · **collect 2-6 pm** ·
+  Focaccia x2 · Focaccia x1 · Focaccia x3
+
+**Where, then when, then what** — the address, then the hours, then the treats.
+
+**And it says nothing when you have not set any.** The card already tells you a Point has no
+collection window; repeating it on every run row would be noise on the screen you read while
+working. A customer's own doorstep never claims hours either — a doorstep is not a place with
+opening times.
+
+**Your data is untouched, and there is nothing to run.** No database step, no upload, no key. A
+Point with no hours behaves exactly as it did yesterday, a doorstep's row is unchanged, and the
+load line is untouched. The suite is **2,712 tests, all green**, including three new ones, and
+every one was watched going red with the fault put back. **One of them taught something worth
+keeping:** the check that a doorstep never shows hours stayed GREEN under the first fault I tried
+— because reading a null Point already gives nothing — so the fault was not the one I had chosen.
+Re-pointed at the mistake that would really do it, *taking the hours from whatever Point happens
+to be first rather than from this row's*, it turns red by its own name.
+
+**04 Oct 2026 — engine v304, THE COLLECTION WINDOW (no database step, nothing to upload —
+pushing this one is the whole of it).**
+
+**Why.** This is the piece we left open, and you chose it from three: **the window belongs to the
+PLACE.** You type it once on the Point — __"Farlim: collect 2-6 pm"__ — and every order collecting
+there is promised it. Not the van's arrival window, which is a different thing entirely.
+
+**What you see, on More → Self collection Points.** Every Point's card gains **"Customers can
+collect from"** and **"and until"** — two time boxes, the same pair the Delivery run fills in for
+the van, so a window means one thing in this app and is read by one piece of code. And the row
+itself now says which of the two it is: **🕑 Collect 2-6 pm**, or **🕑 No collection window —
+customers are told the day only.**
+
+**What your customer is told.** The confirmation, the payment reminder and the pickup reminder all
+name the place **and the hours**: __"Self collect at Farlim, Air Itam, collect 2-6 pm."__ Leave both
+boxes empty and they are told the day and nothing else, which is a promise you can keep rather than
+one that reads as open all day.
+
+**⚠️ THE ONE THING TO GET RIGHT, and it is your judgement rather than the app's: SET THE HOURS FROM
+WHEN THE TREATS IS THERE, NOT FROM WHEN THE SHOP OPENS.** The van arrives during the round, so a
+window starting at opening time can have a customer standing at the counter before their order has
+been delivered. The app deliberately does **not** work this out for you — the same way it never
+works out the fee — because a time the app derives is a time it can get wrong.
+
+**⚠️ AND THE VAN'S OWN WINDOW IS NEVER QUOTED TO THEM.** When you book a round, the trip's window is
+stamped on every order it carries — and for a collection that is when the **treats reaches the
+Point**, which is your business, not the customer's. Telling them both would be telling them two
+different times in one message. So a collecting customer gets the place's hours or nothing at all,
+and never the van's.
+
+**A hole that fixing this found, and it was mine.** The **pickup reminder** said only __"Packed and
+ready for pickup on ..."__ and named **no place at all** — so a customer collecting at Farlim was
+told their order was ready and never where to go, while the confirmation, the payment reminder and
+the shipped message all named it. v299 claimed all four later messages named the Point; three of
+them did. It now reads **"Packed and ready to collect from Farlim, Air Itam on ..."**, and a
+collection from your own kitchen keeps the words it has always had.
+
+**Your data is untouched, and there is nothing to run.** No database step, no upload, no key. A
+Point with no hours behaves exactly as it did yesterday, and every order already placed is
+unaffected. The suite is **2,709 tests, all green**, including eighteen new ones — the model, the
+one place that decides whose window a customer is told, the card's own time boxes, and the three
+messages a collecting customer actually receives, driven through the real builders rather than
+through the helper behind them. **Every one was watched going red** with the fault put back.
+
+**Also in this version, and it is housekeeping you will never see:** the window stopped being the
+courier's own and became a small module both the courier and the Points card read, so **a window
+cannot mean one thing on one screen and another somewhere else**, and its own tests moved with it.
+
+**04 Oct 2026 — engine v303, A POINT YOU SET UP AND HAND OUT BY HAND (no database step, nothing
+to upload — pushing this one is the whole of it).**
+
+**Why.** Two things you found while watching v301 and v302 land, and they are the same gap:
+everything about Points worked for a **customer** ordering from your shop, and almost nothing
+worked for an order **you** take.
+
+**1. ＋ New order and Edit now let you say where it collects from.**
+
+Your words: __"how about + new order, and add edit order?"__ You were right, and it is the
+important half — you take a great many orders over the phone and in chats, and until now an order
+you keyed in yourself **could not be a Point order at all.** It could not go on the Delivery run,
+the Point's fee was never counted for it, and the customer was never told where to collect.
+
+- **A "Collect from" picker**, under **Fulfillment** — **My kitchen** first, which is the default
+  and is what every order you have ever taken already means, then your open Points in your order.
+- **It appears only when there is something to choose.** With no Point open, or on a Courier
+  order, it is absent rather than sitting there doing nothing.
+- **The Point's name is frozen onto the order** the moment you take it, so renaming or ending a
+  Point later leaves every order that already went there still saying where it went. The same rule
+  that keeps a sold price on an order.
+- **Choosing your kitchen clears it.** An order collecting from your kitchen carries no Point at
+  all, which is exactly what it has always meant.
+
+**2. A Point's address box now asks Google as you type.**
+
+Your words: __"there is no address auto complete for collection point?"__ — and then the better
+question, __"why not make the point consistent with the customer card?"__ Both fair. The
+suggestion box was written for the order's delivery address and had never been given to this one,
+so the address a **driver** is sent to — and the address the pin is looked up from — was the one
+address you had to peck out in full on a phone.
+
+- **The same behaviour as the order's address box, because it is now literally the same code**,
+  moved into one place so the two boxes cannot drift apart.
+- **Nothing is ever blocked by it:** a lookup that fails shows nothing at all, and whatever you
+  typed is what gets saved.
+
+**Your data is untouched, and there is nothing to run.** No database step, no upload, no key. An
+order taken before today carries no Point, which is what "collect from my kitchen" has always
+meant, so nothing needs migrating and no order is rewritten. The suite is **2,691 tests, all
+green**, including twelve new ones — nine driving both order cards, and three driving the Point's
+own address box through the real suggestion channel. **Every one of them was watched going red**
+with the fault put back before it was called done.
+
+**04 Oct 2026 — engine v302, AN ORDER COLLECTED AT A POINT REACHES THE RUN (no database step,
+nothing to upload — pushing this one is the whole of it).**
+
+**Why, and it is a fault I found while starting the collection window you asked for.** The run was
+not carrying Points at all. Not rarely — **never**, and it said so quietly: a day where customers
+were collecting at Farlim read **"Nothing to run yet"**.
+
+**★ WHAT WAS WRONG.** Choosing a Self collection Point in your shop **never changes the Self collect
+/ Courier choice** — that is by design, a Point IS a collection. So the order is stored as a
+__collection__, and the run screen used that word to decide what needs a vehicle and **skipped every
+collection**. Every Point order was thrown away **before** the row work v301 added could ever see
+one. v301 built the right rows and they were unreachable.
+
+**The rule now, and it is the one that was always meant: a courier order needs a vehicle, and a
+collection AT A POINT needs one too — the treats still has to reach the Point.** A collection from
+**your own kitchen** still needs none, because you hand those over yourself. That half is the one a
+careless fix breaks, and it has its own test.
+
+**What you see now.** A day of collections at Farlim **offers the run**, the day's own line reads
+**"1 stop"** rather than "2 courier orders", and the Delivery dates screen's **Run (N)** button
+appears on that day counting the same stops. **A Point is ONE stop however many customers collect
+there**, so two customers at Farlim still read **1 stop - 6 items**.
+
+**⚠️ AND ONE RULE NOW LIVES IN ONE PLACE, which is why it went wrong.** The run screen and the
+Delivery dates screen's **Run (N)** button both have to answer __"does this order need a van?"__, and
+they each answered it themselves. **Two readings of one rule is how they came apart**, so the rule
+and the stop's own name are now asked of one function in `courier_job.js` and read from there.
+
+**Your data is untouched, and there is nothing to run.** No database step, no upload, no key. An
+ordinary courier day behaves exactly as it always has, and a collection from your kitchen behaves
+exactly as it always has — **a run with no Points on it is unchanged**. The suite is **2,679 tests,
+all green**, including eleven new ones: six on the rule itself, three driving the run screen with a
+**real** Point order, and two on the Run badge. **Every one of them was watched going red** with the
+fault put back — the gate, the kitchen half, the shared stop name and the badge — before it was
+called done. One of them is worth naming: the test fixture itself had been modelling a Point order
+as a courier order, **which the shop has never produced**, and that is the reason nothing caught
+this. **A fixture that cannot happen is not a test.**
+
+**04 Oct 2026 — engine v301, THE DELIVERY RUN CARRIES POINTS (no database step, nothing to
+upload — pushing this one is the whole of it).**
+
+**Why.** This is the piece you asked for: the Delivery run carrying Self collection Points.
+
+**★ A POINT IS ONE STOP, AND THAT IS THE WHOLE VERSION.** A courier charges **a base fare plus a
+fee for every extra stop**, so the run screen's oldest rule is __one stop per customer__ — a customer
+who bought three things is one doorstep, not three. A **Self collection Point is the next version
+of the same idea**: four customers collecting at Farlim are **one place the van goes**. A run built
+one-stop-per-customer would send the same driver back to the same shop and **bill you a stop fee
+each time**.
+
+**What you see on the run now.**
+
+- **A Point gets a row of its own**, listing **how many orders are collecting there** — __"2 orders
+  collecting here"__ — and its own address. The customer's name is deliberately **not** on it: the
+  treats is going to Farlim and the customer is meeting it there.
+- **The load line counts STOPS**, so two customers at one Point read **"1 stop · 6 items"**, not
+  two stops. Every line of treats is still counted.
+- **A Point you have not pinned offers "Pin the Point"** right there, because the run cannot price a
+  trip to a place with no coordinates.
+- **A Point and a doorstep on the same run are two stops** — the mixed run you described.
+
+**Three things it is careful about, and each one is money.**
+
+- **⚠️ THE VAN GOES TO THE POINT, NEVER TO THE CUSTOMER'S HOUSE.** A customer who chose to collect
+  at Farlim is **not at Farlim** — and she may still have a doorstep of her own pinned from an
+  earlier delivery. That door is **ignored** for a collection order. Sending a driver to her house
+  with four other people's treats would be the most expensive way to be wrong on this screen.
+- **⚠️ ONE DROP ON THE WIRE, and this is the one that shows up on your bill.** The price request is
+  read back in the test on the **bytes that would leave your phone** — because a trip built
+  one-drop-per-customer is priced for a journey you are not taking. Two customers at one Point:
+  **one drop.**
+- **⚠️ A POINT YOU PAUSE STILL SENDS THE VAN.** Pausing decides what is **offered**, never what an
+  order already promised — the customer was already told to go to Farlim, and their treats still has
+  to get there. And a Point you have **deleted** has no pin to give, so that order falls back to the
+  customer's own door rather than a van sent to coordinates nobody has any more.
+
+**And the double-booking guard still sees everyone.** A Point is treated as already on a trip if
+**any** of its customers is — so a Point can never be quietly swept onto a second van, which is the
+fault you reported in v242, at a place instead of a door.
+
+**★ AND A POINT YOU ADD NOW ACTUALLY REACHES YOUR SHOP.** You reported this while the run was being
+built — __"the point added still not able to appear on store?"__ — and **you were right, and the
+fault was mine.** Your Points travel to the shop inside the **storefront row** the shop reads, and
+**the Points card was not republishing that row.** Every other screen that changes something the
+shop shows — Promo codes, Products, Categories, Settings — ends its save with a republish; the
+Points card only ever saved to your phone. So a Point you added **stayed on your phone and never
+went out**, and your shop went on offering only the Points it had last been told about. The test
+proves it on the **request itself**: adding a Point **publishes**, pausing one **republishes**, and
+**pinning one does not** — because the pin is deliberately never published, so republishing for a
+drag would be a request that changes nothing.
+
+**Your data is untouched, and there is nothing to run.** No database step, no upload, no key. **A
+run with no Points on it behaves exactly as it always has** — every order that is not collecting at
+a Point keeps a row, and a stop, to itself. The suite is **2,668 tests, all green** — including two
+new ones that fail if a Point change ever stops reaching your shop. Proved live on
+the real Delivery run at a phone width, and on the wire: **two customers collecting at one Point
+price ONE drop, at the Point's own address**, and the mixed run prices the Point and the doorstep as
+two. The Points card was driven at a phone width too — **40 checks, all green** — including the
+three that read the publish request itself, and every one of them was **watched going red** with the
+fault put back before it was called done.
+
+**04 Oct 2026 — engine v300, EVERY POINT GETS A PIN ON THE MAP (no database step, nothing to
+upload — pushing this one is the whole of it).**
+
+**Why.** You asked for the Delivery run to carry Points, and said a Point should **"get like what
+customer is getting location pin"**. This is that pin — and it is the piece the run cannot work
+without, which is why it comes first.
+
+**A courier is not given an address. It is given a point.** Lalamove wants
+**"5.41405,100.31408"**, and "Farlim, Air Itam" is a guess about one — the courier itself says so
+when it cannot place an address. So **a Point with no pin is a name you can read and a place a van
+cannot be sent to**, and the run cannot price a trip until every end is a real point.
+
+**What a Point has now, on More → Self collection Points.**
+
+- **A line saying where it is** — **📍 Farlim, Air Itam · 5.41405, 100.31408**. **Both the name and
+  the two numbers**, because a name alone cannot be checked and a pin in the wrong place is only ever
+  noticed by looking at the numbers.
+- **"Put the pin on the map"** under every Point, opening **the same map a customer's doorstep is
+  placed with**. It is the same act, so there is nothing new to learn — and your Point's own address
+  is handed to the lookup, so if you have already typed where it is you may not have to drag anything.
+- **An unpinned Point says so plainly**: __"Not pinned yet — a van cannot be sent to a name
+  alone."__ It never pretends to have a door.
+- Once it is pinned, the press becomes **"Move the pin"**.
+
+**Two things this version is careful about.**
+
+- **⚠️ Correcting a Point never un-pins it.** The pin is not a field of the form — it is placed on a
+  map — so an edit had to be made to carry it across deliberately. Without that, fixing a spelling
+  would have silently taken the door away, and you would have found out when a driver was sent
+  nowhere. There is a test that edits a pinned Point and checks the pin is exactly where it was.
+- **⚠️ The pin never leaves your app.** The shop is still told only the Point's **name** — a
+  customer chooses a Point by name, and the driver is the only one who needs the door.
+
+**And a half-typed pin is not a pin.** Anything malformed — one number and no other, a latitude of
+91 — reads as **unpinned** rather than as a point in the sea. A row half-synced between your phones
+can never send a driver somewhere absurd.
+
+**Your data is untouched, and there is nothing to run.** No database step, no upload, no key. Points
+you have already defined simply start unpinned. The suite is **2,656 tests, all green**. Proved live
+on the real card at a phone width: **37 checks**, including that an unpinned Point says so, that the
+press opens the map picker, that a pinned Point shows its numbers, and that correcting a Point leaves
+the pin where it was.
+
+**Next, and it is the thing you actually asked for:** the **Delivery run** carrying Points. It is
+its own version because the run screen is the one that spends your money, and it needs changing
+carefully — a Point's orders have to become **one stop** on the trip rather than one stop each, and
+the screen that ticks them has to say so.
+
+**04 Oct 2026 — engine v299, THE CUSTOMER CAN COLLECT FROM A POINT (no database step, nothing to
+upload — pushing this one is the whole of it).**
+
+**Why.** v298 gave you the card that defines your Self collection Points. This is the other half:
+**your customers can now choose one**, your order carries which one, and **the customer is told
+where to go**.
+
+**What your customers see, in the shop.**
+
+- **"Collect from"**, under the Self collect / Courier choice. **Your kitchen is first** — it is not
+  a Point and needs no record — and **your open Points follow, in your order.**
+- **The whole thing only appears once you have a Point open.** With none, the shop is
+  **byte-for-byte the shop it was**, which is how you said you would do it: one at a time.
+- **The chosen row takes the brand's orange edge**, the same "this one is on" the buttons already
+  use.
+- **A Point paused or deleted while a customer has it chosen falls back to your kitchen.** The shop
+  cannot post an order to a place you have stopped offering — and the kitchen is always there.
+
+**What your customers are told.** The confirmation, and all four later messages, say
+**"Self collect at Farlim, Air Itam"** and give the **address of the place**. That wording is
+written **once** and read by both message builders, so a customer cannot be told one thing in the
+confirmation and another in the reminder.
+
+**Three things this version is careful about.**
+
+- **⚠️ Only the Point's NAME ever leaves your app.** The receiver's name, their phone, the fee and
+  even the address **stay in your app**. The shop is a public page with no login, and publishing the
+  receiver's number would put a private person's phone on a page anyone can read. The address is
+  withheld for a plainer reason: the message that tells a customer where to go is built from **your**
+  copy.
+- **⚠️ The name on an order comes from YOUR record, never from the page.** The shop is public, so a
+  name it sent could be anything at all; the order is matched against **your own Points** and an id
+  you do not have falls back to the kitchen. This is the same rule the promo codes follow.
+- **⚠️ A Point you PAUSE is still honoured for orders already placed.** Pausing decides what is
+  **offered**, never what an order already promised — the customer was already told where to go.
+  Exactly the rule that keeps an ended promo code coming off the order it was placed on.
+
+**And your own screens say it too.** The order row and the packing label read
+**"Self collect · Farlim, Air Itam"**, so whoever is packing a bag can see where it is going. A
+kitchen collection reads exactly as it always has.
+
+**Your data is untouched, and there is nothing to run.** No database step, no upload, no key — the
+Points travel in the storefront row your shop already reads. **Every order already placed is
+unaffected**: an order with no Point IS a collection from your kitchen, which is what it has always
+meant, so nothing needs migrating. The suite is 2,650 tests, all green. Proved live in the real shop
+at a phone width: **20 checks**, including that the kitchen is first and carries no id, that a paused
+Point cannot stay chosen, that with no Points open the shop is unchanged, and that a long Point name
+does not push the page sideways.
+
+**⚠️ 04 Oct 2026 — a correction to this entry.** This entry says your Points travel in the storefront
+row your shop reads, and they do — **but only once your phone has actually republished that row**,
+and the Points card was **not** republishing it. Adding a Point kept it on your phone and **never
+sent it to the shop**, so the shop went on showing only the Points it had last been told about.
+You reported exactly this — __"the point added still not able to appear on store"__ — and it is
+fixed in **v301**: every change to a Point now republishes, which is the same call the Promo codes,
+Products and Categories screens have always made. **Pinning a Point still does not republish**, on
+purpose — the pin is never published at all. Nothing else in this entry changes.
+
+**04 Oct 2026 — engine v298, SELF COLLECTION POINTS — THE CARD (no database step, nothing to
+upload — pushing this one is the whole of it).**
+
+**Why.** You asked to get the system ready for collecting from places that are not your kitchen
+— Sg Ara, Farlim, Chai Leng Park, Bukit Mertajam — and to discuss it first. We did, and this is
+the first piece of it: **the card**, which is the piece you scoped yourself.
+
+Her words: __"we just need to have a card for points"__
+
+**What you see now, on More → 📍 Self collection Points.**
+
+- **A "New Self collection Point" card**, and your Points listed under it.
+- **Five things per Point:** its name, the address, **who receives**, **their phone**, and **the
+  fee per order** — what __you__ pay whoever receives there.
+- **Pause · Edit · Delete** on every row. A paused Point sinks to the bottom and goes pale, and
+  **Resume** brings it back.
+- **Every Point is its own record**, so opening one changes nothing about the others — which is
+  how you said you'd do it: __"open collection point one by one… and not likely will open all
+  point one go."__
+
+**Three things the card is careful about, and each is one of your rules.**
+
+- **Your kitchen is NOT a Point.** Collecting from Sg Ara is what your shop already offers — free,
+  no minimum, always there. It gets no record, no fee and no provider, because it has none of
+  those. A Point is a __third__ thing beside it.
+- **Delete never rewrites where an order went.** An order keeps the Point's **name frozen onto
+  it**, so an order that went to Farlim still says Farlim after the Point is deleted — the same
+  way an order keeps the name and price a product was sold at.
+- **Pause is a normal ending, not a failure.** You said most Points you open will end this way, so
+  pausing is one press and completely reversible.
+
+**⚠️ WHAT THIS VERSION DOES NOT DO YET, said plainly rather than discovered.** This is the **card
+only**. Your shop does **not** offer Points to customers yet, an **order does not carry which
+Point** it went to, and the **Delivery run does not include them**. Those are the next pieces. So
+today: you can define your Points and see them, and nothing else changes.
+
+**And the fee is yours to set, with no arithmetic done for you.** You said __"allow me to manually
+set it fee x2 or x3, but default x1"__ — so the app never measures an order's size. There is no
+product-size field and no volume sum anywhere.
+
+**Your data is untouched, and there is nothing to run.** No database step, no upload, no key. One
+new list is added and starts empty; no order, product, ingredient, price or posting day is touched.
+The suite is 2,646 tests, all green. Proved live on the real card at a phone width: **26 checks**,
+including that a nameless Point is refused with a reason, that pausing one Point leaves every other
+alone, that deleting one leaves the order still saying where it went, and that nothing scrolls
+sideways at 375px.
 
 **04 Oct 2026 — engine v297, THE OFFERS REALLY FLIP, WITH DOTS, AND A CLICK NO LONGER
 FREEZES THEM (no database step, nothing to upload — pushing this one is the whole of it).**

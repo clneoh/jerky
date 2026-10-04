@@ -111,10 +111,20 @@
           <button type="button" class="seg-btn" data-fulfillment="collect" data-i18n="selfCollect">Collect (local)</button>
         </div>
       </div>
+      <!-- Where a Self collect order is collected FROM (v299). Hidden entirely while she has
+           no Points open, so the shop looks exactly as it did before this version. The rows
+           are built by store/app.js: every word inside is written by JS, so it carries no
+           data-i18n tags and the dictionary's English-must-match-the-markup rule in
+           test/store-i18n.test.js is untouched. -->
+      <div class="field" id="point-field" hidden>
+        <label data-i18n="collectFrom">Collect from</label>
+        <div class="point-list" id="point-list"></div>
+      </div>
       <div class="field" id="address-field">
         <label for="address-input"><span data-i18n="addressLabel">Postal address</span> <em class="req">*</em></label>
         <input id="address-input" class="input" type="text" data-i18n-ph="addressPh" placeholder="Full address — street, area, town &amp; postcode" autocomplete="street-address">
         <p class="card-sub" style="margin:4px 0 0" data-i18n="addressSub">We post nationwide — your treats are made on the day you pick and posted to this address.</p>
+
         <!-- Where the addresses the lookup found appear (v202). Emptied and hidden by
              store/app.js; every word inside it is written by JS, so it carries no
              data-i18n tags and the dictionary's English-must-match-the-markup rule in

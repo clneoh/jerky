@@ -181,11 +181,14 @@ export async function suggestAddresses(
   if (q.length < MIN_QUERY) return { ok: true, places: [] };
 
   const key = envOf(PLACES_KEY_ENV);
-  // Is is not an error, it is an assist that is switched off — which is why it is a
-  // reason on a 200 rather than the 500 the function's contract reserves for a missing
-  // secret. A 500 here would reach her as a broken screen; this reaches her as a box that
-  // simply does not suggest, which is exactly what it did before this version existed.
-  if (!key) return { ok: false, reason: "Address suggestions are not set up on the server yet." };
+  // ⚠️ STILL A REASON ON A 200, AND NOW IT IS MARKED (v311). A 500 would reach her as a broken
+  // screen, so this stays a 200 — but the box then went quiet with no way to tell "switched off"
+  // from "nothing matched", and she reported exactly that: __"the suggestion list never appear"__.
+  // **A feature that is off and does not say so reads as a feature that is broken.**
+  //
+  // `setup` is how the app tells a problem SHE must fix from one that passes by itself — the same
+  // distinction the function's own 401/500 contract makes. Only the setup cases carry it.
+  if (!key) return { ok: false, setup: true, reason: "Address suggestions are not set up on the server yet." };
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -208,12 +211,26 @@ export async function suggestAddresses(
         ? String(((body as Record<string, unknown>).error as Record<string, unknown> | undefined)?.message || "")
         : "";
       console.error(`[courier] places answered HTTP ${res.status}${said ? ` — ${said}` : ""}`);
-      return { ok: false, reason: "The address suggester did not answer just now." };
+      // ⚠️ AND THIS ONE IS A SETUP PROBLEM TOO, WHICH IT WAS NOT SAID TO BE (v311). "Places API
+      // (New)" not enabled on the key, or not ticked onto its API restrictions, arrives here as a
+      // 4xx — and it read as "did not answer just now", which sounds like a blip and passes. It
+      // does not pass. A 429 (quota) is the one status here that does.
+      if (res.status === 429) return { ok: false, reason: "The address suggester did not answer just now." };
+      return {
+        ok: false,
+        setup: true,
+        reason: "Address suggestions are switched off — Google refused the request. The Google key needs Places API (New) enabled and allowed.",
+      };
     }
     const data = await res.json().catch(() => null);
     if (placesTrouble(data)) {
       console.error("[courier] places refused the request — check the key, its API restriction and its quota");
-      return { ok: false, reason: "The address suggester did not answer just now." };
+      // Google answered 200 and put the refusal in the body: the same key-not-allowed family.
+      return {
+        ok: false,
+        setup: true,
+        reason: "Address suggestions are switched off — Google refused the request. The Google key needs Places API (New) enabled and allowed.",
+      };
     }
     return { ok: true, places: suggestionsFrom(data) };
   } catch (err) {

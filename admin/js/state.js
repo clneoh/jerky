@@ -189,6 +189,11 @@ export function defaultState() {
     // phone saved last, losing the other's grant.
     rewards: [],
     occasions: [], // delivery-calendar reminder marks: {from, to, label}
+    // Self collection Points (v298): places a customer can collect from that are NOT the
+    // bakery — {id, name, address, receiver, phone, feeRM, paused}. ONE record per Point,
+    // never a setting: she opens them one at a time and expects most to end, so each has to
+    // sync on its own and be pausable without touching the others. See js/points.js.
+    points: [],
     // Promo codes she hands out — one row per code, carrying the six rule
     // families and the offer (see js/promo.js for the engine and the shape). A
     // list she grows, like the credits ledger above, not a setting.
@@ -429,6 +434,7 @@ function normalize(s) {
     credits: Array.isArray(s.credits) ? s.credits : [],
     rewards: Array.isArray(s.rewards) ? s.rewards : [],
     occasions: Array.isArray(s.occasions) ? s.occasions : [],
+    points: Array.isArray(s.points) ? s.points : [],
     // Guarded like every other list she owns. The rows themselves are cleaned by
     // js/promo.js on every read, so a half-synced or hand-edited record can never
     // reach a screen or the shop un-clamped.

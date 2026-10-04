@@ -116,3 +116,45 @@ test("the share link a booked trip came back with says Track your delivery", () 
   assert.ok(!built.message.includes("Tracking number"),
     "and the number label is not also printed — one slot, one label");
 });
+
+// ── v304: the four messages, for an order collecting at a Point ─────────────
+// The confirmation is tested in confirm.test.js; these are the LATER messages, and the discussion
+// said the customer must be told the collection window in "the confirmation and every later
+// message" — so all of them are driven here, not one of them.
+//
+// The window is the PLACE's, typed once on the Point. The order also carries the run's own
+// arrival window (v302 stamped it when the van was booked), and the customer is deliberately
+// never told that one: it is when the bread gets there, not when they can collect.
+
+const FARLIM = {
+  id: "pt_farlim", name: "Farlim, Air Itam", address: "Lebuhraya Thean Teik, 11500 Air Itam",
+  receiver: "Aunty Lim", phone: "60123456789", feeRM: 0.5, paused: false,
+  createdAt: "2026-08-12T00:00:00.000Z", collectWindow: "14:00-18:00",
+  place: { lat: 5.4, lng: 100.28, label: "Farlim" },
+};
+const atPoint = { pointId: "pt_farlim", pointName: "Farlim, Air Itam", deliveryWindow: "10:00-12:00" };
+
+test("the two messages a collecting customer gets name the place and when (v304)", () => {
+  // The SHIPPED message is deliberately not here: it is only ever sent for a courier order, so a
+  // customer collecting at a Point never receives it. What they do receive is the confirmation
+  // (tested in confirm.test.js), the payment reminder and the pickup reminder.
+  const st = state({ points: [FARLIM] });
+  const g = group(atPoint);
+  for (const [name, built] of [
+    ["payment reminder", buildPaymentReminder(st, g, "")],
+    ["pickup reminder", buildPickupReminder(st, g, "")],
+  ]) {
+    assert.ok(built.message.includes("Farlim, Air Itam"), `${name}: names the place`);
+    assert.ok(!/ready for pickup/.test(built.message), `${name}: and never a bare "pickup" with no place`);
+    assert.ok(built.message.includes("collect 2-6 pm"), `${name}: when`);
+    assert.ok(!built.message.includes("10-12"), `${name}: and never the van's arrival window`);
+  }
+});
+
+test("a Point with no hours leaves every later message promising only the day (v304)", () => {
+  const st = state({ points: [{ ...FARLIM, collectWindow: "" }] });
+  const built = buildPickupReminder(st, group(atPoint), "");
+  assert.ok(built.message.includes("Farlim, Air Itam"), "still told where");
+  assert.ok(!/collect \d/.test(built.message), "and nothing about a time");
+  assert.ok(!built.message.includes("10-12"), "nor the van's window");
+});

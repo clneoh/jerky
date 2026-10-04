@@ -738,6 +738,50 @@ matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestion
 now that the Google key returns one precise house-number answer, most lookups legitimately show no
 list and the pin simply lands.
 
+## Fourteen versions in one pass: Self collection Points, and the parcel seam (v298–v311)
+
+Bakery `4bf08a2` (v297 — exactly where jerky sat) → `c67b2d5` (v311), ported with the same
+one-file three-way merge per file. **44 files, 6,147 insertions, 15 new files. Fifteen conflicts
+across eight files, every one of them localization** (`confirm.js`, `courier_job.js`, `messages.js`,
+`views/more.js`, `views/orders.js`, `store-lang.js`, `store/app.js`, `store/index.html`);
+`admin/js/courier_job.js`'s window helpers conflict was a **move** — they left for the new
+`admin/js/time_window.js`. Suite **2664 → 2787 pass / 0 fail**.
+
+**Self collection Points (v298–v306).** A customer can now collect from a **Point** — somewhere other
+than her own kitchen — instead of having the order posted. v298 the card, v299 the shop's own list
+(and the customer's whole order told one `fulfillmentText`), v300 a pin for every Point on the map,
+v301–v303 the delivery run carrying Point orders (and a Point she sets up **by hand**), v304 the
+**collection window** and its hours, v305 those hours on the run row, v306 the **smallest basket** a
+Point will take. New: `admin/js/points.js`, `admin/js/views/points.js`, `admin/js/time_window.js`,
+`admin/js/address_suggest.js`. Her term is hers — it is a **Self collection Point**, never a "pickup
+point" — so the admin keeps her words while the customer-facing line stays jerky's **Collect (local)**.
+
+**The parcel seam (v307–v308).** `admin/js/parcels.js` + `admin/js/parcels/api.js` + a **NEW Edge
+Function** `supabase/functions/parcel/` (`index.ts` + `easyparcel.ts`) — every parcel carrier priced
+at once through EasyParcel, with a prepaid-balance warning. **It is inert without an EasyParcel key**,
+and the bakery's own owner decided **not** to sign up (only an account topped up by RM500 is
+integrated), so v308 makes the block read as *off* rather than as broken. jerky's parcel feature was
+deliberately built as *"a note, not a booking — no key, no wallet, no fee"*; this is what turns that
+into a real price, and she has asked for it.
+
+**v309–v311** say the two ways an order leaves apart on every card, and the address box now **says
+why** it is not suggesting (rather than silently doing nothing).
+
+**The ONE deploy step.** The new `parcel` Edge Function goes up with
+`supabase functions deploy parcel --project-ref ircwozniiyywsowamixy` **from the REPO folder** (never
+inside the function's folder). No new SQL, and nothing to change on the phones.
+
+**Localization.** `fulfillmentText` in `points.js` ("Courier delivery"/"Self collect") → jerky's
+**Post (nationwide)** / **Collect (local)**; `time_window.js`'s "before it left the bakery" → *"your
+place"*; `views/points.js`'s **BREAD** → **TREATS**; `parcels.js`'s default parcel description
+**"Baked goods"** → **"Pet treats"**; `store-lang.js` gained the Point keys in all three languages.
+`home-lang.js`/`index.html` kept jerky's own homepage.
+
+**Two merge traps, both hit.** The conflict resolver left the marker's **path line** behind in four
+files (the suite caught it — they stopped parsing), and one resolver call omitted the closing marker
+so `>>>>>>> …h.tmp` was left inside `views/orders.js`. Both are the same lesson: **after a merge,
+parse-check every written file, never trust the resolution script.**
+
 ## Sixteen versions in one pass: the journals, the invoice, the shop's offer strip, and code labels (v282–v297)
 
 Bakery `81dbab6` (v281 — exactly where jerky sat) → `4bf08a2` (v297), ported with the same

@@ -39,6 +39,7 @@ const LISTS = {
   deposits: "deposits", // money in from your own pocket — same on every phone
   credits: "credits", // bring-a-friend ledger rows
   rewards: "rewards", // reward hand-outs — a record per grant, so neither phone can overwrite the other's
+  points: "points", // Self collection Points — one record each, so opening one on a phone does not disturb the others
   occasions: "occasions", // delivery-calendar reminder marks
   // A promo code made on one phone has to exist on the other, or a card she
   // prints and hands out works on the phone that made it and nowhere else.

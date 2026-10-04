@@ -29,7 +29,7 @@ const {
   stopsUnplaced, tripProblem, fmtDistanceKm,
   orderDay, fmtQuote, fmtQuoteLeft, quoteExpired,
   isLink, trackingLine, jobOf, liveJobOf, liveJobProblem, fmtStamp, fmtAgo,
-  freeCancelOf, freeCancelLine,
+  freeCancelOf, freeCancelLine, needsVan, stopKeyOf, promisedWindowSuffix, windowSuffix,
 } = await import("../admin/js/courier_job.js");
 const { setPickupPlace, setDropPlace } = await import("../admin/js/courier_place.js");
 
@@ -151,6 +151,66 @@ test("a stop carries the person, the number, the words and the point", () => {
   assert.equal(stop.address, "12 Jalan Bunga, 10450 Penang");
   assert.deepEqual(stop.place, { lat: 5.4141, lng: 100.3288, label: "12 Jalan Bunga" });
   assert.equal(stop.order, o, "the order itself travels, so the panel can name it back to her");
+});
+
+// ── v301: a collection at a Self collection Point ─────────────────────────
+
+const FARLIM = {
+  id: "pt_farlim", name: "Farlim, Air Itam", address: "Lebuhraya Thean Teik, 11500 Air Itam",
+  receiver: "Aunty Lim", phone: "012-345 6789", feeRM: 0.5, paused: false,
+  createdAt: "2026-10-12T00:00:00.000Z",
+  place: { lat: 5.4, lng: 100.28, label: "Farlim, Air Itam" },
+};
+
+test("★ a collection at a Point sends the driver to the POINT, not the customer's house", () => {
+  // ⚠️ THE LINE THAT DECIDES WHERE A VAN ACTUALLY GOES. A customer who chose to collect at
+  // Farlim is NOT AT FARLIM — sending a driver to their house with four other people's bread
+  // would be the most expensive possible way to be wrong on this screen. The order carries
+  // which Point it went to, so the stop is the Point: its pin, its name, and the person who
+  // receives there, none of which is the customer.
+  const s = emptyState({ points: [FARLIM] });
+  const o = makeOrder({ pointId: "pt_farlim" });
+  // The customer has a door of their own, pinned and real — and it must be IGNORED.
+  setDropPlace(s, o, { lat: 5.4141, lng: 100.3288, label: "12 Jalan Bunga" });
+
+  const stop = stopOf(s, o);
+  assert.deepEqual(stop.place, { lat: 5.4, lng: 100.28, label: "Farlim, Air Itam" },
+    "the van goes to the Point, never to the customer's own pinned door");
+  assert.equal(stop.name, "Farlim, Air Itam", "and the driver is told to look for the Point");
+  assert.equal(stop.phone, "60123456789", "ringing whoever receives there, not the customer");
+  assert.equal(stop.address, "Lebuhraya Thean Teik, 11500 Air Itam");
+  assert.equal(stop.pointId, "pt_farlim");
+  assert.equal(stop.order, o, "the order still travels, so the panel can name it back to her");
+});
+
+test("a PAUSED Point still sends the van where the order was promised", () => {
+  // Pausing decides what is OFFERED, never what an order already promised — the customer was
+  // already told to go to Farlim, and their bread still has to get there. Same rule that keeps
+  // an ended promo code coming off the order it was placed on.
+  const s = emptyState({ points: [{ ...FARLIM, paused: true }] });
+  const stop = stopOf(s, makeOrder({ pointId: "pt_farlim" }));
+  assert.deepEqual(stop.place, { lat: 5.4, lng: 100.28, label: "Farlim, Air Itam" });
+});
+
+test("a Point with no pin leaves its stop unpinned rather than guessing", () => {
+  // The same rule an unpinned doorstep keeps, for the same reason: a fallback point is a price
+  // for a journey that is not the one she is taking, and it looks like a right answer on
+  // screen. `tripProblem` is what says so.
+  const s = emptyState({ points: [{ ...FARLIM, place: null }] });
+  const stop = stopOf(s, makeOrder({ pointId: "pt_farlim" }));
+  assert.equal(stop.place, null);
+  assert.equal(stop.name, "Farlim, Air Itam", "the words are still there to look it up from");
+  assert.equal(stop.address, "Lebuhraya Thean Teik, 11500 Air Itam");
+});
+
+test("a Point she has DELETED does not move an order that already went there", () => {
+  // The order keeps the Point's NAME frozen (v299), but a deleted Point has no pin to give —
+  // so the stop falls back to the customer's own door, which is the honest answer rather than a
+  // van sent to coordinates nobody has any more.
+  const s = emptyState();
+  const o = makeOrder({ pointId: "pt_gone", pointName: "Farlim, Air Itam" });
+  setDropPlace(s, o, { lat: 5.4141, lng: 100.3288, label: "12 Jalan Bunga" });
+  assert.deepEqual(stopOf(s, o).place, { lat: 5.4141, lng: 100.3288, label: "12 Jalan Bunga" });
 });
 
 test("an unpinned stop keeps place: null rather than a guessed point", () => {
@@ -531,4 +591,128 @@ test("an immediate trip is given the rule and not a made-up clock", () => {
 test("nothing readable means no line at all, rather than an empty sentence on the card", () => {
   assert.equal(freeCancelLine({ jobId: "J1", scheduleAt: "whenever" }, { label: "Lalamove", scheduledMs: 1 }), "");
   assert.equal(freeCancelLine(null, { label: "Lalamove", scheduledMs: 1 }), "");
+});
+
+// ── v302: WHO IS ON THE VAN ─────────────────────────────────────────────────
+//
+// Her report, and it was mine: "the point added still not able to appear on store" was the
+// shop half, and this is the other half found while fixing it. A customer who chose to
+// collect at Farlim never reached the run AT ALL. Choosing a Point in the shop leaves the
+// order's `fulfillment` as "collect", and the run screen asked `fulfillment === "courier"` —
+// so every real Point order was dropped before it could become a stop, and the screen said
+// "Nothing to run yet" over a customer waiting for their bread.
+//
+// These two functions are the rule, and they live here so the run screen and the Delivery
+// dates screen's "Run (N)" badge cannot read it two ways again.
+
+const POINT = {
+  id: "pt_farlim", name: "Farlim, Air Itam", address: "Lebuhraya Thean Teik",
+  receiver: "Aunty Lim", phone: "60123456789", feeRM: 0.5, paused: false,
+  createdAt: "2026-10-12T00:00:00.000Z", place: { lat: 5.4, lng: 100.28, label: "Farlim" },
+};
+const withPoints = (points, extra = {}) => emptyState({ points, ...extra });
+
+test("an order being COLLECTED at a Point still needs a van — the bread has to get there", () => {
+  const st = withPoints([POINT]);
+  assert.equal(needsVan(st, { id: "o1", fulfillment: "collect", pointId: "pt_farlim" }), true);
+});
+
+test("an order collected from the KITCHEN needs no van at all", () => {
+  // The other half, and the half a careless fix breaks: she hands these over herself, and
+  // sweeping them onto a run would price a vehicle for bread that never leaves the counter.
+  assert.equal(needsVan(emptyState(), { id: "o1", fulfillment: "collect" }), false);
+  assert.equal(needsVan(emptyState(), { id: "o1", fulfillment: "collect", pointId: "" }), false);
+  // And a pointId naming a Point she does not have is the kitchen too — the same fallback the
+  // shop applies, and the same one stopOf makes rather than sending a driver nowhere.
+  assert.equal(needsVan(emptyState(), { id: "o1", fulfillment: "collect", pointId: "pt_gone" }), false);
+});
+
+test("a PAUSED Point still sends the van, and a DELETED one does not", () => {
+  // Pausing decides what is OFFERED, never what an order already promised — the customer was
+  // already told to go to Farlim and their bread still has to get there. A deleted Point has
+  // no pin to give, so that order is the kitchen's again.
+  const paused = withPoints([{ ...POINT, paused: true }]);
+  assert.equal(needsVan(paused, { id: "o1", fulfillment: "collect", pointId: "pt_farlim" }), true);
+  assert.equal(needsVan(withPoints([]), { id: "o1", fulfillment: "collect", pointId: "pt_farlim" }), false);
+});
+
+test("a courier order needs a van whether or not it names a Point", () => {
+  const st = withPoints([POINT]);
+  assert.equal(needsVan(st, { id: "o1", fulfillment: "courier" }), true);
+  assert.equal(needsVan(st, { id: "o1", fulfillment: "courier", pointId: "pt_farlim" }), true);
+  assert.equal(needsVan(st, null), false);
+});
+
+test("every customer at one Point shares ONE stop key, so the count cannot drift", () => {
+  // The key is what the run's rows, its ticked set and the "Run (N)" badge all name a stop by.
+  // Two customers at Farlim are one stop; two customers at their own doors are two.
+  const st = withPoints([POINT]);
+  const ain = { id: "o1", groupId: "g1", fulfillment: "collect", pointId: "pt_farlim" };
+  const bala = { id: "o2", groupId: "g2", fulfillment: "collect", pointId: "pt_farlim" };
+  const chandra = { id: "o3", groupId: "g3", fulfillment: "courier" };
+  assert.equal(stopKeyOf(st, { orders: [ain] }), "point:pt_farlim");
+  assert.equal(stopKeyOf(st, { orders: [bala] }), "point:pt_farlim");
+  assert.equal(stopKeyOf(st, { orders: [ain] }), stopKeyOf(st, { orders: [bala] }),
+    "one Point, one stop, however many customers collect there");
+  assert.notEqual(stopKeyOf(st, { orders: [chandra] }), "point:pt_farlim",
+    "a doorstep is its own stop");
+  assert.notEqual(stopKeyOf(st, { orders: [chandra] }), stopKeyOf(st, { orders: [ain] }));
+});
+
+test("a stop key is safe on an empty or malformed group", () => {
+  assert.equal(stopKeyOf(emptyState(), null), "group:");
+  assert.equal(stopKeyOf(emptyState(), { orders: [] }), "group:");
+});
+
+// ── v304: WHOSE WINDOW A CUSTOMER IS TOLD ──────────────────────────────────
+// Her choice: the collection window belongs to the PLACE. So an order collecting at a Point is
+// promised the Point's own hours — and NOTHING when she has not set any. The van's arrival window
+// is deliberately never used as a fallback: that is when the bread REACHES the Point, which is
+// her business, and a customer told it would turn up as the van does.
+//
+// The confirmation, the four messages and the customer's track card all read this one function,
+// so they cannot word the same promise three ways.
+
+const POINT_WITH_HOURS = {
+  id: "pt_farlim", name: "Farlim, Air Itam", address: "Lebuhraya Thean Teik",
+  receiver: "Aunty Lim", phone: "60123456789", feeRM: 0.5, paused: false,
+  createdAt: "2026-08-12T00:00:00.000Z", collectWindow: "14:00-18:00",
+  place: { lat: 5.4, lng: 100.28, label: "Farlim" },
+};
+const pointState = (points) => emptyState({ points });
+
+test("an order collecting at a Point is told the Point's own hours (v304)", () => {
+  const st = pointState([POINT_WITH_HOURS]);
+  assert.equal(promisedWindowSuffix(st, { fulfillment: "collect", pointId: "pt_farlim" }),
+    ", collect 2-6 pm");
+});
+
+test("⚠️ and NEVER the van's window, which is when the bread gets there (v304)", () => {
+  // The order carries a deliveryWindow because the run that took the bread to the Point stamped
+  // one (v302). The customer must not be told it: it is the van's arrival, not their hours, and
+  // quoting both would be two different times in one message.
+  const st = pointState([POINT_WITH_HOURS]);
+  const onARun = { fulfillment: "collect", pointId: "pt_farlim", deliveryWindow: "10:00-12:00" };
+  assert.equal(promisedWindowSuffix(st, onARun), ", collect 2-6 pm",
+    "the Point's hours win, and the van's window is not mentioned at all");
+});
+
+test("a Point with no hours promises the day and nothing else (v304)", () => {
+  const st = pointState([{ ...POINT_WITH_HOURS, collectWindow: "" }]);
+  const onARun = { fulfillment: "collect", pointId: "pt_farlim", deliveryWindow: "10:00-12:00" };
+  assert.equal(promisedWindowSuffix(st, onARun), "",
+    "nothing rather than the van's window — an unset window is not a licence to promise the van's");
+});
+
+test("every other order is promised the trip's window, exactly as it always was (v304)", () => {
+  const st = pointState([POINT_WITH_HOURS]);
+  assert.equal(promisedWindowSuffix(st, { fulfillment: "courier", deliveryWindow: "14:00-17:00" }),
+    ", 2-5 pm");
+  assert.equal(promisedWindowSuffix(st, { fulfillment: "courier" }), "",
+    "a courier order with no window booked promises no time");
+  // A collection from the KITCHEN has no Point, so it is on the ordinary path too.
+  assert.equal(promisedWindowSuffix(st, { fulfillment: "collect" }), "");
+  // And a Point she has since deleted leaves the order with no hours rather than an error.
+  assert.equal(promisedWindowSuffix(st, { fulfillment: "collect", pointId: "pt_gone" }), "");
+  assert.equal(promisedWindowSuffix(st, null), "");
 });

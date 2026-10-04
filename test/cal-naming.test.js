@@ -527,3 +527,48 @@ test("the app's bubble is shown on hover where a mouse is, and only there", () =
   assert.ok(!/\.cal-cell:hover \.cal-tip/.test(withoutHoverBlock),
     "every hover rule sits inside the (hover: hover) query");
 });
+
+// ── v302: the day's "Run (N)" badge counts STOPS ─────────────────────────────
+// The badge on a delivery day's card is a promise about the screen it opens: it must be the
+// number of stops the run will find, or she presses it expecting two doorsteps and finds one.
+// It counted courier GROUPS and skipped every Self collection Point order, exactly as the run
+// screen did — so a day where two customers collect at Farlim had no Run button at all, and
+// the trip was unreachable from here. Both now read one rule out of courier_job.js.
+//
+// The card the badge lives on is drawn for a PAST date (an upcoming day wears its green pill
+// on the calendar instead), so these two days sit behind this file's mocked today.
+const POINTED = (atPoint) => ({
+  ...DSTATE(),
+  deliveryDates: [{ id: "d16", date: "2026-09-02" }, { id: "d20", date: "2026-09-05" }],
+  points: [{ id: "pt_farlim", name: "Farlim, Air Itam", address: "Lebuhraya Thean Teik",
+    receiver: "Aunty Lim", phone: "60123456789", feeRM: 0.5, paused: false,
+    createdAt: "2026-08-12T00:00:00.000Z", place: { lat: 5.4, lng: 100.28, label: "Farlim" } }],
+  orders: [
+    { id: "o1", groupId: "g1", deliveryDateId: "d16", fulfillment: "collect",
+      status: "paid", createdAt: "2026-08-20T02:00:00.000Z", customerName: "Ain",
+      whatsapp: "+60 12-111 1111", address: "1 Jalan A", productId: "p1", qty: 2,
+      ...(atPoint ? { pointId: "pt_farlim" } : {}) },
+    { id: "o2", groupId: "g2", deliveryDateId: "d16", fulfillment: "collect",
+      status: "paid", createdAt: "2026-08-20T03:00:00.000Z", customerName: "Bala",
+      whatsapp: "+60 12-222 2222", address: "9 Jalan B", productId: "p1", qty: 3,
+      ...(atPoint ? { pointId: "pt_farlim" } : {}) },
+  ],
+});
+const runButton = (root) => walk(root).find((n) => n.tagName === "BUTTON"
+  && String((n.children[0] || {}).text || "").startsWith("Run ("));
+
+test("a day where two customers collect at ONE Point offers a Run of ONE (v302)", () => {
+  const root = Object.assign(createEl("div"), {});
+  renderDeliveries(root, POINTED(true));
+  const btn = runButton(root);
+  assert.ok(btn, "the day has a Run button at all — half the fault was that it had none");
+  assert.equal(btn.children[0].text, "Run (1)",
+    "one Point is one stop, however many customers collect there");
+});
+
+test("a day of collections from the KITCHEN offers no Run at all (v302)", () => {
+  const root = Object.assign(createEl("div"), {});
+  renderDeliveries(root, POINTED(false));
+  assert.equal(runButton(root), undefined,
+    "she hands kitchen collections over herself — there is no trip to price");
+});
