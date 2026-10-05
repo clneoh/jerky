@@ -500,10 +500,14 @@ function groupSearchText(state, group) {
 }
 
 // Order groups whose every search word shows up somewhere in the order: a name,
-// a code ("#A3F9C2" or just its digits), a WhatsApp number typed with or
-// without dashes/+, an item name, the note, the address or a delivery day. All
-// words must match (so "ain focaccia" narrows to one order). Recency-sorted,
-// most recent first. Pure — the finder box wires this up to the DOM.
+// a code ("#A3F9C2" or "A3F9C2"), a WhatsApp number typed with or without
+// dashes/+, an item name, the note, the address or a delivery day. All words must
+// match (so "ain focaccia" narrows to one order). Recency-sorted, most recent
+// first. Pure — the finder box wires this up to the DOM.
+//
+// ⚠️ THE NUMBER PATH IS FOR NUMBERS (v331). A query WITH A LETTER IN IT is matched as
+// text and nothing else — see the note inside — because a code like "C2FDA5" used to be
+// stripped to "25" and then found every order whose phone number contains it.
 export function matchingGroups(state, query) {
   const tokens = String(query || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (!tokens.length) return [];
@@ -511,6 +515,20 @@ export function matchingGroups(state, query) {
     const hay = groupSearchText(state, group);
     return tokens.every((tok) => {
       if (hay.text.includes(tok)) return true;
+      // ★★ THE DIGITS FALLBACK IS FOR A PHONE NUMBER, AND ONLY FOR ONE (v331). Her
+      // report, 5 Oct 2026: __"C2FDA5 why when i type this 17 order found?"__
+      //
+      // ⚠️⚠️ AN ORDER CODE WAS BEING READ AS A LOOSE PAIR OF DIGITS. `C2FDA5` carries two
+      // digits, so stripping the letters gave "25" — and the query then matched **every
+      // order whose WhatsApp number contains "25"**. In a Malaysian book that is most of
+      // them: seventeen, on hers. **A search that returns seventeen when she typed one
+      // code is worse than no search at all, because it hides the one row she asked for.**
+      //
+      // A code never needed this path: `#C2FDA5` is already in the haystack, so the TEXT
+      // check above finds it. The fallback exists for "012-345 6789" — a number typed WITH
+      // separators, which cannot match the stored number character for character. **A query
+      // with a letter in it is not a number.**
+      if (/[a-z]/.test(tok)) return false;
       const digits = tok.replace(/[^0-9]/g, "");
       return digits.length >= 2 && hay.digits.includes(digits);
     });
@@ -926,9 +944,16 @@ export function newOrdersInbox(state, selectDate, root) {
     const orphan = !date;
     const title = g.orders.map((o) => orderLineName(state, o)).join(" + ");
     const qtyTotal = g.orders.reduce((s, o) => s + o.qty, 0);
-    const sub = [first.customerName || "No name", date ? shortDate(date.date) : "",
-      `Placed ${fmtPlaced(first.createdAt, first.orderDate)}`]
-      .filter(Boolean).join(" · ");
+    // ★ A ROW WITH NO DAY SAYS SO, AND SAYS WHAT TO DO (v332). It used to carry the same
+    // sub-line as every other row with the day simply missing — so it read as an ordinary
+    // order that had lost a field, with no way to open it and no hint that it could be
+    // fixed. **A dead row must explain itself** (her own rule about controls).
+    const sub = orphan
+      ? [first.customerName || "No name", "its delivery day was removed — tap to put it on one"]
+        .filter(Boolean).join(" · ")
+      : [first.customerName || "No name", date ? shortDate(date.date) : "",
+        `Placed ${fmtPlaced(first.createdAt, first.orderDate)}`]
+        .filter(Boolean).join(" · ");
     const main = el("div", { class: "li-main" },
       el("div", { class: "li-title" }, title, orderCodeTag(first),
         referredTag(first),
@@ -937,11 +962,22 @@ export function newOrdersInbox(state, selectDate, root) {
       el("div", { class: "li-sub" }, sub));
     const meta = el("div", { class: "li-right" },
       el("span", { class: "qty-chip" }, `×${qtyTotal}`),
-      orphan ? null : el("span", { class: "inbox-arrow" }, "›"));
-    // An orphaned order (its delivery date was deleted) has no date to open, so
-    // it renders as a plain row — but it still gets a ✕ so it can be removed.
+      el("span", { class: "inbox-arrow" }, "›"));
+    // ★★ AN ORPHANED ORDER CAN BE OPENED (v332). It has no date to jump to, and it used
+    // to be drawn as a plain `<span>` with only a ✕ — **so the one thing she could do with
+    // it was delete it**, and if she did not want to delete it she could do nothing at all.
+    // Her report: __"there is many orphant orders around, can you clear it for me"__, and
+    // then, having found one by its code, __"no button to delete it"__.
+    //
+    // It opens its own Edit card now — which is where an order's day is changed, and it
+    // saves only once a day is chosen. **So the row that could only be thrown away can be
+    // put back instead.**
     const nav = orphan
-      ? el("span", { class: "inbox-main" }, main, meta)
+      ? el("a", {
+          class: "inbox-main",
+          href: "#",
+          onclick: (ev) => { ev.preventDefault(); openEditPopup(state, g, "", root); },
+        }, main, meta)
       : el("a", {
           class: "inbox-main",
           href: `#/orders?date=${first.deliveryDateId}`,
@@ -1007,17 +1043,36 @@ function orderFinderEl(state, root, selectDate, body) {
       el("div", { class: "li-sub" }, sub));
     const meta = el("div", { class: "li-right" },
       el("span", { class: "qty-chip" }, `×${qtyTotal}`),
-      orphan ? null : el("span", { class: "inbox-arrow" }, "›"));
-    // An orphan (its delivery date was deleted) has no date to jump to, so it
-    // renders as a plain row without an arrow.
-    const nav = orphan
-      ? el("span", { class: "inbox-main" }, main, meta)
-      : el("a", {
-          class: "inbox-main",
-          href: `#/orders?date=${first.deliveryDateId}`,
-          onclick: (ev) => { ev.preventDefault(); open(group); },
-        }, main, meta);
-    return el("div", { class: "inbox-item" }, nav);
+      // ★ AND AN ORPHAN WEARS THE ARROW NOW (v332) — it has somewhere to go, which is its
+      // own card. It was drawn with no arrow because it led nowhere, and an arrow that
+      // leads nowhere is worse than none; now it leads to the day picker.
+      el("span", { class: "inbox-arrow" }, "›"));
+    const nav = el("a", {
+      class: "inbox-main",
+      href: `#/orders?date=${first.deliveryDateId}`,
+      onclick: (ev) => { ev.preventDefault(); open(group); },
+    }, main, meta);
+    // ★★ A RESULT SHE FOUND CAN BE REMOVED FROM HERE (v332). Her report: __"C2FDA5 i search
+    // this order, but no button to delete it"__. The New-orders inbox has carried a ✕ on
+    // every row since it was built; **a search result carried none at all**, so the one
+    // place she goes to find an order by its code was the one place she could not act on
+    // it. Alike rows behave alike — the same ✕ here as there, and it asks before it
+    // deletes, exactly as that one does.
+    return el("div", { class: "inbox-item" },
+      nav,
+      el("button", {
+        class: "inbox-del",
+        "aria-label": "Remove order",
+        // ⚠️⚠️ `group`, NOT `g`. The ✕ was first written with the INBOX's own variable name
+        // — `groupOrders(unread).map((g) => …)` — and this function's parameter is `group`,
+        // so pressing it threw `ReferenceError: g is not defined` and **removed nothing at
+        // all**. It was shipped that way for the length of one push, and it was caught only
+        // because she asked the question that matters:
+        // __"have you tested it really can delete?"__ **A control is not tested until it has
+        // been driven to its outcome.** `test/orders-day-sum.test.js` now presses this
+        // button through the confirmation to an empty order list.
+        onclick: () => removeOrder(state, group, root, first.deliveryDateId),
+      }, "✕"));
   };
 
   const paint = (query) => {
@@ -1064,7 +1119,17 @@ function orderFinderEl(state, root, selectDate, body) {
     input.value = "";
     hideResults();
     if (!date) {
-      toast("This order's delivery date was deleted — remove it from the New Orders box.");
+      // ★★ AN ORDER WHOSE DAY IS GONE OPENS ITS OWN CARD (v332). It used to be a toast
+      // telling her to go to the New-orders box — **which cannot help either**: that row
+      // has no day to jump to, so the only thing it offers is a ✕. Her report, 5 Oct 2026:
+      // __"C2FDA5 i search this order, but no button to delete it"__ — she had found the
+      // order and could do nothing with it.
+      //
+      // The Edit card is the right door and always was: it opens with no day marked, its
+      // **Delivery day** calendar offers the days she is still taking, and its save refuses
+      // until she picks one ("Choose a delivery day"). **So the same tap puts the order
+      // back on a day, or she removes it from the row's own ✕ — nothing is stuck.**
+      openEditPopup(state, group, "", root);
       return;
     }
     orderStatusFilter = "";

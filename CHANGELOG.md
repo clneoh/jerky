@@ -1,8 +1,137 @@
-# Munchies Furkidz — change history (v54 → v330)
+# Munchies Furkidz — change history (v54 → v335)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**05 Oct 2026 — engine v335, THE SELF-CHECK NOW SEES EVERY KIND OF CONTROL (no database step,
+nothing to upload — pushing this one is the whole of it).**
+
+**It left screens out, and finding out why taught more than the check itself. It was blind to three
+kinds of control, not three screens:**
+
+**1 · Tick boxes and switches.** The bring-a-friend on/off, the day ticks on the Purchase Order, every
+product toggle. The check walked straight past them — and a switch whose handler breaks is exactly the
+kind of fault it exists to find.
+
+**2 · Number boxes.** The amount fields, the daily limits, the discounts. Same — skipped.
+
+**3 · The screens that fill themselves in.** The Reviews screen asks the cloud for the waiting reviews
+and draws its Publish and Delete presses only when the answer arrives. The check looked the instant the
+screen was drawn, saw an empty card, and said "nothing to press" — when what it was really looking at
+was a screen that had not answered yet. It waits one turn now. **That is a whole class**: anything that
+arrives from a fetch behaves this way.
+
+**All three were reproduced here before being believed, not taken on trust.** Blinding the check to
+tick boxes drops it from 6,046 presses to 4,824 and makes the whole Purchase Order screen read as
+having nothing to press — every control on it is a day tick. Removing its one-turn wait makes the
+Reviews screen read as empty.
+
+**05 Oct 2026 — engine v334, THE APP NOW CHECKS ITSELF BEFORE IT REACHES YOUR PHONE (no database
+step, nothing to upload — pushing this one is the whole of it).**
+
+**Why.** Your question, after a day of faults, in your own words: __"you work is not checked, how can
+you improve?"__ The honest answer is that the checks covered what was BUILT, not what you DO. Three
+faults that day were the same shape: a remove button asserted to be present and never pressed; a fault
+tested green on a made-up state; and a stray "null" found by a screenshot rather than by a test.
+
+**What it does now.** It opens every screen the app has — the list is read out of the app's own route
+table, so a new screen is covered the moment it is given a route — and on each one it presses every
+button, link and dropdown, types into every text box, and then presses whatever those presses reveal,
+including a confirmation's Yes. **Anything that throws is a failure, and it names which screen, which
+control, and what it was doing when it broke.**
+
+**And the proof it works: a fault was put back to see whether the check would catch it.** It did, and
+this is what it said:
+
+__/orders · revealed → BUTTON "x" (after INPUT "Find an order — name, #code, phone…") · g is not
+defined__
+
+**That is a dead button, named, on the screen it was on, with the press that revealed it and the error
+it threw.** It is now found automatically, every time. Here it is **26 screens and 6,046 presses, in
+about five seconds.**
+
+**One thing it is not, said plainly.** It is not a browser: it catches a control that breaks when used,
+never whether a thing looks right or moves.
+
+**05 Oct 2026 — engine v333, THE REMOVE BUTTON I ADDED YESTERDAY DID NOT WORK (no database step,
+nothing to upload — pushing this one is the whole of it).**
+
+**You asked the question that mattered: __"have you tested it really can delete?"__ — and the answer
+was no.** I had checked that the ✕ was __there__, and that the row opens. **I had never pressed it
+through to a deletion. So I did — and it was broken.**
+
+**What was wrong.** The remove button I put on a search result was wired to a variable name that does
+not exist in that part of the code — the name belongs to the New-orders box next door. Pressing it
+**threw an error and removed nothing at all.** A button that does nothing is the thing this app
+treats as a bug everywhere else, and I had shipped one.
+
+**Now fixed and properly tested — by pressing it.** The test now **presses the ✕, answers the
+confirmation, and checks the order is actually gone**, from **both** doors: the New-orders box and a
+search result. It also fails with the old mistake put back, so it is a real check and not a hopeful one.
+
+**⚠️ And it was worth asking for a second reason:** the New-orders box's own ✕ has been there since
+the box was built and had **only ever been checked for existing** — never pressed. It works, and it is
+now covered too. **Two buttons call the same removal; testing one proves nothing about the other.**
+
+**On v332's other half — nothing was lost.** Opening an orphaned order was working, and still is.
+**No order was ever removed by the broken press**, because a press that throws removes nothing.
+
+**Your data is untouched.** No SQL, no Edge Function, no key. The suite is **2,821 tests, all green**.
+
+**05 Oct 2026 — engine v332, AN ORDER WITH NO DELIVERY DAY CAN BE OPENED — AND A SEARCHED ORDER
+REMOVED (no database step, nothing to upload — pushing this one is the whole of it).**
+
+**Two of your reports, and they were the same dead end met from two sides.**
+
+**What an "orphan" is.** When you delete a delivery day that still has orders on it, the app asks
+first and promises: **"The orders are kept in your delivery history."** You agreed, so they are kept
+— **but the day they belonged to is gone, and until now that left them stranded.** The row could not be
+opened (no arrow, no jump), so **the one thing you could do with one was delete a real sale** — and if
+you did not want to delete it, you could do nothing at all.
+
+**Both halves are fixed:**
+
+**1 · The row now opens the order.** Tap an orphan in the New-orders inbox, or a search result, and
+its **own Edit card** opens — the one with the **Delivery day** calendar in it. Pick a day, press
+Save changes, and the order is back where it belongs. **Nothing is deleted.** And that row now says
+what it is: __"its delivery day was removed — tap to put it on one"__.
+
+**2 · A search result can be removed.** Your words: __"C2FDA5 i search this order, but no button to
+delete it."__ **A search result had no controls at all** — no arrow, no ✕ — so the one place you go to
+find an order by its code was the one place you could not act on it. **It carries the same ✕ the
+New-orders inbox has always had**, and it still asks before it removes anything.
+
+**You chose this route yourself**, and it is the safe one: **every orphan can be opened, put back on a
+day, or removed one at a time — and nothing leaves your sales or your Profit statement unless you
+remove that one order yourself.**
+
+**Your data is untouched.** No SQL, no Edge Function, no key. The suite is **2,819 tests, all green**.
+
+**05 Oct 2026 — engine v331, A CODE SEARCH FINDS THAT ORDER AND NO OTHERS (no database step, nothing
+to upload — pushing this one is the whole of it).**
+
+**Your report:** __"C2FDA5 why when i type this 17 order found?"__
+
+**What was wrong.** The search box has a second way of matching, added for a phone number typed
+with dashes or spaces — "__012-345 6789__" cannot match a number stored as "__60123456789__"
+character for character, so the box strips everything that is not a digit and looks for those digits
+in the order's number. **An order code was falling into that same path.** "__C2FDA5__" carries two
+digits in it, so stripping the letters left "__25__" — and the search then found **every order whose
+phone number contains 25**. In a Malaysian book that is most of them: **seventeen, on yours.**
+
+**⚠️ And it is worse than a long list.** The one row you asked for is buried inside it, so a search
+that returns seventeen is a search that has stopped working.
+
+**Now fixed.** **A query with a letter in it is matched as text and nothing else** — and a code never
+needed the number path anyway, because "__#C2FDA5__" is already in what the search reads. **Typing a
+code now finds exactly that order, with or without the `#`, in any case.**
+
+**And the number path still does its own job** — "__012-345__", "__0123456789__", "__60123456789__"
+and "__016 555 7777__" all still find their order, exactly as before. **Both halves are pinned as a
+test**, so neither can be broken by fixing the other.
+
+**Your data is untouched.** No SQL, no Edge Function, no key. The suite is **2,818 tests, all green**.
 
 **05 Oct 2026 — engine v330, THE BRING-A-FRIEND DISCOUNT SHOWS IN THE WORKING (no database step,
 nothing to upload — pushing this one is the whole of it).**

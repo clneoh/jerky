@@ -161,11 +161,13 @@ test("newOrdersInbox lists every new order with a ✕ remove button, orphans inc
   const rows = inbox.children[2].children; // .inbox-list
   assert.equal(rows.length, 3, "one row per new order group");
 
-  // Orphaned order: no date to open, so it's a plain row — but still removable.
+  // Orphaned order: it CAN be opened now (v332) — its own Edit card, where a day is chosen.
+  // ⚠️ It was a bare `<span>` with only a ✕, which left deleting it as the one thing she
+  // could do with it. Every row is a control; alike rows behave alike.
   const orphanRow = rows[0];
-  assert.equal(orphanRow.children[0].tagName, "SPAN", "orphan row is not a link");
-  assert.equal(orphanRow.children[0].attrs.href, undefined, "orphan row has no href");
-  assert.equal(orphanRow.children[0].children[1].children.length, 1, "no arrow on an orphan row");
+  assert.equal(orphanRow.children[0].tagName, "A", "orphan row is a control, not a bare span");
+  assert.equal(orphanRow.children[0].children[1].children.length, 2,
+    "and it wears the arrow, because it now leads somewhere");
 
   // Normal order: navigates to its delivery date.
   const normalRow = rows[2]; // o1 → d1
@@ -278,11 +280,28 @@ test("the reveal finds the row through the group id when it is tagged with a dif
   assert.equal(row.scrolled.block, "center");
 });
 
-test("an orphaned inbox row offers no tap, and an unfound row is left alone", () => {
-  // The orphan has no date to open, so it renders as a plain span with no click.
+test("★ an orphaned inbox row CAN be tapped, and says so", () => {
+  // ★★ v332, and this test used to pin the opposite: "an orphaned inbox row offers no tap".
+  // That was the dead end. An order whose delivery day was deleted was drawn as a plain
+  // `<span>` with only a ✕ beside it — **so the one thing she could do with it was delete
+  // it**, and if she did not want to delete it she could do nothing at all. Her report:
+  // __"there is many orphant orders around, can you clear it for me"__.
+  //
+  // ⚠️ THE BEHAVIOUR CHANGED ON PURPOSE, so the assertion changed with it rather than
+  // being deleted: **the row now opens the order's own Edit card**, which is where a day
+  // is chosen. Nothing about the ✕ moved — it is still on every row.
   const inbox = newOrdersInbox(inboxState, () => {}, fakeRoot());
   const rows = inbox.children[2].children; // .inbox-list
-  assert.equal(rows[0].children[0]._listeners.click, undefined, "an orphan row cannot be tapped");
+  const orphan = rows[0].children[0];
+  assert.ok(orphan._listeners.click, "an orphan row can be tapped");
+  assert.doesNotThrow(() => tapRow(orphan), "and tapping it does not throw");
+
+  // ⚠️ AND IT SAYS WHAT IT IS. A row with the day simply missing read as an ordinary order
+  // that had lost a field, with no hint that it could be fixed.
+  const sub = rows[0].children[0].children[0].children[1].children[0].text;
+  assert.ok(String(sub).includes("delivery day was removed"),
+    `the row says why it has no day: ${sub}`);
+  assert.ok(String(sub).includes("tap to put it on one"), "and what tapping does");
 
   // A row that the date view did not render (e.g. filtered away) must not throw.
   assert.doesNotThrow(() => tapRow(rows[1].children[0]));
@@ -364,6 +383,47 @@ test("matchingGroups finds an order by WhatsApp number, messy as typed", () => {
   assert.deepEqual(foundIds(st, "0123456789"), ["o_9f3ba44e"], "local digits, no dash");
   assert.deepEqual(foundIds(st, "60123456789"), ["o_9f3ba44e"], "international digits");
   assert.deepEqual(foundIds(st, "016 555 7777"), ["o_ce7c9b21"], "country-code digits split");
+});
+
+test("★ a code is found AS A CODE — never as a loose pair of digits out of it", () => {
+  // ★★ Her report, 5 Oct 2026: __"C2FDA5 why when i type this 17 order found?"__
+  //
+  // ⚠️⚠️ THE FALLBACK MEANT FOR A PHONE NUMBER TYPED WITH DASHES WAS FIRING ON AN ORDER
+  // CODE. `C2FDA5` has two digits in it, so `tok.replace(/[^0-9]/g, "")` gave "25" — and
+  // the query then matched **every order whose WhatsApp number contains "25"**, which in a
+  // Malaysian mobile book is most of them. Seventeen, on her book.
+  //
+  // The fallback exists for "012-345 6789": a number typed WITH separators, which cannot
+  // match the stored number character for character. **A query with a letter in it is not a
+  // number, and a code is matched by the text path above** — `#C2FDA5` is in the haystack,
+  // so the code never needed the digits path at all.
+  const st = {
+    ...searchState(),
+    // ⚠️ The ORIGINAL two ride along: the phone-number half of this test needs the order
+    // whose number was stored as "012-345 6789", and replacing the list wholesale would
+    // have silently removed the thing that half is checking.
+    orders: [
+      ...searchState().orders,
+      { id: "o_c2fda5", status: "new", deliveryDateId: "d1", deliveryDate: "2026-09-04",
+        productId: "p1", qty: 1, customerName: "Ain", whatsapp: "60111111111",
+        fulfillment: "collect", createdAt: "2026-09-04T10:00:00" },
+      // Numbers that really do contain "25" — the seventeen, in miniature.
+      { id: "o_aaaa1111", status: "new", deliveryDateId: "d1", deliveryDate: "2026-09-04",
+        productId: "p1", qty: 1, customerName: "Bee", whatsapp: "6012255555",
+        fulfillment: "collect", createdAt: "2026-09-01T10:00:00" },
+      { id: "o_bbbb2222", status: "new", deliveryDateId: "d1", deliveryDate: "2026-09-04",
+        productId: "p1", qty: 1, customerName: "Cee", whatsapp: "6012255666",
+        fulfillment: "collect", createdAt: "2026-09-01T11:00:00" },
+    ],
+  };
+  assert.deepEqual(foundIds(st, "C2FDA5"), ["o_c2fda5"],
+    "the code finds the order it names, and only it");
+  assert.deepEqual(foundIds(st, "c2fda5"), ["o_c2fda5"], "in any case");
+  assert.deepEqual(foundIds(st, "#C2FDA5"), ["o_c2fda5"], "and with the hash");
+  // ⚠️ AND THE FALLBACK STILL DOES ITS OWN JOB — a number typed with separators, and the
+  // bare digits of one, both still find their order. The fix must not take that away.
+  assert.deepEqual(foundIds(st, "012-345"), ["o_9f3ba44e"], "a number with separators still finds it");
+  assert.deepEqual(foundIds(st, "12255555"), ["o_aaaa1111"], "and its bare digits do too");
 });
 
 test("matchingGroups finds by item, note, delivery method and delivery day", () => {

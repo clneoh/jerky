@@ -738,6 +738,68 @@ matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestion
 now that the Google key returns one precise house-number answer, most lookups legitimately show no
 list and the pin simply lands.
 
+## Five versions, and the app now checks itself (v331–v335)
+
+Bakery `7a71894` (v330 — exactly where jerky sat) → `a76d8f0` (v335), the same one-file three-way
+merge. **Taken as the FINAL state of each file, never replayed version by version** — the bakery's
+own brief says why: `admin/js/views/orders.js` changed in v326, v327, v332 *and* v333 in one day, so
+replaying the steps in order fights itself. All four merged files came in with **0 conflicts**.
+
+**v331 — a code search finds that order and no others.** The digits fallback meant for a phone number
+typed with separators was firing on an **order code**: `C2FDA5` carries two digits, so stripping the
+letters gave `"25"` and the query matched every order whose WhatsApp number contains `25` —
+seventeen, on her. The fix is one line: **a query with a letter in it is not a phone number.** Tested
+two-sided (the code case *and* the phone-number cases in one test), because a fix for a false match is
+exactly what quietly removes a true one.
+
+**v332 — an order with no delivery day can be opened, and a searched order removed.** Two of her
+reports, one dead end from two sides: an **orphan** — an order whose delivery day she deleted, which
+the app promised to keep — was drawn as a bare `<span>` with only a ✕, so the one thing she could do
+with a real sale was delete it; and a finder result carried no controls at all. Now an orphan opens
+its own Edit card (where the delivery-day calendar puts it back), and every finder result carries the
+inbox's own remove ✕. **She was asked first** — "clear it for me" means deleting sales records — and
+chose to open each one. **Never bulk-delete an order she can still be paid for.**
+
+**v333 — the remove button added in v332 did not work.** It was written with the inbox's own variable
+name (`g`) where the finder row's parameter is `group`, so pressing it threw `ReferenceError: g is not
+defined` and removed nothing.
+
+## ★ The self-check: `test/press-everything.test.js` (v334–v335, ported here)
+
+She asked the bakery session *"you work is not checked, how can you improve?"* — and the answer was
+built: **a pass that renders every route in `app.js`** (read out of its own route table and import
+block, so a new screen is covered the moment it is routed), **presses every button, link, dropdown and
+tick box on each — each from a fresh state and a fresh render — types into every text box, and presses
+whatever a press reveals**, in the pop-up layers *and* in the screen. Anything thrown is a failure,
+and it names the screen, the control, and what it was doing.
+
+**In jerky: 26 screens, 6,046 presses, ~5 seconds, no skipped screens.**
+
+**Four things it costs to get right**, all reproduced here rather than taken on trust:
+
+- **A reveal is not only a pop-up.** The bakery's first pass re-scanned only the layers and **stayed
+  green with a real fault put back**, because the broken button lived on a row revealed *in the
+  screen* by typing into the finder.
+- **Tick boxes, number boxes, and screens that fill themselves from a fetch.** Blinding this pass to
+  tick boxes drops it **6,046 → 4,824 presses** and makes the whole **Purchase Order** screen read as
+  having nothing to press; removing its one-turn wait makes **Reviews** read as empty.
+- **`unref()` every timer a press starts**, or `node --test` reports a TIMEOUT for a pass that already
+  finished — and the pass's own wait must use the **real** timer, since awaiting an unref'd one never
+  resolves.
+- **★ AND BITE IT.** A check nobody has bitten is a check nobody knows works. Here the v332-shape fault
+  was put back (`group` → `g` in the finder's ✕) and the pass caught it by name:
+
+  ```
+  /orders  revealed → BUTTON "✕" (after INPUT "Find an order — name, #code, phone…")
+      g is not defined
+  ```
+
+  A second bite (the inbox's own ✕) proved the inbox rows are walked too — the pass named it on both
+  the direct press and the revealed path.
+
+**What it is not, said plainly:** a shim is not a browser. It catches a control that breaks when used,
+never whether a thing looks right or moves. **A floor, not a proof.**
+
 ## Seventeen versions in one pass: bring-a-friend becomes a coupon, and the shop's offers scroll (v314–v330)
 
 Bakery `3073714` (v313 — exactly where jerky sat) → `7a71894` (v330), the same one-file three-way

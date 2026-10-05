@@ -105,6 +105,7 @@ function state() {
   };
 }
 
+const txtOf = (n) => String(n && (n.textContent !== undefined ? n.textContent : n.text) || "");
 const all = (node, out = []) => {
   for (const c of node.children || []) { out.push(c); all(c, out); }
   return out;
@@ -1868,4 +1869,131 @@ test("the Edit card's total has the bring-a-friend discount taken off it", () =>
   assert.equal(valueOf("Items total"), "RM 30.00", "items first");
   assert.equal(valueOf("Total"), "RM 27.00",
     "AND THE TOTAL ITSELF IS AFTER THE DISCOUNT — this is the figure she quotes to a customer");
+});
+
+// ── ★ v332: an order whose day is gone can be opened, and a result can be removed ──
+test("a code search opens its result, and the result can be removed", () => {
+  // ★★ TWO REPORTS, ONE DEAD END. First: __"there is many orphant orders around, can you
+  // clear it for me"__ — an orphan was drawn as a bare row with only a ✕, so the one thing
+  // she could do with it was delete it. Then, minutes later: __"C2FDA5 i search this order,
+  // but no button to delete it"__ — and a search result carried NO controls at all.
+  //
+  // ⚠️ SO BOTH HALVES ARE PINNED HERE THROUGH THE REAL SCREEN: the result carries the same
+  // ✕ the New-orders inbox has always had, and tapping the row opens the order's own Edit
+  // card — where its Delivery day is chosen. Tapping it used to be a toast telling her to
+  // go somewhere that could not help.
+  const st = state();
+  st.orders = [{
+    id: "o_c2fda5", groupId: "o_c2fda5", status: "new",
+    deliveryDateId: "gone", deliveryDate: "2026-09-01", // the day was deleted
+    productId: "p1", qty: 2, unitPrice: 15,
+    customerName: "Uncle Tan", whatsapp: "60162223333",
+    createdAt: "2026-09-01T10:00:00", orderDate: "2026-09-01",
+  }];
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+
+  const box = all(root).find((n) => n.tagName === "INPUT"
+    && String(n.className).includes("finder-input"));
+  assert.ok(box, "the finder box is on the screen");
+  box.value = "C2FDA5";
+  box._listeners.input[0].call(box);
+
+  const results = all(root).find((n) => String(n.className).includes("finder-results"));
+  const row = all(results).find((n) => String(n.className).includes("inbox-item"));
+  assert.ok(row, `the code finds its order (results: ${JSON.stringify(all(results).map((n) => n.textContent))})`);
+
+  const del = all(row).find((n) => String(n.className).includes("inbox-del"));
+  assert.ok(del, "AND THE RESULT CAN BE REMOVED — the ✕ is there, exactly as on an inbox row");
+
+  // The row itself opens the card rather than doing nothing.
+  const nav = row.children[0];
+  // ⚠️⚠️ THE LAYER IS SHARED BY EVERY TEST IN THIS FILE, and it is not emptied between
+  // them — so a card left by an earlier test made this one pass while the fault was put
+  // back (found by biting it). EMPTIED FIRST, so the only thing that can be read here is
+  // the card THIS tap opened.
+  layers["popup-layer"].replaceChildren();
+  const ev = { preventDefault() {} }; // the handler calls it, as a real click would
+  assert.doesNotThrow(() => (nav._listeners.click || []).forEach((f) => f.call(nav, ev)));
+
+  const pop = layers["popup-layer"];
+  const txt = (n) => String(n && (n.textContent !== undefined ? n.textContent : n.text) || "");
+  assert.ok(txt(pop).includes("Edit order"),
+    "tapping an orphan result opens its own Edit card, where its delivery day is chosen");
+  assert.ok(txt(pop).includes("Save changes"), "with the press that puts it back on a day");
+});
+
+test("★ the ✕ on a search result REALLY removes the order", () => {
+  // ★★ She asked the right question, 5 Oct 2026: __"have you tested it really can delete?"__
+  // — and the honest answer was NO. The test above proves the ✕ is THERE and that the row
+  // opens; it never pressed the ✕ through to a deletion. **A control is not tested until it
+  // has been driven to its outcome.**
+  //
+  // ⚠️ AND THE OUTCOME IS TWO PRESSES, not one: the ✕ opens a confirmation and the removal
+  // happens on ITS yes. A test that stopped at the first press would prove nothing about
+  // whether the order goes.
+  const st = state();
+  st.orders = [{
+    id: "o_c2fda5", groupId: "o_c2fda5", status: "new",
+    deliveryDateId: "gone", deliveryDate: "2026-09-01",
+    productId: "p1", qty: 2, unitPrice: 15,
+    customerName: "Uncle Tan", whatsapp: "60162223333",
+    createdAt: "2026-09-01T10:00:00", orderDate: "2026-09-01",
+  }];
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+
+  const box = all(root).find((n) => n.tagName === "INPUT" && String(n.className).includes("finder-input"));
+  box.value = "C2FDA5";
+  box._listeners.input[0].call(box);
+
+  const results = all(root).find((n) => String(n.className).includes("finder-results"));
+  const row = all(results).find((n) => String(n.className).includes("inbox-item"));
+  const del = all(row).find((n) => String(n.className).includes("inbox-del"));
+  assert.equal(st.orders.length, 1, "one order before the press");
+
+  del._listeners.click[0](); // press 1: the ✕
+  const confirm = layers["confirm-layer"];
+  assert.equal(confirm.hidden, false, "and it ASKS first — the second press is hers");
+  assert.ok(txtOf(confirm).includes("Uncle Tan") || txtOf(confirm).includes("Focaccia"),
+    `the question names the order: ${txtOf(confirm)}`);
+
+  const yes = all(confirm).find((n) => n.tagName === "BUTTON" && txtOf(n).includes("Remove"));
+  assert.ok(yes, "with a Remove press of its own");
+  yes._listeners.click[0](); // press 2: the yes
+
+  assert.equal(st.orders.length, 0, "AND THE ORDER IS GONE — which is the whole of what she asked");
+  const after = all(root).find((n) => String(n.className).includes("finder-results"));
+  assert.equal(all(after).some((n) => String(n.className).includes("inbox-item")), false,
+    "and the row is gone from the results she is looking at");
+});
+
+test("★ the inbox's own ✕ removes too — the other door onto the same outcome", () => {
+  // ⚠️ BOTH DOORS, BOTH DRIVEN. The inbox's ✕ has been there since the inbox was built and
+  // had only ever been asserted to EXIST; the finder's ✕ was wired to the wrong variable
+  // name (the inbox's `g`) and threw on press. **There are two presses that call
+  // `removeOrder`, so a test of one proves nothing about the other** — and the second one
+  // is the older, the one she is more likely to reach for.
+  const st = state();
+  st.orders = [{
+    id: "o_c2fda5", groupId: "o_c2fda5", status: "new",
+    deliveryDateId: "gone", deliveryDate: "2026-09-01",
+    productId: "p1", qty: 2, unitPrice: 15,
+    customerName: "Uncle Tan", whatsapp: "60162223333",
+    createdAt: "2026-09-01T10:00:00", orderDate: "2026-09-01",
+  }];
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+
+  const inbox = all(root).find((n) => String(n.className).includes("inbox"));
+  const del = all(inbox).find((n) => String(n.className).includes("inbox-del"));
+  assert.ok(del, "the inbox row carries its own ✕");
+
+  layers["confirm-layer"].replaceChildren();
+  del._listeners.click[0]();
+  const yes = all(layers["confirm-layer"]).find((n) => n.tagName === "BUTTON" && txtOf(n).includes("Remove"));
+  assert.ok(yes, "and it asks first");
+  yes._listeners.click[0]();
+
+  assert.equal(st.orders.length, 0, "the order is gone — from the inbox door too");
 });
