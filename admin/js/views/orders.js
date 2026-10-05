@@ -20,9 +20,9 @@ import { strictestCancelDays } from "../../../store/pool.js";
 import { buildConfirmation } from "../confirm.js";
 import { buildPaymentReminder, buildPickupReminder, buildShippedMessage } from "../messages.js";
 import { maybePublishTracking, maybeSync, publishTracking } from "../supabase.js";
-import { writeCourierCharge, courierFeeOf, courierPayerOf, courierCodOf, isCourierOrder, codeMissed, codeNotApplied, customerTotal, receiptNote, receiptRows, promoOn, promoValue } from "../courier.js";
+import { writeCourierCharge, courierFeeOf, courierPayerOf, courierCodOf, isCourierOrder, codeMissed, codeNotApplied, couponAgainst, customerTotal, receiptNote, receiptRows, promoOn, promoValue } from "../courier.js";
 import { methodsOf } from "../accounts.js";
-import { schemeOf, referralFlag, giveCredits, validCredits, markOneUsed, referrerName } from "../referrals.js";
+import { schemeOf, referralFlag, giveCredits, validCredits, markOneUsed, referrerName, couponOn } from "../referrals.js";
 import { adjustForStatus } from "../stock.js";
 import { customerList, keyOf } from "../customers.js";
 import { strictNumber } from "../courier_place.js";
@@ -63,6 +63,18 @@ let anchorRowId = null;
 // at a later week survives a rebuild the baker did not ask for (a sync pull, a
 // status change).
 let ordersCalView = null;
+// ★ WHICH DAY EACH ID MEANT (v327). A delivery day is addressed everywhere by its
+// id, and an id is supposed to name one day — but two records can share one, and
+// when they do, an id alone cannot say which day a screen is on. So the day's own
+// DATE is remembered here the moment a press or an address names it, and every
+// rebuild that brings only an id reads it back.
+//
+// ⚠️⚠️ THIS IS WHAT THE THIRTEEN `renderAll(..., { date: … })` CALLS INSIDE THIS
+// FILE NEED, and it is why they are not each patched: a status change, a save, a
+// day's availability saved — every one of them re-renders the screen with the id
+// it was working on and no date, and with a shared id the panel would open the
+// other day. Remembering the day once, here, covers all of them.
+let ordersDayById = new Map();
 // Whether the ＋ New order card is open. Also module scope, because the card is
 // rebuilt whenever anything around it changes — including when a day is tapped in
 // its own calendar — and folding under her finger at that moment would be mad.
@@ -444,6 +456,7 @@ export function renderOrders(root, state, params) {
   newFormDayView = null; // …and paged to the day that opens
   newOrderDraft = null; // …and with nothing half-typed inside it
   ordersCalView = null; // …and on the week of the day that opens
+  ordersDayById = new Map(); // …and with no day remembered against any id
   installOrderCollapseOutside();
   renderAll(root, state, params);
   // Everything built above goes away with this screen — forget the open cards so
@@ -642,7 +655,10 @@ export function deliveryCal({ state, days, getActiveId, view, onPick, noteMisses
           missedIso = null;
           nameDay(state.occasions, iso, past);
           paint();
-          onPick(dateId);
+          // ★ v326. The day's OWN date goes with the tap, not only its id. The cell
+          // was drawn from this row of `byDate`; handing the date over lets the
+          // screen open the same record this cell stood for, whatever the ids do.
+          onPick(dateId, iso);
         },
       }, num, el("span", { class: "cal-count" }, full ? "FULL" : `${cap.total}/${cap.capacity}`), tip);
     });
@@ -705,6 +721,25 @@ function renderAll(root, state, params) {
   let activeId = (requested && dates.some((d) => d.id === requested))
     ? requested
     : (dates.find((d) => d.date >= todayISO())?.id || dates[dates.length - 1].id);
+  // ★ v326, widened in v327. The day's own date, carried beside the id from the
+  // cell she tapped — and now carried in the ADDRESS too (`?date=<id>&day=<date>`),
+  // which is the half v326 missed.
+  //
+  // ⚠️⚠️ WHY THE ADDRESS HAS TO CARRY IT. app.js rebuilds this screen from the
+  // address whenever the cloud answers, a pull lands, or the app regains focus
+  // (onSyncChanged -> render() -> parseHash()). On that rebuild there is no tap and
+  // no remembered date — only the address. If the address held the ID alone, and
+  // two delivery days share that id, the panel resolved to the OTHER day: the red
+  // mark stayed on the day she tapped (the calendar is drawn from the day's own
+  // record) and the panel opened the other one. ⚠️ AND NOTHING FLASHES — the
+  // rebuild runs in a microtask, before the browser paints, so the wrong panel is
+  // the only picture she ever sees. That is her recording exactly: 5 Oct loses the
+  // fill, 7 Oct gains it, and the panel's pixels are unchanged to the byte.
+  //
+  // ⚠️ It is read from `day` and NEVER from `date`: `date` is an id, and using it
+  // as a date is what made v326's own fix fall back to the wrong record on any
+  // rebuild. An older address with no `day` still works and resolves by id.
+  let activeIso = params.get("day") || ordersDayById.get(activeId) || "";
 
   if (!ordersCalView) ordersCalView = { offset: null };
   const topCal = deliveryCal({
@@ -712,26 +747,79 @@ function renderAll(root, state, params) {
     days: deliveryDayList(state),
     getActiveId: () => activeId,
     view: ordersCalView,
-    onPick: (id) => selectDate(id),
+    onPick: (id, iso) => selectDate(id, iso),
     noteMisses: true,
   });
   const content = el("div", {});
 
-  const renderContent = () => {
-    const date = byId(state.deliveryDates, activeId);
-    if (!date) {
-      content.replaceChildren(emptyState("Delivery date missing",
-        "This order's delivery date was deleted. Remove it from the New Orders box."));
-      return;
+  // WHICH RECORD A DAY IS. By id first — that is what every other screen, every
+  // order and the cloud all mean by a day. When the tap carried a date as well,
+  // the record on that date wins, so the panel can never be a different day from
+  // the cell that opened it.
+  const dayRecordFor = (id, iso) => {
+    const list = state.deliveryDates || [];
+    if (iso) {
+      const exact = list.find((d) => d && d.id === id && d.date === iso);
+      if (exact) return exact;
     }
-    content.replaceChildren(dateContent(state, date, root, selectDate));
+    return byId(list, id);
+  };
+
+  // ★ A DAY THAT CANNOT BE DRAWN SAYS SO (v328). Three versions of fixing this from
+  // the outside got nowhere, because the fault is in ONE day's data and nothing on
+  // screen ever said what it was. This is the app's own error surface — the same
+  // one app.js uses when a whole screen crashes — put where the day would have
+  // been, so the reason can be read out and acted on instead of guessed at.
+  const dayFailed = (err, id, iso) => {
+    console.error("Orders: could not draw a day", id, iso, err);
+    const rec = byId(state.deliveryDates || [], id);
+    return el("div", { class: "card" },
+      el("p", { class: "card-title" }, "This day could not be opened"),
+      el("p", { class: "card-sub" }, `${iso || (rec && rec.date) || id} — the app hit an error drawing it.`),
+      el("p", { class: "card-sub", style: "margin:10px 0 0" },
+        "Tell the baker's helper this message: " + String((err && err.message) || err)),
+      el("p", { class: "card-sub", style: "margin:8px 0 0" },
+        "Nothing has been changed. The day is still in your list — this is only about showing it."));
+  };
+
+  const drawDay = (id, iso) => {
+    const date = dayRecordFor(id, iso);
+    if (!date) {
+      return emptyState("Delivery date missing",
+        "This order's delivery date was deleted. Remove it from the New Orders box.");
+    }
+    return dateContent(state, date, root, selectDate);
+  };
+
+  const renderContent = () => {
+    try {
+      content.replaceChildren(drawDay(activeId, activeIso));
+    } catch (err) {
+      content.replaceChildren(dayFailed(err, activeId, activeIso));
+    }
   };
 
   // Switch dates in place instead of navigating: only the order area below the
   // calendar is rebuilt, so the calendar keeps the week she paged it to. The URL
   // still updates (without firing the router) so the current date stays shareable.
-  const selectDate = (id) => {
+  const selectDate = (id, iso) => {
+    // ⚠️⚠️ ALL OR NOTHING, AND THAT IS THE POINT (v328). The day is built BEFORE the
+    // red mark moves. If it cannot be built, the mark does not move and the reason
+    // takes the day's place — because a red square sitting over ANOTHER day's panel
+    // is the one thing this screen must never show, and it is exactly what she has
+    // been looking at for three versions.
+    let node;
+    try {
+      node = drawDay(id, iso);
+    } catch (err) {
+      content.replaceChildren(dayFailed(err, id, iso));
+      return;
+    }
     activeId = id;
+    activeIso = iso || "";
+    // The day she named, remembered against its id, so every later rebuild of this
+    // screen — the cloud answering, a status change, a save — opens the same day.
+    if (activeIso) ordersDayById.set(id, activeIso);
     // Opening a day the grid is NOT on brings the grid with it — a New-orders row a
     // season away must not leave the calendar showing a week it isn't on. A day
     // already on screen leaves the window exactly where she put it, so opening one
@@ -742,9 +830,16 @@ function renderAll(root, state, params) {
       if (!shown.includes(dest.date)) ordersCalView.offset = windowForDay(todayISO(), dest.date);
     }
     topCal.repaint();
-    renderContent();
+    // The day was built above, before anything moved — it is swapped in here, not
+    // built a second time.
+    content.replaceChildren(node);
     if (history && history.replaceState) {
-      history.replaceState(null, "", `#/orders?date=${id}`);
+      // ⚠️ THE DAY GOES IN THE ADDRESS AS WELL AS THE ID (v327) — see `activeIso`
+      // above for why a rebuild without it opens the wrong day. It is the day she
+      // named, or the one already remembered against this id; never a guess.
+      const day = activeIso || ordersDayById.get(id) || "";
+      const tail = day ? `&day=${day}` : "";
+      history.replaceState(null, "", `#/orders?date=${id}${tail}`);
     }
   };
 
@@ -857,7 +952,9 @@ export function newOrdersInbox(state, selectDate, root) {
             // A status filter could hide the row on its own date — clear it, the
             // same way the finder does, so the flash has something to land on.
             orderStatusFilter = "";
-            selectDate(first.deliveryDateId);
+            // The day's own date comes with its id (v326), so a jump from the
+            // inbox lands on the day the order is on.
+            selectDate(first.deliveryDateId, date.date);
             revealOrderRow(root, g);
           },
         }, main, meta);
@@ -971,7 +1068,9 @@ function orderFinderEl(state, root, selectDate, body) {
       return;
     }
     orderStatusFilter = "";
-    selectDate(date.id); // renderContent already put the order's row in the DOM
+    // The day's own date rides along with its id (v326), so an order always lands
+    // on the day it is actually on.
+    selectDate(date.id, date.date); // renderContent already put the order's row in the DOM
     revealOrderRow(root, group);
   };
 
@@ -1479,7 +1578,7 @@ function orderForm(state, dateId, root, selectDate) {
     view: newFormDayView || (newFormDayView = { offset: null }),
     // The panel shuts BEFORE the screen switches, so it cannot spring open again under
     // her on the rebuilt card.
-    onPick: (id) => { newFormDayOpen = false; selectDate(id); },
+    onPick: (id, iso) => { newFormDayOpen = false; selectDate(id, iso); },
     noteMisses: true,
   });
 
@@ -2003,6 +2102,12 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     // saved order's, so this card explains a code that gave nothing exactly as the
     // customer's confirmation will (v276).
     const missed = off > 0 ? null : codeMissed(state, first.promo, itemsTotal);
+    // ★★ THE FRIEND'S DISCOUNT, IN THE TOTAL SHE IS READING (v330). This card worked its
+    // total out from the lines she is typing and left the coupon out of it entirely, so the
+    // Total here was the total BEFORE the discount — a figure she would quote to a customer
+    // and then have to explain. Priced by the same rule `customerTotal` uses for a saved
+    // order, so what she reads while editing and what the message says are one figure.
+    const coupon = off > 0 ? { amount: 0 } : couponAgainst(state, [first], itemsTotal + here - off);
     totalEl.replaceChildren(...(priced.length ? receiptEls(state, {
       items: itemsTotal,
       courier: here,
@@ -2011,7 +2116,8 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       promoCode: off ? promo.code : "",
       notApplied: missed ? missed.code : "",
       promoMinimum: missed ? missed.minimum : 0,
-      total: Math.max(0, itemsTotal + here - off),
+      coupon: coupon.amount,
+      total: Math.max(0, itemsTotal + here - off - coupon.amount),
     }) : []));
   }
   // The courier charge, asked for here as well as in the Note / tracking box (19 Sep
@@ -3210,6 +3316,10 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
         // The promo comes off what they owe here exactly as it does in the message they
         // are sent, so the two figures she can read side by side are the same figure.
         const off = promo.money;
+        // And the same discount here (v330) — the two cards list one order's money, so a
+        // discount named on one and missing from the other is the fault this pairing exists
+        // to prevent. Read off the SAVED order, which is what this box is for.
+        const coupon = off > 0 ? { amount: 0 } : couponAgainst(state, group.orders, itemsTotal + theirs - cod - off);
         custTotal.replaceChildren(...receiptEls(state, {
           items: itemsTotal,
           courier: theirs - cod,
@@ -3218,7 +3328,8 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
           promoCode: off ? promo.code : "",
           notApplied: missed ? missed.code : "",
           promoMinimum: missed ? missed.minimum : 0,
-          total: Math.max(0, itemsTotal + theirs - cod - off),
+          coupon: coupon.amount,
+          total: Math.max(0, itemsTotal + theirs - cod - off - coupon.amount),
         }));
       }
       // The charge's questions, built by the shared block so this box and the Edit form
@@ -3923,12 +4034,30 @@ function orderGroupRow(state, group, root, dateId) {
 
 function referralBlockEl(state, group, root, dateId) {
   const first = group.orders[0];
+  // ⚠️⚠️ v329. THIS LINE WAS MISSING AND IT BROKE A WHOLE DAY. `cur` was used at the
+  // bring-a-friend line below but only declared in the TWO FUNCTIONS AFTER THIS ONE
+  // (`referralOfferEl`, `referralApplyEl`) — so an order that actually carried a
+  // bring-a-friend coupon threw `ReferenceError: cur is not defined` while the day's
+  // panel was being built. The calendar square had already been repainted by then, so
+  // the day turned red and the panel underneath kept the previous day: her exact
+  // report, "the day like hang", and it took three versions to see because the throw
+  // is inside ONE day's own data and every day without a coupon was perfectly fine.
+  const cur = (state.settings && state.settings.currency) || "RM";
   const scheme = schemeOf(state);
   if (!scheme.enabled || !first) return null;
   const parts = [];
   if (waNumber(first.referredBy)) {
     const offer = referralOfferEl(state, group, scheme, root, dateId);
     if (offer) parts.push(offer);
+  }
+  // ★ THE DISCOUNT ALREADY IN THE TOTAL, SAID OUT LOUD (v322). The friend's coupon is spent
+  // the moment it is given, so it no longer appears as a "ready" coupon with a press beside
+  // it — and the order's Total is RM3 lower with **nothing on the order explaining why**.
+  // An unexplained figure is the fault this app treats as a bug everywhere else, so the
+  // discount names itself here, beside the money it moved.
+  const applied = couponOn(state, group.orders);
+  if (applied.amount > 0) {
+    parts.push(refNote(`🎁 Bring-a-friend — ${fmtRM(applied.amount, cur)} already off this order's total.`));
   }
   const apply = referralApplyEl(state, group, root, dateId);
   if (apply) parts.push(apply);
@@ -3955,10 +4084,19 @@ function referralOfferEl(state, group, scheme, root, dateId) {
     anchorRowId = first.id;
     save(state);
     maybeSync(state);
+    // ★★ AND THE CUSTOMER'S OWN CARD IS REPUBLISHED (v322). `maybePublishTracking` exists so
+    // that **every door which changes what a customer sees calls it** — the code's note says
+    // exactly that, and lists the reason: a hand-kept list of doors is what once left a
+    // customer reading an order that had already been changed. **This door was not on the
+    // list.** Giving a coupon changes the order's Total (the friend's discount now comes off
+    // it), so without this line the customer's tracking page keeps showing the price they
+    // were quoted before the discount existed — which is precisely her report:
+    // __"there store front copy still hold the discount in cache"__.
+    maybePublishTracking(state, group);
     updateOrderBadge(state);
     toast(r.created
-      ? `Credits added — apply the ${fmtRM(scheme.friendRM, cur)} off when you confirm`
-      : "Credit was already given");
+      ? `Coupon given — the ${fmtRM(scheme.friendRM, cur)} is already off this order`
+      : "Coupon was already given");
     renderAll(root, state, new URLSearchParams({ date: dateId }));
   };
   const skip = () => {
@@ -3966,47 +4104,59 @@ function referralOfferEl(state, group, scheme, root, dateId) {
     anchorRowId = first.id;
     save(state);
     maybeSync(state);
-    toast("Skipped — no credit for a returning customer");
+    toast("Skipped — no coupon for a returning customer");
     renderAll(root, state, new URLSearchParams({ date: dateId }));
   };
 
   if (handled === "gave") {
-    return refNote(`🎁 Credit given — ${fmtRM(scheme.friendRM, cur)} off ${friendName}'s first order, and ${fmtRM(scheme.referrerRM, cur)} for ${refName}.`);
+    return refNote(`🎁 Coupon given — ${fmtRM(scheme.friendRM, cur)} off ${friendName}'s first order, and a ${fmtRM(scheme.referrerRM, cur)} coupon for ${refName}.`);
   }
   if (handled === "skip") {
-    return refNote("⏭ Marked \"already a customer\" — no credit given.");
+    return refNote("⏭ Marked \"already a customer\" — no coupon given.");
   }
   if (referralFlag(state, group) === "self") {
-    return refNote(`↩️ ${refName} ordered through their own link — no referral credit.`);
+    return refNote(`↩️ ${refName} ordered through their own link — no referral coupon.`);
   }
   if (referralFlag(state, group) === "existing") {
-    return refNote(`👋 ${friendName} came via a link but already ordered before — not a new friend, no credit.`);
+    return refNote(`👋 ${friendName} came via a link but already ordered before — not a new friend, no coupon.`);
   }
   return el("div", { class: "ref-offer", style: "margin-bottom:6px" },
-    refNote(`🎁 New referred customer — ${friendName} gets ${fmtRM(scheme.friendRM, cur)} off their first order, and ${refName} earns ${fmtRM(scheme.referrerRM, cur)}.`),
+    refNote(`🎁 New referred customer — ${friendName} gets ${fmtRM(scheme.friendRM, cur)} off their first order, and ${refName} earns a ${fmtRM(scheme.referrerRM, cur)} coupon.`),
     el("div", { class: "btn-row", style: "margin:0" },
-      button("Give credit", give, "small primary"),
+      button("Give coupon", give, "small primary"),
       button("Skip — already a customer", skip, "ghost small")));
 }
 
-// The person on THIS order has unused credits (a friend's first-order discount,
-// or a referrer reward ready to spend) — offer to apply one. The owner taps it
+// The person on THIS order has unused coupons (a friend's first-order discount,
+// or a referrer reward ready to spend) — offer to apply ONE. The owner taps it
 // after she has taken the RM off in WhatsApp, so the record matches reality.
+//
+// ★ ★ ONE PER ORDER, AND THE LINE NOW SAYS SO (v314). It used to read
+// "RM 3.00 credit available on this order" with a button reading
+// "Apply credit (2)" — one coupon's money beside a count of two, while the press
+// spent exactly one. **Her rule is what settles it:** __"only one coupon apply
+// for each purchase."__ So the amount shown is the one that will actually come
+// off, and the count is named as a count of what is READY, not of what this
+// order can take. This is the same fix as the customer's own card: a coupon is a
+// thing with its own value, never a balance that adds up.
 function referralApplyEl(state, group, root, dateId) {
   const first = group.orders[0];
   const cur = (state.settings && state.settings.currency) || "RM";
   const mine = validCredits(state, waNumber(first.whatsapp));
   if (!mine.length) return null;
   const firstCredit = mine[0];
+  const what = `${fmtRM(firstCredit.amountRM, cur)} coupon`;
   return el("div", { class: "ref-apply", style: "margin-top:2px" },
     el("span", { class: "card-sub", style: "margin:0" },
-      `✨ ${fmtRM(firstCredit.amountRM, cur)} credit available on this order`),
-    button(`Apply credit${mine.length > 1 ? ` (${mine.length})` : ""}`, () => {
+      mine.length > 1
+        ? `✨ ${what} ready for this order — one per order, ${mine.length} more after it`
+        : `✨ ${what} ready for this order`),
+    button(mine.length > 1 ? `Apply coupon (1 of ${mine.length})` : "Apply coupon", () => {
       const used = markOneUsed(state, waNumber(first.whatsapp));
       anchorRowId = first.id;
       save(state);
       maybeSync(state);
-      toast(used ? `${fmtRM(used.amountRM, cur)} credit used — already taken off this order` : "Nothing to apply");
+      toast(used ? `${fmtRM(used.amountRM, cur)} coupon used — already taken off this order` : "Nothing to apply");
       renderAll(root, state, new URLSearchParams({ date: dateId }));
     }, "soft small"));
 }

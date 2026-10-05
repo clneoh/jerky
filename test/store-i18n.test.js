@@ -110,6 +110,12 @@ test("the closed-product reason and the basket notes are keyed in all three lang
     // code it was, and one that dropped %2 would name the code and never say what came
     // off the total.
     promoLine: ["%1", "%2"],
+    // ★ THE BRING-A-FRIEND DISCOUNT (v323), which carries no code and so needs its own words.
+    // ⚠️ **`%1` AND NOT TWO PLACEHOLDERS, AND THAT IS THE WHOLE DIFFERENCE BETWEEN THE TWO
+    // LINES**: a code has a NAME the customer typed and can check, and the friend's discount
+    // has only an amount. A translation that invented a second placeholder would print an
+    // empty slot where a code name goes.
+    promoFriend: ["%1"],
   };
   for (const [key, phs] of Object.entries(holders)) {
     for (const l of LANGS) {
@@ -156,9 +162,25 @@ test("the promo line is translated, not left in English", () => {
   // so a language left in English would sit inside an otherwise translated card and read
   // as a machine's line rather than the bakery's.
   for (const l of LANGS.slice(1)) {
-    assert.ok(STORE[l].promoLine.trim(), `${l}.promoLine is present`);
-    assert.notEqual(STORE[l].promoLine, STORE.en.promoLine, `${l} is translated, not left in English`);
+    for (const key of ["promoLine", "promoFriend"]) {
+      assert.ok(STORE[l][key].trim(), `${l}.${key} is present`);
+      assert.notEqual(STORE[l][key], STORE.en[key], `${l}.${key} is translated, not left in English`);
+    }
   }
+});
+
+test("an order with a discount and NO code reads as bring-a-friend, and never as 'Promo :'", () => {
+  // ★ v323, adapted for THIS shop's card (jerky keeps its own single money line, so the
+  // bakery's `moneyEls` shape is not here). The card picks its words on
+  // `promo_rm > 0 && promo_code`, and that test only works because **a code always has a
+  // name** — the app refuses to label one without it. If that ever stopped being true, a
+  // code would start printing the friend's label.
+  const app = readFileSync(new URL("../store/app.js", import.meta.url), "utf8");
+  assert.match(app, /row\.promo_rm > 0 && row\.promo_code/,
+    "the card no longer draws a discount line at all");
+  assert.match(app, /t\("promoFriend"\)/, "and no longer has the friend's words to draw it with");
+  assert.match(app, /: row\.promo_rm > 0[\s\S]{0,200}t\("promoFriend"\)/,
+    "the choice must be made ON the code being present, not on some other flag");
 });
 
 test("the COD charge is worded differently from the plain one in every language", () => {

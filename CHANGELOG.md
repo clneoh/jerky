@@ -1,8 +1,675 @@
-# Munchies Furkidz — change history (v54 → v313)
+# Munchies Furkidz — change history (v54 → v330)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**05 Oct 2026 — engine v330, THE BRING-A-FRIEND DISCOUNT SHOWS IN THE WORKING (no database step,
+nothing to upload — pushing this one is the whole of it).**
+
+**Your report, and you were right about both halves:** __"the discount dnt show in the total adding in
+edit, probably other place?"__
+
+**What was wrong, and it was worse than a missing line.** v322 took the bring-a-friend discount off
+the order's Total and named it on the customer's message — **and left it out of the Edit card and the
+Note / tracking card altogether.** Those two do not read the order's Total; **they work the total out
+themselves** from the lines you are editing. So **the Total on the Edit card was the total BEFORE the
+discount** — and the same figure was missing from your receipt and from the invoice.
+
+**That is the figure you read while editing an order and quote to a customer.** It now reads:
+
+Items total — RM 30.00 · Bring-a-friend discount — -RM 3.00 · Total — RM 27.00.
+
+**Both cards, the receipt and the invoice now show the discount as its own line, right above the
+Total it moves — and the Total itself has it taken off.**
+
+**The other place, answered.** I swept every screen that shows an order's money. The discount was
+already named on the customer's WhatsApp message and on their tracking page. **The Edit card, the
+Note / tracking card, the receipt and the invoice were the ones missing it — and they were the ones
+that list the money as a sum you can check by adding it up.** The two pop-ups now price the discount
+through the same single rule the rest of the app uses, so **a figure she reads while editing and the
+message the customer gets can never be two different figures.**
+
+**⚠️ AND THE SWEEP FOUND A SECOND FAULT, which I have also fixed.** If a coupon was worth more than
+the order — the rare case, and a hand-given one could do it — the receipt said it had taken off the
+whole amount while the Total stopped at zero, **so the lines did not add up and the figure claimed
+more off than the order was worth.** It now takes off only what is really there: **a coupon can never
+make an order cheaper than nothing, and the line and the Total always agree.** That fix reaches the
+customer's message and their tracking page too, because all of them read the one money function.
+
+**And the rule is now a test, not a hope.** The receipt's own check **adds up every line and compares
+it with the Total** — on a plain order, with a code, with a courier charge, with a COD charge and with
+a discount — so **the next time anything comes off an order and is not given a line, the suite goes
+red instead of the number quietly not adding up.** That is the check that found the second fault
+above, within seconds of being written.
+
+**Your data is untouched.** No SQL, no Edge Function, no key. The suite is **2,816 tests, all green**.
+
+**05 Oct 2026 — engine v329, THE DAY THAT WOULD NOT OPEN: THE ACTUAL CAUSE, FOUND AND FIXED (no
+database step, nothing to upload — pushing this one is the whole of it).**
+
+**The message you read out was the whole answer: "cur is not defined".**
+
+**What it was.** When I added the bring-a-friend discount on **v322**, one line that names the
+discount on the order's row used a value called `cur` — **and I never declared it there.** It was
+declared in the two blocks __next to__ it, not in the one that used it. So the moment a day held an
+order that had been given a bring-a-friend coupon, drawing that day's panel **crashed**.
+
+**And that is why it looked like what it looked like.** The calendar square is repainted a moment
+before the panel is built, so a crash while building the panel left **the square red on the day you
+tapped and the panel still showing the day before.** Exactly your recording, and your three words for
+it — **"the day like hang"**.
+
+**⚠️ And it was never about 5 October or 7 October.** It was about **any day holding an order that
+had been given a bring-a-friend coupon.** Only 7 October had one, which is why only 7 October
+refused. **Every day with such an order had the same fault** — and now none of them do.
+
+**I have to be straight with you about the road here.** My first two answers (v326, v327) were
+guesses about your two days sharing an internal id. **They were wrong, and they cost you two pushes.**
+What finally worked was **v328 making the app report the error itself** — one tap and you handed me
+the exact line I could not see from the outside. **That is the lesson I am keeping.**
+
+**What stands from v326 and v327, and it is kept because it is good on its own:** the day you are on
+now travels in the page's address (so a bookmark or a shared link opens the right day), the screen
+remembers which day each id meant, and a day whose records ever do share an id is separated at load,
+losslessly. **None of that was your fault** — but none of it is harmful either, and two of the three
+are small improvements in their own right.
+
+**And v328 stays, and it earned its place:** if a day ever cannot be drawn again, the square will not
+turn red and the reason will name itself on the card, in one line you can read out. **It is the reason
+this fault is fixed at all.**
+
+**Your data is untouched.** No SQL, no Edge Function, no key. The suite is **2,813 tests, all green**.
+
+**05 Oct 2026 — engine v328, THE DAY THAT WILL NOT OPEN NOW SAYS WHY (no database step, nothing to
+upload — pushing this one is the whole of it).**
+
+**Why, and it is an honest one.** You pushed v326, then v327, and told me both times that 7 October
+still would not open. **Two versions of fixing it from the outside got nowhere — and that is on me,
+because I was guessing.** What I could see was the shape of the fault from your recording: the day
+turns red and the panel underneath never changes. What I could not see was **why**, and the reason is
+in that one day's own records, which I cannot look at.
+
+**So this version stops guessing and makes the app speak.**
+
+**The day is now built BEFORE the red mark moves.** If it cannot be built:
+
+- **the red mark does not move** — because a red day sitting over a different day's panel is exactly
+  the fault you have been looking at, and it should never have been possible; and
+- **the reason takes the day's place**, in the app's own words, with a line to read out to me.
+
+**What you will see.** Tap 7 October on the new version and you will get one of two things:
+
+1. **The day opens normally** — a plain square with its heading, its count and its orders. Nothing to
+   do; it is fixed.
+2. **A card headed "This day could not be opened"**, naming the day and ending with
+   **"Tell whoever is at the shop this message: …"**. **Read that sentence out to me and I will have the
+   answer in one step** instead of another round of guessing.
+
+**Whichever it is, nothing is changed and nothing is lost** — the card says so itself. 7 October stays
+in your list either way, and no order, product, price or posting day is touched.
+
+**If you get the second one, the message is what I need** — not a description of it. The words after
+"this message:" are the whole answer.
+
+**Your data is untouched.** No SQL, no Edge Function, no key. The suite is **2,812 tests, all green**.
+
+**Added 05 Oct 2026, the same day: you tapped 7 October and it said "cur is not defined" — and that
+line was the answer. See v329 above: a missing declaration added in v322, crashing the day's panel
+whenever an order had been given a bring-a-friend coupon. This version is what surfaced it.**
+
+**05 Oct 2026 — engine v327, THE DAY STAYS PUT WHEN THE SCREEN REBUILDS ITSELF (no database step,
+nothing to upload — pushing this one is the whole of it).**
+
+**Why.** You pushed v326 and told me plainly: __"the 7/10 still not working right."__ **You were
+right, and my fix had a hole in it.** I found the hole by writing the test I should have written the
+first time, and it failed with your bug in one line: `expected 'Thu, 10 Sep 2026' / actual 'Mon, 7 Sep
+2026'`.
+
+**What I missed.** v326 made the day you tap travel with the tap — that part was right, and it is why
+the calendar square turns red correctly. But **the address the app writes carried only the day's
+internal id**, and the Orders screen **rebuilds itself from that address** every time the cloud
+answers, a pull lands, or the app regains focus. On that rebuild there is no tap and no remembered
+day — only the address. So the screen came back to the id, the id is shared by two of your days, and
+the panel opened the other one again.
+
+**⚠️ And that is why you never saw it flicker:** the rebuild happens in the same instant as the tap,
+before the phone has drawn anything. **The wrong panel was the only picture that ever reached your
+screen** — which is exactly what your recording showed: the red mark moves, and the panel does not
+change by a single pixel.
+
+**Now fixed twice over:**
+
+**1 · The address carries the day, not only its id** — `#/orders?date=…&day=2026-10-07`. A rebuild
+reads it back and opens the day you tapped. **A bookmark or a link you share now opens the right day
+too.**
+
+**2 · The app remembers which day each id meant, for as long as you are on the screen** — so every
+other rebuild does the same: changing an order's status, saving a day's availability, and anything
+else that redraws the screen. **Thirteen separate places rebuild it; all thirteen are covered by that
+one memory.**
+
+**And this fix does not depend on the v326 repair having run** — it holds whether or not your two days
+still share an id.
+
+**Your data is untouched.** No SQL, no Edge Function, no key. The suite is **2,811 tests, all green**.
+
+**Added 05 Oct 2026, the same day: this did not fix it either, and the cause was never what this
+entry says.** The real fault was v329 — a missing declaration from v322 crashing the day's panel
+whenever an order had been given a bring-a-friend coupon. Read v329 above. **The id-repair and the
+day-in-the-address described here are kept because they are small improvements in their own right,
+not because they were the answer.**
+
+**05 Oct 2026 — engine v326, A DAY YOU TAP IS THE DAY YOU GET (no database step, nothing to upload —
+pushing this one is the whole of it).**
+
+**Why.** Your report: __"why the order calander not able to select 7/10/26?"__ and then, exactly:
+__"that day shown 2/12, clicking that date, the date turn red, but the SET day's avaibility not
+changing to 7/10/26."__ **You were right, and your recording showed it happening — four times in
+thirty seconds.**
+
+**What was happening.** Each day in the calendar is drawn from that day's own record, so the **red
+mark followed your tap** — it always did. But the panel underneath was looked up a different way:
+by the record's **id**, and that lookup answers with the **first** record holding it. **Two of your
+delivery days are carrying the same id**, so tapping one of them turned the day red and then opened
+the __other__ one. Pressing **5 Oct** worked and **9 Oct** worked because they are not the pair —
+**7 Oct** was the day it happened to.
+
+**Two fixes, and you get both:**
+
+**1 · The panel now opens the day whose cell you tapped** — the day's own date rides along with the
+tap, so the calendar and the panel under it can never be two different days again.
+
+**2 · The two days are given their own ids when the app loads** — nothing is deleted, every day and
+every order and price survives, and **each order follows its own day** (its own saved delivery date
+is what tells the two apart). Your **7 Oct becomes openable, editable and deletable again** — and so
+does anything else the shared id was quietly affecting.
+
+**⚠️ AND IT IS FIXED THE SAME WAY ON EVERY PHONE.** The replacement id is worked out from the old id
+and the date rather than rolled fresh, so both of your phones reach the **same** answer. Two different
+answers would have put the pair back with the next sync.
+
+**How it got that way I cannot say** — I could not find anything in the app that makes two days share
+an id. What I can say is that the fault it caused is now impossible to repeat from your side, and if
+it ever happens again the screen will simply follow your tap.
+
+**Your data is untouched.** No SQL, no Edge Function, no key. The suite is **2,809 tests, all green**.
+
+**Added 05 Oct 2026, the same day: this version did not fix it, and v327 is the rest of it.** Making
+the day travel with the tap was right, but the app writes only the day's id into the address and then
+**rebuilds the screen from that address** — and on that rebuild the day was lost again. **v327 carries
+the day in the address and remembers it, and the fault is closed. Read v327 above.**
+
+**05 Oct 2026 — engine v325, THE FRIEND'S NUMBER COMES OFF THE NEW CUSTOMER'S ADDRESS (no database
+step, nothing to upload — pushing this one is the whole of it).**
+
+**Why.** Your question, and it was a good one: __"for new customer clicking link from his friend, after
+he place an order have you remove his page linking his friend phone number?"__ **I had not.**
+
+**What was happening.** A referral link is `/store/?via=60123456789` — **the friend's own phone
+number.** The shop reads it once, stamps it onto the order as __"this one came through their link"__, and
+then **the number just stayed there**: in the new customer's address bar, in their browsing history,
+and in anything they copied out of the address to pass on. After the order, it is only a phone number
+being carried around.
+
+**Now it comes off the address the moment the order is placed.**
+
+**⚠️ AND THE MOMENT MATTERS, which is why it is not simply done when the page opens.** A customer can
+arrive by the link and browse for ten minutes before ordering — taking the stamp off on arrival would
+lose the referral altogether. So it goes when **the order really landed**, which is the same branch
+the app already uses to remember the order was placed. **An order that fell back to WhatsApp keeps
+its stamp on purpose** — nothing was recorded, they may try again, and the message they send carries
+it.
+
+**Only `via` is removed.** If the same customer is also looking at an old order, `track` is a separate
+key handled by its own rule, and each removes only itself.
+
+**Your data is untouched.** No SQL, no order, product, price or posting day moved. The suite is **2,805
+tests, all green**.
+
+**05 Oct 2026 — engine v324, A TRACKED ORDER STOPS OWNING THE PAGE, AND YOU CAN FORGET A STRAY
+CUSTOMER (no database step, nothing to upload — pushing this one is the whole of it).**
+
+**Two things you asked for, and they ship together.**
+
+**1 · THE ORDER CODE COMES OFF THE ADDRESS BAR.** Your words: __"when a customer track his order, his
+store version became associated with that order code. Anyway to take it off automatically?"__
+
+The tracking link opens as `/store/?track=CODE`, and **that code used to stay in the address bar.** So
+the next time that page was opened — a bookmark, a history entry, a link re-shared — it landed back
+on **that one order's card** instead of on the shop. **The page belonged to an order rather than to
+the shop.**
+
+**Now the code comes off the address the moment the card appears, and the card stays up for that
+visit.** The link still does exactly what it is for. The cost, said plainly: **a refresh now lands on
+the shop** rather than on the card — which is the direction you asked for, and their code is in their
+WhatsApp if they want it again.
+
+**⚠️ AND ONE THING THAT WOULD HAVE BROKEN IN SILENCE: `via` is left alone.** That is the friend's
+referral stamp, and a customer can arrive **by** a referral link and **then** track an order —
+stripping the whole address would have quietly broken bring-a-friend for exactly that person. Only
+`track` is removed, and that is a test.
+
+**2 · 🗑 FORGET — for the strays.** Your words: __"i need a button to delete a customer as well, i
+found there is few stray customer."__
+
+**⚠️ READ THIS BIT, because it is why the button is where it is and not everywhere.** Your customer
+book is **built from your orders.** Someone you added by hand has never ordered, so **their row __is__
+the record you typed** — forget it and they are gone, name, number, reward and note, with a question
+that names exactly what goes and says **"nothing else in your book is touched."**
+
+**A customer who HAS ordered cannot be deleted from here, and it is not an oversight.** Their row is
+their **order history**. Removing the record would leave the row standing — it comes straight back
+from the orders — while quietly throwing away their reward, their note and their dog's name. **A
+button that did half of what it said would be worse than no button**, which is your own rule about
+dead controls: two rows that look alike must behave alike. **For two records of one person, use
+Merge** — that is what it is for.
+
+**Your data is untouched.** No SQL, no order, product, price or posting day moved. The suite is **2,804
+tests, all green**.
+
+*(One note: this commit carries two version numbers — v323 and v324 — because the tracking-card line
+and these two were built back to back and both were still uncommitted. The Engine on your More screen
+reads **324**.)*
+
+**05 Oct 2026 — engine v323, THE TRACKING CARD SAYS WHY THE TOTAL IS LOWER (no database step, nothing
+to upload — pushing this one is the whole of it).**
+
+**Why.** You asked for it after the last version: the customer's own tracking page was showing the
+**correct lower total with nothing saying why.**
+
+**What they see now.** On the tracking page, under the items and the courier charge, a line in the
+customer's own language:
+
+**Bring-a-friend you were sent: -RM 3.00**
+
+— sitting where the promo line sits, so the figures above it still add up to the Total below. In
+中文 it reads 朋友推荐优惠：-RM3.00, and in Bahasa Malaysia __Bawa rakan yang menghantar anda: -RM3.00__.
+It is the same sentence your WhatsApp confirmation uses, so the two agree word for word.
+
+**★ And it needed no database step, which is worth explaining because it nearly did.** The obvious
+way was a new column on the tracking table — and the app's own code warns against exactly that:
+__"a missing column kills publishing for EVERY order silently."__ **So it reuses the discount column
+that is already there**, which is honest because **a code and the friend's coupon can never both
+apply** — that column holds __the__ discount on the order, whichever it is.
+
+**The small piece of cleverness, and why it is safe.** The card tells the two apart by the code being
+**absent**: a discount with no code beside it can only be the friend's, because the app refuses to let
+a promo code be labelled without a name. If that ever stopped being true, a code would start wearing
+the friend's words — **so that rule is a test.**
+
+**Your data is untouched.** **No SQL, nothing to upload.** The suite is **2,799 tests, all green**.
+
+**05 Oct 2026 — engine v322, THE NEW CUSTOMER'S DISCOUNT ACTUALLY COMES OFF NOW (no database step,
+nothing to upload — pushing this one is the whole of it).**
+
+**Why.** Your two reports: __"the bring a friend discount used but not really create a discount for
+that new customer"__, and then __"there store front copy still hold the discount in cache."__
+
+**★ You were right on both, and the first one was worse than a wording slip.**
+
+**What was happening.** When you pressed **Give coupon**, the app wrote the friend a coupon —
+__"First order — via Jienny's link"__ — and then **nothing ever read it**. The order's Total, the
+confirmation and the three later messages are all worked out by one function, and that function knew
+about promo **codes** and nothing else. So the coupon was recorded, the order was priced as though it
+did not exist, and pressing **Apply coupon** told you __"already taken off this order"__ about a figure
+**nothing had ever taken off.** An app telling you it did something it did not do is the worst kind
+of fault, and I wrote that sentence.
+
+**What you see now.**
+
+- **The RM3 comes off the order's total by itself.** The customer pays the lower figure, so your
+  money and your message agree.
+- **The message says so, in its own line** — __"Bring-a-friend you were sent: -RM3.00"__ — sitting with
+  the items and Courier charge so the lines add up to the Total beneath them. A discount the customer
+  cannot find in the message is one they will ask you about.
+- **The order says it too** — __"🎁 Bring-a-friend — RM3.00 already off this order's total"__ — so the
+  lower figure is never unexplained on your own screen either.
+- **It cannot be used twice.** The coupon is tied to the one order it was born on, so their next
+  order is priced normally no matter what any cached copy of a page happens to hold.
+
+**★ And your second report was a real gap of its own.** Everywhere else in the app, anything that
+changes what a customer sees republishes their tracking page. **The Give coupon press did not** — so
+the customer's own card went on showing the price they were quoted __before__ the discount. That is
+fixed: giving a coupon now republishes their card, exactly like changing the items or the address
+does.
+
+**Her own rule is honoured, unchanged:** **one discount per order** — and if a customer typed a
+**code**, **the code wins** the total, because that is the one they typed and can see. **When that
+happens the friend's coupon is not spent** — it stays theirs for the next order, rather than being
+quietly burned.
+
+**⚠️ One thing left, and I would rather say it than let you find it.** The customer's **own tracking
+page** now shows the correct lower Total, but it does not yet say __why__ — because adding that line
+there needs one small database step. **Their WhatsApp confirmation, which is where they are asked for
+money, already explains it in full.** Say the word and I will do the tracking-page line as its own
+version, with the one-line SQL for you to run first.
+
+**Your data is untouched.** No SQL needed for this version, no order, product, price or posting day
+touched. The suite is **2,796 tests, all green** — including the one that would have caught this on
+the day it was written: not "does the coupon say the right thing" but **"does it actually come off
+the total"**.
+
+**05 Oct 2026 — engine v321, THE OFFERS WERE NEVER BROKEN — YOUR MAC ASKED FOR NO ANIMATION (no
+database step, nothing to upload — pushing this one is the whole of it).**
+
+**★ THE ANSWER, AND IT CAME FROM YOUR RECORDING.** Six seconds of your screen, one turn pulled out
+frame by frame at a tenth of a second: the message changed **between two frames**, with no
+half-way picture in between. The offers were changing the whole time. **What was missing was the
+animation — and the reason is a setting on your Mac.**
+
+**Your Mac has "Reduce motion" turned on.** That is an accessibility setting in *System Settings →
+Accessibility → Display*. When it is on, the app is not allowed to animate, so it was showing you
+each new message **instantly, with nothing to see** — which is exactly what "no effect" looks like.
+The message __was__ changing every 2 seconds; it just arrived with no movement at all.
+
+**★ AND THAT IS WHY I KEPT GETTING IT WRONG — I HAVE TO TELL YOU THIS PROPERLY.** **The very same
+setting is switched on in the browser I test in.** So every check I made was made under your exact
+condition, and every one of them said "correct" — because the app __was__ correct. I was reading where
+things ended up and calling it verified, and the one thing your setting removes is precisely the
+thing I was never able to see. **Four versions went by on that mistake.** I am sorry.
+
+**What changed — and it means you get an effect either way.** The house rules say: when someone asks
+for less movement, take away the **movement**, and allow **a short fade — up to a fifth of a second
+— instead of nothing.** The app was taking away both. Now the new message **fades in over 0.18
+seconds** rather than appearing in a single frame. No travel, no spinning, nothing to make anyone
+dizzy — but you can see it change.
+
+**★ IF YOU WOULD RATHER HAVE THE FULL SLIDE**, where one message scrolls up and the next follows from
+below:
+
+1. Open **System Settings**
+2. Go to **Accessibility** → **Display**
+3. Turn **Reduce motion** off
+
+The offers will then slide exactly as designed. **With it on you now get the fade instead of nothing**,
+so both ways round you will see something.
+
+**Your data is untouched.** No SQL, no order, product, price or posting day touched, and **no database
+step**. The suite is **2,789 tests, all green**.
+
+**And one thing said plainly rather than buried:** I still cannot __watch__ the animation from my side.
+What I can say for certain is what the code computes — the panel that arrives is in its place and
+fades from nothing to full — and that the setting which was hiding it is named above. **You are the
+one who can see it, and you have the `?debug=offers` line if anything ever looks wrong again.**
+
+**05 Oct 2026 — engine v320, A FINGER CAN NO LONGER STOP THE OFFERS FOR GOOD (no database step,
+nothing to upload — pushing this one is the whole of it).**
+
+**First, plainly: I owe you an apology on method.** I told you twice that this was fixed, and both
+times I had never actually watched it move. Every check I made was on a browser pane that reports
+itself as **hidden**, and **a hidden tab runs no animation at all** — so all I could ever read was
+where things __ended up__. That is how two versions went to you broken. It will not happen again in
+this particular way, because there is now a way to ask the strip itself (below).
+
+**★ AND I HAVE FOUND THE ONE THING IN THE CODE THAT CAN STOP THE OFFERS FOR GOOD.**
+
+The strip holds still while your pointer rests on it — that was your own ask, so you can finish
+reading a message. The app remembers __"the pointer is on it"__ as a little flag, and it clears that
+flag when the pointer **leaves**. **On a touch screen, that "leaves" may never arrive.** A finger
+landing on the strip sets the flag, and if the matching leave never comes, the strip is held **for
+the whole life of the page**: the timer keeps ticking, everything thinks the pointer is still there,
+**and the messages never change again.** That looks exactly like a broken strip — and it is the only
+mechanism in the code that can stop the turning dead, which matches what you are seeing.
+
+**What changed.** **A pointer can now hold the strip only where a pointer can hover** — that is a
+mouse. **On a phone the strip simply carries on**, because on a touch screen there is nothing to rest
+and so nothing to hold. On your Mac, resting the mouse on it still holds it, exactly as before.
+
+**★ AND A WAY FOR YOU TO ASK IT DIRECTLY.** If the offers are ever not turning again, add
+**`?debug=offers`** to the end of your shop's address, like this:
+
+```
+https://munchies.com.my/store/?debug=offers
+```
+
+One small line appears under the strip and tells us exactly what is going on — how many offers it can
+see, whether the timer is running, whether it thinks your pointer is resting on it, whether your phone
+can hover at all, and whether the tab is hidden. **No customer ever sees it: it only appears with that
+`?debug=offers` on the link.** Next time, you read it to me and I will know, instead of guessing.
+
+**Your data is untouched.** No SQL, no order, product, price or posting day touched, and **no database
+step**. The suite is **2,788 tests, all green**, including two new ones: that a touch can no longer
+hold the strip, and that the debug line exists and can never reach a customer.
+
+**05 Oct 2026 — engine v319, THE FOLLOWING MESSAGE WAS BROKEN ON A TWO-OFFER SHOP (no database step,
+nothing to upload — pushing this one is the whole of it).**
+
+**Why.** Your report, three words: __"there is no effect."__ **You were right and I had broken it** —
+and the way it was broken is worth reading, because your shop is exactly the case it broke on.
+
+**★ WHAT WAS WRONG.** When a message is replaced, the app has to know WHICH one is leaving so it can
+send it up through the top. It worked that out by counting backwards from the one showing: __the
+previous one__. That was inherited from the old 3D flip, where two panels leaving by opposite doors
+made sense, and it is fine when **three or more** offers are running.
+
+**⚠️ WITH EXACTLY TWO OFFERS, "THE PREVIOUS ONE" IS THE MESSAGE THAT IS ARRIVING.** So the message
+about to come in was parked **above** the window — where the one that had just left sits — and it then
+travelled **back down** into place. **Nothing was ever left waiting below**, so "one message following
+another" could not happen at all. A two-offer strip is not an edge case; it is the ordinary one, and
+it is what yours runs.
+
+**How it hid, and that is the uncomfortable part.** With three offers running it looked perfect, so
+the page I checked and the harness I built both showed the effect working. **And 2,784 tests were
+green while it was broken on your phone.** Nothing was watching the two-offer case, which is the case
+that matters most. **That is now the one the test exists for.**
+
+**★ MEASURED, ON THE REAL SHOP, AT 375, TWO OFFERS:**
+
+| | at rest | after a step |
+|---|---|---|
+| before | `[0, −183]` — **nothing waiting below** | the arriving message came from **above** |
+| **now** | `[0, +183]` — **the next waits below** | it comes **up from below**, following the one leaving |
+
+**And the second half of the fix.** A message that has just left through the top has to be back at the
+bottom to arrive from below next time — and moving it there __with__ an animation would slide it the
+whole way **through the window**, sweeping the message you just read back across the strip in the
+wrong direction. So every waiting message is now put back in its place **instantly, with no
+animation**, before the movement starts. A jump paints only where it lands.
+
+**Your data is untouched.** No SQL, no order, product, price or posting day touched, and **no database
+step**. The suite is **2,786 tests, all green** — two of them new, and the one that matters asserts
+the two-offer case by name.
+
+**05 Oct 2026 — engine v318, EACH MESSAGE IS ITS OWN BOX AND THEY SCROLL UP (no database step,
+nothing to upload — pushing this one is the whole of it).**
+
+**Why.** Your words, and they were the whole spec: __"Maybe you box up each message, when 1st
+message start to scroll up, the 2nd message is following, So effectively you see 2 message, one
+follow by another, it scroll up, stop 2sec, scroll again until mouse over."__
+
+**What I had wrong.** v316 sent them **sideways** — I read "scrolling off" as off to the side. You
+meant **up**. Both readings of __"box up each message"__ went onto a page side by side, you picked the
+one where **every message is its own box**, and that is what is built.
+
+**What you see now.**
+
+- **Each message is its own amber box.** The box used to belong to the strip — one box that never
+  moved. It has moved onto the messages: the strip is now just the **window** you look through, with
+  no box of its own, so nothing is drawn twice.
+- **They scroll UP.** The message being replaced leaves through the top and the next follows from
+  below, with a **small gap passing between them** as they go — that gap is what makes it read as one
+  message following another rather than one block of text sliding.
+- **Two messages are visible during the move**, which is exactly what you described.
+- **Then it stops for your 2 seconds**, and **rests while your pointer is on it** — unchanged.
+
+**And the rule that keeps your page still survives again.** Measured on the live shop at 375:
+**206.6 pixels, identical at every step.** (It was 210.6 before — four pixels shorter, because the
+box moved off the strip and the strip stopped adding padding of its own.)
+
+**⚠️ AND THREE MOTIONS HAVE NOW COME AND GONE, ALL THREE MINE:** a fade (v292), a 3D flip (v296), a
+sideways slide (v316) — each with reasoning I wrote into the code about what "reads as a glitch". You
+are the one who watches this every day. The code and the test now say so, so none of them quietly
+comes back.
+
+**Your data is untouched.** No SQL, no order, product, price or posting day touched, and **no database
+step**. The suite is **2,784 tests, all green**, and the rewritten test holds every part of this: the
+motion is up, each message carries its own box, the strip carries none, the gap between the two, and
+no fading.
+
+**05 Oct 2026 — engine v317, EACH OFFER HOLDS FOR 2 SECONDS (no database step, nothing to upload —
+pushing this one is the whole of it).**
+
+**Why.** Your words, right after the scroll went in: __"maybe the scrolling is too fast and hardly
+see the results."__
+
+**★ YOU WERE RIGHT, AND IT WAS NOT MARGINAL — I measured your own shop before changing anything:**
+
+- your long offer runs to **38 words** (the code's line **plus your own sentence in the chalk hand**)
+  — about **11 seconds** to read at a comfortable pace
+- the short one (__AZQKJ__) is **14 words** — about **4 seconds**
+- each of them was getting **1.5 seconds**, of which **0.4 is the move itself**
+
+So the long one had about **a tenth** of the time it needed, and the short one about a quarter.
+
+**★ BUT THE SCROLL WAS NOT WHAT WAS TOO FAST.** The move is 0.4 of a second, which is already the
+**top of what the house rules allow** (250–400ms for a change like this) — slowing the animation would
+have made it draggy and bought you **not one extra second of reading**. What was too short was the
+**stillness**: 1.1 seconds before, **1.6 seconds now**.
+
+**The pace is 2 seconds an offer — your number.** It was 1.5s, chosen back when the line was mostly a
+short code; your offers have grown since, which is what changed the arithmetic.
+
+**One thing said plainly rather than left for you to find:** 2 seconds is still under the 11 your long
+offer wants, so it will still turn before you have read all of it — and the move now takes a fifth of
+each turn. **Watch it on your phone with two codes running.** If it still turns too soon, **it is one
+number and nothing else needs touching** — say the word and I will put it wherever you like.
+
+**Your data is untouched.** No SQL, no order, product, price or posting day touched, and **no database
+step**. The suite is **2,784 tests, all green**, and the test that pins the pace now records that 2 is
+__your__ number, chosen with the arithmetic in front of you.
+
+**05 Oct 2026 — engine v316, THE SHOP'S OFFERS SCROLL INSTEAD OF TURNING (no database step, nothing
+to upload — pushing this one is the whole of it).**
+
+**Why.** Your words: __"the promo code, can it be like scrolling off, and new code follow, that kind
+of animation."__ The offer line under your shop name used to **turn** — a quarter-turn flip, the
+old offer tipping away over the top while the next rose from below.
+
+**What you see now.** The offer being replaced **slides off to the LEFT** and the next one **follows
+it in from the right**, at the same 1.5 seconds an offer. The strip is clipped, so nothing shows
+outside it. Everything else about it is untouched: the dots, the pointer resting on it to hold it,
+the tab going quiet when you leave it, and **nothing turns at all when only one code is running**.
+
+**★ AND THE FLIP WAS MY CHOICE, NOT YOURS — that is worth saying plainly.** Back in v292 I picked a
+fade, then turned it into a 3D flip, and I wrote the reason into the code: that sliding one line of
+message sideways "reads as a glitch". You are the one who looks at this every day, and you asked for
+the scroll. The argument loses.
+
+**★ ONE HONEST TRADE, so it is not a surprise.** During a scroll **two offers are briefly on screen at
+once** — the tail of the one leaving and the head of the one arriving. That is exactly what makes it
+read as a scroll rather than a swap. The flip never showed two, so if a long offer like __"Free
+delivery within Malaysia on RM200.00 and above — use code FREEDEL"__ looks busy mid-move, that is why.
+
+**★ AND THE ONE THING THAT MUST NEVER REGRESS WAS RE-MEASURED.** v295's whole point was that the
+strip is exactly as tall as your tallest message and never changes height, because the page under it
+used to jump up and down every 1.5 seconds. **Measured on the live shop across three turns: 210.6
+pixels, 16 samples, never once different.** A sideways slide is a transform, just as the turn was, so
+the guarantee carries over exactly.
+
+**Two corrections to the guide while I was in it.** It described the old turning motion, and it said
+*"on a phone a tap holds it still for about twenty seconds"* — which **stopped being true in v297**,
+when we removed exactly that because it trapped anyone who touched the strip. Both now match what the
+shop actually does.
+
+**Your data is untouched.** No SQL, no order, product, price or posting day touched, and **no database
+step**. The suite is **2,784 tests, all green**, including the rewritten strip test: the flip coming
+back, a fade creeping in, an unclipped rotor, and a move slower than the house 250–400ms band each
+turn it red.
+
+**05 Oct 2026 — engine v315, TWO MORE CARDS LEAVE SETTINGS, AND ONE OF THEM IS RENAMED (no database
+step, nothing to upload — pushing this one is the whole of it).**
+
+**Why.** Your two instructions: __"move Courier(Lalamove) and Mailing labels(courier), both to
+Logistic?"__ and __"move Message Style to the shop"__. Both are the same idea as v314 — a thing
+belongs where its work is, not under "defaults, backup, transfer".
+
+**What moved.**
+
+- **Send a van** is now its own screen under **Logistic** — your own door for the driver, and which
+  Lalamove account this phone is talking to. Same card, same pickup pin, moved whole.
+- **Message style** is now under **The shop**, beside Bring a friend, Promo codes and Reviews. How
+  your words reach a customer is the same subject as the offers and the reviews.
+
+**Two words I did NOT use, and you should know why.** The first choice was to call the new Logistic
+row **"Courier"** — and it would have sat directly above **📦 Parcel couriers**, which means something
+else entirely. A parcel is something you **post**; a van is a trip you **book**. v309 already gave
+those two their own words on the order cards, so the screen is called **Send a van** and the card
+inside still names **Lalamove**, asked from the registry rather than typed here.
+
+**★ AND THE THIRD CARD I DID NOT MOVE — because the name was the real problem, not the address.**
+"Mailing labels (courier)" holds **one address**, and I went and checked what actually reads it.
+**Four things do:**
+
+- the **FROM block on a parcel label**
+- the **door the courier collects from**
+- **the letterhead on every invoice**
+- the **from line on the wish-list email**
+
+So it is not a courier setting at all — it is one address typed once that four screens read. Filed
+under **Logistic**, an invoice with the wrong heading would have sent you looking under deliveries.
+You chose **"Rename it, keep it in Settings"**, and that is what it is now: **🏠 Your address**,
+with the four jobs named in the card itself, and a way to it from the **Send a van** screen so the
+trip is still one tap when it is a delivery you are fixing.
+
+**What Settings keeps:** Delivery settings, App password, **Storefront**, Your address, Website &
+developer, Live availability, Shared data, Backup & safety, Danger zone. **Storefront stays there
+deliberately** — your call, and recorded so no later version proposes moving it again.
+
+**Your data is untouched.** No SQL, no order, product, price or posting day touched, and **no database
+step**. The suite is **2,784 tests, all green** — and the v312 route guard caught **both** new
+screens by name when I briefly took them out of the menu.
+
+**05 Oct 2026 — engine v314, BRING-A-FRIEND MOVES TO THE SHOP, AND THE REWARD IS A COUPON (no
+database step, nothing to upload — pushing this one is the whole of it).**
+
+**Why.** Two of your own, in one message. First: __"can be brought to The Shop, rather than in
+Settings."__ Second: __"can we make to more seamless with other promo?"__ — and when I asked what
+seamless meant, you chose **"One place, read as a family."**
+
+**What you see now.** **More → The shop** carries three rows instead of two: **Promo codes**,
+**🔗 Bring a friend**, **Reviews**. The scheme itself has not changed at all — same switch, same
+three numbers, same links on a customer's card, same Give-coupon press on an order. It simply lives
+where you would look for a customer offer, instead of beside "defaults, backup, transfer".
+
+**And each half now names the other.** The Bring a friend screen carries a card called **"A link, or
+a code"**, which says the difference in the terms you gave me: a link **costs nothing to issue and
+travels** — forward it and it still works; a code and a label is for a partner who prints brochures.
+Promo codes says the same thing from its side and points back.
+
+**★ BUT THE IMPORTANT PART OF THIS VERSION IS YOUR SECOND SENTENCE.** You said: __"if we state only
+credit of ringgit, there might be confusion of how much credit to apply, but we can state, only one
+coupon apply for each purchase."__ **You were right, and it was worse than you described — it was two
+places, and both of them argued with themselves:**
+
+- On a customer's card holding **two** RM3 coupons, the chip above read **"2 ready"** while the line
+  beneath it read **"unused = you still owe RM 3.00 off an order"** — because that figure was taken
+  from the **first** coupon only. Two numbers, disagreeing, on one line.
+- On an order with two ready, the line read **"RM 3.00 credit available on this order"** beside a
+  button reading **"Apply credit (2)"** — and the press spent exactly **one**. So the screen showed
+  one coupon's money next to a count of two, and did something else again.
+
+**The fix is not arithmetic. It is your rule, written down.** No screen shows a running balance any
+more. The customer's card now reads **"2 ready — one per order"**; the order reads **"RM 3.00 coupon
+ready for this order — one per order, 2 more after it"**; and the message a customer forwards to their
+friend now promises __"a RM 3.00 coupon for a future order — one coupon per order"__ so nobody has to
+guess. The rule is stated in all four places you would meet it.
+
+**★ AND WE NOW CALL IT A COUPON, IN YOUR WORDS.** Eighteen strings changed — Give **coupon**, Apply
+**coupon**, **Coupons**, Add **coupon**, the customer's card, and all three WhatsApp messages
+(English, 中文, Bahasa Malaysia). **Your decision on the two schemes is unchanged and I have kept to
+it: both stay, and the difference between them is what you hand over.** **⚠️ AND ONE THING DELIBERATELY
+DID NOT MOVE WITH THE WORD: the stored name.** Every coupon already given out lives under
+`state.credits`, and renaming that would have orphaned all of them — so the words changed and the
+storage did not. It is a test.
+
+**⚠️ ALSO NOT RENAMED, because they are a different thing entirely: "Insufficient Credit" and the
+EasyParcel wallet line on the parcel block.** That is the parcel money, not your reward.
+
+**Your data is untouched.** No SQL, no order, product, price or posting day touched, and **no database
+step**. The suite is **2,783 tests, all green** — and one of the new ones is the v312 route guard,
+which **caught this new screen by name** the moment I briefly took it out of the menu, exactly as it
+was built to.
 
 **05 Oct 2026 — engine v313, THE SMALL GREY LINES ARE READABLE NOW (no database step, nothing to
 upload — pushing this one is the whole of it).**

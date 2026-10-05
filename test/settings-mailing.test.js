@@ -32,20 +32,45 @@ function carriedKeys() {
   return m[1].split(",").map((s) => s.trim().replace(/^"|"$/g, "")).filter(Boolean);
 }
 
-// Every sentence the mailing card prints, which is the user-visible text of the
-// card and nothing else: the JSX-ish string literals inside the "Mailing labels
-// (courier)" block, up to the next section's own comment.
+// Every sentence the address card prints, which is the user-visible text of the
+// card and nothing else: the JSX-ish string literals inside the block, up to the
+// NEXT section's own banner comment.
+//
+// ⚠️ **THE CARD WAS RENAMED "Your address" IN v315, AND THE OLD ANCHORS BOTH MOVED.**
+// It used to be "Mailing labels (courier)" and to sit immediately above a
+// "── Courier ──" block that has since left Settings for its own screen. So the
+// slice now ends at the next banner rather than at a named neighbour — a helper
+// that names the card after it breaks every time a card moves, and this test's
+// subject is the ADDRESS, not what happens to be filed beside it.
+// ⚠️ **COMMENTS COME OUT FIRST, AND THAT IS NOT FASTIDIOUSNESS.** The moment this
+// card's own banner quoted the old name — `Called "Mailing labels (courier)"` — the
+// helper started reading the COMMENT as card text and reported the card as claiming
+// something it does not. What this function wants is what the card SAYS TO HER, and
+// a comment is not that.
+const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+
 function mailingCardText() {
-  const start = settingsSrc.indexOf("── Mailing labels (post) ──");
-  assert.ok(start > -1, "the mailing-labels section was not found in settings.js");
-  // The block runs to the NEXT section heading, not to a named one: this app's
-  // Settings screen keeps its own cards (Postage, Website & developer) between the
-  // mailing card and Courier, so naming the far end would swallow three cards that
-  // have nothing to do with the mailing address.
-  const rest = settingsSrc.slice(start);
-  const end = rest.indexOf("\n  // ── ", 10);
-  const block = end > -1 ? rest.slice(0, end) : rest;
-  return block.match(/"([^"\\]{20,})"/g).map((s) => s.slice(1, -1)).join("\n");
+
+  // ⚠️ THE SECTION IS FOUND BY ITS BANNER, AND THE BANNER IS A COMMENT — so the
+  // split happens on the RAW source (the banner is the delimiter) and only the chosen
+  // block is then stripped. Stripping first would take the divider with it.
+  //
+  // ⚠️ **AND IT ENDS AT THE NEXT DECLARATION, NOT ONLY AT THE NEXT BANNER (v315).**
+  // The card's two neighbours in Settings both left for screens of their own, and
+  // their banners went with them — so the address section ran on into the cloud card
+  // below, and this test read "anon public key" as something the ADDRESS card says.
+  // A card ends where the next one begins.
+  const at = settingsSrc.indexOf("const mailingCard = ");
+  assert.ok(at > -1, "the address card was not found in settings.js — it may have been renamed or moved again");
+  const rest = settingsSrc.slice(at);
+  const stop = rest.search(/\n  const /); // the next card's declaration, or the end
+  const block = stop > -1 ? rest.slice(0, stop) : rest;
+  // ⚠️ THE STRING MAY NOT CROSS A LINE. Without the `\n` here the pattern runs from
+  // one quote to the next quote ANYWHERE below it, so it read code as card text and
+  // reported the card as saying things it does not. Every string this card prints is
+  // written on one line.
+  return stripComments(block).match(/"([^"\\\n]{20,})"/g).map((s) => s.slice(1, -1)).join("\n");
+
 }
 
 test("the mailing card and the carried settings agree that the address travels (v206)", () => {
@@ -65,7 +90,28 @@ test("the mailing card and the carried settings agree that the address travels (
   }
 });
 
-test("the mailing card never claims to be published with the storefront (v206)", () => {
+test("the address card names every job it does, not just the label (v315)", () => {
+  // ★ WHY IT KEPT ITS PLACE IN SETTINGS. Given the choice, she said "Rename it, keep
+  // it in Settings" — but the card had been called "Mailing labels (courier)", and
+  // that name was wrong: ONE address feeds the parcel label's FROM, the bakery's own
+  // door for the van, **the letterhead on every invoice** (v293), and the from line
+  // on the wish-list email. Called a courier thing, an invoice with the wrong heading
+  // would have sent her looking under deliveries.
+  //
+  // So the card must NAME all four. This is the assertion that stops it drifting back
+  // into being a label card with an address in it.
+  const said = mailingCardText();
+  for (const [what, re] of [
+    ["the parcel label", /parcel label/i],
+    ["the courier's door", /courier collects from/i],
+    ["the invoice letterhead", /invoice/i],
+    ["the wish-list email", /wish-list email/i],
+  ]) {
+    assert.match(said, re, `the address card no longer says it is used on ${what}`);
+  }
+});
+
+test("the address card never claims to be published with the storefront (v206)", () => {
   // The other half of the same fact, and the one that would be the real
   // problem: this address is HER bakery's, held in settings. Anything on this
   // card saying it is published — or that the customer sees it before the

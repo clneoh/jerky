@@ -29,6 +29,12 @@ const MENU_GROUPS = [
   ["Logistic", [
     ["#/run", "🚚 Delivery run", "Several orders, one trip — and what it saves"],
     ["#/deliveries", "📅 Delivery dates", "Which days you post, and who is on each"],
+    // ⚠️ **"SEND A VAN", NOT "LALAMOVE" (v315).** ⚠️ AND NOT "COURIER" EITHER —
+    // **📦 Parcel couriers** is the row directly above and means the parcels she
+    // POSTS. v309 gave the two kinds her own words, and the order cards say them:
+    // **Post a parcel** / **Send a van**. The screen inside names Lalamove, and
+    // asks the registry rather than knowing, so a second courier needs no change here.
+    ["#/send-van", "🚚 Send a van", "Your own door for the driver, and the van service that collects from it"],
     ["#/points", "📍 Self collection Points", "The places your customers collect from instead of your kitchen"],
     ["#/parcel-couriers", "📦 Parcel couriers", "Posting dry goods yourself — J&T, Ninja Van, Line Clear"],
   ]],
@@ -54,6 +60,14 @@ const MENU_GROUPS = [
   ]],
   ["The shop", [
     ["#/promo", "🎟 Promo codes", "Codes your customers type in the shop"],
+    // ⚠️ MOVED OUT OF SETTINGS IN v314. It is a customer offer, not a default,
+    // so it lives with the two it belongs beside. Her words: "can be brought to
+    // The Shop, rather than in Settings."
+    ["#/bring-a-friend", "🔗 Bring a friend", "A customer's own link, and what both of them get"],
+    // ⚠️ MOVED OUT OF SETTINGS IN v315 — how her words reach a customer is the same
+    // subject as the offers and the reviews. Her instruction: "move Message Style to
+    // the shop".
+    ["#/message-style", "💬 Message style", "How the four WhatsApp messages to a customer open"],
     ["#/reviews", "⭐ Reviews", "Approve and remove homepage reviews"],
   ]],
 ];

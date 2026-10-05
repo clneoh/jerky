@@ -17,7 +17,7 @@
 // standing line always stands down for it, so such a control could never refuse
 // anything. A control that can never refuse is a control that does nothing.
 
-import { el, button, copyText, emptyState, confirmDialog, showPopup, toast } from "../ui.js";
+import { el, button, copyText, emptyState, confirmDialog, showPopup, toast, menuRow } from "../ui.js";
 import { qrSvg } from "../qr.js";
 import { shopLink } from "../promo-card.js";
 import { fmtRM, newId, save } from "../state.js";
@@ -45,7 +45,18 @@ function renderAll(root, state) {
     newCodeCard(state, root),
     stepsCard(state),
     el("h2", { class: "section" }, `Promo codes (${list.length})`),
-    ...rows);
+    ...rows,
+    // ── ★ THE OTHER HALF (v314) ─────────────────────────────────────────────
+    // A code is only one of the two things she can hand a customer. The other is
+    // a customer's own LINK, and until v314 the two were a screen apart with
+    // nothing saying they were related. Her ask: "can we make to more seamless
+    // with other promo?" → "One place, read as a family". **The axis is the
+    // ARTEFACT, not the reward, and both schemes stay (her decision, v289) — do
+    // not propose merging them.**
+    el("h2", { class: "section" }, "Or give a customer their own link"),
+    el("div", { class: "card", style: "padding:4px 14px" },
+      menuRow("#/bring-a-friend", "🔗 Bring a friend",
+        "A link a customer forwards — it costs nothing to issue, and it still works after being passed on")));
 }
 
 /* ── How many times a label was opened (v288) ──────────────────────────────────

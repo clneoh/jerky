@@ -11,7 +11,7 @@ import { publishOccasions } from "./occasion_catalog.js";
 import { flattenTree, primaryCategoryId, productsInCategory } from "./productCategories.js";
 import { isThumb, lineNoteOf } from "../../storefront-fields.js";
 import { effectiveCapacity, effectiveLimit, isPoolablePack, poolRemaining, totalUnitsOnDate } from "./bom.js";
-import { byId, fmtRM, newId, orderCode, orderLineName, save, stampOrderLine } from "./state.js";
+import { byId, fmtRM, newId, orderCode, orderLineName, round2, save, stampOrderLine } from "./state.js";
 import { phoneDigits } from "./customers.js";
 import { customerTotal } from "./courier.js";
 // The promo-code engine. Only two things are asked of it here: what the shop may
@@ -588,8 +588,24 @@ export function trackingSnapshot(state, group) {
   // ask them for the charge at the door (19 Sep 2026).
   const {
     courier: courierFee, cod: courierCod, quoted, total: totalNum,
-    promo: promoRm, promoCode,
+    promo: promoRm, promoCode, coupon: couponRm,
   } = customerTotal(state, group);
+  // ★★ THE CARD'S DISCOUNT COLUMN CARRIES BOTH KINDS (v323), AND THAT IS DELIBERATE.
+  // A customer who ordered through a friend's link has the RM3 taken off their total — and
+  // until this, the card showed the LOWER TOTAL WITH NOTHING SAYING WHY, which is the one
+  // thing this app never lets a figure do.
+  //
+  // ⚠️ **IT REUSES `promo_rm` RATHER THAN ADDING A COLUMN, AND THE NOTE ABOVE IS THE REASON:
+  // a column that does not exist yet kills publishing for EVERY order, silently.** `promo_rm`
+  // already means "the discount on this order", and it can only ever hold ONE discount,
+  // because **a code and the friend's coupon can never both apply** (see `customerTotal`).
+  // So `promo_rm = promoRm + couponRm` is not two things in one field — it is the one
+  // discount, whichever it happens to be.
+  //
+  // ⚠️ **AND AN EMPTY `promo_code` BESIDE A DISCOUNT MEANS "bring-a-friend", WITH NO FLAG
+  // NEEDED.** A code always has a name — the app refuses to let one be labelled without it —
+  // so `off > 0 && !code` can only be the friend's discount. The shop has its own words for
+  // that, in all three languages, and picks them on exactly that test.
   const total = fmtRM(totalNum, state.settings.currency);
   // The booked trip, as the order itself remembers it. Every one of these is null on an
   // order with no trip, and the customer's card leaves its line out rather than printing
@@ -664,7 +680,9 @@ export function trackingSnapshot(state, group) {
     // this build is deployed (see that file) — and a missing column kills publishing
     // for EVERY order silently, because pushTracking swallows its errors.
     promo_code: promoCode || null,
-    promo_rm: promoRm > 0 ? promoRm : null,
+    // The ONE discount on this order — a code, or the friend's first-order coupon, never
+    // both. See the note where this number is worked out.
+    promo_rm: (promoRm + couponRm) > 0 ? round2(promoRm + couponRm) : null,
     // Who is carrying it, where it has got to, and who is driving — each null when the
     // order has no trip or the trip has not told us that yet.
     //

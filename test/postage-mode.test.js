@@ -95,7 +95,7 @@ test("quote mode: a posted order with no charge owes the items alone, and says s
   const st = state({ postageMode: "quote" });
   const parts = customerTotal(st, groupOf(st));
   assert.deepEqual(parts, { items: 30, courier: 0, cod: 0, postage: 0, quoted: true,
-    promo: 0, promoCode: "", notApplied: "", promoMinimum: 0, total: 30 },
+    promo: 0, promoCode: "", notApplied: "", promoMinimum: 0, coupon: 0, couponId: "", couponCode: "", total: 30 },
     "no delivery figure is invented, and the total is not silently the whole cost");
   assert.deepEqual(moneyLines(st, parts), [
     "Total: RM 30.00",

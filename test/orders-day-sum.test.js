@@ -1830,3 +1830,42 @@ test("a price that lands after she has closed the card is not written into it", 
     "no price row was painted into the card she had already closed");
   assert.equal(feeInput(card).value, "", "and no charge was written into the box inside it");
 });
+
+// ── ★ v330: the Total the Edit card shows IS the total after the discount ────
+test("the Edit card's total has the bring-a-friend discount taken off it", () => {
+  // ★★ HER REPORT: __"the discount dnt show in the total adding in edit, probably other
+  // place?"__ — and the "adding" was the smaller half. This card **worked its own total out
+  // from the lines she was typing** and never applied the coupon, so the figure she read
+  // while editing was the total BEFORE the discount — **a total she would quote to a
+  // customer and then have to explain.**
+  //
+  // ⚠️ AND IT IS A DIFFERENT PATH FROM `customerTotal`, which is why fixing the receipt's
+  // row was not enough on its own: the two pop-ups price a DRAFT, so they build their own
+  // `parts`. Both now price the coupon through the one exported rule.
+  const st = state();
+  st.orders[0].productId = "p1";
+  st.orders[0].unitPrice = 15;
+  st.orders[0].whatsapp = "60123456789";
+  // orderCode takes the last six hex of the id, so "o1" alone gives a code of "1".
+  st.orders[0].id = "aa11bb22cc33";
+  st.orders[0].groupId = "aa11bb22cc33";
+  st.credits = [{ id: "cr1", role: "friendOff", orderCode: "22CC33",
+    holder: "60123456789", amountRM: 3, status: "valid" }];
+
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+  buttonByText(root, "Edit")._listeners.click[0]();
+  const pop = layers["popup-layer"];
+
+  const txt = (n) => String(n && (n.textContent !== undefined ? n.textContent : n.text) || "");
+  const rowFor = (label) => all(pop).find((n) => String(n.className).includes("info-row")
+    && all(n).some((c) => txt(c).trim() === label));
+  const valueOf = (label) => txt(all(rowFor(label)).find((n) => String(n.className).includes("info-val")));
+
+  assert.ok(rowFor("Bring-a-friend discount"),
+    "the discount is a line on the Edit card's receipt, not left to be guessed");
+  assert.equal(valueOf("Bring-a-friend discount"), "-RM 3.00", "with the ringgit signed");
+  assert.equal(valueOf("Items total"), "RM 30.00", "items first");
+  assert.equal(valueOf("Total"), "RM 27.00",
+    "AND THE TOTAL ITSELF IS AFTER THE DISCOUNT — this is the figure she quotes to a customer");
+});

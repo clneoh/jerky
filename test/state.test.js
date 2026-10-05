@@ -149,6 +149,77 @@ test("consolidating duplicate dates keeps the first record's day adjustments", (
     "the surviving (first) record's dayAdj wins, matching dayDelta's owner rule");
 });
 
+test("two days sharing ONE id are split apart, and each order follows its own day", () => {
+  // ★ v326. Her report, 5 Oct 2026: "the order calander not able to select
+  // 7/10/26 … clicking that date, the date turn red, but the SET day's avaibility
+  // not changing to 7/10/26." The red mark follows the id the CELL was drawn from;
+  // the panel under it is drawn from `byId`, which answers with the FIRST record
+  // holding that id. When two days share one id those are two different days, and
+  // the second can never be opened — nor deleted, because deleteDate deletes by id.
+  //
+  // ⚠️ THE ORDER'S OWN `deliveryDate` IS WHAT TELLS THE TWO DAYS APART. The id is
+  // the same for both, so it cannot.
+  const book = {
+    version: 1,
+    deliveryDates: [
+      { id: "del_a", date: "2026-10-05", notes: "" },
+      { id: "del_a", date: "2026-10-07", notes: "" },
+    ],
+    orders: [
+      { id: "o1", deliveryDateId: "del_a", deliveryDate: "2026-10-05", productId: "p", qty: 2 },
+      { id: "o2", deliveryDateId: "del_a", deliveryDate: "2026-10-07", productId: "p", qty: 3 },
+    ],
+  };
+  const out = normalize(book);
+  assert.equal(out.deliveryDates.length, 2, "both days survive — nothing is deleted");
+  assert.equal(out.deliveryDates[0].id, "del_a", "the first record keeps the id byId already answers with");
+  const second = out.deliveryDates[1];
+  assert.equal(second.date, "2026-10-07", "the second day is still 7 Oct");
+  assert.notEqual(second.id, "del_a", "and it has an id of its own");
+  assert.equal(out.deliveryDates.filter((d) => d.id === "del_a").length, 1,
+    "so no two days share an id any more");
+  // ⚠️ AND IT IS DERIVED, NOT ROLLED FRESH — both phones must choose the same id,
+  // or the next pull brings the pair back. Same input, same answer, every time.
+  const again = normalize(book);
+  assert.equal(again.deliveryDates[1].id, second.id, "a second load picks the same id");
+  assert.equal(normalize({ version: 1, deliveryDates: out.deliveryDates, orders: out.orders })
+    .deliveryDates[1].id, second.id, "and re-loading an already-repaired book changes nothing");
+  assert.equal(out.orders.find((o) => o.id === "o1").deliveryDateId, "del_a", "5 Oct's order stays on 5 Oct");
+  assert.equal(out.orders.find((o) => o.id === "o2").deliveryDateId, second.id, "7 Oct's order follows its own day");
+  assert.deepEqual(out.orders.map((o) => o.qty), [2, 3], "no order lost");
+});
+
+test("an order with no date snapshot stays on the id, which is where it reads today", () => {
+  // The snapshot is the only thing that can say which of the two days an order
+  // belongs to. Without one, moving it would be a guess — and a guess here moves
+  // somebody's order. It stays where `byId` already resolves it.
+  const out = normalize({
+    version: 1,
+    deliveryDates: [
+      { id: "del_a", date: "2026-10-05", notes: "" },
+      { id: "del_a", date: "2026-10-07", notes: "" },
+    ],
+    orders: [{ id: "o1", deliveryDateId: "del_a", productId: "p", qty: 1 }],
+  });
+  assert.equal(out.orders[0].deliveryDateId, "del_a", "left alone, where it already read");
+});
+
+test("loading a healthy book of days changes nothing at all", () => {
+  // The repair must be invisible when there is nothing wrong — the same rule
+  // consolidateDeliveryDates follows. Two days, two ids, no edits.
+  const before = {
+    version: 1,
+    deliveryDates: [
+      { id: "del_a", date: "2026-10-05", notes: "" },
+      { id: "del_b", date: "2026-10-07", notes: "" },
+    ],
+    orders: [{ id: "o1", deliveryDateId: "del_b", deliveryDate: "2026-10-07", productId: "p", qty: 1 }],
+  };
+  const out = normalize(before);
+  assert.deepEqual(out.deliveryDates, before.deliveryDates, "the days are the same objects, untouched");
+  assert.deepEqual(out.orders, [{ ...before.orders[0], status: "new" }], "and so is the order");
+});
+
 test("groupOrders merges shared groupIds and keeps standalone orders separate", () => {
   const g = groupOrders([
     { id: "a", groupId: "g1" },

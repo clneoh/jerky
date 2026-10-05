@@ -658,3 +658,200 @@ test("an order nobody has priced says nothing, rather than claiming it is worth 
   assert.equal(moneyRows(dayRow(root)).length, 0,
     "an unpriced order is not an order worth RM 0.00 — the row would be the app inventing a figure");
 });
+
+test("the day you tap is the day you get, even if two days share one id", () => {
+  // ★ v326. Her report, 5 Oct 2026: "the order calander not able to select
+  // 7/10/26 … clicking that date, the date turn red, but the SET day's avaibility
+  // not changing to 7/10/26." The cell is drawn from the day's OWN row of the
+  // calendar's `byDate` map, so the red mark followed her tap. The panel under it
+  // was drawn from `byId`, which answers with the FIRST record holding that id —
+  // and when two days share one id, that is a different day. So the screen could
+  // disagree with itself, and nothing said so.
+  //
+  // ⚠️ THE STATE HERE HAS NOT BEEN THROUGH normalize, ON PURPOSE. The load-time
+  // repair in state.js (splitSharedDateIds) is the other half of this fix; this
+  // test is the half that has to hold the instant she taps, on a screen whose
+  // data was loaded before the repair existed.
+  const st = {
+    ...STATE,
+    deliveryDates: [
+      { id: "shared", date: "2026-09-07" }, // holds the id; byId answers with this one
+      { id: "shared", date: "2026-09-10" }, // the day that could never be opened
+      { id: "own", date: "2026-09-07" }, // …which is why 7 Sep's cell is drawn from its own id
+    ],
+  };
+  const root = createEl("div");
+  renderOrders(root, st, PARAMS());
+
+  const titleNow = () => (all(root).find((n) => String(n.className).includes("card-title"))
+    || { textContent: "(no day card)" }).textContent;
+
+  const cell = all(root).find((n) => n.dataset && n.dataset.date === "2026-09-10"
+    && n.tagName === "BUTTON");
+  assert.ok(cell, "10 Sep is a delivery day, so its cell is a button");
+  (cell._listeners.click || []).forEach((f) => f.call(cell));
+
+  assert.equal(titleNow(), "Thu, 10 Sep 2026",
+    "the panel opens the day whose cell she tapped — never the other record holding that id");
+  const sel = all(root).filter((n) => String(n.className).includes("cal-cell")
+    && String(n.className).includes("sel")).map((n) => n.dataset.date);
+  assert.deepEqual(sel, ["2026-09-10"],
+    "and the red mark is on that one day, as it was on her screen");
+});
+
+test("the day survives the screen rebuilding itself from the address", () => {
+  // ★ v327, and it is the half v326 missed. v326 made the TAP carry the day's own
+  // date, which is right — but the address it writes carries only the ID, and the
+  // screen rebuilds itself from that address whenever the cloud answers, a pull
+  // lands, or the app regains focus (app.js's onSyncChanged -> render()). On that
+  // rebuild there is no date, only the id, and an id can be shared by two days —
+  // so the panel went back to the other one. Nothing flashes: the rebuild happens
+  // in a microtask, before the browser paints, so the wrong panel is the ONLY
+  // picture she ever sees. That is exactly her recording: the red mark moves and
+  // the panel does not, with the panel's pixels unchanged to the byte.
+  const st = {
+    ...STATE,
+    deliveryDates: [
+      { id: "shared", date: "2026-09-07" },
+      { id: "shared", date: "2026-09-10" },
+      { id: "own", date: "2026-09-07" },
+    ],
+  };
+  const root = createEl("div");
+  const titleNow = () => (all(root).find((n) => String(n.className).includes("card-title"))
+    || { textContent: "(no day card)" }).textContent;
+
+  let address = "";
+  globalThis.history = { replaceState: (a, b, url) => { address = url; } };
+
+  renderOrders(root, st, PARAMS());
+  const cell = all(root).find((n) => n.dataset && n.dataset.date === "2026-09-10"
+    && n.tagName === "BUTTON");
+  (cell._listeners.click || []).forEach((f) => f.call(cell));
+  assert.equal(titleNow(), "Thu, 10 Sep 2026", "the tap opens the day whose cell she pressed");
+
+  // The address the press wrote, read back the way app.js's router reads it.
+  const query = address.split("?")[1] || "";
+  renderOrders(root, st, new URLSearchParams(query));
+  assert.equal(titleNow(), "Thu, 10 Sep 2026",
+    "and a rebuild from that address still shows the day she tapped — the address must carry the day, not only its id");
+});
+
+test("a status change does not send the day back", () => {
+  // ★ v327. Thirteen places inside views/orders.js re-render the screen with the id
+  // they were working on and nothing else — a status change, a save, a day's
+  // availability. Each one is a rebuild with an id and no date, so with a shared id
+  // the panel would open the other day: the same fault, arriving by a different door
+  // and at a moment she would never connect to it. `ordersDayById` is what closes
+  // all thirteen at once.
+  const st = {
+    ...STATE,
+    deliveryDates: [
+      { id: "shared", date: "2026-09-07" },
+      { id: "shared", date: "2026-09-10" },
+      { id: "own", date: "2026-09-07" },
+    ],
+    orders: [
+      { id: "o1", deliveryDateId: "shared", deliveryDate: "2026-09-10", productId: "p1",
+        qty: 2, customerName: "Uncle Tan", whatsapp: "0162223333", status: "new" },
+    ],
+  };
+  const root = createEl("div");
+  const titleNow = () => (all(root).find((n) => String(n.className).includes("card-title"))
+    || { textContent: "(no day card)" }).textContent;
+
+  renderOrders(root, st, PARAMS());
+  const cell = all(root).find((n) => n.dataset && n.dataset.date === "2026-09-10"
+    && n.tagName === "BUTTON");
+  (cell._listeners.click || []).forEach((f) => f.call(cell));
+  assert.equal(titleNow(), "Thu, 10 Sep 2026", "she is on 10 Sep");
+
+  // The row's own status control — setStage re-renders the whole screen with the id.
+  const stSel = all(root).find((n) => n.tagName === "SELECT" && String(n.className).includes("sel-small"));
+  assert.ok(stSel, "the order's status control is on the day she opened");
+  stSel.value = "confirmed";
+  stSel._listeners.change[0]();
+
+  assert.equal(titleNow(), "Thu, 10 Sep 2026",
+    "and the screen is still on 10 Sep afterwards — a rebuild must not swap the day out from under her");
+});
+
+test("a day that cannot be drawn says so, and does not move the mark", () => {
+  // ★ v328. Her fault survived two rounds of fixing from the outside — the red
+  // square moved and the panel did not — because the reason was in ONE day's data
+  // and nothing on screen ever named it. So the day is now built BEFORE the mark
+  // moves: if it cannot be built, the mark stays where it was and the reason takes
+  // the day's place. **A red square over another day's panel is the one thing this
+  // screen must never show**, and it is exactly what she has been looking at.
+  const boom = () => { throw new Error("orders.test: this day's orders cannot be read"); };
+  const bad = { id: "o9", deliveryDateId: "d_ten", deliveryDate: "2026-09-10",
+    productId: "p1", qty: 2, customerName: "Uncle Tan", whatsapp: "0162223333", status: "confirmed" };
+  // ⚠️ THE LEVER MATTERS. It must break ONLY the day it is on: the calendar's own
+  // count (`explodeBom`), the inbox and the cloud all read other fields, and a
+  // property they read would fail the whole screen instead of one day. `customerName`
+  // is read by the order ROW alone, which only that day's panel builds.
+  Object.defineProperty(bad, "customerName", { get: boom, enumerable: true, configurable: true });
+
+  const st = {
+    ...STATE,
+    deliveryDates: [{ id: "d7", date: "2026-09-07" }, { id: "d_ten", date: "2026-09-10" }],
+    orders: [bad],
+  };
+  const root = createEl("div");
+  renderOrders(root, st, PARAMS()); // opens on 7 Sep, which is fine
+  const text = () => all(root).map((n) => (n.nodeType === 3 ? n.text : n.textContent)).join("");
+  assert.ok(text().includes("Mon, 7 Sep 2026"), "the screen opens on its normal day");
+
+  const cell = all(root).find((n) => n.dataset && n.dataset.date === "2026-09-10"
+    && n.tagName === "BUTTON");
+  assert.ok(cell, "10 Sep is a delivery day");
+  (cell._listeners.click || []).forEach((f) => f.call(cell));
+
+  assert.ok(text().includes("This day could not be opened"), "the day says it could not be drawn");
+  assert.ok(text().includes("orders.test: this day's orders cannot be read"),
+    "and names the reason, so it can be read out instead of guessed at");
+  assert.ok(text().includes("Nothing has been changed"), "and says her day is still safe");
+  const sel = all(root).filter((n) => String(n.className).includes("cal-cell")
+    && String(n.className).includes("sel")).map((n) => n.dataset.date);
+  assert.deepEqual(sel, ["2026-09-07"],
+    "the red mark did NOT move — a red day sitting over another day's panel is the fault itself");
+  assert.equal(st.deliveryDates.length, 2, "and her days are untouched");
+});
+
+test("a day whose order was given a bring-a-friend coupon still opens", () => {
+  // ★ v329, AND THIS IS THE FAULT ITSELF. `referralBlockEl` used `cur` in the line
+  // that names the friend's discount, but `cur` was only declared in the two
+  // functions AFTER it — so building the row for an order that carries a
+  // bring-a-friend coupon threw `ReferenceError: cur is not defined`. The calendar
+  // square had already repainted by then, so the day turned red and the panel under
+  // it kept the previous day. Her report, verbatim: "the day like hang".
+  //
+  // ⚠️ IT IS ONE DAY'S OWN DATA, WHICH IS WHY THREE VERSIONS MISSED IT: every day
+  // without a coupon was perfectly fine, and every test fixture was without one.
+  const id = "aa11bb22cc33"; // orderCode takes the last 6 hex → 22CC33
+  const st = {
+    ...STATE,
+    deliveryDates: [{ id: "d7", date: "2026-09-07" }, { id: "d10", date: "2026-09-10" }],
+    orders: [
+      { id, groupId: id, deliveryDateId: "d10", deliveryDate: "2026-09-10", productId: "p1",
+        qty: 2, customerName: "Uncle Tan", whatsapp: "0162223333", status: "confirmed" },
+    ],
+    credits: [{ id: "c1", role: "friendOff", orderCode: "22CC33", holder: "0162223333",
+      amountRM: 3, status: "valid", earnedAt: "2026-09-10" }],
+    settings: { ...STATE.settings, referrals: { enabled: true, friendRM: 3, referrerRM: 3, days: 90 } },
+  };
+  const root = createEl("div");
+  renderOrders(root, st, PARAMS());
+  const text = () => all(root).map((n) => (n.nodeType === 3 ? n.text : n.textContent)).join("");
+
+  const cell = all(root).find((n) => n.dataset && n.dataset.date === "2026-09-10"
+    && n.tagName === "BUTTON");
+  assert.ok(cell, "10 Sep is a delivery day");
+  (cell._listeners.click || []).forEach((f) => f.call(cell));
+
+  assert.equal((all(root).find((n) => String(n.className).includes("card-title"))
+    || { textContent: "" }).textContent, "Thu, 10 Sep 2026",
+    "the day opens — it must not throw while building the order's row");
+  assert.ok(text().includes("Bring-a-friend"), "and the discount names itself on the row");
+  assert.ok(text().includes("RM 3.00"), "with its figure");
+});

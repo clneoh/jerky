@@ -738,6 +738,45 @@ matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestion
 now that the Google key returns one precise house-number answer, most lookups legitimately show no
 list and the pin simply lands.
 
+## Seventeen versions in one pass: bring-a-friend becomes a coupon, and the shop's offers scroll (v314–v330)
+
+Bakery `3073714` (v313 — exactly where jerky sat) → `7a71894` (v330), the same one-file three-way
+merge. **37 files, 2,981 insertions, 4 new files** (`admin/js/views/referrals.js`, `message_style.js`,
+`send_van.js`, `test/bring-friend.test.js`). **No SQL, no Edge Function.** Suite **2801 → 2846
+pass / 0 fail**.
+
+**Bring-a-friend (v314, v322–v323, v330).** The scheme left Settings for a screen of its own,
+**`#/bring-a-friend`**, beside Promo codes under The shop — it is a customer offer, not a default —
+and the reward is now a **coupon**: one per friend, one per order, and its words say so in all three
+languages. The complaint it answers is that **the discount was promised and never seen taken**: the
+friend's RM3 now comes off the customers' totals and is **named on the tracking card** (one discount
+column, code or friend, never both) and in the Edit card's working.
+
+**The shop's offer line (v316–v321, v309's line).** It **scrolls** now instead of turning — each
+offer in its own box, held **2 seconds**, the next sliding up as the last leaves — so two offers are
+briefly visible together, which is what makes it read as a scroll rather than a swap. Three faults
+came out of it and are fixed: **a finger could stop it for good** (a clock, not the pointer), the
+**"following" message was broken on a two-offer shop**, and **the Mac asked for no animation** — the
+preference was being read as "off" rather than "no motion".
+
+**Two more cards left Settings (v315):** the courier card became **`#/send-van`** (Send a van), and
+the message style became **`#/message-style`**; the mailing card was renamed **"Your address"**,
+because four things read it (a parcel label, the courier's door, an invoice's letterhead, the
+wish-list from line) and a courier name would have her looking under deliveries.
+
+**v324–v329:** a tracked order **stops owning the page** (and a stray customer can be forgotten), the
+friend's number **comes off** the new customer's address, a day you tap **is** the day you get, the
+day **stays put** when the screen rebuilds, and a day that will not open now **says why** — with the
+actual cause found in v329.
+
+**Localization.** jerky's Settings keeps its own **postageCard** (the bakery has none) and its old
+`Mailing labels (post)` card was removed as the head's renamed card replaced it; `customerTotal` in
+`courier.js` keeps jerky's **flat `postage`** **and** gains the head's `coupon`; the follow-up pitch
+keeps jerky's **"Feeding tip"** with the new coupon wording; `send_van.js`'s pin title → "Your
+pickup pin"; the changelog entries localized (bake day → posting day, the bakery's URL → munchies).
+**`test/store-i18n.test.js`'s card test was adapted**, not copied: jerky's card has no `moneyEls`, so
+the assertion now checks jerky's own `promo_rm > 0 && promo_code` shape.
+
 ## One version: the small grey lines are readable (v313)
 
 Bakery `6543ed6` (v312 — exactly where jerky sat) → `3073714` (v313), the same one-file three-way

@@ -190,11 +190,15 @@ test("the headings are her words, in the order she reads them", () => {
   ]);
 });
 
-test("'Logistic' is her own word for the delivery set, and carries all four", () => {
+test("'Logistic' is her own word for the delivery set, and carries all five", () => {
+  // ⚠️ **"SEND A VAN", AND THE TWO KINDS ARE SAID APART (v309, v315).** The van row
+  // sits directly above **Parcel couriers**, and those two must never blur: a parcel
+  // is something she POSTS, a van is a trip she BOOKS. v309 gave the two kinds her own
+  // words and the order cards say them.
   const logistic = groupsOf(drawMore()).find((g) => g.name === "Logistic");
   assert.deepEqual(logistic.hrefs,
-    ["#/run", "#/deliveries", "#/points", "#/parcel-couriers"],
-    "an order leaving the kitchen is one job — all four screens are under Logistic");
+    ["#/run", "#/deliveries", "#/send-van", "#/points", "#/parcel-couriers"],
+    "an order leaving the kitchen is one job — every way it leaves is under Logistic");
 });
 
 test("the three she named sit together, under the name of the screen they belong to", () => {

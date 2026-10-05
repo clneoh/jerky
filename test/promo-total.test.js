@@ -97,7 +97,8 @@ test("the customer's total, in its parts, is the one figure the four messages sh
   const { st, g } = ordered();
   assert.deepEqual(customerTotal(st, g),
     { items: 30, courier: 0, cod: 0, postage: 0, quoted: false,
-      promo: 10, promoCode: "FRESH10", notApplied: "", promoMinimum: 0, total: 20 },
+      promo: 10, promoCode: "FRESH10", notApplied: "", promoMinimum: 0, coupon: 0, couponId: "", couponCode: "", total: 20 },
+
     "one helper, so the message and the customer's own card cannot quote different figures");
 });
 
@@ -209,7 +210,8 @@ test("a free-delivery code on a self-collect order is worth nothing and says not
     { fulfillment: "collect", courierFee: 8, courierPaidBy: "customer" });
   assert.deepEqual(customerTotal(st, g),
     { items: 30, courier: 0, cod: 0, postage: 0, quoted: false,
-      promo: 0, promoCode: "", notApplied: "", promoMinimum: 0, total: 30 });
+      promo: 0, promoCode: "", notApplied: "", promoMinimum: 0, coupon: 0, couponId: "", couponCode: "", total: 30 });
+
   assert.equal(confirm(st, g).includes("Promo"), false, "and the message is the plain one");
 });
 
@@ -247,7 +249,8 @@ test("a code she has since deleted does not invent one, and does not crash", () 
   st.orders = orders({ promo: "FRESH10" });
   assert.deepEqual(customerTotal(st, { orders: st.orders }),
     { items: 30, courier: 0, cod: 0, postage: 0, quoted: false,
-      promo: 0, promoCode: "", notApplied: "", promoMinimum: 0, total: 30 },
+      promo: 0, promoCode: "", notApplied: "", promoMinimum: 0, coupon: 0, couponId: "", couponCode: "", total: 30 },
+
     "nothing to price it from, so nothing comes off — the same answer as no code at all");
 });
 
@@ -317,7 +320,8 @@ test("a code whose smallest basket the order never reached gives NOTHING", () =>
   const { st, g } = ordered(minCode(100));
   assert.deepEqual(customerTotal(st, g),
     { items: 30, courier: 0, cod: 0, postage: 0, quoted: false, promo: 0, promoCode: "",
-      notApplied: "FRESH10", promoMinimum: 100, total: 30 },
+      notApplied: "FRESH10", promoMinimum: 100, coupon: 0, couponId: "", couponCode: "", total: 30 },
+
     "RM10 off was asked for on RM30 of goods, and RM30 is not RM100 — so nothing comes off,"
     + " and the code is carried as the one that was missed rather than as a discount");
 });
@@ -377,7 +381,8 @@ test("a delivery code below its smallest basket waives nothing", () => {
     { courierFee: 8, courierPaidBy: "customer" });
   assert.deepEqual(customerTotal(st, g),
     { items: 30, courier: 8, cod: 0, postage: 0, quoted: false, promo: 0, promoCode: "",
-      notApplied: "FREEPOST", promoMinimum: 100, total: 38 },
+      notApplied: "FREEPOST", promoMinimum: 100, coupon: 0, couponId: "", couponCode: "", total: 38 },
+
     "the charge stands, and the code waives none of it");
 });
 

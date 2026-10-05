@@ -7,6 +7,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 // ── Minimal DOM shim (same shape as test/store-lang-switch.test.js, plus a real
 // removeEventListener and a scrollIntoView spy, which is what this file checks) ─
@@ -110,6 +111,28 @@ test("the glow is ended by the customer reaching the card, not by the clock", ()
     "and nothing is left listening once it has");
 });
 
+test("the order code comes OFF the address bar, and the friend's stamp stays", async () => {
+  // ★ v324. Her report: __"when a customer track his order, his store version became associated
+  // with that order code."__ The link opens `/store/?track=CODE` and that code used to stay in
+  // the address — so the next time that page was opened, from a bookmark or from history, it
+  // landed back on that ONE order's card instead of on the shop. **The page belonged to an
+  // order rather than to the bakery.**
+  //
+  // ⚠️ **AND `via` MUST SURVIVE.** That is the friend's referral stamp, and a customer can
+  // arrive BY a referral link and then track an order — stripping the whole query string
+  // would silently break bring-a-friend for exactly that person.
+  const calls = [];
+  globalThis.history = { replaceState: (a, b, url) => calls.push(url) };
+  globalThis.location = { search: "?track=a3f9c2&via=60123456789", pathname: "/store/", hash: "" };
+
+  await import("../store/app.js?trackclean");
+
+  assert.equal(calls.length, 1, "the address is rewritten exactly once");
+  assert.equal(calls[0].includes("track"), false, "the order code is gone from the address");
+  assert.ok(calls[0].includes("via=60123456789"), `the friend's stamp is kept: ${calls[0]}`);
+  assert.ok(calls[0].startsWith("/store/"), `and the page is still the shop: ${calls[0]}`);
+});
+
 test("a customer who just opens the shop gets no glow", async () => {
   // Clear what the deep link did, then boot the SAME page with no ?track= in the
   // address: the card is a section of the page like any other, and nothing moves.
@@ -124,4 +147,42 @@ test("a customer who just opens the shop gets no glow", async () => {
 
   assert.equal(box.classList.contains("hit"), false, "no link, no glow");
   assert.equal(box.scrolled, undefined, "and the page is left where it opened");
+});
+
+test("the friend's number comes off the address once the order is placed — and only then", async () => {
+  // ★ v325. Her question: __"for new customer clicking link from his friend, after he place an
+  // order have you remove his page linking his friend phone number?"__ **It did not, and it
+  // should.** `?via=60123456789` is the FRIEND'S OWN NUMBER, and it sat in the new customer's
+  // address bar, their history, and anything they copied out of the address to pass on.
+  //
+  // ⚠️⚠️ **NOT WHEN THE PAGE OPENS.** A customer may arrive by the link and browse for ten
+  // minutes before ordering; taking the stamp off on arrival would lose the referral entirely.
+  // The safe moment is the one `placeOrder` already marks — **the path where the order really
+  // landed** — so this drives the helper directly, and separately asserts WHERE it is called.
+  const { forgetVia } = await import("../store/app.js?viatest");
+
+  const calls = [];
+  globalThis.history = { replaceState: (a, b, url) => calls.push(url) };
+  globalThis.location = { search: "?via=60123456789&track=a3f9c2", pathname: "/store/", hash: "" };
+  assert.equal(forgetVia(), true, "it reports that it did something");
+  assert.equal(calls[0].includes("via"), false, "the friend's number is gone");
+  assert.ok(calls[0].includes("track=a3f9c2"), `and an old order's code is left for its own rule: ${calls[0]}`);
+
+  // Nothing to remove is not a rewrite of the address.
+  calls.length = 0;
+  globalThis.location = { search: "?track=a3f9c2", pathname: "/store/", hash: "" };
+  assert.equal(forgetVia(), false, "no stamp, no work");
+  assert.equal(calls.length, 0, "and the address is untouched");
+
+  // And it is called on the placed-order path, NOWHERE else.
+  // ⚠️ ANCHORED ON `rememberShopOrder` RATHER THAN ON `if (r.ok)`, because that is the line whose
+  // own comment says it is on "the one path where the order really landed" — two comments and two
+  // clean-ups about the same moment sit together, and a count of characters between a vague anchor
+  // and the call is a measurement of the file's line length rather than of the code.
+  const src = readFileSync(new URL("../store/app.js", import.meta.url), "utf8");
+  const at = src.indexOf("rememberShopOrder(promoApplied)");
+  assert.ok(at > -1, "the placed-order branch was not found");
+  const next = src.indexOf("forgetVia()", at);
+  assert.ok(next > at && next - at < 500,
+    "the stamp must come off on the branch where the order really landed, beside rememberShopOrder");
 });

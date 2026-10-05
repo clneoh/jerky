@@ -1224,12 +1224,15 @@ button.prod-next.off::after { content: ""; }
    now, not a control, so it wears the referral strip's shape. Amber rather than
    green: green is already the referral's "you were given something", and a
    referred customer can see both strips at once. */
+/* ★ v318: THE WINDOW, NOT THE BOX. The amber panel used to live here — one box that never
+   moved. She asked for "each message" to be boxed, so the box moved onto every `.promo-slide`
+   and this element became the frame you look through: no background, no border, no padding, so
+   nothing is drawn twice and the window adds no height of its own.
+   ⚠️ It still carries the COLOUR and the TYPE the panels inherit, and it is still the element
+   the pointer listeners are bound to — so "rest your pointer on it and it holds" still means
+   the whole strip, boxes and all. */
 .promo-today {
   margin: 0 0 14px;
-  padding: 10px 14px;
-  border-radius: 12px;
-  background: #fdf3e3;
-  border: 1px solid #f0dcb8;
   color: #8a5a12;
   font-size: 13px;
   font-weight: 600;
@@ -1261,43 +1264,77 @@ button.prod-next.off::after { content: ""; }
    An offer nobody is reading waits a quarter-turn AWAY — `rotateX(90deg)`, edge-on to the
    reader — and being lit brings it round to face them. That much was v296.
 
-   ★ WHAT MAKES IT 3D IS THE OPPOSITE DOOR (v297). v296 sent BOTH panels through the SAME
-   arc: the old one 0 → −90, the new one −90 → 0. They mirrored each other all the way, which
-   reads as a vertical SQUASH, not a flip. Now the one that has just been replaced is sent to
-   `rotateX(-90deg)` instead — it tips AWAY over the top while the next rises from BELOW —
-   and two panels turning through opposite arcs is a card turning over. That is the `.is-left`
-   rule below, and it is the whole of the difference.
+   ★ ★ v318: THE OFFERS SCROLL **UP**, AND EACH MESSAGE IS ITS OWN BOX. Her words, and they
+   are the whole spec: __"Maybe you box up each message, when 1st message start to scroll up,
+   the 2nd message is following, So effectively you see 2 message, one follow by another, it
+   scroll up, stop 2sec, scroll again until mouse over."__
 
-   The fade timings still differ on purpose: both panels are on screen at once, so the one
-   leaving is gone quickly (.16s) and the one arriving holds its fade back until it is most
-   of the way round. Equal fades would put two half-turned messages on screen at once.
+   ⚠️ **THE AMBER BOX MOVED OFF THE STRIP AND ONTO EACH MESSAGE.** Until now `.promo-today` WAS
+   the box; there was one of it and it never moved. She asked for each message to be boxed, so
+   the strip becomes the WINDOW (transparent, no border, no padding) and every `.promo-slide`
+   carries the amber panel instead. That is the swap this rule makes, and it is why the strip's
+   own background and border are gone from the rule above.
 
-   `transform` and `opacity` are paint-only, so NONE of this can change the strip's height —
-   the guarantee above holds with the animation as it did without it. */
-.promo-rotor { display: grid; perspective: 450px; }
+   ⚠️ **AND THE TWO MESSAGES ARE THE POINT, NOT A SIDE EFFECT.** The waiting one sits a full
+   panel BELOW (`translateY(calc(100% + 10px))`) and the replaced one leaves through the TOP
+   (`translateY(calc(-100% - 10px))`). The `+ 10px` is not decoration: it is the GAP that passes
+   between the two panels as they move, which is what makes it read as one message following
+   another rather than as one block of text sliding.
+
+   ⚠️ **THE FLIP (v297) AND THE SIDEWAYS SCROLL (v316) ARE BOTH MINE, NOT HERS, AND BOTH ARE
+   GONE.** v292 chose a fade, v296/v297 a 3D flip, v316 a slide off to the left — each with
+   reasoning written into this file about what "reads as a glitch". She looks at this every day.
+   **Do not restore either on the strength of those arguments.**
+
+   ⚠️ **AND THERE IS NO FADE — a scroll shows BOTH messages.** Fading either would put a
+   half-visible one on screen, which is what the old fades existed to prevent.
+
+   ⚠️ `overflow: hidden` IS LOAD-BEARING: without it the waiting panels, parked below the
+   window, would hang under the strip. It cannot clip a focus ring — a panel holds only `<p>`,
+   so there is nothing focusable inside one.
+
+   `transform` is paint-only, so NONE of this can change the strip's height — the guarantee
+   above holds with the animation as it did without it. Measured on the live page across four
+   steps: **unchanged on every one.** */
+.promo-rotor { display: grid; overflow: hidden; }
 .promo-slide {
   grid-area: 1 / 1;      /* every slide lands in the same cell, so the tallest sets the height */
-  opacity: 0;
-  transform: rotateX(90deg);          /* waiting below, edge-on */
+  /* THE MESSAGE'S OWN BOX — this is what used to be on `.promo-today`. */
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #fdf3e3;
+  border: 1px solid #f0dcb8;
+  /* The gap at the end of the travel is what separates the two panels as they pass. */
+  transform: translateY(calc(100% + 10px));   /* waiting its turn, a panel BELOW */
   transform-origin: center center;
-  backface-visibility: hidden;
-  pointer-events: none;  /* an unlit slide sits behind the lit one; it must never catch a tap */
-  /* LEAVING: gone quickly, so it never lingers behind the one arriving, and it LEAVES on an
-     ease-in — the easing the house skill names for anything going out (ease-out for coming in).
-     Sitting inside the 250–400ms band that reads as correct for a page-level state change. */
-  transition: transform .38s cubic-bezier(.4, 0, 1, 1), opacity .16s ease;
+  pointer-events: none;  /* a waiting panel sits outside the window; it must never catch a tap */
+  /* LEAVING: the ease the house skill names for anything going out, inside the 250–400ms band
+     that reads as correct for a page-level state change. */
+  transition: transform .4s cubic-bezier(.4, 0, 1, 1);
 }
 .promo-slide.is-on {
-  opacity: 1;
-  transform: rotateX(0deg);
+  transform: translateY(0);
   pointer-events: auto;
-  /* ARRIVING: an ease-out to settle on, and the words held back until the turn is most of
-     the way round. */
-  transition: transform .38s cubic-bezier(0, 0, .2, 1), opacity .3s ease .14s;
+  /* ARRIVING: an ease-out to settle on, the same duration so the pair travel together. */
+  transition: transform .4s cubic-bezier(0, 0, .2, 1);
 }
-/* The offer that has just been replaced: out the other door, over the top. This rule must
-   stay AFTER `.promo-slide` and is more specific than it, so it wins on its own. */
-.promo-slide.is-left { transform: rotateX(-90deg); }
+/* The message that has just been replaced: up and out through the top. This rule must stay
+   AFTER `.promo-slide` and is more specific than it, so it wins on its own. */
+.promo-slide.is-left { transform: translateY(calc(-100% - 10px)); }
+
+/* ⚠️⚠️ THE PARKED SLIDE, AND IT IS LOAD-BEARING (v319). `showSlide` puts this on every
+   waiting message for one frame before it hands out `is-on` / `is-left`, so each of them
+   lands back in its place BELOW with no transition.
+
+   ⚠️ WITHOUT IT, A MESSAGE TRAVELS BACK THROUGH THE WINDOW. A slide that has just left
+   through the top sits at `-100%`; when its turn comes round again it has to be at `+100%`
+   to arrive from below — and MOVING IT THERE WITH A TRANSITION SLIDES IT THE WHOLE WAY
+   THROUGH THE WINDOW, so the message the customer just read sweeps back across the strip
+   in the wrong direction. A jump with the transition off paints only its ends.
+
+   ⚠️ IT MUST COME LAST, or `.is-on` and `.is-left` (same specificity) would win on source
+   order and the park would not take. */
+.promo-slide.is-parked { transition: none; }
 
 /* One dot per offer, under the box (v297). Her ask: "there should be 2 dot if there is 2
    message, 3 dot if 3 message."
@@ -1313,6 +1350,20 @@ button.prod-next.off::after { content: ""; }
    mistakes the house skill names. */
 .promo-dots { display: flex; justify-content: center; gap: 4px; margin-top: 6px; }
 .promo-dots:empty { display: none; }
+
+/* ⚠️ `?debug=offers` ONLY — one line saying why the strip is or is not turning. It is
+   built by the script only when the shop's address carries that flag, so a customer
+   never sees it; the rule exists so that when it IS there it reads as what it is —
+   a reading, not part of the shop. */
+.promo-debug {
+  margin: 6px 0 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #6b5545;
+  text-align: center;
+  word-break: break-word;
+}
 .promo-dot {
   width: 28px; height: 28px;           /* WCAG 2.5.8 floor is 24; this clears it */
   padding: 0; border: 0; background: none; cursor: pointer;
@@ -1333,7 +1384,29 @@ button.prod-next.off::after { content: ""; }
 /* The setting is about MOTION, not about information: a customer who asks for less
    movement still gets every offer — it simply arrives facing them, with no turn. */
 @media (prefers-reduced-motion: reduce) {
-  .promo-slide, .promo-slide.is-on { transition: none; }
+  /* ⚠️⚠️ "REDUCE MOTION" MEANS NO *MOVEMENT* — NOT NO *EFFECT* (v321).
+     This used to be `transition: none` and nothing else, which was wrong in a way that took
+     a screen recording to find: the offers still changed, but they changed **INSTANTLY**,
+     with nothing to see at all. She recorded it, and one turn came out as a snap between
+     two frames a tenth of a second apart — and `transition: none` was on MY machine too,
+     which is why every check I made looked fine.
+
+     The house skill is explicit: under `prefers-reduced-motion: reduce`, drop the transforms
+     and parallax, and allow **at most a ≤200ms opacity crossfade**. The panels therefore keep
+     their places and only their OPACITY changes — no travel at all, but the message still
+     visibly arrives rather than blinking. */
+  /* ⚠️⚠️ **THE TRANSFORMS STAY. ONLY THEIR ANIMATION GOES.** The panels keep their places —
+     the waiting ones below, the replaced one above — so the strip cannot be left blank by
+     this rule, and if `is-on` were ever missing the failure is the one it already had rather
+     than a new one. What changes is that the panel ARRIVING fades in over 180ms instead of
+     appearing in a single frame. No travel, and something to see.
+
+     ⚠️ AND THE SPECIFICITY MATTERS: `.promo-slide` alone is (0,1,0) and CANNOT beat the
+     `transition: transform` that `.promo-slide.is-on` (0,2,0) carries — so the arriving
+     panel has to be named here too, or it keeps animating its transform and never fades. */
+  .promo-slide { opacity: 0; transition: opacity .18s ease; }
+  .promo-slide.is-on { opacity: 1; transition: opacity .18s ease; }
+  .promo-slide.is-parked { transition: none; }
   .promo-dot::before { transition: none; }
 }
 /* The bakery's own words, inside the same strip but quieter than the offer and

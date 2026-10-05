@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { customerList, keyOf } from "../admin/js/customers.js";
-import { attachProfiles, canonicaliseCustomers, customerMatches, customerNameMatches, customerRowName, mergeCustomers, profileFor, profileForOrder, reconcileContacts, syncContactFromOrder, upsertProfile } from "../admin/js/profiles.js";
+import { attachProfiles, canonicaliseCustomers, customerMatches, customerNameMatches, customerRowName, mergeCustomers, profileFor, profileForOrder, removeProfile, reconcileContacts, syncContactFromOrder, upsertProfile } from "../admin/js/profiles.js";
 
 // A tiny app-password hash constant unused here — kept to match sibling files.
 
@@ -601,4 +601,44 @@ test("a code's tie survives the customer's number being corrected", () => {
   assert.equal(after.id, id, "the id is issued once and survives the re-key");
   assert.equal(after.key, "6012999", "the key follows the corrected number");
   assert.notEqual(after.key, keyBefore, "so the KEY moves — which is exactly what a code must not store");
+});
+
+
+// ── ★★ FORGETTING SOMEONE SHE ADDED BY HAND (v325) ──────────────────────────
+//
+// Her ask: __"i need a button to delete a customer as well, i found there is few stray customer"__.
+//
+// ⚠️⚠️ **THIS REMOVES A PROFILE, WHICH IS A DIFFERENT THING FROM A CUSTOMER, AND THE BUTTON IS
+// OFFERED ON A HAND-ADDED ROW ONLY.** The book is built from her ORDERS: someone she typed in has
+// none, so their row IS this record. **A customer who has ordered cannot be deleted here at all** —
+// their row is their sales history, and removing the profile would leave the row standing while
+// throwing away their reward, their note and their dog's name. **Half of what the button says is
+// worse than no button.**
+
+test("forgetting a hand-added person takes their row with them", () => {
+  const st = { customers: [{ key: "name:mei", name: "Mei", whatsapp: "" }], orders: [] };
+  assert.equal(customerList(st).length, 1, "she is in the book");
+  assert.equal(removeProfile(st, "name:mei"), true, "the delete reports that it worked");
+  assert.equal(st.customers.length, 0, "and the record is gone");
+  assert.equal(customerList(st).length, 0, "so the row goes with it");
+});
+
+test("it finds the record even when the stored key has LAGGED behind", () => {
+  // ⚠️ THE SAME RULE `customerList` USES TO DRAW THESE ROWS, and for the same reason: a stored key
+  // LAGS. A name-keyed record whose person later gained a number keeps the OLD key, so matching on
+  // `p.key` alone would find nothing — and a delete that quietly did nothing while reporting
+  // success is the fault this test exists for.
+  const st = { customers: [{ key: "name:mei", name: "Mei", whatsapp: "60123456789" }], orders: [] };
+  const derived = keyOf({ whatsapp: "60123456789", customerName: "Mei" });
+  assert.notEqual(derived, "name:mei", "the two keys really are different, or this proves nothing");
+  assert.equal(removeProfile(st, derived), true, "the row was found by its RE-DERIVED key");
+  assert.equal(st.customers.length, 0, "and removed");
+});
+
+test("forgetting something that is not there reports failure rather than pretending", () => {
+  const st = { customers: [{ key: "name:mei", name: "Mei", whatsapp: "" }], orders: [] };
+  assert.equal(removeProfile(st, "name:someone-else"), false, "it says so");
+  assert.equal(st.customers.length, 1, "and nothing was touched");
+  assert.equal(removeProfile(st, ""), false, "and no key at all is not a delete of everything");
+  assert.equal(st.customers.length, 1);
 });

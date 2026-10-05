@@ -19,7 +19,7 @@ import { FOLLOWUP, fmtFollowup } from "./followup-lang.js";
 const DEFAULT_SCHEME = { enabled: false, friendRM: 3, referrerRM: 3, validDays: 90 };
 
 export const ROLE_LABEL = {
-  reward: "Referral credit",
+  reward: "Referral coupon",
   friendOff: "Friend's discount",
 };
 
@@ -80,15 +80,18 @@ export function shareMessage(state, r, origin) {
     && state.settings.storefront.name) || "Munchies Furkidz").trim();
   const cur = (state.settings && state.settings.currency) || "RM";
   const validity = scheme.validDays === "" || scheme.validDays == null
-    ? "Your credit never expires."
-    : `Each credit is valid ${scheme.validDays} days from when your friend orders.`;
+    ? "Your coupon never expires."
+    : `Each coupon is valid ${scheme.validDays} days from when your friend orders.`;
 
   const lines = [];
   if (name) lines.push(`Hi ${name}! ${bakery} has a bring-a-friend deal 🐾`);
   else lines.push(`${bakery} has a bring-a-friend deal 🐾`);
   lines.push("");
   lines.push(`• A friend who is NEW to us gets ${fmtRM(scheme.friendRM, cur)} off their FIRST order`);
-  lines.push(`• For every friend who orders, you get ${fmtRM(scheme.referrerRM, cur)} off a future order`);
+  // ★ THE RULE IS STATED WHERE SHE PROMISES IT (v314). Her words: __"we can
+  // state, only one coupon apply for each purchase."__ A friend forwarding this
+  // is the first place the deal is written down, so it is where the rule belongs.
+  lines.push(`• For every friend who orders, you get a ${fmtRM(scheme.referrerRM, cur)} coupon for a future order — one coupon per order`);
   lines.push("");
   lines.push("Your personal link to share:");
   lines.push(link);
@@ -207,6 +210,46 @@ export function validCredits(state, whatsapp, today = todayISO()) {
   return creditRows(state, whatsapp, today).filter((c) => c.status === "valid");
 }
 
+// ★★ THE FRIEND'S DISCOUNT, ON THE ORDER ITSELF (v322).
+//
+// ⚠️⚠️ **IT WAS NEVER TAKING ANYTHING OFF, AND THAT WAS THE WHOLE FAULT.** `giveCredits`
+// wrote the friend a coupon — *"First order — via X's link"* — and then **nothing read it**:
+// the order's Total, the confirmation and the three later messages are all worked out by
+// `customerTotal`, which knew about promo CODES and nothing else. So the coupon was
+// recorded, the order was priced as if it did not exist, and pressing **Apply coupon** said
+// *"already taken off this order"* about a figure nothing had ever taken off. Her words:
+// **"the bring a friend discount used but not really create a discount for that new
+// customer."**
+//
+// It was built that way on purpose — the scheme's first rule was *"the app records what is
+// owed; you apply the real discount yourself when you confirm"* — which made sense until the
+// app learned to take a CODE off by itself (v272). A code comes off, shows its working in
+// every message and names itself; the friend's coupon did none of those.
+//
+// **THE MATCH IS BY ORDER CODE, NOT BY "THE CUSTOMER'S VALID COUPONS".** The coupon is born
+// ON this order, so `orderCode` is already on it, and matching by that is exact — it cannot
+// pick up the referrer's reward (which is for a LATER order), it cannot leak the discount
+// onto the friend's second order, and it does not care whether the coupon reads as used,
+// because being spent on this order is exactly what it is.
+export function couponOn(state, orders) {
+  const rows = Array.isArray(orders) ? orders : [];
+  const first = rows[0];
+  if (!first) return { amount: 0, id: "", code: "" };
+  const code = orderCode(first);
+  if (!code) return { amount: 0, id: "", code: "" };
+  const friend = waNumber(first.whatsapp);
+  const hit = (state.credits || []).find((c) => c
+    && c.role === "friendOff"
+    && String(c.orderCode || "") === code
+    && Number(c.amountRM) > 0
+    // ⚠️ The holder is checked as well, and deliberately: `orderCode` is unique by
+    // construction, so this can only ever fail on a hand-edited record — and a discount
+    // landing on the wrong person's order is the one outcome worth guarding against twice.
+    && (!friend || waNumber(c.holder) === friend));
+  if (!hit) return { amount: 0, id: "", code: "" };
+  return { amount: round2(Number(hit.amountRM)), id: hit.id, code };
+}
+
 // The live state of one credit. A used credit stays used; an expired credit is
 // greyed; "" expiry never expires. Still valid ON its expiry day (compares the
 // full ISO dates, so "2026-12-04" is fine until 2026-12-05).
@@ -255,6 +298,18 @@ export function giveCredits(state, group, scheme = schemeOf(state), today = toda
     });
   }
   if (Number(scheme.friendRM) > 0 && friend) {
+    // ★★ AND IT IS SPENT THE MOMENT IT IS MADE, because it comes off THIS order (v322).
+    // Her complaint was that it was recorded and never taken off; the other half of making
+    // it come off is that it must not come off TWICE — once on this order, and again as a
+    // "ready" coupon on the customer's card where she would reasonably press Apply a second
+    // time.
+    //
+    // ⚠️ **UNLESS THE ORDER CARRIED A CODE.** Her rule is one coupon per order (v314), and if
+    // a code is on the order the CODE wins the Total (see `customerTotal`) — so the friend's
+    // coupon was not spent, and is left UNUSED and valid, theirs to use on the next order.
+    // Reading `first.promo` here rather than calling `promoOn` is deliberate: importing
+    // courier.js would make a cycle, and whether a code is ON the order is all this needs.
+    const codeWins = !!String(first.promo || "").trim();
     rows.push({
       id: newId("crd"),
       holder: friend,
@@ -263,7 +318,7 @@ export function giveCredits(state, group, scheme = schemeOf(state), today = toda
       role: "friendOff",
       earnedAt,
       expiresAt: exp,
-      usedAt: null,
+      usedAt: codeWins ? null : (first.createdAt || new Date().toISOString()),
       orderCode: code,
       note: `First order — via ${referrerNameStr}’s link`,
     });

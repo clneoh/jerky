@@ -303,7 +303,7 @@ test("shareMessage quotes the live scheme numbers and the customer's link", () =
   const msg = shareMessage(st, r, "https://munchies.com.my");
   assert.match(msg, /Hi Aisyah!/);
   assert.match(msg, /RM 5\.00 off their FIRST order/);
-  assert.match(msg, /you get RM 2\.00 off a future order/);
+  assert.match(msg, /you get a RM 2\.00 coupon for a future order — one coupon per order/);
   assert.match(msg, /https:\/\/munchies\.com\.my\/store\/\?via=60123456789/);
   assert.match(msg, /never expires/);
 });
@@ -322,7 +322,7 @@ test("followupMessage personalises with the product they just bought + its feedi
   assert.match(msg, /Hi Aisyah! How did the Chicken Jerky go/);
   assert.match(msg, /Feeding tip: Tear into small pieces for small dogs/);
   assert.match(msg, /RM 3\.00 off their FIRST order/);
-  assert.match(msg, /RM 3\.00 off a future order/);
+  assert.match(msg, /RM 3\.00 coupon for a future order/);
   assert.match(msg, /\?via=60123456789/);
 
   // A product with no feeding tip stays clean — no blank "Feeding tip:" line.
@@ -348,18 +348,22 @@ const TRILINGUAL = {
 const R = { name: "Aisyah", whatsapp: "60123456789" };
 const ORIGIN = "https://munchies.com.my";
 
-test("followupMessage with no language or 'en' is byte-for-byte the pre-v66 message", () => {
+test("followupMessage with no language or 'en' is the English default, word for word", () => {
   const st = baseState(); // 3/3/90 scheme, RM currency
+  // ⚠️ THIS USED TO SAY "byte-for-byte the pre-v66 message", AND THAT STOPPED
+  // BEING TRUE IN v314 — the reward is a COUPON now, and the one-per-order rule
+  // is stated in the sentence that promises it. Pinned whole, so a later edit to
+  // any line of it turns red rather than riding out quietly.
   const expected = [
     "Hi Aisyah! How did the Focaccia go? Hope you enjoyed it 😊",
     "Feeding tip: Warm 10 min at 150°C — crisp on top, soft inside",
     "",
-    "If you liked it, why not share your personal link below? A friend who is NEW to us gets RM 3.00 off their FIRST order — and you get RM 3.00 off a future order for every friend who orders through your link.",
+    "If you liked it, why not share your personal link below? A friend who is NEW to us gets RM 3.00 off their FIRST order — and you get a RM 3.00 coupon for a future order for every friend who orders through your link, one coupon per order.",
     "",
     "Your link to share:",
     "https://munchies.com.my/store/?via=60123456789",
     "",
-    "Each credit is valid 90 days from when your friend orders.",
+    "Each coupon is valid 90 days from when your friend orders.",
   ].join("\n");
   assert.equal(followupMessage(st, R, TRILINGUAL, ORIGIN), expected, "default stays English");
   assert.equal(followupMessage(st, R, TRILINGUAL, ORIGIN, "en"), expected, "explicit 'en' matches the default");
@@ -370,10 +374,10 @@ test("followupMessage in 中文 uses the product's Chinese name + serving tip an
   const msg = followupMessage(st, R, TRILINGUAL, ORIGIN, "zh");
   assert.match(msg, /^你好 Aisyah! 你觉得佛卡夏怎么样/);
   assert.match(msg, /食用建议：以 150°C 加热 10 分钟/);
-  assert.match(msg, /新朋友首次下单立减 RM 3\.00，朋友通过你的链接每下一单，你的下一次订单也减 RM 3\.00。$/m);
+  assert.match(msg, /新朋友首次下单立减 RM 3\.00；朋友通过你的链接每下一单，你就获得一张 RM 3\.00 优惠券，用于之后的订单，每张订单限用一张。$/m);
   assert.match(msg, /分享你的链接：/);
   assert.match(msg, /https:\/\/munchies\.com\.my\/store\/\?via=60123456789/);
-  assert.match(msg, /每份奖励自朋友下单起 90 天内有效。$/);
+  assert.match(msg, /每张优惠券自朋友下单起 90 天内有效。$/);
   assert.doesNotMatch(msg, /Hope you enjoyed it|Your link to share|Serving tip:/, "no English sentences leak in");
 });
 
@@ -383,9 +387,9 @@ test("followupMessage in Bahasa Malaysia uses the product's Malay name + serving
   assert.match(msg, /^Hai Aisyah! Macam mana Roti Focaccia tadi/);
   assert.match(msg, /Tip hidangan: Panaskan 10 minit pada 150°C/);
   assert.match(msg, /rakan yang BARU kepada kami dapat RM 3\.00 diskaun untuk pesanan PERTAMA mereka/);
-  assert.match(msg, /anda dapat RM 3\.00 diskaun untuk pesanan akan datang\.$/m);
+  assert.match(msg, /anda dapat satu kupon RM 3\.00 untuk pesanan akan datang — satu kupon untuk setiap pesanan\.$/m);
   assert.match(msg, /Pautan anda untuk dikongsi:/);
-  assert.match(msg, /Setiap kredit sah 90 hari dari tarikh rakan anda membuat pesanan\.$/);
+  assert.match(msg, /Setiap kupon sah 90 hari dari tarikh rakan anda membuat pesanan\.$/);
   assert.doesNotMatch(msg, /Hope you enjoyed it|How did the/, "no English sentences leak in");
 });
 
@@ -396,8 +400,12 @@ test("a product passed as just its name still localizes around the sentences, wi
   assert.doesNotMatch(msg, /Serving tip|Roti Focaccia/, "a bare name carries no serving tip to translate");
 });
 
-test("ROLE_LABEL covers the two credit kinds", () => {
-  assert.equal(ROLE_LABEL.reward, "Referral credit");
+test("ROLE_LABEL covers the two coupon kinds", () => {
+  // v314 moved the app's word from "credit" to "coupon" — her words: __"you got a
+  // discount coupon."__ ⚠️ THE STORED KEYS DID NOT MOVE with it (`state.credits`,
+  // `role: "reward"`), because renaming those would orphan every coupon she has
+  // already given out. The words change; the storage does not.
+  assert.equal(ROLE_LABEL.reward, "Referral coupon");
   assert.equal(ROLE_LABEL.friendOff, "Friend's discount");
 });
 

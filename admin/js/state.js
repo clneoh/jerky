@@ -443,6 +443,9 @@ function normalize(s) {
   const consolidated = consolidateDeliveryDates(out.deliveryDates, out.orders);
   out.deliveryDates = consolidated.deliveryDates;
   out.orders = consolidated.orders;
+  const split = splitSharedDateIds(out.deliveryDates, out.orders);
+  out.deliveryDates = split.deliveryDates;
+  out.orders = split.orders;
   ensureCountUnits(out);
   ensurePlanningUnits(out);
   backfillUnitRefs(out);
@@ -656,6 +659,55 @@ function consolidateDeliveryDates(deliveryDates, orders) {
       ? { ...o, deliveryDateId: removed.get(o.deliveryDateId) }
       : o;
   return { deliveryDates: out, orders: orders.map(reId) };
+}
+
+// ★ THE ONE SHAPE THE MERGE ABOVE CANNOT SEE (v326). Two records for the SAME
+// day look like a duplicate and are merged; two records that share an ID but sit
+// on DIFFERENT days look like two ordinary days, and every lookup in this app is
+// by id — `byId` answers with the FIRST record holding it, so the second day
+// becomes a day that cannot be opened. Her report, 5 Oct 2026: "the order
+// calander not able to select 7/10/26 … clicking that date, the date turn red,
+// but the SET day's avaibility not changing to 7/10/26" — the red mark followed
+// the tap (it is drawn from the day's own id) and the panel under it did not (it
+// is drawn from `byId`, which found the other record). It also makes `deleteDate`
+// remove BOTH days, because that deletes by id.
+//
+// The FIRST record to claim an id keeps it, and any later one on a different day
+// is moved off it. That is exactly the record `byId` already answers with, so
+// nothing that resolves today resolves differently afterwards. Its orders follow
+// it — matched on the id AND the order's own `deliveryDate` snapshot, which is
+// what tells the two days apart. An order with no snapshot stays where it is:
+// on the id, which is where it reads today.
+//
+// ⚠️ THE NEW ID IS DERIVED FROM THE OLD ONE AND THE DATE, NEVER ROLLED FRESH,
+// and that is the whole reason two phones can share this fix. Both of them load
+// the same pair and must move the SAME record to the SAME id; two random ids
+// would leave one phone's copy riding the old id, the next pull would bring both
+// days back onto it, and the fault would return wearing a different hat. It is
+// also what makes the step idempotent and safe to un-do a push: the shape it
+// produces cannot be produced twice, because after it no id is shared.
+//
+// Nothing is deleted. Every day, every order and every price survives.
+function splitSharedDateIds(deliveryDates, orders) {
+  const held = new Map(); // id -> the date of the record that keeps it
+  const moved = []; // { oldId, date, id } for each record that had to move
+  const out = (deliveryDates || []).map((d) => {
+    if (!d || !d.id) return d;
+    if (!held.has(d.id)) { held.set(d.id, d.date); return d; }
+    // The same day twice is not this fault; consolidateDeliveryDates above is
+    // what answers it, and it has already run by the time this is called.
+    if (held.get(d.id) === d.date) return d;
+    // `~` is outside the alphabet newId rolls from, so this cannot meet one.
+    const id = `${d.id}~${d.date}`;
+    moved.push({ oldId: d.id, date: d.date, id });
+    return { ...d, id };
+  });
+  if (!moved.length) return { deliveryDates, orders };
+  const reId = (o) => {
+    const hit = moved.find((m) => o && o.deliveryDateId === m.oldId && o.deliveryDate === m.date);
+    return hit ? { ...o, deliveryDateId: hit.id } : o;
+  };
+  return { deliveryDates: out, orders: (orders || []).map(reId) };
 }
 
 // Move a whole customer order to another delivery day. `group` is a group from

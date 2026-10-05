@@ -29,6 +29,31 @@ export function profileForOrder(state, o) {
   return profileFor(state, keyOf(o));
 }
 
+// ★★ FORGET A PERSON SHE ADDED BY HAND (v325). Her ask: __"i need a button to delete a customer as
+// well, i found there is few stray customer"__.
+//
+// ⚠️⚠️ **THIS DELETES A PROFILE, WHICH IS A DIFFERENT THING FROM A CUSTOMER, AND THE DIFFERENCE IS
+// THE WHOLE OF WHY IT IS ONLY OFFERED ON A HAND-ADDED ROW.** The customer book is built from her
+// ORDERS (see `customerList`). Someone she typed in herself has no orders, so **their row IS the
+// profile** — remove it and the row is gone. **A customer who has ordered cannot be deleted here at
+// all**: their row is their sales history, and removing the profile would leave the row standing
+// while quietly throwing away their reward, their note and their dog's name. Doing half of what the
+// button says is worse than not offering it.
+//
+// ⚠️ **MATCHED BY A RE-DERIVED `keyOf`, NEVER BY THE STORED `key` ALONE** — the exact rule
+// `customerList` uses to draw these rows, and for the same reason: a stored key LAGS. A name-keyed
+// record whose person later gained a number still carries the old key, and matching on it would
+// find nothing and report a delete that did not happen.
+export function removeProfile(state, rowKey) {
+  if (!rowKey) return false;
+  const list = Array.isArray(state.customers) ? state.customers : [];
+  const at = list.findIndex((p) => p
+    && (p.key === rowKey || (keyOf({ whatsapp: p.whatsapp, customerName: p.name }) || p.key) === rowKey));
+  if (at === -1) return false;
+  state.customers = list.filter((_, i) => i !== at);
+  return true;
+}
+
 // ── name + WhatsApp: one saved copy, written through to the orders ──────────
 
 // The name and number a person's orders currently carry. One order is enough:

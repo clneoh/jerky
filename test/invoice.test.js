@@ -168,6 +168,22 @@ test("the code comes off as its own row, named, with the minus in front", () => 
   assert.equal(s.totals[0].amount, 20);
 });
 
+test("the bring-a-friend discount comes off as its own line, above the Total it moves", () => {
+  // ★ v330, and it is the "probably other place?" half of her report. Her receipt and the
+  // invoice are the two screens that list an order's money as a sum; v322 taught the
+  // customer's MESSAGE about the coupon and left both of these out, so both read
+  // "Items RM 30.00" straight down to "Total RM 27.00" with nothing between them.
+  const st = state({ credits: [{ id: "cr1", role: "friendOff", orderCode: "ABC123",
+    holder: "60123456789", amountRM: 3, status: "valid" }] });
+  const { g } = cart([{}], st);
+  const s = journalSheet(invoiceSheet(st, g));
+  const coupon = s.lines.find((l) => l.what === "Bring-a-friend discount");
+  assert.ok(coupon, "the discount is a line of its own, never folded into the items");
+  assert.equal(coupon.amount, 3, "with the ringgit that actually came off");
+  assert.equal(coupon.dir, "out", "and the minus every other reduction on this sheet wears");
+  assert.equal(s.totals[0].amount, 27, "the lines above the Total add up to it");
+});
+
 test("an invoice for an old order shows the price it was SOLD at, not today's", () => {
   // The frozen line is the whole reason a rename or a price rise cannot rewrite history.
   const st = state();

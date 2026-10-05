@@ -135,6 +135,63 @@ test("a COD charge is a row with its own rider, and stays out of the total", () 
   assert.equal(rowFor(rows, "Total").value, "RM 30.00", "and the total asks for the bread alone");
 });
 
+// ── ★ v330: whatever comes off the total gets a row ──────────────────────────
+
+// An order carrying a bring-a-friend coupon and NO code — `customerTotal` only applies a
+// coupon when no code was used, because one offer per order is her rule.
+function couponed(amount = 3) {
+  const st = state({ credits: [{ id: "cr1", role: "friendOff", orderCode: "ABC123",
+    holder: "60123456789", amountRM: amount, status: "valid" }] });
+  st.orders = orders();
+  return { st, g: { orders: st.orders }, parts: customerTotal(st, { orders: st.orders }) };
+}
+
+test("a bring-a-friend discount is a row of its own, above the Total it moves", () => {
+  // ★ Her report, 5 Oct 2026: __"the discount dnt show in the total adding in edit,
+  // probably other place?"__ v322 took the coupon off the Total and named it on the
+  // customer's message, and left it out of HER receipt and the invoice — so the receipt
+  // read "Items total RM 30.00" straight down to "Total RM 27.00" with nothing between.
+  const { st, parts } = couponed();
+  assert.deepEqual(receiptRows(st, parts),
+    [{ label: "Items total", value: "RM 30.00" },
+      { label: "Bring-a-friend discount", value: "-RM 3.00" },
+      { label: "Total", value: "RM 27.00", total: true }],
+    "the discount named, the ringgit signed, and the Total the two lines above it add to");
+});
+
+test("THE ROWS ABOVE THE RULE ALWAYS ADD UP TO THE TOTAL", () => {
+  // ★★ THE GUARD, AND IT IS THE POINT OF THIS FILE. The receipt exists so the working can
+  // be checked by adding it up — "clearly shown the working, how they add up", her words.
+  // A figure that moves the Total and is not listed breaks that as surely as a wrong
+  // figure does, and it is worse, because a wrong figure is at least visible.
+  //
+  // ⚠️ IT IS ASSERTED ACROSS EVERY SHAPE THE MONEY CAN TAKE, so the next discount added to
+  // customerTotal turns this red until it is given a row — which is exactly what v322 did
+  // not do for the coupon.
+  //
+  // A row carrying a `note` is the COD rider: money the customer owes the COURIER, never
+  // money she collects, and deliberately not part of the Total.
+  const amount = (v) => Number(String(v).replace(/[^0-9.\-]/g, ""));
+  const shapes = [
+    ["a plain order", priced(null)],
+    ["a code that worked", priced(mkCode())],
+    ["a code that gave nothing", priced(mkCode({ basket: { type: "amount", amount: 100 } }))],
+    ["a courier charge", priced(null, { courierFee: 8, courierPaidBy: "customer" })],
+    ["a COD charge", priced(null, { courierFee: 8, courierPaidBy: "customer", courierCod: true })],
+    ["a bring-a-friend discount", couponed()],
+    ["a discount of more than the basket", couponed(999)],
+  ];
+  for (const [what, { st, parts }] of shapes) {
+    const rows = receiptRows(st, parts);
+    const total = amount(rows.find((r) => r.total).value);
+    const added = rows.filter((r) => !r.total && !r.note)
+      .reduce((s, r) => s + amount(r.value), 0);
+    assert.ok(Math.abs(added - total) < 0.005,
+      `${what}: the rows add to ${added} but the Total says ${total} — `
+      + rows.map((r) => `${r.label} ${r.value}`).join(" / "));
+  }
+});
+
 // ── the note under the receipt ───────────────────────────────────────────────
 
 test("a receipt with nothing to explain draws no note at all", () => {

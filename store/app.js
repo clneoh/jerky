@@ -282,6 +282,37 @@ export function parseVia(search) {
   return waNumber(new URLSearchParams(String(search || "")).get("via"));
 }
 
+// ★★ THE FRIEND'S NUMBER COMES OFF THE ADDRESS ONCE THE ORDER IS PLACED (v325).
+//
+// Her question: __"for new customer clicking link from his friend, after he place an order have
+// you remove his page linking his friend phone number?"__ **No — and it should.** The link is
+// `/store/?via=60123456789`: the FRIEND'S OWN NUMBER, sitting in the new customer's address bar,
+// their history, and anything they copy out of the address to send on. The stamp has done its work
+// the moment the order carries it onto the order record, so from then on it is only a phone number
+// being carried around.
+//
+// ⚠️⚠️ **IT IS REMOVED WHEN THE ORDER IS PLACED, NOT WHEN THE PAGE OPENS, AND THE DIFFERENCE
+// MATTERS.** A customer may arrive by the link and browse for ten minutes before ordering — and
+// taking the stamp off on arrival would lose the referral entirely. The one safe moment is the one
+// `placeOrder` already marks: **the path where the order really landed.** An order that fell back
+// to WhatsApp reached no record at all, so the stamp is LEFT ALONE there — they may try again, and
+// the message they send carries it.
+//
+// ⚠️ **ONLY `via` IS REMOVED.** `track` may be in the address at the same time (a customer who
+// arrived by a link and is also looking at an old order), and each key removes only itself.
+export function forgetVia(hist = (typeof history !== "undefined" ? history : null)) {
+  if (!hist || typeof hist.replaceState !== "function") return false;
+  if (typeof location === "undefined" || !location.search) return false;
+  const rest = new URLSearchParams(location.search);
+  if (!rest.get("via")) return false;
+  rest.delete("via");
+  const q = rest.toString();
+  try {
+    hist.replaceState(null, "", location.pathname + (q ? `?${q}` : "") + (location.hash || ""));
+  } catch { return false; }
+  return true;
+}
+
 function currentVia() {
   return (typeof location !== "undefined" && location.search)
     ? parseVia(location.search) : "";
@@ -1302,9 +1333,25 @@ export function render() {
   // message — worked out by the browser, at whatever font, language and text size the
   // customer actually has, with no number of ours that can go stale. Turning then only
   // moves which slide is lit, and nothing under the strip moves at all.
-  const TURN_MS = 1500;
+  // ★ 2 SECONDS, HER NUMBER, GIVEN 2026-10-05 (v317). It was 1.5s, chosen back when the line
+  // was mostly a short code, and she reported the result as too fast: __"maybe the scrolling is
+  // too fast and hardly see the results"__.
+  //
+  // ⚠️ **AND IT IS THE STILLNESS THAT WAS TOO SHORT, NOT THE MOVE.** The slide itself takes
+  // 0.4s, which is already the top of the house band (250–400ms for a state change) — slowing
+  // the animation would only make it draggy without buying a second of reading. At 1.5s an
+  // offer sat still for about **1.1s**; at 2s it sits for **1.6s**.
+  //
+  // ⚠️ **MEASURED ON HER OWN SHOP, SO THE CEILING IS ON THE RECORD:** her offers run to **38
+  // words** (the code's line plus her own sentence in the chalk hand), which wants about 11
+  // seconds at a comfortable pace; the short one is 14 words, about 4. **She was shown those
+  // numbers and chose 2 seconds anyway** — her line, her shop. If she says so again, this is
+  // the one number to change, and nothing else needs touching.
+  const TURN_MS = 2000;
 
   let turnTimer = null;
+  let turnsDone = 0;        // how many turns have COMPLETED (see armTurn)
+  let lastTurnError = "";   // and the message if one ever threw
   let liveCodes = [];   // what the strip is turning through right now
   let shownCodes = [];  // ...and what it was turning through when it last drew
   let codeAt = 0;       // which of them is on screen
@@ -1324,8 +1371,28 @@ export function render() {
   // the pointer. Her report: "once we put mouse over it or click it, the flip stop… move
   // the mouse outside the window, the flip should be back." The pointer being OVER the
   // strip is the whole of the pause now, so leaving always starts it again.
+  // ⚠️⚠️ A POINTER MAY HOLD THE STRIP **ONLY WHERE A POINTER CAN HOVER** (v320).
+  //
+  // `overStrip` is a LATCH: set on `pointerenter`, cleared on `pointerleave` or
+  // `pointercancel` — and **ON A TOUCH SCREEN NEITHER OF THOSE IS GUARANTEED TO FIRE.** A
+  // finger that lands on the strip sets the latch, and if the matching leave never arrives
+  // the strip is held **for the whole life of the page**: the timer still ticks, `mayTurn()`
+  // says no, and **the offers never change again.** That is indistinguishable from a broken
+  // strip, and it is the one mechanism in here that can stop the turning dead.
+  //
+  // Her report: *"the text never changes at all"* — with two dots showing, so the turning
+  // should have been running.
+  //
+  // The pause exists so a reader can hold the message and finish it. **That only means
+  // anything where a pointer rests**, which is a mouse. On a touch screen there is nothing
+  // to rest, so there is nothing to hold — and the latch is simply not set.
+  function canHover() {
+    return typeof window !== "undefined" && typeof window.matchMedia === "function"
+      && window.matchMedia("(hover: hover)").matches;
+  }
+
   function mayTurn() {
-    return !document.hidden && !overStrip;
+    return !document.hidden && !(overStrip && canHover());
   }
 
   // One offer, as its own slide. Two lines: the app's line, which names the code, and
@@ -1364,21 +1431,60 @@ export function render() {
   // never again — this only moves a class, which is what makes the strip's height
   // unmovable: nothing here can change how tall the content is.
   //
-  // ★ THE LEAVING OFFER GOES OUT THE OPPOSITE DOOR (v297). Every other slide waits edge-on
-  // at `rotateX(90deg)` and rises to meet the reader; the one that has just been replaced
-  // is sent to `rotateX(-90deg)` instead. Two panels turning through the SAME arc is a
-  // squash; two turning through opposite arcs is a flip, and this is the whole of what
-  // makes it read as 3D. Her words: "the flip should be 3D flip".
+  // ★ THE LEAVING MESSAGE GOES UP, AND THE NEXT FOLLOWS IT (v318). Every other slide waits a
+  // full panel BELOW the window; the one that has just been replaced is sent up through the
+  // TOP. Her words, which are the whole spec: __"Maybe you box up each message, when 1st
+  // message start to scroll up, the 2nd message is following, So effectively you see 2
+  // message, one follow by another, it scroll up, stop 2sec, scroll again until mouse over."__
+  //
+  // ⚠️ THE CLASS NAMES NEVER CHANGE — `is-on` and `is-left` mean the same two things they did
+  // when this was a fade, then a flip, then a sideways slide (this one is showing / that one
+  // has just gone). Three motions, one set of names, so nothing in this file had to be
+  // rewritten and the dot, the pause and the timer are untouched.
+  // ⚠️⚠️ THE LEAVING SLIDE IS THE ONE THAT WAS LIT, NOT "THE PREVIOUS INDEX" (v319).
+  //
+  // This used to derive the outgoing slide arithmetically — `left = (i - 1 + n) % n` — which
+  // came down from the 3D flip, where two panels going out by opposite doors made sense.
+  // **IT IS WRONG THE MOMENT A SHOP RUNS EXACTLY TWO OFFERS.** With n = 2 the "previous index"
+  // IS the arriving slide, so the message about to come in was parked where the message that
+  // had just gone sits — ABOVE the window — and it then travelled back DOWN into place.
+  // Nothing was ever left waiting below, so "one message following another" could not happen
+  // at all. **Measured on the real stylesheet at 375, two offers: at rest `[0, -66]` — nothing
+  // below — and after a step the arriving slide came from -66. With three offers it read
+  // `[0, 66, -66]` and the arriving one came up from below, which is why the fault hid.**
+  //
+  // So there are now two steps, and the second one is the whole fix:
+  //
+  // 1. **PARK EVERY SLIDE EXCEPT THE ONE BEING REPLACED, WITH NO TRANSITION** (`is-parked`).
+  //    Every waiting message is put back to its place below instantly. This is what stops a
+  //    message that has just left through the top from travelling back DOWN through the window
+  //    when its turn comes round again — a jump with the transition off paints only its ends.
+  // 2. **THEN hand out the classes.** The arriving message animates UP from below (her words:
+  //    "when 1st message start to scroll up, the 2nd message is following"), and the one being
+  //    replaced leaves through the top.
+  //
+  // The leaving slide is deliberately NOT parked: it is sitting in the window, and parking it
+  // would send it to the bottom first and then sweep it the whole way up through the window.
   function showSlide(at) {
     codeAt = at;
     const i = Number(at) || 0;
     if (i === litAt && slides.length) return;
+    const was = litAt;          // the slide being replaced — -1 on the very first paint
     litAt = i;
-    const n = slides.length;
-    const left = n > 1 ? (i - 1 + n) % n : -1;
+
     slides.forEach((s, k) => {
+      if (k === was) return;
+      s.classList.add("is-parked");
+      s.classList.remove("is-on", "is-left");
+    });
+    // Force the park to land BEFORE anything is animated, or the two happen in one frame and
+    // the browser animates from wherever the slide happened to be.
+    if (slides[0]) void slides[0].offsetHeight;
+
+    slides.forEach((s, k) => {
+      s.classList.remove("is-parked");
       s.classList.toggle("is-on", k === i);
-      s.classList.toggle("is-left", k === left);
+      s.classList.toggle("is-left", k === was && k !== i);
       // The offers nobody is reading must not be read aloud either. They are stacked
       // behind the lit one, so a screen reader would otherwise take all of them in turn.
       s.setAttribute("aria-hidden", k === i ? "false" : "true");
@@ -1386,9 +1492,8 @@ export function render() {
     dots.forEach((d, k) => d.classList.toggle("is-on", k === i));
   }
 
-  // Stand the turning down. There is no fade to undo any more — the cross-fade is a CSS
-  // transition on the slides themselves, so a repaint landing mid-turn cannot leave a
-  // blank strip behind.
+  // Stand the turning down. There is no fade to undo any more — the move is a CSS transition
+  // on the slides themselves, so a repaint landing mid-move cannot leave a blank strip behind.
   function stopTurn() {
     if (turnTimer) { clearInterval(turnTimer); turnTimer = null; }
   }
@@ -1400,7 +1505,19 @@ export function render() {
     if (!promoToday || !turnsAtAll(liveCodes.length)) return;
     turnTimer = setInterval(() => {
       if (!mayTurn()) return;
-      showSlide(standingNext(liveCodes.length, codeAt));
+      // ⚠️⚠️ THE TURN IS COUNTED AND ANY THROW IS CAUGHT, AND THAT CLOSES A HOLE IN MY OWN
+      // REASONING. `showSlide` sets `codeAt` on its FIRST line, so watching `showing` flip
+      // proves only that the callback ran — **NOT that the rest of `showSlide` completed.**
+      // A throw after that line produces every symptom she reported: the number changes, the
+      // classes never do, and the words on screen never move. Catching it here means either
+      // it is fine (and `turns` climbs) or the message is printed in the debug line instead
+      // of vanishing into the console of a phone nobody is looking at.
+      try {
+        showSlide(standingNext(liveCodes.length, codeAt));
+        turnsDone += 1;
+      } catch (e) {
+        lastTurnError = String((e && e.message) || e);
+      }
     }, TURN_MS);
   }
 
@@ -1414,17 +1531,68 @@ export function render() {
   }
 
   if (promoToday) {
-    promoToday.addEventListener("pointerenter", () => { overStrip = true; });
-    promoToday.addEventListener("pointerleave", () => { overStrip = false; });
+    // ⚠️ THE LATCH IS ONLY SET WHERE A POINTER CAN HOVER (v320) — see `canHover` above.
+    // On a touch screen these listeners are never attached, so a finger cannot hold the
+    // strip for ever. `matchMedia` is read ONCE here rather than per event: it is a
+    // constant of the device, and a second read could disagree with the first.
+    if (canHover()) {
+      promoToday.addEventListener("pointerenter", () => { overStrip = true; });
+      promoToday.addEventListener("pointerleave", () => { overStrip = false; });
+    }
     // Belt and braces for the exact case she reported — "move the mouse outside the window,
     // the flip should be back". A pointer that leaves the whole document without passing
-    // through the strip's own leave event must not leave the turn held for ever.
+    // through the strip's own leave event must not leave the turn held for ever. These only
+    // ever CLEAR the latch, so they are safe to keep on every device.
     document.addEventListener("pointerleave", () => { overStrip = false; });
     document.addEventListener("pointercancel", () => { overStrip = false; });
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) stopTurn();
       else armTurn();
     });
+  }
+
+  // ⚠️ `?debug=offers` — ONE LINE THAT SAYS WHY THE STRIP IS OR IS NOT TURNING.
+  //
+  // IT EXISTS BECAUSE I COULD NOT SEE HER PHONE, and saying "verified" three times without
+  // ever watching it move is how two versions in a row were handed over broken. Every check
+  // I could make was on a browser pane that reports itself HIDDEN, and a hidden tab runs no
+  // animation at all — so my readings could only ever be about where things ENDED UP.
+  //
+  // With this, the next report is a reading rather than a guess. It appears **only** when
+  // the shop's address carries `?debug=offers`, so no customer ever sees it.
+  if (promoToday && (() => {
+    const q = String((typeof location !== "undefined" && location.search) || "");
+    return q.indexOf("debug=offers") > -1;
+  })()) {
+    const node = el("p", { class: "promo-debug" });
+    // ⚠️ WHAT IT PRINTS IS CHOSEN TO SPLIT THE FAULT IN TWO, because her reading already did
+    // that much: **`showing` FLIPS, so `showSlide` IS running and the classes ARE being
+    // toggled — and the text on screen never changes.** So the next question is whether the
+    // panels MOVE (a drawing fault) or never move at all (the transform is being ignored),
+    // and whether the two panels are even the same height (a short panel parked at
+    // `translateY(100%)` of ITSELF only moves its own little height, so it never leaves the
+    // window the tallest panel sized).
+    //
+    // It is deliberately ONE line: she reads it off a phone screen.
+    const paint = () => {
+      const cls = slides.map((s) => (s.classList.contains("is-on") ? "on"
+        : s.classList.contains("is-left") ? "left" : "-")).join(",");
+      const y = slides.map((s) => {
+        const m = getComputedStyle(s).transform.match(/-?[\d.]+/g);
+        return m ? Math.round(Number(m[5])) : 0;
+      }).join(",");
+      const tall = slides.map((s) => Math.round(s.getBoundingClientRect().height)).join(",");
+      const box = promoRotor ? Math.round(promoRotor.getBoundingClientRect().height) : 0;
+      node.textContent =
+        `offers ${liveCodes.length} · timer ${turnTimer ? "armed" : "OFF"}`
+        + ` · pause ${overStrip ? "ON" : "off"} · hover ${canHover() ? "yes" : "no"}`
+        + ` · tab ${document.hidden ? "hidden" : "visible"}`
+        + ` · showing ${codeAt} · lit ${litAt} · cls ${cls} · y ${y} · h ${tall} in ${box}`
+        + ` · turns ${turnsDone}${lastTurnError ? ` · ERR ${lastTurnError}` : ""}`;
+    };
+    paint();
+    setInterval(paint, 500);
+    if (promoToday.parentNode) promoToday.parentNode.insertBefore(node, promoToday.nextSibling);
   }
 
   // What the basket comes to right now. The same sum renderBar shows in the bar,
@@ -2523,6 +2691,11 @@ export function render() {
       // WhatsApp reached no record at all, and counting it would tell the next
       // customer a code had been used when nothing says it had.
       rememberShopOrder(promoApplied);
+      // ★★ AND THE FRIEND'S NUMBER LEAVES THE ADDRESS (v325). It is on the order record now, so
+      // from here it is only a phone number sitting in someone else's address bar. **This is the
+      // one path where the order really landed** — the same reason `rememberShopOrder` is here and
+      // nowhere else — and an order that fell back to WhatsApp keeps its stamp on purpose.
+      forgetVia();
       cart.clear();
       // …and with it every note typed against it, or the next customer's first
       // look at the menu would open with the last person's words sitting in the
@@ -2772,6 +2945,7 @@ const TRIP_WORDS = {
 // removed rather than left unreachable: a helper that would compute a wrong figure is a
 // trap for whoever wires it up next.
 
+
 function tripEls(row) {
   const out = [];
   const phase = String((row && row.courier_phase) || "").trim();
@@ -2856,7 +3030,13 @@ function paintTrack() {
       ? el("p", { class: "track-note track-promo" }, sub(
           t("promoLine"), row.promo_code,
           `RM${Number(row.promo_rm).toFixed(2)}`))
-      : null,
+      // A CODE AND THE FRIEND'S COUPON CAN NEVER BOTH APPLY (v322), so an amount with no
+      // code is the friend's discount — and it is NAMED, because the promise was money off
+      // and a lower total with nothing saying why is the one thing this card never does.
+      : row.promo_rm > 0
+        ? el("p", { class: "track-note track-promo" },
+            sub(t("promoFriend"), `RM${Number(row.promo_rm).toFixed(2)}`))
+        : null,
     el("p", {}, `${row.items} — ${row.total}`),
   ]);
   const kids = [
@@ -3436,11 +3616,37 @@ function wireTrack() {
   // The confirmation link opens this page as /store/?track=CODE — prefill and
   // look the order up right away so the customer sees their status instantly.
   if (typeof location !== "undefined" && location.search) {
-    const code = new URLSearchParams(location.search).get("track");
+    const params = new URLSearchParams(location.search);
+    const code = params.get("track");
     if (code) {
       input.value = code.replace(/^#/, "").toUpperCase();
       trackOrder(code);
       revealTrack(); // the link she tapped IS the card she should land on
+      // ★★ AND THE CODE COMES OFF THE ADDRESS BAR (v324). Her report: __"when a customer track
+      // his order, his store version became associated with that order code."__
+      //
+      // The link opens as `/store/?track=CODE` and that code used to STAY there. So the next
+      // time that page was opened — a bookmark, a history entry, a link re-shared — it landed
+      // back on that ONE order's card instead of on the shop, and the customer could not get
+      // to the menu without knowing to strip the address themselves. **The page belonged to an
+      // order rather than to the bakery.**
+      //
+      // ⚠️ **THE CARD ITSELF STAYS UP for this visit** — the link still does what it is for, it
+      // is only the address that is cleaned. The cost is that a REFRESH now lands on the shop
+      // rather than the card, which is the direction she asked for: a customer coming back to
+      // order should get the shop. Their code is in their WhatsApp, and the input box takes it.
+      //
+      // ⚠️ **ONLY `track` IS REMOVED.** The other parameter this page carries is `via`, the
+      // friend's referral stamp, and stripping that would silently break bring-a-friend for
+      // anyone who arrived by a link and then tracked an order.
+      if (typeof history !== "undefined" && history.replaceState) {
+        const rest = new URLSearchParams(location.search);
+        rest.delete("track");
+        const q = rest.toString();
+        try {
+          history.replaceState(null, "", location.pathname + (q ? `?${q}` : "") + location.hash);
+        } catch { /* a browser that refuses is not a reason to fail the lookup */ }
+      }
     }
   }
 }

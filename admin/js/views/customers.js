@@ -7,7 +7,7 @@
 
 import { navigate } from "../app.js";
 import { customerList, ordersForCustomer, phoneDigits } from "../customers.js";
-import { attachProfiles, customerMatches, customerRowName, mergeCustomers, profileFor, upsertProfile } from "../profiles.js";
+import { attachProfiles, customerMatches, customerRowName, mergeCustomers, profileFor, removeProfile, upsertProfile } from "../profiles.js";
 import { readPhoto } from "../photo.js";
 import { el, button, select, emptyState, showPopup, copyText, toast, confirmDialog } from "../ui.js";
 import { byId, fmtRM, orderLineName, save, waNumber } from "../state.js";
@@ -375,6 +375,31 @@ function profileBlockEl(state, r, refresh, onSaved) {
         editablePerson(r)
           ? button(empty ? "✎ Add details" : "✎ Edit",
               () => editProfilePopup(state, r, () => { refresh(); if (onSaved) onSaved(); }), "ghost small")
+          : null,
+        // ★★ FORGET SOMEONE SHE ADDED BY HAND (v325). Her ask: __"i need a button to delete a
+        // customer as well, i found there is few stray customer"__.
+        //
+        // ⚠️⚠️ **IT IS OFFERED ON A HAND-ADDED ROW ONLY, AND THAT IS NOT A LIMITATION — IT IS THE
+        // DIFFERENCE BETWEEN A PROFILE AND A CUSTOMER.** The book is built from her ORDERS: someone
+        // she typed in has no orders, so **their row IS this record** and removing it removes them.
+        // **A customer who has ordered cannot be deleted from here at all** — their row is their
+        // sales history, and removing the profile would leave the row standing while quietly
+        // throwing away their reward, their note and their dog's name. **A button that did half of
+        // what it says would be worse than no button**, which is her own rule about dead controls:
+        // two rows that look alike must behave alike, and a press that cannot do what it says must
+        // say why rather than sit there looking available.
+        r.manual
+          ? button("🗑 Forget", () => {
+              confirmDialog(
+                `Forget ${r.name || "this person"}? They are in your list because you added them, and they have never ordered — so this removes the name, the number, any reward and any note. Nothing else in your book is touched, and you can add them again any time.`,
+                () => {
+                  removeProfile(state, r._key);
+                  save(state);
+                  toast("Removed from your list");
+                  refresh();
+                  if (onSaved) onSaved();
+                }, { danger: true, yesLabel: "Forget" });
+            }, "ghost small")
           : null)),
     // WHAT THIS ADVOCATE GETS AND WHAT THEY HAVE HAD (v291). It sits UNDER the profile top rather
     // than inside `.profile-who`, because it carries a press and the who-column is a flex child
@@ -664,15 +689,15 @@ function referralSection(state, r, ui, refresh, product) {
   const ready = credits.filter((c) => c.status === "valid").length;
 
   const validTxt = scheme.validDays === "" || scheme.validDays == null
-    ? "Credits never expire."
-    : `Each credit is valid ${scheme.validDays} days.`;
+    ? "Coupons never expire."
+    : `Each coupon is valid ${scheme.validDays} days.`;
 
   const parts = [
     el("div", { style: "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:2px" },
       el("span", { style: "font-weight:700" }, "🎁 Bring-a-friend"),
       el("span", { class: "st-chip valid" }, `${ready} ready`)),
     el("p", { class: "card-sub", style: "margin:0 0 8px" },
-      `New friends who order through ${name}'s personal link get ${fmtRM(scheme.friendRM, cur)} off their first order, and ${name} earns ${fmtRM(scheme.referrerRM, cur)} a credit for each one. ${validTxt}`),
+      `New friends who order through ${name}'s personal link get ${fmtRM(scheme.friendRM, cur)} off their first order, and ${name} earns a ${fmtRM(scheme.referrerRM, cur)} coupon for each one. ${validTxt}`),
     el("div", { class: "li-row", style: "align-items:center;gap:6px;margin:0 0 8px" },
       el("span", { class: "card-sub", style: "margin:0" }, "Follow-up language:"),
       [["en", "EN"], ["zh", "中文"], ["ms", "BM"]].map(([code, label]) =>
@@ -691,20 +716,33 @@ function referralSection(state, r, ui, refresh, product) {
     linkEl(link),
   ];
 
+  // ★ ★ HOW MANY, NOT HOW MUCH (v314). This line used to read "unused = you still
+  // owe RM 3.00 off an order" and took that figure from the FIRST valid credit
+  // only — so a customer sitting on two RM3 credits read "2 ready" in the chip
+  // above and "RM 3.00" here, and there was nothing on the screen that said how
+  // much to take off. Her words: __"if we state only credit of ringgit, there
+  // might be confusion of how much credit to apply, but we can state, only one
+  // coupon apply for each purchase."__ She is right on both halves — the figure
+  // was ambiguous AND it disagreed with the count — so the money is gone from
+  // this line entirely and her rule is stated where she acts.
+  //
+  // ⚠️ **THE COUNT IS THE TRUTH.** A coupon is a thing, not a balance: each one is
+  // worth its own amount, and ONE is spent per order.
+  const readyCount = credits.filter((c) => c.status === "valid").length;
   const credTitle = el("div", { class: "li-row", style: "align-items:center;gap:6px;margin-top:10px" },
-    el("span", { style: "font-weight:700" }, "Credits"),
+    el("span", { style: "font-weight:700" }, "Coupons"),
     el("span", { class: "card-sub", style: "margin:0" },
-      credits.length
-        ? `unused = you still owe ${fmtRM((credits.find((c) => c.status === "valid") || {}).amountRM ?? scheme.referrerRM, cur)} off an order`
-        : "none yet — they appear when a new friend orders"),
-    button(ui.addingCredit ? "Close" : "＋ Add credit",
+      !credits.length ? "none yet — they appear when a new friend orders"
+        : readyCount === 0 ? "none ready — every coupon here is used or has run out"
+          : `${readyCount} ready — one per order`),
+    button(ui.addingCredit ? "Close" : "＋ Add coupon",
       () => { ui.addingCredit = !ui.addingCredit; ui.editingCredit = null; refresh(); }, "ghost small"));
 
   parts.push(credTitle);
   if (ui.addingCredit) parts.push(addCreditRow(state, r, ui, refresh));
   parts.push(...(credits.length ? credits.map((c) => creditRowEl(state, c, ui, refresh))
     : [el("p", { class: "card-sub", style: "margin:6px 0 0" },
-        "When a NEW friend orders through this customer's link, the Give credit button on that order adds two credits here.")]));
+        "When a NEW friend orders through this customer's link, the Give coupon button on that order adds two coupons here.")]));
 
   return el("div", { class: "ref-block", style: "margin:10px 0 2px;padding:10px 12px" }, ...parts);
 }
@@ -719,7 +757,7 @@ function linkEl(link) {
 
 function creditRowEl(state, c, ui, refresh) {
   const cur = (state.settings && state.settings.currency) || "RM";
-  const roleTxt = (ROLE_LABEL[c.role] || "Credit").toLowerCase();
+  const roleTxt = (ROLE_LABEL[c.role] || "Coupon").toLowerCase();
   const status = c.status;
   const when = status === "used"
     ? (c.usedAt ? `Used ${longDate(String(c.usedAt).slice(0, 10))}` : "Used")
@@ -732,14 +770,14 @@ function creditRowEl(state, c, ui, refresh) {
   const btns = el("div", { class: "btn-row", style: "margin:0" });
   if (status === "valid") {
     btns.append(button("Mark used",
-      () => { markCreditUsed(state, c.id); saveSync(); toast(`${fmtRM(c.amountRM, cur)} credit marked used — taken off an order`); refresh(); },
+      () => { markCreditUsed(state, c.id); saveSync(); toast(`${fmtRM(c.amountRM, cur)} coupon marked used — taken off an order`); refresh(); },
       "soft small"));
   }
   btns.append(button(status === "used" ? "Remove" : (ui.editingCredit === c.id ? "Done" : "Expiry"),
     () => {
       if (status === "used") {
         confirmDialog(`Remove this ${fmtRM(c.amountRM, cur)} ${roleTxt}?`, () => {
-          removeCredit(state, c.id); saveSync(); toast("Credit removed"); refresh();
+          removeCredit(state, c.id); saveSync(); toast("Coupon removed"); refresh();
         }, { danger: true, yesLabel: "Remove" });
         return;
       }
@@ -795,14 +833,14 @@ function addCreditRow(state, r, ui, refresh) {
     save(state);
     maybeSync(state);
     ui.addingCredit = false;
-    toast(credit ? `${fmtRM(credit.amountRM, cur)} credit added` : "Couldn't add credit");
+    toast(credit ? `${fmtRM(credit.amountRM, cur)} coupon added` : "Couldn't add coupon");
     refresh();
   };
   return el("div", { style: "display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:4px;width:100%" },
     el("div", { class: "field", style: "margin:0" }, el("label", {}, "Amount"), amountIn),
     el("div", { class: "field", style: "margin:0" }, el("label", {}, "Valid for"), daysIn),
     el("div", { class: "field", style: "flex:1 1 100%;margin:0" }, el("label", {}, "Note"), noteIn),
-    button("Add credit", saveCredit, "primary small"));
+    button("Add coupon", saveCredit, "primary small"));
 }
 
 function historyBlock(state, b) {
