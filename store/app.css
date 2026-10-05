@@ -2,7 +2,14 @@
   --bg: #fbf4ea;
   --surface: #fffdf9;
   --ink: #3b2a1f;
-  --muted: #9a8471;
+  /* ★ v313 — the same move as the backoffice: this is the shop's quiet line (a
+     product's second line, a collection Point's address, money labels), and she
+     reads it on a phone in daylight more than anything else in the app.
+     ⚠️ IT IS THE SAME VALUE AS THE BACKOFFICE'S TOKEN, and it is the same value
+     for the same reason: set by the WORST background it lands on, not the nicest.
+     The two files define their own tokens, so moving one does not move the
+     other — change them together or the two screens disagree about one word. */
+  --muted: #7b6552;
   --line: #f0e2d2;
   --brown: #c4552f;
   --brown-dark: #a84322;

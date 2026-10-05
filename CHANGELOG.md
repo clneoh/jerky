@@ -1,8 +1,49 @@
-# Munchies Furkidz — change history (v54 → v312)
+# Munchies Furkidz — change history (v54 → v313)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**05 Oct 2026 — engine v313, THE SMALL GREY LINES ARE READABLE NOW (no database step, nothing to
+upload — pushing this one is the whole of it).**
+
+**Why.** Every small second line in the app is drawn in one grey — the line under a menu row, under
+an order row, the hint under a box, a collection Point's address in the shop. You looked at it
+against the darker candidate and said do it.
+
+**★ IT WAS UNDER THE FLOOR, AND YOUR OWN APP HAD ALREADY ADMITTED IT ONCE.** Measured against the
+card behind it the old grey came to **3.50:1**. The standard asks **4.50:1** of text. And in v309,
+when I drew the **Post a parcel / Send a van** headings, I deliberately dodged this exact grey for
+the line beside them and wrote the reason into the code: __"at 12px it is only about 3.5:1 — under
+the 4.5:1 floor that applies to text."__ So the app knew. It had only ever fixed that one spot.
+
+**AND THIS IS THE PART WORTH READING: THE COLOUR IS SET BY THE WORST PLACE IT LANDS, NOT THE
+BEST.** The value you approved on the page measured a comfortable **5.02:1** on a plain card — and
+only **4.24:1** on the soft grey behind a used promo chip or a "courier paid" tag. Five more
+backgrounds — the striped band, the warm block, the green, amber and red chips — came in between
+**4.27 and 4.47**, all under the floor. So the colour is a step darker than the one on the page:
+**#7b6552**, which is **4.56:1 on the worst background there is** and **5.40:1 on a card**. One
+colour has to clear the worst thing it is drawn on, or you have only moved the problem to the chips.
+
+**What changed, exactly: one value, in two files.** The backoffice and the shop each keep their own
+copy of the grey, and both moved together — a shop whose quiet line is a different grey from the
+backoffice's is the same fault as two rows that look alike and behave differently.
+
+**AND ONE THING DELIBERATELY DID NOT MOVE.** The 2px rule inside the **Post a parcel / Send a
+van** headings is an __edge__, not text, and an edge answers to 3:1 rather than 4.50:1. Left at the new
+darker text colour it would have stopped being a join inside a card and started reading as another
+box. It keeps the old, lighter value under its own name — **measured on the real card: still exactly
+`rgb(154, 132, 113)`, unchanged, 2px.**
+
+**And the calendar's quiet day stayed put too.** That colour was built as a halfway mix between the
+old grey and the ink, precisely because the old grey was faint. The grey is not faint any more, so
+re-deriving it would have pushed a quiet day __toward__ a delivery day and narrowed the very gap it
+exists to keep — for no gain. It stays at 6.71:1 against a delivery day's 13.45:1.
+
+**Your data is untouched.** No SQL, no order, product, price or posting day touched, and **no database
+step**. The suite is **2,772 tests, all green**, including a new guard that measures this grey
+against **every background it can land on** and fails by name if it drops under the floor — the test
+that would have caught 5.02-on-a-card.
 
 **05 Oct 2026 — engine v312, THE MORE SCREEN GROUPED BY THE WORK (no database step, nothing to
 upload — pushing this one is the whole of it).**

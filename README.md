@@ -738,6 +738,31 @@ matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestion
 now that the Google key returns one precise house-number answer, most lookups legitimately show no
 list and the pin simply lands.
 
+## One version: the small grey lines are readable (v313)
+
+Bakery `6543ed6` (v312 — exactly where jerky sat) → `3073714` (v313), the same one-file three-way
+merge. **Six files** (`admin/css/app.css`, `store/app.css`, `version.js`, `CHANGELOG.md`,
+`changelog.pdf`, and a new `test/readable-quiet-line.test.js`). Suite **2798 → 2801 pass / 0 fail**.
+
+Every **small second line** — the line under a menu row, under an order row, the hint under a box, a
+collection Point's address — was drawn in one grey (`#9a8471`). Measured against the card behind it
+that is **3.50:1**, under the **4.50:1** the standard asks of text, on a phone, in a kitchen, in
+Malaysian daylight. It is now **`#7b6552`** in **both** stylesheets (the backoffice and the shop each
+define their own `--muted`, so moving one does not move the other).
+
+**The colour is set by the worst background it lands on, not the nicest.** The first candidate
+measured 5.02:1 on a card but only **4.24:1 on `--gray-bg`**, where a used promo chip and a courier-paid
+tag actually live; five more backgrounds came in between 4.27 and 4.47. The shipped value clears the
+worst at **4.56:1** and reaches 5.40:1 on a card.
+
+**A join is not text.** The 2px rule inside `h3.courier-kind` keeps the **old** value as its own token
+(`--join: #9a8471`) on purpose — an edge answers to 3:1, and darkening it to the new text colour would
+turn a join inside a card into another box.
+
+**`.cal-cell.off` needed no re-derive** — its `#6b5748` was derived from the *old* muted, and the
+bakery's own note at that rule says it is deliberately frozen. jerky's copy matches byte-for-byte, so
+jerky's documented `.cal-cell.past`-above-`.off` source-order divergence is untouched.
+
 ## One version: the More screen grouped by the work (v312)
 
 Bakery `c67b2d5` (v311 — exactly where jerky sat) → `6543ed6` (v312), the same one-file three-way

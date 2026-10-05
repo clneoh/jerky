@@ -2,7 +2,25 @@
   --bg: #fbf4ea;
   --surface: #fffdf9;
   --ink: #3b2a1f;
-  --muted: #9a8471;
+  /* ★ THE SMALL SECOND LINE (v313). Every quiet line in the app draws in this —
+     the line under a menu row, under an order row, the hint under a box.
+     ⚠️ IT USED TO BE #9a8471, WHICH MEASURES 3.50:1 ON A CARD AGAINST THE 4.50:1
+     THE STANDARD ASKS OF TEXT. That is a line meant to be READ, on a phone, in a
+     kitchen, in Penang daylight — the app had already admitted as much once, in
+     `h3.courier-kind .kind-what`, which dodged this token for exactly that
+     reason.
+     ⚠️ AND IT IS *THIS* DARK BECAUSE OF THE TINTED CHIPS, NOT THE CARDS. On a
+     plain card the first candidate (#806a57) is a comfortable 5.02:1 — but the
+     same colour on `--gray-bg` (a used promo chip, a courier-paid tag) is only
+     4.24:1, and on `--strip`, `--brown-soft`, `--green-bg` and `--red-bg` it is
+     between 4.27 and 4.47. ONE TOKEN HAS TO CLEAR THE WORST BACKGROUND IT LANDS
+     ON, so it is set by `--gray-bg`: 4.56:1 there, 5.82:1 on a card.
+     ⚠️ RE-DERIVE `.cal-cell.off` IS **NOT** REQUIRED — see the note at that rule. */
+  --muted: #7b6552;
+  /* A JOIN, NOT TEXT: the 2px rule inside `h3.courier-kind`. It keeps the OLD
+     muted value on purpose — an edge answers to 3:1, and darkening it to the new
+     text colour would turn a join inside a card into another box. */
+  --join: #9a8471;
   --line: #f0e2d2;
   --brown: #c4552f;        /* terracotta brand */
   --brown-dark: #a84322;
@@ -409,7 +427,7 @@ h3.courier-kind {
      a phone in daylight, which is exactly where she reads this. A boundary she cannot see would
      not have answered her. `--muted` clears the 3:1 the standard asks of a UI edge, and at 2px it
      still reads as a join inside a card rather than as another box. */
-  border-top: 2px solid var(--muted);
+  border-top: 2px solid var(--join);
   font-family: var(--serif);
   font-size: 16px;
   font-weight: 700;
@@ -2416,16 +2434,24 @@ option.tone-off { color: var(--muted); }
    against the card, versus a delivery day's 13.45:1). Dropping the opacity left
    it at flat --muted, which was only 3.50:1 — plainly there, but still faint
    enough that she asked for it to be more solid.
-   The colour is now HALFWAY between --muted and --ink (#9a8471 and #3b2a1f give
-   #6b5748), so a day she does not deliver is a solid day in its own right:
+   The colour was derived HALFWAY between --muted and --ink (#9a8471 and #3b2a1f
+   gave #6b5748), so a day she does not deliver is a solid day in its own right:
    6.71:1 against the card, very nearly twice the old value, while still sitting
    at half a delivery day's 13.45:1 so the two never read as the same thing. On
    the product availability calendar the same rule has to keep "you can sell here"
    (plain --ink, 13.45:1) apart from "you cannot" — and it still does: 6.71
    against 13.45 is a clear step, not a smear.
-   Re-derive it if either token moves: mix the two channels, half and half.
    Keeping the cell free of any opacity also leaves .past free to land as ONE
-   colour on every cell it touches. */
+   colour on every cell it touches.
+
+   ⚠️ **v313 MOVED `--muted` (#9a8471 → #7b6552) AND THIS COLOUR DID *NOT* MOVE
+   WITH IT.** The half-and-half rule above was written for a world where --muted
+   was 3.50:1 — it existed to lift this cell well clear of a faint token. It is
+   no longer faint. Re-deriving it would give #5b4839 (about 8.5:1), which pushes
+   the quiet day TOWARD the delivery day's 13.45:1 and narrows the very gap this
+   comment warns about, for no gain: what the cell has to be is a solid step below
+   --ink, and at 6.71:1 against 13.45:1 it is. Leave it. `test/orders-cal.test.js`
+   holds both halves — it must clear 6:1, and stay a full point under --ink. */
 .cal-cell.off { color: #6b5748; }
 /* A day already gone wears the SHOP's past grey, flat and one shade. It used to be
    a half-transparent --muted here, and a past day that was ALSO a day she does not
