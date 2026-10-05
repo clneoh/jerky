@@ -537,8 +537,21 @@ test("each line's share of the total shows as a rounded %, and no-cost lines rea
 
 const buttonByText = (root, text) => walk(root).find((n) => n.tagName === "BUTTON"
   && (n.children || []).some((c) => c.text === text));
+// The three LIST headings — "On the shop", "Draft…", "Hidden…".
+//
+// ⚠️ The screen also draws the "Products & ingredients" card (v312), and its
+// heading is a place to GO rather than one of the lists, so it is skipped here:
+// a card of links out is made of <a class="menu-item">, and no list of products
+// on this screen is. Without this the three-list assertions below read four
+// headings and fail — which is a test reading too much, not the screen
+// showing something wrong.
+const isListHeading = (n) => {
+  const card = ((n.parent && n.parent.children) || []).find(
+    (c) => c.tagName === "DIV" && String(c.className || "").includes("card"));
+  return !(card && (card.children || []).some((k) => k.className === "menu-item"));
+};
 const groupHeadings = (root) => walk(root)
-  .filter((n) => n.tagName === "H2" && n.className === "section")
+  .filter((n) => n.tagName === "H2" && n.className === "section" && isListHeading(n))
   .map((n) => (n.children[0] ? n.children[0].text : ""));
 const resetLayers = () => {
   for (const id of Object.keys(layers)) { layers[id].hidden = true; layers[id].replaceChildren(); }

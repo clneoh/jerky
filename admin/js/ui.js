@@ -29,6 +29,26 @@ export function button(text, onClick, cls = "") {
   return el("button", { class: `btn ${cls}`.trim(), onclick: onClick }, text);
 }
 
+// ★ ONE ROW OF "SOMEWHERE ELSE TO GO" (v312). A title, a line under it saying
+// what it is for, and a chevron on the right.
+//
+// ⚠️ ONE BUILDER, DELIBERATELY. The More screen lists every screen, and the
+// Products screen now lists three of them as well; a second row builder would be
+// a second place the shape can drift, and two rows that look alike and behave
+// differently are the fault this app treats as a bug — the v290 lesson about a
+// second form, applied to a row.
+//
+// The right-hand group exists so an async count pill (Reviews' "N waiting") can
+// be tucked in beside the chevron rather than floating to the middle of the row.
+export function menuRow(href, title, sub, { newTab = false } = {}) {
+  return el("a",
+    { class: "menu-item", href, ...(newTab ? { target: "_blank", rel: "noopener" } : {}) },
+    el("div", {},
+      el("div", {}, title),
+      el("div", { class: "card-sub", style: "font-weight:400" }, sub)),
+    el("span", { class: "menu-right" }, el("span", { class: "chev" }, "›")));
+}
+
 // The class a picker wears for the value it now holds — "" when it holds
 // nothing, or when the choice carries no tone.
 function toneClass(options, value) {

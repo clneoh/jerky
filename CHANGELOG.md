@@ -1,8 +1,68 @@
-# Munchies Furkidz — change history (v54 → v311)
+# Munchies Furkidz — change history (v54 → v312)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**05 Oct 2026 — engine v312, THE MORE SCREEN GROUPED BY THE WORK (no database step, nothing to
+upload — pushing this one is the whole of it).**
+
+**Why.** Your words: __"when i work on Products, i have to alway go into Others to find, ingredient,
+unit, category"__ — and __"Everything about delivery should be group under logistic."__
+
+You were right on both counts. Seventeen screens sat in ONE list under a single heading called
+"Manage", in roughly the order they were built. Nothing was wrong with any row; the problem was that
+its neighbours told you nothing. Categories, Units and Ingredients were at rows 13, 11 and 14 — two
+of them separated by other screens — and the four delivery screens were at rows 7 to 10, mixed in
+among the money screens.
+
+**What you see now.** Seven headings, in the order you reach for them:
+
+- **Logistic** — Delivery run · Delivery dates · Self collection Points · Parcel couriers
+
+- **Products & ingredients** — Categories · Units · Ingredients
+
+- **Buying** — Purchase Order · PO history · Suppliers
+
+- **Money** — Money · Profit
+
+- **The kitchen** — Production line · Scenario planner
+
+- **The shop** — Promo codes · Reviews
+
+- **Settings & this app** — Settings · Change history · Developer contact
+
+**Logistic is your word**, and it carries all four ways an order leaves the kitchen. **Products &
+ingredients is the one your sentence asked for**: the three things you reach for while working on a
+product, together, under the name of the screen they belong to.
+
+**And the trip out of the screen is gone.** The Products screen now carries the same three at its
+top, under the same heading — Categories, Units and Ingredients, one tap from where you are editing.
+It sits BELOW the ＋ New product fold, so the thing you came there to do is still the first thing on
+the screen.
+
+**"About" is gone as its own section**, because Settings and the change history are the same subject
+— the app itself — and two headings for one subject was one too many.
+
+**Nothing moved that has to be found twice.** All seventeen addresses are exactly what they were, so
+an old bookmark still lands where it always did, and every row keeps the words it had underneath it;
+only the heading above it changed. **Two of those second lines now say the moment rather than the
+mechanism** — "Which days you deliver, and who is on each" instead of "Set and manage delivery
+dates", and PO history reads "Your saved shopping lists".
+
+**⚠️ AND THE ONE THING WORTH KNOWING: A ROW DROPPED IN A REGROUP IS SILENT.** The screen still
+exists and its address still works — it has simply become unreachable from the menu, and nothing
+goes red. So the new test reads the app's own route table and walks it against this menu, and fails
+by name if a screen is missing. It was watched going red before it was trusted, and it caught a real
+fault on the way in: the first cut passed the rows as raw lists and drew four empty headings with
+nothing under them.
+
+**Your data is untouched.** No SQL, no order, product, price or posting day touched, and **no database
+step**. The suite is **2,769 tests, all green**.
+
+**Measured at 375 wide, same phone, same data: 1,994 px became 2,263 px.** Grouping costs height —
+about **+269 px**, a third of a screen of extra scrolling. Finding beats scrolling here, but it is a
+real trade and it is worth knowing about.
 
 **05 Oct 2026 — engine v311, THE ADDRESS BOX SAYS WHY IT ISN'T SUGGESTING (ONE STEP FOR YOU, BELOW —
 the app side is a push, the reason needs a redeploy).**

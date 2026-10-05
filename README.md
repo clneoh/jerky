@@ -738,6 +738,30 @@ matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestion
 now that the Google key returns one precise house-number answer, most lookups legitimately show no
 list and the pin simply lands.
 
+## One version: the More screen grouped by the work (v312)
+
+Bakery `c67b2d5` (v311 — exactly where jerky sat) → `6543ed6` (v312), the same one-file three-way
+merge. **Eight files.** Suite **2787 → 2798 pass / 0 fail**.
+
+Seventeen screens used to sit in **one flat list** in whatever order they were built, so a row's
+neighbours told you nothing. They are now **seven headings**, in the order she reaches for them:
+**Logistic** (her word — Delivery run, Delivery dates, Self collection Points, Parcel couriers),
+**Products & ingredients** (Categories, Units, Ingredients), **Buying** (Purchase Order, PO history,
+Suppliers), **Money** (Money, Profit), **The kitchen** (Production line, Scenario planner), **The
+shop** (Promo codes, Reviews), and **Settings & this app** (Settings, the change history, the
+developer rows — "About" is gone as a separate heading).
+
+**A regroup changes the heading, never the address** — all seventeen routes are unchanged, so an old
+bookmark still lands where it always did. `views/products.js` gained the same three rows
+(Categories / Units / Ingredients) on the Products screen itself, since she had to leave that screen
+to reach them.
+
+**Jerky-only handling.** jerky's **📖 Guide** row has no upstream equivalent, so it was **re-homed
+into the last group** ("Settings & this app") rather than dropped with the flat list — the silent-drop
+trap, caught by reading the resolution rather than by the merge. Two menu descriptions were
+localized for jerky ("Which days you post", "what to make"). New test: `test/more-menu.test.js`,
+which walks the app's own route table against the menu so a forgotten row fails by name.
+
 ## Fourteen versions in one pass: Self collection Points, and the parcel seam (v298–v311)
 
 Bakery `4bf08a2` (v297 — exactly where jerky sat) → `c67b2d5` (v311), ported with the same

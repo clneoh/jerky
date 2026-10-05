@@ -1,12 +1,62 @@
 // views/more.js — menu for the secondary screens, plus the software wish list.
 
-import { el, button, confirmDialog, toast } from "../ui.js";
+import { el, button, confirmDialog, toast, menuRow } from "../ui.js";
 import { ENGINE_VERSION } from "../version.js";
 import {
   addWish, removeWish, renameWish, toggleWish, wishList,
 } from "../wishlist.js";
 import { developerEmails, developerName, buildWishMail, sendWishMail, devWaHref } from "../devmail.js";
 import { pendingReviewCount } from "../supabase.js";
+
+// ── ★ THE MENU IS GROUPED BY THE WORK, NOT BY THE SCREEN (v312) ────────────
+//
+// Seventeen screens used to sit in ONE flat list under a single heading called
+// "Manage", in roughly the order they were built. Her report: __"when i work on
+// Products, i have to alway go into Others to find, ingredient, unit, category"__
+// — and __"Everything about delivery should be group under logistic."__
+//
+// ⚠️ **A ROW DROPPED IN A REGROUP IS SILENT.** The screen still exists and its
+// address still works; it is simply unreachable from the menu, and nothing goes
+// red. `test/more-menu.test.js` walks the app's own route table against this
+// menu, so the next forgotten row fails by name instead of disappearing.
+//
+// ⚠️ **AND THE ADDRESSES MUST NOT CHANGE.** Tapping through from an old
+// bookmarked `#/points` has to keep working, so a regroup is a change of
+// HEADING only — never of `href`.
+const MENU_GROUPS = [
+  // Her word, twice: "Everything about delivery should be group under logistic."
+  // Four screens that were at rows 7-10, mixed in among the money screens.
+  ["Logistic", [
+    ["#/run", "🚚 Delivery run", "Several orders, one trip — and what it saves"],
+    ["#/deliveries", "📅 Delivery dates", "Which days you post, and who is on each"],
+    ["#/points", "📍 Self collection Points", "The places your customers collect from instead of your kitchen"],
+    ["#/parcel-couriers", "📦 Parcel couriers", "Posting dry goods yourself — J&T, Ninja Van, Line Clear"],
+  ]],
+  // The three she named, together, under the name of the screen they belong to.
+  // Products is a tab; these are everything else it needs.
+  ["Products & ingredients", [
+    ["#/product-categories", "🗂 Categories", "The headings your shop lists products under"],
+    ["#/units", "📐 Units", "g, kg, L — how packs compare"],
+    ["#/ingredients", "🧂 Ingredients", "Your pantry, with what each supplier charges"],
+  ]],
+  ["Buying", [
+    ["#/po", "🧾 Purchase Order", "What to top up — what to make, what to buy"],
+    ["#/history", "🧾 PO history", "Your saved shopping lists"],
+    ["#/suppliers", "🏪 Suppliers", "Who you buy from, with their WhatsApp"],
+  ]],
+  ["Money", [
+    ["#/money", "💰 Money", "What came in — cash, TNG, still to collect"],
+    ["#/profit", "📈 Profit", "Sales, ingredient cost, what the month left"],
+  ]],
+  ["The kitchen", [
+    ["#/production", "🏭 Production line", "Where the line slows down, and the best use of your hands"],
+    ["#/scenario", "🧱 Scenario planner", "Build the line from modules, and climb to the day you want"],
+  ]],
+  ["The shop", [
+    ["#/promo", "🎟 Promo codes", "Codes your customers type in the shop"],
+    ["#/reviews", "⭐ Reviews", "Approve and remove homepage reviews"],
+  ]],
+];
 
 export function renderMore(root, state) {
   let dead = false; // set once this view unmounts, so async fills never paint
@@ -17,42 +67,27 @@ export function renderMore(root, state) {
     `${state.purchaseOrders.length} purchase orders`,
   ].join(" · ");
 
-  const menu = el("div", { class: "card", style: "padding:4px 14px" },
-    menuItem("#/guide", "📖 Guide", "How this app works — plain English"),
-    menuItem("#/po", "🧾 Purchase Order", "Top up what to post or make"),
-    menuItem("#/suppliers", "🏪 Suppliers", "Who you buy from, with their WhatsApp"),
-    menuItem("#/money", "💰 Money", "What came in — cash, TNG, still to collect"),
-    menuItem("#/profit", "📈 Profit", "Sales, ingredient cost, what the month left"),
-    menuItem("#/production", "🏭 Production line", "Where the line slows down, and the best use of your hands"),
-    menuItem("#/scenario", "🧱 Scenario planner", "Build the line from modules, and climb to the day you want"),
-    menuItem("#/deliveries", "📅 Delivery dates", "Set and manage delivery dates"),
-    menuItem("#/run", "🚚 Delivery run", "Several orders, one trip — and what it saves"),
-    menuItem("#/parcel-couriers", "📦 Parcel couriers", "J&T, Ninja Van, Line Clear — for parcels you post yourself"),
-    menuItem("#/points", "📍 Self collection Points", "Places a customer can collect from instead of having it posted"),
-    menuItem("#/ingredients", "🧂 Ingredients", "Pouch units + supplier prices for the PO"),
-    menuItem("#/history", "📚 PO history", "Saved purchase orders"),
-    menuItem("#/units", "📐 Units", "g, kg, L — how packs compare"),
-    menuItem("#/product-categories", "🗂 Categories", "The headings your shop lists products under"),
-    menuItem("#/reviews", "⭐ Reviews", "Approve & remove homepage reviews"),
-    menuItem("#/promo", "🎟 Promo codes", "Codes your customers type in the shop"),
-    menuItem("#/settings", "⚙️ Settings", "Defaults, backup, transfer"));
-
   const wish = wishCard(state);
+
+  // ── The last group: the app itself. Settings used to be the final row of the
+  // seventeen and the change history sat in a separate "About" section below —
+  // two headings for one subject. They are one card now.
+  //
   // Developer contact rows — WhatsApp first when she set a number (it opens a
   // chat with a ready "Hi!"), the ✉ email row kept underneath. Shown only once
   // she set a name and at least one way to reach the developer in Settings.
   const devMail = developerEmails(state);
   const devWa = devWaHref(state); // null when no usable WhatsApp number is set
   const devBy = developerName(state) ? `Website by ${developerName(state)}` : "";
-  const about = el("div", {},
-    el("h2", { class: "section" }, "About"),
-    el("div", { class: "card", style: "padding:4px 14px" },
-      linkRow("../changelog.pdf", "📄 Full change history",
-        "Every version from v54, as a PDF"),
-      ...(devWa ? [linkRow(devWa, "💬 WhatsApp the developer",
-        `Opens WhatsApp with a ready “Hi!”${devBy ? ` · ${devBy}` : ""}`)] : []),
-      ...(devMail.length ? [linkRow(`mailto:${devMail.join(",")}`, "✉ Email the developer",
-        `${devBy ? `${devBy} · ` : ""}${devMail.join(", ")}`)] : [])));
+  const thisApp = [
+    menuItem("#/guide", "📖 Guide", "How this app works — plain English"),
+    menuItem("#/settings", "⚙️ Settings", "Defaults, backup, transfer"),
+    linkRow("../changelog.pdf", "📄 Full change history", "Every version from v54, as a PDF"),
+    ...(devWa ? [linkRow(devWa, "💬 WhatsApp the developer",
+      `Opens WhatsApp with a ready “Hi!”${devBy ? ` · ${devBy}` : ""}`)] : []),
+    ...(devMail.length ? [linkRow(`mailto:${devMail.join(",")}`, "✉ Email the developer",
+      `${devBy ? `${devBy} · ` : ""}${devMail.join(", ")}`)] : []),
+  ];
 
   root.replaceChildren(
     el("div", { class: "card" },
@@ -60,10 +95,9 @@ export function renderMore(root, state) {
       el("p", { class: "card-sub", style: "margin:6px 0 0" }, stats),
       el("p", { class: "card-sub", style: "margin:8px 0 0" },
         el("span", { class: "engine-pill" }, `Engine v${ENGINE_VERSION}`))),
-    el("h2", { class: "section" }, "Manage"),
-    menu,
-    wish,
-    about);
+    ...MENU_GROUPS.map(menuGroup),
+    menuGroup(["Settings & this app", thisApp]),
+    wish);
 
   // "N waiting" pill on the ⭐ Reviews row — reviews live in the cloud, so the
   // count is fetched after render and only shown when reviews are waiting.
@@ -79,25 +113,33 @@ export function renderMore(root, state) {
   return () => { dead = true; };
 }
 
-// A tappable row in the "About" card — plain <a> so it opens in a new tab and
-// is never confused with an app route.
+// One heading and its card of rows. Every group wears the app's own
+// h2.section — the heading Products, Ingredients and Promo codes already draw —
+// so the regroup introduces no new shape to learn.
+//
+// ⚠️ **A ROW MAY ARRIVE TWO WAYS, AND BOTH ARE REAL.** The six groups above are
+// `[href, title, sub]` TRIPLES, because they are one shape written once and read
+// by nothing else. The last group is built already — its developer rows appear
+// only once Settings holds a name and a way to reach them — so it hands over
+// NODES. Passing a triple straight into `el()` would stringify the array into a
+// text node: the heading would draw, the rows would not, and the menu would be
+// silently empty. `test/more-menu.test.js` catches exactly that.
+const asRow = (r) => (Array.isArray(r) ? menuItem(r[0], r[1], r[2]) : r);
+
+function menuGroup([name, rows]) {
+  return el("div", {},
+    el("h2", { class: "section" }, name),
+    el("div", { class: "card", style: "padding:4px 14px" }, ...rows.map(asRow)));
+}
+
+// A row that leaves the app — plain <a> opening in a new tab, so it is never
+// confused with an app route. Drawn by the one shared builder in ui.js.
 function linkRow(href, title, sub) {
-  return el("a", { class: "menu-item", href, target: "_blank", rel: "noopener" },
-    el("div", {},
-      el("div", {}, title),
-      el("div", { class: "card-sub", style: "font-weight:400" }, sub)),
-    el("span", { class: "chev" }, "›"));
+  return menuRow(href, title, sub, { newTab: true });
 }
 
 function menuItem(href, title, sub) {
-  return el("a", { class: "menu-item", href },
-    el("div", {},
-      el("div", {}, title),
-      el("div", { class: "card-sub", style: "font-weight:400" }, sub)),
-    // The chev sits in a right-hand group so an async count pill (e.g. the
-    // "N waiting" on Reviews) can be tucked in beside it before the chev.
-    el("span", { class: "menu-right" },
-      el("span", { class: "chev" }, "›")));
+  return menuRow(href, title, sub);
 }
 
 // ── Software wish list — a to-do that never resets ─────────────────────────

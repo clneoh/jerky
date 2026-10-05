@@ -2,7 +2,7 @@
 // folded card at the top; tapping Edit opens the same form in a pop-up over the
 // screen, exactly like editing an order.
 
-import { el, button, select, emptyState, confirmDialog, showPopup, toast, wireRowReorder } from "../ui.js";
+import { el, button, select, emptyState, confirmDialog, showPopup, toast, wireRowReorder, menuRow } from "../ui.js";
 import { byId, productUnitOptions, fmtRM, round2, newId, save } from "../state.js";
 import { recipeLineCosts, validateRecipeNoCycle } from "../bom.js";
 import { maybeSyncStorefront } from "../supabase.js";
@@ -75,6 +75,7 @@ function renderAll(root, state) {
 
   if (!state.products.length) {
     root.replaceChildren(form,
+      alsoInProducts(),
       el("h2", { class: "section" }, "Products"),
       emptyState("No products yet",
         "Add a product and its recipe (ingredients per unit). It starts as a draft — Publish it to put it on the shop."));
@@ -166,10 +167,35 @@ function renderAll(root, state) {
 
   root.replaceChildren(
     form,
+    alsoInProducts(),
     ...group("On the shop", live, "Nothing on the shop yet — publish a draft below to start selling it."),
     ...group("Draft — not on the shop yet", drafts, "New products start here as drafts. Publish one to put it on the shop."),
     ...group("Hidden — taken down", hidden, "Hidden products keep their history and recipe; nothing here is shown to customers."));
   if (y && typeof window !== "undefined") window.scrollTo(0, y);
+}
+
+// ★ THE THREE SHE REACHES FOR WHILE WORKING ON PRODUCTS, ON THE SCREEN ITSELF
+// (v312). Her words: __"when i work on Products, i have to alway go into Others
+// to find, ingredient, unit, category."__ The More menu now groups the same
+// three under this same heading; this card is the second half — it removes the
+// trip out of the screen altogether.
+//
+// ⚠️ **IT SITS BELOW THE ＋ NEW PRODUCT FOLD, NOT ABOVE IT.** The fold is the
+// reason she opens this screen, and a navigation card in front of it would put
+// something she reads once above the thing she came to do. "At the top of the
+// screen" is where it lives; above the primary action is not.
+//
+// ⚠️ **AND IT IS NOT AN ESCAPE HATCH MID-FORM.** Leaving this screen unmounts
+// the half-filled product card — the form does not survive navigation. So this
+// is orientation for someone arriving, telling her the three things that go
+// with Products, not a detour for someone halfway through typing.
+function alsoInProducts() {
+  return el("div", {},
+    el("h2", { class: "section" }, "Products & ingredients"),
+    el("div", { class: "card", style: "padding:4px 14px" },
+      menuRow("#/product-categories", "🗂 Categories", "The headings your shop lists products under"),
+      menuRow("#/units", "📐 Units", "g, kg, L — how packs compare"),
+      menuRow("#/ingredients", "🧂 Ingredients", "Your pantry, with what each supplier charges")));
 }
 
 // ── Availability — the days this product SELLS, marked on a calendar ────────
