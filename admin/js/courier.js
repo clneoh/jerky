@@ -272,7 +272,7 @@ export function flatPostage(state, first) {
 // card and the published row all quote.
 export function couponAgainst(state, orders, takeable) {
   const hit = couponOn(state, orders);
-  if (!(hit.amount > 0)) return { amount: 0, id: "", code: "" };
+  if (!(hit.amount > 0)) return { amount: 0, id: "", code: "", role: "" };
   return { ...hit, amount: Math.min(hit.amount, Math.max(0, round2(takeable || 0))) };
 }
 
@@ -308,7 +308,7 @@ export function customerTotal(state, group) {
   // coupon is NOT spent when that happens (it is written unused — see `giveCredits`), so it
   // is still theirs to use on the next order.
   const coupon = promo.money > 0
-    ? { amount: 0, id: "", code: "" }
+    ? { amount: 0, id: "", code: "", role: "" }
     : couponAgainst(state, orders, items + courier - promo.money);
   // Floored at nothing: a discount larger than the order (a free-delivery code on a
   // collect order has no fee to waive, but a hand-edited code could still overshoot)
@@ -319,6 +319,10 @@ export function customerTotal(state, group) {
     promo: promo.money, promoCode: promo.code,
     notApplied: missed ? missed.code : "", promoMinimum: missed ? missed.minimum : 0,
     coupon: coupon.amount, couponId: coupon.id, couponCode: coupon.code,
+    // ★ WHICH KIND IT WAS (v336), so the wording can be right: the friend was SENT theirs and the
+    // referrer EARNED hers, and a receipt that calls a reward "the one you were sent" reads as
+    // somebody else's coupon on her order.
+    couponRole: coupon.role || "",
     total,
   };
 }
@@ -387,7 +391,9 @@ export function moneyLines(state, parts) {
   // find in the message is a discount they will ask about**, and the lines above it have to
   // add up to the Total below — that is the rule this whole function exists for.
   if (parts.coupon > 0) {
-    out.push(`Bring-a-friend you were sent: -${fmtRM(parts.coupon, cur)}`);
+    out.push(parts.couponRole === "reward"
+      ? `Bring-a-friend reward: -${fmtRM(parts.coupon, cur)}`
+      : `Bring-a-friend you were sent: -${fmtRM(parts.coupon, cur)}`);
   }
   if (toPay) out.push(`To pay: ${fmtRM(parts.total, cur)}`);
   return out;
@@ -446,7 +452,10 @@ export function receiptRows(state, parts) {
   // surely as a wrong figure does — and it is worse, because a wrong figure is at least
   // visible. **Whatever comes off the total gets a row here.**
   if (parts.coupon > 0) {
-    rows.push({ label: "Bring-a-friend discount", value: `-${fmtRM(parts.coupon, cur)}` });
+    // ⚠️ TWO KINDS, TWO WORDS (v336). The friend was SENT theirs; the referrer EARNED hers. One
+    // label for both told the referrer she was spending somebody else's coupon on her own order.
+    rows.push({ label: parts.couponRole === "reward" ? "Bring-a-friend reward" : "Bring-a-friend discount",
+      value: `-${fmtRM(parts.coupon, cur)}` });
   }
   rows.push({ label: "Total", value: fmtRM(parts.total, cur), total: true });
   return rows;

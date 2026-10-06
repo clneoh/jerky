@@ -4217,7 +4217,11 @@ function referralApplyEl(state, group, root, dateId) {
         ? `✨ ${what} ready for this order — one per order, ${mine.length} more after it`
         : `✨ ${what} ready for this order`),
     button(mine.length > 1 ? `Apply coupon (1 of ${mine.length})` : "Apply coupon", () => {
-      const used = markOneUsed(state, waNumber(first.whatsapp));
+      // ★★ AND IT SAYS WHICH ORDER (v336). Without this the coupon was marked used and came off
+      // NOTHING — `couponOn` could not tell which of her orders a spent reward belonged to, so
+      // this press burned the coupon and moved no money. The toast below has been promising
+      // "already taken off this order" since v322; from here it is true.
+      const used = markOneUsed(state, waNumber(first.whatsapp), new Date().toISOString(), orderCode(first));
       anchorRowId = first.id;
       save(state);
       maybeSync(state);

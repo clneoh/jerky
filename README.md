@@ -738,6 +738,29 @@ matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestion
 now that the Google key returns one precise house-number answer, most lookups legitimately show no
 list and the pin simply lands.
 
+## One version: your own reward coupon comes off your order (v336)
+
+Bakery `a76d8f0` (v335 — exactly where jerky sat) → `0648029` (v336). **All five source files merged
+with 0 conflicts** (`courier.js`, `referrals.js`, `invoice.js`, `views/orders.js`, `version.js`); the
+eight conflicts were test assertions gaining the new field. **No SQL** — the tracking row is untouched.
+Suite **2851 → 2854 pass / 0 fail**, and the new press-everything pass walked the change green.
+
+**Her report:** *"when i refer a friend and get a coupon, but redeem that coupon will not reduce my
+order price"* — and she was right.
+
+**There are two kinds of coupon and only one was ever read.** `friendOff` is the FRIEND's: earned and
+spent on the same order, so its `orderCode` *is* that order. `reward` is **the referrer's own** —
+earned on the friend's order and spent on one of her own, later — so its `orderCode` names the order
+that EARNED it and could never match the order it was spent on. `couponOn` matched
+`role === "friendOff"` alone, so her reward coupon was **offered on her order, pressed, and marked
+used — while coming off nothing**, and the toast said "already taken off this order". That is the
+"the customer was promised and never saw it" shape, still live on the other half.
+
+**The fix, in three parts:** `markOneUsed(state, whatsapp, now, appliedTo)` records **which order** the
+coupon was spent on — `appliedTo` is a **new field, and `orderCode` is never overwritten** (it still
+names the earning order). `couponOn` now judges by role *and* lifetime. And the receipt and the
+customer's card read `couponRole`, which is why the tests gained it.
+
 ## Five versions, and the app now checks itself (v331–v335)
 
 Bakery `7a71894` (v330 — exactly where jerky sat) → `a76d8f0` (v335), the same one-file three-way

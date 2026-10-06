@@ -107,7 +107,8 @@ test("a charge on an order that is NOT going by courier is nothing, wherever it 
   Object.assign(st.orders[0], { courierFee: 8, courierPaidBy: "customer", fulfillment: "collect" });
   const g = groupOf(st);
   assert.deepEqual(customerTotal(st, g), { items: 30, courier: 0, cod: 0, postage: 0, quoted: false,
-    promo: 0, promoCode: "", notApplied: "", promoMinimum: 0, coupon: 0, couponId: "", couponCode: "", total: 30 },
+    promo: 0, promoCode: "", notApplied: "", promoMinimum: 0, coupon: 0, couponId: "", couponCode: "", couponRole: "", total: 30 },
+
 
     "the items alone — the courier is not carrying anything");
   assert.ok(!buildConfirmation(st, g, "https://x/track").message.includes("Courier charge"),
@@ -359,7 +360,7 @@ test("a charge SHE bore absorbs the flat postage too, and says nothing about del
   st.orders[0].courierFee = 12;
   st.orders[0].courierPaidBy = "me";
   assert.deepEqual(customerTotal(st, groupOf(st)), { items: 30, courier: 0, cod: 0, postage: 0, quoted: false,
-    promo: 0, promoCode: "", notApplied: "", promoMinimum: 0, coupon: 0, couponId: "", couponCode: "", total: 30 },
+    promo: 0, promoCode: "", notApplied: "", promoMinimum: 0, coupon: 0, couponId: "", couponCode: "", couponRole: "", total: 30 },
     "she bears it: they owe the bread alone, with no delivery line of any kind");
 
   const msg = buildConfirmation(st, groupOf(st), "https://x/track").message;
@@ -377,7 +378,7 @@ test("a half-filled charge box is not a charge yet — the flat postage stands",
   st.orders[0].courierFee = 12;
   st.orders[0].courierPaidBy = "";
   assert.deepEqual(customerTotal(st, groupOf(st)), { items: 30, courier: 0, cod: 0, postage: 8, quoted: false,
-    promo: 0, promoCode: "", notApplied: "", promoMinimum: 0, coupon: 0, couponId: "", couponCode: "", total: 38 },
+    promo: 0, promoCode: "", notApplied: "", promoMinimum: 0, coupon: 0, couponId: "", couponCode: "", couponRole: "", total: 38 },
     "the fee is still quoted, exactly as it was before anything was typed");
 });
 
@@ -451,7 +452,8 @@ test("COD is read the house way — a lone flag on no charge is not COD", () => 
 test("a COD charge is split OUT of the advance total, not folded into it", () => {
   const st = state();
   const parts = customerTotal(st, codOrder(st));
-  assert.deepEqual(parts, { items: 30, courier: 0, cod: 8, postage: 0, quoted: false, promo: 0, promoCode: "", notApplied: "", promoMinimum: 0, coupon: 0, couponId: "", couponCode: "", total: 30 },
+  assert.deepEqual(parts, { items: 30, courier: 0, cod: 8, postage: 0, quoted: false, promo: 0, promoCode: "", notApplied: "", promoMinimum: 0, coupon: 0, couponId: "", couponCode: "", couponRole: "", total: 30 },
+
 
     "the charge is named in cod, and the total asks for the bread alone");
 });
@@ -460,7 +462,8 @@ test("the same charge with the order still sits inside the total, exactly as bef
   const st = state();
   st.orders[0].courierFee = 8;
   st.orders[0].courierPaidBy = "customer";
-  assert.deepEqual(customerTotal(st, groupOf(st)), { items: 30, courier: 8, cod: 0, postage: 0, quoted: false, promo: 0, promoCode: "", notApplied: "", promoMinimum: 0, coupon: 0, couponId: "", couponCode: "", total: 38 },
+  assert.deepEqual(customerTotal(st, groupOf(st)), { items: 30, courier: 8, cod: 0, postage: 0, quoted: false, promo: 0, promoCode: "", notApplied: "", promoMinimum: 0, coupon: 0, couponId: "", couponCode: "", couponRole: "", total: 38 },
+
 
     "only the mode moved — with the order, the charge is in the total it was always in");
 });

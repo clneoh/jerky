@@ -1,8 +1,39 @@
-# Munchies Furkidz — change history (v54 → v335)
+# Munchies Furkidz — change history (v54 → v336)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**06 Oct 2026 — engine v336, YOUR OWN REWARD COUPON NOW COMES OFF YOUR ORDER (no database step,
+nothing to upload — pushing this one is the whole of it).**
+
+**Your words:** __"when i refer a friend and get a coupon, but redeem that coupon will not reduce my
+order price"__ — **and you were exactly right, again.**
+
+**What was wrong.** There are **two kinds of coupon** in the app, and only one of them was ever being
+read:
+
+- **The friend's** — RM3 off __their__ first order. That is the one I fixed in v322.
+- **Yours** — the RM3 you earn for bringing someone in. **Nothing ever took that one off anything.**
+
+**So when you pressed "Apply coupon" on your own order**: the coupon was used up, the app said *"already
+taken off this order"* — **and the price did not move.** The coupon was spent and gave you nothing.
+
+**Why the two behave differently, and it is a real difference.** The friend's coupon is earned and
+spent **on the same order**, so the order is written on it. Yours is earned on **the friend's** order
+and spent on **one of yours, later** — so the order number written on it is the wrong one to look for.
+**The app was looking for the friend's kind of coupon and never for yours.**
+
+**Now fixed.** Pressing **Apply coupon** on your own order marks the coupon *and records which order you
+spent it on* — so the money function can find it, and **the Total comes off.** Your receipt and the
+customer's message also now call it a **bring-a-friend reward** rather than "the one you were sent",
+because it is your own coupon on your own order.
+
+**Careful about two things it must NOT do, and both are tested:** a coupon you are **holding but have
+not applied** comes off nothing — it is yours to spend when you choose; and a coupon you spent on
+**one order** cannot come off a second one.
+
+**Your data is untouched.** No SQL, no Edge Function, no key. The suite is **2,825 tests, all green**.
 
 **05 Oct 2026 — engine v335, THE SELF-CHECK NOW SEES EVERY KIND OF CONTROL (no database step,
 nothing to upload — pushing this one is the whole of it).**

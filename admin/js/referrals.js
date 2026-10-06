@@ -234,20 +234,30 @@ export function validCredits(state, whatsapp, today = todayISO()) {
 export function couponOn(state, orders) {
   const rows = Array.isArray(orders) ? orders : [];
   const first = rows[0];
-  if (!first) return { amount: 0, id: "", code: "" };
+  if (!first) return { amount: 0, id: "", code: "", role: "" };
   const code = orderCode(first);
-  if (!code) return { amount: 0, id: "", code: "" };
+  if (!code) return { amount: 0, id: "", code: "", role: "" };
   const friend = waNumber(first.whatsapp);
   const hit = (state.credits || []).find((c) => c
-    && c.role === "friendOff"
-    && String(c.orderCode || "") === code
     && Number(c.amountRM) > 0
-    // ⚠️ The holder is checked as well, and deliberately: `orderCode` is unique by
-    // construction, so this can only ever fail on a hand-edited record — and a discount
-    // landing on the wrong person's order is the one outcome worth guarding against twice.
-    && (!friend || waNumber(c.holder) === friend));
-  if (!hit) return { amount: 0, id: "", code: "" };
-  return { amount: round2(Number(hit.amountRM)), id: hit.id, code };
+    // ⚠️ The holder is checked on BOTH kinds, and deliberately: a discount landing on the
+    // wrong person's order is the one outcome worth guarding against twice.
+    && (!friend || waNumber(c.holder) === friend)
+    && (c.role === "friendOff"
+      // THE FRIEND'S, come off the first order it names — and `orderCode` IS that order, so
+      // matching on it is exact, exactly as it has been since v322.
+      ? String(c.orderCode || "") === code
+      // ★★ THE REFERRER'S REWARD, WHICH IS A DIFFERENT KIND OF THING (v336). Hers is earned on
+      // the FRIEND's order and spent on one of HER OWN, later — so **its `orderCode` names the
+      // order that earned it and must NOT be matched against this one.** What says it belongs
+      // here is that she PRESSED APPLY ON THIS ORDER, which stamps `appliedTo` (see
+      // `markOneUsed`). **Until v336 only `friendOff` was read here, so a reward coupon was
+      // offered, applied, marked used — and came off nothing at all.** Her report: __"when i
+      // refer a friend and get a coupon, but redeem that coupon will not reduce my order
+      // price"__.
+      : c.role === "reward" && !!c.usedAt && String(c.appliedTo || "") === code));
+  if (!hit) return { amount: 0, id: "", code: "", role: "" };
+  return { amount: round2(Number(hit.amountRM)), id: hit.id, code, role: hit.role };
 }
 
 // The live state of one credit. A used credit stays used; an expired credit is
@@ -331,11 +341,24 @@ export function giveCredits(state, group, scheme = schemeOf(state), today = toda
 // returns it (the owner has applied that RM off in WhatsApp). Nothing to use →
 // null. Finds the original state row (creditRows returns copies, so mutating
 // them would never persist).
-export function markOneUsed(state, whatsapp, now = new Date().toISOString()) {
+export function markOneUsed(state, whatsapp, now = new Date().toISOString(), appliedTo = "") {
   const sorted = validCredits(state, whatsapp);
   if (!sorted.length) return null;
   const row = (state.credits || []).find((c) => c.id === sorted[0].id);
-  if (row) row.usedAt = now;
+  if (row) {
+    row.usedAt = now;
+    // ★★ AND WHICH ORDER IT WAS SPENT ON (v336). **A coupon's `orderCode` names the order it was
+    // EARNED on** — for the referrer's reward that is the FRIEND's order, which is a different order
+    // from the one it is spent on. Without this, the money function could not tell which of the
+    // referrer's orders a spent coupon belonged to, so **the coupon was marked used and came off
+    // nothing** — her report: __"when i refer a friend and get a coupon, but redeem that coupon will
+    // not reduce my order price"__.
+    //
+    // ⚠️ IT IS A SEPARATE FIELD AND `orderCode` IS NEVER OVERWRITTEN. `giveCredits` refuses to hand
+    // out a second coupon for an order whose code is already on a credit — overwriting it would make
+    // that guard blind, and the order that earned the coupon would stop being recorded anywhere.
+    if (appliedTo) row.appliedTo = String(appliedTo);
+  }
   return row || null;
 }
 

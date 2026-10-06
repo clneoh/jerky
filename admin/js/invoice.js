@@ -94,7 +94,7 @@ export function invoiceSheet(state, group, { from = "", bakery = "", printed = "
   // so it belongs above it — she asked me to check "probably other place?", and this was
   // the other place. An invoice whose lines do not add up to its own total is not an
   // invoice; the same rule `receiptRows` states, and the same fault when it is broken.
-  if (t.coupon > 0) lines.push({ what: "Bring-a-friend discount", amount: t.coupon, dir: "out" });
+  if (t.coupon > 0) lines.push({ what: t.couponRole === "reward" ? "Bring-a-friend reward" : "Bring-a-friend discount", amount: t.coupon, dir: "out" });
 
   return {
     // The order's own code IS the invoice number, so the title and the order's tag

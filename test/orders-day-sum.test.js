@@ -1997,3 +1997,43 @@ test("★ the inbox's own ✕ removes too — the other door onto the same outco
 
   assert.equal(st.orders.length, 0, "the order is gone — from the inbox door too");
 });
+
+// ── ★★ v336: pressing Apply coupon on a REFERRER'S reward must move the money ──
+test("★ Apply coupon on a bring-a-friend reward really takes it off the order", () => {
+  // ★★ HER REPORT: __"when i refer a friend and get a coupon, but redeem that coupon will not
+  // reduce my order price"__. The press had been promising "already taken off this order" since
+  // v322 while taking nothing off, because only the FRIEND's kind of coupon was ever read.
+  //
+  // ⚠️ AND THIS IS THE HALF THAT MATTERS, exactly as she taught it: the earlier test proves the
+  // money function CAN find an applied reward. **This one presses the button and asserts the
+  // figure moves** — a control is not tested until it has been driven to its outcome.
+  const st = state();
+  st.products[0].price = 18;
+  st.orders[0].unitPrice = 18;
+  st.orders[0].whatsapp = "60123456789";
+  st.orders[0].customerName = "Aunty Bee";
+  st.orders[0].status = "confirmed";
+  st.settings.referrals = { enabled: true, friendRM: 3, referrerRM: 3, days: 90 };
+  // Her OWN reward — earned on a friend's order, held by her, not yet spent.
+  st.credits = [{ id: "cr_1", role: "reward", holder: "60123456789", amountRM: 3,
+    earnedAt: "2026-09-01", expiresAt: "", usedAt: null, orderCode: "ZZZZZZ" }];
+
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+  const totalNow = () => {
+    const row = all(root).find((n) => String(n.className).includes("li-money"));
+    return row ? txtOf(all(row).find((n) => String(n.className).includes("info-val"))) : "(no total)";
+  };
+  assert.equal(totalNow(), "RM 36.00", "the row prices the order at two focaccia before anything");
+
+  const apply = all(root).find((n) => n.tagName === "BUTTON" && txtOf(n).includes("Apply coupon"));
+  assert.ok(apply, "her reward is offered on the order as an Apply coupon press");
+  apply._listeners.click[0]();
+
+  assert.equal(totalNow(), "RM 33.00",
+    "AND THE ORDER IS RM 3 CHEAPER — the press has to move the figure, not just say it did");
+  const spent = st.credits.find((c) => c.id === "cr_1");
+  assert.ok(spent.usedAt, "the coupon is recorded as spent");
+  assert.equal(spent.appliedTo, orderCode(st.orders[0]),
+    "and it is stamped with the order it was spent on, which is how the money function finds it");
+});

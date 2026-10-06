@@ -286,3 +286,56 @@ test("nothing about a missed code reaches the money itself", () => {
   assert.equal(parts.promo, 0, "the discount is still nothing");
   assert.equal(promoValue(st, "FRESH10", 30, 0).money, 0, "and the Edit form's own preview agrees");
 });
+
+// ── ★★ v336: the REFERRER'S reward coupon is a different kind of thing ───────
+test("a reward coupon she has APPLIED to this order comes off it", () => {
+  // ★★ HER REPORT, 5 Oct 2026: __"when i refer a friend and get a coupon, but redeem that coupon
+  // will not reduce my order price"__ — and she was right.
+  //
+  // ⚠️⚠️ TWO KINDS OF COUPON, SPENT DIFFERENTLY, and only one of them was ever read.
+  //   · `friendOff` — the FRIEND's. Earned and spent on the same order, so its `orderCode` IS the
+  //     order it comes off, and v322 matched on that.
+  //   · `reward`    — the REFERRER's. **Earned on the FRIEND's order and spent on one of her own,
+  //     LATER** — so its `orderCode` names the order that EARNED it and must never be matched
+  //     against the one it is spent on. Nothing read this role at all, so the coupon was offered,
+  //     pressed, marked used — **and came off nothing.**
+  const st = state({ credits: [{
+    id: "cr_reward", role: "reward", holder: "60123456789", holderName: "Aunty Bee",
+    amountRM: 3, earnedAt: "2026-09-01", expiresAt: "", usedAt: "2026-09-10T10:00:00.000Z",
+    // ⚠️ THE FRIEND'S ORDER — NOT this one. That is the whole point.
+    orderCode: "ZZZZZZ",
+    appliedTo: "ABC123", // …and THIS is the order she pressed Apply on.
+    note: "Brought Maya as a new customer",
+  }] });
+  st.orders = orders();
+  const parts = customerTotal(st, { orders: st.orders });
+  assert.equal(parts.coupon, 3, "the reward comes off the order she applied it to");
+  assert.equal(parts.couponRole, "reward", "and it says which kind it was, so it can be worded right");
+  assert.equal(parts.total, 27, "Items 30 less the reward");
+
+  const row = receiptRows(st, parts).find((r) => String(r.label).includes("Bring-a-friend"));
+  assert.ok(row, "with a row of its own on her receipt");
+  assert.equal(row.label, "Bring-a-friend reward",
+    "called a REWARD, not the one she was sent — it is her own coupon, on her own order");
+});
+
+test("a reward coupon comes off NOTHING until she applies it, and nothing on another order", () => {
+  // ⚠️ TWO WAYS THIS MUST NOT LEAK, and both are the difference between a coupon and free money.
+  //
+  // (1) EARNED BUT NOT APPLIED — she decides when to spend it, and until she presses Apply it is
+  //     simply a coupon she is holding.
+  // (2) APPLIED TO A DIFFERENT ORDER — a spent coupon that came off every one of her orders would
+  //     be taking the same ringgit off again and again.
+  const held = state({ credits: [{ id: "cr_1", role: "reward", holder: "60123456789",
+    amountRM: 3, earnedAt: "2026-09-01", expiresAt: "", usedAt: null, orderCode: "ZZZZZZ" }] });
+  held.orders = orders();
+  assert.equal(customerTotal(held, { orders: held.orders }).coupon, 0,
+    "held but not applied — it is hers to spend, and it comes off nothing yet");
+
+  const spentElsewhere = state({ credits: [{ id: "cr_2", role: "reward", holder: "60123456789",
+    amountRM: 3, earnedAt: "2026-09-01", expiresAt: "", usedAt: "2026-09-09T10:00:00.000Z",
+    orderCode: "ZZZZZZ", appliedTo: "QQQQQQ" }] });
+  spentElsewhere.orders = orders();
+  assert.equal(customerTotal(spentElsewhere, { orders: spentElsewhere.orders }).coupon, 0,
+    "spent on ANOTHER order — it must not come off this one a second time");
+});
