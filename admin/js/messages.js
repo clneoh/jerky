@@ -10,7 +10,7 @@ import { byId, orderCode, orderLineName, waNumber } from "./state.js";
 import { shortDate } from "./dates.js";
 import { customerTotal, moneyLines } from "./courier.js";
 import { fulfillmentText, orderPointName } from "./points.js";
-import { promisedWindowSuffix, trackingLine } from "./courier_job.js";
+import { dayLine, promisedWindowSuffix, trackingLine, vanLine } from "./courier_job.js";
 
 // The opening line, in the voice she chose on Settings (2 Oct 2026). WhatsApp
 // carries no fonts at all — the letters always come from the customer's own phone
@@ -53,7 +53,11 @@ function basics(state, group, trackUrl) {
   // can word the promise differently from the others. promisedWindowSuffix is the publishing gate
   // and answers "" for a window that could not be typed, so a half-filled promise cannot
   // be sent to a customer.
-  const date = `${del ? shortDate(del.date) : String(first.deliveryDate || "")}${promisedWindowSuffix(state, first)}`;
+  // ⚠️ THE LABEL AND THE WINDOW COME FROM `dayLine` (v337). A courier order's day is its BAKE
+  // day and its window is the VAN's, so they are not the same day and must not share a line —
+  // see the helper for the customer who asked whether it was Wednesday or Thursday.
+  const day = dayLine(state, first);
+  const date = `${del ? shortDate(del.date) : String(first.deliveryDate || "")}${day.window}`;
   const courier = first.fulfillment === "courier";
   // The same ONE wording the confirmation uses (v299), so the four messages and the
   // confirmation cannot tell a customer two different things about where to go.
@@ -76,7 +80,7 @@ function basics(state, group, trackUrl) {
   // told about and has very likely paid — restating it risks reading as still-owed.
   const charged = parts.courier > 0 || parts.cod > 0;
   const chargeLines = charged ? money.slice(1) : [];
-  return { first, recipient, items, date, courier, fulfillment, bakery, qr, trackUrl, trackingNo, money, charged, chargeLines };
+  return { first, recipient, items, date, day, courier, fulfillment, bakery, qr, trackUrl, trackingNo, money, charged, chargeLines };
 }
 
 export function buildPaymentReminder(state, group, trackUrl) {
@@ -86,7 +90,8 @@ export function buildPaymentReminder(state, group, trackUrl) {
   // line) so every WhatsApp message leads with the same scannable #CODE.
   let msg = `${greeting(state, `Hi ${b.first.customerName || ""}! A friendly reminder from ${b.bakery} about your order.`)}\n`;
   msg += `Order #${orderCode(b.first)}\n`;
-  msg += `Delivery: ${b.date} - ${b.fulfillment}\n`;
+  msg += `${b.day.label}: ${b.date} - ${b.fulfillment}\n`;
+  msg += vanLine(b.day, b.first);
   msg += `Items: ${b.items}\n`;
   // Shown as its parts as well as the sum: the customer is being asked for money, and a
   // figure that is RM8 more than the items they chose has to say so — and show them the
@@ -112,7 +117,8 @@ export function buildShippedMessage(state, group, trackUrl) {
   if (!b || !b.recipient) return null;
   let msg = `${greeting(state, `Hi ${b.first.customerName || ""}! Your order from ${b.bakery} is on its way.`)}\n`;
   msg += `Order #${orderCode(b.first)}\n`;
-  msg += `Delivery: ${b.date} - ${b.fulfillment}\n`;
+  msg += `${b.day.label}: ${b.date} - ${b.fulfillment}\n`;
+  msg += vanLine(b.day, b.first);
   msg += `Items: ${b.items}\n`;
   // One slot, two kinds of thing. A number she typed reads "Tracking number"; the
   // share link a booked trip came back with reads "Track your delivery", because it

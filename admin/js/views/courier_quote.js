@@ -48,8 +48,9 @@
 import { button, confirmDialog, el, guarded, keepStill, toast } from "../ui.js";
 import { todayISO } from "../dates.js";
 import {
+  courierDayOf, pickupTimeOf,
   fmtAgo, fmtDistanceKm, fmtQuote, fmtQuoteLeft, fmtStamp, isLink, jobOf, liveJobOf,
-  liveJobProblem, orderDay, quoteExpired, scheduleAtUTC, tripCalledOff, tripCollected, tripOf,
+  liveJobProblem, quoteExpired, scheduleAtUTC, tripCalledOff, tripCollected, tripOf,
   tripProblem,
 } from "../courier_job.js";
 import {
@@ -1156,11 +1157,20 @@ export function courierQuoteSection({
     }
 
     // ── when the driver collects ─────────────────────────────────────────
-    const dayInput = el("input", { class: "input", type: "date", value: orderDay(state, first),
+    // ★★ THE DAY COMES OFF THE ORDER, NEVER OFF THE BAKE PLAN (v338). This read `orderDay(state,
+    // first)` — the BAKE day — which is the fault her customer's confusion came from: baked
+    // Wednesday, van Thursday morning, and the quote handed her Wednesday to price. Her own rule
+    // forbids working it out for her: *"bake plan is just a plan… it is good not to tie our own hand
+    // down."* It now opens on what she already keyed in on the order, and is EMPTY when she has not —
+    // `courierDayOf` reads whichever shape it is handed, so this box and the card's own field agree.
+    const dayInput = el("input", { class: "input", type: "date", value: courierDayOf(first),
       "aria-label": "The day the driver collects" });
     const timeInput = el("input", {
       class: "input", type: "time",
-      value: String(((state.settings || {}).courier || {}).dispatch || "").trim(),
+      // ★ HER TYPED PICKUP TIME WINS (v341), and her own Settings dispatch time is the fallback —
+      // the same rule as the day box above it. She set that fallback herself; what neither reads is
+      // the bake plan.
+      value: pickupTimeOf(first) || String(((state.settings || {}).courier || {}).dispatch || "").trim(),
       "aria-label": "The time the driver collects",
     });
     const whenNote = el("p", { class: "card-sub", style: "margin:6px 0 0" });
@@ -1179,7 +1189,7 @@ export function courierQuoteSection({
       timeInput.disabled = !d;
       whenNote.textContent = d
         ? "The time the driver collects. It opens on the app's own dispatch time; changing it here changes this price only — when a trip can really be booked, this becomes a setting of its own."
-        : "This order has no delivery day on it, so this prices collection as soon as possible. Choose a day to schedule it.";
+        : "No day has been set for the van yet, so this prices collection as soon as possible. Choose a day above to schedule it.";
       if (pricedFor && pricedFor !== whenLabel()) {
         whenNote.textContent += ` The prices below were asked for ${pricedFor}.`;
       }

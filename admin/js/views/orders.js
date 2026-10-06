@@ -27,6 +27,9 @@ import { adjustForStatus } from "../stock.js";
 import { customerList, keyOf } from "../customers.js";
 import { strictNumber } from "../courier_place.js";
 import { fmtStamp, jobOf } from "../courier_job.js";
+// The app's ONE time window (v304): how it is read, packed, checked and said. The van's window on an
+// order asks the same questions as the run screen's, so it asks the same functions.
+import { fmtWindow, windowAt, windowParts, windowProblem } from "../time_window.js";
 // The second KIND of courier (v226): a parcel she books herself and the app only
 // records. See js/parcel.js for why it is a record and not a provider.
 import { parcelOf, parcelHanded, setParcel, markHanded, clearParcel, notParcelable } from "../parcel.js";
@@ -1032,7 +1035,7 @@ function orderFinderEl(state, root, selectDate, body) {
     const qtyTotal = group.orders.reduce((s, o) => s + o.qty, 0);
     const statusName = (STATUSES.find(([v]) => v === (first.status || "new")) || [])[1];
     const sub = [first.customerName || "No name",
-      date ? shortDate(date.date) : "delivery date removed", statusName]
+      date ? shortDate(date.date) : "delivery day removed", statusName]
       .filter(Boolean).join(" · ");
     const main = el("div", { class: "li-main" },
       el("div", { class: "li-title" }, items.join(" + "), orderCodeTag(first),
@@ -1126,8 +1129,8 @@ function orderFinderEl(state, root, selectDate, body) {
       // order and could do nothing with it.
       //
       // The Edit card is the right door and always was: it opens with no day marked, its
-      // **Delivery day** calendar offers the days she is still taking, and its save refuses
-      // until she picks one ("Choose a delivery day"). **So the same tap puts the order
+      // **Delivery date** calendar offers the days she is still taking, and its save refuses
+      // until she picks one ("Choose a delivery date"). **So the same tap puts the order
       // back on a day, or she removes it from the row's own ✕ — nothing is stuck.**
       openEditPopup(state, group, "", root);
       return;
@@ -1403,7 +1406,9 @@ function promoTag(order) {
 // that show an order's money (the Edit form and the Note / tracking card) and the
 // customer's own message are all listing the same sum. `parts` is whatever the caller
 // priced — a saved order, or the lines she is typing.
-function receiptEls(state, parts) {
+// ⚠️ EXPORTED (v342) so the Delivery run can draw an order's money with the SAME renderer — see the
+// unfolded order on that screen. Two renderings of one order's figures is two figures that can disagree.
+export function receiptEls(state, parts) {
   const rows = receiptRows(state, parts).map((r) =>
     el("div", { class: "info-row" + (r.total ? " pl-total" : "") },
       el("span", {}, r.note ? `${r.label} — ${r.note}` : r.label),
@@ -1532,6 +1537,67 @@ import { addressSuggester } from "../address_suggest.js";
 // same shape a multi-item storefront order arrives as, so the list/inbox/confirm
 // all treat it as a single order. Editing an order never replaces this card:
 // Edit opens a pop-up over the screen instead.
+// ★★ THE VAN'S OWN DAY AND WINDOW (v338) — one piece of the card, used by BOTH order cards.
+//
+// ⚠️⚠️ THE GAP THIS CLOSES. A courier order's `deliveryDateId` is the day it is BAKED, and the van
+// often goes the NEXT morning — her customer's own case: *"our delivery date is Wednesday 7th Oct, customer
+// want a lalamove delivery of Thursday morning 9am."* Until this version an order had nowhere to write
+// that down, so the run screen handed her the delivery date to book against and the customer's card printed
+// the window beside the wrong date. `courierDay` is the order's own answer to "when does it reach them".
+//
+// ⚠️ **BOTH BOXES OPEN EMPTY, AND NOTHING HERE EVER FILLS THEM IN FOR HER.** Her own rule: *"bake plan
+// is just a plan… it is good not to tie our own hand down."* A day worked out from the bake plan is a
+// number she would then have to defend to a driver, so the app asks and stays quiet.
+//
+// Built once rather than twice because the two cards are the same three boxes, the same labels and the
+// same live caption — and two copies of a form are two chances to differ. `box` is whichever draft the
+// caller owns ({ day, from, to }), so a card keeping its values in the module draft and one keeping
+// them in a pop-up draft can both use it and neither has to know about the other.
+function courierWhenFields(box) {
+  // ⚠️ The three handlers read the NODE, not `this`. A real DOM sets `this` to the element, but a
+  // test's shim does not have to — and a handler that only works under one of those two conventions
+  // is a handler half the suite cannot exercise. Reading the node is right under both.
+  const day = el("input", { class: "input", type: "date", value: box.day || "",
+    "aria-label": "The day the courier delivers",
+    oninput: () => { box.day = day.value; } });
+  // ★★ THE PICKUP TIME (v341). Her distinction: *"for courier lalamove, there is no delivery window
+  // open and delivery window closes promise… Pickup time is something user should specify."*
+  // It is the time the van collects FROM HER — the one clock a single van delivery actually fixes —
+  // and it is deliberately NOT a promise to the customer: what a customer is told is a Point's hours,
+  // or the window a run with many stops carries. So it feeds the Delivery run's own collection time
+  // and the price box beside it, and never reaches `promisedWindowSuffix`, which every customer-facing
+  // line reads.
+  const pickup = el("input", { class: "input", type: "time", value: box.pickup || "",
+    "aria-label": "The time the van collects from you",
+    oninput: () => { box.pickup = pickup.value; } });
+  const said = el("p", { class: "card-sub", style: "margin:6px 0 0" });
+  const from = el("input", { class: "input", type: "time", value: box.from || "",
+    "aria-label": "The delivery window opens",
+    oninput: () => { box.from = from.value; paint(); } });
+  const to = el("input", { class: "input", type: "time", value: box.to || "",
+    "aria-label": "The delivery window closes",
+    oninput: () => { box.to = to.value; paint(); } });
+  function paint() {
+    const bad = windowProblem(box.from, box.to);
+    const w = windowAt(box.from, box.to);
+    said.textContent = bad || (w
+      ? `The customer will be told: ${fmtWindow(w)}.`
+      : "A window is what a customer is PROMISED. Set one when a run has several stops, or when the customer has told you the hours they are available — 'from 2 to 5', say. Leave it blank and the message promises to confirm the time.");
+  }
+  paint();
+  return el("div", { class: "field" },
+    el("label", {}, "Courier delivery date"),
+    day,
+    el("p", { class: "hint" }, "The day the van comes — often the morning after the delivery day. Leave it blank until you know it."),
+    el("label", { style: "margin-top:12px" }, "Pickup time"),
+    pickup,
+    el("p", { class: "hint" }, "The time the van collects from you. This fills in the Delivery run's own collection time."),
+    el("div", { class: "form-grid", style: "margin-top:12px" },
+      el("div", {}, el("label", {}, "Delivery window opens"), from),
+      el("div", {}, el("label", {}, "Delivery window closes"), to)),
+    said);
+}
+
 function orderForm(state, dateId, root, selectDate) {
   const date = byId(state.deliveryDates, dateId);
   const products = productOptions(state, dateId);
@@ -1552,6 +1618,11 @@ function orderForm(state, dateId, root, selectDate) {
     // Which Self collection Point this order collects from, or "" for her own kitchen (v303).
     // A collection is the only thing that can have one, so a switch to Courier clears it.
     pointId: "",
+    // The van's own day and window (v338) — see `courierWhenFields` below. One nested object because
+    // the three boxes are ONE question ("when does the van come?") and that helper reads and writes
+    // them together. It is a DRAFT shape only: the order itself carries a flat `courierDay` and the
+    // existing packed `deliveryWindow`, so no order gains a nested key.
+    courierWhen: { day: "", pickup: "", from: "", to: "" },
     items: [{ productId: "", qty: 1, price: null }],
   });
   // The day is the SCREEN's, not the draft's: picking one switches the screen, because
@@ -1725,6 +1796,16 @@ function orderForm(state, dateId, root, selectDate) {
       shared.courier = courierCharge.read();
       shared.trackingNo = draft.trackingNo.trim();
       shared.parcel = { carrierId: draft.carrierId, handedAt: draft.handedAt };
+      // ★ WHEN THE VAN COMES (v338). A half-typed window is refused in words, by the same guard the
+      // run screen's own pair uses — but an EMPTY window is not a mistake, it is the answer "not
+      // known yet", and the message then promises to confirm the time separately.
+      const winWhy = windowProblem(draft.courierWhen.from, draft.courierWhen.to);
+      if (winWhy) return toast(winWhy);
+      shared.courierDay = String(draft.courierWhen.day || "").trim();
+      // When the van collects from her (v341). Not a customer promise — see the comment on
+      // `courierWhenFields` — so it is stored, remembered and used by the run, and published nowhere.
+      shared.pickupTime = String(draft.courierWhen.pickup || "").trim();
+      shared.deliveryWindow = windowAt(draft.courierWhen.from, draft.courierWhen.to);
     }
     // A courier order carries no Point, whatever the picker still holds behind it.
     const pointId = fulfillment === "courier" ? "" : draft.pointId;
@@ -1867,6 +1948,9 @@ function orderForm(state, dateId, root, selectDate) {
       parcelSlot,
       trackingSlot,
       courierKind("van"),
+      // When the van comes (v338). Under the "van" heading and above the charge, so the block reads
+      // in the order she thinks in: whose door, then when, then what it costs.
+      courierWhenFields(draft.courierWhen),
       charge.el,
       quote,
     ];
@@ -1884,7 +1968,7 @@ function orderForm(state, dateId, root, selectDate) {
   // then who ordered them. The courier's fields follow the Fulfillment choice further down.
   const body = el("div", { class: "fold-body", hidden: !newFormOpen },
     el("div", { class: "field", style: "margin-bottom:10px" },
-      el("label", {}, "Delivery day"),
+      el("label", {}, "Delivery date"),
       dayLine),
     el("div", { class: "field" },
       el("label", {}, "Items"),
@@ -1951,7 +2035,7 @@ function deliveryDayList(state) {
     .map((d) => ({ id: d.id, date: d.date }));
 }
 
-// The days the Edit-order pop-up's "Delivery day" calendar offers: every day
+// The days the Edit-order pop-up's "Delivery date" calendar offers: every day
 // still to come, plus the order's own day even if that has passed (so an order
 // left on an old date still shows where it is).
 function deliveryDayOptions(state, curId) {
@@ -1959,7 +2043,7 @@ function deliveryDayOptions(state, curId) {
   return deliveryDayList(state).filter((d) => d.date >= today || d.id === curId);
 }
 
-// Soft notes under the "Delivery day" select: the window the customer was told,
+// Soft notes under the "Delivery date" select: the window the customer was told,
 // whether the new day falls inside it, and anything the new day cannot take.
 // Nothing here blocks the move — the baker always overrides by hand.
 function moveNoteLines(state, group, destId) {
@@ -2001,7 +2085,7 @@ function openEditPopup(state, group, dateId, root) {
   if (!first) return;
   const date = byId(state.deliveryDates, dateId) ||
     (first.deliveryDateId ? byId(state.deliveryDates, first.deliveryDateId) : null);
-  // A missing date record no longer stops the pop-up opening: the "Delivery day"
+  // A missing date record no longer stops the pop-up opening: the "Delivery date"
   // calendar is exactly what puts an orphaned order back onto a real day.
 
   // Each line carries the price it is sold at, so the pop-up can show it and she can
@@ -2034,6 +2118,19 @@ function openEditPopup(state, group, dateId, root) {
     // order with no parcel, so an order she never touched is byte-identical.
     carrierId: (parcelOf(first) || {}).carrierId || "",
     handedAt: (parcelOf(first) || {}).handedAt || "",
+    // ★★ THE VAN'S OWN DAY AND WINDOW, READ BACK OFF THE ORDER (v338) — this is her *"the card should
+    // remember"*. The day she typed is stored on the order, so the box opens on it again instead of
+    // asking her a second time; `windowParts` answers null for anything that is not a window, so a box
+    // can never be seeded with a time that was never set. Both are EMPTY on an order that has neither,
+    // because nothing here is ever worked out from the delivery date.
+    courierWhen: {
+      day: first.courierDay || "",
+      // The time the van collects from her (v341) — read back like the day beside it, so it is
+      // remembered rather than asked for twice. Never derived from anything.
+      pickup: first.pickupTime || "",
+      from: (windowParts(first.deliveryWindow) || {}).from || "",
+      to: (windowParts(first.deliveryWindow) || {}).to || "",
+    },
   };
 
   const title = el("div", { class: "popup-title-row" },
@@ -2252,6 +2349,11 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     // it would drop that fault back in for those orders alone (1 Oct 2026).
     const whyCharge = charge.problem();
     if (whyCharge) return toast(whyCharge);
+    // A half-typed delivery window is refused in words here too (v338), by the same guard the run
+    // screen's own pair uses — so a Save can never quietly drop a window she is still filling in.
+    const whyWindow = draft.fulfillment === "courier"
+      ? windowProblem(draft.courierWhen.from, draft.courierWhen.to) : "";
+    if (whyWindow) return toast(whyWindow);
     applyPopupEdits(state, date, group, first, chosen, {
       customerName: customer.value.trim(),
       whatsapp: waNumber(whatsapp.value.trim()),
@@ -2263,6 +2365,15 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       address: address.value.trim(),
       note: note.value.trim(),
       trackingNo: tracking.value.trim(),
+      // ★★ WHEN THE VAN COMES (v338). Passed even when EMPTY, because emptying the box is how she
+      // takes a day back off an order — `applyPopupEdits` writes these with the line-note pattern
+      // (set when there is a value, DELETED when there is not), so an order that never carried one
+      // still carries no key after a Save. Nothing here is ever worked out from the delivery date.
+      courierDay: String(draft.courierWhen.day || "").trim(),
+      // The time the van collects from her (v341), passed on the same rule as the day beside it:
+      // empty means DELETE the key, not park an empty one.
+      pickupTime: String(draft.courierWhen.pickup || "").trim(),
+      deliveryWindow: windowAt(draft.courierWhen.from, draft.courierWhen.to),
       // The courier charge rides as one object rather than three loose keys, because its
       // four answers have to be written together: the amount, who bore it, whether the
       // courier collects it, and how SHE paid it decide an order row AND an expense row,
@@ -2297,7 +2408,7 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
   // it has always had, and the two screens are allowed to differ.
   return el("div", {},
     el("div", { class: "field", style: "margin-bottom:10px" },
-      el("label", {}, "Delivery day"),
+      el("label", {}, "Delivery date"),
       deliveryPick,
       deliveryNotes),
     el("div", { class: "form-grid order-sugg" },
@@ -2331,6 +2442,12 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     // still carries a charge — so a parked charge is never invisible to the only person
     // who can settle it (1 Oct 2026).
     showCharge || jobOf(first) ? courierKind("van") : null,
+    // ★★ THE VAN'S OWN DAY AND WINDOW (v338) — the same three boxes and the same words as the ＋ New
+    // order card, in the same place: under the "van" heading and above the charge, so both cards read
+    // in the order she thinks in. Drawn only for a courier order, because a collection happens ON the
+    // delivery date and has no van to promise. Seeded from the order's own record, so her typed day and
+    // window come back exactly as she left them.
+    draft.fulfillment === "courier" ? courierWhenFields(draft.courierWhen) : null,
     parkedCharge ? parkedChargeNote(state, first) : null,
     showCharge ? charge.el : null,
     // Same price section as the Note / tracking box carries, for the same reason that
@@ -2413,7 +2530,11 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
   // there would be saved onto every row as a field of its own. The parcel (v226) is the
   // second such record, and is destructured here for exactly the same reason — miss this
   // line and every line of a multi-item order gets saved with its own copy of the parcel.
-  const { courier = null, parcel = null, pointId = "", ...fields } = shared;
+  // `courierDay` and `deliveryWindow` are pulled out beside the charge and the parcel (v338) — but
+  // for the opposite outcome. They ARE the rows' own fields, so they are written back onto every row
+  // BY HAND in the loop below, where an empty box DELETES the key instead of parking an empty one on
+  // every line of a group. Left inside `fields`, `Object.assign` would do exactly that.
+  const { courier = null, parcel = null, pointId = "", courierDay = "", deliveryWindow = "", pickupTime = "", ...fields } = shared;
   const dest = byId(state.deliveryDates, fields.deliveryDateId) || date;
   if (!dest) return toast("Choose a delivery day");
   // The capacity guard follows the order to its destination. Capacity is derived
@@ -2461,6 +2582,15 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
         // so a note she clears leaves the row exactly as it was before she wrote one.
         const lineNote = lineNoteOf(l.lineNote);
         if (lineNote) o.lineNote = lineNote; else delete o.lineNote;
+        // The van's own day and window (v338) — order-level, so the SAME on every row, unlike the
+        // line note just above. Written per row rather than through `fields` because emptying either
+        // box DELETES the key: a day she takes back off an order leaves no empty key behind, and an
+        // order that never carried one is untouched by an unrelated Save.
+        if (courierDay) o.courierDay = courierDay; else delete o.courierDay;
+        if (deliveryWindow) o.deliveryWindow = deliveryWindow; else delete o.deliveryWindow;
+        // The pickup time (v341) rides the same rule — set when she typed one, DELETED when she
+        // emptied the box, so an order that never carried one still carries none.
+        if (pickupTime) o.pickupTime = pickupTime; else delete o.pickupTime;
         keptRows.push(o);
       } else {
         const row = {
@@ -2476,6 +2606,12 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
           address: fields.address,
           note: fields.note,
           trackingNo: fields.trackingNo,
+          // A line added here joins an order the van already has a day for, so it carries the same
+          // two facts as its siblings (v338) — the ones this branch would otherwise drop, because
+          // it copies `fields` by hand rather than with Object.assign.
+          ...(courierDay ? { courierDay } : {}),
+          ...(pickupTime ? { pickupTime } : {}),
+          ...(deliveryWindow ? { deliveryWindow } : {}),
           status: first.status || "new",
           groupId: gid,
           createdAt: new Date().toISOString(),
@@ -2545,7 +2681,10 @@ function addNew(state, date, productId, qty, price, customerName, whatsapp, fulf
   // The courier's own three records, off the card's shared answers (v237). Destructured
   // here rather than left nested, because they are written by their own functions AFTER
   // the row exists and must never be copied onto the row as fields of their own.
-  const { courier = null, parcel = null, trackingNo = "" } = shared || {};
+  //
+  // `courierDay` and `deliveryWindow` come off the same object (v338) and ARE the row's own fields:
+  // the day the van comes, and the window it comes in.
+  const { courier = null, parcel = null, trackingNo = "", courierDay = "", deliveryWindow = "", pickupTime = "" } = shared || {};
 
   function commit() {
     // The card keeps your draft across a rebuild, so a successful add has to clear it by
@@ -2585,6 +2724,13 @@ function addNew(state, date, productId, qty, price, customerName, whatsapp, fulf
     // before maybePublishTracking, so the tracking number and the carrier are on the row
     // by the time the customer's card is published.
     if (trackingNo) row.trackingNo = trackingNo;
+    // ★★ WHEN THE VAN COMES (v338). Written ONLY when she typed something, so an order taken
+    // without a courier day carries no key at all — the same "absent means nothing" spelling the
+    // line note and the tracking number above already follow, and the reason every order already in
+    // her records is byte-for-byte untouched by this version.
+    if (String(courierDay || "").trim()) row.courierDay = String(courierDay).trim();
+    if (String(pickupTime || "").trim()) row.pickupTime = String(pickupTime).trim();
+    if (String(deliveryWindow || "").trim()) row.deliveryWindow = String(deliveryWindow).trim();
     writeCourierCharge(state, [row], { orders: [row] }, courier);
     writeParcel(state, row, [row], parcel);
     save(state);
@@ -2618,7 +2764,9 @@ function addGroupNew(state, date, items, customerName, whatsapp, fulfillment, ad
   const cap = capacityStatus(state, date.id);
   const newTotal = cap.total + totalQty;
   const st = deliveryStatus(date.date, state.settings);
-  const { courier = null, parcel = null, trackingNo = "" } = shared || {}; // see addNew
+  // See addNew — and `courierDay`/`deliveryWindow` are read here too (v338), because a group order
+  // has ONE van coming to ONE door, so every row of it carries the same day and window.
+  const { courier = null, parcel = null, trackingNo = "", courierDay = "", deliveryWindow = "", pickupTime = "" } = shared || {};
 
   function commit() {
     // See addNew: a completed add starts the card clean.
@@ -2661,6 +2809,11 @@ function addGroupNew(state, date, items, customerName, whatsapp, fulfillment, ad
     // number rides on every row of the order, as the pop-up does. See addNew for why this
     // can only happen after the rows exist.
     if (trackingNo) for (const o of rows) o.trackingNo = trackingNo;
+    // The van's own day and window (v338) — on EVERY row, like the tracking number above, because
+    // one van comes to one door however many lines the order has.
+    if (String(courierDay || "").trim()) for (const o of rows) o.courierDay = String(courierDay).trim();
+    if (String(pickupTime || "").trim()) for (const o of rows) o.pickupTime = String(pickupTime).trim();
+    if (String(deliveryWindow || "").trim()) for (const o of rows) o.deliveryWindow = String(deliveryWindow).trim();
     writeCourierCharge(state, rows, { orders: rows }, courier);
     writeParcel(state, rows[0], rows, parcel);
     save(state);
@@ -3332,6 +3485,11 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
   const draft = {
     note: first.note || "",
     trackingNo: first.trackingNo || "",
+    // The time the van collects from her (v341). This is the THIRD door onto the same record — the
+    // ＋ New order card and the Edit form are the other two — so it asks the same question and
+    // remembers it the same way. Held on the draft because this card repaints (the parcel picker asks
+    // for one), and a repaint must not throw away what she has typed.
+    pickupTime: first.pickupTime || "",
     fulfillment: first.fulfillment || "collect",
     carrierId: (parcelOf(first) || {}).carrierId || "",
     handedAt: (parcelOf(first) || {}).handedAt || "",
@@ -3367,6 +3525,15 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
       // this box has no fulfilment control of its own — the order's fulfilment is not one
       // of the things this card is for. See the Edit form's block for what they mean.
       const courierOrder = isCourierOrder(first);
+      // ★ The time the van collects from her (v341). Built HERE, after `courierOrder` exists — a
+      // self-collect order has no van to be collected by, so the box is not drawn for one. (Declared
+      // in this order on purpose: `courierOrder` is a `const` further down this body, and reading it
+      // earlier would throw where the card is built — the `cur is not defined` shape of v322.)
+      const pickup = courierOrder
+        ? el("input", { class: "input", type: "time", value: draft.pickupTime,
+          "aria-label": "The time the van collects from you",
+          oninput: () => { draft.pickupTime = pickup.value; } })
+        : null;
       const parkedCharge = !courierOrder && (courierFeeOf(first) > 0 || !!courierPayerOf(first));
       const showCharge = courierOrder || parkedCharge;
       function paintCustTotal() {
@@ -3440,6 +3607,12 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
           el("p", { class: "hint" }, "For a parcel this is the consignment number the carrier gave you.")),
         parcelSection({ state, group, draft, refresh }),
         showCharge || jobOf(first) ? courierKind("van") : null,
+        // ★ The time the van collects from her (v341) — the same question the ＋ New order card and
+        // the Edit form ask, in the same place: under the van heading, above the charge.
+        pickup ? el("div", { class: "field" },
+          el("label", {}, "Pickup time"),
+          pickup,
+          el("p", { class: "hint" }, "The time the van collects from you. This fills in the Delivery run's own collection time.")) : null,
         parkedCharge ? parkedChargeNote(state, first) : null,
         showCharge ? charge.el : null,
         // The price, folded away until she asks for it (25 Sep 2026). It lives INSIDE
@@ -3482,6 +3655,7 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
               ? "The charge box above is parked: this order leaves by self collect, so nothing about it reaches the customer and it is not on the confirmation, the messages or the track card. Clear who paid the courier to take it off the order entirely, or switch the order back to Post (nationwide) under Edit. "
               : "")
           + "The tracking number goes onto the customer's track card and into the posted message. Anything else - the delivery day, the customer, the address, the items - is under Edit."),
+
         el("div", { class: "popup-actions" },
           button("Cancel", close, "ghost"),
           button("Save", () => {
@@ -3526,9 +3700,15 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
             // money nobody has been asked for yet (17 Sep 2026 — the same rule setStage
             // follows).
             const paidAtNow = new Date().toISOString();
+            // The time the van collects from her (v341), read off the BOX like the note and the number
+            // above it. Written only when the box was drawn — this card is opened on a self-collect
+            // order too, and a card with no van on it has no business deleting a key it never asked
+            // about. Emptying it DELETES the key, the same rule the other two cards follow.
+            const pickupTime = pickup ? pickup.value.trim() : "";
             for (const o of group.orders) {
               o.note = note.value.trim();
               o.trackingNo = number;
+              if (pickup) { if (pickupTime) o.pickupTime = pickupTime; else delete o.pickupTime; }
               if (method) {
                 o.paidReceived = true;
                 o.paidMethod = method;
@@ -3565,10 +3745,11 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
     });
 }
 
-// "Send posted message" — a post order that has gone out, carrying the tracking
-// number she typed. Offered at Packed and again at Collected / Posted, since
-// either order of doing things is natural. Disabled without a WhatsApp number,
-// like every other message button on a row.
+// "Send shipped message" — a courier order that HAS GONE to the courier, carrying the tracking
+// number she typed or the trip's own share link. **Offered at Collected / Shipped only (v340):** at
+// Packed nothing has left yet, so the message would be saying something untrue. Disabled without a
+// WhatsApp number, like every other message button on a row.
+
 function shippedMsgButton(state, group, first, root, dateId) {
   const btn = button("Send posted message", () =>
     sendOrderWhatsApp(state, group, {
@@ -3587,11 +3768,12 @@ function shippedMsgButton(state, group, first, root, dateId) {
 // journey map shows which step is done (green ✓) and which step is waiting on
 // the baker (pulsing amber), and the buttons under the status match the stage:
 // Confirmed offers "Send confirmation", Paid offers "Send payment reminder" +
-// "Paid", Preparing offers "Print label" (to kit the order as it is packed), and
-// Packed offers the message for how the order leaves: a post order gets "Send
-// posted message" (with its tracking number), a collect one "Send pickup
-// reminder". The last stage's NAME is the pair Collected / Posted for both — only
-// which message it offers depends on the method.
+// "Paid", Baked offers "Print label" (to kit the order as it is packed), and
+// Packed offers a message to a SELF-COLLECT order only ("Send pickup reminder") —
+// a courier order is told nothing there, because nothing has left yet (v340).
+// The last stage's NAME is the pair Collected / Shipped for both, and that is
+// where the courier gets "Send shipped message", once the courier really has it.
+
 
 // Courier orders also get a "Mailing" pill (first): FROM = the bakery address
 // typed in Settings → Mailing labels, TO = the customer, ORDER = code/date/items.
@@ -3695,7 +3877,7 @@ function openLabelPrint(state, group) {
 // identically, and because the sentence about it has to reach the section's own toast.
 function onCollectedMove(state, group, root, dateId) {
   return (o) => (autoCollect(state, group, o, { root, dateId })
-    ? "The order moved itself to Collected / Shipped — the Undo is on the row."
+    ? "The order moved itself to Collected / Posted — the Undo is on the row."
     : "");
 }
 
@@ -3922,11 +4104,16 @@ function orderGroupRow(state, group, root, dateId) {
     // packed, including for the order still in her hand, with nothing on the row to say
     // where it went.
   } else if (status === "ready") {
-    // How this order leaves decides what she tells the customer: a parcel goes on
-    // its way (with its tracking number), a collect order is ready to fetch.
-    if (courier) {
-      actions.push(shippedMsgButton(state, group, first, root, dateId));
-    } else {
+    // ★★ PACKED SAYS NOTHING TO A COURIER CUSTOMER (v340) — her decision, and her reason is the
+    // whole of it: **at Packed no van has come yet**, so "your order is on its way" is not true,
+    // and a share link handed over before a driver has taken the job only confuses (v338 withholds
+    // it from the tracking card for exactly the same reason). There is nothing to tell a courier
+    // customer at this step, so nothing is offered.
+    //
+    // A self-collect order is the opposite case and keeps its button: the bread really IS ready,
+    // and the pickup reminder is what says so and where to fetch it.
+    if (!courier) {
+
       const pickupBtn = button("Send pickup reminder", () =>
         sendOrderWhatsApp(state, group, { builder: buildPickupReminder, doneMsg: "Pickup reminder drafted — press Send in WhatsApp", root, dateId }),
         "soft small");
@@ -3934,8 +4121,16 @@ function orderGroupRow(state, group, root, dateId) {
       actions.push(pickupBtn);
     }
   } else if (status === "delivered" && courier) {
-    // Already marked Posted: the message is still offered, because she may have
-    // moved the status first and typed the tracking number afterwards.
+    // ★★ THE SHIPPED MESSAGE'S ONE HOME (v340). By the time she marks the order **Collected /
+    // Shipped** the courier has the order in hand, so the message is true and the trip's own share
+    // link is real — the customer's tracking card can carry it too, with nothing to explain away.
+    //
+    // It covers a PARCEL as well, and for the same reason: a consignment number matters once the
+    // parcel is actually posted, not while it is still on her counter.
+    //
+    // Still offered after the status has already moved, because she may well have moved it first
+    // and typed the tracking number afterwards.
+
     actions.push(shippedMsgButton(state, group, first, root, dateId));
   }
   // Money can be recorded at ANY stage from Paid onwards, not only while the order sits on

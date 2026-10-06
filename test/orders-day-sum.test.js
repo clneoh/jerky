@@ -206,6 +206,117 @@ test("the Edit pop-up shows the tracking number and writes a new one back", () =
   assert.equal(st.orders[0].trackingNo, "JT999 888", "and it reaches the order on save");
 });
 
+// ── ★★ v338: the Edit pop-up REMEMBERS the van's day and window ──────────────
+//
+// Her own words: *"and after we fix the courier delivery date and time in +add order or edit order,
+// the card should remember."* The day she typed comes back when she reopens Edit, so she is never
+// asked for it twice.
+
+const whenField = (pop, label) =>
+  all(pop).find((n) => n.attrs && n.attrs["aria-label"] === label);
+
+test("the Edit pop-up remembers the van's day and window, and saves a change back", () => {
+  const st = state();
+  st.orders[0].fulfillment = "courier";
+  st.orders[0].courierDay = "2026-09-11"; // baked Friday 11 Sep, van the next morning
+  st.orders[0].deliveryWindow = "09:00-11:00";
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+
+  buttonByText(root, "Edit")._listeners.click[0]();
+  const pop = layers["popup-layer"];
+  const day = whenField(pop, "The day the courier delivers");
+  const from = whenField(pop, "The delivery window opens");
+  const to = whenField(pop, "The delivery window closes");
+  assert.ok(day, "the pop-up carries the van's day");
+  assert.equal(day.value, "2026-09-11", "opened on the day already saved — this is the 'remember'");
+  assert.equal(from.value, "09:00", "and the window taken apart into its two boxes");
+  assert.equal(to.value, "11:00");
+
+  day.value = "2026-09-12";
+  day._listeners.input[0]();
+  from.value = "10:00";
+  from._listeners.input[0]();
+  to.value = "12:00";
+  to._listeners.input[0]();
+  buttonByText(pop, "Save changes")._listeners.click[0]();
+  assert.equal(st.orders[0].courierDay, "2026-09-12", "the new day reaches the order");
+  assert.equal(st.orders[0].deliveryWindow, "10:00-12:00", "and the new window with it");
+});
+
+test("⚠️ emptying the van's day in the Edit pop-up takes the key back off (v338)", () => {
+  // An empty box DELETES the key rather than parking an empty one — so an order she has cleared is
+  // the same order it was before she ever set a day, and nothing published grows a blank.
+  const st = state();
+  st.orders[0].fulfillment = "courier";
+  st.orders[0].courierDay = "2026-09-11";
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+
+  buttonByText(root, "Edit")._listeners.click[0]();
+  const pop = layers["popup-layer"];
+  const day = whenField(pop, "The day the courier delivers");
+  day.value = "";
+  day._listeners.input[0]();
+  buttonByText(pop, "Save changes")._listeners.click[0]();
+  assert.equal("courierDay" in st.orders[0], false, "the key is gone, not left empty");
+});
+
+test("the Edit pop-up remembers the pickup time, and blanking it clears it (v341)", () => {
+  // Her distinction, in her words: *"for courier lalamove, there is no delivery window open and
+  // delivery window closes promise… Pickup time is something user should specify."* It is remembered
+  // like the day beside it, and it is NOT the window — the two boxes are separate fields.
+  const st = state();
+  st.orders[0].fulfillment = "courier";
+  st.orders[0].pickupTime = "09:00";
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+
+  buttonByText(root, "Edit")._listeners.click[0]();
+  const pop = layers["popup-layer"];
+  const pickup = whenField(pop, "The time the van collects from you");
+  assert.ok(pickup, "the pop-up carries the pickup time");
+  assert.equal(pickup.value, "09:00", "opened on the time already saved");
+
+  pickup.value = "";
+  pickup._listeners.input[0]();
+  buttonByText(pop, "Save changes")._listeners.click[0]();
+  assert.equal("pickupTime" in st.orders[0], false, "blanking it takes the key back off");
+  assert.equal("deliveryWindow" in st.orders[0], false, "and no window was invented from it");
+});
+
+// ── ★★ v340: what Packed offers, and what Collected / Shipped offers ─────────
+//
+// Her decision, and her reasoning: *"for courier order, we take away the SEND SHIPPED MASSAGE. When
+// status change to SHIP/COLLECT — Send ship message button, by that time, courier already collected,
+// lalamove link can be shared, no more confusion."* At Packed nothing has left the kitchen, so there
+// is nothing true to tell a courier customer; a self-collect order is the opposite — the bread really
+// is ready, and the pickup reminder is what says so.
+
+function rowAt(status, fulfillment) {
+  const st = state();
+  st.orders[0].status = status;
+  st.orders[0].fulfillment = fulfillment;
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+  return root;
+}
+const hasButton = (root, text) => !!buttonByText(root, text);
+
+test("⚠️ Packed says nothing to a courier customer, and still tells a collector (v340)", () => {
+  assert.equal(hasButton(rowAt("ready", "courier"), "Send posted message"), false,
+    "nothing has left the kitchen at Packed, so nothing may be claimed");
+  assert.equal(hasButton(rowAt("ready", "collect"), "Send pickup reminder"), true,
+    "a self-collect order really is ready, and keeps its reminder");
+});
+
+test("★ Collected / Posted is where the posted message lives (v340)", () => {
+  assert.equal(hasButton(rowAt("delivered", "courier"), "Send posted message"), true,
+    "the courier has it in hand now, so the message is true and its share link is real");
+  assert.equal(hasButton(rowAt("delivered", "collect"), "Send posted message"), false,
+    "and a collect order is never posted");
+});
+
 // ── v98/v101: Note / tracking / payment — the short way in, without Edit ────
 test("Note / tracking opens just those fields, and save writes them onto the order", () => {
   const st = state();
@@ -219,10 +330,13 @@ test("Note / tracking opens just those fields, and save writes them onto the ord
   assert.match(all(pop).find((n) => String(n.className).includes("popup-title-row")).textContent,
     /^Note \/ tracking \/ courier \/ payment/, "a pop-up of its own, not the whole Edit form (with the order code beside it)");
   const inputs = all(pop).filter((n) => n.tagName === "INPUT");
-  assert.equal(inputs.length, 3, "the note, the number and the courier's charge — nothing else to scroll past");
+  assert.equal(inputs.length, 4,
+    "the note, the number, the van's pickup time and the courier's charge — nothing else to scroll past");
   assert.equal(inputs[0].value, "no nuts", "the note as it stands");
   assert.equal(inputs[1].attrs.placeholder, "e.g. JT123456789", "and the courier's number");
-  assert.equal(inputs[2].attrs.placeholder, "e.g. 8.00", "and what the courier charged");
+  assert.equal(inputs[2].attrs["aria-label"], "The time the van collects from you",
+    "the pickup time (v341) — her ask, and this box is the third door onto the same record");
+  assert.equal(inputs[3].attrs.placeholder, "e.g. 8.00", "and what the courier charged");
   const paidSel = selWith(pop, "TNG transfer");
   assert.ok(paidSel, "with how it was paid");
   assert.deepEqual(paidSel.children.map((o) => o.children[0].text),
@@ -230,10 +344,13 @@ test("Note / tracking opens just those fields, and save writes them onto the ord
 
   inputs[0].value = "extra sauce";
   inputs[1].value = " JT999 888 ";
+  inputs[2].value = "09:00"; // the time the van collects (v341)
   paidSel.value = "cash";
   buttonByText(pop, "Save")._listeners.click[0]();
   assert.equal(st.orders[0].note, "extra sauce", "the note reaches the order");
   assert.equal(st.orders[0].trackingNo, "JT999 888", "and so does the number, trimmed at the ends");
+  assert.equal(st.orders[0].pickupTime, "09:00",
+    "and the pickup time she typed on THIS card — her ask: note/tracking needs it too");
   assert.equal(st.orders[0].paidMethod, "cash", "and how it was paid is recorded for reconciling");
 
   // "Not recorded" is the absent key, not an empty string, so a row that never had

@@ -523,3 +523,88 @@ test("nothing on the courier block prints the literal word null", () => {
   assert.ok(!/\bnull\b/.test(text), `a bare null is on the card: ${text.slice(0, 200)}`);
   assert.ok(!/\bundefined\b/.test(text), "and no undefined either");
 });
+
+// ── ★★ THE VAN'S OWN DAY AND WINDOW (v338) ────────────────────────────────
+//
+// Her words: *"and after we fix the courier delivery date and time in +add order or edit order, the
+// card should remember."* Three boxes live inside the courier half, and they open EMPTY: her rule is
+// that the bake plan is a plan, not a schedule, so nothing here is ever worked out for her.
+
+const whenDay = (root) =>
+  all(root).find((n) => n.attrs && n.attrs["aria-label"] === "The day the courier delivers");
+const whenFrom = (root) =>
+  all(root).find((n) => n.attrs && n.attrs["aria-label"] === "The delivery window opens");
+const whenTo = (root) =>
+  all(root).find((n) => n.attrs && n.attrs["aria-label"] === "The delivery window closes");
+const whenPickup = (root) =>
+  all(root).find((n) => n.attrs && n.attrs["aria-label"] === "The time the van collects from you");
+
+test("⚠️ the van's day and window open EMPTY — nothing is ever worked out (v338)", () => {
+  const st = state();
+  const root = pickProduct(pickCourier(openCard(st)), 1);
+  assert.ok(whenDay(root), "the day box is on the courier half");
+  assert.equal(whenDay(root).value, "", "and it opens empty — never the bake day");
+  assert.equal(whenFrom(root).value, "", "the window opens empty too");
+  assert.equal(whenTo(root).value, "");
+});
+
+test("a day and a window typed on the card land on the order (v338)", () => {
+  const st = state();
+  const root = pickProduct(pickCourier(openCard(st)), 1);
+  type(whenDay(root), "2026-10-08"); // the morning after the bake
+  type(whenFrom(root), "09:00");
+  type(whenTo(root), "11:00");
+  addOrder(root);
+
+  assert.equal(st.orders.length, 1);
+  assert.equal(st.orders[0].courierDay, "2026-10-08", "the van's own day is remembered");
+  assert.equal(st.orders[0].deliveryWindow, "09:00-11:00", "and the window it comes in");
+});
+
+test("a day with no window is a legitimate answer, not a mistake (v338)", () => {
+  const st = state();
+  const root = pickProduct(pickCourier(openCard(st)), 1);
+  type(whenDay(root), "2026-10-08");
+  addOrder(root);
+  assert.equal(st.orders.length, 1, "the order still goes through");
+  assert.equal(st.orders[0].courierDay, "2026-10-08");
+  assert.equal("deliveryWindow" in st.orders[0], false, "and carries no empty window key");
+});
+
+test("★ a pickup time typed on the card lands on the order, and is not a customer promise (v341)", () => {
+  // Her correction: *"Pickup time is something user should specify"* — and a pickup time is when the
+  // van is at HER door, not what the customer is told. So it is stored, and it must NOT quietly
+  // become the window the customer's message and track card would publish.
+  const st = state();
+  const root = pickProduct(pickCourier(openCard(st)), 1);
+  type(whenPickup(root), "09:00");
+  addOrder(root);
+  assert.equal(st.orders[0].pickupTime, "09:00", "the time the van collects is remembered");
+  assert.equal("deliveryWindow" in st.orders[0], false,
+    "and it is NOT turned into a window the customer would be told");
+});
+
+test("⚠️ nothing typed leaves no key at all (v338)", () => {
+  const st = state();
+  const root = pickProduct(pickCourier(openCard(st)), 1);
+  addOrder(root);
+  assert.equal("courierDay" in st.orders[0], false, "no empty day on an order that has none");
+  assert.equal("deliveryWindow" in st.orders[0], false);
+});
+
+test("⚠️ a half-typed window is refused in words and writes nothing (v338)", () => {
+  const st = state();
+  const root = pickProduct(pickCourier(openCard(st)), 1);
+  type(whenDay(root), "2026-10-08");
+  type(whenFrom(root), "09:00"); // an end was never given
+  addOrder(root);
+  assert.equal(st.orders.length, 0, "a half-made promise is not written to an order");
+  assert.ok(/both ends/.test(lastToast()), `the screen says why — read "${lastToast()}"`);
+
+  // …and an end before its start is the other half of the same refusal.
+  type(whenFrom(root), "17:00");
+  type(whenTo(root), "14:00");
+  addOrder(root);
+  assert.equal(st.orders.length, 0, "a promise to arrive before the van left is refused too");
+  assert.ok(/ends before it starts/.test(lastToast()), `read "${lastToast()}"`);
+});

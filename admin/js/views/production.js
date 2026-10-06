@@ -35,7 +35,7 @@ import { renderBoard } from "./scenario.js";
 // with confidence.
 const LINE_FIELDS = [
   { key: "hours", label: "Hours you'll bake for", step: 0.5,
-    hint: "How long you're willing to stand at it on a delivery day." },
+    hint: "How long you're willing to stand at it on a delivery date." },
   { key: "pans", label: "Baking pans you own", step: 1 },
   { key: "prooferPans", label: "Pans your proofer holds at once", step: 1,
     hint: "The ceiling on your day, and it is the one you worked out yourself: a batch is in the cabinet for 81 minutes, so 12 pans means one batch every 40.5 minutes and no faster. Count the shelves honestly — if it holds 18, type 18 and everything below changes." },

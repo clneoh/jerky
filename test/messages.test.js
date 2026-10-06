@@ -79,7 +79,7 @@ test("shipped message says the order is on its way and carries the tracking numb
   assert.equal(built.recipient, "60123456789");
   assert.ok(built.message.includes("is on its way"), "the shipped wording");
   assert.ok(built.message.includes("Order #445566"), "order code in the message");
-  assert.ok(built.message.includes("Delivery: Mon, 7 Sep - Post (nationwide)"), "date + how it left");
+  assert.ok(built.message.includes("Posting day: Mon, 7 Sep - Post (nationwide)"), "the posting day + how it left");
   assert.ok(built.message.includes("Items: Chicken Jerky x2"), "what was sent");
   assert.ok(built.message.includes("Tracking number: JT123456789"), "the number she typed");
   assert.ok(built.message.includes("Track your order: https://bake.app/store/?track=445566"));

@@ -1,8 +1,252 @@
-# Munchies Furkidz — change history (v54 → v336)
+# Munchies Furkidz — change history (v54 → v343)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**06 Oct 2026 — engine v343, A RUN IS ON THE DAY THE VAN COMES (no database step, nothing to upload —
+pushing this one is the whole of it).**
+
+**Your words:** __"the delivery run should not be on delivery date only, for the case of 7th delivery date order
+deliver 8th, his order should be appear only on date 8th. SO after his order, other order not specifing
+specific delivery will be on delivery date 6th"__
+
+**1 · A run's day is the day the VAN comes.** It used to be the delivery date, always — so an order posted on the
+7th with the van typed as the 8th still sat on the **7th's** run, which is the same confusion the last
+three versions have been unpicking everywhere else. **Now it is the day you typed on the order, and the
+order's delivery date only when you have typed none.** Your example, exactly: an order posted the 7th and
+delivered the 8th appears on the **8th's** run and on no other, and an order with nothing typed stays on
+its delivery date.
+
+**2 · A van day that is no delivery date gets a run of its own** — the "not on delivery date only" half. Type a van
+day on a morning you are not baking and it appears in the day list as its own run, with its own stops.
+
+**3 · The run's own field says what it is.** It read __"The delivery date"__; it is now **"The day the van runs"**,
+because it is the one control deciding which day's work you are looking at.
+
+**4 · The Run (N) badge on a delivery date counts the same way**, so a card promising three stops opens a screen
+holding three. Where the van's day is no delivery date there is no badge for it — a van day has no bake-day card
+— but it is still reachable from the run screen's own day list.
+
+**AND YOUR CORRECTION ON v342 IS IN THIS VERSION TOO.**
+
+**Your words:** __"for the v342, you miss underrstood me, what i want is the courier booked details like
+the one we see after pressing GET A DELIVERY PRICE, i shows LALAMOVE is on this order, with check the trip,
+status, bookedz:3:25pm and lalamove link"__
+
+**You were right twice over.** v342 unfolded a summary of the **order** — who it is for, the items, the
+money — which is not what you open a booked row to read. **And the thing you actually wanted was hidden by
+my own caution:** the trip's card lives inside the price section, under a flag I had turned off to be safe,
+so pressing the section's own button drew no trip at all. Two fixes:
+
+- **See this order** is now **See the trip**, and what it unfolds is **the courier's own record of that
+  booking**, saying the courier is on this order, with **Get a delivery price** right there. Open that and
+  the trip's card is waiting — the vehicle, when it was booked, where it has got to, the customer's share
+  link, **Check the trip** and **Cancel trip**.
+- **The order summary is gone**, because it was the wrong thing.
+
+**Nothing on that panel can be edited**, and nothing is asked of the courier until you press — a repaint of
+the screen never spends a quote.
+
+**Your data is untouched.** No SQL, no Edge Function, no upload. The suite is **2,857 tests, all green**,
+with two more rules bitten: key the run by the delivery date again and the day test fails by name; put my
+"safe" flag back and the trip card's guard fails.
+
+**06 Oct 2026 — engine v342, THE RUN'S WARNING OPENS THE ORDER (no database step, nothing to upload —
+pushing this one is the whole of it).**
+
+**Your words:** __"on delivery run, it indicate an order which its lalamove already active, can clicking a
+button inside the red ribbon, drop down its full detail, as what is shown in edit order, get a delivery
+price."__
+
+**Done — and you chose for it to unfold in place, under the row rather than in a pop-up.**
+
+**The button.** A row whose courier trip is already booked wears the warning it always has, and that block
+now carries a second press: **See this order**, beside __"Call off the trip and add to this run"__ rather
+than instead of it. It folds the order out underneath its row; **Hide the order** folds it back.
+
+**What drops down:**
+
+- **who** it is for, and their number;
+- **what** they ordered — each line as it was sold, with the quantity and the price that line went out at;
+- **where** it goes: the address, or the Point it collects from;
+- **when** — the delivery date, the day the van comes, and **your pickup time**, each on its own line;
+- **their note**, when they left one;
+- **what it comes to** — the same rows the Edit card and the invoice show;
+- and at the foot, **Get a delivery price**, which asks the courier what that one order would cost.
+
+**⚠️ Not one figure on it is worked out fresh.** The money is drawn by the same renderer, from the same
+money function, that the Edit card, the Note / tracking card, the invoice and — most importantly — the
+customer's own message and tracking page all read. **A summary written only for this screen would have been
+a second figure, and a second figure is one that can disagree with the message you have already sent.** The
+days use the same wording those messages use, so the delivery date and the van's day are said apart here exactly
+as they are there.
+
+**Nothing on it can be edited.** This is the screen you work on while a van is out, and every control that
+changes an order already lives in one place — the Edit card this panel deliberately mirrors.
+
+**Your data is untouched.** No SQL, no Edge Function, no upload. The suite is **2,854 tests, all green**,
+and the two rules that protect it were bitten: move the detail inside the row and it fails naming the trap;
+let its open state live in the drawing rather than beside it, and it fails too.
+
+**06 Oct 2026 — engine v341, A PICKUP TIME IS NOT A PROMISE (no database step, nothing to upload —
+pushing this one is the whole of it).**
+
+**Your words:** __"for courier lalamove, there is no delivery window open and delivery window closes
+promise, it is more for self collection point, and for delivery run that courier have to go many stop, and
+delivery time have to be a window reasonably. Pickup time is something user should specify."__
+
+**You are right, and this corrects what I built this morning.** A single van delivery is not promised to a
+customer as a window. A window is the right promise only where a van has **many stops** (the run) or where
+a **Point's own hours** are the promise — and both of those already exist. What you fix on a courier order
+is the **pickup time**: when the van collects from you.
+
+**So the courier half of the card now asks both, and they are kept apart:**
+
+- **Pickup time** — new. The time the van collects from **you**. It fills in the **Delivery run's** own
+  "the day and time the driver collects", so that screen no longer opens on a time the app thought of.
+- **Delivery window (opens / closes)** — kept, and now plainly the **customer's** promise. It is set for
+  one of two reasons: a **run with several stops** needs one, or **the customer themselves has told you
+  the hours they are available** — __"from 2 to 5"__, say. Left blank, the message promises to confirm the
+  time.
+
+**The pickup time never reaches a customer.** A van collected from your kitchen at nine is at the
+customer's door later than nine, so nine is not theirs to be told. It is stored on the order, remembered,
+and used by the run — deliberately not published in the confirmation, in the messages or on the tracking
+card. A test pins exactly that, and it was bitten: let it leak and the test fails showing the customer
+being told `, 09:00`.
+
+**All three doors to a courier order ask it** — **＋ New order**, **Edit**, and **Note / tracking** — so
+whichever one you open, the same question is there and the same answer comes back.
+
+**Your data is untouched.** No SQL, no Edge Function, no upload. The suite is **2,851 tests, all green**.
+
+**06 Oct 2026 — engine v340, A COURIER ORDER IS TOLD NOTHING AT PACKED (no database step, nothing to
+upload — pushing this one is the whole of it).**
+
+**Your words:** __"to make it simpler, can we do like this, when status changed to PACKED … 2. for
+courier order, we take away the SEND SHIPPED MASSAGE. When status change to SHIP/COLLECT — Send ship
+message button, by that time, courier already collected, lalamove link can be shared, no more
+confusion."__
+
+**Done — and it removes a message that was saying something untrue.** At **Packed** nothing has left your
+kitchen, yet the row offered a courier customer **"Send shipped message"**: __"your order is on its way"__,
+with a share link, before any driver had taken the job. That is the same confusion the tracking card was
+fixed for in v338.
+
+**Packed now offers:**
+
+- **self collect** — **Send pickup reminder**, unchanged. The treats really are ready, and this is what
+  says so and where to fetch it.
+- **courier** — **nothing at all.** There is nothing true to tell them yet.
+
+**Collected / Shipped is where the shipped message lives now** — the one place it is offered, for a van
+order and a posted parcel alike. By the time you mark it there the courier has the order in hand: the
+message is true, its Lalamove link works, and the customer's own tracking page shows that link too.
+
+**Your data is untouched and no screen moved.** No SQL, no Edge Function, no upload. The suite is
+**2,846 tests, all green**, and the new rule was bitten — put the button back at Packed and it fails by
+name.
+
+**06 Oct 2026 — engine v339, DELIVERY DATES MOVES TO THE SHOP (no database step, nothing to upload — pushing
+this one is the whole of it).**
+
+**Your words:** __"i think the delivery dates should not be at logistic, it should be in the Shop."__
+
+**You are right, and the reason is worth writing down.** **Logistic** is the list of ways an order LEAVES
+your kitchen. A delivery date is not a journey — it is **the day the shop is open**: the day the storefront's
+own calendar offers a customer, and the only days it will take an order for. So **📅 Delivery dates** now sits
+under **The shop**, at the top of the group, because which days you are open comes before what you are
+advertising.
+
+**Logistic** keeps the four that belong to it: Delivery run, Send a van, Self collection Points, Parcel
+couriers.
+
+**Nothing else moved, and no address changed** — every bookmark, `#/deliveries` included, still opens the
+same screen. The suite is **2,844 tests, all green**, and the guard that catches a screen going missing in
+a regroup was bitten: take the row out and it fails, naming the screen that can no longer be reached.
+
+**06 Oct 2026 — engine v338, THE VAN GETS ITS OWN DAY AND TIME (no database step, nothing to upload —
+pushing this one is the whole of it).**
+
+**Your words:** __"and after we fix the courier delivery date and time in +add order or edit order, the
+card should remember"__ — and, about the tracking page: __"the lalamove link should not be there because
+the driver might not be confirming, it only create more confusion if they were to click the link.
+Lalamove link and Delivery: Finding a driver, should not be send at this stage."__
+
+**This finishes the job that began with your customer asking whether his delivery was Wednesday or
+Thursday.**
+
+**1 · The order now carries the van's own day and time, typed by you.** **＋ New order** and **Edit**
+each gain three boxes in the courier half: **Courier delivery date**, and a **delivery window**
+(opens / closes). **They always open EMPTY.** Nothing is ever worked out from the delivery date — the bake
+plan is a plan and not a schedule, as you told me in September.
+
+**2 · And they are remembered.** ⚠️ **This is the half that was missing.** Until now an order had
+nowhere to write the day the van comes, so the app assumed the delivery date. The day and the window are now
+stored on the order itself, and reopening **Edit** brings both back exactly as you left them. Blanking a
+box takes it back off the order rather than leaving an empty word behind.
+
+**3 · The customer's tracking card stops gluing the van's window to the delivery date.** For your case —
+posted Wednesday, van Thursday morning — it used to read `Wed, 7 Oct … 9-11 am`, **a time on a day the van
+does not come.** It now names both days and puts the window with the van's own day; the message line is
+also called **delivery** rather than "pickup window", which is what your run screen has always called
+that value. **An order with no van day on it reads exactly as it always has**, so nothing already in your
+records changed.
+
+**4 · The Lalamove link and "Finding a driver" are not sent at that stage any more.** ⚠️ **Your words,
+and you were right** — a link the driver may never take up only creates confusion. While a booked van is
+still **finding a driver**, the customer's card now says nothing about the trip at all: no link, no
+status. From the moment a driver is on the way, both appear as before. ⛔ **Nothing is thrown away:** the
+order keeps its link and its status, your own screens are unchanged, and only the sending stops. A parcel
+is untouched — its consignment number is exactly what a customer needs.
+
+**5 · The Delivery run no longer hands you the delivery date.** Opening a run used to fill the **"day the
+driver collects"** box in for you with the delivery date — so for Mr Tan's Thursday van it read **Wednesday**,
+written in as though you had chosen it, and that is the day that would have been booked. It now comes
+from **the day you already typed on the order**, and is empty when you have not typed one. The price box
+inside an order does the same.
+
+⚠️ **One thing deliberately left alone:** the run's **time** box still opens on your own dispatch time
+from Settings. That time is **when the van collects from you**; the time on the order is **when the treats
+reaches the customer** — different by the length of the journey — so seeding one from the other would
+send the van to your kitchen before the treats had left it. If you would rather it opened empty each time,
+that is a one-line change.
+
+**Your data is untouched.** No SQL, no new column, no upload: the day and window ride on the order, and
+the customer's card carries them inside the text it already publishes. The suite is **2,843 tests, all
+green**, and three of the new assertions were bitten — put the old behaviour back and they fail by name.
+
+**06 Oct 2026 — engine v337, THE MESSAGE NO LONGER CALLS THE DAY ONE THING AND MEANS ANOTHER (no
+database step, nothing to upload — pushing this one is the whole of it).**
+
+**This version is one repair and one guard. The repair is the one that reached a real customer.**
+
+**1 · The confirmation message called the delivery date a delivery.** You asked which day a courier
+order is on, and the answer is: **the day it is made and posted** — the van goes whenever you book it,
+which may be the next morning. So a van booked for **Thursday morning** was announced in the message
+as __Delivery: Wed, 7 Oct__ — and that is why a customer had to ask you whether it was the Wednesday
+or the Thursday. **The message now says the two apart:**
+
+- a **posted** order reads __Posting day: Wed, 7 Oct - Post (nationwide)__, and on its own line __Your
+  courier delivery time will be confirmed separately__ — because at that moment the app does not know
+  the van's window yet, and it was stating one anyway;
+- once you **have** booked the van, its window goes on **its own line** — never glued to the day it
+  was posted;
+- a **collection** order is unchanged (__Delivery: Wed, 7 Oct__), because your kitchen or a Point is
+  genuinely where and when it changes hands.
+
+**2 · The app's own day keeps its own name.** The bakery renamed its day to "bake day" in this version.
+**This app did not follow that** — your admin still calls it a **delivery date**, which is the word
+you have used here all along, and the storefront still calls it a **posting day**. Nothing about the
+screens changed for you.
+
+**3 · ⚠️ And a guard that finds a signpost pointing at a screen that no longer exists.** When a screen
+is renamed, any sentence that names it becomes a dead end — and it was found by *building the guard*,
+not by looking. The new `test/screen-names.test.js` reads every **"More → X"** in the app and checks
+it against the names that really exist, taken from the app's own route table and menu. It caught
+several stale signposts in this app's own Guide the first time it ran, and they were fixed rather than
+the guard being loosened.
 
 **06 Oct 2026 — engine v336, YOUR OWN REWARD COUPON NOW COMES OFF YOUR ORDER (no database step,
 nothing to upload — pushing this one is the whole of it).**

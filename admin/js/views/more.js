@@ -28,7 +28,10 @@ const MENU_GROUPS = [
   // Four screens that were at rows 7-10, mixed in among the money screens.
   ["Logistic", [
     ["#/run", "🚚 Delivery run", "Several orders, one trip — and what it saves"],
-    ["#/deliveries", "📅 Delivery dates", "Which days you post, and who is on each"],
+    // ⚠️ **DELIVERY DATES MOVED TO "The shop" (v339), on her word:** *"i think the bake days should not
+    // be at logistic, it should be in the Shop."* She is right, and the reason is worth keeping: which
+    // days you post is not a way an order LEAVES the kitchen — it is the day the shop OFFERS, the one a
+    // customer picks on the storefront's calendar. Logistic keeps the four ways an order leaves.
     // ⚠️ **"SEND A VAN", NOT "LALAMOVE" (v315).** ⚠️ AND NOT "COURIER" EITHER —
     // **📦 Parcel couriers** is the row directly above and means the parcels she
     // POSTS. v309 gave the two kinds her own words, and the order cards say them:
@@ -59,6 +62,12 @@ const MENU_GROUPS = [
     ["#/scenario", "🧱 Scenario planner", "Build the line from modules, and climb to the day you want"],
   ]],
   ["The shop", [
+    // ★ **DELIVERY DATES, FIRST (v339).** Her word: *"i think the bake days should not be at logistic, it
+    // should be in the Shop."* It belongs here because the days you post are something the CUSTOMER meets —
+    // the storefront's own calendar offers those days and only those — while Logistic is the four ways
+    // an order leaves the kitchen. It leads the group because which days the shop is open comes before
+    // what it is advertising.
+    ["#/deliveries", "📅 Delivery dates", "Which days you post, and who is on each"],
     ["#/promo", "🎟 Promo codes", "Codes your customers type in the shop"],
     // ⚠️ MOVED OUT OF SETTINGS IN v314. It is a customer offer, not a default,
     // so it lives with the two it belongs beside. Her words: "can be brought to

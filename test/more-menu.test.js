@@ -190,15 +190,27 @@ test("the headings are her words, in the order she reads them", () => {
   ]);
 });
 
-test("'Logistic' is her own word for the delivery set, and carries all five", () => {
+test("'Logistic' is her own word for the delivery set, and carries all four", () => {
   // ⚠️ **"SEND A VAN", AND THE TWO KINDS ARE SAID APART (v309, v315).** The van row
   // sits directly above **Parcel couriers**, and those two must never blur: a parcel
   // is something she POSTS, a van is a trip she BOOKS. v309 gave the two kinds her own
   // words and the order cards say them.
   const logistic = groupsOf(drawMore()).find((g) => g.name === "Logistic");
   assert.deepEqual(logistic.hrefs,
-    ["#/run", "#/deliveries", "#/send-van", "#/points", "#/parcel-couriers"],
+    ["#/run", "#/send-van", "#/points", "#/parcel-couriers"],
     "an order leaving the kitchen is one job — every way it leaves is under Logistic");
+});
+
+test("★ Bake days sits under 'The shop', where the customer meets it (v339)", () => {
+  // Her word: *"i think the bake days should not be at logistic, it should be in the Shop."* And the
+  // reason it is right is worth keeping: a bake day is the day the SHOP offers — the storefront's own
+  // calendar offers those days and only those — while Logistic is the four ways an order LEAVES the
+  // kitchen. Before v339 the row sat under Logistic, which is a list of journeys, not of opening days.
+  const shop = groupsOf(drawMore()).find((g) => g.name === "The shop");
+  assert.equal(shop.hrefs[0], "#/deliveries",
+    "and it leads the group: which days you are open comes before what you are advertising");
+  const logistic = groupsOf(drawMore()).find((g) => g.name === "Logistic");
+  assert.equal(logistic.hrefs.includes("#/deliveries"), false, "and it is no longer under Logistic");
 });
 
 test("the three she named sit together, under the name of the screen they belong to", () => {

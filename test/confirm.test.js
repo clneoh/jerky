@@ -135,8 +135,14 @@ test("a courier order at this stage is unchanged — its van is booked later (v3
     fulfillment: "courier", whatsapp: "+60 12-345 6789", customerName: "Bala",
     address: "9 Jalan B", productId: "p1", qty: 1 }] };
   const built = buildConfirmation(state(), group, "");
-  const line = built.message.split("\n").find((l) => l.startsWith("Delivery:"));
-  assert.ok(line.includes("Delivery: Mon, 7 Sep - Post (nationwide)"), `read "${line}"`);
+  // ⚠️ AND IT IS LABELLED THE POSTING DAY (v337), not a delivery: a courier order is made on this
+  // day and delivered when the van goes, which may be the next morning. Her report — a Wednesday
+  // make with a Thursday-morning van "asking whether the delivery date is wed or thurday".
+  const line = built.message.split("\n").find((l) => l.startsWith("Posting day:"));
+  assert.ok(line.includes("Posting day: Mon, 7 Sep - Post (nationwide)"), `read "${line}"`);
   assert.ok(!/collect \d|\d\s*-\s*\d+\s*(am|pm)/.test(line),
     "no time invented for a van that has not been booked — the window is stamped at booking");
+  // AND THE TIME IS PROMISED RATHER THAN LEFT UNSAID: the van is booked later, so the app says so.
+  assert.ok(built.message.includes("Your courier delivery time will be confirmed separately."),
+    "the customer is told the van's time is still to come");
 });

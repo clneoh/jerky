@@ -9,7 +9,7 @@ import { dayListLabel, dayName, deliveryStatus, generateUpcomingDates, longDate,
 import { effectiveCapacity, totalUnitsOnDate } from "../bom.js";
 import { el, button, confirmDialog, showPopup, toast } from "../ui.js";
 import { groupOrders, newId, save } from "../state.js";
-import { needsVan, stopKeyOf } from "../courier_job.js";
+import { needsVan, runDayOf, stopKeyOf } from "../courier_job.js";
 import { maybeSync, maybeSyncStorefront } from "../supabase.js";
 import {
   DOW, OCC_COLOURS, addMonth, monthLabel, monthWeeks,
@@ -167,7 +167,7 @@ function buildAddCard(state) {
       el("div", { class: "btn-row", style: "margin-top:8px" },
         button("Generate the next dates", () => generateDates(state), "ghost")),
       el("p", { class: "card-sub", style: "margin:6px 0 0" },
-        `Generate adds the next dates that follow your delivery days${dayListLabel(state.settings.deliveryDays) ? ` — ${dayListLabel(state.settings.deliveryDays)}` : ""}.`)));
+        `Generate adds the next dates that follow your delivery dates${dayListLabel(state.settings.deliveryDays) ? ` — ${dayListLabel(state.settings.deliveryDays)}` : ""}.`)));
 }
 
 // ── add-dates grid (mode 1) ───────────────────────────────────────────────
@@ -810,8 +810,14 @@ function dateCard(state, date) {
         // lands on "Nothing to run yet" is a dead control, which this app treats as a bug.
         // The button is a sibling of the pressable column, never inside it, so pressing it
         // books a run rather than opening the day's orders.
-        courierOn(state, date.id)
-          ? button(`Run (${courierOn(state, date.id)})`, () => navigate(`#/run?date=${date.id}`), "soft small")
+        // ⚠️ **THE DAY, NOT THE RECORD'S ID (v343).** A run is now on the day the VAN RUNS — the day she
+        // typed on an order, or that order's delivery date — so this counts and hands over the DATE, exactly as
+        // the run screen keys its days. ⚠️ **A van day that is no delivery date has no card on this screen, so
+        // it is reachable only from the run screen's own day list** — which is where she is working
+        // anyway. Counting the delivery date here would put a number on this card that the run it opens does
+        // not match, which is the fault this button's own comment already warns about.
+        courierOn(state, date.date)
+          ? button(`Run (${courierOn(state, date.date)})`, () => navigate(`#/run?date=${date.date}`), "soft small")
           : null,
         button("Del", () => deleteDate(state, date), "ghost small"))));
 }
@@ -826,13 +832,17 @@ function dateCard(state, date) {
 //
 // A Point CARRIES several customers' orders and is ONE stop, so this counts distinct stop
 // keys rather than groups — the badge is counting doorsteps, not people and not order lines.
-function courierOn(state, dateId) {
-  const want = String(dateId || "");
+//
+// ⚠️ AND IT COUNTS THE DAY THE **VAN RUNS** (v343), through the run's own `runDayOf`, never by
+// `deliveryDateId` — which is the second half of the same lesson: this badge and the run screen must read
+// one rule, or a card promising "Run (3)" opens a screen holding two stops.
+function courierOn(state, wantDay) {
+  const want = String(wantDay || "");
   const stops = new Set();
   for (const g of groupOrders(state.orders || [])) {
     const first = g.orders[0];
     if (!needsVan(state, first)) continue;
-    if (String(first.deliveryDateId || "") !== want) continue;
+    if (runDayOf(state, first) !== want) continue;
     stops.add(stopKeyOf(state, g));
   }
   return stops.size;

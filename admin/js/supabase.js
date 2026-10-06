@@ -26,7 +26,7 @@ import { usageByCode } from "./promo-usage.js";
 // registry here would close a loop between the two. Everything published about a trip
 // is therefore already ON the record — its courier's name, its phase and its driver are
 // written there when the trip is booked or checked, and this only carries them across.
-import { jobOf, promisedWindowSuffix } from "./courier_job.js";
+import { jobOf, promisedWindowSuffix, courierDeliveryText } from "./courier_job.js";
 // The parcel record (v226) — the second KIND of courier. See js/parcel.js.
 import { parcelOf, parcelHanded } from "./parcel.js";
 // The shop's own payload is untrusted input, so the one rule about what a place
@@ -531,7 +531,7 @@ export async function refreshStorefront(state) {
     if (typeof remote.facebook === "string") sf.facebook = remote.facebook;
     if (typeof remote.tngQr === "string") sf.tngQr = remote.tngQr;
     // The developer credit follows the same rule: the published values win, so
-    // the More → About ✉ row and the footers match what customers see.
+    // the More → Settings & this app ✉ rows and the footers match what customers see.
     let dev = state.settings.developer;
     if (!dev || typeof dev !== "object") dev = state.settings.developer = { name: "", emails: [], whatsapp: "" };
     if (typeof remote.developerName === "string" && remote.developerName.trim()) {
@@ -635,13 +635,39 @@ export function trackingSnapshot(state, group) {
   // trip WINS when there is one: a real vehicle the customer is being shown must never
   // be contradicted by an older record (see views/orders.js for the same rule).
   const parcel = (first.fulfillment === "courier" && !trip) ? parcelOf(first) : null;
+
+  // ★★ A TRIP THAT IS STILL LOOKING FOR A DRIVER TELLS THE CUSTOMER NOTHING (v338).
+  //
+  // Her words: *"the lalamove link should not be there because the driver might not be confirming, it
+  // only create more confusion if they were to click the link. Lalamove link and Delivery: Finding a
+  // driver, should not be send at this stage."*
+  //
+  // A booking lands in the courier's own "assigning a driver" status at once, which is the phase this
+  // app calls `finding` — so the card said "Delivery: Finding a driver" and offered a live link the
+  // moment she booked, before any driver had taken the job, and a link that leads somewhere the
+  // customer cannot use. **Nothing is thrown away:** the order keeps its phase and its link, her own
+  // screens read them exactly as before, and only the sending stops. A PARCEL is untouched — it has no
+  // trip, and a carrier's own number is precisely what a customer needs.
+  const searching = !!(trip && String(trip.phase || "").trim() === "finding");
+
+  // The day and the window, in one clause. A courier order is promised the VAN's own day and window
+  // (v338); everything else keeps exactly the promise it had. Built here rather than inline so the
+  // comma cannot end up doubled or missing — the customer's card prints this string verbatim.
+  const courierWhen = courier ? courierDeliveryText(first) : "";
+  const whenText = courier
+    ? (courierWhen ? `, ${courierWhen}` : "")
+    : promisedWindowSuffix(state, first);
   return {
     code: orderCode(first),
     status: first.status || "new",
     // The courier's tracking number, as you typed it on the order. Null when there
     // is none (a collect order, or one not posted yet) — the customer's card
     // leaves the line out entirely rather than printing an empty label.
-    tracking_no: (courier && String(first.trackingNo || "").trim()) || null,
+    //
+    // ⚠️ Withheld while the trip is still LOOKING FOR A DRIVER (v338): on a booked trip this field
+    // carries the courier's own share link, and a customer handed a live link before a driver has
+    // taken the job can only be confused by it. You keep it on your screen; they do not get it yet.
+    tracking_no: (courier && !searching && String(first.trackingNo || "").trim()) || null,
     // The courier's charge, when the customer bears it. Null when they don't — you
     // pay it, or there is no charge — and the card leaves the line out rather than
     // printing an empty label. NOTE: this column needs supabase/courier_fee.sql run
@@ -698,7 +724,10 @@ export function trackingSnapshot(state, group) {
     // counter is not with the carrier yet, and a phase published before the fact would
     // tell the customer something that has not happened. No hand-over, no phase — the
     // card then leaves its line off, exactly as it does for a trip that has said nothing.
-    courier_phase: (trip && String(trip.phase || "").trim())
+    // ⚠️ And the phase itself is withheld while the trip is still finding a driver (v338) — "Delivery:
+    // Finding a driver" is a status about a job nobody has taken, and it reads to a customer as though
+    // something were already happening. From the moment a driver is on the way, it publishes as before.
+    courier_phase: (!searching && trip && String(trip.phase || "").trim())
       || (parcel && parcelHanded(first) ? "collected" : null) || null,
     courier_driver: (driver && String(driver.name || "").trim()) || null,
     courier_plate: (driver && String(driver.plate || "").trim()) || null,
@@ -714,7 +743,14 @@ export function trackingSnapshot(state, group) {
     // a box she is still looking at can never reach a customer — and for an order being
     // collected at a Point (v304) it names the POINT's own collection hours rather than the
     // van's arrival window, which is when the bread gets there and is not the customer's.
-    delivery: `${date ? shortDate(date) : ""} · ${fulfillment}${address}${promisedWindowSuffix(state, first)}`,
+    //
+    // ⚠️ **A COURIER ORDER CARRIES THE VAN'S OWN DAY HERE (v338), and that is what fixes the last
+    // of this week's bug.** Until now this string glued the van's window to the BAKE day — so a card
+    // for an order baked Wednesday and delivered Thursday morning read "Wed, 7 Oct … 9-11 am", which
+    // is a time on a day the van never comes. `courierDeliveryText` words the van's day and window
+    // together, or the window alone when no day has been typed — **byte-for-byte what this line
+    // produced before, so every order that carries no courier day is untouched.**
+    delivery: `${date ? shortDate(date) : ""} · ${fulfillment}${address}${whenText}`,
     items,
     total,
     customer: String(first.customerName || ""),

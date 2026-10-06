@@ -3,8 +3,8 @@
 // A mark is just data (state.occasions; the pure helpers that read it live in
 // calendar.js). This is the one place that turns it into the two shapes the
 // stylesheet knows, so a holiday reads the same on EVERY calendar that shows a
-// month: More → Delivery Dates, the Orders screen (and the Edit-order pop-up's
-// delivery-day picker), a product's Availability card, and every free date
+// month: More → Delivery dates, the Orders screen (and the Edit-order pop-up's
+// bake-day picker), a product's Availability card, and every free date
 // field. Before this module only the first of those drew marks at all.
 //
 // It also NAMES a marked day, on her request: a tap says what the day is in a

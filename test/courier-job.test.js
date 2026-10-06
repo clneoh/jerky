@@ -30,6 +30,7 @@ const {
   orderDay, fmtQuote, fmtQuoteLeft, quoteExpired,
   isLink, trackingLine, jobOf, liveJobOf, liveJobProblem, fmtStamp, fmtAgo,
   freeCancelOf, freeCancelLine, needsVan, stopKeyOf, promisedWindowSuffix, windowSuffix,
+  courierDeliveryText, courierDayOf, pickupTimeOf,
 } = await import("../admin/js/courier_job.js");
 const { setPickupPlace, setDropPlace } = await import("../admin/js/courier_place.js");
 
@@ -715,4 +716,106 @@ test("every other order is promised the trip's window, exactly as it always was 
   // And a Point she has since deleted leaves the order with no hours rather than an error.
   assert.equal(promisedWindowSuffix(st, { fulfillment: "collect", pointId: "pt_gone" }), "");
   assert.equal(promisedWindowSuffix(st, null), "");
+});
+
+// ── ★★ THE VAN'S OWN DAY (v338) ──────────────────────────────────────────────
+//
+// Until this version an order had nowhere to record the day the VAN comes, so every promise to a
+// customer glued the van's window onto the BAKE day. Her customer's own case: *"our bake day is
+// Wednesday 7th Oct, customer want a lalamove delivery of Thursday morning 9am… the customer was
+// confused, then asking whether the delivery date is wed or thurday."* `courierDay` is the order's own
+// answer, typed by hand on the order card — never worked out.
+
+test("the van's day and its window are said together (v338)", () => {
+  const order = { fulfillment: "courier", courierDay: "2026-10-08", deliveryWindow: "09:00-11:00" };
+  assert.equal(courierDeliveryText(order), "Thu, 8 Oct, 9-11 am",
+    "the day the van comes, then the window it comes in — one promise, one line");
+});
+
+test("a day with no window still names the day (v338)", () => {
+  assert.equal(courierDeliveryText({ fulfillment: "courier", courierDay: "2026-10-08" }), "Thu, 8 Oct",
+    "more than the app could say before this version, when it knew only the window");
+});
+
+test("⚠️ no day leaves the text byte-for-byte what it always was (v338)", () => {
+  // The window alone, exactly as v191 wrote it. This is why every order already in her records reads
+  // unchanged, and why the existing card and message tests still pass untouched.
+  assert.equal(courierDeliveryText({ fulfillment: "courier", deliveryWindow: "14:00-17:00" }), "2-5 pm");
+  assert.equal(courierDeliveryText({ fulfillment: "courier" }), "");
+  assert.equal(courierDeliveryText(null), "");
+});
+
+test("⚠️ a window that could not be typed is never published, day or no day (v338)", () => {
+  // windowSuffix is the PUBLISHING gate and answers "" for an end before its start. The day must not
+  // smuggle a broken promise out beside it.
+  assert.equal(
+    courierDeliveryText({ fulfillment: "courier", courierDay: "2026-10-08", deliveryWindow: "17:00-09:00" }),
+    "Thu, 8 Oct");
+});
+
+test("⚠️ a POINT's hours are not the van's day, even on an order carrying one (v338)", () => {
+  // The new day is when the VAN comes, and a Point order has no van reaching the customer at all.
+  // `promisedWindowSuffix` owns that answer, and it still wins.
+  const st = pointState([POINT_WITH_HOURS]);
+  const onARun = { fulfillment: "collect", pointId: "pt_farlim", courierDay: "2026-10-08" };
+  assert.equal(promisedWindowSuffix(st, onARun), ", collect 2-6 pm");
+});
+
+test("courierDayOf reads a saved order AND a card's own draft (v338)", () => {
+  // A saved order carries it flat; the ＋ New order card holds it in `courierWhen` until it is saved.
+  // ONE reader for both shapes, because the price section is handed one or the other depending on the
+  // card it stands in — three call sites deciding for themselves is how two boxes come to disagree.
+  assert.equal(courierDayOf({ courierDay: "2026-10-08" }), "2026-10-08");
+  assert.equal(courierDayOf({ courierWhen: { day: "2026-10-08" } }), "2026-10-08");
+  assert.equal(courierDayOf({}), "");
+  assert.equal(courierDayOf(null), "");
+  assert.equal(courierDayOf({ courierDay: "   " }), "", "whitespace is not a day");
+});
+
+test("⚠️ NOTHING is ever worked out from the bake day (v338)", () => {
+  // THE TRAP THIS VERSION EXISTS TO CLOSE. An order with a bake day and no courier day must NOT be
+  // handed one — her rule: *"bake plan is just a plan… it is good not to tie our own hand down."*
+  const bakeOnly = { fulfillment: "courier", deliveryDateId: "d1", deliveryDate: "2026-10-07" };
+  assert.equal(courierDayOf(bakeOnly), "", "the bake day is not the van's day");
+  assert.equal(courierDeliveryText(bakeOnly), "", "and it may not be published as one");
+});
+
+// ── ★★ THE PICKUP TIME, AND WHAT IT IS NOT (v341) ────────────────────────────
+//
+// Her correction: *"for courier lalamove, there is no delivery window open and delivery window closes
+// promise… Pickup time is something user should specify."* A pickup time is when the van is at HER
+// door. A delivery window is what a CUSTOMER is promised. **The two are different facts and must never
+// become one field** — that is the whole of this version.
+
+test("pickupTimeOf reads a saved order AND a card's own draft (v341)", () => {
+  assert.equal(pickupTimeOf({ pickupTime: "09:00" }), "09:00");
+  assert.equal(pickupTimeOf({ courierWhen: { pickup: "08:30" } }), "08:30");
+  assert.equal(pickupTimeOf({ pickupTime: "   " }), "", "whitespace is not a time");
+  assert.equal(pickupTimeOf({}), "");
+  assert.equal(pickupTimeOf(null), "");
+});
+
+test("⚠️ A PICKUP TIME IS NEVER PUBLISHED AS THE CUSTOMER'S PROMISE (v341)", () => {
+  // The whole point of her correction. A van collecting from her kitchen at nine is at the CUSTOMER's
+  // door later than nine, so nine is not theirs to be told. Everything a customer reads passes through
+  // promisedWindowSuffix (which reads the window, never this), so this value must not reach any of it.
+  const st = emptyState();
+  const withPickup = { fulfillment: "courier", pickupTime: "09:00", courierDay: "2026-10-08" };
+
+  assert.equal(promisedWindowSuffix(st, withPickup), "",
+    "no window was promised, so nothing is — a pickup time is not a stand-in for one");
+  assert.equal(windowSuffix(withPickup), "", "and the window suffix itself never sees it");
+  assert.equal(courierDeliveryText(withPickup), "Thu, 8 Oct",
+    "the day is named, and no time is glued to it");
+});
+
+test("a pickup time does not disturb the window when there IS one (v341)", () => {
+  // A run with several stops still promises its window, and a pickup time riding on the same order
+  // must leave that promise exactly as it was.
+  const st = emptyState();
+  const both = {
+    fulfillment: "courier", pickupTime: "09:00", courierDay: "2026-10-08", deliveryWindow: "14:00-17:00",
+  };
+  assert.equal(promisedWindowSuffix(st, both), ", 2-5 pm", "the customer's window is unchanged");
+  assert.equal(courierDeliveryText(both), "Thu, 8 Oct, 2-5 pm", "and it rides with the van's day");
 });

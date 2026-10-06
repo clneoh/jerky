@@ -9,7 +9,7 @@
 // opened from. Expanding under the control also reads better on a phone.
 //
 // Built on the pure grid helpers in calendar.js and painted with the same
-// .cal-* rules the More → Delivery Dates screen already uses, so a day looks the
+// .cal-* rules the More → Delivery dates screen already uses, so a day looks the
 // same wherever the baker meets it.
 
 import { el, button } from "./ui.js";

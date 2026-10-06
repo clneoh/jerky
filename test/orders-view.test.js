@@ -130,7 +130,7 @@ test("its title opens and shuts it, and the caret follows", () => {
 test("opened, it reads the day on one line, then the items, then the customer", () => {
   const { root } = build();
   const body = byClass(root, "fold-body");
-  const dayIdx = body.children.findIndex((n) => labelOf(n) === "Delivery day");
+  const dayIdx = body.children.findIndex((n) => labelOf(n) === "Delivery date");
   const itemsIdx = body.children.findIndex((n) => labelOf(n) === "Items");
   const customerIdx = body.children.findIndex((n) => labelOf(n) === "Customer");
   const addIdx = body.children.findIndex((n) => String(n.className).includes("block"));
@@ -243,7 +243,7 @@ test("the last stage wears one label — Collected / Posted — on every order",
   assert.ok(!opts.includes("Shipped"), "nor a bare Shipped on its own");
 });
 
-test("every order offers Note / tracking beside Edit, and the message for how it leaves", () => {
+test("every order offers Note / tracking beside Edit, and Packed speaks only to a collector (v340)", () => {
   const root = createEl("div");
   renderOrders(root, { ...STATE, orders: [{
     id: "o1", deliveryDateId: "d7", productId: "p1", qty: 1, customerName: "Ain",
@@ -253,7 +253,12 @@ test("every order offers Note / tracking beside Edit, and the message for how it
   assert.ok(labels.includes("Note / tracking"),
     "the two fields she reaches for most have their own way in, without the whole Edit form");
   assert.ok(labels.includes("Edit"), "Edit stays for everything else");
-  assert.ok(labels.includes("Send posted message"), "and the message that carries the number");
+  // ⚠️ CHANGED WITH THE RULE, NOT DROPPED (v340). This used to assert that a PACKED courier order
+  // offers "Send posted message". Her decision: it no longer does — nothing has left the kitchen at
+  // Packed, so "your order is on its way" would be untrue and its share link premature. The button
+  // belongs to Collected / Posted now, and that is pinned in orders-day-sum.test.js.
+  assert.ok(!labels.includes("Send posted message"),
+    "a packed courier order is told nothing, because nothing has left yet");
 
   const collect = createEl("div");
   renderOrders(collect, { ...STATE, orders: [{

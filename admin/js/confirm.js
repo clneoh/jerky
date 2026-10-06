@@ -17,7 +17,7 @@ import { byId, orderCode, orderLineName, waNumber } from "./state.js";
 import { shortDate } from "./dates.js";
 import { customerTotal, moneyLines } from "./courier.js";
 import { fulfillmentText, pointAddressFor } from "./points.js";
-import { promisedWindowSuffix } from "./courier_job.js";
+import { dayLine, vanLine } from "./courier_job.js";
 // The one place the opening line is worded, so the confirmation cannot lean over
 // while the three later messages do not (2 Oct 2026).
 import { greeting } from "./messages.js";
@@ -51,8 +51,12 @@ export function buildConfirmation(state, group, trackUrl) {
   // The day, and the promise that comes with it (v304): a collection at a Point carries the
   // place's own collection hours. A courier order has no window yet at this stage - the van is
   // booked later - so this changes nothing for one and the customer is told when to come.
+  // ⚠️ `dayLine` DECIDES THE LABEL AND WHAT MAY GO ON THE LINE (v337) — a courier order is a
+  // BAKE day and its window belongs to the van, so the two never share a line. See the helper
+  // for the customer who asked whether his delivery was Wednesday or Thursday.
+  const day = dayLine(state, first);
   const date = `${del ? shortDate(del.date) : String(first.deliveryDate || "")}`
-    + promisedWindowSuffix(state, first);
+    + day.window;
   const courier = first.fulfillment === "courier";
   // ONE wording for how the order reaches them (v299) — the confirmation and every later
   // message read the same helper, so a customer cannot be told two different things.
@@ -72,7 +76,7 @@ export function buildConfirmation(state, group, trackUrl) {
 
   let msg = `${greeting(state, `Hi ${first.customerName || ""}! Your order from ${bakery} is confirmed.`)}\n`;
   msg += `Order #${orderCode(first)}\n`;
-  msg += `Delivery: ${date} - ${fulfillment}${address}\n`;
+  msg += `${day.label}: ${date} - ${fulfillment}${address}\n`;
   msg += `Items: ${items}\n`;
   // The sum and its parts: a recorded courier charge is named so the customer can add it
   // up themselves rather than take it on trust — "the message need to show the add up for
@@ -91,6 +95,7 @@ export function buildConfirmation(state, group, trackUrl) {
   // front of the customer, so nothing ever jumps away or looks truncated.
   msg += `\nWhen you pay, put your phone number${recipient ? ` (${recipient})` : ""} in the payment description.\n`;
   msg += `Then send your TNG receipt screenshot here as a photo - thank you!\n`;
+  msg += vanLine(day, first);
   msg += `Track your order: ${trackUrl}`;
   return { recipient, message: msg };
 }

@@ -1,4 +1,4 @@
-// views/po.js — the headline: tick the bake days to shop for → one combined
+// views/po.js — the headline: tick the delivery dates to shop for → one combined
 // ingredient PO. Days with orders are remembered as already shopped when a
 // regular snapshot covers them (PO History), so they drop out of the default
 // list. If orders change after a day was saved it flips to "orders changed"
@@ -68,7 +68,7 @@ export function renderPO(root, state, params) {
   render();
 }
 
-// One bake day's standing, read only from live state + saved PO snapshots.
+// One delivery date's standing, read only from live state + saved PO snapshots.
 // Coverage is derived, never stored; the only extra persistence is `poAck` on
 // the day's own deliveryDate record — the fingerprint the baker said "leave
 // it, I've got this" for — so an ignored change survives reloads and syncs.

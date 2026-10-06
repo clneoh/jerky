@@ -52,7 +52,7 @@
 
 import { button, confirmDialog, el, emptyState, guarded, saidOf, select, toast } from "../ui.js";
 import { shortDate } from "../dates.js";
-import { groupOrders, save } from "../state.js";
+import { byId, groupOrders, save } from "../state.js";
 import { maybePublishTracking, maybeSync } from "../supabase.js";
 import { runChargeAmounts, splitEven, writeCourierCharge } from "../courier.js";
 import { activeCourier, courierByKey } from "../couriers.js";
@@ -65,9 +65,13 @@ import { openPlacePicker } from "../place_map.js";
 import { pointById, pointPlace, pointWindowText } from "../points.js";
 import { openPointPinPicker } from "./points.js";
 import { courierPayQuestions } from "./orders.js";
+// The price section, for the unfolded order (v342). This screen prices the whole RUN its own way; this
+// is for asking what ONE already-booked order would cost. No cycle: courier_quote.js does not read this file.
+import { courierQuoteSection } from "./courier_quote.js";
 // A parcel recorded on the order (v226) is never swept into a van run — see runDays.
 import { parcelOf } from "../parcel.js";
 import {
+  courierDayOf, pickupTimeOf, runDayOf,
   fmtDistanceKm, fmtQuote, fmtQuoteLeft, liveJobOf, liveJobProblem, loadOf,
   needsVan, quoteExpired, runLimitProblem, savingOf, scheduleAtUTC, stampTrip, stopKeyOf,
   tripCalledOff, tripOf, tripProblem,
@@ -101,14 +105,19 @@ export function renderDeliveryRun(root, state, params) {
       el("div", { class: "card" },
         el("h2", {}, "Delivery run"),
         emptyState("Nothing to run yet",
-          "A run carries several orders on one trip. It needs an order going out by courier, or one being collected at a Self collection Point, on a delivery day. A collection from your own kitchen is handed over by you, so it never needs a van.")));
+          "A run carries several orders on one trip. It needs an order going out by courier, or one being collected at a Self collection Point, on a delivery date. A collection from your own kitchen is handed over by you, so it never needs a van.")));
     return;
   }
 
   // The day asked for by whoever sent her here — the button on a delivery day card names
   // the day it was pressed on — falling back to the day she most likely wants.
   const asked = String((params && params.get && params.get("date")) || "").trim();
-  const wantDay = days.some((d) => d.id === asked) ? asked : String((state.settings && state.settings.runDay) || "");
+  // ⚠️ A DAY HERE IS A DATE (v343), and whoever sent her here may name it either way: the Delivery dates
+  // screen hands over a delivery-date ID, and an older bookmark may carry one too. Both are accepted and
+  // resolved to the day the run is on — one lookup, and neither route can silently open the wrong day.
+  const askedRec = byId(state.deliveryDates, asked);
+  const askedDay = askedRec ? String(askedRec.date || "").trim() : asked;
+  const wantDay = days.some((d) => d.id === askedDay) ? askedDay : String((state.settings && state.settings.runDay) || "");
   let dayId = days.some((d) => d.id === wantDay) ? wantDay : defaultDay(days);
 
   // Ticked customers, by group key, and what the price on screen was actually asked for.
@@ -120,6 +129,13 @@ export function renderDeliveryRun(root, state, params) {
   let compare = {};     // vehicle key -> { state, amounts, reason, done, total }
   let busy = false;
   const clocks = [];
+  // ★★ WHOSE ORDER IS UNFOLDED (v342). Her ask: *"clicking a button inside the red ribbon, drop down its
+  // full detail, as what is shown in edit order, get a delivery price."* It holds the STOP's row key, so
+  // the detail reopens on the row she opened and nowhere else — and it lives HERE, beside the ticked set
+  // and the price, because a repaint of this screen only redraws the list: state kept in the DOM would be
+  // gone the moment another customer is ticked. `refreshDay` clears it with the other two, because a
+  // different day is a different list.
+  let unfolded = null;
 
   // ── the controls, built once ───────────────────────────────────────────
   //
@@ -279,11 +295,45 @@ export function renderDeliveryRun(root, state, params) {
   // The day's customers all on, on the day's first look: the common case is that the whole
   // day goes out in one van, and making her tick eight boxes to say so would be this screen
   // asking her to repeat what she already decided.
+  // ★★ THE VAN'S DAY OFF THE ORDER, NEVER THE BAKE DAY (v338).
+  //
+  // ⚠️⚠️ THIS READ `day.date` — the BAKE day — and that is exactly the fault her customer's confusion
+  // came from: baked Wednesday, van Thursday morning, and the box handed her Wednesday to book against.
+  // Her own rule forbids working it out for her: *"bake plan is just a plan… it is good not to tie our
+  // own hand down."* So it is read from what she already keyed in on the orders on this run, and is
+  // EMPTY when none of them carries one — never a day the app chose. (The TIME box beside it keeps its
+  // default from Settings, which is a default she set herself.)
+  function dayTheVanComes(day) {
+    for (const g of (day ? day.groups : [])) {
+      for (const o of g.orders) {
+        const d = courierDayOf(o);
+        if (d) return d;
+      }
+    }
+    return "";
+  }
+
+  // ★★ AND THE TIME IT COLLECTS, from the same place (v341). Her distinction, in her words: *"Pickup
+  // time is something user should specify"* — so the time she typed on the order WINS, and her own
+  // Settings dispatch time is the fallback. That fallback is a default she set herself, and her own
+  // note says the pickup box "opens on a hand-typed default and it should stay a hand-typed box"; what
+  // neither the box nor this function ever does is work a time out from the bake plan.
+  function timeTheVanCollects(day) {
+    for (const g of (day ? day.groups : [])) {
+      for (const o of g.orders) {
+        const t = pickupTimeOf(o);
+        if (t) return t;
+      }
+    }
+    return dispatchTime(state);
+  }
+
   function pickTicked() {
     const day = dayRowNow();
     // Every tickable customer on, and a booked one left OFF (v242) — tickableGroups, above.
     ticked = new Set(tickableRows().map((r) => r.key));
-    if (day) pickupDay.value = String(day.date || "");
+    pickupDay.value = dayTheVanComes(day);
+    pickupTime.value = timeTheVanCollects(day);
   }
 
   // A price describes one list and one journey. Anything that changes either throws the
@@ -294,6 +344,9 @@ export function renderDeliveryRun(root, state, params) {
   }
 
   function refreshDay() {
+    // A different day is a different list, so the unfolded order folds away with the ticked set and the
+    // price (v342) — a detail left open on a row that is no longer on screen is worse than none.
+    unfolded = null;
     pickTicked();
     priceAgain();
     paintList();
@@ -428,11 +481,34 @@ export function renderDeliveryRun(root, state, params) {
         : null;
       // Greyed while a courier call of any kind is in flight, so the press cannot be taken twice.
       if (offBtn) offBtn.disabled = Boolean(busy);
+      // ★★ AND A WAY TO LOOK AT THE ORDER ITSELF (v342). Her ask: on the Delivery run, the row whose
+      // courier trip is ALREADY ACTIVE should offer a button — inside this very block — that drops its
+      // full detail down, as the Edit card shows it, with a delivery price.
+      //
+      // ⚠️ Her words name the courier company, and this file may not: `test/delivery-run.test.js` scans
+      // it for the brand (case-insensitively, comments included) because this screen must keep asking
+      // the registry what to call whoever is on the road. Paraphrase, never quote, in this file.
+      //
+      // ⚠️ THE WORDING IS DELIBERATELY UNLIKE the call-off button's: this file's tests press that one by
+      // its exact text, and two buttons whose words run together are the fault the app's own affordance
+      // rule names.
+      const open = unfolded === r.key;
+      const seeBtn = job
+        ? button(open ? "Hide the trip" : "See the trip", () => {
+          unfolded = open ? null : r.key;
+          paintList();
+        }, "ghost small")
+        : null;
       const booked = job
         ? el("div", { class: "pin-offer run-booked" },
             el("p", { class: "card-sub" }, bookedSaid(job, holder)),
-            el("div", { class: "btn-row" }, offBtn))
+            el("div", { class: "btn-row" }, offBtn, seeBtn))
         : null;
+      // The order itself, folded out under this row (v342) — a SIBLING of the row and never inside its
+      // <label>, for the same reason the block above is: everything in that label is a tick, so a press
+      // in there would tick the customer instead of doing what it says. Built fresh on every repaint
+      // from `unfolded`, so it is exactly as open, or as shut, as she left it.
+      const detail = job && open ? unfoldedTrip(state, bookedGroup) : null;
       // The two doors on this order, when they disagree, offered under its own row — one
       // line and one press. It is a block of its own rather than a line inside the row
       // because everything in that row sits inside one <label>: a press in there would tick
@@ -449,6 +525,7 @@ export function renderDeliveryRun(root, state, params) {
       const theirs = Boolean(offer && offer.which === "customer");
       const tail = [];
       if (booked) tail.push(booked);
+      if (detail) tail.push(detail);
       if (offer) tail.push(el("div", { class: "pin-offer" },
             el("p", { class: "card-sub" },
               theirs
@@ -1122,8 +1199,18 @@ export function renderDeliveryRun(root, state, params) {
     // The window goes on every LINE of every group, not only the first: the card and
     // the messages read the group's first line today, but a customer's order can be
     // edited and re-split, and a promise living on one row would go with that row.
+    // ★ The day the van comes, as she set it on this screen (v338) — written onto the orders for the
+    // same reason the window is: the customer's card and the five messages read the ORDER, so a day
+    // chosen here and nowhere else would be gone the moment she left the screen. Only when she has
+    // one, so a trip booked without a day leaves every order exactly as it was.
+    const bookedDay = String(pickupDay.value || "").trim();
+    const bookedTime = String(pickupTime.value || "").trim();
     for (const g of groups) {
       if (w) for (const o of g.orders) o.deliveryWindow = w;
+      if (bookedDay) for (const o of g.orders) o.courierDay = bookedDay;
+      // …and the time the van collects (v341), for the same reason: it is HER answer, and an order
+      // that was told it once should still carry it the next time she opens it.
+      if (bookedTime) for (const o of g.orders) o.pickupTime = bookedTime;
       // `alone` only on a run that turned out to carry one doorstep: the courier's link is
       // ONE link for the whole trip, so on any bigger run it is not the customers' to have.
       stampTrip(g.orders, out.job, holder.label, { alone: groups.length === 1 });
@@ -1170,7 +1257,11 @@ export function renderDeliveryRun(root, state, params) {
       el("p", { class: "card-sub" },
         `One vehicle, ${courier.label}'s own fare, several stops. A multi-stop trip is charged as one base fare plus a fee for each extra stop, so the run below is priced as one trip — and can be compared against the same stops sent one at a time, which is the money this screen is for. A stop is a customer's door, or a Self collection Point carrying several customers' orders.`),
       el("div", { class: "field", style: "margin-top:12px" },
-        el("label", {}, "The delivery day"), daySel),
+        // ⚠️ NOT "the delivery date" (v343). This is the day the VAN GOES — the baker's own day when she has
+        // typed one on an order, and that order's delivery date when she has not — and it is the one control
+        // that decides which day's work she is looking at. Calling it the delivery date is what had a van
+        // booked for the morning after the bake sitting under the wrong date.
+        el("label", {}, "The day the van runs"), daySel),
       listBox,
       loadLine,
       el("div", { class: "field", style: "margin-top:12px" },
@@ -1215,6 +1306,42 @@ export function renderDeliveryRun(root, state, params) {
   return () => clearInterval(beat);
 }
 
+// ★★ THE BOOKED TRIP, UNFOLDED UNDER ITS ROW (v342, corrected v343).
+//
+// ⚠️⚠️ **HER CORRECTION, paraphrased because this file may not name the courier company:** she asked for
+// the courier's own record of the trip — *"the courier booked details like the one we see after pressing
+// GET A DELIVERY PRICE"* — showing that the courier **is on this order**, with [Check the trip], the
+// trip's status, when it was booked and the customer's link.
+//
+// **v342 drew a summary of the ORDER instead** — who it is for, the items, the money. That is not what
+// she unfolds a booked row to read, and it was the wrong thing twice over: it was a SECOND rendering of
+// an order's figures, and it buried the one card she wanted.
+//
+// **What she wants is already built, by the code that owns it.** `courierQuoteSection` draws the trip's
+// own card (`jobBox`) — the vehicle and its price, when it was booked, where it has got to, the
+// customer's share link, [Check the trip] and [Cancel trip] — so this unfolds THAT, and there is no
+// second copy of anything to keep in step. The price rows are a press away inside it.
+//
+// ⚠️ **`canBook` IS LEFT AT ITS DEFAULT, and v342's `false` is exactly what hid her card:** the whole
+// trip block sits under `canBook ? jobBox : null`. This screen has nothing to fear from booking — a live
+// trip makes the section refuse a second one by itself (`liveJobProblem`, v242) — and nothing is asked of
+// the courier until she presses, so a repaint never spends a quote.
+function unfoldedTrip(state, group) {
+  const first = (group && group.orders && group.orders[0]) || null;
+  if (!first) return null;
+  // The registry's own name for whoever is carrying it, never a name typed here.
+  const holder = activeCourier();
+  return el("div", { class: "pin-offer run-detail" },
+    el("p", { class: "card-sub" },
+      `${(holder && holder.label) || "The courier"} is booked on this order.`),
+    courierQuoteSection({
+      state, orders: [first], onUseFee: null,
+      // Nothing here books, so this only ever answers a door the quote itself wrote — saved the moment
+      // it is written rather than on a Save press this screen does not have.
+      onCommit: (o) => { if (o) { save(state); maybeSync(state); } },
+    }));
+}
+
 // ── reading the day ─────────────────────────────────────────────────────
 
 // Every saved delivery day that has at least one order needing a van on it, soonest first.
@@ -1240,15 +1367,17 @@ function runDays(state) {
     // told a carrier has it, would then be told a driver is coming. The record lives
     // on the order rather than the day, so the filter belongs here.
     if (parcelOf(first)) continue;
-    const id = String(first.deliveryDateId || "").trim();
-    if (!id) continue;
-    if (!byDay.has(id)) byDay.set(id, []);
-    byDay.get(id).push(g);
+    const day = runDayOf(state, first);
+    if (!day) continue;
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(g);
   }
-  return (state.deliveryDates || [])
-    .filter((d) => d && byDay.has(d.id))
-    .map((d) => ({ id: d.id, date: String(d.date || ""), groups: byDay.get(d.id) }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+  // ⚠️ `id` AND `date` ARE BOTH THE ISO DATE (v343). A van day that is not a delivery date has no delivery-date
+  // record to carry an id, and `dayRowNow` matches on `d.id === dayId`, so the day's own date is what the
+  // whole screen keys on now. The old entry's `id` was the RECORD's; nothing here needs a record any more.
+  return [...byDay.keys()]
+    .sort((a, b) => a.localeCompare(b))
+    .map((date) => ({ id: date, date, groups: byDay.get(date) }));
 }
 
 // The day she most likely wants: the next one that has not gone out yet, else the last day

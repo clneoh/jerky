@@ -530,7 +530,7 @@ function availabilityCard(state, product) {
       el("p", { class: "card-sub", style: "margin:8px 0 0" },
         rules.length
           ? "Only the days you mark are sold. Nothing carries over to the next month — open a month and mark it if you want to sell then."
-          : "Nothing marked yet, so this product sells on every delivery day. Mark the days you want — or leave it alone to sell every day."),
+          : "Nothing marked yet, so this product sells on every delivery date. Mark the days you want — or leave it alone to sell every day."),
       el("p", { class: "occ-tip" },
         rules.length
           ? "Tap a weekday letter to mark every one of it in this month. Tap a day, or slide across days, to mark just those. Tapping or sliding over a marked day takes it back."
@@ -540,7 +540,7 @@ function availabilityCard(state, product) {
       el("p", { class: "occ-sublabel" }, "Marked periods"),
       rules.length
         ? el("div", { class: "occ-body" }, ...rules.map(markRow))
-        : el("p", { class: "card-sub", style: "margin:4px 0 0" }, "Nothing marked — this product sells every delivery day."),
+        : el("p", { class: "card-sub", style: "margin:4px 0 0" }, "Nothing marked — this product sells every delivery date."),
       endsEl(),
       el("p", { class: "occ-tip" },
         `${mb.from.slice(8)}-${mb.to.slice(8)} ${monthLabel(month.year, month.month)} is one month's worth of marks; stretch a period into the next month with Starts / Ends above.`));
@@ -575,6 +575,7 @@ function buildEditor(state, product) {
   const limit = el("input", { class: "input", type: "number", inputmode: "numeric", min: "1",
     placeholder: "e.g. 12", "data-suggest": "12", value: product?.limit ?? "",
     title: "Max pouches of this product per batch/posting day. Limits are added together for the day's availability (e.g. 12 chicken + 12 duck = 24). Leave blank for no limit." });
+
 
   // Optional per-product date rules — customers can't order this product for a
   // delivery date it isn't open for. Orders close N days before delivery, and /
@@ -1163,6 +1164,7 @@ function editorFields(state, editor) {
     el("div", { class: "field" }, el("label", {}, "Daily limit (optional)"),
       el("p", { class: "card-sub", style: "margin:0 0 5px" },
         "Max pouches per batch/posting day. Limits add up for availability — 12 chicken + 12 duck = 24 left."),
+
       editor.limit),
     editor.availability.card,
     el("div", { class: "field" }, el("label", {}, "Orders close (days before delivery)"),

@@ -1064,6 +1064,39 @@ test("trackingSnapshot: a self-collect order publishes none of the courier's hal
   assert.equal(sent.courier_fee, 8, "and the charge they bear is named again");
 });
 
+test("⚠️ a trip still looking for a driver tells the customer NOTHING (v338)", () => {
+  // Her words: *"the lalamove link should not be there because the driver might not be confirming, it
+  // only create more confusion if they were to click the link. Lalamove link and Delivery: Finding a
+  // driver, should not be send at this stage."*
+  //
+  // A booking lands in the courier's own "assigning a driver" status at once, which is the phase this
+  // app calls `finding` — so the card said "Delivery: Finding a driver" and offered a live link the
+  // moment she booked, before any driver had taken the job.
+  const state = makeState();
+  state.products = [{ id: "prd_1", name: "Focaccia", price: 15, active: true }];
+  const date = state.deliveryDates[0];
+  const trip = (phase) => ({ orders: [{
+    id: "ord_1", groupId: "ordg_112233445566", deliveryDateId: date.id, productId: "prd_1", qty: 1,
+    customerName: "Ain", status: "confirmed", createdAt: "2026-09-01T14:32:00",
+    fulfillment: "courier", address: "12 Jalan Bunga, Penang",
+    trackingNo: "https://lalamove.com/share/abc123",
+    courierJob: { jobId: "J1", phase, amount: 8 },
+  }] });
+
+  const searching = trackingSnapshot(state, trip("finding"));
+  assert.equal(searching.courier_phase, null,
+    "no phase — 'Finding a driver' is a status about a job nobody has taken yet");
+  assert.equal(searching.tracking_no, null,
+    "and no live link to click, which is the other half of what she asked for");
+
+  // ⚠️ AND IT IS WITHHELD, NOT LOST. From the moment a driver is on the way, both come back exactly as
+  // they were — her own record is untouched, and only the SENDING stopped, and only until the trip
+  // has actually begun.
+  const later = trackingSnapshot(state, trip("on_way"));
+  assert.equal(later.courier_phase, "on_way", "once a driver is coming, the journey shows again");
+  assert.equal(later.tracking_no, "https://lalamove.com/share/abc123", "and the link comes with it");
+});
+
 // ── a parcel she posted herself (v226) ───────────────────────────────────────
 // The second KIND of courier has no driver and no live link, so its whole half of
 // the customer's card is the carrier's name and one neutral word. `collected` is

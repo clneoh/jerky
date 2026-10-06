@@ -738,6 +738,41 @@ matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestion
 now that the Google key returns one precise house-number answer, most lookups legitimately show no
 list and the pin simply lands.
 
+## Seven versions: the van's own day, and a signpost guard (v337–v343)
+
+Bakery `0648029` (v336 — exactly where jerky sat) → `562ccb2` (v343), the same one-file three-way
+merge. **40 files, ~1,554 insertions, no SQL.** Suite **2854 → 2886 pass / 0 fail** (the new
+`test/screen-names.test.js` plus the ported assertions).
+
+**⚠️ THE ONE THING THIS SYNC IS ABOUT: the bakery RENAMED its day to "bake day" in v337, and jerky
+did NOT follow.** jerky's admin keeps **"delivery date"** and its storefront keeps **"posting day"**.
+The rename swept 22 bakery files; every jerky string it touched was put back to jerky's own word —
+`app.js`'s route title, the More row (which also moved to **The shop** in v339), the Orders calendar's
+answer, the PO's ticks, the products' hint, the Settings card, and the customer message's day label
+(**"Posting day:"**, never "Baking day"). **The Production line's bakery vocabulary is untouched on
+purpose** (`production.js`, `scenario.js`, the Guide's explanation of it).
+
+**v337's real repair did come across.** A posted order's confirmation announced the *posting* day as
+`Delivery: Wed, 7 Oct` while the van might be Thursday morning — which is why a customer had to ask
+which day it was. The message now says the two apart: **`Posting day: Wed, 7 Oct - Post (nationwide)`**,
+with the van's window on **its own line** (or the promise that it is coming), and a **collection**
+order unchanged.
+
+**v338–v343** — the van gets **its own day and time** on the order (`courierDay`, typed by hand) and
+`dayLine`/`vanLine` are the ONE functions all four messages read; **a courier order is told nothing at
+Packed** (nothing has left yet, so "on its way" would be untrue and its share link premature — the
+button belongs to Collected / Posted); **a pickup time is not a promise**; the run's warning opens the
+order; **a run is on the day the van comes**.
+
+**Two new guards, both jerky-localized:**
+
+- **`test/screen-names.test.js`** — every **"More → X"** in `admin/js` checked against the names that
+  really exist (route titles, menu rows, group headings, all read from jerky's own files). **It caught
+  five stale signposts in this app's own Guide on its first run** — `"More → Backups"`,
+  `"More → About"` (neither exists as a screen any more) and three that ran on into prose — and the
+  prose was fixed rather than the guard loosened.
+- **`.nojekyll`** — GitHub Pages no longer runs Jekyll over the site.
+
 ## One version: your own reward coupon comes off your order (v336)
 
 Bakery `a76d8f0` (v335 — exactly where jerky sat) → `0648029` (v336). **All five source files merged

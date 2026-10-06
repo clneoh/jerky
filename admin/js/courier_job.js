@@ -39,10 +39,12 @@
 import {
   pickupPlace, doorSpotOf, dropAddress, validPlace, strictNumber,
 } from "./courier_place.js";
-import { waNumber, orderLineName } from "./state.js";
+import { byId, waNumber, orderLineName } from "./state.js";
 import { collectionWindowText, pointById } from "./points.js";
 // The window's own reading - see time_window.js for why it is a leaf of its own (v304).
 import { fmtWindow, validWindow } from "./time_window.js";
+// A date in her words ("Thu, 8 Oct"). dates.js imports nothing, so this cannot cycle.
+import { shortDate } from "./dates.js";
 
 // Malaysia has no daylight saving — one offset, all year, since 1982 — so the
 // your own clock is a FIXED eight hours ahead of UTC. That is why the conversion
@@ -233,9 +235,15 @@ export function tripProblem(trip) {
 // The day this order goes out, read the way the order ROW reads it: the delivery day
 // the order points at while that day still exists, else the date it was saved with.
 //
-// It is a function here rather than three lines in the quote panel because a
-// schedule is a day plus a time, and a price for the wrong day is a price she quotes
-// to a customer and then has to take back. One reading, in the tested half.
+// ⚠️ THIS IS THE **BAKE** DAY, and it is deliberately NOT what the van's boxes open on (v338).
+//
+// It answers "which day is this order IN THE BOOKS on" — the delivery date, which is what the Sales and
+// Profit journals are keyed on (`profit.js` reads it three times) and what the bake plan is built
+// from. **Do not repoint it at the courier's day**: her books count what she baked, and moving a sale
+// onto the morning the van happened to arrive would rewrite her numbers.
+//
+// The day the VAN comes is a different fact and a different function — `courierDayOf`, below — and it
+// is hand-typed on the order card, never worked out from the bake plan.
 export function orderDay(state, order) {
   const id = String((order && order.deliveryDateId) || "").trim();
   const row = id ? (((state && state.deliveryDates) || []).find((d) => d && d.id === id) || null) : null;
@@ -505,6 +513,84 @@ export function windowSuffix(order) {
   return `, ${fmtWindow(w)}`;
 }
 
+// ★ THE VAN'S OWN DAY, WHICHEVER SHAPE IT IS IN (v338).
+//
+// A SAVED order carries it flat, as `order.courierDay` — that is what the cloud row, the messages and
+// the customer's card read. The ＋ New order card is not an order yet: it edits a DRAFT, whose three
+// "when" boxes live together in `courierWhen`. The price section is handed one or the other depending
+// on which card it is standing in, so both shapes are read in ONE place — three call sites each
+// deciding for themselves is how two "when" boxes on one card come to disagree.
+//
+// Empty string, never a guess: nothing here is ever derived from the delivery date.
+export function courierDayOf(order) {
+  if (!order) return "";
+  const flat = String(order.courierDay || "").trim();
+  if (flat) return flat;
+  return String((order.courierWhen || {}).day || "").trim();
+}
+
+// ★ THE TIME THE VAN COLLECTS FROM HER, in the same two shapes (v341).
+//
+// ⚠️ **THIS IS NOT THE CUSTOMER'S PROMISE, AND IT NEVER REACHES ONE.** Her distinction, and it is the
+// right one: *"for courier lalamove, there is no delivery window open and delivery window closes
+// promise… Pickup time is something user should specify."* A pickup time is when the van is at HER
+// door; what a customer is promised is the Point's hours or, on a run with many stops, the window the
+// trip itself carries. So this value feeds the DELIVERY RUN's own collection time and the price box
+// beside it — and `promisedWindowSuffix`, which is what every customer-facing line reads, never sees it.
+export function pickupTimeOf(order) {
+  if (!order) return "";
+  const flat = String(order.pickupTime || "").trim();
+  if (flat) return flat;
+  return String((order.courierWhen || {}).pickup || "").trim();
+}
+
+// ★★ THE DAY A RUN IS ON: THE DAY THE VAN COMES (v343).
+//
+// ⚠️⚠️ HER CORRECTION, in her words: *"the delivery run should not be on delivery date only, for the case of
+// 7th delivery date order deliver 8th, his order should be appear only on date 8th. SO after his order, other
+// order not specifing specific delivery will be on delivery date 6th."*
+//
+// So an order's place on a run is the day she typed on the order — `courierDay` (v338) — and its BAKE day
+// only when she has typed none. The delivery date is read the way `messages.js` reads it: the order's own day
+// record first, its frozen snapshot only when that record is gone, so a run and a message cannot name
+// different days.
+//
+// ⚠️ **AND A VAN DAY THAT IS NOT A BAKE DAY GETS A RUN OF ITS OWN** — the run list is no longer a subset
+// of the saved delivery dates, it is every distinct day a van actually goes out. An order baked the 7th with a
+// van typed as the 8th lands on the 8th's run and on no other.
+//
+// ⚠️ **IT LIVES HERE, BESIDE `needsVan`, FOR THE REASON THAT COMMENT GIVES:** this rule is asked by TWO
+// screens that must agree — the run screen, which decides what a day's run holds, and the Delivery dates
+// screen's own "Run (N)" badge, which decides how many stops it will find. Two readings of one rule is
+// exactly how those two came apart over the Point orders, and it is how they would come apart again.
+export function runDayOf(state, order) {
+  const typed = courierDayOf(order);
+  if (typed) return typed;
+  const rec = byId(state && state.deliveryDates, order && order.deliveryDateId);
+  return String((rec && rec.date) || (order && order.deliveryDate) || "").trim();
+}
+
+// ★★ THE DAY THE VAN COMES, AND THE WINDOW IT COMES IN — said together (v338).
+//
+// ⚠️⚠️ UNTIL THIS VERSION AN ORDER CARRIED NO COURIER DAY AT ALL, so a van going the morning after
+// the bake had nowhere to be written down: the run screen handed her the BAKE day to book, and the
+// customer's track card printed the van's window beside the delivery date's date. `courierDay` is the
+// order's own answer to "when does it reach them", typed by hand on the order card.
+//
+// **The rule it enforces: the delivery date and the van's window NEVER share a line.** That window is
+// the VAN's and may belong to the next morning, so it is glued to the courier's own day or to
+// nothing — never to the delivery date. With no `courierDay` this returns byte-for-byte what the app
+// said before this version, so every existing order reads exactly as it always has.
+//
+// ONE function, because the confirmation, the four messages and the published track card all call
+// it — and a promise worded in four places is four promises.
+export function courierDeliveryText(order) {
+  const w = windowSuffix(order).replace(/^, /, "");
+  const day = courierDayOf(order);
+  if (!day) return w;
+  return w ? `${shortDate(day)}, ${w}` : shortDate(day);
+}
+
 // ★ THE WINDOW A CUSTOMER IS ACTUALLY PROMISED, and the ONE place that decides it (v304).
 //
 //   • An order collecting at a Self collection POINT is promised **the Point's own collection
@@ -521,6 +607,52 @@ export function promisedWindowSuffix(state, order) {
   const point = pointById(state, order && order.pointId);
   if (point) return collectionWindowText(state, order);
   return windowSuffix(order);
+}
+
+// ★★ THE DAY LINE A CUSTOMER MESSAGE CARRIES, AND WHAT IT MAY HONESTLY PROMISE (v337).
+//
+// ⚠️⚠️ THE FAULT THIS CLOSES, in her words: *"our delivery date is Wednesday 7th Oct, customer want a
+// lalamove delivery of Thursday morning 9am... the delivery date i choose is 7th. When we send
+// confirmation message to him he was confused, then asking whether the delivery date is wed or
+// thurday."* **A courier order's `deliveryDateId` is the day it is BAKED, and the message called
+// it "Delivery:"** — so a van booked for Thursday morning was announced as *Delivery: Wed, 7 Oct*.
+//
+// ⚠️ AND THE MESSAGE COULD NOT HAVE BEEN RIGHT: the van is booked AFTER the confirmation goes out,
+// so at that moment the app does not know the delivery day at all — **and was stating one anyway.**
+//
+//   · A COLLECTION — her kitchen or a Point — happens ON the delivery date, so `Delivery:` stays: it is
+//     the day they get the bread. Unchanged, window and all.
+//   · A COURIER order is labelled **Posting day**, and **the trip's window is never glued to it** —
+//     that window is the VAN's and may be the next morning, so putting it on the bake-day line
+//     would name a time on the wrong day. It goes on a line of its own, or is promised.
+//   · From v338 the van has a DAY of its own too — `order.courierDay`, typed by hand on the order
+//     card — so the line can at last name the day the bread arrives, not only promise a window.
+//     `courierDeliveryText` words it, and the card and the messages read that one function.
+//
+// The four customer messages read this ONE function, so none of them can word it differently.
+// The van's own line — or the promise that it is coming. Empty for anything that is not a
+// courier order, so a collection's message is byte-for-byte what it always was.
+export function vanLine(day, order) {
+  if (!day || !day.courier) return "";
+  // ⚠️ THE NAME COMES FROM THE BOOKED TRIP, and the word "courier" stands in until there is one.
+  // At the moment a confirmation goes out **no van is booked, so there is no name to give** — which
+  // is the same reason the app cannot know the delivery day yet. Naming the company here by hand is
+  // what `test/courier-provider.test.js` forbids: the seam exists so a second courier can arrive
+  // without editing a screen, and a message that types the brand is that seam with a hole in it.
+  const name = String((order && order.courierJob && order.courierJob.courierName) || "").trim() || "courier";
+  // ⚠️ "delivery", NOT "pickup window" (v338). The window above is the window the CUSTOMER was
+  // promised, and the run screen has always called that very field "The delivery window opens /
+  // closes" - so the message was the only place giving one value two names, and "pickup" also read
+  // as though someone were collecting from the customer.
+  return day.vanTime
+    ? `${name} delivery: ${day.vanTime}\n`
+    : `Your ${name} delivery time will be confirmed separately.\n`;
+}
+
+export function dayLine(state, order) {
+  const courier = !!order && order.fulfillment === "courier";
+  if (!courier) return { label: "Delivery", window: promisedWindowSuffix(state, order), vanTime: "", courier: false };
+  return { label: "Posting day", window: "", vanTime: courierDeliveryText(order), courier: true };
 }
 
 // What the run actually carries: how many doorsteps, how many items, and which items.

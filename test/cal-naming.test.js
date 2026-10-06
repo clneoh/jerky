@@ -381,9 +381,9 @@ test("Generate adds the next dates on her own delivery days, and shows that mont
     ["2026-09-11", "2026-09-14", "2026-09-18", "2026-09-21", "2026-09-23", "2026-09-25"],
     "the next six delivery days, skipping the two already there");
   const caption = walk(root).find((n) => String(n.className).includes("card-sub")
-    && (n.children[0] || {}).text && (n.children[0].text || "").includes("follow your delivery days"));
+    && (n.children[0] || {}).text && (n.children[0].text || "").includes("follow your delivery dates"));
   assert.ok(caption, "the screen says what Generate follows");
-  assert.match(caption.children[0].text, /delivery days — Mon, Wed and Fri/,
+  assert.match(caption.children[0].text, /delivery dates — Mon, Wed and Fri/,
     "and it names HER pattern, read from Settings rather than the app's own default");
 
   // Press it again: it keeps going, where Home's button took itself away after one
