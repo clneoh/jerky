@@ -738,6 +738,27 @@ matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestion
 now that the Google key returns one precise house-number answer, most lookups legitimately show no
 list and the pin simply lands.
 
+## One version: housekeeping, a dead line removed (v344)
+
+Bakery `562ccb2` (v343 — exactly where jerky sat) → `d47248b` (v344), the same one-file three-way
+merge. **Two source files, one conflict each.** Suite **2886 pass / 0 fail** (unchanged, as the bakery
+intended). **No SQL, no deploy.**
+
+The pickup reminder still held a branch reading *"Packed and will be sent for delivery on the day"* —
+**unreachable by any order** since v340, when a posted customer stopped being told anything at Packed
+at all, and it also named a day the last batch had spent a day removing from every other surface. It
+is deleted rather than left as a trap for whoever reads the file next.
+
+**The test that pinned that dead branch was replaced, not deleted with it** — an assertion on a branch
+no order could reach would have left the rule unguarded. It became *"the pickup reminder never says an
+order is being sent"*, the invariant the old wording broke. **Localized:** the guard's pattern gained
+jerky's own phrasing (`posted to you`, not only `sent for delivery`), and the kitchen's line keeps
+jerky's word — **"ready for collection"**.
+
+⚠️ **One merge trap, caught by the suite:** the conflict block's jerky side ran on into the *opening
+lines of the next test*, so resolving it swallowed that test entirely (2886 → 2885). It was restored
+from the original and the count is back. **Check the test COUNT after a merge, not only the pass/fail.**
+
 ## Seven versions: the van's own day, and a signpost guard (v337–v343)
 
 Bakery `0648029` (v336 — exactly where jerky sat) → `562ccb2` (v343), the same one-file three-way

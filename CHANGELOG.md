@@ -1,8 +1,25 @@
-# Munchies Furkidz — change history (v54 → v343)
+# Munchies Furkidz — change history (v54 → v344)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**07 Oct 2026 — engine v344, HOUSEKEEPING: A DEAD LINE REMOVED (no database step, nothing to upload —
+pushing this one is the whole of it).**
+
+**Nothing you can see has changed**, and this entry is here so the version list stays complete rather than
+leaving a gap.
+
+**What went:** the pickup reminder still held a line that said *"Packed and will be sent for delivery on
+the day it was ready"*. **It could not be reached by any order** — it has been dead since v340, when you decided a
+courier customer should be told nothing at Packed at all — and it also named the **bake** day, which is the
+thing v337 to v343 spent a day and a half taking off every other surface. **It is deleted, so it cannot
+mislead anyone reading the code later, and a test now holds the rule it belonged to:** the pickup reminder
+says the order is READY and never that it is being sent — that belongs to the shipped message, at Collected
+/ Shipped.
+
+**Your data is untouched.** No SQL, no Edge Function, no upload. The suite is **2,857 tests, all green**,
+and the new guard was bitten: put the line back and it fails by name.
 
 **06 Oct 2026 — engine v343, A RUN IS ON THE DAY THE VAN COMES (no database step, nothing to upload —
 pushing this one is the whole of it).**

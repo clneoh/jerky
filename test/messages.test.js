@@ -55,9 +55,18 @@ test("pickup reminder is worded for self collect", () => {
   assert.ok(built.message.includes("Track your order: https://bake.app/store/?track=445566"));
 });
 
-test("pickup reminder switches wording for a courier order", () => {
+test("⚠️ the pickup reminder never says an order is being sent (v344)", () => {
+  // ⚠️ A TEST ON THE COURIER WORDING WAS REPLACED BY THIS ONE, not simply deleted. It asserted *"Packed
+  // and will be sent for delivery on Mon, 7 Sep"* — a branch that had been **UNREACHABLE since v340**,
+  // because the row offers this reminder to a self-collect order only (a courier customer is told nothing
+  // at Packed; the shipped message is theirs, at Collected / Shipped). So the old test pinned code no
+  // order could reach, **and the wording it pinned named the BAKE day** — the thing v337-v343 removed
+  // everywhere else. What matters is the invariant: **saying an order is on its way belongs to the shipped
+  // message and to that step, never to this one.**
   const built = buildPickupReminder(state(), group({ fulfillment: "courier" }), "https://bake.app/store/?track=445566");
-  assert.ok(built.message.includes("will be posted to you on Mon, 7 Sep"), "courier wording");
+  assert.equal(/sent for delivery|on its way|posted to you/.test(built.message), false,
+    "the pickup reminder says the order is ready, never that it is being sent");
+  assert.ok(built.message.includes("Mon, 7 Sep"), "and it still names the day it is ready");
 });
 
 test("payment reminder for a posted order carries the flat postage on the to-pay line", () => {
