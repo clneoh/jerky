@@ -738,6 +738,54 @@ matches** — `paintSuggestions()` opens `if (found.length < 2) { hideSuggestion
 now that the Google key returns one precise house-number answer, most lookups legitimately show no
 list and the pin simply lands.
 
+## The Guide was printing its own markup (7 Oct 2026, no engine bump)
+
+Found while checking the availability fix above. The Guide's cards are written with `**double
+asterisks**` round the words that should stand out — and **nothing in the app ever rendered them**, so
+every card that used them showed the asterisks themselves. 37 paragraphs, for as long as the Guide has
+existed; a pass that presses every control cannot see it, because the screen renders fine, it just
+reads wrong.
+
+Fixed with a **`boldify(root)`** pass at the end of `renderGuide` in `admin/js/views/guide.js`: it walks
+the finished screen, turns each `**pair**` into real `<strong>`, leaves a lone `*` alone, and skips a
+paragraph with an unpaired `**` rather than half-converting it. It works on both the browser DOM
+(`childNodes` + `replaceChild`) and the test shim (`children` array).
+
+**Pinned by a new check in `test/press-everything.test.js`** — renders the whole Guide, fails if any
+paragraph still prints its own markers, and also requires the real emphasis to be there (a guard that
+only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
+fails with *"no paragraph on the Guide may print its own \*\* markers"*.
+
+## The shop and the app agree on how full a day is (7 Oct 2026, no engine bump)
+
+Her report: *"the 9th at store show qty and the app shown qty are different"* — and she was right.
+The same number was computed **three times**: what the shop publishes as `slots_left`, the Orders
+calendar's chip, and the Delivery Dates card. **Two of the three were wrong in the same direction.**
+
+**1 · The chip read a costing function.** `capacityStatus` summed a day's orders with
+`explodeBom().totalUnits`, which was written for COSTING — and it **`continue`s past an order whose
+product is gone, or whose product carries no `recipe` array** (it only pushes a warning). So a day with
+a real order on it drew as **`0/12`** while the shop correctly showed it booked.
+
+**2 · One record instead of the day.** Both by-id sums counted a single `deliveryDates` record, while
+`computeSlots` sums every record carrying that date — so two records sharing a day disagreed with the
+cell she had tapped.
+
+**The fix — one answer, three readers.** New `bookedUnitsOnDate(state, dateStr)` in
+`admin/js/bom.js`: every order for that date, across every record carrying it, whoever it is for.
+`capacityStatus` and `deliveries.js` drop their own sums and read it; `computeSlots` stops using its
+private `totalUnitsOnDate` (now deleted). **`explodeBom` itself is untouched** — it is still the
+costing path, and `explodePoDates`/`po.js` still read it.
+
+**The one sanctioned difference, now pinned by a test:** an over-booked day shows **negative** on the
+chip (information she needs) and **0** on the shop (a customer is never shown minus two left).
+
+**Proof.** `test/availability-agrees.test.js` — 7 tests, one per shape. **Bitten: reverting
+`capacityStatus` to the old line fails exactly the three divergent shapes** (no-recipe product,
+deleted product, duplicate record) and leaves the agreeing ones green. Verified in a real browser at
+375 px: a seeded day with one 3-unit order for a recipe-less product now reads **`3/12`** on the
+calendar chip (it read `0/12` before).
+
 ## One version: housekeeping, a dead line removed (v344)
 
 Bakery `562ccb2` (v343 — exactly where jerky sat) → `d47248b` (v344), the same one-file three-way

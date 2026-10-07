@@ -647,10 +647,37 @@ export function saveDayAdjustments(state, deliveryDateId, adjustments) {
   return owner;
 }
 
+// Booked units on a DATE — every order for that date, whoever it is for and whichever
+// record it hangs off.
+//
+// ⚠️⚠️ ONE ANSWER, THREE READERS (her report, 7 Oct 2026: __"the 9th at store show qty
+// and the app shown qty are different"__). The shop's published "left", the Orders
+// calendar's chip and the Delivery Dates card each worked this out for themselves, and
+// **two of the three were wrong in the same direction**:
+//
+//   · `explodeBom().totalUnits` was written for COSTING, and it **skips an order whose
+//     product is gone, or whose product carries no `recipe` array** — so a day with a
+//     real order on it read as if NOTHING were booked (`0/12`).
+//   · and `explodeBom`-by-id and `totalUnitsOnDate`-by-id both count ONE delivery-date
+//     record, while the shop sums every record carrying that date — so two records that
+//     share a day disagreed with the one the calendar cell was drawn from.
+//
+// **An order is work she has to do that day.** It counts, and it counts once, whatever
+// the order is for — which is also what the customer was told. The capacity half was
+// always one computation (`effectiveCapacity`); this is the other half.
+export function bookedUnitsOnDate(state, dateStr) {
+  const ids = new Set((state.deliveryDates || [])
+    .filter((d) => d && d.date === dateStr)
+    .map((d) => d.id));
+  return (state.orders || [])
+    .reduce((s, o) => s + (ids.has(o.deliveryDateId) ? Number(o.qty) || 0 : 0), 0);
+}
+
 export function capacityStatus(state, deliveryDateId) {
-  const { totalUnits } = explodeBom(state, deliveryDateId);
   const rec = byId(state.deliveryDates, deliveryDateId);
-  const cap = effectiveCapacity(state, rec && rec.date);
+  const dateStr = rec && rec.date;
+  const totalUnits = bookedUnitsOnDate(state, dateStr);
+  const cap = effectiveCapacity(state, dateStr);
   const remaining = cap - totalUnits;
   return {
     capacity: cap,
@@ -659,13 +686,6 @@ export function capacityStatus(state, deliveryDateId) {
     exceeded: totalUnits > cap,
     ratio: cap > 0 ? totalUnits / cap : 0,
   };
-}
-
-// Total planned units across ALL delivery dates (for the dashboard strip).
-export function totalUnitsOnDate(state, deliveryDateId) {
-  return state.orders
-    .filter((o) => o.deliveryDateId === deliveryDateId)
-    .reduce((s, o) => s + o.qty, 0);
 }
 
 // Units of a single product already booked for a date, and how many of its

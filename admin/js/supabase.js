@@ -10,7 +10,7 @@ import { normRules } from "../../availability.js";
 import { publishOccasions } from "./occasion_catalog.js";
 import { flattenTree, primaryCategoryId, productsInCategory } from "./productCategories.js";
 import { isThumb, lineNoteOf } from "../../storefront-fields.js";
-import { effectiveCapacity, effectiveLimit, isPoolablePack, poolRemaining, totalUnitsOnDate } from "./bom.js";
+import { bookedUnitsOnDate, effectiveCapacity, effectiveLimit, isPoolablePack, poolRemaining } from "./bom.js";
 import { byId, fmtRM, newId, orderCode, orderLineName, round2, save, stampOrderLine } from "./state.js";
 import { phoneDigits } from "./customers.js";
 import { customerTotal } from "./courier.js";
@@ -82,9 +82,11 @@ function nextDeliveryDates(state, horizon) {
 // what's already booked. Clamped at 0 so a full day is simply "Sold out" on
 // the storefront.
 export function computeSlots(state, horizon = 10) {
-  return nextDeliveryDates(state, horizon).map(({ date, ids }) => {
+  return nextDeliveryDates(state, horizon).map(({ date }) => {
     const capacity = effectiveCapacity(state, date);
-    const booked = ids.reduce((s, id) => s + (id ? totalUnitsOnDate(state, id) : 0), 0);
+    // ⚠️ The SAME function the Orders chip and the Delivery Dates card read — see
+    // bookedUnitsOnDate in bom.js. This used to be its own sum, and the two disagreed.
+    const booked = bookedUnitsOnDate(state, date);
     return { date, slots_left: Math.max(0, capacity - booked), capacity };
   });
 }

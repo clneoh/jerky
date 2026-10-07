@@ -496,3 +496,28 @@ test("★ every screen renders, and every control on it can be pressed without t
   }
   console.log(`★ press-everything: ${ROUTES.length} screens, ${pressed} presses, 0 throws`);
 });
+
+// ── the Guide's own emphasis ────────────────────────────────────────────────
+// The Guide's cards are written with **double asterisks** round the words that should stand out —
+// and for as long as the Guide has existed, nothing rendered them, so the screen showed the
+// asterisks THEMSELVES on every card that used them (37 paragraphs by 7 Oct 2026). A pass that
+// presses every control cannot see this: the screen renders fine, it just reads wrong. This pins
+// the renderer that fixes it, so a card written that way can never go back to printing its markup.
+test("★ the Guide renders every **pair** as real emphasis, never as literal asterisks", async () => {
+  const mod = await import(resolve("renderGuide").href);
+  const root = createEl("div"); root.__root = true;
+  mod.renderGuide(root, clone(FIXTURE()), new URLSearchParams());
+  await settle();
+
+  const words = all(root).filter((n) => n.nodeType === 3).map((n) => String(n.text || ""));
+  const prints = words.filter((t) => t.includes("**"));
+  assert.deepEqual(prints, [], "no paragraph on the Guide may print its own ** markers");
+
+  // And the other half: the asterisks are gone because they became emphasis, not because the
+  // sentences were edited down to nothing. A guard that only counts asterisks would pass on an
+  // empty screen (rule 8 — a pass over nothing passes).
+  const bold = all(root).filter((n) => n.tagName === "STRONG");
+  assert.ok(bold.length > 20,
+    `the Guide's cards use **bold** throughout, so the screen must carry real emphasis — found ${bold.length}`);
+  assert.ok(bold.every((n) => String(n.textContent).length > 0), "and none of it may be empty");
+});

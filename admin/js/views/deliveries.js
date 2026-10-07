@@ -6,7 +6,7 @@
 
 import { navigate } from "../app.js";
 import { dayListLabel, dayName, deliveryStatus, generateUpcomingDates, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
-import { effectiveCapacity, totalUnitsOnDate } from "../bom.js";
+import { bookedUnitsOnDate, effectiveCapacity } from "../bom.js";
 import { el, button, confirmDialog, showPopup, toast } from "../ui.js";
 import { groupOrders, newId, save } from "../state.js";
 import { needsVan, runDayOf, stopKeyOf } from "../courier_job.js";
@@ -785,7 +785,7 @@ export function renderDeliveries(root, state) {
 }
 
 function dateCard(state, date) {
-  const ordered = totalUnitsOnDate(state, date.id);
+  const ordered = bookedUnitsOnDate(state, date.date);
   const left = Math.max(0, effectiveCapacity(state, date.date) - ordered);
   const st = deliveryStatus(date.date, state.settings);
   const closed = st.closed && !st.past;

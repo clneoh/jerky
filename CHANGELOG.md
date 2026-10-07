@@ -4,6 +4,47 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**7 Oct 2026 — no new engine (still v344), THE SHOP AND THE APP NOW AGREE ON HOW FULL A DAY IS
+(nothing to run, nothing to upload — pushing this one is the whole of it).**
+
+**Why.** You told me the shop showed one quantity for the 9th and the app showed another. You were
+right, and the cause was that **the same number was worked out three separate times** — once for what
+the shop publishes as "N left", once for the Orders calendar's chip, and once for the Delivery
+Dates card — and **two of the three were wrong in the same direction**, so the shop always showed the
+day fuller than the app did.
+
+**What was wrong.**
+
+- The app's chip counted a day's orders with the routine written for **costing**, and that routine
+  **skips an order whose product has been deleted, or whose product has no recipe filled in yet**. So a
+  day with a real order on it could read **0/12** on your calendar while the shop correctly showed it
+  booked. It also carried a note to itself saying the skipped order "was skipped", which is exactly the
+  sort of quiet line that never reaches you.
+- Where **two calendar records shared one day**, the chip counted only the record you tapped while the
+  shop counted every record carrying that date.
+
+**What it does now.** One routine answers "how many are booked on this day", and the shop, the Orders
+chip and the Delivery Dates card all read it. **An order is work you have to do that day: it counts,
+whoever it is for** — including a product you have since deleted, and one whose recipe you have not
+written yet. You took that order; the day has to carry it.
+
+**One difference that is deliberate and stays.** The day's *capacity* was always one calculation and is
+untouched. If a day is booked past its capacity — you took more than the day can make — the app's chip
+goes **negative** and says so, because that is information you need; the shop publishes **nothing left**
+(never a negative), because a customer cannot be shown minus two left.
+
+**What did not change.** No capacity, no limit, no day adjustment, no order, no price — and no figure
+was re-tuned. A day that was already reading correctly is still reading correctly. The shop's own
+number was the right one all along; it is the app that was undercounting.
+
+**And one thing found while checking, fixed in the same push: the Guide was showing its own marking.**
+The Guide's own cards are written with a pair of asterisks round the words that should stand out, and
+**nothing in the app ever turned that pair into anything** — so every card that used them printed the
+asterisks themselves, on your screen, for as long as the Guide has existed. It reads properly now: the
+asterisks are gone and the words they wrapped are simply bolder, as they were always meant to be. A
+check now holds it that way — it renders the whole Guide and fails if any paragraph prints its own
+marking, and it was bitten (the renderer removed on purpose made it fail, exactly as it should).
+
 **07 Oct 2026 — engine v344, HOUSEKEEPING: A DEAD LINE REMOVED (no database step, nothing to upload —
 pushing this one is the whole of it).**
 
