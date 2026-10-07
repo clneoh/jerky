@@ -61,11 +61,17 @@ export function bakeryName(state) {
 // `totals` are the closing figures, drawn after a rule of their own.
 export function journalSheet({
   title, subtitle = "", lines = [], totals = [], empty = "", note = "",
-  where = "", bakery = "", from = "", printed = "",
+  where = "", bakery = "", from = "", printed = "", receipt = "", receiptNote = "",
 } = {}) {
   return {
     title: String(title || "Journal"),
     subtitle: String(subtitle || ""),
+    // ★ THE RECEIPT'S SERIAL, AND WHAT TO SAY WHEN THERE IS NONE (v360). An invoice carries
+    // it under its title; every other journal passes nothing, so this stays empty and draws
+    // nothing. `receiptNote` is the sentence for an order that has no number YET — it is
+    // never both, and a blank where a number belongs is the fault this app calls a bug.
+    receipt: String(receipt || ""),
+    receiptNote: String(receiptNote || ""),
     lines: (lines || []).map((l) => ({
       what: String(l && l.what != null ? l.what : ""),
       amount: Number(l && l.amount) || 0,
@@ -168,7 +174,11 @@ export function journalSheetEl(sheet, cur = "RM") {
       s.bakery ? el("p", { class: "js-bakery" }, s.bakery) : null,
       ...fromLines(s.from, s.bakery).map((line) => el("p", { class: "js-from" }, line)),
       el("h2", { class: "js-title" }, s.title),
-      s.subtitle ? el("p", { class: "js-sub" }, s.subtitle) : null),
+      s.subtitle ? el("p", { class: "js-sub" }, s.subtitle) : null,
+      // The serial, printed under the title on the paper and nowhere else, so a second
+      // number cannot be mistaken for the document's own heading.
+      s.receipt ? el("p", { class: "js-receipt" }, s.receipt) : null,
+      !s.receipt && s.receiptNote ? el("p", { class: "js-receipt note" }, s.receiptNote) : null),
     s.lines.length
       ? el("div", { class: "js-rows" }, ...s.lines.map((l) => (l.heading
           ? el("p", { class: "js-section" }, l.what)

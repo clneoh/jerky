@@ -20,6 +20,7 @@
 import { byId, orderLineName, orderLinePrice } from "./state.js";
 import { costOf } from "./bom.js";
 import { categoriesOf, classOfCategory } from "./accounts.js";
+import { isRefunded } from "./money.js";
 
 // The day an order is FOR: the delivery date record while it exists, its own
 // snapshot after the date was deleted. Sales are counted by delivery day, the same
@@ -57,7 +58,9 @@ export function profitBetween(state, from, to) {
   let lines = 0;
   let uncosted = 0;
   for (const o of state.orders || []) {
-    if (!o || !inRange(orderDay(state, o), from, to)) continue;
+    // ★ A REFUNDED SALE IS NOT A SALE (v361). The money came in and went back out, so it is
+    // not trading — and counting it would report a profit on money she handed back.
+    if (!o || isRefunded(o) || !inRange(orderDay(state, o), from, to)) continue;
     const qty = Number(o.qty) || 0;
     const price = orderLinePrice(state, o);
     sales += qty * (price == null ? 0 : price);
@@ -150,7 +153,9 @@ export function expenseRows(state, from, to, label = null) {
 export function tradingRows(state, from, to) {
   const rows = [];
   for (const o of state.orders || []) {
-    if (!o || !inRange(orderDay(state, o), from, to)) continue;
+    // ★ AND THE ROLL-UP MUST SKIP IT TOO (v361), or the journal behind the line would not
+    // add up to the line — the one fault this app calls a bug in every book it draws.
+    if (!o || isRefunded(o) || !inRange(orderDay(state, o), from, to)) continue;
     const qty = Number(o.qty) || 0;
     const price = orderLinePrice(state, o);
     const cost = lineCost(state, o);

@@ -56,6 +56,22 @@ export function isCollected(group) {
   return at >= PAID_STAGE && first.paidReceived !== false;
 }
 
+// ★★ A REFUNDED SALE IS NEITHER TAKINGS NOR OWED (v361). The money came in and went back
+// out, so it is not money she has — and it is not money anybody owes either, because the
+// order is over. **Every totaller SKIPS it rather than filing it on one side or the other:**
+// as takings it would say she kept money she handed back, and as owed it would say a
+// customer still has to pay for a sale that has been undone. Both are lies, and a total
+// nobody can trust is worse than no total.
+//
+// ⚠️ READ OFF THE ORDER, and stamped on EVERY row of the sale the same way `courierDay` and
+// `pickupTime` are — so a row read on its own still knows. It takes a group or a bare row,
+// because the Money screen walks groups and Profit walks rows.
+export function isRefunded(x) {
+  if (!x) return false;
+  const first = Array.isArray(x.orders) ? (x.orders[0] || null) : x;
+  return !!(first && first.refundedAt);
+}
+
 // The method as it should be read: the list's own label, whichever spelling the row
 // was written with ("Cash" and "cash" are the same thing to the books), or "" for a
 // row nobody said how they paid. Returning only the old lower-case pair here is what
@@ -99,6 +115,9 @@ function tally(state, groups) {
   const out = { cash: 0, tng: 0, other: 0, unmarked: 0, toCollect: 0, toCollectCount: 0, count: 0, byMethod: new Map() };
   for (const g of groups) {
     out.count++;
+    // ★ A refunded sale is money that came in and went back out (v361) — skipped by every
+    // column rather than landing in one of them.
+    if (isRefunded(g)) continue;
     const value = groupValue(state, g);
     // Owed money is counted at what the customer will hand over: the items plus the
     // delivery charge, which is the flat postage or the courier charge standing in its
@@ -201,7 +220,7 @@ export function journalFor(state, method, from, to) {
   const rows = [];
   for (const g of groupOrders(state.orders || [])) {
     const first = firstOf(g);
-    if (!isCollected(g) || methodLabel(first.paidMethod) !== want) continue;
+    if (isRefunded(g) || !isCollected(g) || methodLabel(first.paidMethod) !== want) continue;
     const day = paidOf(state, g);
     if (!isWithin(day, from, to)) continue;
     rows.push({
@@ -267,6 +286,11 @@ export function pocketOwed(state, method, from, to) {
 
 // A stretch of days, for the Money screen.
 export function moneyBetween(state, fromISO, toISO) {
+  // ⚠️ NO REFUND FILTER HERE, AND THAT IS DELIBERATE (v361). `tally` is the one place the
+  // refund is skipped, and a second copy of the rule here would be a second thing to keep in
+  // step — the bite proved this one changed no figure at all, which is what dead weight looks
+  // like. The day filter below still runs: a group is placed in a stretch before its money is
+  // counted, and a refunded one then falls out in `tally` with the rest.
   const groups = groupOrders(state.orders || []).filter((g) => (isCollected(g)
     ? isWithin(paidOf(state, g), fromISO, toISO)
     : isWithin(deliveryOf(state, g), fromISO, toISO)));

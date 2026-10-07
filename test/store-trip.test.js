@@ -4,11 +4,15 @@
 // Two rules are the whole file, and they pull in opposite directions:
 //
 //   • What the card DRAWS has to come off the published row, which means every column
-//     it reads must be NAMED in the storefront's own `select`. PostgREST returns only
-//     the columns asked for, so a column the backoffice publishes and this page forgets
-//     to name arrives as `undefined` — the card is simply missing a section and nothing
-//     anywhere says why. That failure is silent, so it is measured rather than reasoned:
-//     the tests below read the request the page actually sends.
+//     it reads must be NAMED in the lookup's own column list. Until v345 that list was
+//     the storefront's PostgREST `select`; from v345 it is the `returns table (...)`
+//     of `track_order` in supabase/tracking.sql, because the read became a function —
+//     a `using (true)` read policy on the table handed every customer's name and
+//     delivery address to anyone holding the (public) anon key. Either way the failure
+//     mode is identical and silent: a column the backoffice publishes that the list
+//     omits arrives as `undefined`, the card is simply missing a section, and nothing
+//     anywhere says why. So it is MEASURED, not reasoned — the test below reads the
+//     SQL file itself.
 //   • The card must never be taught a courier's vocabulary. It is handed a NEUTRAL
 //     phase (finding, on_the_way, collected…) and carries its own words for those in
 //     all three languages, so a second courier cannot make the customer's page wrong.
@@ -87,11 +91,17 @@ globalThis.location = { search: "" };
 // The one request this file cares about is the tracking lookup; everything else the page
 // asks for at boot (availability, the published storefront settings) is answered empty, so
 // the card under test is built from the row handed to it and nothing else.
+//
+// ⚠️ THE LOOKUP IS AN RPC NOW (v345). It is a POST to /rest/v1/rpc/track_order with the
+// code in the body — not a filtered select on the table — because the table stopped
+// being readable by the public. A stub still matching the old URL would answer nothing
+// and every card test here would quietly pass on an empty card, so the URL is asserted
+// below as well as used.
 const TRACK_URL = [];
 let TRACK_ROW = null;
 globalThis.fetch = async (url) => {
   const href = String(url);
-  if (href.includes("/rest/v1/order_tracking")) {
+  if (href.includes("/rest/v1/rpc/track_order")) {
     TRACK_URL.push(href);
     return { ok: true, json: async () => (TRACK_ROW ? [TRACK_ROW] : []) };
   }
@@ -278,20 +288,48 @@ test("a blank or absent carrier name draws no line at all", async () => {
   assert.equal((await card({ ...base })).some((s) => s.startsWith("Carrier:")), false);
 });
 
-// ── the silent failure, measured off the request the page actually sends ─────
-test("every trip column the card reads is named in the page's own select", async () => {
+// ── the table is no longer public: the security half of v345 ─────────────────
+test("the public cannot read the tracking table, only ask for one order", () => {
+  const raw = readFileSync(new URL("../supabase/tracking.sql", import.meta.url), "utf8");
+  // ⚠️ STRIP THE COMMENT LINES FIRST. This file explains the old policy in its own
+  // comments — including the words `for select to anon using (true)` — so a guard run
+  // against the raw text would find the very string it is looking for in the paragraph
+  // forbidding it. The explanation is not the code.
+  const sql = raw.replace(/^[^\n]*--[^\n]*$/gm, "");
+
+  assert.ok(!/create\s+policy[\s\S]*?for\s+select\s+to\s+anon/i.test(sql),
+    "no read policy hands the table to the public");
+  assert.ok(/security\s+definer/i.test(sql),
+    "the lookup is SECURITY DEFINER, which is what lets it match a code before RLS applies");
+  assert.ok(/grant\s+execute\s+on\s+function\s+public\.track_order\(text\)\s+to\s+anon/i.test(sql),
+    "anon may call the lookup");
+  assert.ok(/drop\s+policy\s+if\s+exists\s+"public read"\s+on\s+order_tracking/i.test(sql),
+    "the old permissive read is dropped, so a database that already has it is repaired");
+});
+
+// ── the silent failure, measured off the lookup's own column list ────────────
+test("every trip column the card reads is named in the lookup's own column list", async () => {
   TRACK_ROW = null;
   await trackOrder("A3F9C2");
   const asked = TRACK_URL[TRACK_URL.length - 1] || "";
   assert.ok(asked, "the page asked for the order");
-  // PostgREST returns ONLY what is named here. A column the backoffice publishes and this
-  // list forgets is a line the card can never draw — and it fails with no error anywhere,
-  // so the request itself is what has to be measured.
-  for (const col of ["courier_name", "courier_phase", "courier_driver", "courier_plate", "courier_phone"]) {
-    assert.ok(asked.includes(col), `${col} is asked for`);
+  assert.ok(asked.includes("/rest/v1/rpc/track_order"),
+    "the page asks the lookup function, not the table");
+
+  // The list that decides what the card CAN draw now lives in the SQL. A function
+  // returns only the columns it names, exactly as a `select` did, so the same silent
+  // failure is available here — and this is where it has to be measured now.
+  const sql = readFileSync(new URL("../supabase/tracking.sql", import.meta.url), "utf8");
+  const declared = sql.slice(sql.indexOf("returns table"), sql.indexOf("language sql"));
+  const body = sql.slice(sql.indexOf("as $$"), sql.indexOf("$$;"));
+  const wanted = ["courier_name", "courier_phase", "courier_driver", "courier_plate",
+    "courier_phone", "tracking_no"];
+  for (const col of wanted) {
+    assert.ok(declared.includes(col), `${col} is declared in the function's returns table`);
+    // A column declared but not selected raises at call time, and the customer's card
+    // is simply empty with nothing anywhere saying why — so both halves are checked.
+    assert.ok(body.includes(col), `${col} is selected in the function's body`);
   }
-  // And the slot the share link rides in, which is not new but is drawn by the same card.
-  assert.ok(asked.includes("tracking_no"), "tracking_no is asked for");
 });
 
 // ── the words themselves ────────────────────────────────────────────────────

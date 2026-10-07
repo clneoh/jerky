@@ -1163,33 +1163,45 @@ export function courierQuoteSection({
     // forbids working it out for her: *"bake plan is just a plan… it is good not to tie our own hand
     // down."* It now opens on what she already keyed in on the order, and is EMPTY when she has not —
     // `courierDayOf` reads whichever shape it is handed, so this box and the card's own field agree.
-    const dayInput = el("input", { class: "input", type: "date", value: courierDayOf(first),
-      "aria-label": "The day the driver collects" });
-    const timeInput = el("input", {
-      class: "input", type: "time",
-      // ★ HER TYPED PICKUP TIME WINS (v341), and her own Settings dispatch time is the fallback —
-      // the same rule as the day box above it. She set that fallback herself; what neither reads is
-      // the bake plan.
-      value: pickupTimeOf(first) || String(((state.settings || {}).courier || {}).dispatch || "").trim(),
-      "aria-label": "The time the driver collects",
-    });
+    // ★★ THE DAY AND THE TIME COME OFF THE ORDER — THERE ARE NO BOXES HERE (v359). This section
+    // used to carry a SECOND pair of day-and-time boxes, on top of the order's own "Courier
+    // delivery date" and "Pickup time" on the same screen, and the two pairs did not talk to each
+    // other: she answered the order's, pressed Get a price, and this half was still holding the
+    // value it had captured when the screen was drawn — so it looked like it was asking her the
+    // same question twice, AND it asked the courier for a price at a time the van was not coming.
+    // Her words: __"why not remove the one inside get a price. the logic is i entered all details
+    // that is relevent, i just want a price."__ — she is right, and the order is where the
+    // details live. This section reads them, and only prices them.
+    //
+    // ⚠️ READ AT ASK TIME, NOT CAPTURED AT BUILD TIME. That is the whole repair: the value is
+    // whatever the order holds when the button is pressed, so what is priced and what the run
+    // will collect at cannot drift apart.
+    function whenDay() {
+      return courierDayOf(first);
+    }
+    function whenTime() {
+      // ★ HER TYPED PICKUP TIME WINS (v341), and her own Settings dispatch time is the fallback.
+      // She set that fallback herself; what neither reads is the bake plan.
+      return pickupTimeOf(first) || String(((state.settings || {}).courier || {}).dispatch || "").trim();
+    }
     const whenNote = el("p", { class: "card-sub", style: "margin:6px 0 0" });
 
     function whenLabel() {
-      const d = String(dayInput.value || "").trim();
-      const t = String(timeInput.value || "").trim();
+      const d = String(whenDay() || "").trim();
+      const t = String(whenTime() || "").trim();
       if (!d) return "as soon as possible";
       return t ? `${d} at ${t}` : d;
     }
-    // The time box is inert without a day, and it is DRAWN inert with the reason
-    // beside it: a time with no day is a schedule the API cannot be given at all, so
-    // leaving it live would be a control that does nothing.
+    // ⚠️ THE NOTE DOES NOT RESTATE THE DAY AND TIME (v359), and that is deliberate. It used to,
+    // because it owned the boxes. The values now live on the order and are on this same screen, so
+    // restating them could only ever be a second copy — and a second copy is what goes stale the
+    // moment she edits one. So this says WHERE they come from and, when the prices under her thumb
+    // belong to a time she has since left, THAT.
     function paintWhen() {
-      const d = String(dayInput.value || "").trim();
-      timeInput.disabled = !d;
+      const d = String(whenDay() || "").trim();
       whenNote.textContent = d
-        ? "The time the driver collects. It opens on the app's own dispatch time; changing it here changes this price only — when a trip can really be booked, this becomes a setting of its own."
-        : "No day has been set for the van yet, so this prices collection as soon as possible. Choose a day above to schedule it.";
+        ? "The price is asked for the order's own Courier delivery date and Pickup time, above."
+        : "No day has been set for the van yet, so this prices collection as soon as possible. Set the Courier delivery date on the order, above, to schedule it.";
       if (pricedFor && pricedFor !== whenLabel()) {
         whenNote.textContent += ` The prices below were asked for ${pricedFor}.`;
       }
@@ -1445,7 +1457,8 @@ export function courierQuoteSection({
         return;
       }
       const trip = tripOf(state, list, {
-        scheduleAt: scheduleAtUTC(dayInput.value, String(timeInput.value || "").trim()),
+        // Read from the ORDER, at the moment the button is pressed (v359) — see whenDay/whenTime.
+        scheduleAt: scheduleAtUTC(whenDay(), whenTime()),
       });
       const problem = tripProblem(trip);
       if (problem) {
@@ -1502,9 +1515,6 @@ export function courierQuoteSection({
         : `The door moved — ask again for a price for this spot. ${prices}`);
     };
 
-    dayInput.addEventListener("input", paintWhen);
-    timeInput.addEventListener("input", paintWhen);
-
     paintEnds();
     paintWhen();
     paintQuotes();
@@ -1519,15 +1529,12 @@ export function courierQuoteSection({
       endsLine,
       offerBox,
       endsRow,
-      el("div", { class: "field", style: "margin-top:12px" },
-        el("label", {}, "The day the driver collects"), dayInput),
-      el("div", { class: "field" }, el("label", {}, "The time the driver collects"), timeInput),
       whenNote,
       askRow,
       statusLine,
       quoteBox,
       canBook ? el("p", { class: "card-sub", style: "margin:14px 0 0" },
-        `Booking books the trip this price was quoted at, so the vehicle and the hour that arrive are the ones priced here — moving the time box after a price does not move a booking. The customer's tracking box takes the trip's share link, which is what the card and the shipped message send them to, and the customer's card also carries the trip's own progress, the driver's name, the plate and a button to ring them. ${courier.label} hands the driver over only shortly before the pickup, so a check made before then comes back with the trip and no driver at all — there is no driver line until there is one to have.`) : null,
+        `Booking books the trip this price was quoted at, so the vehicle and the hour that arrive are the ones priced here — changing the order's Courier delivery date or Pickup time after a price does not move a booking. The customer's tracking box takes the trip's share link, which is what the card and the shipped message send them to, and the customer's card also carries the trip's own progress, the driver's name, the plate and a button to ring them. ${courier.label} hands the driver over only shortly before the pickup, so a check made before then comes back with the trip and no driver at all — there is no driver line until there is one to have.`) : null,
     ].filter(Boolean));
 
     ask();

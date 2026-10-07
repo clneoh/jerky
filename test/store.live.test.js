@@ -54,6 +54,17 @@ globalThis.setInterval = (fn) => { intervalCb = fn; return 1; };
 globalThis.clearInterval = () => {};
 
 const { CONFIG } = await import("../store/config.js");
+
+// ⚠️ THIS FILE'S MENU IS ITS OWN FIXTURE, DECLARED BEFORE THE PAGE RENDERS (v347).
+// The refresh test drives TWO products — filling a basket from both, then depleting
+// them differently on the next poll — so it needs two, and until v347 it borrowed
+// them from the shop's fallback menu. That fallback now lists exactly what is sold
+// (one focaccia, her decision), so the two this file reasons about are written down
+// here instead.
+CONFIG.products = [
+  { name: "Focaccia", price: 16, unit: "loaf" },
+  { name: "Sandwich", price: 8, unit: "piece" },
+];
 const { rollingWeeks } = await import("../store/calendar.js");
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 function dateKey(d) {

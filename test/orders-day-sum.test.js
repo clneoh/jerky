@@ -86,7 +86,7 @@ globalThis.Date = MockDate;
 const { renderOrders } = await import("../admin/js/views/orders.js");
 const { effectiveCapacity } = await import("../admin/js/bom.js");
 const { orderCode, orderLinePrice } = await import("../admin/js/state.js");
-const { forgetPublishedCards } = await import("../admin/js/supabase.js");
+const { forgetPublishedCards, pullIncoming, forgetStuckOrders } = await import("../admin/js/supabase.js");
 
 // Focaccia sells every day; the Saturday loaf is marked Saturdays only, and the
 // day on screen (Thu 10 Sep) is not one of them. One order is already booked.
@@ -2153,4 +2153,207 @@ test("★ Apply coupon on a bring-a-friend reward really takes it off the order"
   assert.ok(spent.usedAt, "the coupon is recorded as spent");
   assert.equal(spent.appliedTo, orderCode(st.orders[0]),
     "and it is stamped with the order it was spent on, which is how the money function finds it");
+});
+
+// ── ★★ v358: ONE ORDER, ONE COUPON — AND THE SCREEN MUST NOT INVITE A SECOND ──
+test("★ applying a coupon does not offer the button again, and a second press spends nothing", () => {
+  // ★★ HER REPORT: applying a coupon *"feels like taking two time but actually one coupon apply"*.
+  // She described it on a page that used the app's own code: after ONE press the row read
+  // "RM3.00 already off this order's total" **and** "RM3.00 coupon ready for this order" **and**
+  // offered the Apply button again — three lines that contradict each other, so the only honest
+  // reading was that the press had not taken. Pressing again then spent the NEXT coupon, stamped
+  // it on the SAME order, and moved no money, because `couponOn` can only ever find one.
+  const st = state();
+  st.products[0].price = 18;
+  st.orders[0].unitPrice = 18;
+  st.orders[0].whatsapp = "60123456789";
+  st.orders[0].customerName = "Aunty Bee";
+  st.orders[0].status = "confirmed";
+  st.settings.referrals = { enabled: true, friendRM: 3, referrerRM: 3, days: 90 };
+  // TWO rewards, which is the ordinary case for someone who has brought in two friends — and the
+  // only shape in which a second press can spend anything.
+  st.credits = [
+    { id: "cr_1", role: "reward", holder: "60123456789", amountRM: 3,
+      earnedAt: "2026-09-01", expiresAt: "", usedAt: null, orderCode: "ZZZZZZ" },
+    { id: "cr_2", role: "reward", holder: "60123456789", amountRM: 3,
+      earnedAt: "2026-09-02", expiresAt: "", usedAt: null, orderCode: "YYYYYY" },
+  ];
+
+  const isApply = (n) => n.tagName === "BUTTON" && txtOf(n).includes("Apply coupon");
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+  const totalNow = () => {
+    const row = all(root).find((n) => String(n.className).includes("li-money"));
+    return row ? txtOf(all(row).find((n) => String(n.className).includes("info-val"))) : "(no total)";
+  };
+  assert.equal(totalNow(), "RM 36.00", "two focaccia before anything");
+
+  const apply = all(root).find(isApply);
+  assert.ok(apply, "her reward is offered on the order as an Apply coupon press");
+  // ⚠️ HELD ONTO ON PURPOSE. This is the second phone: a screen drawn BEFORE the coupon was
+  // applied, with its own button still on it. The guard has to hold against that, because no
+  // screen-level fix can reach a phone that has not repainted yet.
+  apply._listeners.click[0]();
+
+  assert.equal(totalNow(), "RM 33.00", "the press moves the figure");
+  assert.equal(st.credits.filter((c) => c.usedAt).length, 1, "exactly one coupon is spent");
+
+  // The screen as it is drawn now.
+  const fresh = createEl("div");
+  renderOrders(fresh, st, new URLSearchParams({ date: "d10" }));
+  assert.equal(all(fresh).some(isApply), false,
+    "★ THE BUTTON IS GONE once the order has its coupon — it must not offer itself again");
+
+  // And the stale screen presses anyway.
+  apply._listeners.click[0]();
+
+  assert.equal(st.credits.filter((c) => c.usedAt).length, 1,
+    "★ AND THE GUARD HOLDS: the second press spends nothing — no coupon burnt for nothing");
+  // ⚠️ FOUND BY ID, NOT BY NAME. `markOneUsed` spends whichever coupon is oldest by expiry, so
+  // naming "cr_2" here asserted about the wrong one the first time this test ran — the guard had
+  // held and the test still went red. Ask which is UNSPENT instead of which one was picked.
+  const untouched = st.credits.filter((c) => !c.usedAt);
+  assert.equal(untouched.length, 1, "exactly one coupon is left unspent");
+  assert.equal(untouched[0].appliedTo || "", "",
+    "and it was not stamped onto this order — the guard stopped it before anything was written");
+  assert.equal(totalNow(), "RM 33.00", "the total does not move twice for one coupon");
+});
+
+// ── ★★ v364: a shop order the app could not read is SAID on this screen ─────
+test("★ an order the shop took that the app could not read is SAID on the Orders screen", async () => {
+  // ★★ THE FAULT WAS THE SILENCE, NOT THE SKIP. A stuck row retried every 30 seconds and appeared
+  // on NO screen at all — the customer waited and the baker was never told. This drives the real
+  // producer (`pullIncoming` against a stubbed queue) and then renders the real screen, so what is
+  // asserted is what she would actually be looking at.
+  forgetStuckOrders();
+  const st = state();
+  st.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
+  st.products = [{ id: "p1", name: "Focaccia", active: true, price: 15 }];
+  const row = {
+    id: "stuck-1",
+    data: JSON.stringify({ customer: "Ain", date: "2026-10-09",
+      lines: [{ name: "Pizza", qty: 1, price: 10 }] }),
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    const u = String(url);
+    if (u.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    if (u.includes("/rest/v1/incoming_orders") && !(opts && opts.method)) return { ok: true, json: async () => [row] };
+    return { ok: true, json: async () => [row], text: async () => "" };
+  };
+  try {
+    await pullIncoming(st);
+    const root = createEl("div");
+    renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+    const text = all(root).map(txtOf).join(" ");
+
+    assert.match(text, /1 order from the shop is waiting/, "★ THE ORDERS SCREEN SAYS SO");
+    assert.match(text, /Pizza/, "and it NAMES what the order is for");
+    assert.match(text, /not in your Products/, "and says why it could not be read");
+    assert.match(text, /Nothing is lost/, "and tells her nothing is lost");
+    // ⚠️ AND IT IS THE ONLY THING THAT CHANGED — a plain screen must not grow a warning.
+  } finally {
+    globalThis.fetch = realFetch;
+    forgetStuckOrders();
+  }
+});
+
+test("and a screen with nothing stuck says nothing at all", () => {
+  // ⚠️ The other half: a notice that appears when there is nothing to say is worse than no notice.
+  forgetStuckOrders();
+  const st = state();
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+  const text = all(root).map(txtOf).join(" ");
+  assert.equal(/from the shop is waiting/.test(text), false, "no notice when nothing is stuck");
+  assert.equal(byClass(root, "intake-note"), undefined, "and the block is not drawn at all");
+});
+
+// ── ★★ v361: the Refund press, driven to its outcome ─────────────────────────
+test("★ Refund is offered on a paid order, asks FIRST, and leaves the row saying Refunded", () => {
+  const st = state();
+  st.orders[0].status = "paid";
+  st.orders[0].paidReceived = true;
+  st.orders[0].paidMethod = "cash";
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+
+  const buttonNamed = (node, label) =>
+    all(node).find((n) => n.tagName === "BUTTON" && txtOf(n) === label);
+  const press = (node, label) => {
+    const b = buttonNamed(node, label);
+    assert.ok(b, `no button on this screen reads "${label}"`);
+    b._listeners.click[0]();
+  };
+
+  assert.ok(buttonNamed(root, "Refund"), "★ a paid order offers the refund press");
+  // ⚠️ NOTHING IS OFFERED BEFORE THE MONEY IS IN. There is nothing to give back until it has
+  // arrived, and the press must not be sitting there inviting a mistake.
+  const unpaid = state();
+  unpaid.orders[0].status = "confirmed";
+  unpaid.orders[0].paidReceived = false;
+  const unpaidRoot = createEl("div");
+  renderOrders(unpaidRoot, unpaid, new URLSearchParams({ date: "d10" }));
+  assert.equal(buttonNamed(unpaidRoot, "Refund"), undefined, "an unpaid order offers no refund");
+
+  press(root, "Refund");
+
+  // ⚠️⚠️ IT ASKS FIRST, AND THIS IS THE ASSERTION THAT MATTERS. Giving money back is not a
+  // stage to nudge like Paid · Cash; a press that refunded in one tap on a row people tap all
+  // day would be the worst control in the app.
+  assert.equal(st.orders[0].refundedAt, undefined, "★ NOTHING is refunded until she confirms");
+
+  const layer = document.getElementById("confirm-layer");
+  press(layer, "Confirm");
+
+  assert.ok(st.orders[0].refundedAt, "the order is marked refunded");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+  assert.ok(all(root).some((n) => txtOf(n) === "Refunded"),
+    "★ and the row says so — it must not go on reading as Cash");
+  assert.ok(buttonNamed(root, "Undo refund"), "and the way back is offered");
+});
+
+test("★ Undo refund REFUSES rather than half-doing it when the register cannot be reached", async () => {
+  // ⚠️⚠️ THE DISAGREEMENT THIS PREVENTS. An order put back to paid on this phone while the
+  // register still says refunded is her books and her paper telling two different stories — the
+  // exact outcome this feature exists to avoid. So when the register cannot be told, NOTHING
+  // changes and she is told why.
+  const st = state();
+  st.orders[0].status = "paid";
+  st.orders[0].paidReceived = true;
+  st.orders[0].paidMethod = "cash";
+  st.orders[0].refundedAt = "2026-10-06T00:00:00.000Z";
+  // ⚠️ IT HAS A RECEIPT NUMBER, so there IS a register to disagree with. Without one the local
+  // undo is the whole story and refusing would be a gate for no reason — see the test below.
+  st.orders[0].receiptNo = 123;
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+
+  const named = (node, label) => all(node).find((n) => n.tagName === "BUTTON" && txtOf(n) === label);
+  named(root, "Undo refund")._listeners.click[0]();
+  named(document.getElementById("confirm-layer"), "Confirm")._listeners.click[0]();
+  // The handler awaits the register before it decides, so let the microtasks run.
+  await new Promise((r) => setTimeout(r, 0));
+  await new Promise((r) => setTimeout(r, 0));
+
+  assert.ok(st.orders[0].refundedAt,
+    "★ NOTHING changed — the register could not be told, so the order stays refunded");
+});
+
+test("but an order that never got a receipt number can be undone freely — there is no register to disagree with", async () => {
+  const st = state();
+  st.orders[0].status = "paid";
+  st.orders[0].paidReceived = true;
+  st.orders[0].paidMethod = "cash";
+  st.orders[0].refundedAt = "2026-10-06T00:00:00.000Z";
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+
+  const named = (node, label) => all(node).find((n) => n.tagName === "BUTTON" && txtOf(n) === label);
+  named(root, "Undo refund")._listeners.click[0]();
+  named(document.getElementById("confirm-layer"), "Confirm")._listeners.click[0]();
+  await new Promise((r) => setTimeout(r, 0));
+  await new Promise((r) => setTimeout(r, 0));
+
+  assert.equal(st.orders[0].refundedAt, undefined, "the local undo is the whole story here");
 });

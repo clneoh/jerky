@@ -224,6 +224,11 @@ function startSync() {
 // the poll runs only while the app is on screen — returning to the app runs it
 // right away, so a new order never waits a full 30s behind the gate.
 let intakeStarted = false;
+// ★ HOW MANY SHOP ORDERS THE LAST POLL COULD NOT READ (v364), so the screen can repaint when that
+// CHANGES — including when it clears. ⚠️ Without this the Orders screen repainted only when
+// something was IMPORTED, so the notice would have failed to appear when an order got stuck and,
+// worse, failed to go when it came in — a warning that cannot clear is worse than none.
+let lastStuckCount = -1;
 function startIntake() {
   if (intakeStarted) return;
   intakeStarted = true;
@@ -231,8 +236,15 @@ function startIntake() {
     if (!sync.pageActive()) return;
     try {
       const r = await pullIncoming(state);
+      const stuckNow = (r.stuck && r.stuck.length) || 0;
       if (r.imported && r.imported.length) {
+        lastStuckCount = stuckNow;
         maybeSync(state); // new orders change slots-left → refresh availability
+        onSyncChanged();
+      } else if (stuckNow !== lastStuckCount) {
+        lastStuckCount = stuckNow;
+        // ⚠️ NOTHING OF HERS CHANGED — only what the intake could read — so this repaints the
+        // notice and publishes nothing.
         onSyncChanged();
       }
     } catch { /* pullIncoming never throws, but stay safe */ }

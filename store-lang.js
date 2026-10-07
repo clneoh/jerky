@@ -63,6 +63,35 @@ const en = {
   whatsappNo: "WhatsApp number",
   whatsPh: "e.g. 012-345 6789",
   waSub: "We use this to confirm your order and send your payment QR — we'll never spam you.",
+
+  // The small privacy notice under the customer's details (v348). The PDPA wants a
+  // customer to be able to make a choice BEFORE sending their details, so the notice
+  // sits at the point of collection and not only in a policy page. ⚠️ THE CONTACT
+  // NUMBER IS NOT HERE — store/app.js fills it in from the bakery's own setting, so
+  // this sentence must end where the number begins.
+  // v350 — the notice moved to the ORDER BAR: one line under Place order, and this
+  // panel behind it. ⚠️ TWO OF THE FOUR FACTS WERE REWRITTEN AT v353: "we COLLECT your
+  // name..." became "we USE your name... only to...", because "collect" reads to an Asian
+  // ear as "we take it and keep it" (her words: "we are sensitive to when you said you
+  // collect, that mean you keep it"). And "Nobody else sees your details" was simply NOT
+  // TRUE - the driver gets the name, number and address, and the alert that pings her
+  // phone carries them too. Both now name the CLASS of people who handle an order, which
+  // is what s.7 asks for, with no company name in it.
+  // privacyLead is GONE: the Act no
+  // longer opens the notice (the Commissioner's own template does not open with the
+  // law, and neither do the large platforms) — it closes it instead, on privacyDate.
+  privacyLine: "By ordering you agree to our",
+  privacyLink: "privacy notice.",
+  privacyHead: "How we use your details",
+  privacyWhat: "We use your data only to make your order, get it to you, and talk to you about it. To post it we also need your address and the pin on your door.",
+  // ⚠️ 'THE DRIVER' IS THE BAKERY'S WORD (v348). This shop POSTS — its own fulfilment
+  // option is 'Post (nationwide)' — so the party who receives a customer's name and
+  // address is the postal service. Left as the bakery had it, the notice would describe
+  // a van nobody drives for this business.
+  privacyWho: "To post your order to you, the postal service is given your name, number and address. Your confirmation reaches you on WhatsApp, and an alert carrying your order pings our phone. Nobody else sees your details, and we never sell them.",
+  privacyKeep: "Your details stay with your order in our order book, on a secure cloud service and on our own phones behind a PIN. We keep the sales record for seven years, as the tax office asks — but your name, number and address are not part of that record, so ask us any time and we will delete them.",
+  privacyContact: "Ask us any time to see, correct or delete what we hold — WhatsApp",
+  privacyDate: "Under Malaysia's Personal Data Protection Act 2010 (Act 709). Last reviewed: 7 October 2026.",
   howGet: "How will you get your order?",
   courier: "Post (nationwide)",
   selfCollect: "Collect (local)",
@@ -327,6 +356,15 @@ const zh = {
   whatsappNo: "WhatsApp 号码",
   whatsPh: "例如：012-345 6789",
   waSub: "我们会用这个号码确认订单和发送付款二维码，不会拿来 spam 您。",
+
+  privacyLine: "下单即表示你同意我们的",
+  privacyLink: "个人资料声明。",
+  privacyHead: "我们如何使用你的资料",
+  privacyWhat: "你的资料，我们只用来制作你的订单、把它送到你手上，以及就订单与你联络。如果选择邮寄，我们也需要你的地址和门口定位。",
+  privacyWho: "为了把订单寄到你手上，邮递员会收到你的姓名、号码和地址。确认讯息通过 WhatsApp 发给你，订单通知则会传到我们的手机。除此之外没有人会看到你的资料，我们也绝不会出售。",
+  privacyKeep: "你的资料会随订单保存在我们的订单记录里，存放在安全的云端服务，以及我们自己的手机中（有密码保护）。销售记录我们依税务局的要求保存七年；你的姓名、号码和地址并不属于这份记录，随时可以要求我们删除。",
+  privacyContact: "随时可以要求查阅、更正或删除我们持有的资料 —— WhatsApp",
+  privacyDate: "依据《2010 年个人资料保护法令》（Act 709）。最后更新：2026 年 10 月 7 日。",
   howGet: "您希望怎样收货？",
   courier: "邮寄（全马）",
   collectFrom: "去哪里取",
@@ -511,6 +549,15 @@ const ms = {
   whatsappNo: "Nombor WhatsApp",
   whatsPh: "cth. 012-345 6789",
   waSub: "Kami guna nombor ini untuk sahkan tempahan dan hantar QR pembayaran — kami tidak akan spam anda.",
+
+  privacyLine: "Dengan menempah, anda bersetuju dengan",
+  privacyLink: "notis privasi.",
+  privacyHead: "Bagaimana kami menggunakan maklumat anda",
+  privacyWhat: "Kami menggunakan data anda hanya untuk membuat tempahan anda, menghantarnya kepada anda, dan menghubungi anda mengenainya. Jika dipos, kami juga perlukan alamat dan pin pintu anda.",
+  privacyWho: "Untuk mempos tempahan anda, pihak pos diberi nama, nombor dan alamat anda. Pengesahan sampai kepada anda melalui WhatsApp, dan notis tempahan masuk ke telefon kami. Tiada sesiapa lain melihat maklumat anda, dan kami tidak pernah menjualnya.",
+  privacyKeep: "Maklumat anda disimpan bersama tempahan anda dalam buku tempahan kami, di perkhidmatan awan yang selamat dan dalam telefon kami sendiri di belakang PIN. Rekod jualan disimpan selama tujuh tahun seperti yang dikehendaki pihak cukai — tetapi nama, nombor dan alamat anda bukan sebahagian daripada rekod itu, jadi beritahu kami bila-bila masa dan kami akan padamkannya.",
+  privacyContact: "Beritahu kami bila-bila masa untuk melihat, membetulkan atau memadam apa yang kami simpan — WhatsApp",
+  privacyDate: "Di bawah Akta Perlindungan Data Peribadi 2010 (Akta 709). Kemas kini terakhir: 7 Oktober 2026.",
   howGet: "Macam mana anda mahu terima tempahan?",
   courier: "Pos (seluruh negara)",
   collectFrom: "Ambil dari mana",

@@ -658,6 +658,126 @@ button.prod-next.off::after { content: ""; }
   white-space: pre-line;
 }
 
+/* The privacy notice, moved to the ORDER BAR (v350). One quiet line under Place
+   order, and this panel behind it. It was a block at the point of collection (v348);
+   she asked for it moved because the block read as something LOUD sitting in the
+   middle of the form.
+
+   ⚠️ DELIBERATELY QUIET, NOT HIDDEN — and the two are not the same thing. The
+   Commissioner's guide says a notice "hidden behind too many links" is one nobody
+   reads, and warns against a font "so small that it results in the data subject not
+   reading the PDP Notice". The panel opens in place, from the bar itself, so the
+   notice is one press from the button rather than a page away.
+   ⚠️ IT IS A NOTICE, NEVER A GATE: no tick box, and nothing here can refuse an order.
+   ⚠️ THE LINE IS THE ONLY PLACE THE NOTICE IS GIVEN, so 12.5px is its FLOOR, not a
+   starting point. It matches the size the v348 block used. */
+/* .order-notice-wrap carries NO styling of its own. It exists to be the ZONE for "click away
+   to close" (see store/app.js): the words are inside it, and the panel — which used to be — is
+   now checked separately, because it has moved out to the bar. */
+
+/* ⚠️ THE PANEL FLOATS ABOVE THE WHOLE BAR (v357), AND IT DOES NOT PUSH.
+   Its parent is .order-bar, which is `position: fixed` and so is the containing block; that
+   makes `bottom: 100%` land the panel's lower edge exactly on the bar's top edge.
+   ⚠️ IT USED TO SIT INSIDE .order-notice-wrap, directly above the words — which put it ON TOP
+   OF THE ROW, and that row is the Place order button. Her words: "can the pop up be open
+   higher not to block the Placae Order button". The button must stay in sight while the
+   notice is read.
+   left/right are 16px because that is the bar's own horizontal padding, so the panel lines up
+   with the button and the words rather than with the bar's outer edges.
+   max-height keeps it on screen on a short phone; it scrolls inside rather than running off the
+   top. ⚠️ The cap is MEASURED from the tallest language, not picked: at 375px wide the notice is
+   English 405px, Chinese 371px, BAHASA MALAYSIA 518px, so a 360px cap was cutting 45px off the
+   Malay one and making a 4-point notice scroll. 520px shows all three whole, and the
+   `calc(100vh - 160px)` term is what stops it running off the top on a short phone (160px covers
+   the bar's own height plus the gap and a little air). */
+.privacy-sheet {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: calc(100% + 6px);
+  z-index: 1;
+  max-height: min(520px, calc(100vh - 160px));
+  overflow-y: auto;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+}
+.privacy-sheet-head {
+  margin: 0 0 7px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #6b5b4a;
+}
+.privacy-sheet-list {
+  margin: 0;
+  padding: 0 0 0 16px;
+  list-style: disc;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #6f6052;
+}
+.privacy-sheet-list li { margin: 0 0 5px; }
+.privacy-sheet-list li:last-child { margin-bottom: 0; }
+/* The line naming the Act. It CLOSES the notice rather than opening it (v350): the
+   Commissioner's own template opens in plain language, and so do the large
+   platforms. The date is the last reviewed date the guide asks to be recorded. */
+.privacy-sheet-fine {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #9b8b7b;
+}
+/* The number, not a word — so it carries the ink and a tap target worth having. */
+.privacy-wa {
+  color: var(--terra, #c4552f);
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  padding: 3px 0;
+}
+/* One line of small print under the button, and the press that opens the panel.
+   The press carries padding with a matching NEGATIVE margin: that grows the tap
+   target to a thumb's size without moving the words or changing the line's height. */
+.order-notice {
+  margin: 0;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #8a7a68;
+}
+/* ⚠️ NOT THE TERRACOTTA. It carries `--brown-dark` until v352, which read as a RED link
+   sitting under a sentence of grey small print — she asked for the underline to stay and
+   the red to go. `inherit` takes the colour of the line it lives in, so the trigger can
+   never drift away from the small print around it, in any language or on any background.
+   The affordance is the underline and the weight; the hover thickens it rather than
+   changing colour, so nothing here goes red again. */
+.privacy-link {
+  appearance: none;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: inherit;
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  display: inline-block;
+  vertical-align: middle;
+  padding: 6px 4px;
+  margin: -6px -4px;
+  min-height: 24px;
+}
+/* A press that shows nothing when it is hovered reads as a dead control, and the colour
+   is no longer the tell — so the underline carries it, and thickens on hover. */
+.privacy-link:hover { text-decoration-thickness: 2px; }
+/* ⚠️ IT HAD NO FOCUS RING OF ITS OWN until v352, and with `appearance:none; border:0` it
+   was relying on whatever the browser felt like drawing. Same shape as the shop's other
+   focus ring (.promo-dot), in the small print's own colour rather than the terracotta. */
+.privacy-link:focus-visible { outline: 2px solid #8a7a68; outline-offset: 2px; }
+
 /* Notice shown when a live refresh had to fix the customer's order — e.g. an
    item sold out (or only a few left) after they added it. Sits above the menu. */
 .menu-note {
@@ -1131,19 +1251,28 @@ button.prod-next.off::after { content: ""; }
 .fb-say.fb-bad { color: var(--brown); }
 
 /* ---------- Sticky order bar ---------- */
+/* The bar is TWO ROWS since v350: the total and the button, then one line of small
+   print. It was a single flex row; the row itself now lives in .order-bar-row, so
+   everything that used to be a direct child of the bar keeps its arrangement.
+   ⚠️ THE BAR IS FIXED, so its height is a cost paid on every screen: .bar-spacer
+   must cover the CLOSED height in the LONGEST language, or the last thing on the
+   page hides behind the bar. Measured, not guessed — see .bar-spacer below. */
 .order-bar {
   position: fixed;
   left: 0; right: 0; bottom: 0;
   z-index: 30;
-  display: flex;
-  align-items: center;
-  gap: 12px;
   padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
   background: var(--surface);
   border-top: 1px solid var(--line);
   box-shadow: 0 -4px 16px rgba(120, 66, 32, .08);
   max-width: 540px;
   margin: 0 auto;
+}
+.order-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 8px;
 }
 .order-summary {
   display: flex;
@@ -1170,7 +1299,20 @@ button.prod-next.off::after { content: ""; }
 .order-bar .btn:active { transform: translateY(1px) scale(.99); }
 .order-bar .btn[disabled] { opacity: .55; box-shadow: none; cursor: default; }
 
-.bar-spacer { height: 78px; }
+/* ⚠️ MEASURED, NOT GUESSED. The bar is fixed over the page, so this is the only thing
+   stopping its height from swallowing the last row of the shop. It was 78px for the old
+   one-row bar. The notice line made it two rows, and two things set the number, not one:
+
+     · the TALLEST LANGUAGE, and
+     · the NARROWEST SCREEN.
+
+   Measured on the closed bar: at 375px wide English 100 / Chinese 101 / Bahasa Malaysia
+   100; at **320px wide Bahasa Malaysia wraps to a second line and reaches 118** — the
+   tallest of the six readings. So 118 is the floor and 126 gives it headroom. Set from
+   English at 375px (100) the bar would cover the last row of the shop for a customer on
+   a small phone reading in Bahasa Malaysia. ⚠️ The panel does NOT count here: it floats
+   (see .privacy-sheet), so opening the notice does not change this height at all. */
+.bar-spacer { height: 126px; }
 
 .confirm-msg {
   margin: 0 0 14px;

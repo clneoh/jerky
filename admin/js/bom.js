@@ -47,7 +47,14 @@ export function explodeBom(state, deliveryDateId) {
       warnings.push(`Order for a deleted product (${order.qty} pcs) was skipped.`);
       continue;
     }
-    if (!Array.isArray(product.recipe)) continue;
+    // ⚠️ AND THIS HALF WAS SILENT (v362). A product with no `recipe` array is skipped — which is
+    // right for COSTING, there is nothing to explode — but it said nothing, so the order simply
+    // vanished from the costing totals with no line anywhere to say a product cannot be costed.
+    // **The deleted-product branch right above has always warned; this one never did.** Say it.
+    if (!Array.isArray(product.recipe)) {
+      warnings.push(`${product.name} has no recipe, so its ${order.qty} pcs are not costed.`);
+      continue;
+    }
     totalUnits += order.qty;
     const cycleWarnings = [];
     const perUnit = demandMap(state, product.id, memo, new Set(), cycleWarnings);

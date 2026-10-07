@@ -184,6 +184,7 @@ const { keyOf } = await import("../admin/js/customers.js");
 // The real holder object the screen asks, so the spy below watches the call the phone
 // actually makes rather than a stand-in for it.
 const { lalamove } = await import("../admin/js/couriers/lalamove.js");
+const { scheduleAtUTC } = await import("../admin/js/courier_job.js");
 
 // ── the stubbed wire ──────────────────────────────────────────────────────
 //
@@ -599,6 +600,55 @@ test("a booking host still gets [Book this trip] — the two modes are told apar
     assert.ok(buttonNamed(root, "Book this trip"), "the courier screen keeps its booking press");
     assert.ok(!root.textContent.includes("then press Place Order"),
       "and it is told what Save is, not what this app has no Place Order button for");
+  } finally {
+    lalamove.vehicles = realVehicles;
+    lalamove.quote = realQuote;
+  }
+});
+
+// ── ★★ v359: the day and the time come off the ORDER, not from boxes in here ──
+test("★ the price is asked for the order's OWN day and pickup time — this half has no boxes of its own", async () => {
+  // ★★ HER REPORT: *"in a edit order, after send a van, we entre pickup time, pressing get a price,
+  // again it ask for pickup time again?"* — and her own answer to what to do about it: *"why not
+  // remove the one inside get a price. the logic is i entered all details that is relevent, i just
+  // want a price."*
+  //
+  // ⚠️ WHY THIS TEST IS THE ONE THAT MATTERS. This section used to carry a SECOND pair of day-and-
+  // time boxes on top of the order's own — and it captured their values WHEN THE SCREEN WAS DRAWN,
+  // which is before she had typed. So it asked her the same question twice **and, the half that
+  // costs money, asked the courier for a price at a time the van was not coming.**
+  stubFetch();
+  const st = world(null);
+  st.orders[0].courierDay = "2026-10-08"; // the day the van comes
+  st.orders[0].pickupTime = "15:25";      // the time it collects from her
+  const realVehicles = lalamove.vehicles;
+  const realQuote = lalamove.quote;
+  let asked = null;
+  lalamove.vehicles = async () => ({ ok: true, vehicles: [{ key: "MOTORCYCLE" }] });
+  lalamove.quote = async (state, trip) => { asked = trip; return { ok: true, quotes: [], failed: [] }; };
+  try {
+    const root = Object.assign(createEl("div"), { __root: true });
+    root.append(courierQuoteSection({ state: st, orders: st.orders }));
+    press(root, "Get a delivery price");
+    await settle();
+    await settle();
+
+    assert.ok(asked, "the courier was asked for a price");
+    assert.equal(asked.scheduleAt, scheduleAtUTC("2026-10-08", "15:25"),
+      "★ THE PRICE IS ASKED FOR THE ORDER'S OWN DAY AND PICKUP TIME");
+
+    // ⚠️ AND THIS HALF ASKS FOR NEITHER. Those two boxes are the whole of her report.
+    //
+    // ⚠️ READ THROUGH getAttribute, NOT `.type`. `el()` applies anything it does not name
+    // explicitly with `setAttribute`, so an input's type lands in the attribute map and NOT as a
+    // `type` property on the stand-in node — an assertion written `n.type === "time"` was false for
+    // every node and **could never fail**, which the bite caught: a box put back into this half did
+    // not trip it. Found by the bite, not by reading.
+    const inputsOfType = (want) => all(root).filter((n) => n.tagName === "INPUT"
+      && String(n.getAttribute ? n.getAttribute("type") : n.type) === want);
+    assert.equal(inputsOfType("time").length, 0,
+      "no time box in the price half — the order's own Pickup time is the only one on the screen");
+    assert.equal(inputsOfType("date").length, 0, "and no day box either");
   } finally {
     lalamove.vehicles = realVehicles;
     lalamove.quote = realQuote;

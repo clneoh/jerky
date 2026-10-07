@@ -2,7 +2,7 @@
 
 import { addDays, deliveryStatus, fmtPlaced, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
 import { capacityStatus, dayCapacityParts, dayRuleRows, parseDayDelta, productRemaining, saveDayAdjustments } from "../bom.js";
-import { dayMoney, groupValue, isCollected } from "../money.js";
+import { dayMoney, groupValue, isCollected, isRefunded } from "../money.js";
 import { el, button, select, fillMeter, emptyState, confirmDialog, toast, showPopup } from "../ui.js";
 import { dateField } from "../datepicker.js";
 import { DOW, WINDOW_WEEKS, deliveryWindow, occColour, occForDate, rollingWeeks,
@@ -19,7 +19,8 @@ import { byId, fmtRM, groupOrders, moveOrderGroup, newId, orderCode, orderLineNa
 import { strictestCancelDays } from "../../../store/pool.js";
 import { buildConfirmation } from "../confirm.js";
 import { buildPaymentReminder, buildPickupReminder, buildShippedMessage } from "../messages.js";
-import { maybePublishTracking, maybeSync, publishTracking } from "../supabase.js";
+import { claimReceipt, maybePublishTracking, maybeSync, publishTracking, refundReceipt, stuckOrders, unrefundReceipt } from "../supabase.js";
+import { receiptLine, receiptStatus } from "../receipts.js";
 import { writeCourierCharge, courierFeeOf, courierPayerOf, courierCodOf, isCourierOrder, codeMissed, codeNotApplied, couponAgainst, customerTotal, receiptNote, receiptRows, promoOn, promoValue } from "../courier.js";
 import { methodsOf } from "../accounts.js";
 import { schemeOf, referralFlag, giveCredits, validCredits, markOneUsed, referrerName, couponOn } from "../referrals.js";
@@ -713,6 +714,27 @@ function windowForDay(today, iso) {
   return deliveryWindow(today, iso ? [iso] : []).home;
 }
 
+// ★★ ORDERS THE SHOP TOOK THAT THIS APP COULD NOT READ (v364).
+//
+// ⚠️⚠️ THE WHOLE POINT IS THAT IT SAYS SO. A stuck order retries every 30 seconds and, before
+// this, **appeared on no screen at all** — the customer waits and the baker is never told. v363
+// removed the cause it could; this removes the blindness whatever the cause.
+//
+// ⚠️ It names the REASON, not a code, and it says the two things she needs: nothing is lost, and
+// what to do about it.
+function stuckOrdersEl() {
+  const stuck = stuckOrders();
+  if (!stuck.length) return null;
+  const one = stuck.length === 1;
+  return el("div", { class: "intake-note" },
+    el("p", {},
+      el("b", {}, one ? "1 order from the shop is waiting" : `${stuck.length} orders from the shop are waiting`),
+      one ? " and could not be read — " : " and could not be read:"),
+    ...stuck.slice(0, 3).map((s) => el("p", {}, `· ${s.reason}`)),
+    stuck.length > 3 ? el("p", {}, `· and ${stuck.length - 3} more`) : null,
+    el("p", {}, "Nothing is lost: it stays in the queue and is tried again every 30 seconds. Add what it names under Products and it will come in on its own."));
+}
+
 function renderAll(root, state, params) {
   const dates = [...state.deliveryDates].sort((a, b) => a.date.localeCompare(b.date));
   if (!dates.length) {
@@ -870,6 +892,12 @@ function renderAll(root, state, params) {
   // else (New-orders inbox, the delivery calendar, that date's orders) in one
   // container. While a search is active the container hides so only matches show.
   const body = el("div", {});
+  // ★★ AN ORDER THE SHOP TOOK THAT THIS APP COULD NOT READ (v364). It goes ABOVE the inbox,
+  // because it is about an order that never reached the inbox at all — and it is drawn from a
+  // module-level observation of the queue rather than from `state`, so nothing about her data
+  // moved and no cloud field was added.
+  const stuckNote = stuckOrdersEl();
+  if (stuckNote) body.append(stuckNote);
   if (inbox) body.append(inbox);
   body.append(topCal.el, content);
   const finder = orderFinderEl(state, root, selectDate, body);
@@ -3444,16 +3472,37 @@ function parcelApiBlock({ state, group, draft, refresh }) {
 // assign now, so pressing Invoice touches no record at all, and an invoice for an old order
 // reads the same number it always did because the number was never stored. See js/invoice.js
 // for the whole of that reasoning, and for the trade-off it states rather than hides.
-function openInvoice(state, group) {
+async function openInvoice(state, group) {
   const first = (group && group.orders && group.orders[0]) || null;
   // A press that cannot do its job says so rather than opening an empty page. An order
   // with no items is not an order, and there is nothing on it to invoice.
   if (!first) return toast("This order has nothing on it to invoice");
 
+  // ★★ THE SECOND CHANCE TO CLAIM THE NUMBER (v360). The first is the Paid press, and it
+  // can fail — no signal, or the SQL not yet run. This is the moment it matters, because
+  // she is about to hand the paper over. ⚠️ AND ONLY FOR AN ORDER ALREADY PAID: a receipt
+  // number is for money received, so an unpaid order must not draw one from the sequence.
+  if (first.paidReceived && !(Number(first.receiptNo) > 0)) {
+    if (await claimReceipt(state, first)) {
+      const n = Number(first.receiptNo);
+      for (const o of group.orders) {
+        o.receiptNo = n;
+        if (first.receiptRefundedAt) o.receiptRefundedAt = first.receiptRefundedAt;
+      }
+      save(state);
+      maybeSync(state);
+    }
+  }
+
   const cur = invoiceCurrency(state);
   const sheet = invoiceSheet(state, group, {
     bakery: bakeryName(state),
     from: String((state.settings && state.settings.mailingAddress) || ""),
+    // The serial, and the order code beside it — the first proves the sequence, the second
+    // finds the order. Empty on an order that has no number yet, so the paper says why
+    // rather than inventing one.
+    receipt: receiptLine(first, invoiceNo(group)),
+    receiptStatus: receiptStatus(first),
   });
 
   showPopup(`Invoice #${invoiceNo(group)}`, (refresh, close) => el("div", {},
@@ -3463,6 +3512,11 @@ function openInvoice(state, group) {
     // date for the paper and the PDF.
     el("p", { class: "card-sub", style: "margin:0 0 10px" },
       `${String(first.customerName || "").trim() || "No name"} · placed ${longDate(first.orderDate || first.createdAt)}`),
+    // ★ THE RECEIPT'S SERIAL ON SCREEN TOO (v360), so what she reads here is what the paper
+    // says. ⚠️ AND WHEN THERE IS NO NUMBER IT SAYS WHY — never a blank, and never a made-up
+    // zero, which would be the app inventing a receipt the books do not have.
+    el("p", { class: "card-sub", style: "margin:0 0 10px" },
+      receiptLine(first, invoiceNo(group)) || receiptStatus(first)),
     journalBodyEl(sheet, cur),
     el("div", { class: "popup-actions" }, ...journalButtons(sheet, cur))));
 }
@@ -4145,6 +4199,17 @@ function orderGroupRow(state, group, root, dateId) {
       button("Paid · Cash", () => markPaid(state, group, root, dateId, "cash"), "small primary"),
       button("Paid · TNG", () => markPaid(state, group, root, dateId, "tng"), "small primary"));
   }
+  // ★★ THE REFUND (v361). Offered only once the money is IN — there is nothing to give back
+  // until it has arrived — and it sits with the paid buttons because it is the same subject:
+  // the money on this order.
+  //
+  // ⚠️ IT IS NOT ONE OF A PAIR OF QUICK PRESSES like Paid · Cash / Paid · TNG. Giving money
+  // back is not a stage to nudge; it asks first, and the question says the amount.
+  if (isCollected(group)) {
+    actions.push(first.refundedAt
+      ? button("Undo refund", () => undoRefundOrder(state, group, first, { root, dateId }), "ghost small")
+      : button("Refund", () => refundOrder(state, group, first, { root, dateId }), "ghost small"));
+  }
   // Print label, from Baked onwards rather than only while the order sits on Baked (v268).
   // The slip goes out with the bag — a label that tore, or one printed before she had
   // finished packing, needs a second one, and the order it belongs to is often still in
@@ -4250,10 +4315,14 @@ function orderGroupRow(state, group, root, dateId) {
       // back to Not recorded — still dressed the row as paid while every other screen said
       // it owed money. A method with the money not in is a note about HOW it will come,
       // and that belongs in the pop-up, not on a row that reads as settled.
-      first.paidMethod && isCollected(group)
-        ? el("span", { class: `paid-tag${first.paidMethod === "tng" ? " tng" : ""}` },
-            first.paidMethod === "cash" ? "Cash" : "TNG")
-        : null,
+      // ★ A REFUNDED ORDER WEARS ITS OWN TAG, AND NOT THE CASH / TNG ONE (v361). It was paid,
+      // and it is not money she has any more — so the row must not go on reading as settled.
+      isRefunded(group)
+        ? el("span", { class: "paid-tag refunded" }, "Refunded")
+        : first.paidMethod && isCollected(group)
+          ? el("span", { class: `paid-tag${first.paidMethod === "tng" ? " tng" : ""}` },
+              first.paidMethod === "cash" ? "Cash" : "TNG")
+          : null,
       // The courier's charge, in the paid-tag's family so it reads as one more thing
       // about this order: neutral when the customer bore it (it costs her nothing),
       // amber when it came out of her own pocket and is already off her profit.
@@ -4402,6 +4471,14 @@ function referralOfferEl(state, group, scheme, root, dateId) {
 function referralApplyEl(state, group, root, dateId) {
   const first = group.orders[0];
   const cur = (state.settings && state.settings.currency) || "RM";
+  // ★★ NOT OFFERED ONCE THE ORDER HAS ITS COUPON (v358). It used to be, and the row then read
+  // "RM8.00 already off this order's total" and "RM8.00 coupon ready for this order" and an
+  // Apply button, all three at once — so the one honest reading was that the press had not
+  // taken, and pressing again was the obvious next move. Her report: applying a coupon
+  // *"feels like taking two time but actually one coupon apply"*. **Everything this block has
+  // to say is already said by the line above it**, which names the coupon and the money it
+  // moved; a second offer underneath it was only ever an invitation to burn another coupon.
+  if (couponOn(state, group.orders).amount > 0) return null;
   const mine = validCredits(state, waNumber(first.whatsapp));
   if (!mine.length) return null;
   const firstCredit = mine[0];
@@ -4416,11 +4493,19 @@ function referralApplyEl(state, group, root, dateId) {
       // NOTHING — `couponOn` could not tell which of her orders a spent reward belonged to, so
       // this press burned the coupon and moved no money. The toast below has been promising
       // "already taken off this order" since v322; from here it is true.
+      // ⚠️ THREE ANSWERS, NOT TWO (v358). A null from markOneUsed now means either "this holder
+      // has no coupons left" or "this order already has one" — different facts, and saying
+      // "Nothing to apply" for both would hide the second. The guard is a backstop: the button
+      // is no longer drawn on an order that has its coupon, but a second phone holding a stale
+      // screen can still reach it.
+      const already = couponOn(state, group.orders).amount > 0;
       const used = markOneUsed(state, waNumber(first.whatsapp), new Date().toISOString(), orderCode(first));
       anchorRowId = first.id;
       save(state);
       maybeSync(state);
-      toast(used ? `${fmtRM(used.amountRM, cur)} coupon used — already taken off this order` : "Nothing to apply");
+      toast(used
+        ? `${fmtRM(used.amountRM, cur)} coupon used — already taken off this order`
+        : already ? "This order already has its coupon" : "Nothing to apply");
       renderAll(root, state, new URLSearchParams({ date: dateId }));
     }, "soft small"));
 }
@@ -4496,10 +4581,94 @@ function markPaid(state, group, root, dateId, method) {
   publishTracking(state, group); // Paid now green on the customer's track card too
   toast(method === "cash" ? "Paid — cash received" : "Paid — TNG received");
   renderAll(root, state, new URLSearchParams({ date: dateId }));
+
+  // ★★ AND THE RECEIPT GETS ITS NUMBER (v360). This is the moment — a receipt is for money
+  // received, so it is issued when the money is recorded and not when the order was taken,
+  // and never when the paper is printed.
+  //
+  // ⚠️ NOT AWAITED, on purpose. The press must feel instant, and the number is not needed
+  // for anything she is looking at: a claim that cannot be made — no signal, or the SQL not
+  // yet run — leaves the order unnumbered and is simply tried again when the receipt is
+  // opened. That is also what makes this safe to deploy in either order.
+  const first = firstOf(group);
+  claimReceipt(state, first).then((got) => {
+    if (!got) return;
+    // Stamped on EVERY row of the sale, not just the first, so any row read on its own
+    // still knows the number — the same rule `courierDay` and `pickupTime` follow.
+    const n = Number(first.receiptNo);
+    for (const o of group.orders) {
+      o.receiptNo = n;
+      if (first.receiptRefundedAt) o.receiptRefundedAt = first.receiptRefundedAt;
+    }
+    save(state);
+    renderAll(root, state, new URLSearchParams({ date: dateId }));
+  });
 }
 
 function firstOf(group) {
   return ((group && group.orders) || [])[0];
+}
+
+// ── giving the money back (v361) ────────────────────────────────────────────
+//
+// ⚠️⚠️ WHAT A REFUND DOES TO THE BOOKS, because this is money and it has to be said plainly:
+// **the sale stops counting.** A refunded order is neither takings nor owed — the money came
+// in and went back out — so every money total skips it (`money.isRefunded`, read by the Money
+// screen and by Profit). **It is NOT recorded as an expense as well:** the sale is gone, and
+// subtracting the refund a second time would take it off her profit twice.
+//
+// ⚠️ AND THE RECEIPT KEEPS ITS NUMBER. It is MARKED, never renumbered and never deleted —
+// the money really moved, and a receipt that vanished would leave exactly the gap in the
+// sequence that the numbering exists to prevent.
+function refundOrder(state, group, first, { root, dateId } = {}) {
+  const cur = (state.settings && state.settings.currency) || "RM";
+  const what = fmtRM(customerTotal(state, group).total, cur);
+  confirmDialog(`Refund ${what} on this order?`, async () => {
+    const at = new Date().toISOString();
+    for (const o of group.orders) o.refundedAt = at;
+    anchorRowId = first.id;
+    save(state);
+    maybeSync(state);
+    // The register's own mark, best-effort and never blocking: if it cannot be made, the
+    // order still reads as refunded here, and the mark arrives from the server the next time
+    // the receipt is opened.
+    // ⚠️ THE ORDER'S OWN MARK IS NOT BEST-EFFORT; THE REGISTER'S IS. The money really has gone
+    // back — that is a thing she did, not a thing this app decided — so the sale stops counting
+    // the moment she confirms, whatever the register says. But a register that was never told
+    // would print an UNMARKED receipt for a refunded sale, and that disagreement is hers to
+    // know about: it is said on her screen rather than carried in silence.
+    const marked = await refundReceipt(state, first);
+    save(state);
+    toast(marked
+      ? `${what} refunded — off your takings, and the receipt is marked, not renumbered`
+      : `${what} refunded and off your takings — but the receipt could NOT be marked in the register. Run supabase/receipts.sql, then open this order's Invoice.`);
+    renderAll(root, state, new URLSearchParams({ date: dateId }));
+  });
+}
+
+// Undo a refund made on the wrong order. ⚠️ IT PUTS THE SALE BACK AND THE RECEIPT'S MARK WITH
+// IT — and the number was never touched by either, so nothing about the sequence moves.
+function undoRefundOrder(state, group, first, { root, dateId } = {}) {
+  confirmDialog("Put this order back to paid? The refund comes off, and its receipt stops being marked.", async () => {
+    // ⚠️⚠️ AND THIS ONE REFUSES RATHER THAN HALF-DOING IT. An order put back to paid on this
+    // phone while the register still says refunded is a disagreement between her books and her
+    // paper — the one outcome this feature exists to avoid — so if the register cannot be told,
+    // NOTHING changes and she is told why.
+    //
+    // ⚠️ ONLY WHEN THERE IS A REGISTER TO DISAGREE WITH. An order with no receipt number has
+    // never been near it (nothing claimed, or the SQL not yet run), so the local undo IS the
+    // whole story and refusing would be a gate for no reason.
+    if (Number(first.receiptNo) > 0 && !(await unrefundReceipt(state, first))) {
+      toast("Could not reach the receipts register, so nothing has changed. Run supabase/receipts.sql, then try again.");
+      return;
+    }
+    for (const o of group.orders) delete o.refundedAt;
+    anchorRowId = first.id;
+    save(state);
+    maybeSync(state);
+    toast("Refund undone — the order counts as paid again");
+    renderAll(root, state, new URLSearchParams({ date: dateId }));
+  });
 }
 
 function removeOrder(state, group, root, dateId) {

@@ -264,6 +264,23 @@ export function waNumber(n) {
   return digits.startsWith("0") ? `60${digits.slice(1)}` : digits;
 }
 
+// The same number, written the way a person reads it: +60 16-960 1268 (v348).
+// Used by the shop's privacy notice, which has to print contact details rather
+// than only build a link. The Malaysian mobile grouping — country code, then the
+// two-digit prefix, then the subscriber number in two groups — which is how the
+// homepage writes it too. Anything that is not an 11-digit Malaysian number is
+// shown as a plain +digits rather than grouped wrongly.
+export function phoneText(n) {
+  // Normalised through waNumber first, so a number typed with a local leading 0
+  // is read the same way the link would build it.
+  const d = waNumber(n);
+  if (!d) return "";
+  if (d.length === 11 && d.startsWith("60")) {
+    return `+${d.slice(0, 2)} ${d.slice(2, 4)}-${d.slice(4, 7)} ${d.slice(7)}`;
+  }
+  return `+${d}`;
+}
+
 // Bring the customer to the day they have just been given: the delivery calendar
 // above the menu, where the chosen day is written out in words. The same idea as
 // the backoffice jumping to an order it was just told about.
@@ -1238,6 +1255,25 @@ export function renderStatic(cfg) {
     if (policyText) policyText.textContent = value;
     policyBox.hidden = !value;
   }
+
+  // The contact number on the privacy notice (v348). The sentence around it is
+  // translated with the rest of the page; the NUMBER is not translated, and it is
+  // read from the same setting the order button builds its link from — so changing
+  // it in Settings -> Storefront changes it here as well, and the notice can never
+  // print a number that has been left behind. Hidden if there is no number at all,
+  // which is better than a link to nowhere.
+  const privacyWa = document.getElementById("privacy-wa");
+  if (privacyWa) {
+    const shown = phoneText(cfg && cfg.whatsapp);
+    privacyWa.textContent = shown;
+    privacyWa.href = shown ? `https://wa.me/${waNumber(cfg.whatsapp)}` : "";
+    privacyWa.hidden = !shown;
+  }
+
+  // ⚠️ THE NOTICE'S PRESS IS NOT WIRED HERE — see the foot of this file. renderStatic()
+  // runs AGAIN on every render and on every language switch, and a TOGGLE bound in here is
+  // bound once more each time: one press then flipped the panel an even number of times and
+  // the control looked dead. It is bound once, at module scope, with the language pills.
 
   renderDevFoot(cfg);
   renderFeedback(cfg);
@@ -3086,23 +3122,32 @@ export async function trackOrder(code) {
     // after the baker updates it) always gets the current status, never a
     // cached one from the phone's HTTP cache.
     //
-    // PostgREST returns ONLY the columns named in `select`, and paintTrack draws
-    // the courier's number, the courier's charge and whether that charge is COD —
-    // so tracking_no, customer, courier_fee and courier_cod all have to be asked for
-    // here or the customer's half of v97/v98 and of the courier charge is dead: the
-    // row carries the column, the card just never receives it (19 Sep 2026).
+    // ⚠️ THE LOOKUP IS A FUNCTION, NOT A TABLE READ (v345, 7 Oct 2026). It used to
+    // be a PostgREST select on order_tracking, and that table was readable by
+    // ANYONE: the anon key is public by design, and a `using (true)` read policy
+    // meant a single request returned every customer's name and delivery address
+    // — the shop asked for one code, but nothing enforced it. RLS cannot express
+    // "only if you know the code", because a policy sees a row and never the
+    // question. So the match moved into supabase/tracking.sql's `track_order`
+    // function, which returns ONE row and is the only door left on that table.
     //
-    // The five courier_* trip columns are on the same footing (v190): a column the
-    // backoffice publishes and this list does not name is a line the customer's card
-    // can never draw, and it fails silently — the row would arrive complete and the
-    // card would simply be missing a section, with nothing anywhere saying why.
+    // ⚠️ AND THE COLUMN LIST MOVED WITH IT — it is now the `returns table (...)`
+    // in that function, and it is still load-bearing for the same reason it
+    // always was: PostgREST returns only what that list names, and a column the
+    // backoffice publishes which the list omits is a line this card can never
+    // draw, failing silently with nothing anywhere saying why. test/store-trip
+    // reads the SQL file to prove every column the card needs is named there.
     //
-    // postage_quoted follows the same rule (28 Sep 2026): without it in this list the
-    // card cannot tell an order whose delivery cost is still to be quoted from one
-    // with nothing left to pay, and would quietly say neither.
-    const res = await fetch(
-      `${base}/rest/v1/order_tracking?select=status,confirmed_sent,paid_received,delivery,items,total,tracking_no,courier_fee,courier_cod,postage_quoted,promo_code,promo_rm,customer,updated_at,courier_name,courier_phase,courier_driver,courier_plate,courier_phone&code=eq.${clean}&limit=1`,
-      { headers: { apikey: sb.anonKey }, cache: "no-store" });
+    // ⚠️ JERKY'S OWN `postage_quoted` IS IN THAT LIST. It is not in the bakery's and
+    // nobody else will miss it — without it this card cannot tell an order whose
+    // delivery cost is still to be quoted from one with nothing left to pay, and would
+    // quietly say neither. Added to supabase/tracking.sql by this project.
+    const res = await fetch(`${base}/rest/v1/rpc/track_order`, {
+      method: "POST",
+      headers: { apikey: sb.anonKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ p_code: clean }),
+      cache: "no-store",
+    });
     const rows = res.ok ? await res.json() : null;
     const row = Array.isArray(rows) && rows[0];
     lastTrack = row ? { kind: "row", code: clean, row } : { kind: "notfound", code: clean };
@@ -3686,4 +3731,56 @@ if (typeof document !== "undefined" && document.documentElement) {
   applyTo(document, STORE, loadLang());
   paintPillsHook(loadLang());
   pills.forEach((b) => b.addEventListener("click", () => setLang(b.dataset.lang)));
+
+  // ---------------------------------------------------------------------------------
+  // THE PRIVACY NOTICE UNDER PLACE ORDER — bound ONCE, here, and nowhere else.
+  //
+  // ⚠️ IT MUST NOT LIVE IN renderStatic(). That function runs again on every render and on
+  // every language switch (its own comment says so, line ~944), so a TOGGLE bound inside it
+  // is bound every time it runs. An even number of bindings cancel out and the press looks
+  // DEAD; an odd number works. That is exactly what shipped in v350 and v351: pressing the
+  // words did nothing on a freshly loaded shop and opened it after one language switch.
+  // Anything wired here must be wired once, because the bar's markup is static HTML that is
+  // never replaced — one binding lasts the life of the page.
+  //
+  // It opens on a CLICK and closes when the customer clicks AWAY (her words, v352: "make it
+  // expend only when i click on it, away, colapse"). It opened on hover for one version and
+  // she changed it the same day — and a press is the better behaviour anyway, because hover
+  // does not exist on a touchscreen, so a hover-opened notice needed a second, hidden path
+  // to work at all on the phones this shop is ordered from.
+  //
+  // ⚠️ "AWAY" MEANS OUTSIDE THE NOTICE, not outside the words. The panel lives in the same
+  // wrapper, so a press on the paragraphs or on the WhatsApp link inside it leaves it open;
+  // only a press outside the wrapper closes it.
+  // ---------------------------------------------------------------------------------
+  const privacyZone = document.getElementById("privacy-zone");
+  const privacyOpen = document.getElementById("privacy-open");
+  const privacySheet = document.getElementById("privacy-sheet");
+  if (privacyZone && privacyOpen && privacySheet) {
+    const setOpen = (o) => {
+      privacySheet.hidden = !o;
+      privacyOpen.setAttribute("aria-expanded", o ? "true" : "false");
+    };
+    const isOpen = () => privacyOpen.getAttribute("aria-expanded") === "true";
+
+    privacyOpen.addEventListener("click", () => setOpen(!isOpen()));
+
+    // The press that OPENED it must not be the press that closes it: this runs on the
+    // document, in the same bubble, after the button's own — and the wrapper test is what
+    // lets the button through, because the button is inside the zone.
+    //
+    // ⚠️ "AWAY" IS OUTSIDE BOTH, THE WORDS **AND** THE PANEL. Since v357 the panel is a child
+    // of the BAR rather than of #privacy-zone — it is positioned against the bar so it opens
+    // ABOVE Place order instead of on top of it. Without the second test, a press on the
+    // WhatsApp link inside the panel would count as "away" and shut the notice being read.
+    document.addEventListener("click", (e) => {
+      if (isOpen() && !privacyZone.contains(e.target) && !privacySheet.contains(e.target)) {
+        setOpen(false);
+      }
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && isOpen()) setOpen(false);
+    });
+  }
 }

@@ -157,6 +157,44 @@ test("the suggestion box is translated in all three languages", () => {
   assert.notEqual(STORE.ms.fbPh, STORE.en.fbPh, "Bahasa Malaysia is translated, not left in English");
 });
 
+// The privacy notice, now one line under Place order plus the panel behind it (v350).
+// The PDPA asks for the notice in BAHASA MALAYSIA as well as English, and a customer
+// who reads the notice in the language they ordered in is the whole point of it — a
+// language left in English would sit inside an otherwise translated bar and read as
+// boilerplate nobody wrote for them.
+//
+// ⚠️ privacyLead IS GONE, and its absence is the point of v350: the notice used to
+// OPEN with the Act. The Commissioner's own template opens in plain language and so
+// do the large platforms, so the Act moved to the CLOSING line (privacyDate). If a
+// later change brings the opener back, this list will not notice — the test that
+// would is the markup one above, because the sentence would have to be authored into
+// store/index.html as well.
+test("the privacy notice is written in all three languages", () => {
+  const keys = ["privacyLine", "privacyLink", "privacyHead", "privacyWhat", "privacyWho", "privacyKeep", "privacyContact", "privacyDate"];
+  for (const l of LANGS) {
+    for (const key of keys) {
+      assert.ok(typeof STORE[l][key] === "string" && STORE[l][key].trim(), `${l}.${key} is present`);
+    }
+  }
+  for (const l of LANGS.slice(1)) {
+    for (const key of keys) {
+      assert.notEqual(STORE[l][key], STORE.en[key], `${l}.${key} is translated, not left in English`);
+    }
+  }
+});
+
+// ⚠️ AND THE NOTICE CARRIES NO NUMBER. The sentence ends where the number begins, and
+// store/app.js fills that from the SAME setting the order button builds its link from —
+// so changing the number in Settings → Storefront moves both together, and a number
+// typed into a translated string could never be left behind. A number in here would
+// look correct today and be wrong the first time she changes it.
+test("the privacy notice leaves the contact number to the app", () => {
+  for (const l of LANGS) {
+    assert.equal(/\d{6,}/.test(STORE[l].privacyContact), false,
+      `${l}.privacyContact carries no number — store/app.js fills it from the settings`);
+  }
+});
+
 test("the promo line is translated, not left in English", () => {
   // The line is only ever read by a customer, and only on an order that carried a code,
   // so a language left in English would sit inside an otherwise translated card and read
@@ -230,4 +268,74 @@ test("the shop has a way back to the homepage, and it points at a page that exis
   for (const l of LANGS) assert.ok(STORE[l].homeLink.trim(), `${l}.homeLink is present`);
   assert.notEqual(STORE.zh.homeLink, STORE.en.homeLink, "Chinese is translated, not left in English");
   assert.notEqual(STORE.ms.homeLink, STORE.en.homeLink, "Bahasa Malaysia is translated, not left in English");
+});
+
+// The privacy notice moved to the order bar (v350): one line under Place order, and the
+// four facts in a panel behind it. Three things can break it silently, and all three are
+// invisible to any test that stops at "the string is translated".
+//
+//   1. THE PRESS AND THE PANEL MUST NAME EACH OTHER. The button carries aria-controls and
+//      store/app.js looks the panel up by id. Rename the panel and forget the button and
+//      the press becomes a DEAD CONTROL — it looks pressable, does nothing, and a PDF of
+//      the copy would still read perfectly.
+//   2. THE LINE MUST NOT SHRINK. It is the only place the notice is given now, and the
+//      Commissioner's guide warns against a font "so small that it results in the data
+//      subject not reading the PDP Notice". 12.5px is the floor — the size the v348 block
+//      used — not a starting point to tune down later.
+//   3. THE SPACER MUST CLEAR THE TALLEST LANGUAGE. The bar is fixed over the page, so a
+//      spacer shorter than the closed bar hides the last row of the shop behind it. The
+//      bar is tallest in Bahasa Malaysia, which is why 136px is the number and 118px
+//      (English) is not.
+test("the privacy line opens the panel it names, and is not set too small to read", () => {
+  const btn = html.match(/<button\b[^>]*id="privacy-open"[^>]*>/);
+  assert.ok(btn, "the order bar carries the press that opens the notice");
+  const controls = btn[0].match(/aria-controls="([^"]+)"/);
+  assert.ok(controls, "the press says which panel it opens");
+  const sheet = html.match(new RegExp(`<div\\b[^>]*id="${controls[1]}"[^>]*>`));
+  assert.ok(sheet, `the panel the press names (${controls[1]}) exists on the page`);
+  assert.match(btn[0], /aria-expanded="false"/, "it starts closed, and says so out loud");
+  assert.match(sheet[0], /\bhidden\b/, "the panel starts hidden");
+
+  // The four facts and the Act are authored into the page, not only into the dictionary —
+  // the panel is the notice, so a key missing here is a fact the customer never reads.
+  for (const key of ["privacyWhat", "privacyWho", "privacyKeep", "privacyContact", "privacyDate"]) {
+    assert.match(html, new RegExp(`data-i18n="${key}"`), `${key} is authored into the page`);
+  }
+
+  const css = readFileSync(new URL("../store/app.css", import.meta.url), "utf8");
+  const size = css.match(/\.order-notice\s*\{[^}]*font-size:\s*([\d.]+)px/);
+  assert.ok(size, ".order-notice sets its own size");
+  assert.ok(Number(size[1]) >= 12.5,
+    `the line is at least 12.5px (it is ${size[1]}px) — it is the only place the notice is given`);
+
+  const spacer = css.match(/\.bar-spacer\s*\{\s*height:\s*([\d.]+)px/);
+  assert.ok(spacer, ".bar-spacer sets its own height");
+  assert.ok(Number(spacer[1]) >= 118,
+    `the spacer clears the TALLEST language on the NARROWEST screen (measured 118px: Bahasa Malaysia at 320px, where the line wraps to two — it is ${spacer[1]}px)`);
+});
+
+// ⚠️ renderStatic() RUNS AGAIN ON EVERY RENDER AND ON EVERY LANGUAGE SWITCH — its own
+// comment says so (store/app.js ~L944, "renderStatic() runs again on every language
+// switch"). A listener bound inside it is therefore bound AGAIN each time it runs, and that
+// is harmless for a handler that SETS a state — but fatal for one that TOGGLES it: two
+// bindings cancel out and the control reads as DEAD.
+//
+// That is exactly what shipped in v350 and v351. Pressing the words under Place order did
+// NOTHING on a freshly loaded shop, and opened the notice after one language switch. It got
+// past every check because one press was driven, not two, and because the parity at that
+// moment happened to be odd. Driving the press twice in a row is what exposes it.
+//
+// So this is an invariant, and it is broad on purpose: renderStatic must bind NO event
+// listener at all. Anything the shop needs bound belongs at module scope, where the language
+// pills are bound, because the bar's markup is static HTML that is never replaced.
+test("renderStatic binds no event listeners, because it runs more than once", () => {
+  const src = readFileSync(new URL("../store/app.js", import.meta.url), "utf8");
+  const at = src.indexOf("export function renderStatic(");
+  assert.ok(at > -1, "renderStatic exists in store/app.js");
+  const rest = src.slice(at + 1);
+  const nextExport = rest.search(/\nexport (function|const|let) /);
+  const body = nextExport > -1 ? rest.slice(0, nextExport) : rest;
+  const binds = body.match(/addEventListener\(/g) || [];
+  assert.equal(binds.length, 0,
+    `renderStatic() binds ${binds.length} listener(s). It runs again on every render and every language switch, so a binding there is a binding REPEATED — and a TOGGLE bound twice cancels itself out, so the control looks dead on a fresh page and works after a language switch. Bind once at module scope instead.`);
 });

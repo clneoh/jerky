@@ -150,6 +150,13 @@
         <label for="note-input" data-i18n="noteLabel">Delivery note (optional)</label>
         <input id="note-input" class="input note-input" type="text" data-i18n-ph="notePh" placeholder="Gate code, landmark, delivery time…" autocomplete="off">
       </div>
+
+      <!-- HOW HER CUSTOMERS' DETAILS ARE USED now lives in the ORDER BAR, one quiet
+           line under Place order, and in the panel that line opens (v350). It was a
+           block here at the point of collection (v348); she asked for it moved, because
+           the block read as something LOUD sitting in the middle of the form. The line
+           and the panel are at the foot of this file, beside the button. Nothing about
+           the notice itself changed — same four facts, same Act, same date. -->
     </div>
 
     <section id="track-section">
@@ -181,11 +188,63 @@
 
   <div class="bar-spacer"></div>
   <div class="order-bar">
-    <div class="order-summary">
-      <span id="bar-count" class="bar-count">0 items</span>
-      <span id="bar-total" class="bar-total">RM0.00</span>
+    <div class="order-bar-row">
+      <div class="order-summary">
+        <span id="bar-count" class="bar-count">0 items</span>
+        <span id="bar-total" class="bar-total">RM0.00</span>
+      </div>
+      <button id="order-btn" class="btn primary" disabled>Place order</button>
     </div>
-    <button id="order-btn" class="btn primary" disabled>Place order</button>
+
+    <!-- THE NOTICE, ONE LINE UNDER THE BUTTON (v350; reworked v351).
+         She asked for "we use your details only to bake and deliver" OUT, which left
+         "privacy notice" twice back to back — "…our privacy notice. Privacy notice".
+         So the words IN the sentence are now the trigger, the way Amazon's own checkout
+         does it: nothing repeats and nothing is added.
+
+         ⚠️ IT OPENS ON A CLICK, AND CLOSES WHEN YOU CLICK AWAY. Her words: "make it
+         expend only when i click on it, away, colapse." It opened on HOVER for one
+         version (v351) and she changed it the same day. **A press behaves the same on a
+         laptop and on a phone** — which hover never could, because hover does not exist
+         on a touchscreen and this shop is ordered from phones. The trigger is a real
+         <button>, so Enter and Space work, and Escape closes it.
+
+         ⚠️ THE PANEL FLOATS ABOVE THE LINE rather than pushing the bar taller, so
+         opening it never moves Place order under the customer's thumb. It sits INSIDE
+         this wrapper because "away" means OUTSIDE THE NOTICE — a press on the WhatsApp
+         link inside the panel must not close it.
+
+         ⚠️ THE CONTACT NUMBER IS NOT IN THE STRINGS. The sentence is translated with the
+         rest of the page; the number is filled by store/app.js from the same setting the
+         order button builds its link from, so the two can never disagree.
+         ⚠️ IT IS A NOTICE, NEVER A GATE: no tick box, and nothing here can refuse an order.
+         ⚠️ THIS LINE IS THE ONLY PLACE THE NOTICE IS GIVEN, so 12.5px is its FLOOR, not a
+         starting point — the guide warns against a font the customer will not read. -->
+    <div class="order-notice-wrap" id="privacy-zone">
+      <!-- The sentence is split around the press, so the press carries the closing full
+           stop: it is a full stop in English and Bahasa Malaysia and a 。 in Chinese, and
+           a punctuation mark left in the markup would be wrong in one of the three. -->
+      <p class="order-notice"><span data-i18n="privacyLine">By ordering you agree to our</span> <button id="privacy-open" class="privacy-link" type="button" aria-expanded="false" aria-controls="privacy-sheet" data-i18n="privacyLink">privacy notice.</button></p>
+    </div>
+
+    <!-- ⚠️ THE PANEL IS A CHILD OF THE BAR, NOT OF THE NOTICE LINE (v357).
+         It used to sit inside the wrapper just above the words, which put it directly on top
+         of the row — and that row IS the Place order button. Her words: "can the pop up be
+         open higher not to block the Placae Order button". Out here it positions against the
+         BAR itself, so it opens above the whole bar and the button stays in sight while the
+         notice is read.
+         ⚠️ It is no longer inside #privacy-zone, so the click-away test had to learn about it
+         — see store/app.js, where "away" means outside the words AND outside this panel. -->
+    <div class="privacy-sheet" id="privacy-sheet" hidden>
+      <p class="privacy-sheet-head" data-i18n="privacyHead">How we use your details</p>
+      <ul class="privacy-sheet-list">
+        <li data-i18n="privacyWhat">We use your data only to make your order, get it to you, and talk to you about it. To post it we also need your address and the pin on your door.</li>
+        <li data-i18n="privacyWho">To post your order to you, the postal service is given your name, number and address. Your confirmation reaches you on WhatsApp, and an alert carrying your order pings our phone. Nobody else sees your details, and we never sell them.</li>
+        <li data-i18n="privacyKeep">Your details stay with your order in our order book, on a secure cloud service and on our own phones behind a PIN. We keep the sales record for seven years, as the tax office asks — but your name, number and address are not part of that record, so ask us any time and we will delete them.</li>
+        <li><span data-i18n="privacyContact">Ask us any time to see, correct or delete what we hold — WhatsApp</span> <a id="privacy-wa" class="privacy-wa" href="" hidden></a></li>
+      </ul>
+      <p class="privacy-sheet-fine" data-i18n="privacyDate">Under Malaysia's Personal Data Protection Act 2010 (Act 709). Last reviewed: 7 October 2026.</p>
+    </div>
   </div>
 
   <script type="module" src="app.js"></script>

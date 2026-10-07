@@ -86,6 +86,15 @@ let fetchCount = 0;
 globalThis.fetch = async () => { fetchCount += 1; return { ok: true, json: async () => [] }; };
 
 const { setLang, trackOrder } = await import("../store/app.js");
+const { CONFIG } = await import("../store/config.js");
+
+// ⚠️ DERIVED, NOT TYPED (v346). These tests put ONE focaccia in the basket and
+// then assert the bar reads back the same figure after each language switch —
+// the point is that the basket SURVIVES the repaint, never what the loaf costs.
+// Every one of them used to spell ONE_FOCACCIA, which was the fallback menu's own
+// price and silently became a lie the moment that price was corrected to RM16.
+// Reading it off the config keeps the assertion about the thing under test.
+const ONE_FOCACCIA = `RM${CONFIG.products[0].price}.00`;
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 const btn = () => registry["order-btn"];
@@ -107,16 +116,16 @@ test("the shop starts in English and the EN pill is lit", () => {
 });
 
 test("switching to 中文 repaints in place and keeps the basket", () => {
-  // Put one Chicken Jerky in the basket (RM22) through the real stepper.
+  // Put one Focaccia in the basket, through the real stepper.
   firstCardStepper().children[2]._listeners.click[0]();
-  assert.equal(barTotal(), "RM22.00", "the basket has one Chicken Jerky");
+  assert.equal(barTotal(), ONE_FOCACCIA, "the basket has one Focaccia");
   assert.equal(btn().disabled, false);
 
   const before = fetchCount;
   assert.equal(setLang("zh"), true, "the switch reports that it changed the language");
 
   assert.equal(btn().textContent, "提交订单", "the order button is Chinese");
-  assert.equal(barTotal(), "RM22.00", "the basket survived the switch");
+  assert.equal(barTotal(), ONE_FOCACCIA, "the basket survived the switch");
   assert.equal(btn().disabled, false, "and the button is still usable");
   assert.equal(litPill(), pills[1], "the 中文 pill is now lit");
   assert.equal(document.documentElement.lang, "zh", "the page declares its language");
@@ -153,7 +162,7 @@ test("switching 中文 → BM relabels the page and the order button", () => {
   assert.equal(setLang("ms"), true);
   assert.equal(btn().textContent, "Hantar tempahan");
   assert.equal(litPill(), pills[2], "the BM pill is lit");
-  assert.equal(barTotal(), "RM22.00", "the basket is still there");
+  assert.equal(barTotal(), ONE_FOCACCIA, "the basket is still there");
 });
 
 test("the track card repaints in the chosen language with no network", async () => {
@@ -168,7 +177,7 @@ test("the track card repaints in the chosen language with no network", async () 
     "the same card re-reads in English, from the cached lookup — not a new fetch");
   assert.equal(fetchCount, before, "repainting the track card hits no network");
   assert.equal(btn().textContent, STORE.en.placeOrder, "and the order button is back to English");
-  assert.equal(barTotal(), "RM22.00", "the basket is untouched by every switch");
+  assert.equal(barTotal(), ONE_FOCACCIA, "the basket is untouched by every switch");
 });
 
 test("the language pills are wired to the in-place switch", () => {
@@ -176,7 +185,7 @@ test("the language pills are wired to the in-place switch", () => {
   pills[1]._listeners.click[0]();
   assert.equal(btn().textContent, "提交订单", "tapping 中文 switches the page in place");
   assert.equal(litPill(), pills[1]);
-  assert.equal(barTotal(), "RM22.00", "the basket is still intact after a pill tap");
+  assert.equal(barTotal(), ONE_FOCACCIA, "the basket is still intact after a pill tap");
 });
 
 test("store/app.js never reloads the page for a language change", () => {

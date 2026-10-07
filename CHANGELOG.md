@@ -1,8 +1,62 @@
-# Munchies Furkidz — change history (v54 → v344)
+# Munchies Furkidz — change history (v54 → v364)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**8 Oct 2026 — engine v344 → v364, TWENTY VERSIONS IN ONE GO
+(⚠️ ONE LINE OF SQL TO RUN FIRST — see "Before you push" at the end of this entry).**
+
+**Why so many at once.** This is the biggest single jump this app has taken. Twenty versions were
+built on the bakery first, and they all arrive here together. Three of them are different: they
+started with **your** report on this shop, were fixed here, and then went the other way to the
+bakery. Those three are marked ★ below.
+
+★★★ **The one that matters: a customer's order had been thrown away.** Your app would only accept a
+shop order if **every single item** on it was something you currently sell. You had paused one
+product, so an entire customer's order was refused — silently, with nothing telling you, and it
+would have been refused for ever. Meanwhile your shop had already counted it. **That is why the shop
+and the app never tallied.** It now takes in every item it can, writes the ones it could not onto the
+order itself with their quantity and price, and **says so on your Orders screen** — an amber note
+above the New-orders box, naming what the order is for and why it could not come in. It clears
+itself the moment the order can be read.
+
+★ **The day's count.** Your shop, your Orders calendar and your Delivery Dates card each worked the
+same number out for themselves, and **your app's copy skipped any order whose product you had
+deleted, or whose recipe you had not filled in yet** — so a day with a real order on it could read
+**0/12** while the shop correctly showed it booked. One routine answers it now and all three read it.
+An over-booked day still shows **negative** on your app and **nothing left** on the shop: you need to
+know, a customer should never see a minus.
+
+★ **The product stamps.** "Only N left" is worked out the same way, and now follows the same rule.
+
+**Your customers can no longer be read by anyone who asks.** The order-tracking page asked the
+database for one order — but the permission it was allowed to read under said *every row is public*,
+and the key the shop uses is public by design. Anyone who knew that could have asked for the whole
+list and received **every customer's name and delivery address, and the delivery driver's name and
+phone**. The reading has moved inside the database, which now answers one code at a time and nothing
+else. **Nothing looks different on the page.** *(This is what the SQL line below is for.)*
+
+**Your shop now states how it uses a customer's details.** A quiet line under Place order, opening
+into the full notice — what is used, who receives it, how long it is kept, how to ask for it to be
+deleted — in English, Chinese and Malay, closing on the law it is given under. Written to be read,
+not to impress a lawyer.
+
+**Every paid order can draw its own serial receipt number**, and a refund is **marked on the order**
+rather than the number being reused — so the run of numbers never shows a gap where money moved.
+
+**Smaller repairs.** The shop's fallback menu and fallback number now hold **what you really sell and
+your own number** (they held a sample product nobody delivers and, after the update, the bakery's
+number); applying a coupon no longer looks as though it did not take; and the van's price no longer
+asks you for the same pickup time twice.
+
+**Before you push — the one thing you must do.** This release changes the database as well as the
+app, and **a push runs no SQL**. Open your Supabase project → SQL Editor and run **`supabase/receipts.sql`**
+(the new receipt numbers) and then **`supabase/tracking.sql`** again (the new one-code-at-a-time
+reading — both files are safe to run twice). **Until `tracking.sql` has been run, the page a customer
+uses to track an order will not work**, so this one really does have to go in before you push.
+
+**Nothing to upload, no Edge Function, no setting to change on either phone.**
 
 **7 Oct 2026 — no new engine (still v344), THE SHOP AND THE APP NOW AGREE ON HOW FULL A DAY IS
 (nothing to run, nothing to upload — pushing this one is the whole of it).**

@@ -73,7 +73,7 @@ export function invoiceNo(group) {
 //
 // `from` is her mailing address, read from settings by the caller (this module holds
 // no settings of its own, so it stays pure and testable).
-export function invoiceSheet(state, group, { from = "", bakery = "", printed = "" } = {}) {
+export function invoiceSheet(state, group, { from = "", bakery = "", printed = "", receipt = "", receiptStatus = "" } = {}) {
   const rows = (group && group.orders) || [];
   const first = rows[0] || {};
   const t = customerTotal(state, group);
@@ -100,6 +100,13 @@ export function invoiceSheet(state, group, { from = "", bakery = "", printed = "
     // The order's own code IS the invoice number, so the title and the order's tag
     // every other screen shows are the same characters.
     title: `Invoice #${invoiceNo(group)}`,
+    // ★ THE RECEIPT'S OWN SERIAL, BESIDE THE ORDER'S CODE (v360). **Both are needed and
+    // neither replaces the other:** the serial is what proves the receipt sequence has no
+    // gaps, and the order code is what finds the order again. Empty on an order with no
+    // number yet — and then `receiptNote` says WHY rather than leaving a blank where a
+    // number belongs, which is the fault this app treats as a bug everywhere else.
+    receipt,
+    receiptNote: receipt ? "" : receiptStatus,
     // The day the order was PLACED, not today — a reprint is the same invoice and
     // must carry the same date as the first one.
     subtitle: longDate(first.orderDate || first.createdAt),

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateUpcomingDates } from "../admin/js/dates.js";
-import { computeSlots, computeProductSlots, syncAvailability, login, syncStorefront, pullIncoming, importable, publishTracking, maybePublishTracking, forgetPublishedCards, trackingSnapshot, refreshStorefront, pendingReviewCount, fetchPromoVisits } from "../admin/js/supabase.js";
+import { computeSlots, computeProductSlots, syncAvailability, login, syncStorefront, pullIncoming, publishTracking, maybePublishTracking, forgetPublishedCards, trackingSnapshot, refreshStorefront, pendingReviewCount, fetchPromoVisits, importable, stuckOrders, forgetStuckOrders, whyUnimportable } from "../admin/js/supabase.js";
 import { groupOrders, orderCode } from "../admin/js/state.js";
 
 const realFetch = globalThis.fetch;
@@ -632,6 +632,128 @@ test("pullIncoming imports storefront orders, marks and deletes the rows", async
     globalThis.fetch = realFetch;
     if (realLocalStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = realLocalStorage;
   }
+});
+
+// ── ★★ v364: AN ORDER THE INTAKE COULD NOT READ MUST NOT BE INVISIBLE ───────
+const intakeState = () => {
+  const st = makeState();
+  st.products = [{ id: "prd_1", name: "Focaccia", active: true }];
+  st.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
+  return st;
+};
+const intakeFetch = (rows, { unreachable = false } = {}) => async (url, opts) => {
+  const u = String(url);
+  if (u.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+  if (u.includes("/rest/v1/incoming_orders") && !(opts && opts.method)) {
+    if (unreachable) throw new Error("no signal");
+    return { ok: true, json: async () => rows };
+  }
+  return { ok: true, json: async () => rows, text: async () => "" };
+};
+
+test("whyUnimportable says WHY in words she can act on, never a code", () => {
+  const st = intakeState();
+  assert.match(whyUnimportable(st, { lines: [{ name: "Focaccia" }] }), /no bake day/);
+  assert.match(whyUnimportable(st, { date: "2026-10-09", lines: [] }), /nothing on it/);
+  assert.equal(whyUnimportable(st, { date: "2026-10-09", lines: [{ name: "Pizza" }] }),
+    "it is for Pizza, which is not in your Products");
+  assert.equal(whyUnimportable(st, { date: "2026-10-09", lines: [{ name: "Pizza" }, { name: "Cake" }] }),
+    "it is for Pizza, Cake, which are not in your Products");
+});
+
+test("★ an order the intake could not read is REMEMBERED, and a later good read clears it", async () => {
+  // ⚠️⚠️ THE WHOLE FAULT IS THE SILENCE: a stuck row retried for ever and appeared on no screen.
+  forgetStuckOrders();
+  const st = intakeState();
+  const realFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = intakeFetch([{ id: "stuck-1", data: JSON.stringify({ customer: "Ain", date: "2026-10-09", lines: [{ name: "Pizza", qty: 1 }] }) }]);
+    await pullIncoming(st);
+    assert.equal(stuckOrders().length, 1, "★ it is remembered rather than vanishing");
+    assert.match(stuckOrders()[0].reason, /Pizza/);
+
+    // The next poll with nothing waiting clears it — a warning that cannot clear is worse than none.
+    globalThis.fetch = intakeFetch([]);
+    await pullIncoming(st);
+    assert.equal(stuckOrders().length, 0, "and it clears when the queue is clear");
+  } finally { globalThis.fetch = realFetch; forgetStuckOrders(); }
+});
+
+test("⚠️ but an UNREACHABLE queue leaves the list exactly as it was", async () => {
+  // ⚠️⚠️ A ZERO HERE WOULD BE A POSITIVE CLAIM — "nothing is waiting" — MADE ON A REQUEST THAT NEVER
+  // CAME BACK. The same rule the promo label's open count follows. So every early return leaves the
+  // list alone, and only a read that SUCCEEDED replaces it.
+  forgetStuckOrders();
+  const st = intakeState();
+  const realFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = intakeFetch([{ id: "stuck-1", data: JSON.stringify({ date: "2026-10-09", lines: [{ name: "Pizza", qty: 1 }] }) }]);
+    await pullIncoming(st);
+    assert.equal(stuckOrders().length, 1, "one is waiting");
+
+    globalThis.fetch = intakeFetch([], { unreachable: true });
+    const r = await pullIncoming(st);
+    assert.equal(r.ok, false, "the read failed");
+    assert.equal(stuckOrders().length, 1, "★ AND THE WARNING STANDS — it is not cleared by a failure");
+  } finally { globalThis.fetch = realFetch; forgetStuckOrders(); }
+});
+
+// ── ★★ v363: ONE LINE SHE NO LONGER SELLS MUST NOT THROW THE ORDER AWAY ──────
+test("★ an order with a line she no longer sells is STILL imported, and says which line is missing", async () => {
+  // ★★ FROM THE MUNCHIES BRIDGE NOTE, 2026-10-08. `importable` used `.every`, so **ONE line the
+  // shop had sold which this app no longer knows** — a product she paused, renamed or deleted
+  // while a customer's page was still open — **refused the WHOLE order, including the lines she
+  // does still sell.** And `pullIncoming` leaves a refused row at `status='new'`: it retries for
+  // ever and **tells nobody.** On the other shop that was a real, invisible, unserved order.
+  storageShim(new Map());
+  const state = makeState();
+  state.products = [
+    { id: "prd_1", name: "Focaccia", active: true },
+    { id: "prd_2", name: "Sandwich", active: false }, // ← she PAUSED it after the page was open
+  ];
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
+  const row = {
+    id: "abc-999",
+    data: JSON.stringify({
+      customer: "Ain", date: "2026-09-04", total: 38,
+      lines: [{ name: "Focaccia", qty: 2, price: 15 }, { name: "Sandwich", qty: 1, price: 8 }],
+    }),
+  };
+  globalThis.fetch = async (url, opts) => {
+    if (url.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    if (url.includes("/rest/v1/incoming_orders") && !(opts && opts.method)) return { ok: true, json: async () => [row] };
+    if (url.includes("/rest/v1/incoming_orders") && (opts && opts.method === "PATCH")) return { ok: true, json: async () => [row] };
+    return { ok: true, text: async () => "" };
+  };
+  try {
+    const r = await pullIncoming(state);
+    assert.deepEqual(r.imported, ["abc-999"], "★ THE ORDER IS TAKEN — not thrown away over one line");
+    assert.equal(state.orders.length, 1, "only the line she still sells becomes a row");
+    assert.equal(state.orders[0].qty, 2);
+    const note = state.orders[0].note;
+    assert.match(note, /Sandwich ×1/, "★ the missing line is NAMED, with its quantity");
+    // ⚠️ AND ITS PRICE IS NOT DECORATION: the order's total is built from the rows it holds, so
+    // without the figure she is looking at a total the customer never paid.
+    assert.match(note, /RM\s?8\.00/, "★ AND ITS PRICE — the total is short and this is what corrects it");
+    assert.match(note, /NOT in its total/, "and the note says the total is short");
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realLocalStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = realLocalStorage;
+  }
+});
+
+test("★★ but an order she sells NOTHING of still WAITS rather than being claimed and lost", () => {
+  // ⚠️ THE HONEST REFUSAL, AND IT IS WHY THE FIX IS `some` AND NOT "always import". There is
+  // nothing to make this order out of, so it stays `status='new'` and retries — which is exactly
+  // what the retry loop exists for. Claiming it would leave an empty order and hide the problem.
+  const state = makeState();
+  state.products = [{ id: "prd_1", name: "Focaccia", active: true }];
+  assert.equal(importable(state, { date: "2026-09-04", lines: [{ name: "Pizza", qty: 1 }] }), false,
+    "★ nothing she sells → the order WAITS");
+  assert.equal(importable(state, { date: "2026-09-04", lines: [{ name: "Focaccia", qty: 1 }, { name: "Pizza", qty: 1 }] }), true,
+    "★ and one line she HAS is enough to take the whole order");
+  assert.equal(importable(state, { date: "2026-09-04", lines: [] }), false, "an empty cart is not an order");
+  assert.equal(importable(state, { lines: [{ name: "Focaccia", qty: 1 }] }), false, "and a date is still required");
 });
 
 test("pullIncoming groups a multi-item storefront order under one groupId", async () => {
@@ -1960,68 +2082,11 @@ test("★ with nothing limited to publish, the sweep sends NO name-delete at all
   }
 });
 
-// ── one paused item must not throw a customer's order away ──────────────────
-// Her own data, 7 Oct 2026: a shop order for the 9th held three items, one of them
-// (Chicken Jerky (Taster)) on a product she had paused. The gate asked for EVERY line to
-// match, so the whole order was refused — and refused silently, forever, while the shop's
-// count had already gone down for it. That is a customer's order invisible in between two
-// numbers that disagree, which is exactly what she reported.
-test("★ importable accepts an order when ANY line is still on her menu", () => {
-  const state = makeState();
-  state.products = [
-    { id: "p1", name: "Pork Jerky", active: true },
-    { id: "p2", name: "Chicken Jerky (Taster)", active: false },
-  ];
-  const day = { date: "2099-01-05" };
-  assert.equal(importable(state, { ...day, lines: [{ name: "Pork Jerky", qty: 1 }] }), true,
-    "an ordinary order");
-  assert.equal(importable(state, { ...day, lines: [
-    { name: "Pork Jerky", qty: 1 },
-    { name: "Chicken Jerky (Taster)", qty: 1 },
-  ] }), true, "★ one paused item must NOT block the item she sells");
-  assert.equal(importable(state, { ...day, lines: [{ name: "Chicken Jerky (Taster)", qty: 1 }] }), false,
-    "but an order with nothing she sells still waits rather than being claimed");
-  assert.equal(importable(state, { ...day, lines: [{ name: "Something Gone", qty: 1 }, { name: "Also Gone", qty: 2 }] }), false,
-    "and two unknown names are no better than one");
-});
 
-test("★ such an order is taken in, and the item that couldn't be is NAMED on the order", async () => {
-  storageShim(new Map());
-  const state = makeState();
-  state.products = [
-    { id: "prd_1", name: "Pork Jerky", active: true, price: 31 },
-    { id: "prd_2", name: "Pork Jerky (Taster)", active: true, price: 17 },
-    { id: "prd_3", name: "Chicken Jerky (Taster)", active: false, price: 16 },
-  ];
-  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
-  const row = { id: "abc", data: JSON.stringify({
-    customer: "A Customer", date: "2099-01-05", total: 64, whatsapp: "60123456789",
-    lines: [
-      { name: "Chicken Jerky (Taster)", qty: 1, price: 16 },
-      { name: "Pork Jerky (Taster)", qty: 1, price: 17 },
-      { name: "Pork Jerky", qty: 1, price: 31 },
-    ],
-  }) };
-  globalThis.fetch = async (url, opts) => {
-    if (url.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
-    if (url.includes("/rest/v1/incoming_orders") && !(opts && opts.method)) return { ok: true, json: async () => [row] };
-    if (url.includes("/rest/v1/incoming_orders") && (opts && opts.method === "PATCH")) return { ok: true, json: async () => [row] };
-    return { ok: true, text: async () => "" };
-  };
-  try {
-    const r = await pullIncoming(state);
-    assert.ok(r.ok);
-    assert.equal(r.imported.length, 1, "the row is claimed — it does not sit retrying forever");
-    assert.equal(state.orders.length, 2, "★ the two items she DOES sell are taken in");
-    const noted = state.orders.find((o) => String(o.note || "").includes("Chicken Jerky (Taster)"));
-    assert.ok(noted, "★ and the paused item is written onto the order, where she cannot miss it");
-    assert.ok(noted.note.includes("1 x Chicken Jerky (Taster)"), "named, with its quantity");
-    assert.ok(noted.note.includes("(RM16)"), "★ and the price, so the short total is explained");
-    assert.ok(/not on your menu/.test(noted.note), "and what it means");
-    // The customer's own details came through with it.
-    assert.equal(state.orders[0].customerName, "A Customer");
-  } finally {
-    globalThis.fetch = realFetch;
-    if (realLocalStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = realLocalStorage;
-  }
-});
+// ⚠️ THE TWO TESTS THAT STOOD HERE ARE GONE, AND THE BAKERY'S REPLACED THEM (v363/v364). They
+// were written on this side first — this project found the fault, and the fix travelled to the
+// bakery — but the versions that now live above ("an order with a line she no longer sells is
+// STILL imported" and "an order she sells NOTHING of still WAITS") test the same ground against
+// the shipped API, including `unmatchedLinesNote`, which the wording moved into. Keeping both
+// sets would be two spellings of one rule, and the older one asserts a sentence that no longer
+// exists.

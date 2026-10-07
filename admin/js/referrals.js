@@ -342,6 +342,24 @@ export function giveCredits(state, group, scheme = schemeOf(state), today = toda
 // null. Finds the original state row (creditRows returns copies, so mutating
 // them would never persist).
 export function markOneUsed(state, whatsapp, now = new Date().toISOString(), appliedTo = "") {
+  // ★★ ONE ORDER, ONE COUPON — AND THIS IS WHERE IT IS ENFORCED (v358). Her report: applying a
+  // coupon *"feels like taking two time but actually one coupon apply"*. The screen was offering
+  // the button again after a coupon had already come off the order, so a second press looked like
+  // the way to make it take — and it spent the NEXT coupon, stamped it on the SAME order, and
+  // moved no money at all, because `couponOn` can only ever find one. **A coupon burnt for
+  // nothing.** The button is no longer offered (see `referralApplyEl`), and this is the guard
+  // behind it — for a second phone holding a stale screen, which is exactly the case a
+  // screen-level fix cannot reach.
+  //
+  // ⚠️ IT ONLY APPLIES WHEN AN ORDER IS NAMED. Called without `appliedTo`, this still walks the
+  // holder's coupons one at a time, which is what marking a coupon by hand means and what
+  // test/referrals.test.js pins.
+  if (appliedTo) {
+    const order = String(appliedTo);
+    const spentHere = (state.credits || []).some((c) => c
+      && c.usedAt && String(c.appliedTo || "") === order);
+    if (spentHere) return null;
+  }
   const sorted = validCredits(state, whatsapp);
   if (!sorted.length) return null;
   const row = (state.credits || []).find((c) => c.id === sorted[0].id);

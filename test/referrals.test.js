@@ -259,6 +259,32 @@ test("markOneUsed marks the oldest valid credit and returns it", () => {
   assert.equal(markOneUsed(st, "60123456789"), null, "nothing left to use");
 });
 
+// ── ★★ v358: one order, one coupon — enforced here, not only on the screen ───
+test("★ markOneUsed refuses a second coupon for an order that already has one", () => {
+  // ⚠️ THE WALK ABOVE MUST KEEP WORKING — that is what marking a coupon by hand means, and it is
+  // why the guard only applies when an ORDER IS NAMED. This test is the other half: name the
+  // order, and a second coupon for that same order is refused.
+  const st = baseState();
+  st.credits = [
+    { id: "c1", holder: "60123456789", expiresAt: "", usedAt: null, amountRM: 3, role: "reward", earnedAt: "2026-09-01T00:00:00.000Z", orderCode: "" },
+    { id: "c2", holder: "60123456789", expiresAt: "", usedAt: null, amountRM: 3, role: "reward", earnedAt: "2026-09-01T00:00:00.000Z", orderCode: "" },
+  ];
+
+  const firstUse = markOneUsed(st, "60123456789", "2026-09-06T10:00:00.000Z", "ABC123");
+  assert.ok(firstUse, "the first coupon goes on fine");
+  assert.equal(firstUse.appliedTo, "ABC123");
+
+  const secondUse = markOneUsed(st, "60123456789", "2026-09-06T11:00:00.000Z", "ABC123");
+  assert.equal(secondUse, null, "★ the second one for the SAME order is refused");
+  assert.equal(st.credits.filter((c) => c.usedAt).length, 1, "and only one coupon was spent");
+  assert.equal(st.credits.find((c) => c.id === "c2").usedAt, null, "the other is untouched");
+
+  // A DIFFERENT order is a different question — the coupon is hers to spend there.
+  const otherOrder = markOneUsed(st, "60123456789", "2026-09-06T12:00:00.000Z", "DEF456");
+  assert.ok(otherOrder, "a coupon still goes on another order");
+  assert.equal(otherOrder.appliedTo, "DEF456");
+});
+
 test("markCreditUsed stamps one by id; setCreditExpiry changes or clears it; removeCredit deletes it", () => {
   const st = baseState();
   st.credits = [

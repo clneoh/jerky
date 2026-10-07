@@ -756,6 +756,59 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## Engine v344 → v364 — twenty versions, and the sync that carried an identity across (8 Oct 2026)
+
+Base bakery `d47248b` (v344, exactly where jerky sat) → `0e4f836` (v364). **37 files, ~3,232
+insertions.** `git merge-file -p --diff3` per file; only **7 conflicts** (bom.js 1, supabase.js 4,
+store-lang.js 2) plus 15 in the test files. Suite **2901 → 2941 pass / 0 fail**.
+
+**The three versions that travelled the other way.** The bakery's v362 (the day's count), v363 (an
+order thrown away over one line) and v364 (the app says so) are its ports of *jerky's* 7 Oct fixes —
+its commit messages name the munchies bridge note. Two consequences:
+
+- **v362 kept the by-id counter; jerky keeps the by-date one.** The bakery fixed `capacityStatus` to
+  `totalUnitsOnDate(state, id)`; jerky already had `bookedUnitsOnDate(state, dateStr)`. Resolution:
+  jerky's hunk wins, and the bakery's *other* bom.js change (a **warning when a product has no
+  recipe**, so a line is never silently uncosted) is adopted.
+- **v364 closes the hole jerky left open** — "an order where NO line matches still waits forever,
+  silently". Its `stuckOrders()` / `whyUnimportable()` / `forgetStuckOrders()` are adopted whole, and
+  the amber notice on the Orders screen comes with them.
+
+**⚠️ SILENT-DROP TRAP #1 — the security fix's column list.** v345 moves the customer's track lookup
+out of PostgREST and into a `SECURITY DEFINER` function, because the table's `for select to anon
+using (true)` policy exposed **every customer's name, address and the driver's phone** to anyone
+holding the (public) anon key. The shop's `select=` list disappears — the columns now live in
+`supabase/tracking.sql`'s `returns table (…)`. **The bakery's list does not contain
+`postage_quoted`**, jerky's own column. Adopted as-is, the customer's card would have lost the line
+telling them the posting cost is still to be quoted — silently, with nothing going red. **Added to
+both halves of the function** (a `returns table` list and its SELECT are positional).
+
+**⚠️ SILENT-DROP TRAP #2 — an identity is not engine content.** v346 fixes the *bakery's* shop
+fallback number, changing `store/config.js`'s `whatsapp` from the placeholder `60123456789` to the
+bakery's real number. That line merged with **no conflict** — jerky's file held the identical
+placeholder — so the bakery's phone number landed in jerky's shop, i.e. the number a customer is
+handed at the one moment the published settings cannot be reached. **Jerky's is `60189136389`.** This
+is the class CLAUDE.md names ("never the bakery's CNAME, its Supabase project or its seed data") and
+the merge could not have caught it by itself.
+
+**⚠️ CORRECTION TO A PREVIOUS CLAIM.** The 7 Oct note to the bakery said its `productRemaining` /
+`poolRemaining` carried the same by-id fault. It does not: **both apps merge two `deliveryDates`
+records for the same day at load** (bakery state.js:654, jerky state.js:665), so a day has one record
+and the two sides cannot disagree there. Jerky's widening is still the right rule and is kept, but it
+was not a live divergence on either side. The bridge note has been corrected.
+
+**Also adopted:** `admin/js/receipts.js` + `supabase/receipts.sql` (v360/v361 — serial receipt
+numbers, refund/undo via two RPCs); the shop's privacy notice (v348–v357, all three languages, its
+copy localized — *"To post it we also need…"*, *"the postal service is given…"*, where the bakery has
+"the driver"); v347's config comment; v358/v359.
+
+**Localization:** the privacy keys are jerky's, in all three languages; the authored English in
+`store/index.html` is kept in step with the dictionary (the i18n test compares the two).
+
+**⚠️ New SQL, and one of them is not optional before deploying:** `supabase/receipts.sql` (new) and
+`supabase/tracking.sql` (changed — until it is run, the customer's track page does not work at all).
+A push runs no SQL.
+
 ## A customer's order can no longer be thrown away (7 Oct 2026, no engine bump)
 
 Found by asking her database whether a shop order was sitting unaccepted — there was one, from

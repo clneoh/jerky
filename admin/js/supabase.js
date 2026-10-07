@@ -855,6 +855,111 @@ export function forgetPublishedCards() {
   published.clear();
 }
 
+// ── the receipt number (v360) ───────────────────────────────────────────────
+//
+// ⚠️ THE NUMBER COMES FROM THE DATABASE AND FROM NOWHERE ELSE. `supabase/receipts.sql`
+// holds the counter and an IDEMPOTENT function: an order that already has a number gets
+// that number back and consumes nothing. So calling this twice — a second press of Paid,
+// the other phone, opening the receipt again — is safe by construction, and cannot leave
+// the gap in the sequence that a local counter would.
+//
+// ⚠️ AND IT NEVER BLOCKS HER. A claim that cannot be made (no signal, the SQL not yet
+// run) simply returns false and leaves the order unnumbered. The Paid press has already
+// been saved by then, and the next claim — opening the receipt — tries again. That is
+// also what makes the deploy safe: the app works before the SQL is run and after it.
+//
+// Returns true when the order now genuinely holds a number.
+export async function claimReceipt(state, order) {
+  if (!order) return false;
+  // ⚠️⚠️ A RECEIPT IS FOR MONEY RECEIVED, AND THIS IS WHERE THAT IS ENFORCED. An order that
+  // has not been paid must never draw a number: that would put a serial on a receipt the
+  // books do not have, and every number after it would be one ahead of a sale that never
+  // happened. **The guard lives HERE and not only on the screen that calls it** — v358's
+  // lesson, and the case it covers is a second phone or a future caller, which no
+  // screen-level check can reach.
+  if (!order.paidReceived) return false;
+  // Already numbered: nothing to ask the server for. This is the ordinary path on every
+  // press after the first, and it is why a reprint costs no network at all.
+  if (Number(order.receiptNo) > 0) return true;
+  const c = cfg(state);
+  if (!ready(c)) return false;
+  const code = String(orderCode(order) || "").trim();
+  if (!code) return false;
+  let token = cachedToken();
+  if (!token) {
+    try { token = await login(c.url, c.anonKey, c.email, c.password); }
+    catch { return false; }
+  }
+  try {
+    const res = await fetch(`${c.url}/rest/v1/rpc/claim_receipt_number`, {
+      method: "POST",
+      headers: {
+        apikey: c.anonKey,
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ p_order_code: code }),
+    });
+    if (!res || !res.ok) return false;
+    const rows = await res.json();
+    const row = Array.isArray(rows) ? rows[0] : null;
+    const n = Number(row && row.number);
+    if (!Number.isFinite(n) || n <= 0) return false;
+    order.receiptNo = n;
+    // ⚠️ A REFUND IS CARRIED BACK TOO, and it only ever ADDS a mark. The server decides
+    // whether this order has been refunded; a phone that has never seen the refund learns
+    // about it here rather than by assuming the order is clean.
+    if (row.refunded_at) order.refundedAt = String(row.refunded_at);
+    return true;
+  } catch { return false; }
+}
+
+// One call to one receipt function, and the same two answers for both: it worked, or it did
+// not. ⚠️ KEEPING THE TWO IN ONE PLACE IS NOT TIDINESS. A refund and the undoing of it must
+// send the same body and read the same reply; two copies of that are two chances to drift,
+// and the thing that would drift is her books.
+async function receiptRpc(state, order, fn) {
+  if (!order) return false;
+  const c = cfg(state);
+  if (!ready(c)) return false;
+  const code = String(orderCode(order) || "").trim();
+  if (!code) return false;
+  let token = cachedToken();
+  if (!token) {
+    try { token = await login(c.url, c.anonKey, c.email, c.password); }
+    catch { return false; }
+  }
+  try {
+    const res = await fetch(`${c.url}/rest/v1/rpc/${fn}`, {
+      method: "POST",
+      headers: {
+        apikey: c.anonKey,
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ p_order_code: code }),
+    });
+    return !!(res && res.ok);
+  } catch { return false; }
+}
+
+// Mark one order's receipt refunded. ⚠️ IT MARKS, IT NEVER DELETES — the number stays
+// spent for ever, or the sequence shows a gap where money really moved.
+export async function refundReceipt(state, order) {
+  if (!(await receiptRpc(state, order, "refund_receipt"))) return false;
+  order.refundedAt = new Date().toISOString();
+  return true;
+}
+
+// Take the mark back off — for a refund made on the wrong order. ⚠️ IT CLEARS A MARK AND
+// NOTHING ELSE: the number stays, because a receipt that vanished would leave the gap the
+// whole table exists to prevent.
+export async function unrefundReceipt(state, order) {
+  if (!(await receiptRpc(state, order, "unrefund_receipt"))) return false;
+  delete order.refundedAt;
+  return true;
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Order intake — customer orders placed on the storefront land in the
 // backoffice order list automatically. The storefront inserts a row; this
@@ -862,32 +967,81 @@ export function forgetPublishedCards() {
 // isn't imported twice.
 // ────────────────────────────────────────────────────────────────────────────
 
-// Whether an incoming order can be imported: it needs a date and every line
-// must match an active backoffice product. Rows that fail this are left alone
-// (status stays "new") so the owner can add the product and the order retries.
+// Whether an incoming order can be imported: it needs a date, and AT LEAST ONE line must match an
+// active backoffice product. Rows that fail this are left alone (status stays "new") so the owner
+// can add the product and the order retries.
+//
+// ★★★ `.some`, NOT `.every` (v363), AND THIS ONE COST A CUSTOMER AN ORDER. ⚠️⚠️ `importable`
+// decides whether a row is CLAIMED at all, and `pullIncoming` **leaves an unimportable row at
+// `status = 'new'` — retrying for ever, and telling nobody.** So `.every` meant that **ONE line
+// the shop had sold which this app no longer knows** — a product she paused, renamed or deleted
+// while a customer's page was still open — **threw away the WHOLE order, including the lines she
+// does still sell.** The shop's own counts had already moved, so the two sides disagreed with a
+// customer's order in between.
+//
+// ⚠️ FOUND FROM THE MUNCHIES SESSION'S BRIDGE NOTE, 2026-10-08 — the same fault in code both apps
+// share. **On their side it produced a real, invisible, unserved order that sat unclaimed for a
+// day.**
+//
+// ★ SO: an order with AT LEAST ONE line she still sells is imported, and the lines that did not
+// match are written onto it by `importIncoming` rather than vanishing. **An order in which she
+// sells NOTHING still waits** — that is the honest refusal, because there is nothing to make it
+// out of, and it is exactly the case the retry loop exists for.
 export function importable(state, data) {
   if (!data || !data.date || !Array.isArray(data.lines) || !data.lines.length) return false;
-  // ⚠️⚠️ AT LEAST ONE LINE, NOT EVERY LINE. Requiring EVERY line to match meant one item she
-  // had paused or renamed threw the customer's WHOLE order away — and meant it for good: the
-  // row keeps `status='new'` and retries forever, so the order never reaches her and NOTHING
-  // ever says why. Her own data, 7 Oct 2026: an order for the 9th (Chicken Jerky (Taster),
-  // Pork Jerky (Taster), Pork Jerky) sat unclaimed for as long as she had paused the first of
-  // them, while the shop's count had already gone down for it — **the shop and her app telling
-  // her two different things, and a customer's order invisible in between.**
-  //
-  // The lines she does sell are taken in now, and the one that couldn't be is written onto the
-  // order in her own words — see importIncoming. A row where NOTHING matches still waits,
-  // because an order with no line the app can name is not an order it can hold.
-  return data.lines.some((line) => line && line.name && matchesActiveProduct(state, line.name));
+  return data.lines.some((line) => line && line.name
+    && state.products.some((p) => p.active !== false
+      && String(p.name).trim().toLowerCase() === String(line.name).trim().toLowerCase()));
 }
 
-// Does a shop line name a product she currently sells? ONE rule, asked from both sides — the
-// gate above and the import below. A product she has paused is not a match: it is exactly the
-// case this pair of functions exists to survive.
-function matchesActiveProduct(state, name) {
-  const want = String(name).trim().toLowerCase();
-  return (state.products || []).some((p) => p.active !== false
-    && String(p.name).trim().toLowerCase() === want);
+// The sentence written onto an order whose shop lines this app could not match. ⚠️ IT CARRIES THE
+// PRICE AND THE QUANTITY, and neither is decoration: **the app adds up from the LINE ROWS it
+// holds, and a dropped line has no row** — so an order imported this way is SHORT by exactly
+// these lines, and a note that named only the item would leave her looking at a total the
+// customer never paid. Say what the shop charged, so the money can be added by hand.
+export function unmatchedLinesNote(lines, cur = "RM") {
+  const said = lines.map((l) => {
+    const price = Number(l.price);
+    const each = Number.isFinite(price) && price > 0 ? ` at ${fmtRM(price, cur)} each` : " (no price was sent)";
+    return `${l.name} ×${l.qty}${each}`;
+  });
+  return `${lines.length === 1 ? "1 item" : `${lines.length} items`} the shop sold ${lines.length === 1 ? "is" : "are"} not in Products, so ${lines.length === 1 ? "it is" : "they are"} NOT on this order and NOT in its total: ${said.join(", ")}. Add ${lines.length === 1 ? "it" : "them"} under Products, then add ${lines.length === 1 ? "its" : "their"} money by hand.`;
+}
+
+// ★★ WHAT THE INTAKE COULD NOT READ (v364).
+//
+// ⚠️⚠️ THE FAULT BEING FIXED HERE IS THE SILENCE, NOT THE SKIP. `pullIncoming` leaves an
+// unimportable row at `status='new'` ON PURPOSE — it retries rather than being claimed and lost —
+// but that also meant **nothing anywhere said a customer's order was waiting.** v363 removed the
+// cause it could; this removes the blindness, whatever the cause.
+//
+// 🗒️ IT IS NOT KEPT ON `state`, AND THAT IS DELIBERATE. A new top-level field would have to be
+// added to every publish/merge list or be dropped in silence (v199), and it would sync to the cloud
+// a fact that is only true of THIS phone's last poll. The queue is re-read every 30 seconds, so
+// memory is the honest place for it.
+let stuckIncoming = [];
+
+export function stuckOrders() {
+  return stuckIncoming;
+}
+
+// For a test seam, the way `forgetPublishedCards` is.
+export function forgetStuckOrders() {
+  stuckIncoming = [];
+}
+
+// Why a row could not be read, in words she can act on. ⚠️ NEVER a code and never a shrug — the one
+// thing this whole feature exists to stop is something happening and not being said.
+export function whyUnimportable(state, data) {
+  if (!data || !data.date) return "it arrived with no bake day on it";
+  if (!Array.isArray(data.lines) || !data.lines.length) return "it arrived with nothing on it";
+  const unknown = data.lines
+    .filter((l) => l && l.name
+      && !state.products.some((p) => p.active !== false
+        && String(p.name).trim().toLowerCase() === String(l.name).trim().toLowerCase()))
+    .map((l) => String(l.name).trim());
+  if (!unknown.length) return "it could not be read";
+  return `it is for ${unknown.join(", ")}, which ${unknown.length === 1 ? "is" : "are"} not in your Products`;
 }
 
 export async function pullIncoming(state) {
@@ -911,13 +1065,21 @@ export async function pullIncoming(state) {
     if (!res.ok) return { ok: false, imported: [] };
     const rows = await res.json().catch(() => []);
     const imported = [];
+    // ★ AND EVERY ROW THAT COULD NOT BE READ IS KEPT, IN WORDS (v364) — see `stuckOrders`.
+    const stuck = [];
     for (const row of rows) {
       if (!row || !row.id) continue;
       let data;
-      try { data = JSON.parse(row.data); } catch { continue; }
+      try { data = JSON.parse(row.data); } catch {
+        stuck.push({ id: row.id, reason: "it arrived in a form this app could not read" });
+        continue;
+      }
       // Unimportable rows (unknown product, missing date) stay status=new so
       // they keep retrying instead of being claimed and lost.
-      if (!importable(state, data)) continue;
+      if (!importable(state, data)) {
+        stuck.push({ id: row.id, reason: whyUnimportable(state, data) });
+        continue;
+      }
       // Claim first: the PATCH filters status=eq.new, so only one phone can
       // flip it to imported. A row another phone already claimed matches 0
       // rows and is skipped — the fix for orders appearing as "new" twice.
@@ -941,7 +1103,12 @@ export async function pullIncoming(state) {
       }).catch(() => {});
     }
     if (imported.length) save(state);
-    return { ok: true, imported };
+    // ⚠️ THE LIST IS REPLACED ONLY ON A READ THAT SUCCEEDED. Every early return above — no cloud
+    // configured, no token, the queue unreachable — leaves it EXACTLY as it was, because on those
+    // paths the queue's state is UNKNOWN. Clearing it would be a claim that nothing is waiting,
+    // made on a request that never came back. (The same rule the promo label's open count follows.)
+    stuckIncoming = stuck;
+    return { ok: true, imported, stuck };
   } catch {
     return { ok: false, imported: [] };
   }
@@ -985,13 +1152,25 @@ function importIncoming(state, row) {
   // this order went.
   const chosenPoint = data.fulfillment === "courier" ? null : pointById(state, data.pointId);
   const groupId = data.lines.length > 1 ? newId("ordg") : null;
-  const droppedLines = []; // lines she no longer sells — named on the order, never silently lost
+  // ⚠️ NOT `dropped`. `const dropped = validPlace(data.place)` already lives lower in THIS SAME
+  // BLOCK, and a second `const dropped` up here is a TDZ ReferenceError — which `pullIncoming`'s
+  // bare `catch {}` would SWALLOW, so the crash would surface only as `{ok:false}` and read as a
+  // refusal. (That trap came with the munchies session's version of this fix; it is real here.)
+  const droppedLines = [];
   for (const line of data.lines) {
     if (!line || !line.name) continue;
     const qty = Math.max(1, Number(line.qty) || 1);
-    const product = state.products.find((p) => p.active !== false
-      && String(p.name).trim().toLowerCase() === String(line.name).trim().toLowerCase());
-    if (!product) { droppedLines.push({ name: String(line.name).trim(), qty, price: line.price }); continue; }
+    const product = state.products.find(
+      (p) => p.active !== false
+        && String(p.name).trim().toLowerCase() === String(line.name).trim().toLowerCase());
+    if (!product) {
+      // ★★ NOT DROPPED IN SILENCE (v363). The shop sold this line; she may have paused, renamed
+      // or deleted the product while the customer's page was still open. It cannot become an
+      // order ROW — there is no product to make one out of — **but it must not vanish, because
+      // this order's total is built from its rows and these lines are now missing from it.**
+      droppedLines.push({ name: String(line.name).trim(), qty, price: line.price });
+      continue;
+    }
     const order = {
       id: newId("ord"),
       deliveryDateId: del.id,
@@ -1056,23 +1235,17 @@ function importIncoming(state, row) {
     state.orders.push(order);
     created.push(order.id);
   }
-
-  // ⚠️ THE ITEM THAT COULDN'T BE TAKEN IN IS WRITTEN DOWN, NOT DROPPED. Before this, an order
-  // holding one item she had paused was refused whole and stayed refused — she never learned it
-  // existed. Now the order lands with everything she does sell, and the rest is named on the
-  // order in her own words, where she cannot miss it. The order she has to make is on the
-  // screen; the customer is not waiting on a count that never arrived.
-  if (droppedLines.length && created.length) {
+  // ★ AND WHAT DID NOT MATCH IS SAID OUT LOUD (v363) — written onto the FIRST order this cart
+  // created, so the warning sits on the order she will actually open rather than on a row nobody
+  // looks at. ⚠️ IT CARRIES THE PRICE, because the app totals from the rows it holds: without the
+  // figure she would be looking at a total the customer never paid, with nothing to correct it
+  // against. Kept on its own line so the customer's own note is still readable beside it.
+  if (created.length && droppedLines.length) {
     const first = state.orders.find((o) => o.id === created[0]);
-    // ⚠️ THE PRICE IS CARRIED, OR THE ORDER'S TOTAL COMES OUT SHORT. The app works its total
-    // out from the lines it holds, and this line is not one of them — so a note naming only the
-    // item would leave her looking at a figure the customer never paid.
-    const said = droppedLines.map((d) => {
-      const p = d.price != null && d.price !== "" ? ` (RM${d.price})` : "";
-      return `${d.qty} x ${d.name}${p}`;
-    }).join(", ");
-    const line = `From the shop: ${said} — not on your menu (paused or renamed since the customer ordered), so it is NOT in the total below. Add it by hand if you can still make it.`;
-    if (first) first.note = first.note ? `${first.note}\n${line}` : line;
+    if (first) {
+      const said = unmatchedLinesNote(droppedLines, (state.settings && state.settings.currency) || "RM");
+      first.note = [first.note, said].filter(Boolean).join("\n");
+    }
   }
   return created.length ? created : null;
 }

@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 // Minimal DOM shim so store/app.js can render at import time.
 //
@@ -58,7 +59,7 @@ globalThis.window = { open() {} };
 // so the module-level render() hits no network.
 globalThis.fetch = async () => ({ ok: true, json: async () => [] });
 
-const { buildMessage, mergeStorefront, upcomingDates, daySpecs, dateKey, fmtDay, windowTitle, trackOrder, isOpen, postsOn, dayAsk, waNumber, parseVia, clockWords, renderStatic, render } = await import("../store/app.js");
+const { buildMessage, mergeStorefront, upcomingDates, daySpecs, dateKey, fmtDay, windowTitle, trackOrder, isOpen, postsOn, dayAsk, waNumber, phoneText, parseVia, clockWords, renderStatic, render } = await import("../store/app.js");
 const { strictestCancelDays } = await import("../store/pool.js");
 const { CONFIG } = await import("../store/config.js");
 // v270: the shop's own line and its refusals, kept as pure functions so they are
@@ -100,6 +101,43 @@ test("the info card reads 'Order by 6pm the day before posting'", () => {
 function confirmLines() {
   return registry["confirm-msg"].children.map((n) => (n.children[0] ? n.children[0].text : n.textContent));
 }
+
+// ── the privacy notice's contact number (v348) ───────────────────────────────
+// The notice prints a number rather than only building a link, and the number is
+// read from the same setting the order button uses. This is the formatting step:
+// a mis-grouped Malaysian number is the kind of thing that looks like a typo in a
+// document whose entire job is to look trustworthy.
+test("the privacy notice's number is written the way a person reads it", () => {
+  assert.equal(phoneText("60169601268"), "+60 16-960 1268");
+  assert.equal(phoneText("0169601268"), "+60 16-960 1268", "a local number is read the same way");
+  assert.equal(phoneText("+60 16-960 1268"), "+60 16-960 1268", "and one already written out is unchanged");
+  assert.equal(phoneText(""), "", "no number set means nothing to show");
+  assert.equal(phoneText(null), "");
+  // Anything that is not an 11-digit Malaysian number is shown plainly rather than
+  // grouped into a shape it does not have.
+  assert.equal(phoneText("+1 415 555 0100"), "+14155550100");
+});
+
+// ── the spare copy of the shop's settings has to be REAL (v346) ──────────────
+// store/config.js is only a fallback — the published settings override it — so a
+// fault in it is invisible for as long as the cloud answers. It is also what the
+// shop shows at the one moment it matters: when the published settings cannot be
+// reached, which is when an order cannot be placed either. It shipped the notes'
+// own EXAMPLE WhatsApp number, 60123456789, which belongs to a stranger, and a
+// menu with a product and a price the shop does not sell. Neither could be seen
+// on any screen while the cloud was up.
+test("the shop's fallback settings are real, not the notes' examples", () => {
+  assert.notEqual(CONFIG.whatsapp, "60123456789",
+    "the fallback WhatsApp number is her real number, not the example written in the comment above it");
+  assert.match(String(CONFIG.whatsapp), /^60\d{8,10}$/,
+    "and it is a Malaysian number in the shop's own digits-only format");
+  assert.ok(CONFIG.products.length > 0, "and there is a menu to fall back to at all");
+  for (const p of CONFIG.products) {
+    assert.ok(String(p.name || "").trim(), "every fallback product is named");
+    assert.ok(Number.isFinite(p.price) && p.price > 0,
+      `and carries a real price: ${p.name} is ${p.price}`);
+  }
+});
 
 test("buildMessage produces a tidy WhatsApp order", () => {
   const cfg = { name: "Munchies Furkidz", products: [{ name: "Chicken Jerky", price: 12 }] };
@@ -180,7 +218,9 @@ test("isOpen keeps a later day open and treats a missing cutoff as always open",
 test("store render() fills the page without crashing", () => {
   assert.ok(registry["name"]);
   assert.equal(registry["name"].textContent, "Munchies Furkidz");
-  assert.ok(registry["menu"].children.length >= 2); // one card per product
+  // One card per product — read off the config rather than asserted against a
+  // number that meant "the sample menu happened to hold two" (v347).
+  assert.equal(registry["menu"].children.length, CONFIG.products.length);
   assert.equal(registry["dates"].children.length, 1); // just the calendar
 
   // Feature off (no availability) → every delivery day is open, so the calendar
@@ -529,34 +569,39 @@ test("the next customer does not inherit the last one's front door", async () =>
 });
 
 test("the receipt carries the strictest change/cancel window of the whole basket", async () => {
-  const card = registry["menu"].children[0];
-  card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+  // The two products and their two windows are the TEST's own fixture (v347) —
+  // the fallback menu can no longer supply them, and never promised to.
+  await withProducts(
+    [
+      { name: "Chicken Jerky", price: 22, unit: "100g pouch", cancelDays: 3 },
+      { name: "Duck Jerky", price: 24, unit: "100g pouch", cancelDays: 1 },
+    ],
+    async () => {
+      const card = registry["menu"].children[0];
+      const plus = () => card.children.find((c) => c.className === "card-body")
+        .children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+      plus();
 
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, opts) => (opts && opts.method === "POST" ? { ok: true } : { ok: true, json: async () => [] });
-  const saved = CONFIG.products.map((p) => p.cancelDays);
-  try {
-    // Two products, two different windows: the customer reads the strictest (3).
-    CONFIG.products.forEach((p) => { p.cancelDays = p.name === "Chicken Jerky" ? 3 : 1; });
-    document.getElementById("whatsapp-input").value = "60123456789";
-    document.getElementById("fulfillment")._value = "collect"; // avoid the postal-address requirement
-    await registry["order-btn"].onclick();
-    const line = confirmLines().find((t) => /change or cancel/i.test(t));
-    assert.ok(line, "the receipt states a change/cancel window");
-    assert.match(line, /up to 3 days before the posting day/, "the strictest window wins");
-    assert.match(line, /not refundable/i, "and the no-refund rule that goes with it");
+      globalThis.fetch = async (url, opts) => (opts && opts.method === "POST" ? { ok: true } : { ok: true, json: async () => [] });
 
-    // Nothing stated anywhere → no window line at all.
-    CONFIG.products.forEach((p) => { delete p.cancelDays; });
-    card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper").children[2]._listeners.click[0](); // basket refilled
-    document.getElementById("fulfillment")._value = "collect"; // the success path reset it to Post
-    await registry["order-btn"].onclick();
-    assert.ok(!confirmLines().some((t) => /change or cancel/i.test(t)),
-      "no product states a window → the receipt says nothing");
-  } finally {
-    CONFIG.products.forEach((p, i) => { if (saved[i] === undefined) delete p.cancelDays; else p.cancelDays = saved[i]; });
-    globalThis.fetch = realFetch;
-  }
+      // Two products in the basket, two different windows: the customer reads the
+      // strictest (3), not the loosest.
+      document.getElementById("whatsapp-input").value = "60123456789";
+      document.getElementById("fulfillment")._value = "collect"; // avoid the postal-address requirement
+      await registry["order-btn"].onclick();
+      const line = confirmLines().find((t) => /change or cancel/i.test(t));
+      assert.ok(line, "the receipt states a change/cancel window");
+      assert.match(line, /up to 3 days before the posting day/, "the strictest window wins");
+      assert.match(line, /not refundable/i, "and the no-refund rule that goes with it");
+
+      // Nothing stated anywhere → no window line at all.
+      CONFIG.products.forEach((p) => { delete p.cancelDays; });
+      plus(); // basket refilled
+      document.getElementById("fulfillment")._value = "collect"; // the success path reset it to Post
+      await registry["order-btn"].onclick();
+      assert.ok(!confirmLines().some((t) => /change or cancel/i.test(t)),
+        "no product states a window → the receipt says nothing");
+    });
 });
 
 test("parseVia normalises the ?via= digits on a referral link", () => {
@@ -931,6 +976,36 @@ test("mergeStorefront sorts occasions by start date and trims the label", () => 
   assert.deepEqual(out.occasions.map((o) => o.from), ["2026-09-16", "2026-10-31"]);
 });
 
+// A lookup returns ONLY the columns its column list names, and a stub that answers
+// with the whole row regardless is exactly how a missing column hides: the card
+// draws a field the real server would never have sent. Every track stub goes
+// through this so the column list is part of what is being tested (19 Sep 2026).
+//
+// ⚠️ THE LIST MOVED IN v345, AND SO DID THE THING THAT READS IT. The lookup used to
+// be a PostgREST select and this read the `select=` out of the URL. It is now the
+// `track_order` function in supabase/tracking.sql, because a `using (true)` read
+// policy on the table handed every customer's name and delivery address to anyone
+// holding the (public) anon key. A function returns only what its `returns table`
+// names, so the column list is read out of the SQL file instead — and it is still
+// part of what is being tested, for exactly the same reason as before.
+const trackCols = (() => {
+  const sql = readFileSync(new URL("../supabase/tracking.sql", import.meta.url), "utf8");
+  const declared = sql.slice(sql.indexOf("returns table"), sql.indexOf("language sql"));
+  return new Set([...declared.matchAll(/^\s*([a-z_]+)\s+(?:text|boolean|numeric|timestamptz)/gm)]
+    .map((m) => m[1]));
+})();
+
+const onlySelected = (url, row) => {
+  const href = String(url);
+  if (href.includes("/rest/v1/rpc/track_order")) {
+    return Object.fromEntries(Object.entries(row).filter(([k]) => trackCols.has(k)));
+  }
+  const sel = /[?&]select=([^&]*)/.exec(href)?.[1];
+  if (!sel || sel === "*") return row;
+  const keep = decodeURIComponent(sel).split(",").map((s) => s.trim());
+  return Object.fromEntries(Object.entries(row).filter(([k]) => keep.includes(k)));
+};
+
 test("trackOrder re-fetches and re-renders every lookup (never stale)", async () => {
   const box = document.getElementById("track-result");
   const urls = [];
@@ -948,8 +1023,10 @@ test("trackOrder re-fetches and re-renders every lookup (never stale)", async ()
     assert.equal(urls.length, 2, "every lookup hits the network — nothing is cached");
     assert.equal(urls[0].opts.cache, "no-store", "cache: no-store so status is always fresh");
     assert.equal(urls[1].opts.cache, "no-store");
-    assert.ok(String(urls[0].url).includes("confirmed_sent,paid_received"),
+    assert.ok(trackCols.has("confirmed_sent") && trackCols.has("paid_received"),
       "the lookup fetches the stage flags so the map matches the app's");
+    assert.ok(trackCols.has("tracking_no"),
+      "and asks for tracking_no by name — the lookup sends only the columns listed, so a number the baker typed is invisible to the card until this names it");
   } finally {
     globalThis.fetch = async () => ({ ok: true, json: async () => [] });
   }
@@ -1151,7 +1228,8 @@ test("WhatsApp only opens as a fallback when the order could NOT reach the app",
     document.getElementById("fulfillment")._value = "collect"; // avoid the postal-address requirement
     await registry["order-btn"].onclick();
     assert.equal(opened.length, 1, "WhatsApp opens only when the app could not be reached");
-    assert.ok(String(opened[0]).startsWith("https://wa.me/60123456789?text="), "falls back to the configured shop number");
+    assert.ok(String(opened[0]).startsWith(`https://wa.me/${CONFIG.whatsapp}?text=`),
+      "falls back to the configured shop number");
     assert.ok(decodeURIComponent(opened[0]).includes("New order"), "the message carries the order details");
     assert.equal(registry["order-btn"].disabled, false, "button is usable again so the customer can retry");
   } finally {
@@ -1194,16 +1272,10 @@ const deepByClass = (box, name) => {
   })(box);
   return hit;
 };
-// PostgREST returns ONLY the columns named in `select`, and a stub that answers
-// with the whole row regardless is exactly how a missing column hides: the card
-// draws a field the real server would never have sent. Every track stub goes
-// through this so the column list is part of what is being tested (19 Sep 2026).
-const onlySelected = (url, row) => {
-  const sel = /[?&]select=([^&]*)/.exec(String(url))?.[1];
-  if (!sel || sel === "*") return row;
-  const keep = decodeURIComponent(sel).split(",").map((s) => s.trim());
-  return Object.fromEntries(Object.entries(row).filter(([k]) => keep.includes(k)));
-};
+// ⚠️ THE OLD by-`select=` VERSION OF `onlySelected` STOOD HERE and was removed by the v345 sync:
+// the lookup is no longer a PostgREST select but the `track_order` function, whose column list
+// lives in supabase/tracking.sql — so the one definition above (which reads the SQL file) is the
+// only one, and a second copy would be a SyntaxError before a single test ran.
 
 test("a posted order shows the courier's tracking number", async () => {
   const box = document.getElementById("track-result");
@@ -1297,9 +1369,9 @@ test("a courier charge the customer bears is named on the card, and the lookup a
   };
   try {
     await trackOrder("A3F9C2");
-    assert.ok(/[?&]select=[^&]*\bcourier_fee\b/.test(urls[0]),
-      "the lookup names courier_fee — PostgREST sends only the columns listed, so the charge you typed is invisible to the card until this asks for it");
-    assert.ok(/[?&]select=[^&]*\bcustomer\b/.test(urls[0]),
+    assert.ok(trackCols.has("courier_fee"),
+      "the lookup names courier_fee — it sends only the columns listed, so the charge the baker typed is invisible to the card until this asks for it");
+    assert.ok(trackCols.has("customer"),
       "and customer, for the same reason: the name was in the row all along and the card never received it");
     const fee = deepByClass(box, "track-fee");
     assert.ok(fee, "the charge is named on its own line, above the total that includes it");
@@ -1345,8 +1417,8 @@ test("the code a customer used is named on the card, and the lookup asks for it"
   };
   try {
     await trackOrder("A3F9C2");
-    assert.ok(/[?&]select=[^&]*\bpromo_code\b/.test(urls[0]) && /[?&]select=[^&]*\bpromo_rm\b/.test(urls[0]),
-      "the lookup names promo_code and promo_rm — PostgREST sends only the columns listed, so the discount is invisible to the card until this asks for it");
+    assert.ok(trackCols.has("promo_code") && trackCols.has("promo_rm"),
+      "the lookup names promo_code and promo_rm — it sends only the columns its list names, so the discount is invisible to the card until this asks for it");
     const promo = deepByClass(box, "track-promo");
     assert.ok(promo, "the code is named on its own line, above the total that already has it off");
     assert.equal(feeText(promo), "Promo FRESH10: -RM10.00",
@@ -1388,8 +1460,8 @@ test("a Courier COD charge tells the customer to pay the courier, not you", asyn
   };
   try {
     await trackOrder("A3F9C2");
-    assert.ok(/[?&]select=[^&]*\bcourier_cod\b/.test(urls[0]),
-      "the lookup names courier_cod — PostgREST sends only the columns listed, so the card can never know the charge is COD until this asks for it, and would word it as money owed to you");
+    assert.ok(trackCols.has("courier_cod"),
+      "the lookup names courier_cod — it sends only the columns listed, so the card can never know the charge is COD until this asks for it, and would word it as money owed to the baker");
     const fee = deepByClass(box, "track-fee");
     assert.ok(fee, "the charge is still named in full — the customer has to know what the courier will ask for");
     assert.equal(feeText(fee), "Courier charge: RM8.00 - COD, pay the courier on delivery",
@@ -1439,8 +1511,12 @@ test("a posted order with its delivery cost still to be quoted says so", async (
   };
   try {
     await trackOrder("A3F9C2");
-    assert.ok(/[?&]select=[^&]*\bpostage_quoted\b/.test(urls[0]),
-      "the lookup names postage_quoted — PostgREST sends only the columns listed, so without this the card cannot tell an order whose delivery is still to be quoted from one with nothing left to pay, and would quietly say neither");
+    // ⚠️ JERKY-ONLY COLUMN, AND JERKY-ONLY ASSERTION. The bakery has no `postage_quoted`, so this
+    // line survived the v345 sync untouched — and it had to be moved onto `trackCols` by hand,
+    // because the column list it was reading moved out of the shop's URL and into the SQL. Left
+    // as it was, it would have gone on passing on a URL the shop no longer builds.
+    assert.ok(trackCols.has("postage_quoted"),
+      "the lookup names postage_quoted — it sends only the columns its list names, so without this the card cannot tell an order whose delivery is still to be quoted from one with nothing left to pay, and would quietly say neither");
     const fee = deepByClass(box, "track-fee");
     assert.ok(fee, "the customer is told the delivery cost is coming, rather than left with a total that looks like the whole of it");
     assert.equal(fee.children[0].text, "Postage: quoted separately - we'll message you the exact amount");
@@ -1581,21 +1657,40 @@ const pressPlus = (card) => plusOf(card)._listeners.click[0]();
 const tapNote = (card) => noteAdd(card)._listeners.click[0]();
 const typeNote = (box, text) => { box.value = text; box._listeners.input[0].call(box); };
 
-// One product switched on for a note, rendered, driven, and put back exactly as it
-// was. `render()` is the real page render, so the second call rebuilds the menu and
-// gives each test a cart of its own.
-async function withNotedProduct(fn) {
-  const p = CONFIG.products[0];
+// ⚠️ A TEST THAT NEEDS SEVERAL PRODUCTS DECLARES THEM ITSELF (v347).
+//
+// The shop's fallback menu now lists exactly what is sold — one focaccia — because
+// her decision was to trim it (see store/config.js). It used to hold a two-product
+// SAMPLE, and these tests had been borrowing it: one wanted "two products with
+// different change/cancel windows", another wanted "a product the baker never
+// switched on". Neither was ever a guarantee — one of the borrowed products was a
+// Sandwich the shop does not sell.
+//
+// withProducts() renders the menu the test actually needs, and puts the real one
+// back afterwards. `render()` is the real page render, so the final call rebuilds
+// the menu and gives the next test a clean page.
+async function withProducts(list, fn) {
+  const real = CONFIG.products;
   const realFetch = globalThis.fetch;
-  p.askNote = true;
+  CONFIG.products = list;
   render();
   try {
-    return await fn(p, realFetch);
+    return await fn(list);
   } finally {
-    delete p.askNote;
+    CONFIG.products = real;
     globalThis.fetch = realFetch;
     render();
   }
+}
+
+// One product switched on for a note, a SECOND one that is not, rendered, driven,
+// and both put back exactly as they were.
+async function withNotedProduct(fn) {
+  const base = CONFIG.products[0];
+  return withProducts(
+    [{ ...base, askNote: true }, { name: "A second item", price: 5, unit: "piece" }],
+    (list) => fn(list[0]),
+  );
 }
 
 test("the note link appears only once the item is in the basket, and opens the box on a tap", async () => {

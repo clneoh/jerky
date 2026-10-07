@@ -144,6 +144,23 @@ body { min-height: 100vh; }
 .update-bar-msg b { color: var(--amber); font-weight: 700; }
 .update-bar .btn { flex: none; }
 
+/* ★ AN ORDER FROM THE SHOP THAT THE INTAKE COULD NOT READ (v364). In flow, at the top of the
+   Orders screen, in the SAME amber pair the "new version" bar uses — a pairing this app has
+   already proven against its own background. ⚠️ v313's rule holds: the colour is set by the WORST
+   background it lands on, not the nicest, so a port must carry the VALUE and not the reasoning.
+   ⚠️ And it is IN FLOW rather than a floating bar: an order she cannot read is not a thing to park
+   at the bottom of the screen, where a thumb and a tab bar both live. */
+.intake-note {
+  background: var(--amber-bg);
+  border: 1px solid #ecd4a5;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin: 0 0 12px;
+}
+.intake-note p { margin: 0 0 4px; font-size: 12.5px; line-height: 1.45; }
+.intake-note p:last-child { margin-bottom: 0; }
+.intake-note b { color: var(--amber); font-weight: 700; }
+
 /* ---------- Hero (Home) ---------- */
 .hero {
   position: relative;

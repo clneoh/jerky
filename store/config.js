@@ -7,7 +7,26 @@
 export const CONFIG = {
   // Her WhatsApp number: country code first, DIGITS ONLY, no "+", no spaces.
   // Malaysia: 012-345 6789 → "60123456789"
-  whatsapp: "60123456789",
+  //
+  // ⚠️ THIS MUST BE HER REAL NUMBER, AND IT WAS NOT — AND THE v346 SYNC PUT THE
+  // WRONG ONE IN HERE. What follows is the bakery's story and munchies' warning
+  // in one, because this project walked into it.
+  //
+  // v346 (bakery): it held the example number from the notes above —
+  // 60123456789, which belongs to somebody else. This file is only the fallback,
+  // so the published settings normally cover it; but it is the fallback for the
+  // WORST moment, because the shop falls back to it exactly when the published
+  // settings cannot be reached, which is also when the order cannot be placed. A
+  // customer was being handed a stranger's WhatsApp at the one moment she most
+  // needed to reach the baker.
+  //
+  // ⚠️⚠️ AND THE FIX ITSELF CROSSED OVER. The bakery's answer was its OWN number
+  // — and the engine sync carried that line into THIS file, which had exactly the
+  // same fault and needed her number instead. **An identity is the one thing a
+  // shared engine must never copy** (see CLAUDE.md: never the bakery's CNAME, its
+  // Supabase project or its seed data). 60169601268 is the bakery's; this is
+  // munchies'.
+  whatsapp: "60189136389",
 
   // The name customers see — her pet-treat business name.
   name: "Munchies Furkidz",
@@ -42,8 +61,14 @@ export const CONFIG = {
   },
 
   // What's on sale. price is in RM. unit is a short label (100g pouch / pack).
-  // These are placeholder entries — the owner edits the real menu from the
-  // backoffice, which publishes over this at runtime.
+  //
+  // ⚠️ THIS LISTS ONLY WHAT THE SHOP REALLY SELLS (v347) — the rule came from the bakery and
+  // applies here for the same reason. This file is the OFFLINE FALLBACK: what a customer sees
+  // when the published settings cannot be reached, which is also when the order cannot be
+  // placed. A fallback offering something nobody can order is worse than a shorter one.
+  //
+  // ⚠️ KEEP THIS IN STEP WITH WHAT IS PUBLISHED. It is the one thing here that can drift
+  // silently, because the published settings cover it while the cloud answers.
   products: [
     { name: "Chicken Jerky", price: 22, unit: "100g pouch" },
     { name: "Duck Jerky", price: 24, unit: "100g pouch" },
