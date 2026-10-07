@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateUpcomingDates } from "../admin/js/dates.js";
-import { computeSlots, computeProductSlots, syncAvailability, login, syncStorefront, pullIncoming, publishTracking, maybePublishTracking, forgetPublishedCards, trackingSnapshot, refreshStorefront, pendingReviewCount, fetchPromoVisits } from "../admin/js/supabase.js";
+import { computeSlots, computeProductSlots, syncAvailability, login, syncStorefront, pullIncoming, importable, publishTracking, maybePublishTracking, forgetPublishedCards, trackingSnapshot, refreshStorefront, pendingReviewCount, fetchPromoVisits } from "../admin/js/supabase.js";
 import { groupOrders, orderCode } from "../admin/js/state.js";
 
 const realFetch = globalThis.fetch;
@@ -1901,5 +1901,127 @@ test("no codes on screen means nothing to ask about", async () => {
     assert.equal(called, false, "an empty list is answered without a request");
   } finally {
     globalThis.fetch = realFetch;
+  }
+});
+
+// ── the sweep that removes rows she no longer sells ─────────────────────────
+// Her own table, 7 Oct 2026: ten product rows for the 9th still dated **16 September**, under
+// names she had stopped selling, and "Chicken Jerky (Taster)" frozen at **9 left** while the day
+// itself read 120 of 120. Rows were only ever deleted when their DATE went, so a row whose
+// PRODUCT went was immortal — and the storefront kept stamping "Only N left" (or "Sold out")
+// from a count that stopped moving. The app treated the same product as unlimited.
+test("★ a published row for a product she no longer sells is DELETED, not left counting down", async () => {
+  const state = makeState();
+  const dates = generateUpcomingDates(baseSettings(), 3);
+  state.deliveryDates = dates.map((date, i) => ({ id: `del_${i}`, date, notes: "" }));
+  state.products = [{ id: "prd_1", name: "Chicken Jerky", active: true, limit: 10 }];
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
+  const calls = [];
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ url, opts });
+    if (url.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    return { ok: true, text: async () => "" };
+  };
+  try {
+    const r = await syncAvailability(state);
+    assert.ok(r.ok);
+    const sweep = calls.find((c) => c.url.includes("product=not.in."));
+    assert.ok(sweep, "the sweep must ask for product rows that are no longer published");
+    assert.equal(sweep.opts.method, "DELETE");
+    assert.ok(sweep.url.includes("date=in."), "…scoped to the dates she IS publishing");
+    const url = decodeURIComponent(sweep.url);
+    assert.ok(url.includes('"Chicken Jerky"'), "keeping the one name she does sell");
+    assert.ok(!url.includes('"Chicken Jerky (Taster)"'), "and keeping nothing else — the stale name is not protected");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("★ with nothing limited to publish, the sweep sends NO name-delete at all", async () => {
+  // ⚠️ `not.in.()` with an empty list matches EVERYTHING. This is the guard that stops the new
+  // sweep from wiping the table: no limited product ⇒ no rows to keep ⇒ no name to delete FOR.
+  const state = makeState();
+  state.products = [{ id: "prd_1", name: "Chicken Jerky", active: true, limit: 0 }];
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
+  const calls = [];
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ url, opts });
+    if (url.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    return { ok: true, text: async () => "" };
+  };
+  try {
+    await syncAvailability(state);
+    assert.equal(calls.some((c) => c.url.includes("product=not.in.")), false,
+      "an empty not.in.() would have matched every row — it must never be sent");
+    assert.ok(calls.some((c) => c.opts && c.opts.method === "DELETE" && c.url.includes("date=not.in.")),
+      "while the date sweep still runs, exactly as before");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+// ── one paused item must not throw a customer's order away ──────────────────
+// Her own data, 7 Oct 2026: a shop order for the 9th held three items, one of them
+// (Chicken Jerky (Taster)) on a product she had paused. The gate asked for EVERY line to
+// match, so the whole order was refused — and refused silently, forever, while the shop's
+// count had already gone down for it. That is a customer's order invisible in between two
+// numbers that disagree, which is exactly what she reported.
+test("★ importable accepts an order when ANY line is still on her menu", () => {
+  const state = makeState();
+  state.products = [
+    { id: "p1", name: "Pork Jerky", active: true },
+    { id: "p2", name: "Chicken Jerky (Taster)", active: false },
+  ];
+  const day = { date: "2099-01-05" };
+  assert.equal(importable(state, { ...day, lines: [{ name: "Pork Jerky", qty: 1 }] }), true,
+    "an ordinary order");
+  assert.equal(importable(state, { ...day, lines: [
+    { name: "Pork Jerky", qty: 1 },
+    { name: "Chicken Jerky (Taster)", qty: 1 },
+  ] }), true, "★ one paused item must NOT block the item she sells");
+  assert.equal(importable(state, { ...day, lines: [{ name: "Chicken Jerky (Taster)", qty: 1 }] }), false,
+    "but an order with nothing she sells still waits rather than being claimed");
+  assert.equal(importable(state, { ...day, lines: [{ name: "Something Gone", qty: 1 }, { name: "Also Gone", qty: 2 }] }), false,
+    "and two unknown names are no better than one");
+});
+
+test("★ such an order is taken in, and the item that couldn't be is NAMED on the order", async () => {
+  storageShim(new Map());
+  const state = makeState();
+  state.products = [
+    { id: "prd_1", name: "Pork Jerky", active: true, price: 31 },
+    { id: "prd_2", name: "Pork Jerky (Taster)", active: true, price: 17 },
+    { id: "prd_3", name: "Chicken Jerky (Taster)", active: false, price: 16 },
+  ];
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
+  const row = { id: "abc", data: JSON.stringify({
+    customer: "A Customer", date: "2099-01-05", total: 64, whatsapp: "60123456789",
+    lines: [
+      { name: "Chicken Jerky (Taster)", qty: 1, price: 16 },
+      { name: "Pork Jerky (Taster)", qty: 1, price: 17 },
+      { name: "Pork Jerky", qty: 1, price: 31 },
+    ],
+  }) };
+  globalThis.fetch = async (url, opts) => {
+    if (url.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    if (url.includes("/rest/v1/incoming_orders") && !(opts && opts.method)) return { ok: true, json: async () => [row] };
+    if (url.includes("/rest/v1/incoming_orders") && (opts && opts.method === "PATCH")) return { ok: true, json: async () => [row] };
+    return { ok: true, text: async () => "" };
+  };
+  try {
+    const r = await pullIncoming(state);
+    assert.ok(r.ok);
+    assert.equal(r.imported.length, 1, "the row is claimed — it does not sit retrying forever");
+    assert.equal(state.orders.length, 2, "★ the two items she DOES sell are taken in");
+    const noted = state.orders.find((o) => String(o.note || "").includes("Chicken Jerky (Taster)"));
+    assert.ok(noted, "★ and the paused item is written onto the order, where she cannot miss it");
+    assert.ok(noted.note.includes("1 x Chicken Jerky (Taster)"), "named, with its quantity");
+    assert.ok(noted.note.includes("(RM16)"), "★ and the price, so the short total is explained");
+    assert.ok(/not on your menu/.test(noted.note), "and what it means");
+    // The customer's own details came through with it.
+    assert.equal(state.orders[0].customerName, "A Customer");
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realLocalStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = realLocalStorage;
   }
 });

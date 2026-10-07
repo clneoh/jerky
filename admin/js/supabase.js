@@ -122,12 +122,13 @@ export function computeProductSlots(state, horizon = 10) {
       // ("this day's bakes"), so a date the owner raised or paused publishes
       // the adjusted count and any value pack derives from it below.
       const capacity = effectiveLimit(state, date, base.id) ?? 0;
-      let booked = 0;
-      for (const id of ids) {
-        if (!id) continue;
-        const pr = poolRemaining(state, id, base.id);
-        if (pr) booked += pr.booked;
-      }
+      // ⚠️ ONE call for the whole date — `poolRemaining` counts every record carrying that
+      // day itself (see idsForDateOf in bom.js). Looping the ids and adding them up
+      // DOUBLE-counted the moment two records shared a date, and it was the pool path
+      // that still disagreed with the shop after the day's own count was fixed.
+      const anyId = ids.find(Boolean);
+      const pr = anyId ? poolRemaining(state, anyId, base.id) : null;
+      const booked = pr ? pr.booked : 0;
       const baseLeft = Math.max(0, capacity - booked);
       rows.push({ date, product: base.name, slots_left: baseLeft, capacity });
       for (const pack of packsByBase.get(base.id) || []) {
@@ -255,19 +256,38 @@ export async function syncAvailability(state) {
     if (batchErr) return batchErr;
   }
 
-  // Best-effort cleanup: drop published rows for dates that are no longer in
-  // the plan (deleted delivery dates) or have passed, so the storefront only
-  // ever shows the baker's real upcoming dates. Failures are swallowed — this
-  // is housekeeping, not the sync itself.
+  // Best-effort cleanup: drop published rows that no longer describe anything she sells, so the
+  // storefront only ever shows her real upcoming dates and her real products. Failures are
+  // swallowed — this is housekeeping, not the sync itself.
+  //
+  // ⚠️⚠️ TWO KINDS OF ORPHAN, AND ONLY THE FIRST WAS EVER CLEANED. Her own table, 7 Oct 2026:
+  // ten product rows for the 9th still dated **16 September**, under names she no longer sells,
+  // and "Chicken Jerky (Taster)" frozen at **9 left** while the day itself read 120 of 120 —
+  // one taken, the other not, on the same day. The cause: a row is only ever deleted when its
+  // **date** is gone, so a row whose **product** is gone is immortal. A product that carried a
+  // daily limit, took orders (so its row went down), and then had the limit taken off gets **no
+  // row from `computeProductSlots` at all** — so nothing ever rewrites it, and the storefront
+  // keeps stamping "Only N left" — or "Sold out" once it reaches 0 — from a count that stopped
+  // moving the day the limit went. The app, meanwhile, treats that product as unlimited.
+  // **That is a shop and an app permanently telling a customer two different things.**
   if (rows.length) {
     const active = rows.map((r) => `"${r.date}"`).join(",");
-    const clean = (table) =>
-      fetch(`${c.url}/rest/v1/${table}?date=not.in.(${active})`, {
+    const clean = (filter) =>
+      fetch(`${c.url}/rest/v1/product_availability?${filter}`, {
         method: "DELETE",
         headers: { apikey: c.anonKey, Authorization: `Bearer ${token}` },
       }).catch(() => {});
-    await clean("availability");
-    await clean("product_availability");
+    await fetch(`${c.url}/rest/v1/availability?date=not.in.(${active})`, {
+      method: "DELETE",
+      headers: { apikey: c.anonKey, Authorization: `Bearer ${token}` },
+    }).catch(() => {});
+    await clean(`date=not.in.(${active})`);
+    // …and, for the dates she IS publishing, any product name she no longer publishes.
+    // ⚠️ GUARDED ON A NON-EMPTY LIST: `not.in.()` with nothing to keep matches everything and
+    // would wipe the table. A shop with no limited product publishes no rows, and then there is
+    // nothing to keep — but also nothing to delete a name FOR, so skipping is right.
+    const names = productRows.map((r) => `"${r.product}"`).join(",");
+    if (names) await clean(`date=in.(${active})&product=not.in.(${names})`);
   }
   return { ok: true, pushed: rows.length, pushedProducts, at: new Date().toISOString() };
 }
@@ -847,9 +867,27 @@ export function forgetPublishedCards() {
 // (status stays "new") so the owner can add the product and the order retries.
 export function importable(state, data) {
   if (!data || !data.date || !Array.isArray(data.lines) || !data.lines.length) return false;
-  return data.lines.every((line) => line && line.name
-    && state.products.some((p) => p.active !== false
-      && String(p.name).trim().toLowerCase() === String(line.name).trim().toLowerCase()));
+  // ⚠️⚠️ AT LEAST ONE LINE, NOT EVERY LINE. Requiring EVERY line to match meant one item she
+  // had paused or renamed threw the customer's WHOLE order away — and meant it for good: the
+  // row keeps `status='new'` and retries forever, so the order never reaches her and NOTHING
+  // ever says why. Her own data, 7 Oct 2026: an order for the 9th (Chicken Jerky (Taster),
+  // Pork Jerky (Taster), Pork Jerky) sat unclaimed for as long as she had paused the first of
+  // them, while the shop's count had already gone down for it — **the shop and her app telling
+  // her two different things, and a customer's order invisible in between.**
+  //
+  // The lines she does sell are taken in now, and the one that couldn't be is written onto the
+  // order in her own words — see importIncoming. A row where NOTHING matches still waits,
+  // because an order with no line the app can name is not an order it can hold.
+  return data.lines.some((line) => line && line.name && matchesActiveProduct(state, line.name));
+}
+
+// Does a shop line name a product she currently sells? ONE rule, asked from both sides — the
+// gate above and the import below. A product she has paused is not a match: it is exactly the
+// case this pair of functions exists to survive.
+function matchesActiveProduct(state, name) {
+  const want = String(name).trim().toLowerCase();
+  return (state.products || []).some((p) => p.active !== false
+    && String(p.name).trim().toLowerCase() === want);
 }
 
 export async function pullIncoming(state) {
@@ -947,13 +985,13 @@ function importIncoming(state, row) {
   // this order went.
   const chosenPoint = data.fulfillment === "courier" ? null : pointById(state, data.pointId);
   const groupId = data.lines.length > 1 ? newId("ordg") : null;
+  const droppedLines = []; // lines she no longer sells — named on the order, never silently lost
   for (const line of data.lines) {
     if (!line || !line.name) continue;
     const qty = Math.max(1, Number(line.qty) || 1);
-    const product = state.products.find(
-      (p) => p.active !== false
-        && String(p.name).trim().toLowerCase() === String(line.name).trim().toLowerCase());
-    if (!product) continue;
+    const product = state.products.find((p) => p.active !== false
+      && String(p.name).trim().toLowerCase() === String(line.name).trim().toLowerCase());
+    if (!product) { droppedLines.push({ name: String(line.name).trim(), qty, price: line.price }); continue; }
     const order = {
       id: newId("ord"),
       deliveryDateId: del.id,
@@ -1017,6 +1055,24 @@ function importIncoming(state, row) {
     });
     state.orders.push(order);
     created.push(order.id);
+  }
+
+  // ⚠️ THE ITEM THAT COULDN'T BE TAKEN IN IS WRITTEN DOWN, NOT DROPPED. Before this, an order
+  // holding one item she had paused was refused whole and stayed refused — she never learned it
+  // existed. Now the order lands with everything she does sell, and the rest is named on the
+  // order in her own words, where she cannot miss it. The order she has to make is on the
+  // screen; the customer is not waiting on a count that never arrived.
+  if (droppedLines.length && created.length) {
+    const first = state.orders.find((o) => o.id === created[0]);
+    // ⚠️ THE PRICE IS CARRIED, OR THE ORDER'S TOTAL COMES OUT SHORT. The app works its total
+    // out from the lines it holds, and this line is not one of them — so a note naming only the
+    // item would leave her looking at a figure the customer never paid.
+    const said = droppedLines.map((d) => {
+      const p = d.price != null && d.price !== "" ? ` (RM${d.price})` : "";
+      return `${d.qty} x ${d.name}${p}`;
+    }).join(", ");
+    const line = `From the shop: ${said} — not on your menu (paused or renamed since the customer ordered), so it is NOT in the total below. Add it by hand if you can still make it.`;
+    if (first) first.note = first.note ? `${first.note}\n${line}` : line;
   }
   return created.length ? created : null;
 }

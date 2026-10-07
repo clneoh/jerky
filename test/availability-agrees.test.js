@@ -23,8 +23,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { bookedUnitsOnDate, effectiveCapacity, capacityStatus } from "../admin/js/bom.js";
-import { computeSlots } from "../admin/js/supabase.js";
+import { bookedUnitsOnDate, effectiveCapacity, capacityStatus, productRemaining, poolRemaining } from "../admin/js/bom.js";
+import { computeSlots, computeProductSlots } from "../admin/js/supabase.js";
 
 const DATE = "2026-10-09"; // "the 9th" of her report
 
@@ -120,4 +120,68 @@ test("with no limited product on sale, the day falls back to the default capacit
     deliveryDates: oneDate(),
     orders: [{ id: "o1", deliveryDateId: "del_9", productId: "prd_1", qty: 2 }],
   }), { booked: 2, capacity: 12 });
+});
+
+// ── the PRODUCT stamp, "Only N left" ────────────────────────────────────────
+// The day's chip was not the only number the shop shows, and it was not the only place the
+// day was counted record-by-record. `computeProductSlots` sums the pool across every record
+// carrying the date, while `productRemaining` / `poolRemaining` named ONE — so a customer's
+// "Only N left" on a product could read one way on the shop and another in the app, on the
+// very same day. Found while chasing her second report (*"the store and app still don tally"*),
+// after the day's own count had already been fixed.
+
+const twoRecords = () => [
+  { id: "del_9", date: DATE },
+  { id: "del_9b", date: DATE },
+];
+const shopProductLeft = (st, productName) => {
+  const row = computeProductSlots(st, 30).find((r) => r.date === DATE && r.product === productName);
+  return row ? row.slots_left : null;
+};
+
+test("★ a product's 'Only N left' agrees across two records sharing one day", () => {
+  const st = state({
+    products: [jerky({ limit: 12 })],
+    deliveryDates: twoRecords(),
+    orders: [
+      { id: "o1", deliveryDateId: "del_9", productId: "prd_1", qty: 3 },
+      { id: "o2", deliveryDateId: "del_9b", productId: "prd_1", qty: 4 },
+    ],
+  });
+  assert.equal(shopProductLeft(st, "Chicken Jerky"), 5, "the shop stamps 5 left (12 − 7)");
+  assert.equal(productRemaining(st, "del_9", "prd_1").remaining, 5, "and the app says 5 from the record it knows");
+  assert.equal(productRemaining(st, "del_9b", "prd_1").remaining, 5, "whichever of the two the screen opened from");
+});
+
+test("★ a value pack draws from the WHOLE day's pool — once, not once per record", () => {
+  // The trap the day's fix left behind: with `poolRemaining` widened to the day, the loop in
+  // `computeProductSlots` that called it once per id would have counted the same day twice.
+  const st = state({
+    products: [
+      jerky({ limit: 12 }),
+      { id: "prd_pack", name: "Chicken Jerky (4 pcs)", active: true, recipe: [{ productId: "prd_1", qty: 4, unit: "pouch" }] },
+    ],
+    deliveryDates: twoRecords(),
+    orders: [
+      { id: "o1", deliveryDateId: "del_9", productId: "prd_pack", qty: 1 },  // 4 base pieces
+      { id: "o2", deliveryDateId: "del_9b", productId: "prd_1", qty: 2 },    // 2 more
+    ],
+  });
+  assert.equal(poolRemaining(st, "del_9", "prd_1").booked, 6, "the pool counts the whole day once: 4 + 2");
+  assert.equal(shopProductLeft(st, "Chicken Jerky"), 6, "so the single is stamped 6 left (12 − 6)");
+  assert.equal(shopProductLeft(st, "Chicken Jerky (4 pcs)"), 1, "and the pack 1 left (floor(6 ÷ 4))");
+});
+
+test("an order left behind by a DELETED day still counts as itself", () => {
+  // The widening must not swallow the orphan. When the record is gone there is no date to
+  // widen to, so the id is matched on its own — what these readers always did, and what keeps
+  // the v331 "an order whose delivery day was deleted" card honest.
+  const st = state({
+    products: [jerky({ limit: 12 })],
+    deliveryDates: oneDate(),
+    orders: [{ id: "o1", deliveryDateId: "del_gone", productId: "prd_1", qty: 5 }],
+  });
+  assert.equal(productRemaining(st, "del_gone", "prd_1").booked, 5, "the orphan's own id still finds its order");
+  assert.equal(poolRemaining(st, "del_gone", "prd_1").booked, 5, "and the pool with it");
+  assert.equal(bookedUnitsOnDate(st, DATE), 0, "while the real day it was NOT booked on stays empty");
 });

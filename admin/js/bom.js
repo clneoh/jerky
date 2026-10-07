@@ -461,10 +461,14 @@ export function poolRemaining(state, deliveryDateId, baseId) {
   if (!base || !(Number(base.limit) > 0)) return null; // unlimited → no shared pool
   const rec = byId(state.deliveryDates, deliveryDateId);
   const limit = effectiveLimit(state, rec && rec.date, baseId) ?? 0;
+  // ⚠️ EVERY record carrying that day, not just the one whose id was passed — see
+  // idsForDateOf. The shop publishes this pool across the whole date, so a count that
+  // named one record would disagree with what the customer is shown.
+  const ids = idsForDateOf(state, deliveryDateId);
   const memo = new Map();
   let booked = 0;
   for (const o of state.orders) {
-    if (o.deliveryDateId !== deliveryDateId) continue;
+    if (!ids.has(o.deliveryDateId)) continue;
     const qty = Number(o.qty) || 0;
     if (qty <= 0) continue;
     booked += qty * baseUnitsOf(state, baseId, o.productId, memo, new Set());
@@ -666,11 +670,31 @@ export function saveDayAdjustments(state, deliveryDateId, adjustments) {
 // the order is for — which is also what the customer was told. The capacity half was
 // always one computation (`effectiveCapacity`); this is the other half.
 export function bookedUnitsOnDate(state, dateStr) {
-  const ids = new Set((state.deliveryDates || [])
-    .filter((d) => d && d.date === dateStr)
-    .map((d) => d.id));
+  const ids = idsOnDate(state, dateStr);
   return (state.orders || [])
     .reduce((s, o) => s + (ids.has(o.deliveryDateId) ? Number(o.qty) || 0 : 0), 0);
+}
+
+// ⚠️⚠️ THE WHOLE DAY, NOT ONE RECORD — and it is asked from an ID, so the id is turned
+// back into its DATE first. Same trap as `bookedUnitsOnDate` above, and the same answer:
+// **two calendar records can share one day** (both phones added the same date before they
+// synced), and a count that names one record sees only the orders booked on that one.
+//
+// THE FALLBACK MATTERS: when the record itself is gone — an order left behind by a delivery
+// day she deleted — there is no date to widen to, so the id is matched on its own, which is
+// exactly what every one of these readers did before. An orphan must keep counting as
+// itself rather than silently counting nothing.
+function idsOnDate(state, dateStr) {
+  if (dateStr == null || dateStr === "") return new Set();
+  const ids = new Set();
+  for (const d of state.deliveryDates || []) if (d && d.date === dateStr) ids.add(d.id);
+  return ids;
+}
+
+function idsForDateOf(state, deliveryDateId) {
+  const rec = byId(state.deliveryDates, deliveryDateId);
+  const ids = idsOnDate(state, rec && rec.date);
+  return ids.size ? ids : new Set([deliveryDateId]);
 }
 
 export function capacityStatus(state, deliveryDateId) {
@@ -697,8 +721,10 @@ export function productRemaining(state, deliveryDateId, productId, excludeOrderI
   if (!product || !(Number(product.limit) > 0)) return null; // unlimited → no count shown
   const rec = byId(state.deliveryDates, deliveryDateId);
   const limit = effectiveLimit(state, rec && rec.date, productId) ?? 0;
+  // ⚠️ The whole day, same as the pool and the day's own count — see idsForDateOf.
+  const ids = idsForDateOf(state, deliveryDateId);
   const booked = state.orders
-    .filter((o) => o.deliveryDateId === deliveryDateId && o.productId === productId && o.id !== excludeOrderId)
+    .filter((o) => ids.has(o.deliveryDateId) && o.productId === productId && o.id !== excludeOrderId)
     .reduce((s, o) => s + o.qty, 0);
   return { limit, booked, remaining: limit - booked };
 }

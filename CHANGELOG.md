@@ -13,6 +13,22 @@ the shop publishes as "N left", once for the Orders calendar's chip, and once fo
 Dates card — and **two of the three were wrong in the same direction**, so the shop always showed the
 day fuller than the app did.
 
+**And the real cause, found from your own data: a customer's order your app had thrown away.** While
+chasing the two numbers I asked your database one question — is there a shop order sitting unaccepted? —
+and there was. **A real order from 7 October, for the 9th: 1 x Chicken Jerky (Taster), 1 x Pork Jerky
+(Taster), 1 x Pork Jerky, RM64.** It had been refused and forgotten from the moment it arrived, and the
+reason was one product: **you had paused Chicken Jerky (Taster)**, and the app would not take in a shop
+order unless **every single item** on it matched something you currently sell. One paused item threw
+away **the whole order** — quietly, with no message, and it would have kept throwing it away forever.
+
+That is why your shop and your app disagreed: the shop had already counted that order, and your app had
+never heard of it.
+
+**What it does now.** The app takes in **every item it can**, and writes the rest onto the order in plain
+words — its quantity and its price — saying it is not in the total below and to add it by hand if you can
+still make it. An order can no longer be lost because of one paused or renamed product, and you can no
+longer fail to be told.
+
 **What was wrong.**
 
 - The app's chip counted a day's orders with the routine written for **costing**, and that routine
@@ -36,6 +52,14 @@ goes **negative** and says so, because that is information you need; the shop pu
 **What did not change.** No capacity, no limit, no day adjustment, no order, no price — and no figure
 was re-tuned. A day that was already reading correctly is still reading correctly. The shop's own
 number was the right one all along; it is the app that was undercounting.
+
+**And the same reading, on a product's stamp (added after your second message).** A day was not the
+only number counted record-by-record. The quantity the shop stamps on a **product** — "Only N left" —
+is worked out from that product's share of the day, and the app's own product screens were still
+counting **one** calendar record where the shop counts the whole day. So the same order could sit on
+the shop's stamp and not on yours. It is now the same rule everywhere: **the whole day, counted once.**
+It changes nothing unless a day has been written down twice, which happens when both your phones add
+the same date before they have synced.
 
 **And one thing found while checking, fixed in the same push: the Guide was showing its own marking.**
 The Guide's own cards are written with a pair of asterisks round the words that should stand out, and

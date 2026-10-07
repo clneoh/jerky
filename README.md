@@ -756,6 +756,31 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## A customer's order can no longer be thrown away (7 Oct 2026, no engine bump)
+
+Found by asking her database whether a shop order was sitting unaccepted — there was one, from
+**2026-10-07 14:25**, for the 9th: `Chicken Jerky (Taster)`, `Pork Jerky (Taster)`, `Pork Jerky`.
+
+`importable()` (`admin/js/supabase.js`) required **every** line to match an `active` product
+(`.every(...)`). She had paused `Chicken Jerky (Taster)`, so the whole order was refused — and
+refused silently and permanently: the row keeps `status='new'` and retries forever. The shop's
+trigger had already decremented its counts, so **the shop and the app disagreed, with a customer's
+order invisible in between** — which is exactly the fault she reported.
+
+**The fix.** `importable()` now asks for **at least one** line (`some(...)`); an order with nothing
+she sells still waits rather than being claimed. `importIncoming()` collects the lines it couldn't
+take (`droppedLines` — **not `dropped`**: that name is already a pin-binding in the same block, and
+reusing it is a TDZ crash), and writes them onto the first created order's `note` with quantity **and
+price**, because the app computes its total from the lines it holds and a note without the price
+leaves her looking at a figure the customer never paid.
+
+**Tests** (`test/supabase.test.js`, 2 new; suite **2901**): the gate accepts a partly-matchable order
+and refuses one with no matchable line; and `pullIncoming` takes in the two sellable items, notes the
+third with its price. **Bitten:** `.every(...)` restored fails both.
+
+**What this does NOT yet do:** an order where *no* line matches still waits forever, still silently.
+Narrow (lines come from her own published menu), and recorded rather than papered over.
+
 ## The shop and the app agree on how full a day is (7 Oct 2026, no engine bump)
 
 Her report: *"the 9th at store show qty and the app shown qty are different"* — and she was right.
@@ -780,7 +805,18 @@ costing path, and `explodePoDates`/`po.js` still read it.
 **The one sanctioned difference, now pinned by a test:** an over-booked day shows **negative** on the
 chip (information she needs) and **0** on the shop (a customer is never shown minus two left).
 
-**Proof.** `test/availability-agrees.test.js` — 7 tests, one per shape. **Bitten: reverting
+**The product stamp — the same reading, fixed after her second report.** `productRemaining` and
+`poolRemaining` (`admin/js/bom.js`) also took a single `deliveryDateId` and filtered orders by it,
+while `computeProductSlots` sums the pool across every record carrying the date. Both now widen to the
+day through a private `idsForDateOf`, and `computeProductSlots` calls `poolRemaining` **once per date**
+(the old loop over `ids` would double-count now that the function itself spans the day). The orphan
+fallback is deliberate: when the record is gone — an order left by a deleted delivery day — the id is
+matched on its own, so such an order keeps counting as itself.
+
+**Proof.** `test/availability-agrees.test.js` — 10 tests, one per shape. **Bitten three times:**
+reverting `capacityStatus` fails the day shapes, reverting the day-widening in `productRemaining`
+fails the product shape, and restoring the per-id loop in `computeProductSlots` fails the product and
+pack shapes. Reverting
 `capacityStatus` to the old line fails exactly the three divergent shapes** (no-recipe product,
 deleted product, duplicate record) and leaves the agreeing ones green. Verified in a real browser at
 375 px: a seeded day with one 3-unit order for a recipe-less product now reads **`3/12`** on the
