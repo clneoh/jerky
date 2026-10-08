@@ -1,8 +1,37 @@
-# Munchies Furkidz — change history (v54 → v368)
+# Munchies Furkidz — change history (v54 → v369)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**8 Oct 2026 — engine v368 → v369, ONE VERSION: the colours a customer actually reads
+(nothing to run, nothing to upload — pushing this one is the whole of it).**
+
+**Why.** Every screen was measured in a real browser for the first time, against the readability
+floor this app set itself in v313. That earlier fix had only ever been applied to the **grey small
+print** — the amber, green and red had never been measured **where they actually sit**. Several were
+under the floor: some in your app, and the worst ones **on your shop**, in the three lines a customer
+reads most — the tracking-page step labels, the line naming the law at the foot of the privacy notice,
+and the line under Place order.
+
+**What changed on your shop.** Those three quiet lines now use the same grey as everything else (they
+had been given their own, written by hand, which is why no check could see them). The **brand
+terracotta did not move** — on your instruction — so instead the fix was to stop using it for words:
+colours that were too light for text are now the darker shade, and your brand colour is still your
+brand colour wherever it is a button or a band rather than a sentence.
+
+**And one colour was never there at all.** The two rules that draw the **day you can still order** and
+the **current step of a tracked order** pointed at colours the shop's own palette had never defined.
+With nothing to fall back on they simply took whatever colour was around them — so the one line a
+customer stares at while waiting on an order lost its colour, and the calendar's "still room" green had
+been drifting on a value nobody chose. Both are now the same colours your app uses, and the calendar
+green is a shade darker on purpose: the old one measured below the floor.
+
+**A check now catches that for good.** The contrast test only ever looked for one named colour, so a
+second one walked past it. It now fails if either of your two stylesheets reads a colour the other one
+declares and it does not — which is what would have caught this before it shipped.
+
+**Nothing to run, no SQL, no upload, no setting to change on either phone.**
 
 **8 Oct 2026 — engine v364 → v368, four more versions
 (⚠️ ONE LINE OF SQL TO RUN AGAIN — see the end of this entry).**

@@ -756,6 +756,39 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## Engine v368 → v369 — the contrast fix, and two colours the shop never declared (8 Oct 2026)
+
+Base `47584d2` → `b400046`. 6 files, **0 conflicts**, engine **v369**, suite **3021 → 3026 pass / 0
+fail**. No SQL, nothing to deploy.
+
+**Adopted:** `admin/css/app.css` and `store/app.css` colour substitutions — the backoffice now meets
+its own 4.5:1 floor everywhere (the Ingredients empty-state line, the promo badge, the engine pill and
+promo chips, the Production/Scenario chips, the wish-list link); the shop's **three quiet lines** now
+use `--muted` like everything else instead of hand-written greys (the tracking step labels, the line
+naming the Act, and the line under Place order — the v313 fault surviving in the one file v313 did not
+cover). The brand terracotta is unchanged as a fill; **eighteen places that drew TEXT in the brand
+fill colour now use the text token** (white on the fill is 4.48:1 — the one pair deliberately left
+under the floor).
+
+**⚠️⚠️ AND JERKY CAUGHT WHAT THE BAKERY'S OWN TEST DID NOT.** The bakery's fix rewrote two shop rules
+to `var(--amber)` — **and neither stylesheet declares `--amber`.** With no fallback the declaration is
+invalid, so the tracked order's current step label and its skipped-step cross took the inherited
+colour. `store/app.css` also read `var(--green, #6b8f4e)`: a fallback, so it *looked* deliberate —
+and `#6b8f4e` measures **3.65:1** on the shop's surface, below the floor this very change is about.
+
+Fixed by **declaring both tokens in the shop's `:root`, at the backoffice's own values**
+(`--amber: #975a13`, `--green: #3b7449`), and **removing the `--green` fallbacks** — a fallback is not
+a defence; it only hides that nobody chose the value there. Verified in the browser: the day-you-can-
+order number and the chosen day's disc now render `rgb(59,116,73)`, and the three shop lines render
+`--muted`.
+
+**The guard, widened — the part that matters.** `test/readable-quiet-line.test.js`'s
+"only another document declares" test searched for **one token by name** (`--terra`), so a second one
+walked past it. New test: **no stylesheet may read a palette token that only its SIBLING declares** —
+deliberately narrow, because both sheets also set custom properties at *runtime* (`--depth`, `--gr`,
+`--tick-w`) which are declared in neither file and must not fail. **Bitten:** removing `--amber` from
+the shop fails it by name.
+
 ## Engine v364 → v368 (8 Oct 2026)
 
 Base `0e4f836` → `47584d2`. 19 files, ~1,556 insertions. **One source conflict** (`app.js`: jerky's
