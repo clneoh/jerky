@@ -396,6 +396,59 @@ test("v380 catch-up writes the cost the books were ALREADY reading, so no figure
   } finally { restore(); }
 });
 
+// ── ★★ Engine v383 — a phone that is behind reloads BEFORE the lock ─────────
+// Her report: __"some app user after keying in pin, but login to an old version app"__. The warning
+// that should have told them was painted UNDER the lock screen, so the reload was moved to the boot.
+// ⚠️⚠️ THIS IS THE WIRING, AND UNTIL NOW NOTHING TESTED IT: `test/freshness.test.js` proves the rule,
+// but deleting the one line that CALLS it from `boot()` broke no test at all — and her users would go
+// straight back to landing in an old build. It is asserted here, in the boot, where the fix lives.
+
+async function bootWith({ seed, deployedVersion }) {
+  freshDOM();
+  const store = installStorage(seed || { "bakeadmin.v1": stateJSON({}) });
+  const sess = new Map();
+  globalThis.sessionStorage = {
+    getItem: (k) => (sess.has(k) ? sess.get(k) : null),
+    setItem: (k, v) => sess.set(k, String(v)),
+    removeItem: (k) => sess.delete(k),
+  };
+  const asked = [];
+  let reloads = 0;
+  globalThis.location = {
+    href: "https://bakery.test/admin/", hash: "#/dashboard",
+    reload: () => { reloads += 1; },
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    asked.push(String(url));
+    return { ok: true, text: async () => `export const ENGINE_VERSION = "${deployedVersion}";` };
+  };
+  const caseName = `v383-${deployedVersion}-${Math.random()}`;
+  try {
+    await import(`../admin/js/app.js?case=${caseName}`);
+  } finally {
+    globalThis.fetch = realFetch;
+    delete globalThis.sessionStorage;
+  }
+  return { store, sess, asked, reloads, lock: document.getElementById("lock-layer"), lockShown: document.getElementById("lock-layer").children.length > 0 };
+}
+
+test("★★ a phone that is BEHIND reloads itself before the lock, so one PIN gets it the new build", async () => {
+  const r = await bootWith({ deployedVersion: "999" });
+  assert.equal(r.reloads, 1, "a phone on an older build did NOT reload — its owner lands in the old app");
+  assert.equal(r.lockShown, false,
+    "the lock was drawn before the reload, which is the whole thing this is meant to avoid");
+  assert.equal(r.sess.get("bakeadmin.updateTried"), "999",
+    "the build it tried was not recorded, so the next boot would reload again for ever");
+  restore();
+});
+
+test("★ and a phone that is CURRENT boots straight to the lock, with no reload", async () => {
+  const r = await bootWith({ deployedVersion: "382" });
+  assert.equal(r.reloads, 0, "a current phone flashed a reload for nothing");
+  restore();
+});
+
 // ── Engine v120 — the one-time customer-identity catch-up ────────────────────
 
 test("v120 catch-up joins a customer who was split by a '+' on their number, once", async () => {

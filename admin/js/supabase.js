@@ -1329,6 +1329,135 @@ function reviewErr(err, fallback) {
   return err && err.message ? err.message : fallback;
 }
 
+// ── ★★ the review photo, which is PRIVATE until she says yes (v384) ──────────
+//
+// ⚠️⚠️ WHY THIS IS NOT A ONE-LINE IMAGE TAG. Her words: __"plan the photo fix too"__. A customer's
+// picture used to go straight into the PUBLIC bucket, so it was fetchable by its link before she had
+// approved the review. It now waits in a PRIVATE bucket that no anonymous reader can reach.
+//
+// ⚠️ AND THAT BREAKS THE OBVIOUS WAY OF SHOWING IT: **an `<img src>` cannot send an Authorization
+// header.** So her moderation card cannot simply point at a private file — it has to be handed a
+// link that carries its own permission. `pendingPhotoUrl` below gets one, and falls back to reading
+// the bytes and using a blob URL if her token cannot mint a signed link. That fallback is why this
+// cannot dead-end on a phone that behaves differently.
+
+// The review's `photo` holds a bare PATH while the review is unpublished, and a full public URL
+// once it has been approved (v384 — see supabase/reviews.sql). One question, asked in one place.
+export function isPendingPhoto(value) {
+  const s = String(value == null ? "" : value).trim();
+  return !!s && !/^https?:\/\//i.test(s);
+}
+
+// The picture's own name, whichever of the two shapes `photo` is in — a bare path, or the public
+// address that contains that same path.
+//
+// ⚠️⚠️ THE COPY ACROSS KEEPS THE NAME, AND THAT IS WHAT MAKES A TAKE-DOWN REVERSIBLE WITHOUT A
+// SECOND COLUMN: the private original is still sitting in the pending bucket under the name this
+// recovers, so taking a review down puts the picture back where it was and publishing it again
+// brings the same picture back — **without asking the customer for it twice.**
+export function reviewPhotoKey(value) {
+  const s = String(value == null ? "" : value).trim();
+  if (!s) return "";
+  const marker = "/review-photos/";
+  const at = s.indexOf(marker);
+  return at === -1 ? s : s.slice(at + marker.length);
+}
+
+// A link her own card can show, for a picture that is still private. Returns the URL, or a reason
+// saying why it could not be had — ⚠️ because a card that silently draws nothing where a picture
+// should be is a card that cannot do its one job, which is to let her judge it.
+export async function pendingPhotoUrl(state, path) {
+  const c = cfg(state);
+  if (!ready(c)) return { ok: false, reason: "Supabase not configured", url: "" };
+  const key = String(path || "").trim();
+  if (!key) return { ok: false, reason: "No picture on this review", url: "" };
+  let headers;
+  try { headers = await reviewAuth(c); } catch (err) {
+    return { ok: false, reason: reviewErr(err, "Sign-in failed"), url: "" };
+  }
+  // 1) ASK THE STORAGE SERVICE TO SIGN IT. The signature rides in the query string, so a plain
+  //    <img> can load it — which is the whole reason this is the first choice.
+  try {
+    const res = await fetch(`${c.url}/storage/v1/object/sign/review-photos-pending/${key}`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ expiresIn: 3600 }),
+    });
+    if (res.ok) {
+      const body = await res.json().catch(() => null);
+      const signed = body && (body.signedURL || body.signedUrl);
+      if (signed) {
+        return { ok: true, url: signed.startsWith("http") ? signed : `${c.url}/storage/v1${signed}`, reason: "" };
+      }
+    }
+  } catch { /* fall through to reading the bytes */ }
+  // 2) ⚠️ THE FALLBACK THAT ALWAYS WORKS: read the file with the key and hand the page a blob. It
+  //    costs a download the signed link would have avoided, so it is second, not first.
+  try {
+    const res = await fetch(`${c.url}/storage/v1/object/authenticated/review-photos-pending/${key}`, { headers });
+    if (!res.ok) return { ok: false, reason: `Could not read the picture (HTTP ${res.status})`, url: "" };
+    const blob = await res.blob();
+    return { ok: true, url: URL.createObjectURL(blob), reason: "" };
+  } catch (err) {
+    return { ok: false, reason: reviewErr(err, "Couldn't reach the picture"), url: "" };
+  }
+}
+
+// ⚠️ IT DOWNLOADS AND RE-UPLOADS RATHER THAN CALLING A COPY ENDPOINT. The two calls below are the
+// two this app ALREADY makes — an authenticated read and a plain upload — so there is no third
+// endpoint whose shape has to be right on the first try on her phone. A review photo is a few
+// hundred kilobytes; the saving of a copy call is not worth an unproven request.
+//
+// Returns { ok, url, reason }: the PUBLIC address to store on the review, or why not.
+export async function publishReviewPhoto(state, path) {
+  const c = cfg(state);
+  if (!ready(c)) return { ok: false, reason: "Supabase not configured", url: "" };
+  const key = String(path || "").trim();
+  if (!key) return { ok: false, reason: "No picture to move", url: "" };
+  let headers;
+  try { headers = await reviewAuth(c); } catch (err) {
+    return { ok: false, reason: reviewErr(err, "Sign-in failed"), url: "" };
+  }
+  try {
+    const got = await fetch(`${c.url}/storage/v1/object/authenticated/review-photos-pending/${key}`, { headers });
+    if (!got.ok) return { ok: false, reason: `Could not read the picture (HTTP ${got.status})`, url: "" };
+    const blob = await got.blob();
+    const put = await fetch(`${c.url}/storage/v1/object/review-photos/${key}`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": blob.type || "image/jpeg", "x-upsert": "true" },
+      body: blob,
+    });
+    if (!put.ok) return { ok: false, reason: `Could not publish the picture (HTTP ${put.status})`, url: "" };
+    return { ok: true, url: `${c.url}/storage/v1/object/public/review-photos/${key}`, reason: "" };
+  } catch (err) {
+    return { ok: false, reason: reviewErr(err, "Couldn't move the picture"), url: "" };
+  }
+}
+
+// Take a picture back off the public bucket — on Take down, and on Delete. ⚠️ Best-effort and
+// NEVER fatal to the action that asked for it: a picture left behind is a small failure, but a
+// review that cannot be taken down is a big one. The row's `photo` is what decides whether the
+// homepage shows it, so hiding works even if this fails.
+export async function deletePublicReviewPhoto(state, url) {
+  const c = cfg(state);
+  if (!ready(c)) return { ok: false, reason: "Supabase not configured" };
+  const s = String(url == null ? "" : url).trim();
+  const marker = "/object/public/review-photos/";
+  const at = s.indexOf(marker);
+  if (at === -1) return { ok: true, reason: "" }; // not a public photo of ours — nothing to do
+  const key = s.slice(at + marker.length);
+  if (!key) return { ok: true, reason: "" };
+  try {
+    const res = await fetch(`${c.url}/storage/v1/object/review-photos/${key}`, {
+      method: "DELETE", headers: await reviewAuth(c),
+    });
+    if (!res.ok) return { ok: false, reason: `Could not remove the picture (HTTP ${res.status})` };
+    return { ok: true, reason: "" };
+  } catch (err) {
+    return { ok: false, reason: reviewErr(err, "Couldn't reach the picture") };
+  }
+}
+
 // Every review, newest first (published and waiting). The view splits them.
 export async function fetchReviews(state) {
   const c = cfg(state);
@@ -1345,14 +1474,21 @@ export async function fetchReviews(state) {
   }
 }
 
-export async function setReviewPublished(state, id, published) {
+export async function setReviewPublished(state, id, published, photo = null) {
   const c = cfg(state);
   if (!ready(c)) return { ok: false, reason: "Supabase not configured" };
   try {
+    // ⚠️ `photo` IS A THIRD ARGUMENT AND IT IS ONLY SENT WHEN IT CHANGED (v384). Publishing moves a
+    // picture from the private bucket to the public one, so the address on the row has to change in
+    // the SAME update as the flag — two calls could leave a published review pointing at a picture
+    // that is still private, which shows as a review with no photo at all. ⚠️ Omitted (null) means
+    // "leave the picture alone", which is what every other caller means.
+    const body = { published: !!published };
+    if (photo != null) body.photo = String(photo);
     const res = await fetch(`${c.url}/rest/v1/reviews?id=eq.${encodeURIComponent(String(id))}`, {
       method: "PATCH",
       headers: { ...(await reviewAuth(c)), "Content-Type": "application/json" },
-      body: JSON.stringify({ published: !!published }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) return { ok: false, reason: `Update failed (HTTP ${res.status})` };
     return { ok: true };
@@ -1374,6 +1510,49 @@ export async function deleteReview(state, id) {
   } catch (err) {
     return { ok: false, reason: reviewErr(err, "Couldn't reach Supabase") };
   }
+}
+
+// ★★ PUBLISH ONE REVIEW, MOVING ITS PICTURE OUT OF THE PRIVATE BUCKET FIRST (v384).
+//
+// ⚠️⚠️ THE ORDER IS THE WHOLE POINT: the picture moves, and only then does the review go live. If the
+// move fails this returns a reason and **publishes nothing**, because the alternative is a review on
+// her homepage whose picture is missing — she would have approved something she could not see the
+// whole of, and the customer's picture would be stranded where nobody can reach it.
+//
+// ⚠️ The move and the flag go in ONE update, so there is never a published review pointing at a
+// picture that is still private, which would show as a review with no picture at all.
+export async function publishReviewWithPhoto(state, row) {
+  const photo = String((row && row.photo) || "").trim();
+  let next = null;
+  if (isPendingPhoto(photo)) {
+    const moved = await publishReviewPhoto(state, photo);
+    if (!moved.ok) return { ok: false, reason: moved.reason };
+    next = moved.url;
+  }
+  return setReviewPublished(state, row && row.id, true, next);
+}
+
+// ★★ TAKE ONE REVIEW DOWN, AND TAKE ITS PICTURE OFF THE PUBLIC BUCKET (v384).
+//
+// ⚠️⚠️ HIDING THE ROW IS NOT ENOUGH. The homepage stops listing a hidden review, but the FILE would
+// stay reachable by anyone who kept the link — so "taken down" would not be true. ⚠️ The private
+// original is untouched, and the row goes back to pointing at it, so publishing again brings the
+// same picture back **without asking the customer for it twice**.
+//
+// ⚠️ A picture that will not delete is SAID but does not stop the take-down: a review she cannot
+// hide is a worse fault than a file left behind.
+export async function takeDownReviewWithPhoto(state, row) {
+  const photo = String((row && row.photo) || "").trim();
+  let warning = "";
+  let next = null;
+  if (photo && !isPendingPhoto(photo)) {
+    const gone = await deletePublicReviewPhoto(state, photo);
+    if (!gone.ok) warning = gone.reason;
+    next = reviewPhotoKey(photo);
+  }
+  const r = await setReviewPublished(state, row && row.id, false, next);
+  if (!r.ok) return r;
+  return { ok: true, warning };
 }
 
 // How many homepage reviews are waiting to be published (published = false).

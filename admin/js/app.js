@@ -42,7 +42,7 @@ import { refreshShareWarn } from "./sharewarn.js";
 import { lockEnabled } from "./pin.js";
 import { installSuggestionAccept } from "./suggest.js";
 import { ENGINE_VERSION } from "./version.js";
-import { startFreshnessWatch } from "./freshness.js";
+import { maybeReloadForUpdate, startFreshnessWatch } from "./freshness.js";
 
 const state = loadState();
 
@@ -344,6 +344,25 @@ async function boot() {
   if (ensureSupabase(state)) save(state);
   const layer = document.getElementById("lock-layer");
   if (layer) layer.hidden = true; // hygiene: never a stale visible lock
+  // ★★ AND A PHONE THAT IS BEHIND RE-LOADS ITSELF HERE, BEFORE THE LOCK (v383).
+  //
+  // Her report: __"some app user after keying in pin, but login to an old version app"__. The cause
+  // was that the warning below was being painted UNDER the lock screen — a full-screen opaque panel
+  // at layer 80 against the strip's layer 25 — so the one message that says "this phone is behind"
+  // was never once visible to the person typing the PIN. Proved on a real screen: a tap at the
+  // centre of that warning lands on the Unlock button.
+  //
+  // ⚠️⚠️ WHY IT RELOADS BEFORE THE LOCK RATHER THAN AFTER THE PIN. The app locks on EVERY open, so a
+  // reload after a correct PIN would bring the lock back and make everyone type it twice, every
+  // time — and the only way round that is to remember the unlock across a reload, which weakens the
+  // gate. Doing it first costs nothing and **leaves the lock exactly as it was**: she keys the PIN
+  // once and is already in the current build.
+  //
+  // ⚠️ It fires ONCE per build and then gives up (`maybeReloadForUpdate`), because a phone reloading
+  // into the same stale file — a wedged deploy, a proxy serving an old copy — would otherwise loop
+  // for ever and never reach a lock screen again. When it does give up, the strip below is what says
+  // so, which is why that strip must be readable at the gate.
+  if (await maybeReloadForUpdate({ running: ENGINE_VERSION })) return;
   // Before the gates, so a phone sitting on the lock or sign-in screen still
   // learns it is behind. GitHub Pages caches the app's code for ten minutes
   // with no build number in any URL, so a fix can be pushed and not arrive;

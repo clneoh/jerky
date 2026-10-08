@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { parseVersion, deployedBuild, decide, startFreshnessWatch } from "../admin/js/freshness.js";
+import { parseVersion, deployedBuild, decide, shouldReload, maybeReloadForUpdate, startFreshnessWatch } from "../admin/js/freshness.js";
 import { ENGINE_VERSION } from "../admin/js/version.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -110,4 +110,108 @@ test("the watch is inert where there is no page to draw it on", () => {
   const stop = startFreshnessWatch({ running: ENGINE_VERSION });
   assert.equal(typeof stop, "function");
   assert.doesNotThrow(() => stop());
+});
+
+// ── ★★ the phone re-loads itself into the new build BEFORE the lock (v383) ────
+// Her report: __"some app user after keying in pin, but login to an old version app"__. The warning
+// that should have told them was being painted UNDER the lock screen (strip layer 25, lock layer 80),
+// so the reload now happens first and the lock is never reached in an old build.
+
+test("shouldReload: nothing to do when the phone is current, or ahead of the site", () => {
+  assert.equal(shouldReload({ running: "300", deployed: "300" }), false, "same build");
+  assert.equal(shouldReload({ running: "300", deployed: null }), false, "no answer — offline, or a bad body");
+  assert.equal(shouldReload({ running: "300", deployed: "" }), false);
+  assert.equal(shouldReload({ running: "300" }), false);
+  assert.equal(shouldReload({}), false);
+  assert.equal(shouldReload({ running: "301", deployed: "300" }), false, "this phone is AHEAD — not a problem to act on");
+});
+
+test("★★ shouldReload: behind reloads once, and only once", () => {
+  assert.equal(shouldReload({ running: "300", deployed: "382" }), true, "behind, never tried → reload");
+  assert.equal(shouldReload({ running: "300", deployed: "382", tried: false }), true);
+  // ⚠️⚠️ THE ANTI-LOOP RULE, and the reason this feature is not merely nice to have. A phone that
+  // reloads into the SAME stale build — a wedged deploy, a proxy serving an old file, a cache that
+  // will not let go — would reload for ever and its owner would never reach a lock screen again.
+  // One attempt per build, then it gives up and the strip explains why.
+  assert.equal(shouldReload({ running: "300", deployed: "382", tried: true }), false,
+    "a second reload for the same build would loop for ever");
+});
+
+test("★★⚠️ the reload fires ONCE, records the build it tried, and does not fire again", async () => {
+  const store = new Map();
+  const realSession = globalThis.sessionStorage;
+  const realLocation = globalThis.location;
+  globalThis.sessionStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => store.set(k, String(v)),
+    removeItem: (k) => store.delete(k),
+  };
+  let reloads = 0;
+  globalThis.location = { href: BASE, reload: () => { reloads += 1; } };
+  const { fetchImpl } = answering("export const ENGINE_VERSION = \"382\";");
+  try {
+    assert.equal(await maybeReloadForUpdate({ running: "300", fetchImpl }), true, "a behind phone must reload");
+    assert.equal(reloads, 1, "it did not actually ask the page to reload");
+    assert.equal(store.get("bakeadmin.updateTried"), "382",
+      "⚠️ the build it tried is not recorded, so the next boot would reload again — for ever");
+
+    // The boot the reload causes: same build on the site, and the attempt already recorded.
+    assert.equal(await maybeReloadForUpdate({ running: "300", fetchImpl }), false,
+      "⚠️ it reloaded a SECOND time — a phone stuck behind would never reach a lock screen");
+    assert.equal(reloads, 1, "a second reload was asked for after the first");
+  } finally {
+    globalThis.sessionStorage = realSession;
+    globalThis.location = realLocation;
+  }
+});
+
+test("⚠️ a phone that is already current never reloads — the boot is not disturbed", async () => {
+  const realLocation = globalThis.location;
+  let reloads = 0;
+  globalThis.location = { href: BASE, reload: () => { reloads += 1; } };
+  const { fetchImpl } = answering("export const ENGINE_VERSION = \"382\";");
+  try {
+    assert.equal(await maybeReloadForUpdate({ running: "382", fetchImpl }), false);
+    assert.equal(reloads, 0, "a current phone reloaded for nothing — every open would flash the page");
+  } finally { globalThis.location = realLocation; }
+});
+
+test("⚠️⚠️ a probe that HANGS does not hold the app up — it is deadlined", async () => {
+  // ⚠️ THE RISK THIS FEATURE INTRODUCES, AND WHY IT IS DEADLINED. The check now runs on the boot
+  // path, BEFORE the lock — so a fetch that never settles would leave a phone with no lock screen,
+  // no app, and nothing to press. That is a WORSE fault than the one being fixed. A promise that
+  // never resolves must therefore come back as "no answer" rather than as a wait.
+  const started = Date.now();
+  const hung = await deployedBuild({
+    base: BASE,
+    timeoutMs: 60,
+    fetchImpl: () => new Promise(() => {}), // never settles, never throws
+  });
+  assert.equal(hung, null, "a hung probe must answer 'nothing learned', not hang the boot");
+  assert.ok(Date.now() - started < 2000, `the deadline did not fire — waited ${Date.now() - started}ms`);
+});
+
+// ── ★★⚠️ the warning is READABLE AT THE LOCK, not painted under it (v383) ─────
+// ⚠️⚠️ THIS IS THE BUG ITSELF, PINNED BY A RULE RATHER THAN BY A NUMBER. The strip sat at layer 25
+// while the lock screen is a full-screen OPAQUE panel at layer 80 — so the one message saying "this
+// phone is behind" was drawn UNDERNEATH the screen the person was looking at. Proved on a real
+// screen: a tap at the centre of the warning reached the Unlock button.
+//
+// ⚠️ A LAYER NUMBER IS EXACTLY THE KIND OF THING A LATER EDIT MOVES WITHOUT KNOWING: 25 looks
+// harmless on its own, and nothing about it says what it is standing behind. This compares the two
+// rules, so the strip can never quietly sink beneath the gate again — and it fails with the reason.
+test("★★⚠️ the update strip sits ABOVE the lock screen, or the warning is invisible", () => {
+  const css = readFileSync(join(here, "..", "admin", "css", "app.css"), "utf8");
+  const layerOf = (sel) => {
+    const rule = new RegExp(`\\${sel}\\s*\\{[^}]*\\}`, "m").exec(css);
+    assert.ok(rule, `${sel} has no rule in app.css — has it been renamed?`);
+    const z = /z-index:\s*(-?\d+)/.exec(rule[0]);
+    assert.ok(z, `${sel} declares no z-index, so its layer is whatever it happens to inherit`);
+    return Number(z[1]);
+  };
+  const bar = layerOf(".update-bar");
+  const lock = layerOf(".lock-layer");
+  assert.ok(bar > lock,
+    `the update strip (z-index ${bar}) is BELOW the lock screen (z-index ${lock}) — the warning that `
+    + "says this phone is behind would be painted under the screen the person is looking at");
 });

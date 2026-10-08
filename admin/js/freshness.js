@@ -19,6 +19,31 @@ import { el, button } from "./ui.js";
 const VERSION_RE = /ENGINE_VERSION\s*=\s*["']([^"']+)["']/;
 const TRIED_KEY = "bakeadmin.updateTried";
 
+// ⚠️⚠️ A PROBE THAT NEVER ANSWERS MUST NEVER HOLD UP THE APP (v383). The version check now runs on the
+// boot path, BEFORE the lock screen — so a fetch that hangs would leave a phone with no lock, no app
+// and nothing to press. ⚠️ That is a worse fault than the one this fixes. The check is a courtesy; the
+// app is not, so it gets a deadline and the app carries on without an answer when it passes.
+// (The watch alone could afford to hang, because it is fire-and-forget. This cannot.)
+const PROBE_MS = 2500;
+
+function withTimeout(promise, ms) {
+  return new Promise((resolve) => {
+    let done = false;
+    const settle = (v) => { if (!done) { done = true; clearTimeout(timer); resolve(v); } };
+    const timer = setTimeout(() => settle(null), ms);
+    Promise.resolve(promise).then(settle, () => settle(null));
+  });
+}
+
+// The one-shot record of "this phone has already tried a reload for that build". Module scope so the
+// pre-lock reload and the watch below agree on it — one fact, one key, one meaning.
+const readTried = () => {
+  try { return sessionStorage.getItem(TRIED_KEY) || null; } catch { return null; }
+};
+const noteTried = (v) => {
+  try { sessionStorage.setItem(TRIED_KEY, v); } catch { /* private mode; the reload still works */ }
+};
+
 // The build named inside a copy of version.js. Exported so the test can read
 // the real file the app ships and prove this pattern still matches it.
 export function parseVersion(text) {
@@ -35,19 +60,57 @@ function num(v) {
 // is the whole point of the request: it must never be answered from a cache,
 // because a cached answer is the very thing being checked for. The query is a
 // second belt on the same braces, for a proxy that ignores the header.
-export async function deployedBuild({ fetchImpl, base } = {}) {
+export async function deployedBuild({ fetchImpl, base, timeoutMs = PROBE_MS } = {}) {
   const f = fetchImpl || (typeof fetch === "function" ? fetch : null);
   const href = base || (typeof location !== "undefined" && location.href ? location.href : "");
   if (!f || !href) return null;
   try {
     const url = new URL("js/version.js", href);
     url.searchParams.set("probe", String(Date.now()));
-    const res = await f(url.href, { cache: "no-store" });
+    // ⚠️ DEADLINED, not merely try/caught: a fetch that never settles neither resolves nor throws, so
+    // the catch below would never run and the boot would wait for ever.
+    const res = await withTimeout(f(url.href, { cache: "no-store" }), timeoutMs);
     if (!res || !res.ok) return null;
     return parseVersion(await res.text());
   } catch {
     return null;
   }
+}
+
+// ★★ WHETHER THIS PHONE SHOULD RELOAD ITSELF INTO THE NEW BUILD (v383), decided with no browser so it
+// can be pinned. The rules are the same three `decide` uses, and they must never disagree: the reload
+// is the ACTION and the strip is the EXPLANATION of the same fact.
+//
+//   no answer, current, or the phone is ahead of the site → no
+//   behind, and a reload has not been tried for that build → yes, once
+//   behind, and it HAS been tried → no. ⚠️⚠️ THIS IS THE ANTI-LOOP RULE AND IT IS THE IMPORTANT ONE:
+//     a phone reloading into the same stale build — a wedged deploy, a proxy serving an old file —
+//     would reload for ever and the person would never reach a lock screen again.
+export function shouldReload({ running, deployed, tried } = {}) {
+  if (!deployed || !running || deployed === running) return false;
+  const site = num(deployed);
+  const mine = num(running);
+  if (site !== null && mine !== null && site < mine) return false; // phone is ahead — not a problem
+  return !tried;
+}
+
+// Reload ONCE, before the lock, if this phone is behind. Returns true when a reload is on its way, and
+// the caller must then do nothing else — the page is being replaced under it.
+//
+// ⚠️⚠️ WHY BEFORE THE LOCK AND NOT AFTER THE PIN. The app locks on EVERY open, so reloading after a
+// correct PIN would show the lock again and make everyone type the PIN twice, every time — and avoiding
+// that would mean remembering the unlock across a reload, which weakens the gate. Doing it first costs
+// nothing: the person keys the PIN once and is already in the current build. **The lock's behaviour is
+// not touched by this at all.**
+export async function maybeReloadForUpdate({ running, fetchImpl } = {}) {
+  if (typeof location === "undefined" || typeof location.reload !== "function") return false;
+  const deployed = await deployedBuild({ fetchImpl });
+  const tried = deployed !== null && readTried() === String(deployed);
+  if (!shouldReload({ running, deployed, tried })) return false;
+  // Recorded BEFORE the reload, because the record has to survive it — that is what stops the loop.
+  noteTried(String(deployed));
+  location.reload();
+  return true;
 }
 
 // What, if anything, to tell her. Pure: the three cases and their wording are
@@ -101,13 +164,6 @@ export function startFreshnessWatch({ running, fetchImpl } = {}) {
   const host = document.getElementById("update-bar");
   if (!host) return () => {};
   let stopped = false;
-
-  const readTried = () => {
-    try { return sessionStorage.getItem(TRIED_KEY) || null; } catch { return null; }
-  };
-  const noteTried = (v) => {
-    try { sessionStorage.setItem(TRIED_KEY, v); } catch { /* private mode; the reload still works */ }
-  };
 
   const check = async () => {
     const deployed = await deployedBuild({ fetchImpl });

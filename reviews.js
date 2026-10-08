@@ -197,16 +197,32 @@ export async function submitReview(data) {
   }
 }
 
-// Upload the customer's photo to the review-photos bucket and return its public
-// URL, or "" when there is no photo / it can't upload. A failed upload never
-// blocks the review — it just posts without a picture.
+// Upload the customer's photo to the PRIVATE pending bucket and return its PATH,
+// or "" when there is no photo / it can't upload. A failed upload never blocks the
+// review — it just posts without a picture.
+//
+// ⚠️⚠️ IT RETURNS A PATH, NOT A URL, AND IT UPLOADS TO A BUCKET NOBODY CAN READ
+// (v384). Her words: __"plan the photo fix too"__. A picture used to go straight
+// into the PUBLIC bucket, so it was fetchable by anyone who knew its link the
+// moment it uploaded — **before she had approved the review** — which is the
+// opposite of what this form promises the customer. The file now waits somewhere
+// private, and her app moves it across only when she presses Publish.
+//
+// ⚠️ A bare path is not a URL, and the review's `photo` column holds one or the
+// other depending on whether it has been approved — see the note in
+// supabase/reviews.sql.
 export async function uploadPhoto(file) {
   if (!photoOk(file)) return "";
   const ext = PHOTO_EXT[file.type] || "jpg";
-  const nonce = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  // ⚠️ A random name, so one customer can never guess another's file. Since v384 the
+  // pending bucket is unreadable anyway, but the SAME name is kept when the owner
+  // publishes it, and that copy is public by design.
+  const nonce = (typeof crypto !== "undefined" && crypto.randomUUID)
+    ? crypto.randomUUID().replace(/-/g, "").slice(0, 20)
+    : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
   const path = `${nonce}.${ext}`;
   try {
-    const res = await fetch(`${BASE}/storage/v1/object/review-photos/${path}`, {
+    const res = await fetch(`${BASE}/storage/v1/object/review-photos-pending/${path}`, {
       method: "POST",
       headers: {
         apikey: SUPABASE.anonKey,
@@ -219,7 +235,7 @@ export async function uploadPhoto(file) {
       body: file,
     });
     if (!res.ok) return "";
-    return `${BASE}/storage/v1/object/public/review-photos/${path}`;
+    return path;
   } catch {
     return "";
   }

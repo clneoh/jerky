@@ -1,8 +1,42 @@
-# Munchies Furkidz — change history (v54 → v382)
+# Munchies Furkidz — change history (v54 → v384)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**8 Oct 2026 — engine v382 → v384, TWO VERSIONS
+(⚠️ ONE LINE OF SQL TO RUN AGAIN — see the end of this entry).**
+
+**A customer's review photo is now private until YOU publish it.** This is a fix, and worth knowing
+about. When a customer added a photo to a review, it went straight into a part of your storage marked
+**public** — so **anyone who had its link could fetch it the moment it uploaded**, before you had ever
+seen the review. The rule on that folder said only approved pictures were readable; it wasn't true.
+Now the picture is uploaded somewhere **no anonymous reader can reach, not even with the exact
+link**, and when you press **Publish** your app moves it across to the part your homepage reads — in
+the same breath as publishing it. If that move fails, **the review is not published** and the card
+tells you why, rather than putting a review on your homepage with its picture missing.
+
+**Taking a review down now really takes it down.** Hiding it used to stop the homepage showing it
+while the file stayed reachable by anyone who kept the link. Taking it down now deletes the public
+copy too — and because the original is kept privately, publishing it again brings the **same picture**
+back without asking the customer for it twice.
+
+**Two smaller things from the same fix.** A picture that cannot be shown now says so rather than
+leaving a blank where a photo should be — that card exists so you can judge the picture before
+publishing it, and a silent blank reads as "no photo". And both folders now refuse anything that is
+not a picture, and anything over 2 MB (your shop shrinks a photo to a small file before uploading, so
+the ceiling never turns a real one away).
+
+**And a phone that is behind now updates itself before the password screen** (v383). Before this, a
+phone could still be running an older build at the moment you typed your PIN, and the update strip
+only appeared after you were already in. It now brings itself up to date first.
+
+**Before you push — the one thing you must do.** In your Supabase project → SQL Editor, run
+**`supabase/reviews.sql`** again. It creates the **private folder** the shop now uploads a customer's
+picture into, and sets the two folders' size and picture-type limits. **Until it is run, a customer's
+review photo cannot be uploaded at all.** Safe to run as many times as you like.
+
+**Nothing to upload, no Edge Function, no setting to change on either phone.**
 
 **8 Oct 2026 — engine v369 → v382, THIRTEEN VERSIONS
 (⚠️ ONE LINE OF SQL TO RUN AGAIN — see the end of this entry).**

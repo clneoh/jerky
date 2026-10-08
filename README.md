@@ -756,6 +756,37 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## Engine v382 → v384 — a review's picture, and a phone that updates first (8 Oct 2026)
+
+Base `8beb8f7` → `651cc94`. 14 files, ~995 insertions. **0 conflicts in all 12 source files.** Suite
+**3125 → 3148 pass / 0 fail**. The **jerky-only-line audit reported 0 lost lines** across every file
+(supabase.js 56, supabase.test.js 67, reviews.sql 43, app.css 28, reviews.js 24, …).
+
+**⚠️ `supabase/reviews.sql` — A SECURITY FIX, AND NOT OPTIONAL BEFORE DEPLOYING.** A customer's review
+photo was uploaded straight into the **public** `review-photos` bucket, so it was fetchable by anyone
+holding its link **before the review was ever approved** — the policy claimed only approved pictures
+were readable, and it was not true. Nor did either bucket have a size or type limit.
+
+Adopted: uploads now go to a **new private bucket `review-photos-pending`** (reachable by no anonymous
+reader, not even with the exact link); **Publish** copies the file across to `review-photos` in the
+same breath and stores the public path; **a failed move does NOT publish** (the card says why — the
+other way round would put a review on the homepage with its picture missing); **taking a review down
+deletes the public copy** while the private original is kept, so re-publishing restores the same
+picture without asking the customer again; the anon insert policy is now `with check (published =
+false)` — **a visitor may ADD a review, but may not arrive with one already published**; and both
+buckets get `file_size_limit = 2097152` and an image-only `allowed_mime_types`.
+
+**⚠️ The shop now uploads to a bucket that does not exist in her project until the script is run** —
+`reviews.js` (the homepage script) posts to `/storage/v1/object/review-photos-pending/…`, so **until
+`supabase/reviews.sql` is re-run, a customer's review photo cannot be uploaded at all.**
+
+**v383** (`admin/js/freshness.js`, `admin/js/app.js`): a phone running an older build now **updates
+itself before the password screen**, rather than showing the update strip only after the PIN is in.
+
+**Localization:** every new string checked (the reviews card's "It is still waiting — publish it once
+you can see it.", "Loading the picture…", the delete confirmations). All generic; no bakery wording,
+no bakery identity; `CNAME` and her Supabase project untouched.
+
 ## Engine v369 → v382 — thirteen versions (8 Oct 2026)
 
 Base `b400046` → `8beb8f7`. **39 files, ~4,661 insertions.** `git merge-file -p --diff3` per file with

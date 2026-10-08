@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateUpcomingDates } from "../admin/js/dates.js";
-import { computeSlots, computeProductSlots, syncAvailability, login, syncStorefront, pullIncoming, publishTracking, maybePublishTracking, forgetPublishedCards, trackingSnapshot, refreshStorefront, pendingReviewCount, fetchPromoVisits, importable, stuckOrders, forgetStuckOrders, whyUnimportable } from "../admin/js/supabase.js";
+import { computeSlots, computeProductSlots, syncAvailability, login, syncStorefront, pullIncoming, publishTracking, maybePublishTracking, forgetPublishedCards, trackingSnapshot, refreshStorefront, pendingReviewCount, fetchPromoVisits, importable, stuckOrders, forgetStuckOrders, whyUnimportable, isPendingPhoto, reviewPhotoKey, publishReviewWithPhoto, takeDownReviewWithPhoto, deletePublicReviewPhoto, pendingPhotoUrl } from "../admin/js/supabase.js";
 import { groupOrders, orderCode } from "../admin/js/state.js";
 
 const realFetch = globalThis.fetch;
@@ -2127,4 +2127,186 @@ test("★★ publishTracking REPORTS whether the card was written — the forget
     globalThis.fetch = realFetch;
     globalThis.localStorage = realLocalStorage;
   }
+});
+
+// ── ★★ the review photo is PRIVATE until she publishes (v384) ─────────────────
+// Her words: __"plan the photo fix too"__, then, asked how far, __"Gate it properly, and harden."__
+// A picture used to land in the PUBLIC bucket, so it was reachable by its link the moment it uploaded
+// — before she had approved the review. It now waits somewhere nobody anonymous can read, and her app
+// moves it across when she presses Publish.
+
+const PENDING = "9f2c1a4b7e3d5.jpg";
+const PUBLIC_URL = "https://x.supabase.co/storage/v1/object/public/review-photos/9f2c1a4b7e3d5.jpg";
+
+function photoCloudState() {
+  const state = makeState();
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon",
+    email: "a@b.c", password: "pw" };
+  return state;
+}
+
+test("isPendingPhoto tells a waiting picture from a published address", () => {
+  assert.equal(isPendingPhoto(PENDING), true, "a bare name is a picture still waiting");
+  assert.equal(isPendingPhoto(PUBLIC_URL), false, "an address is a published picture");
+  assert.equal(isPendingPhoto(""), false);
+  assert.equal(isPendingPhoto(null), false);
+  assert.equal(isPendingPhoto("   "), false);
+});
+
+test("reviewPhotoKey recovers the picture's name from either shape", () => {
+  assert.equal(reviewPhotoKey(PENDING), PENDING, "a bare path is already the name");
+  assert.equal(reviewPhotoKey(PUBLIC_URL), PENDING,
+    "⚠️ the public address carries the same name — which is what makes a take-down reversible");
+  assert.equal(reviewPhotoKey(""), "");
+});
+
+test("★★⚠️ publishing MOVES the picture, and a failed move publishes NOTHING", async () => {
+  // ⚠️⚠️ THE RULE THAT MATTERS MOST HERE. If the picture cannot be moved, publishing anyway would
+  // put a review on her homepage whose picture is missing — she would have approved something she
+  // could not see the whole of, and the customer's picture would be stranded where nobody can reach
+  // it. So a failed move must publish nothing at all.
+  const calls = [];
+  globalThis.fetch = async (url, opts = {}) => {
+    calls.push({ url: String(url), opts });
+    if (String(url).includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    if (String(url).includes("/object/authenticated/review-photos-pending/")) return { ok: false, status: 404 };
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+  try {
+    const r = await publishReviewWithPhoto(photoCloudState(), { id: 7, photo: PENDING });
+    assert.equal(r.ok, false, "a failed move reported success");
+    assert.ok(r.reason, "a failed move gave no reason");
+    const patched = calls.find((c) => c.url.includes("/rest/v1/reviews") && c.opts.method === "PATCH");
+    assert.equal(patched, undefined,
+      "⚠️⚠️ the review was PUBLISHED even though its picture could not be moved");
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test("★★ publishing sends the public address in the SAME update as the flag", async () => {
+  // ⚠️ One update, not two: a published review pointing at a picture that is still private would
+  // show on her homepage as a review with no picture at all.
+  const calls = [];
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    calls.push({ url: u, opts });
+    if (u.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    if (u.includes("/object/authenticated/review-photos-pending/")) return { ok: true, blob: async () => ({ type: "image/jpeg" }) };
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+  try {
+    const r = await publishReviewWithPhoto(photoCloudState(), { id: 7, photo: PENDING });
+    assert.equal(r.ok, true, `publishing failed: ${r.reason}`);
+    assert.ok(calls.some((c) => c.url.includes("/object/review-photos/") && !c.url.includes("pending") && c.opts.method === "POST"),
+      "the picture was never copied into the public bucket");
+    const patched = calls.find((c) => c.url.includes("/rest/v1/reviews") && c.opts.method === "PATCH");
+    assert.ok(patched, "the review was never updated");
+    const body = JSON.parse(patched.opts.body);
+    assert.equal(body.published, true);
+    assert.equal(body.photo, PUBLIC_URL,
+      "⚠️ the review was published without its picture's new address — the homepage would show no photo");
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test("★★⚠️ taking down DELETES the public copy and puts the private name back", async () => {
+  // ⚠️ Hiding the row is not enough: the FILE would stay reachable by anyone who kept the link, so
+  // "taken down" would not be true. And the private original is untouched, so publishing again
+  // brings the same picture back without asking the customer for it twice.
+  const calls = [];
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    calls.push({ url: u, opts });
+    if (u.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+  try {
+    const r = await takeDownReviewWithPhoto(photoCloudState(), { id: 7, photo: PUBLIC_URL });
+    assert.equal(r.ok, true, `taking down failed: ${r.reason}`);
+    const del = calls.find((c) => c.opts.method === "DELETE");
+    assert.ok(del, "⚠️ the public picture was left where it was");
+    assert.ok(del.url.endsWith(PENDING), "the wrong object was deleted");
+    const patched = calls.find((c) => c.url.includes("/rest/v1/reviews") && c.opts.method === "PATCH");
+    const body = JSON.parse(patched.opts.body);
+    assert.equal(body.published, false);
+    assert.equal(body.photo, PENDING,
+      "⚠️ the row was not put back on the private picture, so publishing again would lose it");
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test("⚠️ a picture that will not delete is SAID, and the review comes down anyway", async () => {
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    if (u.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    if (opts.method === "DELETE") return { ok: false, status: 403 };
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+  try {
+    const r = await takeDownReviewWithPhoto(photoCloudState(), { id: 7, photo: PUBLIC_URL });
+    assert.equal(r.ok, true, "a picture that would not delete stopped her taking the review down");
+    assert.ok(r.warning, "the failure was swallowed — she would never know the file is still reachable");
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test("deletePublicReviewPhoto leaves an address that is not ours alone", async () => {
+  let called = false;
+  globalThis.fetch = async () => { called = true; return { ok: true }; };
+  try {
+    const r = await deletePublicReviewPhoto(photoCloudState(), "https://elsewhere.example/photo.jpg");
+    assert.equal(r.ok, true);
+    assert.equal(called, false, "it tried to delete something that is not in her bucket");
+    const none = await deletePublicReviewPhoto(photoCloudState(), "");
+    assert.equal(none.ok, true);
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test("★ pendingPhotoUrl SIGNS a waiting picture so a plain image tag can show it", async () => {
+  // ⚠️ An `<img src>` cannot send a key, so her card cannot point at a private file. The signature
+  // rides in the query string, which is why signing is the first choice.
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    if (u.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    if (u.includes("/object/sign/review-photos-pending/")) {
+      assert.equal(opts.method, "POST");
+      return { ok: true, json: async () => ({ signedURL: "/object/sign/review-photos-pending/x.jpg?token=abc" }) };
+    }
+    return { ok: false, status: 404 };
+  };
+  try {
+    const r = await pendingPhotoUrl(photoCloudState(), PENDING);
+    assert.equal(r.ok, true, `signing failed: ${r.reason}`);
+    assert.ok(r.url.startsWith("https://"), "the signed link is not a full address an image tag can load");
+    assert.ok(r.url.includes("token=abc"), "the signature is missing from the link");
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test("★⚠️ and falls back to reading the bytes when signing is refused", async () => {
+  // ⚠️ The fallback is why this cannot dead-end on a phone whose token cannot mint a signed link.
+  const realURL = globalThis.URL;
+  globalThis.URL = { createObjectURL: () => "blob:test/1" };
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    if (u.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    if (u.includes("/object/sign/")) return { ok: false, status: 400 };
+    if (u.includes("/object/authenticated/review-photos-pending/")) return { ok: true, blob: async () => ({ type: "image/jpeg" }) };
+    return { ok: false, status: 404 };
+  };
+  try {
+    const r = await pendingPhotoUrl(photoCloudState(), PENDING);
+    assert.equal(r.ok, true, `the fallback failed: ${r.reason}`);
+    assert.equal(r.url, "blob:test/1", "it did not fall back to reading the picture's bytes");
+  } finally { globalThis.fetch = realFetch; globalThis.URL = realURL; }
+});
+
+test("⚠️ a picture that can be neither signed nor read SAYS SO rather than showing nothing", async () => {
+  // ⚠️ A moderator card whose whole job is to let her judge a picture must not fail silently — a
+  // blank space where a photo belongs reads as "no photo", and she would publish what she never saw.
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    if (u.includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    return { ok: false, status: 403 };
+  };
+  try {
+    const r = await pendingPhotoUrl(photoCloudState(), PENDING);
+    assert.equal(r.ok, false);
+    assert.ok(r.reason && r.reason.length > 4, "no reason was given for a picture that cannot be shown");
+  } finally { globalThis.fetch = realFetch; }
 });

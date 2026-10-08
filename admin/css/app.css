@@ -126,7 +126,18 @@ body { min-height: 100vh; }
   position: fixed;
   left: 0; right: 0;
   bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
-  z-index: 25; /* over the page, under the tab bar (30) */
+  /* ⚠️⚠️ ABOVE THE LOCK LAYER (80), AND THAT IS THE WHOLE POINT OF THE NUMBER (v383). This strip sat
+     at 25, and the lock screen is a full-screen OPAQUE panel at 80 — so the one message that says
+     "this phone is behind" was painted UNDERNEATH the screen the person was looking at. Proved on a
+     real screen: a tap at the centre of the warning reached the Unlock button. Her report was
+     __"some app user after keying in pin, but login to an old version app"__, and this is why she
+     never saw the warning that would have told them.
+     ⚠️ It also has to clear confirm (72) and toast (70), because the gates it must be readable on
+     are shown before either of those can appear, and a strip that is visible on the lock screen but
+     vanishes the moment a dialog opens would be worse than one that is always on top. It is a
+     status strip with its own button, and it is only ever painted when the phone is actually
+     behind — in every other state it is `hidden` and costs nothing. */
+  z-index: 90;
   background: var(--amber-bg);
   border-top: 1px solid #ecd4a5;
   box-shadow: 0 -1px 6px rgba(120, 66, 32, .07);

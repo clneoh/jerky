@@ -9,7 +9,7 @@
 // review (Publish / Take down / Delete) moves you on to the next one.
 
 import { el, button, emptyState, confirmDialog, toast } from "../ui.js";
-import { fetchReviews, setReviewPublished, deleteReview } from "../supabase.js";
+import { fetchReviews, deleteReview, isPendingPhoto, pendingPhotoUrl, publishReviewWithPhoto, takeDownReviewWithPhoto, deletePublicReviewPhoto } from "../supabase.js";
 
 const LANG_LABEL = { en: "English", zh: "中文", ms: "Bahasa Malaysia" };
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -78,10 +78,23 @@ export function renderReviews(root, state) {
     wrap.replaceChildren(...children);
   }
 
+  // ★★ PUBLISHING MOVES THE PICTURE, AND TAKING IT DOWN PUTS IT BACK (v384). ⚠️ The two-step lives
+  // in supabase.js (`publishReviewWithPhoto` / `takeDownReviewWithPhoto`) so it can be tested
+  // without a screen — the rules that matter are "a failed move publishes NOTHING" and "a take-down
+  // really removes the public file", and both are proved next to the calls they guard.
   async function setPublished(row, value, nextId) {
-    const r = await setReviewPublished(state, row.id, value);
+    const r = value
+      ? await publishReviewWithPhoto(state, row)
+      : await takeDownReviewWithPhoto(state, row);
     if (dead) return;
-    if (!r.ok) return toast(String(r.reason || "Update failed"));
+    if (!r.ok) {
+      return toast(value
+        ? `Not published — ${String(r.reason || "the picture could not be moved")}. The review is still waiting for you.`
+        : String(r.reason || "Update failed"));
+    }
+    // ⚠️ A take-down that could not remove the picture still took the review down, and must not
+    // claim otherwise — so the warning goes out INSTEAD of the cheerful line.
+    if (r.warning) return toast(`Taken down, but ${String(r.warning)}.`);
     toast(value ? "Published — it's on the homepage now." : "Taken down — hidden from the homepage.");
     fill(nextId);
   }
@@ -89,6 +102,13 @@ export function renderReviews(root, state) {
   function askDelete(row, nextId) {
     confirmDialog(`Delete ${row.name ? `"${row.name}'s"` : "this"} review? This can't be undone.`,
       async () => {
+        // ⚠️ A DELETED REVIEW MUST NOT LEAVE ITS PICTURE REACHABLE (v384). Best-effort, and never a
+        // reason to refuse the delete: the row is what the homepage reads, so the review goes
+        // either way. The private original in the pending bucket is left alone — nobody anonymous
+        // can reach it, so an orphan there costs nothing but a few hundred kilobytes.
+        const photo = String(row.photo || "").trim();
+        if (photo && !isPendingPhoto(photo)) await deletePublicReviewPhoto(state, photo);
+        if (dead) return;
         const r = await deleteReview(state, row.id);
         if (dead) return;
         if (!r.ok) return toast(String(r.reason || "Delete failed"));
@@ -166,20 +186,51 @@ function reviewCarousel(rows, startId, actions) {
   return holder;
 }
 
+// ★★ THE PICTURE ON THE CARD (v384). Her words: __"plan the photo fix too"__.
+//
+// ⚠️⚠️ AN UNPUBLISHED PICTURE IS PRIVATE, AND AN `<img>` CANNOT SEND A KEY. So the card cannot just
+// point at it — it asks for a link that carries its own permission, and shows that. Once the review
+// is published the value is an ordinary public address and this is a plain image tag, exactly as
+// before; the two shapes are told apart by `isPendingPhoto`.
+//
+// ⚠️ AND IF IT CANNOT BE SHOWN, THE CARD SAYS SO. A moderator card whose whole job is to let her
+// judge a picture MUST NOT fail silently — a blank space where a photo belongs reads as "no photo",
+// and she would publish something she never saw. That is the one failure this must not have.
+function photoEl(state, row) {
+  const value = String(row.photo || "").trim();
+  if (!isPendingPhoto(value)) {
+    return el("img", {
+      class: "review-card-photo", src: value, alt: "",
+      // A broken link never leaves a hole on the card (same as the homepage).
+      onerror: (ev) => ev.currentTarget.remove(),
+    });
+  }
+  const holder = el("div", { class: "review-photo-wait" }, "Loading the picture…");
+  pendingPhotoUrl(state, value).then((r) => {
+    if (r.ok) {
+      holder.replaceChildren(el("img", {
+        class: "review-card-photo", src: r.url, alt: "",
+        onerror: (ev) => ev.currentTarget.remove(),
+      }));
+    } else {
+      // ⚠️ IT SAYS SO, rather than leaving a hole that reads as "no photo".
+      holder.replaceChildren(el("p", { class: "card-sub", style: "margin:0" },
+        `This review's picture is private and could not be shown: ${String(r.reason || "unknown reason")}. ` +
+        "It is still waiting — publish it once you can see it."));
+    }
+  }).catch(() => {
+    holder.replaceChildren(el("p", { class: "card-sub", style: "margin:0" },
+      "This review's picture could not be shown. It is still waiting."));
+  });
+  return holder;
+}
+
 // The homepage card replica: photo → stars → message → name → language · date
 // (homepage CSS classes in app.css). The moderation buttons ride along at the
 // bottom; acting calls the `actions` callbacks with the review that follows.
 function reviewCard(rows, row, idx, actions) {
   const bits = [];
-  if (row.photo) {
-    bits.push(el("img", {
-      class: "review-card-photo",
-      src: String(row.photo),
-      alt: "",
-      // A broken link never leaves a hole on the card (same as the homepage).
-      onerror: (ev) => ev.currentTarget.remove(),
-    }));
-  }
+  if (row.photo) bits.push(photoEl(state, row));
   const starsN = Math.max(0, Math.min(5, Math.round(Number(row.stars) || 0)));
   const when = fmtDate(row.created_at);
   const metaBits = [langLabel(row.lang)];
