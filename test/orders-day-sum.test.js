@@ -2115,6 +2115,81 @@ test("★ the inbox's own ✕ removes too — the other door onto the same outco
   assert.equal(st.orders.length, 0, "the order is gone — from the inbox door too");
 });
 
+// ── ★★ v365: removing a PAID order must say what happens to its receipt number ──
+test("★★ removing a numbered order says the number survives it — before the press, not after", () => {
+  // ★★ HER REPORT, and she found it by doing it: __"i happen to enter a new order and pay on
+  // it then delete the order… it took inv 001, then i go back to aged order and click inv, it
+  // then took inv002, even the 1st inv already deleted?"__
+  //
+  // The number staying is CORRECT — re-using a serial would put two sales under one number,
+  // which is the one thing a numbered series exists to prevent. What was wrong is that the
+  // app never said so: the dialog was a bare "Remove order?", and the number was gone from
+  // her reach with nothing having mentioned it. ⚠️ THIS IS THE ONE THING ON THIS SCREEN SHE
+  // CANNOT UNDO, so it is said BEFORE the press — the same rule every other destructive
+  // press here follows.
+  const st = state();
+  st.orders = [{
+    id: "o_c2fda5", groupId: "o_c2fda5", status: "paid",
+    deliveryDateId: "d10", deliveryDate: "2026-09-10",
+    productId: "p1", qty: 1, unitPrice: 15,
+    customerName: "Uncle Tan", whatsapp: "60162223333",
+    paidReceived: true, paidAt: "2026-09-10T09:00:00.000Z", receiptNo: 1,
+    createdAt: "2026-09-10T08:00:00", orderDate: "2026-09-10",
+  }];
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+
+  // ⚠️ REACHED THROUGH THE FINDER, not the inbox. A PAID order is not in the New-orders inbox
+  // — that inbox is orders still marked New — and the finder is the door that finds an order
+  // whatever its status, which is exactly the case here.
+  const box = all(root).find((n) => n.tagName === "INPUT" && String(n.className).includes("finder-input"));
+  box.value = "C2FDA5";
+  box._listeners.input[0].call(box);
+  const results = all(root).find((n) => String(n.className).includes("finder-results"));
+  const del = all(results).find((n) => String(n.className).includes("inbox-del"));
+  assert.ok(del, "the search result carries its ✕");
+
+  layers["confirm-layer"].replaceChildren();
+  del._listeners.click[0]();
+  const question = txtOf(layers["confirm-layer"]);
+  assert.match(question, /Receipt #000001/,
+    `the remove question never names the receipt number it is about to strand: "${question}"`);
+  assert.match(question, /does NOT cancel it/,
+    `the remove question does not say the number survives: "${question}"`);
+  assert.match(question, /next receipt takes the next number/,
+    `the remove question does not say the sequence moves on: "${question}"`);
+
+  // ⚠️ AND THE PRESS STILL WORKS. A warning that turns a working control into a dead one is
+  // the fault this app treats as a bug everywhere else.
+  const yes = all(layers["confirm-layer"]).find((n) => n.tagName === "BUTTON" && txtOf(n).includes("Remove"));
+  yes._listeners.click[0]();
+  assert.equal(st.orders.length, 0, "the Remove press still removes");
+});
+
+test("an order with NO receipt number is removed without a word about receipts", () => {
+  // The other half of the same rule: a warning shown where it does not apply is noise, and
+  // noise is what makes a real one unreadable. An unpaid order has no number to strand.
+  const st = state();
+  st.orders = [{
+    id: "o_new", groupId: "o_new", status: "new",
+    deliveryDateId: "d10", deliveryDate: "2026-09-10",
+    productId: "p1", qty: 1, unitPrice: 15,
+    customerName: "Uncle Tan", whatsapp: "60162223333",
+    createdAt: "2026-09-10T08:00:00", orderDate: "2026-09-10",
+  }];
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+
+  const inbox = all(root).find((n) => String(n.className).includes("inbox"));
+  const del = all(inbox).find((n) => String(n.className).includes("inbox-del"));
+  layers["confirm-layer"].replaceChildren();
+  del._listeners.click[0]();
+  const question = txtOf(layers["confirm-layer"]);
+  assert.equal(/Receipt/.test(question), false,
+    `an unnumbered order is told about a receipt it never had: "${question}"`);
+  assert.match(question, /Remove order/, "and it still asks the plain question");
+});
+
 // ── ★★ v336: pressing Apply coupon on a REFERRER'S reward must move the money ──
 test("★ Apply coupon on a bring-a-friend reward really takes it off the order", () => {
   // ★★ HER REPORT: __"when i refer a friend and get a coupon, but redeem that coupon will not

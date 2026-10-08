@@ -1,8 +1,47 @@
-# Munchies Furkidz — change history (v54 → v364)
+# Munchies Furkidz — change history (v54 → v368)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**8 Oct 2026 — engine v364 → v368, four more versions
+(⚠️ ONE LINE OF SQL TO RUN AGAIN — see the end of this entry).**
+
+**A register for your receipt numbers.** More → Money now holds a **🧾 Receipt register**: every
+receipt number the app has issued, in order, and — the point of it — **any number missing from the
+run**. That is the page a business over RM150,000 has to be able to show, and it answers the question
+from outside rather than from inside the app.
+
+**And the gap in that run is closed.** The way a number was drawn had a race in it: if both your
+phones drew one at the same moment, the loser's number was **lost and skipped**, leaving a hole in a
+run whose whole purpose is to have none. It is now drawn under a lock that only holds up that one
+order, so no number is ever skipped.
+
+**One number is said out loud, and two of them are not.** If an order is paid but its number could not
+be drawn — a phone with no signal — the app now says exactly that, rather than leaving the line blank
+or blaming the order. An order that was **removed** says its number is gone with it; a number missing
+from the register is **named**, not silently passed over.
+
+**Clearing coupons, done safely.** More → The shop → Bring a friend can now clear out coupons that are
+sitting on **no order at all** — the ones causing a stale "Apply coupon" on an old order. It is set
+apart under its own heading and dressed as a danger press, and it **deliberately cannot touch a coupon
+that is already coming off an order**: that coupon *is* the discount on that order's Total, so removing
+it would quietly put the customer's price back up. It says so on the card before you press it.
+
+**Every screen now checks itself on every change.** A new pass builds **every screen in the app** —
+twenty-seven of them — twice each, once on a fresh install and once with real data in it, and fails if
+a screen crashes or draws nothing. A screen that opens blank and one that opens empty look identical
+to you and mean opposite things; now neither can slip through. It reads the list of screens out of the
+app itself, so a screen added later cannot quietly miss it. **What it cannot see is whether a screen
+looks right** — spacing, contrast, whether the words are ones you would use. That still wants your eyes
+on a phone.
+
+**Before you push — the one thing you must do.** In your Supabase project → SQL Editor, run
+**`supabase/receipts.sql`** again. It has changed (the skipped-number fix lives in it), and it is safe
+to run as many times as you like. **If you have not yet run `supabase/tracking.sql` from the previous
+update, run that too** — until it is in, the customer's tracking page does not work at all.
+
+**Nothing to upload, no Edge Function, no setting to change on either phone.**
 
 **8 Oct 2026 — engine v344 → v364, TWENTY VERSIONS IN ONE GO
 (⚠️ ONE LINE OF SQL TO RUN FIRST — see "Before you push" at the end of this entry).**

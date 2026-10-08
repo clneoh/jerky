@@ -399,6 +399,60 @@ export function removeCredit(state, id) {
   state.credits = (state.credits || []).filter((x) => x.id !== id);
 }
 
+// ── ★★ CLEARING THE BOOK (v367) ──────────────────────────────────────────────
+//
+// Her words: __"i think for now you can remove all coupon first"__ — said after a stale
+// **Apply coupon** turned up on an aged order.
+//
+// ⚠️⚠️ THE PART THAT IS NOT OBVIOUS, AND THE REASON THIS IS NOT A ONE-LINE DELETE:
+// `couponOn` is what `customerTotal` (courier.js) reads to price the customer's order, their
+// confirmation and every message after it. **So deleting a coupon that is ALREADY coming off
+// an order makes that order's Total go UP** — a price change on an order already promised,
+// done from a cleanup screen, with nothing on screen saying so. That is not a cleanup, it is
+// a fault wearing a cleanup's clothes.
+//
+// So clearing removes ONLY the coupons that are not currently on a live order. Everything
+// spent stays where it is, and no figure anywhere moves.
+
+// The coupons that ARE currently coming off a live order — worked out with the app's OWN
+// definition (`couponOn`), never a second rule that could drift away from the pricing one.
+export function appliedCreditIds(state) {
+  const ids = new Set();
+  for (const g of groupOrders(state.orders || [])) {
+    const hit = couponOn(state, (g && g.orders) || []);
+    if (hit && hit.id) ids.add(hit.id);
+  }
+  return ids;
+}
+
+// Everything a clear WOULD remove: the coupons not on any live order, which is exactly the
+// set that can be removed without moving a figure.
+export function clearableCredits(state) {
+  const keep = appliedCreditIds(state);
+  return (Array.isArray(state.credits) ? state.credits : []).filter((c) => c && !keep.has(c.id));
+}
+
+// What a clear would take away, said in the two numbers that matter before it is pressed.
+export function clearableTotal(state, today = todayISO()) {
+  const rows = clearableCredits(state);
+  const valid = rows.filter((c) => creditStatus(c, today) === "valid");
+  return {
+    count: rows.length,
+    valid: valid.length,
+    owedRM: round2(valid.reduce((s, c) => s + (Number(c.amountRM) || 0), 0)),
+    inUse: (Array.isArray(state.credits) ? state.credits : []).length - rows.length,
+  };
+}
+
+// Returns how many were removed. ⚠️ It removes the CLEARABLE set and never the applied one,
+// so an order's price cannot move as a side effect of clearing — whatever the caller asked for.
+export function removeClearableCredits(state) {
+  const keep = appliedCreditIds(state);
+  const before = (Array.isArray(state.credits) ? state.credits : []).length;
+  state.credits = (state.credits || []).filter((c) => c && keep.has(c.id));
+  return before - state.credits.length;
+}
+
 // A manual credit for an offline referral the owner brought in herself (role
 // "reward"). expiry from validDays, "" when never.
 export function addManualCredit(state, { whatsapp, name = "", amountRM, validDays = "", note = "", today = todayISO() }) {

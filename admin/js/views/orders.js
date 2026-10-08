@@ -20,7 +20,7 @@ import { strictestCancelDays } from "../../../store/pool.js";
 import { buildConfirmation } from "../confirm.js";
 import { buildPaymentReminder, buildPickupReminder, buildShippedMessage } from "../messages.js";
 import { claimReceipt, maybePublishTracking, maybeSync, publishTracking, refundReceipt, stuckOrders, unrefundReceipt } from "../supabase.js";
-import { receiptLine, receiptStatus } from "../receipts.js";
+import { receiptLine, receiptNoOf, receiptStatus } from "../receipts.js";
 import { writeCourierCharge, courierFeeOf, courierPayerOf, courierCodOf, isCourierOrder, codeMissed, codeNotApplied, couponAgainst, customerTotal, receiptNote, receiptRows, promoOn, promoValue } from "../courier.js";
 import { methodsOf } from "../accounts.js";
 import { schemeOf, referralFlag, giveCredits, validCredits, markOneUsed, referrerName, couponOn } from "../referrals.js";
@@ -4673,7 +4673,21 @@ function undoRefundOrder(state, group, first, { root, dateId } = {}) {
 
 function removeOrder(state, group, root, dateId) {
   const label = group.orders.map((o) => `${orderLineName(state, o)} ×${o.qty}`).join(", ");
-  confirmDialog(`Remove order "${label}"?`,
+  // ★★ A NUMBERED RECEIPT IS NOT CANCELLED BY REMOVING THE ORDER (v365). The number was
+  // issued the moment the money was recorded, so the order going away does not give it
+  // back: it stays in the bakery's records and the next receipt simply takes the next
+  // number. That is what an unbroken series IS, and re-using the number would be worse —
+  // two different sales under one serial. ⚠️ AND IT IS THE ONE THING ON THIS SCREEN SHE
+  // CANNOT UNDO, so it is said BEFORE the press rather than discovered afterwards. She
+  // found this by doing it: a test order paid, then removed, then an older order invoiced
+  // took the NEXT number, and nothing on screen had ever mentioned the first one.
+  const num = receiptNoOf(group.orders[0]);
+  const message = num
+    ? [`Remove order "${label}"?`, el("br"), el("br"),
+        `Receipt #${num} was issued when the payment was recorded, and this does NOT cancel it. `,
+        "That number stays in your receipt records and the next receipt takes the next number."]
+    : `Remove order "${label}"?`;
+  confirmDialog(message,
     () => {
       const ids = new Set(group.orders.map((o) => o.id));
       state.orders = state.orders.filter((o) => !ids.has(o.id));

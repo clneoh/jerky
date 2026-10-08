@@ -914,6 +914,38 @@ export async function claimReceipt(state, order) {
   } catch { return false; }
 }
 
+// ── the register itself (v366) ───────────────────────────────────────────────
+//
+// The whole run of receipt numbers, read straight from the table the numbers live in. It
+// needs NO new SQL: `receipt_numbers` already carries a select policy for a signed-in
+// backoffice ("baker reads receipts"), which is exactly this.
+//
+// ⚠️ AND IT NEVER ANSWERS WITH A HALF-TRUTH. `ok: false` means the register could not be
+// read — the phone is offline, or the SQL was never run — and the screen then says that
+// rather than drawing an empty register. **An empty register and an unreachable one look
+// identical and mean opposite things**, and this is the one screen where a false "nothing
+// here" would be read as "no receipts exist", which is the opposite of true.
+export async function pullReceiptRegister(state) {
+  const c = cfg(state);
+  if (!ready(c)) return { ok: false, rows: [] };
+
+  let token = cachedToken();
+  if (!token) {
+    try { token = await login(c.url, c.anonKey, c.email, c.password); }
+    catch { return { ok: false, rows: [] }; }
+  }
+
+  try {
+    const res = await fetch(
+      `${c.url}/rest/v1/receipt_numbers?select=number,order_code,issued_at,refunded_at&order=number.asc`,
+      { headers: { apikey: c.anonKey, Authorization: `Bearer ${token}` } });
+    if (!res || !res.ok) return { ok: false, rows: [] };
+    const rows = await res.json().catch(() => null);
+    if (!Array.isArray(rows)) return { ok: false, rows: [] };
+    return { ok: true, rows };
+  } catch { return { ok: false, rows: [] }; }
+}
+
 // One call to one receipt function, and the same two answers for both: it worked, or it did
 // not. ⚠️ KEEPING THE TWO IN ONE PLACE IS NOT TIDINESS. A refund and the undoing of it must
 // send the same body and read the same reply; two copies of that are two chances to drift,

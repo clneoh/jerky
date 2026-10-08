@@ -56,6 +56,10 @@ const MENU_GROUPS = [
   ["Money", [
     ["#/money", "💰 Money", "What came in — cash, TNG, still to collect"],
     ["#/profit", "📈 Profit", "Sales, ingredient cost, what the month left"],
+    // ★ THE RECEIPT RUN (v366). It belongs with the books rather than with the app's own
+    // settings, because it is the one page here that answers a question from outside — the
+    // serially numbered receipts a business above RM150,000 must be able to show.
+    ["#/receipts", "🧾 Receipt register", "Every receipt number issued — and any that is missing"],
   ]],
   ["The kitchen", [
     ["#/production", "🏭 Production line", "Where the line slows down, and the best use of your hands"],

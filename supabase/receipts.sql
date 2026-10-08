@@ -59,14 +59,26 @@ begin
     return;
   end if;
 
+  -- ★★ THE RACE THAT USED TO LEAVE A HOLE, CLOSED (v366).
+  --
+  -- `nextval` is evaluated BEFORE the insert knows whether the row will land, so if the
+  -- other phone inserted this order's row in the gap between the select below and the
+  -- insert, `on conflict do nothing` fired and THE VALUE DRAWN WAS SIMPLY LOST — a missing
+  -- number in a run whose entire legal purpose is to have no missing numbers. v360 wrote
+  -- that down as a known trade. It does not have to be one.
+  --
+  -- An advisory lock on the ORDER CODE serialises the select-then-insert for one order and
+  -- leaves every other order free to draw at the same instant, so `on conflict` can no
+  -- longer fire for this code and no value is ever skipped. `_xact_` releases it when the
+  -- transaction ends, including on an error, so there is nothing to unlock by hand.
+  perform pg_advisory_xact_lock(hashtext(v_code)::bigint);
+
   select r.number, r.refunded_at into v_num, v_ref
     from receipt_numbers r where r.order_code = v_code;
 
   if v_num is null then
-    -- `on conflict do nothing` is the second guard: if the other phone inserted this
-    -- order's row between the select above and this insert, nothing happens here and
-    -- the number it drew is read back below. The sequence may therefore skip a value
-    -- in that one race — which is why the read-back is here rather than a retry.
+    -- The insert is now the only writer for this code, so it always lands. `on conflict`
+    -- stays as the belt-and-braces guard it always was — it should now never fire.
     insert into receipt_numbers (order_code, number)
       values (v_code, nextval('receipt_number_seq'))
       on conflict (order_code) do nothing

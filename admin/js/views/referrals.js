@@ -15,9 +15,9 @@
 // which is what she asked for: __"can we make to more seamless with other
 // promo?"__ → "One place, read as a family".
 
-import { el, toast, menuRow } from "../ui.js";
-import { save } from "../state.js";
-import { schemeOf } from "../referrals.js";
+import { el, button, toast, menuRow, confirmDialog } from "../ui.js";
+import { save, fmtRM } from "../state.js";
+import { schemeOf, clearableTotal, removeClearableCredits } from "../referrals.js";
 
 export function renderReferrals(root, state) {
   const cur = state.settings ??= {};
@@ -115,6 +115,53 @@ export function renderReferrals(root, state) {
     el("p", { class: "card-sub", style: "margin:0" },
       "A customer's own link is on their card, on Customers. The code half is on Promo codes."));
 
+  // ── ★★ CLEARING THE BOOK (v367) ─────────────────────────────────────────
+  //
+  // Her words: __"i think for now you can remove all coupon first"__.
+  //
+  // ⚠️ AND IT IS DELIBERATELY NOT "REMOVE ALL COUPONS". A coupon already coming off an order
+  // IS the discount on that order's Total, so deleting it would RAISE the price of an order
+  // she has already promised — from a cleanup screen, silently. **So this clears only the
+  // coupons that are on no live order**, which is precisely the set causing a stale "Apply
+  // coupon" to appear, and it says so on the card rather than doing it quietly.
+  //
+  // ⚠️ AND IT IS SET APART, UNDER ITS OWN HEADING, DRESSED AS DANGER. It is the one press on
+  // this screen that destroys customer-facing promises, and it must not sit beside the two
+  // boxes she uses every week.
+  // ⚠️ `cur` IN THIS FILE IS `state.settings`, NOT THE CURRENCY — so the money is read
+  // from it explicitly rather than reusing the name. (Caught by the view test: passing
+  // `cur` as the currency printed "worth [object Object] 3.00" in the confirm.)
+  const curRM = cur.currency || "RM";
+  const clear = clearableTotal(state);
+  const clearCard = el("div", { class: "card" },
+    el("p", { class: "card-title" }, "Coupons not on any order"),
+    el("p", { class: "card-sub", style: "margin:0 0 6px" },
+      clear.count
+        ? `${clear.count} coupon${clear.count === 1 ? "" : "s"} ${clear.count === 1 ? "is" : "are"} sitting in the book on no order at all${clear.valid ? ` — ${clear.valid} of them still valid, worth ${fmtRM(clear.owedRM, curRM)}` : " — none of them still valid"}.`
+        : "Nothing to clear. There is no coupon in the book that is not already on an order."),
+    el("p", { class: "card-sub", style: "margin:0" },
+      clear.inUse
+        ? `⚠ ${clear.inUse} coupon${clear.inUse === 1 ? "" : "s"} are NOT in this — they are already coming off an order, and removing them would put that order's Total back up. Those stay.`
+        : "Nothing here touches a coupon that is already on an order, so no order's Total can move."),
+    el("div", { class: "btn-row", style: "margin-top:10px" },
+      button("Remove the coupons on no order", () => {
+        const t = clearableTotal(state);
+        if (!t.count) return toast("Nothing to remove");
+        confirmDialog([
+          `Remove ${t.count} coupon${t.count === 1 ? "" : "s"}?`,
+          el("br"), el("br"),
+          `${t.valid ? `${t.valid} of them still work, worth ${fmtRM(t.owedRM, curRM)} altogether. ` : ""}`,
+          "A customer holding one will no longer have it honoured by the app. ",
+          "Coupons already coming off an order are NOT touched, so no order's Total changes. ",
+          "This cannot be undone from here.",
+        ], () => {
+          const n = removeClearableCredits(state);
+          save(state);
+          toast(`${n} coupon${n === 1 ? "" : "s"} removed`);
+          renderReferrals(root, state);
+        }, { danger: true, yesLabel: "Remove them" });
+      }, clear.count ? "danger small" : "ghost small")));
+
   root.replaceChildren(
     el("h2", { class: "section" }, ref.enabled === true ? "Bring a friend" : "Bring a friend (off)"),
     schemeCard,
@@ -123,5 +170,7 @@ export function renderReferrals(root, state) {
     el("div", { style: "margin-top:10px" },
       el("div", { class: "card", style: "padding:4px 14px" },
         menuRow("#/promo", "🎟 Promo codes", "A code a customer types, with its own label"),
-        menuRow("#/customers", "📇 Customers", "Open a customer to copy their own link"))));
+        menuRow("#/customers", "📇 Customers", "Open a customer to copy their own link"))),
+    el("h2", { class: "section" }, "Clearing up"),
+    clearCard);
 }

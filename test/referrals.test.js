@@ -10,7 +10,10 @@ import {
   giveCredits, markOneUsed, markCreditUsed, setCreditExpiry, removeCredit,
   addManualCredit, ROLE_LABEL,
   broughtIn, rewardStanding, rewardGrants, giveReward, removeRewardGrant,
+  appliedCreditIds, clearableTotal, removeClearableCredits, couponOn,
 } from "../admin/js/referrals.js";
+import { customerTotal } from "../admin/js/courier.js";
+import { orderCode } from "../admin/js/state.js";
 import { addDays, todayISO } from "../admin/js/dates.js";
 
 const T = "2026-09-05"; // a fixed "today" so expiry math is deterministic
@@ -553,4 +556,101 @@ test("a hand-out can be taken back", () => {
   assert.equal(st.rewards.length, 1, "only the one she took back went");
   assert.equal(removeRewardGrant(st, a.id), false, "and taking it back twice does nothing");
   assert.equal(removeRewardGrant(st, ""), false, "a blank id removes nothing");
+});
+
+// ── ★★ v367: CLEARING THE BOOK — and the one thing it must never move ────────
+//
+// Her words: __"i think for now you can remove all coupon first"__ — said after a stale
+// **Apply coupon** turned up on an aged order.
+//
+// ⚠️⚠️ THE ASSERTION THIS FILE EXISTS FOR IS THE LAST ONE. A coupon already coming off an
+// order IS the discount on that order's Total, so a clear that took it away would RAISE the
+// price of an order she has already promised — from a cleanup screen, silently.
+
+test("★ a coupon ON an order is never clearable; an orphaned one is", () => {
+  const st = baseState();
+  const friend = order({ groupId: "gaaaa01", whatsapp: "60123456789", referredBy: "60199999999" });
+  st.orders = [friend];
+
+  // Referred order → the friend's discount AND the referrer's reward are both born here.
+  giveCredits(st, { orders: [friend] });
+  assert.equal(st.credits.length, 2, "the referred order did not earn its two coupons");
+
+  // The friend's is spent the moment it is given — its own orderCode names THIS order.
+  const applied = st.credits.filter((c) => c.role === "friendOff");
+  assert.equal(applied.length, 1);
+  assert.equal(couponOn(st, [friend]).id, applied[0].id, "the friend's coupon is not on its own order");
+
+  const ids = appliedCreditIds(st);
+  assert.equal(ids.has(applied[0].id), true, "a coupon that IS coming off an order was called clearable");
+
+  const t = clearableTotal(st, T);
+  assert.equal(t.count, 1, `the clearable count is wrong: ${JSON.stringify(t)}`);
+  assert.equal(t.inUse, 1, "the coupon that is on an order was not excluded from the clear");
+});
+
+test("★★ THE PRICE DOES NOT MOVE — clearing cannot raise an order's Total", () => {
+  // ⚠️ THE WHOLE REASON THIS IS NOT A ONE-LINE DELETE. `couponOn` feeds `customerTotal`,
+  // which prices the customer's order, their confirmation and every message after it.
+  const st = baseState();
+  const friend = order({ groupId: "gaaaa01", whatsapp: "60123456789", referredBy: "60199999999" });
+  st.orders = [friend];
+  giveCredits(st, { orders: [friend] });
+
+  const before = customerTotal(st, { orders: [friend] }).total;
+  const removed = removeClearableCredits(st);
+  const after = customerTotal(st, { orders: [friend] }).total;
+
+  assert.equal(removed, 1, "the clear removed the wrong number of coupons");
+  assert.equal(after, before,
+    `clearing the book moved an order's price from ${before} to ${after} — a customer's discount was destroyed`);
+  assert.equal(st.credits.length, 1, "the coupon that IS on the order was removed");
+  assert.equal(st.credits[0].role, "friendOff");
+});
+
+test("a reward already applied to her own order is kept too", () => {
+  // The referrer's kind: spent only once `appliedTo` names the order she pressed Apply on.
+  const st = baseState();
+  const friend = order({ groupId: "gaaaa01", whatsapp: "60123456789", referredBy: "60199999999" });
+  giveCredits(st, { orders: [friend] });
+  const reward = st.credits.find((c) => c.role === "reward");
+
+  // She spends it on one of her own orders.
+  const mine = order({ id: "bbbb02", groupId: "gbbbb02", whatsapp: "60199999999", referredBy: "" });
+  st.orders = [friend, mine];
+  markOneUsed(st, "60199999999", "2026-09-06T00:00:00.000Z", orderCode(mine));
+  assert.equal(couponOn(st, [mine]).id, reward.id, "the reward is not on the order it was applied to");
+
+  const before = customerTotal(st, { orders: [mine] }).total;
+  removeClearableCredits(st);
+  assert.equal(customerTotal(st, { orders: [mine] }).total, before,
+    "clearing took an applied reward off her own order and moved its price");
+  assert.equal(st.credits.some((c) => c.id === reward.id), true, "an APPLIED reward was removed");
+});
+
+test("what the clear would take away is said in the two numbers that matter", () => {
+  const st = baseState();
+  st.credits = [
+    { id: "c1", holder: "60111111111", amountRM: 3, role: "reward", earnedAt: "2026-09-01T00:00:00.000Z", expiresAt: "", usedAt: null, orderCode: "AAAAAA" },
+    { id: "c2", holder: "60122222222", amountRM: 5, role: "reward", earnedAt: "2026-09-01T00:00:00.000Z", expiresAt: "2026-09-02", usedAt: null, orderCode: "BBBBBB" },
+  ];
+  const t = clearableTotal(st, T);
+  assert.equal(t.count, 2);
+  assert.equal(t.valid, 1, "an EXPIRED coupon was counted as still worth money");
+  assert.equal(t.owedRM, 3, `the money still owed is wrong: ${t.owedRM}`);
+  assert.equal(t.inUse, 0);
+
+  assert.equal(removeClearableCredits(st), 2);
+  assert.deepEqual(st.credits, [], "the book was not cleared");
+  assert.equal(removeClearableCredits(st), 0, "clearing an empty book removed something");
+});
+
+test("a manual coupon is clearable, and the book's own count is honest", () => {
+  const st = baseState();
+  addManualCredit(st, { whatsapp: "60133333333", amountRM: 4, validDays: 90, today: T });
+  assert.equal(st.credits.length, 1);
+  const t = clearableTotal(st, T);
+  assert.equal(t.count, 1, "a coupon she added by hand is not clearable");
+  assert.equal(t.valid, 1);
+  assert.equal(t.owedRM, 4);
 });

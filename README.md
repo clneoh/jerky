@@ -756,6 +756,44 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## Engine v364 → v368 (8 Oct 2026)
+
+Base `0e4f836` → `47584d2`. 19 files, ~1,556 insertions. **One source conflict** (`app.js`: jerky's
+`renderGuide` import against the bakery's `renderReceiptRegister` — **kept both**), and the whole
+batch is green: suite **2941 → 3021 pass / 0 fail**.
+
+**Adopted:** `admin/js/views/receipt_register.js` + the `/receipts` route + its More → Money entry
+(v366); `supabase/receipts.sql`'s **advisory-lock fix** — `nextval` ran before the insert knew whether
+the row would land, so a lost race **skipped a receipt number**, in a run whose whole point is that it
+has none (v366); v365's receipt status wording; **v367's clear-the-book** (`appliedCreditIds`,
+`clearableCredits`, `clearableTotal`, `removeClearableCredits` in `admin/js/referrals.js`, plus the
+danger-styled card in `admin/js/views/referrals.js` — it removes only coupons on **no live order**,
+because a coupon already coming off an order *is* that order's discount and deleting it would put the
+customer's price back up); and **v368's `test/screens-smoke.test.js`**.
+
+**⚠️ THE SMOKE PASS FOUND A REAL GAP IN JERKY — its own route table.** It reads `app.js`'s routes and
+fails by name for any screen it does not cover. Jerky's **`/guide`** is not in the bakery's list (the
+bakery has no guide), so it failed immediately. Added to both `SCREENS` and `VIEW_FILES`.
+
+**⚠️ AND IT INVENTED ONE FAULT, WHICH I FIXED IN THE HARNESS, NOT THE APP.** The pass reported the
+Guide as throwing on a fresh install: *"document.createDocumentFragment is not a function"*. Its
+stand-in lacks a method **every real page has**, and the Guide's `boldify()` uses it. Added to the
+shim — the bakery's own v368 body makes the same point: *"a harness that cannot express what a screen
+does invents faults."*
+
+**Two same-basename collisions cost real time.** `admin/js/referrals.js` and
+`admin/js/views/referrals.js` share a basename, and a loop that named its temp files by `basename`
+wrote one file's merge over the other's — twice, and the second time it re-merged *already-merged*
+files. **CARRY IT: key temp files by index, not by basename.** The files were restored from HEAD and
+the pass redone.
+
+**Localization:** the register and the receipt status said *"the bakery's records"* — changed to
+*jerky's own words* ("Reading your receipt numbers…", "…could not be drawn from your receipt
+register"), with the assertion in `test/receipts.test.js` moved with it.
+
+**⚠️ Re-run `supabase/receipts.sql`** — it changed. (`tracking.sql` from the previous update is still
+required if it has not been run.)
+
 ## Engine v344 → v364 — twenty versions, and the sync that carried an identity across (8 Oct 2026)
 
 Base bakery `d47248b` (v344, exactly where jerky sat) → `0e4f836` (v364). **37 files, ~3,232

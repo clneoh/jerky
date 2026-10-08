@@ -6,6 +6,12 @@
 // counter and two phones keeping one on themselves would either collide or leave a gap
 // — and a gap in a receipt sequence is the thing an auditor asks about.
 //
+// ★★ v366 adds `registerRows`, which is the same discipline applied to the whole series:
+// it READS the register and says what shape it is in. It still draws nothing.
+//
+
+import { orderCode } from "./state.js";
+
 // ★★ AND THE NUMBER BELONGS TO THE ORDER, NOT TO THE PRESS. It is claimed once, when the
 // money is recorded, and every later read — printing the receipt, opening it on the other
 // phone, pressing the button a second time — returns the same number and consumes
@@ -63,7 +69,104 @@ export function receiptStatus(order) {
   if (n) return receiptLabel(order);
   // ⚠️ NO NUMBER IS NOT AN ERROR, AND NOT A BLANK. There are two honest reasons for it
   // and they read differently, so neither is guessed at.
+  //
+  // ★★ AND THE PAID LINE BLAMES THE NUMBER, NEVER THE ORDER (v365). It used to read "this
+  // order has not reached the bakery's records", which was wrong twice over: the order is
+  // right here on the screen, and the case it was written for — a receipt drawn before this
+  // feature existed — has nothing to do with the records at all. What has not happened is
+  // the DRAWING of a number, and that is what it now says. It is reached only when a claim
+  // was just attempted and failed, so the advice it gives is the one that works: try again.
   return order.paidReceived
-    ? "No receipt number yet — this order has not reached the bakery's records. Open this again once the phone is back online."
+    ? "No receipt number yet — the number could not be drawn from your receipt register. Open this invoice again once the phone is back online."
     : "No receipt number yet — a receipt number is issued when the money is recorded as received.";
+}
+
+// ── ★★ THE REGISTER ITSELF (v366) ────────────────────────────────────────────
+//
+// WHY THIS EXISTS. Above RM150,000 of gross takings a business must issue SERIALLY
+// numbered receipts, and what an auditor asks to see is not one receipt — it is **the run**:
+// every number, in order, with nothing missing and nothing used twice. Until v366 the app
+// issued the numbers and offered her no way to look at them. She asked for it the day after
+// she removed a paid order and watched #000001 stay spent.
+//
+// ★ THE TWO THINGS ONLY THIS SCREEN CAN SEE, and neither can be worked out from one order:
+//
+// 1. **A GAP.** `claim_receipt_number` draws with `nextval` before it knows whether the row
+//    will land, so the one race it documents can consume a value that is then never used.
+//    That is a missing receipt in the run — exactly the thing the whole series exists to
+//    prevent — and it is invisible from every other screen. v366 also closes the race (see
+//    the advisory lock in `supabase/receipts.sql`); this reports what remains.
+//
+// 2. **A VOID RECEIPT.** A number whose order is no longer in her data: the receipt was
+//    issued, the money moved, and the order has since been removed. It must be VISIBLE and
+//    it must never be re-used — which is what she found by removing a paid order.
+//
+// ⚠️ AND THE VOID TEST IS DELIBERATELY WORDED AS "NOT ON THIS PHONE". The register table is
+// the shared truth; her orders are only what this device holds. Calling a number "void" when
+// the phone simply has not synced yet would invent a hole that does not exist — so the row
+// says what was actually observed.
+export function registerRows(raw, orders) {
+  const list = (Array.isArray(raw) ? raw : [])
+    .filter((r) => r && Number(r.number) > 0)
+    .map((r) => ({
+      number: Math.floor(Number(r.number)),
+      no: String(Math.floor(Number(r.number))).padStart(WIDTH, "0"),
+      code: String(r.order_code || "").trim().toUpperCase(),
+      issuedAt: String(r.issued_at || ""),
+      refundedAt: String(r.refunded_at || ""),
+    }))
+    .sort((a, b) => a.number - b.number);
+
+  // The codes this phone can actually match. A lookup, not a count.
+  const here = new Map();
+  for (const o of (Array.isArray(orders) ? orders : [])) {
+    const c = orderCode(o);
+    if (c && c !== "??????" && !here.has(c)) here.set(c, o);
+  }
+
+  const rows = list.map((r) => ({
+    ...r,
+    order: here.get(r.code) || null,
+    orphan: !here.has(r.code),
+  }));
+
+  // ★ A GAP IS ANY WHOLE NUMBER THE RUN NEVER USED — including at the head, because the
+  // sequence starts at 1 and a first row of #000004 means three receipts are unaccounted
+  // for. Both ends are checked; a missing TAIL cannot be detected from a register at all
+  // (nothing records a number that was never drawn), which is why the count is reported as
+  // a range rather than as a total.
+  const gaps = [];
+  const first = list.length ? list[0].number : 0;
+  for (let n = 1; n < first; n += 1) gaps.push(n);
+  for (let i = 1; i < list.length; i += 1) {
+    for (let n = list[i - 1].number + 1; n < list[i].number; n += 1) gaps.push(n);
+  }
+
+  return {
+    rows,
+    count: list.length,
+    first,
+    last: list.length ? list[list.length - 1].number : 0,
+    gaps,
+    // ⚠️ NAMED FOR WHAT WAS SEEN, NOT FOR WHAT IT MEANS. See the note above.
+    notOnThisPhone: rows.filter((r) => r.orphan).length,
+    refunded: rows.filter((r) => r.refundedAt).length,
+  };
+}
+
+// The register's headline, in one sentence, with the two things worth acting on first.
+export function registerSummary(reg) {
+  if (!reg || !reg.count) return "No receipt has been issued yet.";
+  const span = `Receipts #${String(reg.first).padStart(WIDTH, "0")} to #${String(reg.last).padStart(WIDTH, "0")} — ${reg.count} issued.`;
+  const bits = [];
+  bits.push(reg.gaps.length
+    ? `${reg.gaps.length} number${reg.gaps.length === 1 ? " is" : "s are"} MISSING from the run (${reg.gaps.map((n) => `#${String(n).padStart(WIDTH, "0")}`).join(", ")}).`
+    : "The run is unbroken — every number from the first is accounted for.");
+  if (reg.notOnThisPhone) {
+    bits.push(`${reg.notOnThisPhone} ${reg.notOnThisPhone === 1 ? "is for an order" : "are for orders"} no longer on this phone — the receipt stands and the number is never re-used.`);
+  }
+  if (reg.refunded) {
+    bits.push(`${reg.refunded} marked refunded.`);
+  }
+  return `${span} ${bits.join(" ")}`;
 }

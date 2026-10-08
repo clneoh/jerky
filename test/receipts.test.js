@@ -24,9 +24,9 @@ globalThis.localStorage = {
 globalThis.localStorage.setItem("bakeadmin.supabase",
   JSON.stringify({ access_token: "tok", expires_at: Date.now() + 3600000 }));
 
-const { receiptNoOf, receiptLabel, receiptLine, isRefunded, receiptStatus } =
-  await import("../admin/js/receipts.js");
-const { claimReceipt } = await import("../admin/js/supabase.js");
+const { receiptNoOf, receiptLabel, receiptLine, isRefunded, receiptStatus,
+  registerRows, registerSummary } = await import("../admin/js/receipts.js");
+const { claimReceipt, pullReceiptRegister } = await import("../admin/js/supabase.js");
 const { journalSheet } = await import("../admin/js/journal.js");
 const { orderCode } = await import("../admin/js/state.js");
 
@@ -63,10 +63,18 @@ test("the receipt line carries BOTH numbers, because each does a different job",
 });
 
 test("no number is not a blank — it says WHY, and the two reasons read differently", () => {
-  // Paid but unclaimed: the claim has not reached the bakery's records. This is the state a
-  // phone with no signal leaves behind, and she has to be able to tell it from the other one.
+  // Paid but unclaimed: the number could not be DRAWN from her own register. This is the state
+  // a phone with no signal leaves behind, and she has to be able to tell it from the other one.
+  // ⚠️ JERKY SAYS 'YOUR RECEIPT REGISTER', NOT 'THE BAKERY'S RECORDS' — the bakery's word
+  // cannot be jerky's (this app is not a bakery, and the panel is her own book).
   const paid = receiptStatus({ paidReceived: true });
-  assert.match(paid, /has not reached the bakery's records/);
+  assert.match(paid, /the number could not be drawn from your receipt register/);
+  // ⚠️ AND IT MUST NOT BLAME THE ORDER (v365). It used to read "this order has not reached
+  // the register", which is false in the ordinary case — the order is right there on
+  // the screen — and doubly false for an order paid before the feature existed. The thing
+  // that has not happened is the drawing of the NUMBER.
+  assert.equal(/order has not reached/.test(paid), false,
+    `the paid line blames the order rather than the number: "${paid}"`);
   // Not paid at all: a receipt number is for money received, so there is nothing to be late.
   const unpaid = receiptStatus({ paidReceived: false });
   assert.match(unpaid, /issued when the money is recorded/);
@@ -169,4 +177,118 @@ test("with the cloud switched off entirely, nothing is claimed and nothing is in
   assert.equal(await claimReceipt(st, order), false);
   assert.equal(calls, 0, "an app running without shared data has no receipts register to draw from");
   assert.equal(order.receiptNo, undefined);
+});
+
+// ── ★★ v366: the run itself ─────────────────────────────────────────────────
+//
+// What an auditor asks to see is not one receipt — it is THE RUN: every number, in order,
+// nothing missing, nothing used twice. These are the two things only the register can see.
+
+const raw = (n, code, extra = {}) => ({
+  number: n, order_code: code, issued_at: `2026-10-0${(n % 9) + 1}T0${n % 9}:15:00.000Z`,
+  refunded_at: null, ...extra,
+});
+
+test("★ the register is a COLUMN: sorted by number, padded, and never re-ordered", () => {
+  const reg = registerRows([raw(3, "BBBBBB"), raw(1, "AAAAAA"), raw(2, "CCCCCC")], []);
+  assert.deepEqual(reg.rows.map((r) => r.no), ["000001", "000002", "000003"],
+    "the run is not in number order — which is the only order a register can be read in");
+  assert.deepEqual(reg.rows.map((r) => r.code), ["AAAAAA", "CCCCCC", "BBBBBB"]);
+  assert.equal(reg.first, 1);
+  assert.equal(reg.last, 3);
+  assert.equal(reg.count, 3);
+});
+
+test("★★ a MISSING number is found — in the middle AND at the head", () => {
+  // The middle gap: #000002 was drawn and never issued.
+  const mid = registerRows([raw(1, "AAAAAA"), raw(3, "BBBBBB")], []);
+  assert.deepEqual(mid.gaps, [2], `a hole in the run was not reported: ${JSON.stringify(mid.gaps)}`);
+  assert.match(registerSummary(mid), /MISSING/);
+  assert.match(registerSummary(mid), /#000002/, "the summary does not name the missing number");
+
+  // ⚠️ AND THE HEAD IS A GAP TOO. The sequence starts at 1, so a first row of #000004 means
+  // three receipts are unaccounted for — and a check that only walked between rows would
+  // call that run perfectly clean.
+  const head = registerRows([raw(4, "AAAAAA")], []);
+  assert.deepEqual(head.gaps, [1, 2, 3],
+    `missing numbers before the first row were not reported: ${JSON.stringify(head.gaps)}`);
+});
+
+test("a clean run says so, in words, rather than staying silent", () => {
+  const reg = registerRows([raw(1, "AAAAAA"), raw(2, "BBBBBB"), raw(3, "CCCCCC")], []);
+  assert.deepEqual(reg.gaps, []);
+  assert.match(registerSummary(reg), /unbroken/,
+    "a run with no holes says nothing at all, so a reader cannot tell clean from unchecked");
+  assert.match(registerSummary(reg), /#000001 to #000003/);
+  assert.equal(registerSummary(registerRows([], [])), "No receipt has been issued yet.");
+});
+
+test("★ a receipt whose order is gone is MARKED, and its number is untouched", () => {
+  // ⚠️ THIS IS THE CASE SHE FOUND BY DOING IT: a paid order removed, its number still spent.
+  // The register must show it rather than quietly omitting a row it cannot name.
+  const st = stateWith();
+  const here = { id: "o_c2fda5", groupId: "o_c2fda5", customerName: "Uncle Tan" };
+  const reg = registerRows([raw(1, "C2FDA5"), raw(2, "999999")], [here]);
+
+  assert.equal(reg.rows[0].orphan, false);
+  assert.equal(reg.rows[0].order, here, "an order that IS here is not joined to its receipt");
+  assert.equal(reg.rows[1].orphan, true, "a receipt with no order behind it is not marked");
+  assert.equal(reg.notOnThisPhone, 1);
+  assert.equal(reg.rows[1].number, 2, "the number of a void receipt was altered");
+  assert.match(registerSummary(reg), /no longer on this phone/);
+});
+
+test("a refunded receipt keeps its row, its number, and wears its mark", () => {
+  const reg = registerRows([raw(1, "AAAAAA"), raw(2, "BBBBBB", { refunded_at: "2026-10-08T00:00:00.000Z" })], []);
+  assert.equal(reg.count, 2, "a refunded receipt was dropped from the run");
+  assert.equal(reg.refunded, 1);
+  assert.equal(reg.rows[1].no, "000002");
+  assert.match(registerSummary(reg), /1 marked refunded/);
+});
+
+test("junk in the register is dropped, not drawn as a receipt", () => {
+  const reg = registerRows([raw(1, "AAAAAA"), null, { number: 0 }, { number: -4 }, raw(2, "BBBBBB")], []);
+  assert.deepEqual(reg.rows.map((r) => r.no), ["000001", "000002"],
+    "a row with no usable number was drawn as a receipt the books do not have");
+  assert.deepEqual(reg.gaps, [], "junk was mistaken for a missing number");
+});
+
+// ── reading it from the cloud ────────────────────────────────────────────────
+
+test("★ an unreadable register is NEVER reported as an empty one", async () => {
+  // ⚠️ THE ONE MISTAKE THAT WOULD MATTER HERE. An empty register and an unreachable one look
+  // identical on screen and mean opposite things — "no receipts exist" versus "I could not
+  // ask". Every failure path must say `ok: false` so the screen can say which.
+  const st = stateWith();
+  const answers = [
+    async () => { throw new Error("no signal"); },
+    async () => ({ ok: false, json: async () => [] }),
+    async () => ({ ok: true, json: async () => ({ not: "an array" }) }),
+  ];
+  for (const f of answers) {
+    globalThis.fetch = f;
+    const r = await pullReceiptRegister(st);
+    assert.equal(r.ok, false, "an unreadable register was reported as a successful read");
+    assert.deepEqual(r.rows, []);
+  }
+  // And with the cloud off there is no request at all.
+  st.settings.supabase.enabled = false;
+  let calls = 0;
+  globalThis.fetch = async () => { calls += 1; return { ok: true, json: async () => [] }; };
+  assert.equal((await pullReceiptRegister(st)).ok, false);
+  assert.equal(calls, 0, "the register was asked for with the cloud switched off");
+});
+
+test("the register is read from the receipts table, oldest number first", async () => {
+  const st = stateWith();
+  let seen = null;
+  globalThis.fetch = async (url) => {
+    seen = String(url);
+    return { ok: true, json: async () => [raw(1, "AAAAAA")] };
+  };
+  const r = await pullReceiptRegister(st);
+  assert.equal(r.ok, true);
+  assert.equal(r.rows.length, 1);
+  assert.match(seen, /\/rest\/v1\/receipt_numbers\?/, "the register was not read from the receipts table");
+  assert.match(seen, /order=number\.asc/, "the run was asked for in an order a register cannot be read in");
 });
