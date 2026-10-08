@@ -37,7 +37,12 @@ const printedOf = (s) => s.printed || longDate(todayISO());
 // the sheet has to say which convention it is using or the paper would read differently from
 // the screen it came from. `dir` is empty for every other journal, which leaves the amount as
 // the statement writes it.
-const money = (amount, dir, cur) => `${dir === "out" ? "−" : ""}${fmtRM(amount, cur)}`;
+// ⚠️⚠️ A LINE WITH NO FIGURE AT ALL IS NOT A ZERO (v378). A receipt that was issued and whose order has
+// since been removed has **no amount — the money for it never existed** — and printing "RM 0.00" beside
+// it would put a figure in a filed document that nobody ever paid. `money(null, …)` answers an em dash,
+// and **every renderer that draws an amount goes through this one function**, so the screen, the paper,
+// the shared message and the PDF blank it the same way rather than four times over.
+const money = (amount, dir, cur) => (amount == null ? "—" : `${dir === "out" ? "−" : ""}${fmtRM(amount, cur)}`);
 
 // The one column width a plain-text sheet pads both its rows and its totals to, read off
 // everything that shares the column. Capped, so one very long line cannot push every figure off
@@ -74,7 +79,7 @@ export function journalSheet({
     receiptNote: String(receiptNote || ""),
     lines: (lines || []).map((l) => ({
       what: String(l && l.what != null ? l.what : ""),
-      amount: Number(l && l.amount) || 0,
+      amount: (l && l.amount == null) ? null : (Number(l && l.amount) || 0),
       cls: (l && l.cls) || "",
       // "out" when the money left, "" when it arrived or when the amount is already signed.
       dir: (l && l.dir) || "",
@@ -82,6 +87,19 @@ export function journalSheet({
       // running costs begin; the screen can lean on the section wording above the card, and a
       // page cannot. A heading carries no figure, so it is never padded into a money column.
       heading: !!(l && l.heading),
+      // ★★ COLUMNS, BESIDE THE AMOUNT (v376). Her ask, for the consolidated invoice: __"can we have a
+      // column for order no. and a column for invoice no, sort it to inv will allow us to printout for
+      // filing purpose"__. A filing page needs the serial to line up under the serial — a composed
+      // sentence cannot be read down a column, which is exactly what filing is.
+      //
+      // ⚠️ IT IS **EXTRA**, NOT INSTEAD: `what` is still built from the same cells, so a renderer that
+      // does not know about `cols` (the shared text, the PDF) prints the same facts in a line and never
+      // a blank. **No renderer may show a different value** — only a different arrangement of them.
+      cols: Array.isArray(l && l.cols) ? l.cols.map((c) => String(c == null ? "" : c)) : null,
+      // ★ A COLUMN HEADER (v376). Unlabelled columns are not a filing page — she has to be able to see
+      // WHICH column is the invoice number. It is the same cells in a header dress, so the names sit
+      // over the values they name rather than in a sentence above them.
+      head: !!(l && l.head),
     })),
     totals: (totals || []).map((t) => ({
       label: String(t && t.label != null ? t.label : ""),
@@ -150,13 +168,46 @@ export function buildJournalText(sheet, cur = "RM") {
 // pop-up of its own — the Money screen draws one both ways. Reading the sheet rather than the
 // books a second time is what makes "the paper says what the screen says" true by
 // construction instead of by care.
+// ★ ONE LINE, DRAWN THE SAME EVERYWHERE (v376). The screen and the paper had grown to be identical
+// line-for-line after v372 taught them both about headings, so they are ONE function now — which is what
+// stops them drifting apart the next time either is touched. A row with `cols` is drawn as a column row;
+// one without is the words-and-figure row every journal has always had.
+function sheetLineEl(l, cur) {
+  if (l.heading) return el("p", { class: "js-section" }, l.what);
+  // A header row names the columns and carries no figure — the money column is left empty rather than
+  // filled with a zero nobody meant.
+  if (l.head && l.cols) {
+    return el("div", { class: "info-row journal-line journal-cols journal-cols-head" },
+      ...l.cols.map((c, i) => el("span", { class: `j-col j-col-${i}` }, c)));
+  }
+  const cls = `info-row journal-line${l.cols ? " journal-cols" : ""}${l.cls ? ` ${l.cls}` : ""}`;
+  if (l.cols) {
+    return el("div", { class: cls },
+      ...l.cols.map((c, i) => el("span", { class: `j-col j-col-${i}` }, c)),
+      el("span", { class: "info-val" }, money(l.amount, l.dir, cur)));
+  }
+  return el("div", { class: cls },
+    el("span", { class: "j-what" }, l.what),
+    el("span", { class: "info-val" }, money(l.amount, l.dir, cur)));
+}
+
 export function journalBodyEl(sheet, cur = "RM") {
   const s = journalSheet(sheet);
+  // ★★ A HEADING AND A SUBTOTAL LOOK THE SAME HERE AS THEY DO ON PAPER (v372).
+  //
+  // ⚠️⚠️ THIS IS NOT TIDINESS. `journalSheetEl` — the paper — has always honoured `heading` and
+  // `cls`, and so do the shared text and the PDF. This renderer mapped EVERY line to one plain
+  // row, so a section heading came out as **"AUNTY BEE   RM 0.00"** on the screen while printing
+  // correctly underneath it — two renderings of one document telling her different things, which
+  // is the exact fault this file exists to prevent. It only showed up when a document first had
+  // a heading in it (the consolidated invoice, v372); every journal before that was flat.
+  //
+  // ⚠️ The `cls` goes on the row UNCHANGED, because the paper and the PDF decide a subtotal by
+  // MATCHING `cls` for "total" — a subtotal that reached the screen without it would be ruled and
+  // bolded on paper and plain on screen.
   return el("div", {},
     s.lines.length
-      ? el("div", {}, ...s.lines.map((l) => el("div", { class: "info-row journal-line" },
-          el("span", { class: "j-what" }, l.what),
-          el("span", { class: "info-val" }, money(l.amount, l.dir, cur)))))
+      ? el("div", {}, ...s.lines.map((l) => sheetLineEl(l, cur)))
       : el("p", { class: "card-sub" }, s.empty),
     ...s.totals.map((t) => el("div", { class: `info-row ${t.cls}` },
       el("span", {}, t.label),
@@ -180,11 +231,7 @@ export function journalSheetEl(sheet, cur = "RM") {
       s.receipt ? el("p", { class: "js-receipt" }, s.receipt) : null,
       !s.receipt && s.receiptNote ? el("p", { class: "js-receipt note" }, s.receiptNote) : null),
     s.lines.length
-      ? el("div", { class: "js-rows" }, ...s.lines.map((l) => (l.heading
-          ? el("p", { class: "js-section" }, l.what)
-          : el("div", { class: `info-row journal-line${l.cls ? ` ${l.cls}` : ""}` },
-              el("span", { class: "j-what" }, l.what),
-              el("span", { class: "info-val" }, money(l.amount, l.dir, cur))))))
+      ? el("div", { class: "js-rows" }, ...s.lines.map((l) => sheetLineEl(l, cur)))
       : el("p", { class: "card-sub" }, s.empty),
     ...s.totals.map((t) => el("div", { class: `info-row ${t.cls}` },
       el("span", {}, t.label),
@@ -271,10 +318,22 @@ function sheetPages(s, cur) {
 
   // One row: its words, wrapped into the column the money leaves free, with the figure on the
   // first line and right-aligned. `ruleAbove` draws the line that separates a subtotal.
-  const row = (what, figure, { font = "F1", size = 10, ruleAbove = 0 } = {}) => {
+  // ⚠️ ONE MEASUREMENT, USED TWICE (v372). The wrapping and the height of a row are worked out
+  // here and nowhere else, because a HEADING has to look ahead and reserve room for the row that
+  // follows it. Measuring that row a second way would be two answers to "how tall is this line",
+  // and the day they drifted the heading would guard a space that is not the space it needed.
+  const rowPlan = (what, figure, { font = "F1", size = 10, ruleAbove = 0 } = {}) => {
     const figureW = figure ? textWidth(figure, { font, size }) : 0;
     const chunks = wrapText(what, Math.max(60, PDF_RIGHT - PDF_MARGIN - figureW - 16), { font, size });
-    need((ruleAbove ? ruleAbove + 7 : 0) + chunks.length * PDF_LEAD);
+    return { chunks, figureW, height: (ruleAbove ? ruleAbove + 7 : 0) + chunks.length * PDF_LEAD };
+  };
+
+  // One row: its words, wrapped into the column the money leaves free, with the figure on the
+  // first line and right-aligned. `ruleAbove` draws the line that separates a subtotal.
+  const row = (what, figure, opts = {}) => {
+    const { font = "F1", size = 10, ruleAbove = 0 } = opts;
+    const { chunks, figureW, height } = rowPlan(what, figure, opts);
+    need(height);
     if (ruleAbove) { y -= ruleAbove; rule(0.6); y -= 7; }
     chunks.forEach((chunk, i) => {
       put(chunk, PDF_MARGIN, { font, size });
@@ -291,7 +350,16 @@ function sheetPages(s, cur) {
   } else {
     s.lines.forEach((l, i) => {
       if (l.heading) {
-        need(26);
+        // ⚠️ IT KEEPS ITS FIRST ROW WITH IT (v372). Reserving only the heading's own height let a
+        // customer's name sit alone at the foot of a page with every one of their orders overleaf
+        // — a heading with nothing under it, which reads as a mistake rather than as a page break.
+        const next = s.lines[i + 1];
+        const follow = next && !next.heading
+          ? rowPlan(next.what, money(next.amount, next.dir, cur), {
+              font: next.cls && /total|net/.test(next.cls) ? "F2" : "F1", ruleAbove: 6,
+            }).height
+          : 0;
+        need(26 + follow);
         y -= 9;
         put(l.what, PDF_MARGIN, { font: "F2", size: 10 });
         y -= 15;

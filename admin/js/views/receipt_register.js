@@ -16,6 +16,11 @@
 import { el, button } from "../ui.js";
 import { registerRows, registerSummary } from "../receipts.js";
 import { pullReceiptRegister } from "../supabase.js";
+import { orderHref } from "../state.js";
+
+// ⚠️ `location.hash` DIRECTLY rather than the app's router, the same choice history.js
+// documents: it keeps this view testable under Node, where there is no router running.
+const navigate = (hash) => { location.hash = hash; };
 
 // "8 Oct 2026, 14:02" — a register wants the MOMENT, not just the day, because two receipts
 // issued on one afternoon are otherwise indistinguishable. Read on her own clock, so the
@@ -32,6 +37,8 @@ function stamp(iso) {
 
 export function renderReceiptRegister(root, state) {
   let dead = false;
+
+  const cur = (state.settings && state.settings.currency) || "RM";
 
   const draw = (reg, note) => {
     if (dead) return;
@@ -63,20 +70,43 @@ export function renderReceiptRegister(root, state) {
     }
 
     // ── one row per receipt ─────────────────────────────────────────────────
-    // ⚠️ NO PRESS ON A ROW, DELIBERATELY. Being able to jump to the order would be pleasant,
-    // but a button that lands on the Orders screen WITHOUT opening that order is a control
-    // that does not do what it says — and this app treats that as a bug everywhere else. The
-    // code is printed so it can be found with the Orders screen's own finder, which searches
-    // by order code, and the row says that.
+    // ★★ THE ORDER NUMBER IS NOW A DOOR (v381). Her words: __"can make the order number
+    // clickable to bring us to the order so i can admen it, or look at it detail"__.
+    //
+    // ⚠️ THIS REVERSES A v366 DECISION, ON PURPOSE, AND THE OLD REASON IS WORTH KEEPING: the row
+    // had NO press, because a control that landed on the Orders screen *without opening that
+    // order* would not do what it says — and the code was printed for her to retype into the
+    // Orders screen's own finder, with a sentence underneath saying so. **What changed is that
+    // the link can now genuinely open the order**, so the press does what it promises and the
+    // sentence became unnecessary.
+    //
+    // ⚠️ WHAT DID NOT CHANGE: nothing here edits a NUMBER. This screen is still read-only in the
+    // sense that matters — the run of numbers is untouchable, including by her on a bad evening.
+    // A door to the order does not touch the register.
+    const orderPress = (code) => el("a", {
+      class: "ord-open",
+      href: orderHref(code),
+      // ⚠️ A real `href` AND a handler: the address is what makes it a link (long-pressable,
+      // copiable), and the handler is what makes the tap reliable on a phone — the same pair
+      // every other jump in this app uses.
+      onclick: (ev) => { ev.preventDefault(); navigate(orderHref(code)); },
+    }, `Order #${code}`);
+
     const row = (r) => el("div", { class: "reg-row" },
       el("span", { class: "reg-no" }, `#${r.no}`),
       el("span", { class: "reg-what" },
         el("span", { class: "reg-name" },
           r.order
-            ? `${String(r.order.customerName || "").trim() || "—"} · Order #${r.code}`
+            // ⚠️ ONLY WHEN THE ORDER IS ON THIS PHONE. A receipt whose order is not here has
+            // nothing to open, so it stays plain text with its own honest sentence — a press
+            // there could only land on an empty Orders screen.
+            ? [String(r.order.customerName || "").trim() || "—", " · ", orderPress(r.code)]
             : `Order #${r.code} — not in this phone's orders`),
         el("span", { class: "reg-when" }, stamp(r.issuedAt)),
-        r.refundedAt ? el("span", { class: "reg-tag" }, "refunded") : null));
+        // ★ AND HOW MUCH (v370) — read from the register, so it shows even for a receipt whose
+        // order is not on this phone.
+        r.refundedAt ? el("span", { class: "reg-tag" },
+          r.refundedAmount > 0 ? `refunded ${cur} ${r.refundedAmount.toFixed(2)}` : "refunded") : null));
 
     const gapTxt = reg.gaps.map((n) => `#${String(n).padStart(6, "0")}`).join(", ");
 
@@ -106,7 +136,7 @@ export function renderReceiptRegister(root, state) {
         el("div", { class: "reg-list" }, ...reg.rows.map(row)),
 
         el("p", { class: "card-sub", style: "margin:10px 0 0" },
-          "To open one of these orders, search its code on the Orders screen."),
+          "Press an Order number to open that order, so you can look at it or amend it. A receipt whose order is not on this phone has nothing to open and says so."),
         el("div", { class: "btn-row", style: "margin-top:10px" },
           button("Read again", () => load(), "soft small"))),
 

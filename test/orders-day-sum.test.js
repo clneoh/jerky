@@ -2377,15 +2377,142 @@ test("★ Refund is offered on a paid order, asks FIRST, and leaves the row sayi
   // stage to nudge like Paid · Cash; a press that refunded in one tap on a row people tap all
   // day would be the worst control in the app.
   assert.equal(st.orders[0].refundedAt, undefined, "★ NOTHING is refunded until she confirms");
+  assert.ok(layers["popup-layer"], "and the card that asks is open");
+});
 
-  const layer = document.getElementById("confirm-layer");
-  press(layer, "Confirm");
+// ── ★★ v370: HOW MUCH, AND WHAT ──────────────────────────────────────────────
+//
+// Her words: __"refund should not be a full without choice to how much to refund, what to refund"__.
+// She chose "tick items, then adjust the figure", so what these drive is exactly that: the ticks
+// fill the amount, and typing over it wins.
+test("★★ the refund card: ticking fills the amount, typing over it wins, and Save stamps it", () => {
+  const st = state();
+  st.orders[0].status = "paid";
+  st.orders[0].paidReceived = true;
+  st.orders[0].paidMethod = "cash";
+  st.orders[0].unitPrice = 16; // the price it was SOLD at — two of them, so RM32
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
 
-  assert.ok(st.orders[0].refundedAt, "the order is marked refunded");
+  const buttonNamed = (node, label) =>
+    all(node).find((n) => n.tagName === "BUTTON" && txtOf(n) === label);
+  const press = (node, label) => {
+    const b = buttonNamed(node, label);
+    assert.ok(b, `no button on this screen reads "${label}"`);
+    b._listeners.click[0]();
+  };
+  const pop = () => layers["popup-layer"];
+  const boxes = () => all(pop()).filter((n) => n.attrs && n.attrs.type === "checkbox");
+  const amountBox = () => all(pop()).find((n) => n.attrs && n.attrs.type === "number"
+    && !String(n.className).includes("refund-qty"));
+
+  press(root, "Refund");
+  assert.ok(boxes().length, "the card lists nothing to tick");
+  assert.equal(amountBox().value, "0", "the amount does not start from the ticks");
+
+  // ★ TICK IT — the whole line — and the amount follows on its own.
+  const line = boxes()[0];
+  line.checked = true;
+  line._listeners.change[0]();
+  assert.equal(amountBox().value, "32", `★ ticking did not fill the amount (got ${amountBox().value})`);
+
+  // ★ AND A QUANTITY ON A ROW SHE CAN RETURN PART OF.
+  const qty = all(pop()).find((n) => String(n.className).includes("refund-qty"));
+  assert.ok(qty, "a two-of order offers no way to return one of them");
+  assert.equal(qty.disabled, false, "the quantity is dead on a row that IS ticked");
+  qty.value = "1";
+  qty._listeners.input[0]();
+  assert.equal(amountBox().value, "16", "★ returning one of two did not halve the figure");
+
+  // ★ AND TYPING OVER IT IS HERS — that is the whole point of picking "both".
+  //
+  // ⚠️⚠️ AND THE PROOF HAS TO BE A LATER TICK, NOT A RE-READ. The first version of this asserted
+  // `amountBox().value === "5"` straight after writing "5" — which proves nothing at all, because
+  // it reads back the very same element the test just set. **The bite did not disturb it.** What
+  // actually matters is that moving the ticks afterwards does NOT come along and overwrite her.
+  const box = amountBox();
+  box.value = "5";
+  box._listeners.input[0]();
+  qty.value = "2";
+  qty._listeners.input[0](); // the ticks now total RM32
+  assert.equal(amountBox().value, "5",
+    "★ a later change to the ticks overwrote the figure she typed in");
+
+  press(pop(), "Refund");
+  assert.equal(st.orders[0].refundAmountRM, 5, "★ the amount she typed is not what was recorded");
+  assert.ok(st.orders[0].refundedAt, "and the order is marked refunded");
+  // ⚠️ The ticks and the figure can DISAGREE — that is what "adjust the amount" means, and it is the
+  // trade she accepted when she picked this shape. The ticks are kept as the record of what came
+  // back; the amount is what she decided to give.
+  assert.deepEqual(st.orders[0].refundItems, [{ id: "o1", qty: 2 }],
+    "the ticks are not kept as the record of what came back");
+
   renderOrders(root, st, new URLSearchParams({ date: "d10" }));
   assert.ok(all(root).some((n) => txtOf(n) === "Refunded"),
     "★ and the row says so — it must not go on reading as Cash");
   assert.ok(buttonNamed(root, "Undo refund"), "and the way back is offered");
+});
+
+test("★★ the refund card shows WHAT WAS CHARGED, discount and all — her ask", () => {
+  // Her words: __"can the refund also show the original charges amount as well??"__
+  //
+  // ⚠️ AND IT IS THE SAME RENDERER THE INVOICE AND THE CUSTOMER'S MESSAGES USE (`receiptEls`), not
+  // a second sum drawn on this card. Two renderings of one order's money is two figures that can
+  // disagree — and the one she decides a refund against is the last place that should happen.
+  //
+  // ⚠️ THE DISCOUNT ROW IS THE POINT OF IT: items less the coupon IS the money that came in, which
+  // is why the cap below is RM29 and not the RM32 the bread was priced at.
+  const st = state();
+  st.orders[0].status = "paid";
+  st.orders[0].paidReceived = true;
+  st.orders[0].paidMethod = "cash";
+  st.orders[0].unitPrice = 16; // two of them: RM32
+  st.credits = [{
+    id: "c1", holder: "60111111111", amountRM: 3, role: "friendOff",
+    earnedAt: "2026-09-01T00:00:00.000Z", expiresAt: "", usedAt: null,
+    orderCode: orderCode(st.orders[0]),
+  }];
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+  all(root).find((n) => n.tagName === "BUTTON" && txtOf(n) === "Refund")._listeners.click[0]();
+
+  const said = txtOf(layers["popup-layer"]);
+  assert.match(said, /What was charged/, "the card does not show what was charged at all");
+  assert.match(said, /Items total/, "the goods are not listed");
+  assert.match(said, /RM 32\.00/, `the goods' figure is missing: "${said.slice(0, 200)}"`);
+  assert.match(said, /Bring-a-friend discount/, "the discount is not listed — the cap then looks arbitrary");
+  assert.match(said, /Total/, "no total to read the charges against");
+  // ★ AND THE CAP IS THE DISCOUNTED FIGURE, said on the box it limits.
+  assert.match(said, /up to RM 29\.00/, `the cap is wrong or unsaid: "${said.slice(0, 240)}"`);
+});
+
+test("★ the refund card refuses an amount of nothing, and one bigger than they paid", () => {
+  const st = state();
+  st.orders[0].status = "paid";
+  st.orders[0].paidReceived = true;
+  st.orders[0].paidMethod = "cash";
+  st.orders[0].unitPrice = 16;
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+  const buttonNamed = (node, label) =>
+    all(node).find((n) => n.tagName === "BUTTON" && txtOf(n) === label);
+  const amountBox = () => all(layers["popup-layer"]).find((n) => n.attrs && n.attrs.type === "number"
+    && !String(n.className).includes("refund-qty"));
+
+  buttonNamed(root, "Refund")._listeners.click[0]();
+
+  const box = amountBox();
+  box.value = "0";
+  box._listeners.input[0]();
+  buttonNamed(layers["popup-layer"], "Refund")._listeners.click[0]();
+  assert.equal(st.orders[0].refundedAt, undefined, "★ an amount of nothing refunded the whole order");
+
+  // ⚠️ THE CAP IS WHAT THE CUSTOMER ACTUALLY PAID — RM32 here, with no discount.
+  box.value = "100";
+  box._listeners.input[0]();
+  buttonNamed(layers["popup-layer"], "Refund")._listeners.click[0]();
+  assert.equal(st.orders[0].refundedAt, undefined, "★ more than the customer paid was allowed through");
+  assert.equal(st.orders[0].refundAmountRM, undefined, "and nothing was written");
 });
 
 test("★ Undo refund REFUSES rather than half-doing it when the register cannot be reached", async () => {

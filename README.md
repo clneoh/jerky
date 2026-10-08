@@ -756,6 +756,51 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## Engine v369 → v382 — thirteen versions (8 Oct 2026)
+
+Base `b400046` → `8beb8f7`. **39 files, ~4,661 insertions.** `git merge-file -p --diff3` per file with
+**index-keyed temp names** (never basenames — two pairs collide here: `customers.js` and `profit.js`
+each exist both in `admin/js/` and `admin/js/views/`). **7 conflicts across 5 files**; suite
+**3026 → 3125 pass / 0 fail**. No engine delta owed in either direction.
+
+**Adopted:** the refund amount + what it was for (v370/v371, plus `refund_receipt(p_order_code,
+p_amount)` and a new `refunded_amount` column in `supabase/receipts.sql`); the **consolidated
+invoice** (`admin/js/consolidated.js` + `admin/js/views/consolidated.js`, `/consolidated`, More →
+📑, v372/v373/v376/v377/v378); **v374's real "forget me"** (`publishTracking` now **reports whether
+the customer's card was actually written**, because the forget control has to be able to say *"their
+name is still on the shop's public card"* rather than report a half-kept promise as whole); v375's
+count fix; **v380's frozen cost** (`orderLineCost` — the exact mirror of `orderLinePrice`, so a sale's
+cost is as fixed as its price — plus the `v380` catch-up that writes the cost the books were **already**
+reading, so no figure moves); v381/v382's **order-number doors**.
+
+**Conflicts, and how each was settled** — all in jerky's favour where jerky had its own work:
+- `admin/js/supabase.js` (1): the `bom.js` import. **Taking the bakery's line verbatim asks for
+  `totalUnitsOnDate`, which jerky DELETED in the 7 Oct fix** → `bookedUnitsOnDate` kept, `costOf` added.
+  (The suite caught this immediately: *"does not provide an export named 'totalUnitsOnDate'"*.)
+- `admin/js/money.js` (2): jerky's localized comment kept; **the bakery's v370 takings block taken**
+  (`orderNet`, and the refund guard kept explicit rather than falling out of the arithmetic).
+- `admin/js/profit.js` (2): the bakery's `orderLineCost` / roll-up taken whole.
+- `admin/js/views/customers.js` (1): the bakery's order-number door taken, **jerky's fulfilment labels
+  kept** — *"Post (nationwide)" / "Collect (local)"*, not the bakery's *"Courier"/"Self collect"*.
+- `test/supabase.test.js` (1): both sides kept (jerky's orphan-sweep tests **and** the bakery's new
+  `publishTracking` tests).
+
+**⚠️ A duplicate import slipped through and was caught by the suite**: taking "theirs" on money.js's
+first hunk inserted the bakery's import while jerky's own stayed above it — `Identifier 'groupOrders'
+has already been declared`, failing every test file at load. Removed.
+
+**An automated audit of jerky-only lines** (diff each merged file against jerky's HEAD, then check
+each line survives) reported **only the lines I deliberately changed** — money.js's one localized
+comment and supabase.js's corrected import. Worth keeping: it is how a silent drop gets *found* rather
+than hoped against.
+
+**Localization:** every new string checked — the consolidated invoice, the forget questions, the refund
+card. All generic; the only "bakery" strings left are internal identifiers (`bakeryName`) and SQL
+comments.
+
+**⚠️ Re-run `supabase/receipts.sql`** — the refund now sends an amount, and until it is run **the refund
+press does not work**.
+
 ## Engine v368 → v369 — the contrast fix, and two colours the shop never declared (8 Oct 2026)
 
 Base `47584d2` → `b400046`. 6 files, **0 conflicts**, engine **v369**, suite **3021 → 3026 pass / 0

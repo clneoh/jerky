@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { profitBetween, monthSpan, orderDay, lineCost, expenseRows, tradingRows } = await import("../admin/js/profit.js");
+const { profitBetween, monthSpan, orderDay, lineCost, orderLineCost, expenseRows, tradingRows } = await import("../admin/js/profit.js");
 const { classOfCategory, categoryLabels, DEFAULT_CATEGORIES } = await import("../admin/js/accounts.js");
 
 // Flour at 1 sen a gram; a Focaccia's recipe uses 100 g, so a loaf costs RM1.00 to
@@ -73,6 +73,57 @@ test("a line with no recipe cost is counted as nothing, and said so", () => {
   assert.equal(pl.cost, 0);
   assert.equal(pl.uncosted, 1, "so the screen can tell her to check the recipe");
   assert.equal(lineCost(st, st.orders[0]), 0);
+});
+
+// ── ★★ the cost is FROZEN onto the sale (v380) ──────────────────────────────
+// Her words: "when i change the ingredient cost, for age orders, will its COS
+// change?" — and it did, because everything below was worked out afresh from
+// TODAY's ingredient prices on every read. "yes, freeze the cost onto the order".
+
+test("★★ changing an ingredient price does NOT move an order already taken", () => {
+  const st = state();
+  st.orders = [order({ unitCost: 1 })]; // frozen at the moment the loaves were sold
+  assert.equal(profitBetween(st, "2026-09-01", "2026-09-30").cost, 2);
+  st.ingredients[0].costPerUnit = 0.5; // flour goes up fifty-fold
+  assert.equal(profitBetween(st, "2026-09-01", "2026-09-30").cost, 2,
+    "September's profit is what it was, not today's flour price");
+  assert.equal(profitBetween(st, "2026-09-01", "2026-09-30").gross, 28,
+    "and so is the gross profit the whole statement turns on");
+});
+
+test("an order with NO frozen cost still follows the live recipe — this is not a global freeze", () => {
+  const st = state();
+  st.orders = [order()];
+  assert.equal(profitBetween(st, "2026-09-01", "2026-09-30").cost, 2);
+  st.ingredients[0].costPerUnit = 0.02;
+  assert.equal(profitBetween(st, "2026-09-01", "2026-09-30").cost, 4,
+    "an order that never froze a cost moves with the recipe exactly as it always did");
+});
+
+test("a cost she typed on the line beats both the frozen cost and the live recipe", () => {
+  const st = state();
+  st.orders = [order({ unitCost: 3.5 })]; // "this batch cost me more than the recipe says"
+  assert.equal(orderLineCost(st, st.orders[0]), 3.5, "her own figure is the one the books use");
+  assert.equal(lineCost(st, st.orders[0]), 7, "2 loaves at her figure");
+  assert.equal(profitBetween(st, "2026-09-01", "2026-09-30").cost, 7);
+  st.ingredients[0].costPerUnit = 0.5;
+  assert.equal(lineCost(st, st.orders[0]), 7, "and it does not move when flour does");
+});
+
+test("a cost she TYPED as zero is honoured — only the automatic stamp refuses one", () => {
+  // ⚠️ The asymmetry is deliberate. `stampOrderLine` declines a 0 because it cannot
+  // tell a free recipe from a recipe nobody has built (see test/order-line.test.js).
+  // Here a person has said it, so "this cost me nothing" is a fact and it stands.
+  const st = state();
+  st.orders = [order({ unitCost: 0 })];
+  assert.equal(orderLineCost(st, st.orders[0]), 0);
+  const pl = profitBetween(st, "2026-09-01", "2026-09-30");
+  assert.equal(pl.cost, 0);
+  // ⚠️ AND IT STILL READS AS AN UNCOSTED LINE. `uncosted` is about the FIGURE
+  // contributing nothing — not about whether a person typed it — and a 0 on the
+  // cost side reports a profit that is too high however it got there, so the
+  // journal goes on marking the row. Pinned so nobody "fixes" it into silence.
+  assert.equal(pl.uncosted, 1, "a zero cost is still a row the statement flags");
 });
 
 test("running costs are listed by category, in the chart's order", () => {
@@ -478,11 +529,16 @@ test("an empty trading journal opens and says so, like every spending line", () 
 });
 
 // ── the statement says which kind of cost it is showing (v281) ────────────────
-// Cost of sales is a RECIPE cost, read from the recipe and the ingredient prices as they
-// stand TODAY — not money she actually spent — so editing either one shifts a month that
-// has already closed. It is said on the screen because a figure that disagrees with the
-// Money screen and does not explain itself reads as a fault (3 Oct 2026).
-test("the statement says Cost of sales is a recipe cost, read from today's figures", () => {
+// Cost of sales is a RECIPE cost, read from the recipe and the ingredient prices she has
+// recorded — not money she actually spent. It is said on the screen because a figure that
+// disagrees with the Money screen and does not explain itself reads as a fault (3 Oct 2026).
+//
+// ⚠️⚠️ AND THE CLAIM IT USED TO MAKE IS NOW WITHDRAWN (v380). It said the figure was read
+// fresh each time, so editing a recipe or a price "moves past months too" — which was true
+// then and is FALSE from v380, because the cost is frozen onto the order. A note still
+// claiming a figure can move is a note nobody can trust, so the assertion changed with the
+// behaviour rather than being deleted. This is the sentence that would rot silently.
+test("the statement says the cost is a recipe cost, and that it is FROZEN onto the order", () => {
   const walkAll = screenOf();
   const st = state();
   const now = new Date();
@@ -496,8 +552,15 @@ test("the statement says Cost of sales is a recipe cost, read from today's figur
 
   assert.match(text, /built from the recipe and the ingredient prices you have recorded/,
     "the screen says what the cost figure is made of");
-  assert.match(text, /as they stand today/,
-    "and that it is read fresh, so editing a recipe or a price moves past months too");
+  assert.match(text, /frozen onto each order when you take it/,
+    "★ and that it is frozen, so a later price change does not rewrite a sale already made");
+  assert.match(text, /does not rewrite a sale already made/,
+    "★★ and the PROMISE ITSELF is on the screen, not only the absence of the old claim — "
+    + "a note that merely stopped saying something leaves her no way to know what it does now");
+  assert.doesNotMatch(text, /moves past months too|as they stand today/,
+    "⚠️ the withdrawn claim is GONE — the screen must not still say a closed month can move");
+  assert.match(text, /Orders taken before this was introduced were pinned at the cost they were already showing/,
+    "⚠️ and it admits what the older orders' frozen cost actually is, rather than implying it is history");
   assert.match(text, /not what you actually spent/,
     "so the figure is never read as money she paid out");
   assert.match(text, /the Money screen is where the cash is/,

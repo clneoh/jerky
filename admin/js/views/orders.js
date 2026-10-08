@@ -1,7 +1,7 @@
 // views/orders.js — per-delivery-date order intake (manual, warn-not-block).
 
 import { addDays, deliveryStatus, fmtPlaced, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
-import { capacityStatus, dayCapacityParts, dayRuleRows, parseDayDelta, productRemaining, saveDayAdjustments } from "../bom.js";
+import { capacityStatus, costOf, dayCapacityParts, dayRuleRows, parseDayDelta, productRemaining, saveDayAdjustments } from "../bom.js";
 import { dayMoney, groupValue, isCollected, isRefunded } from "../money.js";
 import { el, button, select, fillMeter, emptyState, confirmDialog, toast, showPopup } from "../ui.js";
 import { dateField } from "../datepicker.js";
@@ -15,13 +15,13 @@ import { availSummary, sellOpen } from "../../../availability.js";
 // same pair the shop applies, from the one module both sides read, so a note can
 // never be longer on this side than the box that collected it allowed.
 import { lineNoteOf, LINE_NOTE_MAX } from "../../../storefront-fields.js";
-import { byId, fmtRM, groupOrders, moveOrderGroup, newId, orderCode, orderLineName, orderLinePrice, save, stampOrderLine, updateOrderBadge, waNumber } from "../state.js";
+import { byId, fmtRM, groupOrders, moveOrderGroup, newId, orderCode, orderLineName, orderLinePrice, round2, save, stampOrderLine, updateOrderBadge, waNumber } from "../state.js";
 import { strictestCancelDays } from "../../../store/pool.js";
 import { buildConfirmation } from "../confirm.js";
 import { buildPaymentReminder, buildPickupReminder, buildShippedMessage } from "../messages.js";
 import { claimReceipt, maybePublishTracking, maybeSync, publishTracking, refundReceipt, stuckOrders, unrefundReceipt } from "../supabase.js";
 import { receiptLine, receiptNoOf, receiptStatus } from "../receipts.js";
-import { writeCourierCharge, courierFeeOf, courierPayerOf, courierCodOf, isCourierOrder, codeMissed, codeNotApplied, couponAgainst, customerTotal, receiptNote, receiptRows, promoOn, promoValue } from "../courier.js";
+import { writeCourierCharge, courierFeeOf, courierPayerOf, courierCodOf, customerCourierFee, isCourierOrder, codeMissed, codeNotApplied, couponAgainst, customerTotal, receiptNote, receiptRows, promoOn, promoValue } from "../courier.js";
 import { methodsOf } from "../accounts.js";
 import { schemeOf, referralFlag, giveCredits, validCredits, markOneUsed, referrerName, couponOn } from "../referrals.js";
 import { adjustForStatus } from "../stock.js";
@@ -913,6 +913,47 @@ function renderAll(root, state, params) {
   }
   if (delta) scroller().scrollTop += delta;
   anchorRowId = null;
+
+  // ★★ AN ORDER NUMBER ANYWHERE IN THE APP IS NOW A DOOR (v381). Her words: __"can make the
+  // order number clickable to bring us to the order so i can admen it, or look at it detail"__.
+  //
+  // ⚠️⚠️ AND THE PARAM IS CONSUMED FIRST, which is not tidiness. `render()` re-runs this whole
+  // screen on every hashchange, on every cloud answer, and after every save — **including the
+  // Edit card's own Save**. Left in the address, the card would reopen for ever: she would
+  // close it, the screen would rebuild, and it would be back in her face. It is replaced with
+  // the day's own address, which is the one `selectDate` writes.
+  const openCode = String(params.get("order") || "").trim().toUpperCase();
+  if (openCode) {
+    // ⚠️ CONSUMED BEFORE THE LOOKUP, NOT AFTER. On the path where the order is found, `selectDate`
+    // rewrites the address anyway — so this looks redundant, and it is not: **on the NOT-FOUND path
+    // nothing else rewrites it**, and a code left sitting in the address would say "not on this
+    // phone" again on every rebuild the app does, for ever. (A bite proved exactly that: removing
+    // this line broke no test until the not-found case was asserted.)
+    if (history && history.replaceState) {
+      const day = activeIso || ordersDayById.get(activeId) || "";
+      history.replaceState(null, "", `#/orders?date=${activeId}${day ? `&day=${day}` : ""}`);
+    }
+    const group = groupOrders(state.orders || [])
+      .find((g) => g.orders[0] && orderCode(g.orders[0]) === openCode);
+    if (!group) {
+      // ⚠️ NOT FOUND IS SAID OUT LOUD. A press that lands on the Orders screen and opens
+      // nothing is the control that does not do what it says — the very thing this feature
+      // exists to stop being. (The register offers no press for an order that is not on this
+      // phone, so this is the stale-code case: a link kept, or the order removed since.)
+      toast(`Order #${openCode} is not on this phone`);
+    } else {
+      const first = group.orders[0];
+      // The day opens FIRST, so the card has the order's own day behind it — and only a day
+      // that still EXISTS, because selecting a deleted one would draw the "bake day missing"
+      // panel underneath the card and read as a fault.
+      const rec = first.deliveryDateId ? byId(state.deliveryDates, first.deliveryDateId) : null;
+      if (rec) selectDate(rec.id, rec.date);
+      revealOrderRow(root, group);
+      // ⚠️ "" WHEN THE DAY IS GONE — the same door v332 opened for the inbox, so an order
+      // whose bake day was deleted can still be reached and given one back.
+      openEditPopup(state, group, rec ? rec.id : "", root);
+    }
+  }
 }
 
 // What ends a revealed row's glow: the baker getting to the row.
@@ -1467,6 +1508,64 @@ function priceForProduct(state, productId) {
   const p = byId(state.products, productId);
   const price = p && p.price != null && p.price !== "" ? Number(p.price) : NaN;
   return Number.isFinite(price) ? price : null;
+}
+
+// The recipe cost of ONE unit right now — what a line's cost is when she has not
+// adjusted it. The same figure `costOf` freezes onto an order the moment it is
+// taken, so the box, the frozen value and the books all read from one place.
+function recipeCostFor(state, productId) {
+  const p = byId(state.products, productId);
+  return p ? costOf(state, p) : 0;
+}
+
+// ★ THE COST BOX (v380). Her words: "yes, freeze the cost onto the order" and
+// "and allow me to adjust it," — so this sits beside the price on a line and
+// does for the cost what the price box already does for the price.
+//
+// ⚠️ BLANK MEANS "THE RECIPE", and the placeholder always shows what the recipe
+// says right now. So the box never lies about the number the books are using,
+// and a line she has not touched reads as the recipe's own figure.
+//
+// ⚠️ THE UNDO IS BUILT WITH THE BOX, not rendered from `line.cost`, and that is
+// deliberate. Rendering it conditionally would mean the whole pop-up had to be
+// rebuilt on every KEYSTROKE for it to appear — and a rebuild mid-typing takes
+// the focus out of the box she is typing in. So the press is always there beside
+// a line whose recipe prices to something, and it says the recipe's own figure,
+// which is worth reading whether or not she has typed over it. It closes over
+// the box element, so pressing it empties the box on the spot.
+function lineCostControls(line, on, recipeCost, cur) {
+  // ⚠️ THE WORD "Cost" IS ON SCREEN, unlike the price box, which gets away with a
+  // bare "RM" beside a stepper. Two figure boxes on one line and one of them
+  // unlabelled is how a cost gets typed into the price. The "each" names the unit.
+  const label = el("span", { class: "line-cost-label" }, "Cost each");
+  const box = el("input", { class: "input line-cost", type: "number", inputmode: "decimal",
+    min: "0", step: "0.01",
+    placeholder: recipeCost > 0 ? fmtRM(recipeCost, cur) : cur,
+    "aria-label": `Cost each (${cur}) — what the recipe says, unless you type over it`,
+    value: line.cost == null ? "" : String(line.cost),
+    oninput: function () {
+      line.cost = this.value === "" ? null : Number(this.value);
+      // ⚠️ THE UNDO FOLLOWS THE BOX, and it is the one thing that differs from the
+      // price beside it. An empty box already means "use the recipe", so a press
+      // offering to go back to the recipe would DO NOTHING — and a tap that does
+      // nothing reads as a fault. So it is hidden while the box is empty and appears
+      // the moment she types. ⚠️ Toggled on the element rather than re-drawn from
+      // `line.cost`, because re-drawing means rebuilding the rows on every keystroke,
+      // which takes the focus out of the box she is typing in.
+      reset.hidden = this.value === "";
+      on();
+    } });
+  // ⚠️ AN ADJUSTMENT WITH NO WAY BACK IS A TRAP — the same reason a Restore had to
+  // be reversible. ⚠️ A product whose recipe prices to nothing gets NO press at all:
+  // it has no figure to offer, and a button naming "RM 0.00" would invent one.
+  if (!(recipeCost > 0)) return [label, box];
+  const recipe = fmtRM(recipeCost, cur);
+  const reset = el("button", { class: "line-cost-reset", type: "button",
+    hidden: line.cost == null,
+    "aria-label": `Use the recipe cost, ${recipe}`,
+    onclick: () => { line.cost = null; box.value = ""; reset.hidden = true; on(); } },
+    `Recipe: ${recipe}`);
+  return [label, box, reset];
 }
 
 // The day's till, under its capacity meter (16 Sep 2026): what came in as cash,
@@ -2123,6 +2222,12 @@ function openEditPopup(state, group, dateId, root) {
   const lines = group.orders.map((o) => ({
     id: o.id, productId: o.productId || "", qty: o.qty,
     price: orderLinePrice(state, o),
+    // This line's COST (v380) — the frozen one when the order carries it, and
+    // null when it does not, which is what makes the box open blank and follow
+    // the recipe. Seeded from `unitCost` itself rather than through `costOf`, so
+    // opening the pop-up can never invent a cost the order does not have.
+    cost: (o.unitCost == null || o.unitCost === "" || !Number.isFinite(Number(o.unitCost)))
+      ? null : Number(o.unitCost),
     // This line's own note (v236), held on the draft so a repaint re-reads it and
     // she can change it here as well as in the New-order card. Line-level, so it
     // is edited per row and never travels in the shared fields below.
@@ -2322,6 +2427,13 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
         // A swapped line takes the new product's price — the old one's would be a
         // price for something she is no longer selling.
         line.price = priceForProduct(state, line.productId);
+        // ★ AND ITS COST (v380), on the same rule and for the same reason: the old
+        // product's recipe is not the new product's recipe. ⚠️ A recipe that prices
+        // to nothing leaves the box BLANK rather than showing a 0, because blank is
+        // what "follow the recipe" has always meant here — and a visible 0 in a box
+        // she never typed into would freeze a figure she never agreed to.
+        const rc = recipeCostFor(state, line.productId);
+        line.cost = rc > 0 ? rc : null;
         refresh();
       }, "Product…");
     const qtySpan = el("span", { class: "stepper-val" }, String(line.qty));
@@ -2337,6 +2449,12 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
           value: line.lineNote || "",
           oninput: function () { line.lineNote = this.value; } })
       : null;
+    // The cost box (v380) sits BESIDE the price, on the same controls row, and only
+    // on this pop-up. The New-order card deliberately does not carry one: the cost
+    // is frozen from the recipe the moment she adds the order anyway, and the card
+    // is where a customer is on the phone — a costing box there would be a second
+    // number to think about during a sale. She adjusts it here, afterwards.
+    const recipeCost = recipeCostFor(state, line.productId);
     return el("div", { class: "add-item" },
       prodSel,
       el("div", { class: "add-item-ctl" },
@@ -2347,6 +2465,11 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
         linePriceBox(line, paintTotal),
         el("button", { class: "inbox-del", "aria-label": "Remove item",
           onclick: () => { lines.splice(i, 1); refresh(); } }, "✕")),
+      el("div", { class: "add-item-ctl" },
+        // Blank means "the recipe", so this line reads as the recipe's own figure
+        // until she types over it. ⚠️ Typing does NOT rebuild the rows — the same
+        // rule the price box follows — so the focus stays in the box.
+        lineCostControls(line, paintTotal, recipeCost, state.settings.currency)),
       lineNoteBox);
   };
 
@@ -2512,6 +2635,11 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       el("label", {}, "Items"),
       el("p", { class: "card-sub", style: "margin:0 0 6px" },
         "The price beside each item is what THIS order is sold at. Change it here and the confirmation, every later message and the customer's total follow it — your menu price is untouched."),
+      // ★ AND THE COST, SAID OUT LOUD (v380). Two figures on one line need to be
+      // told apart in words or the second one gets typed into the first. The
+      // "Recipe:" figure beside the box is what her recipe says it costs TODAY.
+      el("p", { class: "hint", style: "margin:6px 0 0" },
+        "Cost each is what that loaf cost you to bake. It is frozen onto this order when you take it, so changing an ingredient price later never rewrites an order already sold. Type over it if this batch cost you more, or press Recipe to go back to what the recipe says."),
       rowsEl,
       button("＋ Add another item", () => { lines.push({ productId: "", qty: 1, price: null }); refresh(); }, "ghost"),
       totalEl),
@@ -2595,14 +2723,34 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
         Object.assign(o, fields);
         if (gid) o.groupId = gid;
         // Only a line swapped to a different product re-prices; leaving a line
-        // alone keeps the price it was sold at.
-        if (before !== o.productId) stampOrderLine(o, byId(state.products, o.productId));
+        // alone keeps the price it was sold at. ★ AND RE-COSTS (v380) — a different
+        // product has a different recipe, so the frozen cost is re-stamped exactly
+        // as the price is. Leaving the old figure on it would be the same
+        // stale-number fault in a new place.
+        if (before !== o.productId) {
+          // ⚠️ A product with no recipe stamps nothing (the stamp refuses a zero), and
+          // the OLD product's cost is cleared by the cost box's own read-back below —
+          // `line.cost` was set to null when she picked the new product, and a blank
+          // box DELETES the key. That is the same path the price takes (`delete
+          // o.unitPrice`), so the "no value" case has one owner rather than two.
+          stampOrderLine(o, byId(state.products, o.productId), recipeCostFor(state, o.productId));
+        }
         // …and the price box has the last word either way (16 Sep 2026): what she
         // typed is what this order is sold at. A blank box leaves the line following
         // the product, as an unpriced line always has.
         const typed = l.price == null ? NaN : Number(l.price);
         if (Number.isFinite(typed) && typed >= 0) o.unitPrice = typed;
         else delete o.unitPrice;
+        // ★★ THE COST BOX HAS THE LAST WORD THE SAME WAY (v380). What she typed is
+        // what this line cost her; a blank box DELETES the frozen cost, so the line
+        // goes back to following the recipe — which is what her "Recipe:" press does.
+        //
+        // ⚠️ AND A TYPED ZERO IS HONOURED, unlike the automatic stamp, which refuses
+        // one: here a person has said it, so "this cost me nothing" is a fact, while
+        // an un-stamped line's 0 cannot be told from a recipe nobody has built yet.
+        const typedCost = l.cost == null ? NaN : Number(l.cost);
+        if (Number.isFinite(typedCost) && typedCost >= 0) o.unitCost = typedCost;
+        else delete o.unitCost;
         // This line's own note (v236). Written here rather than through `fields`, which
         // the Object.assign above copies onto EVERY row of the group — a line's note
         // riding there would give all three items the same words, the same trap the
@@ -2644,8 +2792,13 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
           groupId: gid,
           createdAt: new Date().toISOString(),
         };
-        stampOrderLine(row, byId(state.products, row.productId));
+        stampOrderLine(row, byId(state.products, row.productId), recipeCostFor(state, row.productId));
         if (Number.isFinite(Number(l.price))) row.unitPrice = Number(l.price);
+        // The cost box's answer for a line added HERE (v380), on the same rule the
+        // kept rows above use — including a typed zero, which is hers to state.
+        if (l.cost != null && Number.isFinite(Number(l.cost)) && Number(l.cost) >= 0) {
+          row.unitCost = Number(l.cost);
+        }
         // This new line's note, written per row like the kept ones above (v236).
         const newLineNote = lineNoteOf(l.lineNote);
         if (newLineNote) row.lineNote = newLineNote;
@@ -2733,7 +2886,7 @@ function addNew(state, date, productId, qty, price, customerName, whatsapp, fulf
       status: "new",
       createdAt: new Date().toISOString(),
     };
-    stampOrderLine(row, byId(state.products, productId));
+    stampOrderLine(row, byId(state.products, productId), recipeCostFor(state, productId));
     // ★ WHERE IT COLLECTS FROM (v303), through the one function that owns the rule, so the
     // Point's name is frozen onto the order exactly as the shop's own path freezes it.
     setOrderPoint(state, row, pointId);
@@ -2819,7 +2972,7 @@ function addGroupNew(state, date, items, customerName, whatsapp, fulfillment, ad
         groupId,
         createdAt,
       };
-      stampOrderLine(row, byId(state.products, it.productId));
+      stampOrderLine(row, byId(state.products, it.productId), recipeCostFor(state, it.productId));
       // See addNew — on EVERY row, because a row she edits or re-splits later must not be
       // the one that forgot where it was going.
       setOrderPoint(state, row, pointId);
@@ -3487,7 +3640,6 @@ async function openInvoice(state, group) {
       const n = Number(first.receiptNo);
       for (const o of group.orders) {
         o.receiptNo = n;
-        if (first.receiptRefundedAt) o.receiptRefundedAt = first.receiptRefundedAt;
       }
       save(state);
       maybeSync(state);
@@ -4598,7 +4750,6 @@ function markPaid(state, group, root, dateId, method) {
     const n = Number(first.receiptNo);
     for (const o of group.orders) {
       o.receiptNo = n;
-      if (first.receiptRefundedAt) o.receiptRefundedAt = first.receiptRefundedAt;
     }
     save(state);
     renderAll(root, state, new URLSearchParams({ date: dateId }));
@@ -4622,27 +4773,143 @@ function firstOf(group) {
 // sequence that the numbering exists to prevent.
 function refundOrder(state, group, first, { root, dateId } = {}) {
   const cur = (state.settings && state.settings.currency) || "RM";
-  const what = fmtRM(customerTotal(state, group).total, cur);
-  confirmDialog(`Refund ${what} on this order?`, async () => {
-    const at = new Date().toISOString();
-    for (const o of group.orders) o.refundedAt = at;
-    anchorRowId = first.id;
-    save(state);
-    maybeSync(state);
-    // The register's own mark, best-effort and never blocking: if it cannot be made, the
-    // order still reads as refunded here, and the mark arrives from the server the next time
-    // the receipt is opened.
-    // ⚠️ THE ORDER'S OWN MARK IS NOT BEST-EFFORT; THE REGISTER'S IS. The money really has gone
-    // back — that is a thing she did, not a thing this app decided — so the sale stops counting
-    // the moment she confirms, whatever the register says. But a register that was never told
-    // would print an UNMARKED receipt for a refunded sale, and that disagreement is hers to
-    // know about: it is said on her screen rather than carried in silence.
-    const marked = await refundReceipt(state, first);
-    save(state);
-    toast(marked
-      ? `${what} refunded — off your takings, and the receipt is marked, not renumbered`
-      : `${what} refunded and off your takings — but the receipt could NOT be marked in the register. Run supabase/receipts.sql, then open this order's Invoice.`);
-    renderAll(root, state, new URLSearchParams({ date: dateId }));
+  // ⚠️⚠️ THE CAP IS WHAT THE CUSTOMER ACTUALLY PAID — never the goods' face price. A coupon or a
+  // promo code means they handed over less than the bread was priced at, and handing back the
+  // discount as cash would be paying out money she never received (v370).
+  const bill = customerTotal(state, group);
+  const cap = round2(bill.total);
+
+  const lines = group.orders.map((o) => ({
+    id: o.id, qty: Number(o.qty) || 0, price: orderLinePrice(state, o), name: orderLineName(state, o),
+  }));
+  const charge = round2(customerCourierFee(first) || 0);
+
+  const ticks = new Map();
+  let courierWanted = false;
+  let typed = false; // has she taken the figure over? until then it follows the ticks
+  let boxEl = null;
+  let sumEl = null;
+
+  const tickedTotal = () => round2(
+    lines.reduce((s, l) => s + (ticks.get(l.id) || 0) * (l.price == null ? 0 : l.price), 0)
+    + (courierWanted ? charge : 0));
+
+  // The box follows the ticks until she types in it, and after that it is hers — which is the whole
+  // of what she picked: tick what came back to get the number right, then change it if she wants.
+  const sync = () => {
+    for (const r of lines.map((l) => l._ui).filter(Boolean)) {
+      const on = ticks.has(r.line.id);
+      const q = ticks.get(r.line.id) || 0;
+      r.box.checked = on;
+      r.amt.textContent = fmtRM(q * (r.line.price == null ? 0 : r.line.price), cur);
+      if (r.qtyBox) { r.qtyBox.value = String(on ? q : r.line.qty); r.qtyBox.disabled = !on; }
+    }
+    if (courierUI) {
+      courierUI.box.checked = courierWanted;
+      courierUI.amt.textContent = fmtRM(courierWanted ? charge : 0, cur);
+    }
+    const total = tickedTotal();
+    if (sumEl) sumEl.textContent = fmtRM(total, cur);
+    if (boxEl && !typed) boxEl.value = String(total);
+    return total;
+  };
+  let courierUI = null;
+
+  showPopup(el("div", { class: "popup-title-row" }, "Refund this order?"), (refresh, close) => {
+    void refresh;
+    const rows = lines.map((line) => {
+      const amt = el("span", { class: "refund-amt" }, "");
+      const qtyBox = line.qty > 1
+        ? el("input", { class: "input refund-qty", type: "number", inputmode: "numeric",
+            min: "1", max: String(line.qty),
+            oninput: () => {
+              const v = Math.max(1, Math.min(line.qty, parseInt(qtyBox.value, 10) || 1));
+              ticks.set(line.id, v);
+              sync();
+            } })
+        : null;
+      const box = el("input", { type: "checkbox", onchange: () => {
+        if (box.checked) ticks.set(line.id, line.qty || 1); else ticks.delete(line.id);
+        sync();
+      } });
+      line._ui = { line, box, amt, qtyBox };
+      return el("div", { class: "refund-line" },
+        el("label", { class: "refund-row" }, box,
+          el("span", { class: "refund-what" }, `${line.name}${line.qty > 1 ? ` ×${line.qty}` : ""}`),
+          amt),
+        qtyBox);
+    });
+
+    if (charge > 0) {
+      const amt = el("span", { class: "refund-amt" }, "");
+      const box = el("input", { type: "checkbox", onchange: () => { courierWanted = box.checked; sync(); } });
+      courierUI = { box, amt };
+      rows.push(el("label", { class: "refund-row" }, box,
+        el("span", { class: "refund-what" }, "Courier charge"), amt));
+    }
+
+    sumEl = el("b", {}, "");
+    boxEl = el("input", { class: "input", type: "number", inputmode: "decimal", min: "0", step: "0.01",
+      oninput: () => { typed = true; } });
+    const note = el("input", { class: "input", placeholder: "Optional" });
+
+    const body = el("div", {},
+      // ★ WHAT WAS CHARGED, ON THE CARD THAT GIVES IT BACK (v370, her ask). The same rows the
+      // invoice and the customer's own messages are built from — `receiptEls` is the ONE renderer
+      // for an order's money — so the figures she decides against here are the figures the
+      // customer was quoted, by construction rather than by both happening to be right.
+      // ⚠️ It lists the DISCOUNTS as their own rows too, which is what makes the cap make sense:
+      // items less a coupon is the money that actually came in.
+      el("p", { class: "card-sub", style: "margin:0 0 6px" }, "What was charged"),
+      el("div", { class: "refund-bill" }, ...receiptEls(state, bill)),
+      el("p", { class: "card-sub", style: "margin:12px 0 8px" }, "Which came back?"),
+      rows.length ? el("div", { class: "refund-list" }, ...rows)
+        : el("p", { class: "card-sub" }, "This order has nothing on it to refund."),
+      el("div", { class: "refund-sum" }, el("span", {}, "Ticked so far"), sumEl),
+      // ⚠️ THE CAP IS SAID ON THE BOX ITSELF, not in a paragraph above it — the limit belongs
+      // beside the thing it limits, and it is the money the customer actually handed over.
+      el("div", { class: "field" }, el("label", {}, `How much back? (up to ${fmtRM(cap, cur)})`), boxEl),
+      el("div", { class: "field" }, el("label", {}, "Why (optional)"), note),
+      el("div", { class: "popup-actions" },
+        button("Cancel", close, "ghost"),
+        button("Refund", async () => {
+          const value = round2(Number(boxEl.value));
+          if (!String(boxEl.value).trim() || !Number.isFinite(value) || value <= 0) {
+            return toast("Type how much to give back");
+          }
+          if (value > cap) {
+            return toast(`That is more than the customer paid — ${fmtRM(cap, cur)} at most`);
+          }
+          const at = new Date().toISOString();
+          const items = [...ticks.entries()].map(([id, qty]) => ({ id, qty }));
+          const why = note.value.trim();
+          for (const o of group.orders) {
+            o.refundedAt = at;
+            o.refundAmountRM = value;
+            if (items.length) o.refundItems = items; else delete o.refundItems;
+            if (why) o.refundNote = why; else delete o.refundNote;
+          }
+          anchorRowId = first.id;
+          save(state);
+          maybeSync(state);
+          // The register's own mark, best-effort and never blocking: if it cannot be made, the
+          // order still reads as refunded here, and the mark arrives from the server the next time
+          // the receipt is opened.
+          // ⚠️ THE ORDER'S OWN MARK IS NOT BEST-EFFORT; THE REGISTER'S IS. The money really has gone
+          // back — that is a thing she did, not a thing this app decided — so the sale stops counting
+          // the moment she confirms, whatever the register says. But a register that was never told
+          // would print an UNMARKED receipt for a refunded sale, and that disagreement is hers to
+          // know about: it is said on her screen rather than carried in silence.
+          const marked = await refundReceipt(state, first, value);
+          save(state);
+          close();
+          toast(marked
+            ? `${fmtRM(value, cur)} refunded — off your takings, and the receipt is marked, not renumbered`
+            : `${fmtRM(value, cur)} refunded and off your takings — but the receipt could NOT be marked in the register. Run supabase/receipts.sql, then open this order's Invoice.`);
+          renderAll(root, state, new URLSearchParams({ date: dateId }));
+        }, "primary")));
+    sync();
+    return body;
   });
 }
 
@@ -4662,7 +4929,16 @@ function undoRefundOrder(state, group, first, { root, dateId } = {}) {
       toast("Could not reach the receipts register, so nothing has changed. Run supabase/receipts.sql, then try again.");
       return;
     }
-    for (const o of group.orders) delete o.refundedAt;
+    // ★ AND IT TAKES THE AMOUNT WITH IT (v370). Leaving the amount behind while clearing the mark
+    // would leave an order that reads as paid and still carries the money it gave back — and
+    // `refundOf` answers an amount before it looks at the mark, so the books would keep counting a
+    // refund she has just undone.
+    for (const o of group.orders) {
+      delete o.refundedAt;
+      delete o.refundAmountRM;
+      delete o.refundItems;
+      delete o.refundNote;
+    }
     anchorRowId = first.id;
     save(state);
     maybeSync(state);

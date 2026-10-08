@@ -320,6 +320,82 @@ test("v70 catch-up stamps pre-existing orders with today's name and price once",
   } finally { restore(); }
 });
 
+// ── ★ Engine v380 — the one-time COST catch-up ───────────────────────────────
+// ⚠️⚠️ THIS IS THE ONE CATCH-UP THAT REWRITES HER ORDER ROWS. It writes to every
+// order she has, in one save, which then syncs to her other phone — so what it
+// writes, what it refuses to write, and what it must never overwrite all matter.
+// Her words: "yes, freeze the cost onto the order".
+
+test("v380 catch-up freezes today's recipe cost onto orders already taken, once", async () => {
+  freshDOM();
+  const store = installStorage({ "bakeadmin.v1": stateJSON({
+    // Flour at 1 sen a gram, 100 g in a Focaccia ⇒ RM1.00 to bake one.
+    ingredients: [{ id: "g1", name: "Flour", unit: "g", costPerUnit: 0.01, active: true }],
+    products: [
+      { id: "p1", name: "Focaccia", price: 15, active: true, recipe: [{ ingredientId: "g1", qty: 100 }] },
+      { id: "p2", name: "Bare", price: 5, active: true }, // a recipe nobody has built yet
+    ],
+    orders: [
+      { id: "o1", productId: "p1", qty: 2, status: "new", deliveryDateId: "d1",
+        customerName: "Ain", whatsapp: "60123456789", createdAt: new Date().toISOString() },
+      { id: "o2", productId: "p1", qty: 1, status: "new", deliveryDateId: "d1", unitCost: 9,
+        customerName: "Ain", whatsapp: "60123456789", createdAt: new Date().toISOString() },
+      { id: "o3", productId: "p2", qty: 1, status: "new", deliveryDateId: "d1",
+        customerName: "Ain", whatsapp: "60123456789", createdAt: new Date().toISOString() },
+      { id: "o4", productId: "gone", qty: 1, status: "new", deliveryDateId: "d1",
+        customerName: "Ain", whatsapp: "60123456789", createdAt: new Date().toISOString() },
+    ],
+  }) });
+  try {
+    await import("../admin/js/app.js?case=v380");
+
+    const saved = JSON.parse(store.get("bakeadmin.v1"));
+    const byId = (id) => saved.orders.find((o) => o.id === id);
+    assert.equal(saved.settings.migratedV380, true, "the catch-up is marked done, so it never runs twice");
+    assert.equal(byId("o1").unitCost, 1, "today's recipe cost is locked onto an order already taken");
+    assert.equal(byId("o2").unitCost, 9,
+      "⚠️ a cost she adjusted BY HAND is never overwritten by the catch-up");
+    assert.equal(byId("o3").unitCost, undefined,
+      "⚠️ a recipe that prices to nothing writes NO cost, so it can gain one later");
+    assert.equal(byId("o4").unitCost, undefined, "a vanished product is left alone, never guessed at");
+    assert.equal(saved.orders.length, 4, "no order was removed or invented");
+    // ⚠️ And the price half of the SAME record is untouched by this version: the
+    // v70 block has already run in this fixture, so these carry the live name/price.
+    assert.equal(byId("o1").unitPrice, 15, "the freeze added a cost without disturbing the price");
+  } finally { restore(); }
+});
+
+test("v380 catch-up writes the cost the books were ALREADY reading, so no figure moves", async () => {
+  // ⚠️⚠️ THE CLAIM THE CHANGELOG MAKES, PINNED. The cost it locks on is exactly what
+  // the live recipe was giving the books a moment earlier — so on the day this ships,
+  // not one number on any screen changes. If this ever stops being true, the whole
+  // "safe to deploy" sentence in the changelog is a lie.
+  const { profitBetween } = await import("../admin/js/profit.js");
+  const ingredients = [{ id: "g1", name: "Flour", unit: "g", costPerUnit: 0.01, active: true }];
+  const products = [{ id: "p1", name: "Focaccia", price: 15, active: true, recipe: [{ ingredientId: "g1", qty: 100 }] }];
+  const orders = [
+    { id: "o1", productId: "p1", qty: 2, status: "new", deliveryDateId: "d1", deliveryDate: "2026-09-10",
+      customerName: "Ain", whatsapp: "60123456789", createdAt: new Date().toISOString() },
+    { id: "o2", productId: "p1", qty: 3, status: "new", deliveryDateId: "d1", deliveryDate: "2026-09-12",
+      customerName: "Bee", whatsapp: "60123456789", createdAt: new Date().toISOString() },
+  ];
+  const live = { settings: { currency: "RM" }, uoms: [], ingredients, products, deliveryDates: [{ id: "d1", date: "2026-09-10" }], orders, expenses: [], deposits: [] };
+  const before = profitBetween(live, "2026-09-01", "2026-09-30");
+
+  freshDOM();
+  const store = installStorage({ "bakeadmin.v1": stateJSON({ ingredients, products, orders }) });
+  try {
+    await import("../admin/js/app.js?case=v380-same");
+    const saved = JSON.parse(store.get("bakeadmin.v1"));
+    assert.equal(saved.orders.every((o) => o.unitCost === 1), true, "every line froze at RM1.00");
+    const after = profitBetween(
+      { ...live, orders: saved.orders }, "2026-09-01", "2026-09-30");
+    assert.equal(after.cost, before.cost, "⚠️ cost of sales is IDENTICAL either side of the catch-up");
+    assert.equal(after.sales, before.sales, "and so are the sales");
+    assert.equal(after.gross, before.gross, "and the gross profit the statement turns on");
+  } finally { restore(); }
+});
+
 // ── Engine v120 — the one-time customer-identity catch-up ────────────────────
 
 test("v120 catch-up joins a customer who was split by a '+' on their number, once", async () => {

@@ -60,6 +60,8 @@ const MENU_GROUPS = [
     // settings, because it is the one page here that answers a question from outside — the
     // serially numbered receipts a business above RM150,000 must be able to show.
     ["#/receipts", "🧾 Receipt register", "Every receipt number issued — and any that is missing"],
+    // ★ ONE INVOICE OVER A PERIOD (v372) — a day, a week, a month, or one customer's own.
+    ["#/consolidated", "📑 Consolidated invoice", "One invoice for a day, a week, a month — or one customer"],
   ]],
   ["The kitchen", [
     ["#/production", "🏭 Production line", "Where the line slows down, and the best use of your hands"],

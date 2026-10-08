@@ -4,6 +4,7 @@
 // app.js — so it runs under Node for tests.
 
 import { byId, fmtRM, groupOrders, newId, orderLinePrice, save } from "./state.js";
+import { orderNet } from "./money.js";
 import { addDays, todayISO } from "./dates.js";
 import { orderDateOf } from "./customers.js";
 import { capacityStatus } from "./bom.js";
@@ -45,15 +46,20 @@ export function weekStats(state, { today = todayISO() } = {}) {
     return !!d && d >= from && d <= today;
   });
 
+  // ⚠️ THE SELL VALUE IS SUMMED BY **GROUP**, NOT BY ROW (v370). A refund is a fact about the
+  // whole order — an amount stamped on every row so a row read alone knows it — so summing rows
+  // would count one refund once per item. `orderNet` also takes the discount off, which is what
+  // the Money screen now does, so the Home tile and the till cannot disagree about the week.
   let rm = 0;
   let unpriced = false;
+  for (const g of groupOrders(rows)) {
+    for (const o of g.orders) if (orderLinePrice(state, o) == null) unpriced = true;
+    rm += orderNet(state, g);
+  }
   const byQty = new Map();
   for (const o of rows) {
-    // Sell value uses the price each order was sold at; the "what sold" tally
-    // below stays on today's product, because that list is what to bake next.
-    const price = orderLinePrice(state, o);
-    if (price == null) unpriced = true;
-    else rm += (Number(o.qty) || 0) * price;
+    // The "what sold" tally stays on today's product, because that list is what to bake next —
+    // and it stays a QUANTITY, so a refunded order still says what was asked for.
     const p = byId(state.products, o.productId);
     if (p) byQty.set(p.id, (byQty.get(p.id) || 0) + (Number(o.qty) || 0));
   }
@@ -175,11 +181,11 @@ function weekNumbers(state, dates) {
     capacity += cs.capacity;
     free += Math.max(0, cs.remaining);
   }
-  for (const o of state.orders || []) {
-    if (!ids.has(o.deliveryDateId)) continue;
-    const price = orderLinePrice(state, o);
-    if (price == null) unpriced = true;
-    else rm += (Number(o.qty) || 0) * price;
+  // ⚠️ BY GROUP, for the same reason as `weekStats` above — a refund is one amount on every row
+  // of an order, so a per-row sum would count it once per item (v370).
+  for (const g of groupOrders((state.orders || []).filter((o) => ids.has(o.deliveryDateId)))) {
+    for (const o of g.orders) if (orderLinePrice(state, o) == null) unpriced = true;
+    rm += orderNet(state, g);
   }
   return { booked, capacity, free, rm, unpriced };
 }

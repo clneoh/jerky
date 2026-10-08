@@ -70,6 +70,45 @@ test("stampOrderLine leaves a blank name or an absent price off rather than writ
   assert.equal(o.unitPrice, undefined);
 });
 
+// ── ★ the COST is frozen the same way (v380) ─────────────────────────────────
+// Her words: "when i change the ingredient cost, for age orders, will its COS
+// change?" It did — the books re-derived every line's cost from today's
+// ingredient prices on every read, so one flour-price edit rewrote every past
+// month's profit. "yes, freeze the cost onto the order".
+
+test("stampOrderLine freezes the cost it is given, and omits one it is not", () => {
+  const o = {};
+  stampOrderLine(o, FOCACCIA, 4.1);
+  assert.equal(o.unitCost, 4.1, "the recipe cost of ONE unit rides on the sale, beside the price");
+  const noCost = {};
+  stampOrderLine(noCost, FOCACCIA);
+  assert.equal(noCost.unitCost, undefined,
+    "a caller with no cost leaves the line following the live recipe, as it always did");
+});
+
+test("stampOrderLine refuses a zero, so a recipe-less product is never locked at nothing", () => {
+  // ⚠️⚠️ THE ONE ASYMMETRY IN THE FREEZE, and it is deliberate. An automatic 0
+  // cannot be told from "nobody has built this recipe yet" — and a 0 frozen onto
+  // every order a product ever had would stay 0 for ever once she DOES build it,
+  // which is a wrong number that can never move again. So the stamp declines, and
+  // the line keeps following the recipe (which is exactly what it does today, so
+  // nothing regresses). ⚠️ A TYPED 0 is a different thing and IS honoured — see
+  // the pop-up's read-back and test/profit.test.js.
+  const o = {};
+  for (const zeroish of [0, "0", null, undefined, "", NaN, "abc"]) {
+    stampOrderLine(o, FOCACCIA, zeroish);
+    assert.equal(o.unitCost, undefined, `nothing is frozen for ${JSON.stringify(zeroish)}`);
+  }
+});
+
+test("stampOrderLine works on a storefront line too — but the cost is still hers, not the shop's", () => {
+  const o = {};
+  stampOrderLine(o, { name: "Basil Loaf", price: 18 }, 5.25);
+  assert.equal(o.productName, "Basil Loaf");
+  assert.equal(o.unitPrice, 18);
+  assert.equal(o.unitCost, 5.25, "taken from her own recipe at import, never from the customer's message");
+});
+
 test("orderLineName prefers the frozen name; a legacy order falls back to the live product", () => {
   const state = makeState({ products: [RENAMED] });
   assert.equal(orderLineName(state, soldOrder({ productName: "Rosemary Focaccia" })), "Rosemary Focaccia");
@@ -133,6 +172,22 @@ test("the customer's tracking page shows what they bought, at the price they pai
   const snap = trackingSnapshot(state, { orders: [o] });
   assert.equal(snap.items, "Rosemary Focaccia ×2");
   assert.equal(snap.total, "RM 30.00");
+});
+
+test("★ what a loaf cost HER never reaches the customer's card", () => {
+  // ★★ THE ONE THING THE FREEZE MUST NOT DO. The cost now rides on the order row,
+  // and the row is what every screen and every outward payload is built from — so
+  // this pins that the customer's card is a WHITELIST, not the row passed through.
+  // ⚠️ Her margin is her business: a customer who can read the cost knows what to
+  // haggle, and a competitor who can read it knows her recipe's price.
+  const state = makeState({ products: [RENAMED] });
+  const o = soldOrder({ unitCost: 4.1 });
+  stampOrderLine(o, FOCACCIA, 4.1);
+  const snap = trackingSnapshot(state, { orders: [o] });
+  assert.equal("unitCost" in snap, false, "no cost field on the customer's card");
+  assert.equal(JSON.stringify(snap).includes("unitCost"), false,
+    "and nothing nested carries the key either");
+  assert.equal(snap.total, "RM 30.00", "the card still quotes what they paid");
 });
 
 test("lifetime spend uses the sold price, not today's menu", () => {

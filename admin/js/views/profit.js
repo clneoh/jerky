@@ -20,11 +20,23 @@ const dayMonth = (iso) => longDate(String(iso).slice(0, 10)).slice(0, -5);
 // card and the printed statement — so a page that leaves the app cannot explain itself in
 // different words than the screen it came from (3 Oct 2026).
 
-// Cost of sales is a RECIPE cost, read from the recipe and the ingredient prices as they
-// stand TODAY — so editing either one moves a month that has already closed. That is what
-// makes gross profit a guide to pricing rather than a bank balance, which is the reading she
-// needs if she compares this screen against Money and finds they disagree.
-const COST_OF_SALES_NOTE = "Cost of sales is built from the recipe and the ingredient prices you have recorded, read as they stand today — so editing a recipe or a price moves past months too. It is not what you actually spent. Gross profit is therefore a guide to your pricing, not your bank balance — the Money screen is where the cash is.";
+// Cost of sales is a RECIPE cost, read from the recipe and the ingredient prices she has
+// recorded — NOT money she actually spent. That is what makes gross profit a guide to
+// pricing rather than a bank balance, which is the reading she needs if she compares this
+// screen against Money and finds they disagree.
+//
+// ★★ AND SINCE v380 IT IS FROZEN ONTO THE ORDER (her words: "yes, freeze the cost onto the
+// order"). The note used to say editing a recipe or a price "moves past months too" — true
+// when this was written, and FALSE from v380 on, because each line carries the cost it was
+// taken at and the books read that. ⚠️ A figure that goes on claiming it can still move is
+// a figure nobody can trust, so the claim is replaced rather than left standing.
+//
+// ⚠️ THE ONE THING THAT STILL MOVES, AND IT IS SAID: an order taken BEFORE v380 was pinned
+// at the cost it was already showing on the day that version arrived — so a closed month is
+// steady from then on, but the figure it settled at is that day's recipe cost, not what the
+// flour cost when the order was actually baked. The app never recorded one; saying otherwise
+// would be inventing a number.
+const COST_OF_SALES_NOTE = "Cost of sales is built from the recipe and the ingredient prices you have recorded. It is frozen onto each order when you take it, so changing a recipe or a price from now on does not rewrite a sale already made. Orders taken before this was introduced were pinned at the cost they were already showing. It is still not what you actually spent, and gross profit is a guide to your pricing rather than your bank balance — the Money screen is where the cash is.";
 
 // The cash half of the same story: a pack bought today is not costed all at once. It closes
 // with the one choice she has to make about her own hours, and carries the month's own count

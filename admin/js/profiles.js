@@ -15,6 +15,7 @@
 
 import { keyOf, phoneDigits } from "./customers.js";
 import { newId, save, waNumber } from "./state.js";
+import { appliedCreditIds } from "./referrals.js";
 
 // The saved profile for a derived row (by its _key), or null.
 export function profileFor(state, rowKey) {
@@ -52,6 +53,87 @@ export function removeProfile(state, rowKey) {
   if (at === -1) return false;
   state.customers = list.filter((_, i) => i !== at);
   return true;
+}
+
+// ── ★★ FORGETTING SOMEONE WHO HAS ORDERED (v374) ────────────────────────────
+//
+// ★ THE PROMISE THIS KEEPS. Her privacy notice tells customers the sales record is kept (about seven
+// years) and **their details are deleted on request**. ⚠️ Until now that was kept BY HAND in Supabase:
+// the Forget press was deliberately WITHHELD from anyone who had ordered, and the comment beside it
+// said why — deleting the profile while leaving the orders standing would have thrown away their
+// reward and their note while their name sat on every sale. **A button that did half of what it says
+// is worse than no button**, and that was the right call at the time.
+//
+// ★★ IT IS THE RIGHT CALL NO LONGER, BECAUSE THE WHOLE JOB CAN NOW BE DONE. The orders are redacted
+// too — so the press does everything it says, and can be offered to everyone.
+//
+// ⚠️⚠️ THE ORDER IS THE HARD PART, AND IT IS THE WHOLE REASON FOR `redactedKey`. Clearing a name and a
+// number leaves `keyOf` falling back to the ORDER ID — so their history would EXPLODE into one
+// "no name" customer per ITEM, and every row of a three-item order would become its own person. Worse,
+// a per-customer statement could never be produced for them again, which is exactly what the notice
+// says IS kept. **So every redacted order carries a random, non-reversible key** — all of that person's
+// orders share it, their history stays ONE row, and the money, the register and the statements are
+// untouched because they walk `state.orders` directly.
+//
+// ⚠️ AND IT NEVER TOUCHES `referredBy`. That field holds the REFERRER'S number (`referrals.js`), so it
+// is somebody else's detail — and clearing it would change `broughtIn` and `rewardStanding` and make
+// the Give-coupon press vanish from that order. **It is left alone deliberately.**
+//
+// ⚠️ AND AN ORDER'S COUPON KEEPS ITS PRICE. Their credits are removed with the CLEARABLE rule only
+// (`appliedCreditIds`), because `couponOn` reads `state.credits` to price `customerTotal` — wiping a
+// coupon that is already coming off an order would RAISE that order's Total, which is the fault v367
+// was built to prevent.
+export function forgetCustomer(state, rowKey) {
+  const rows = (state.orders || []).filter((o) => o && keyOf(o) === rowKey);
+  const first = rows[0] || {};
+  const name = String(first.customerName || "").trim();
+  const who = waNumber(first.whatsapp);
+  const key = newId("red");
+  const at = new Date().toISOString();
+
+  // 1 — the sales record stays; the person on it does not.
+  for (const o of rows) {
+    o.redactedAt = at;
+    o.redactedKey = key;
+    delete o.customerName;
+    delete o.whatsapp;
+    delete o.address;
+    delete o.customerPlace;
+    delete o.note;
+    delete o.lineNote;
+    delete o.refundNote;
+  }
+
+  // 2 — their own record, their coupons, their hand-outs.
+  removeProfile(state, rowKey);
+  const keep = appliedCreditIds(state);
+  const before = (state.credits || []).length;
+  state.credits = (state.credits || []).filter((c) => !(c && waNumber(c.holder) === who && !keep.has(c.id)));
+  const credits = before - state.credits.length;
+  state.rewards = (state.rewards || []).filter((r) => !(r && waNumber(r.holder) === who));
+
+  // 3 — ⚠️ AND THEIR NAME OFF OTHER PEOPLE'S RECORDS. A referrer's reward reads "Brought <them> as a
+  // new customer" and a friend's coupon reads "First order — via <them>'s link", so clearing only
+  // their own rows would leave their name sitting in somebody else's ledger.
+  if (name) {
+    const swap = (s) => String(s).split(name).join("(details removed)");
+    for (const c of state.credits || []) if (c && c.note) c.note = swap(c.note);
+    for (const r of state.rewards || []) if (r && r.note) r.note = swap(r.note);
+    // A promo code can be held by a named partner, and that name is a person.
+    for (const p of state.promoCodes || []) {
+      if (p && p.holder && p.holder.name === name) p.holder = { ...p.holder, name: "" };
+    }
+  }
+
+  // The groups to re-publish, so the caller can blank their public track cards.
+  const groups = [...new Set(rows.map((o) => o.groupId || o.id).filter(Boolean))];
+
+  // ⚠️⚠️ THE COUNT IS **ORDERS**, NOT ROWS — and this was wrong until she looked at it on screen. A
+  // two-item order is TWO ROWS and ONE order, so reporting `rows.length` told her "2 orders" while the
+  // card behind the question read "1 order · 3 units". **A number that contradicts the screen it is
+  // sitting on is worse than no number**, and this is the sentence she weighs before an act that cannot
+  // be undone.
+  return { orders: groups.length, rows: rows.length, credits, name, key, groups, rowKey };
 }
 
 // ── name + WhatsApp: one saved copy, written through to the orders ──────────

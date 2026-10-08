@@ -75,7 +75,7 @@ function domShim() {
 }
 const screen = domShim();
 
-const { journalSheet, buildJournalText, journalSheetEl, shareJournal, printJournal,
+const { journalSheet, buildJournalText, journalSheetEl, journalBodyEl, shareJournal, printJournal,
   journalButtons, bakeryName } = await import("../admin/js/journal.js");
 const { fmtRM } = await import("../admin/js/state.js");
 
@@ -154,6 +154,38 @@ test("a heading is a heading — its own words and no money column", () => {
   const section = walk(journalSheetEl(s)).find((n) => String(n.className).includes("js-section"));
   assert.equal(section.textContent, "Running costs");
   assert.equal(section.children.length, 1, "a heading carries no value node to hold a figure");
+
+  // ★★ AND THE SCREEN TOO (v372). ⚠️⚠️ THIS HALF WENT UNTESTED FOR AS LONG AS HEADINGS HAVE EXISTED.
+  // The paper honoured them; `journalBodyEl` mapped EVERY line to a plain row, so on the phone a
+  // heading read **"Running costs   RM 0.00"** while printing correctly underneath it on paper. One
+  // document, two answers — precisely the disagreement this file exists to make impossible. It only
+  // surfaced when a document first had a heading in it, which was the consolidated invoice.
+  const onScreen = journalBodyEl(s);
+  const shown = walk(onScreen).find((n) => String(n.className).includes("js-section"));
+  assert.ok(shown, "★ the screen drew the heading as a money row instead of a heading");
+  assert.equal(shown.textContent, "Running costs");
+  assert.equal(shown.children.length, 1, "a heading on the screen carries a value node");
+  const rows = moneyRows(onScreen).map(([w]) => w);
+  assert.equal(rows.includes("Running costs"), false,
+    `★ the screen listed a heading as money: ${rows.join(" / ")}`);
+  // And the rows it SHOULD show are still all there.
+  assert.deepEqual(rows, ["Sales", "Packaging", "Total expenses"]);
+});
+
+test("★ a subtotal carries its class to the screen, because paper and PDF rule on that class", () => {
+  // ⚠️ The printed sheet and the hand-written PDF decide a subtotal by MATCHING `cls` for "total".
+  // A subtotal that reached the screen WITHOUT its class would be ruled and bolded on paper and
+  // plain on the phone — the same document reading two ways.
+  const s = sheetOf({ lines: [
+    { what: "Aunty Bee", heading: true },
+    { what: "2 Oct · Focaccia ×2", amount: 16 },
+    { what: "Aunty Bee subtotal", amount: 16, cls: "pl-total" },
+  ] });
+  const sub = walk(journalBodyEl(s)).find((n) => String(n.className).includes("pl-total"));
+  assert.ok(sub, "the screen dropped the subtotal's class");
+  assert.equal(sub.children[1].textContent, fmtRM(16), "the subtotal's figure did not survive the screen");
+  assert.ok(walk(journalSheetEl(s)).some((n) => String(n.className).includes("pl-total")),
+    "the paper and the screen no longer agree that this row is a subtotal");
 });
 
 test("a note of more than one paragraph prints as more than one paragraph", () => {
@@ -413,4 +445,59 @@ test("a second Print press reuses the first press's own layer", () => {
   } finally {
     delete globalThis.window;
   }
+});
+
+test("★★ a COLUMN row lines up on the screen AND on the paper, from one set of values", () => {
+  // v376: the consolidated invoice became a filing list — Date · Order · Invoice · Customer — and a filing
+  // page is read DOWN a column, which a composed sentence cannot be. ⚠️ `cols` is EXTRA, not instead:
+  // `what` still carries every one of the same values, so the shared text and the PDF say the same things.
+  const s = sheetOf({
+    lines: [
+      { head: true, cols: ["Date", "Order", "Invoice", "Customer"], what: "Date · Order · Invoice · Customer" },
+      { cols: ["5 Oct", "#C2FDA5", "#000001", "Aunty Bee"],
+        what: "5 Oct · #C2FDA5 · #000001 · Aunty Bee", amount: 32 },
+    ],
+    totals: [{ label: "Total", amount: 32 }],
+  });
+
+  const cells = (node) => walk(node)
+    .filter((n) => /(^|\s)j-col(\s|$)|j-col-\d/.test(String(n.className)))
+    .map((n) => n.textContent);
+
+  assert.deepEqual(cells(journalBodyEl(s)),
+    ["Date", "Order", "Invoice", "Customer", "5 Oct", "#C2FDA5", "#000001", "Aunty Bee"],
+    "the screen did not draw the columns");
+  assert.deepEqual(cells(journalSheetEl(s)), cells(journalBodyEl(s)),
+    "★ the paper and the screen list different columns for the same document");
+
+  // ⚠️ A HEADER CARRIES NO FIGURE. A zero in the money column would read as a real row.
+  const headRow = walk(journalBodyEl(s)).find((n) => String(n.className).includes("journal-cols-head"));
+  assert.ok(headRow, "no header row was drawn");
+  assert.equal(headRow.children.length, 4, "the header row grew a money cell");
+
+  // ⚠️ AND THE SHARED TEXT CARRIES THE SAME FACTS — a renderer that cannot align columns must not lose one.
+  const text = buildJournalText(s);
+  for (const v of ["#C2FDA5", "#000001", "Aunty Bee"]) {
+    assert.ok(text.includes(v), `the shared message lost "${v}"`);
+  }
+});
+
+test("★★ a line with NO FIGURE prints an em dash, never a confident RM 0.00", () => {
+  // v378. A receipt that was issued and whose order has since been REMOVED has no amount — **the money for
+  // it never existed** — and printing "RM 0.00" beside it would put a figure in a filed document that
+  // nobody ever paid. Every renderer draws its amount through ONE function, so this is proved once.
+  const s = sheetOf({
+    lines: [{ what: "5 Oct · #AAAA01 · #000001 · order removed", amount: null,
+      cols: ["5 Oct", "#AAAA01", "#000001", "order removed", "—"] }],
+    totals: [],
+  });
+  const figures = (node) => walk(node).filter((n) => String(n.className).includes("info-val"))
+    .map((n) => n.textContent).join(" ").trim();
+  assert.equal(figures(journalBodyEl(s)), "—", "the screen printed a figure nobody paid");
+  assert.equal(figures(journalSheetEl(s)), "—", "the paper printed a figure nobody paid");
+  assert.ok(buildJournalText(s).includes("—"), "the shared message lost the blank");
+
+  // ⚠️ AND A REAL ZERO IS STILL A ZERO — this must not quietly turn every 0.00 into a dash.
+  const z = sheetOf({ lines: [{ what: "a free loaf", amount: 0 }], totals: [] });
+  assert.equal(figures(journalBodyEl(z)), "RM 0.00", "a genuine nothing was blanked");
 });

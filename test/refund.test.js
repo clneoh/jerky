@@ -120,3 +120,108 @@ test("and the journal behind the line skips it too, so the rows still add up to 
   const added = rows.reduce((sum, r) => sum + (Number(r.sales) || 0), 0);
   assert.equal(added, p.sales, "★ AND THE ROWS ADD UP TO THE LINE UNDER THEM");
 });
+
+// ── ★★ v370: A REFUND THAT IS NOT ALL OF IT ──────────────────────────────────
+//
+// Her words: __"refund should not be a full without choice to how much to refund, what to refund"__.
+// A refund is now an AMOUNT (`refundAmountRM`) beside the mark, so it can be a part.
+//
+// ⚠️⚠️ AND THAT FORCED A SECOND FIX, WHICH IS WHAT THE FIRST TWO TESTS BELOW ARE ABOUT. Her takings
+// were counted at the goods' FACE price with the discount left in — so a RM15 order with a RM3 coupon
+// read as RM15 in the till though the customer handed over RM12. While a refund skipped the whole
+// order those two errors cancelled; **the moment a refund can be a part, they stop cancelling**, and a
+// full refund of a discounted order would leave a phantom RM3 behind. Asked which she wanted she
+// chose **"count what the customer actually paid"**.
+
+// An order carrying a bring-a-friend coupon: face RM15, RM3 off, so the customer paid RM12.
+const couponed = (extra = {}) => {
+  const st = state();
+  st.orders = [row({ id: "a", groupId: "c2fda5", paidReceived: true, paidMethod: "cash", ...extra })];
+  st.credits = [{
+    id: "c1", holder: "60111111111", amountRM: 3, role: "friendOff",
+    earnedAt: "2026-09-18T00:00:00.000Z", expiresAt: "", usedAt: null, orderCode: "C2FDA5",
+  }];
+  return st;
+};
+
+test("★★ a discounted order counts what the customer actually PAID", () => {
+  const held = couponed();
+  assert.equal(dayMoney(held, "d18").cash, 12,
+    "★ the till is counting the bread's face price, not the money the customer handed over");
+  assert.equal(profitBetween(held, "2026-09-01", "2026-09-30").sales, 12,
+    "and Profit is reporting revenue the customer never paid");
+});
+
+test("★★ a refunded order with NO amount still means the WHOLE order", () => {
+  // ⚠️ THE BACKWARD-COMPATIBILITY TEST, AND THE MOST IMPORTANT ONE HERE. Every order refunded before
+  // v370 carries `refundedAt` and nothing else. Reading a missing amount as "nothing went back" would
+  // put every one of those sales straight back into her takings — the loudest possible way to be
+  // wrong about her books.
+  const st = couponed({ refundedAt: REFUND });
+  assert.equal(dayMoney(st, "d18").cash, 0,
+    "★ an old refunded order came back into the till because it carries no amount");
+  assert.equal(profitBetween(st, "2026-09-01", "2026-09-30").sales, 0,
+    "and it came back as a sale in Profit");
+});
+
+test("★ a PARTIAL refund takes off exactly what she gave back", () => {
+  const st = couponed({ refundAmountRM: 5 });
+  assert.equal(dayMoney(st, "d18").cash, 7, "★ RM12 came in, RM5 went back — the till is wrong");
+  assert.equal(profitBetween(st, "2026-09-01", "2026-09-30").sales, 7);
+});
+
+test("★ a FULL refund of a DISCOUNTED order reaches nothing — the case that was wrong", () => {
+  // ⚠️ THIS IS THE ARITHMETIC THAT MADE THE WHOLE CHANGE NECESSARY. Giving back everything the
+  // customer paid (RM12) must leave RM0 — not the RM3 the coupon was worth, which she never received.
+  const st = couponed({ refundAmountRM: 12 });
+  assert.equal(dayMoney(st, "d18").cash, 0, "★ a phantom discount is left in the till");
+  assert.equal(isRefunded({ orders: st.orders }), true, "the order is still marked refunded");
+});
+
+test("★ counts do not move — the order still happened", () => {
+  const held = couponed();
+  const back = couponed({ refundAmountRM: 5 });
+  const gone = couponed({ refundAmountRM: 12 });
+  assert.equal(dayMoney(held, "d18").count, 1);
+  assert.equal(dayMoney(back, "d18").count, 1, "a partly refunded order stopped being counted");
+  assert.equal(dayMoney(gone, "d18").count, 1, "a fully refunded order stopped being counted");
+  assert.equal(dayMoney(back, "d18").toCollectCount, 0, "a refunded order is owed nothing");
+});
+
+test("⚠️ a partial refund is ONE amount, not one amount per row", () => {
+  // ⚠️ THE TRAP. The amount is a fact about the ORDER, stamped on every row so a row read alone
+  // knows it — so anything that sums rows would subtract the same refund once per item.
+  const st = state();
+  st.orders = [
+    row({ id: "a", groupId: "c2fda5", paidReceived: true, paidMethod: "cash", refundAmountRM: 5 }),
+    row({ id: "b", groupId: "c2fda5", paidReceived: true, paidMethod: "cash", refundAmountRM: 5 }),
+  ];
+  const m = dayMoney(st, "d18");
+  assert.equal(m.cash, 25, `★ RM30 of bread less ONE RM5 refund is RM25, not ${m.cash}`);
+  assert.equal(m.count, 1, "and the two rows are still one order");
+});
+
+test("★ the trading journal still adds up when there is a discount AND a refund", () => {
+  // ⚠️ The rows must sum to the line above them — the one thing this app calls a bug in every book
+  // it draws. A discount and a refund are now visible as rows of their own rather than folded away.
+  const st = couponed({ refundAmountRM: 5 });
+  const p = profitBetween(st, "2026-09-01", "2026-09-30");
+  const rows = tradingRows(st, "2026-09-01", "2026-09-30");
+  const added = rows.reduce((sum, r) => sum + (Number(r.sales) || 0), 0);
+  assert.equal(Math.round(added * 100) / 100, p.sales, "★ the journal no longer adds up to the line");
+  assert.equal(rows.some((r) => /Bring-a-friend/.test(r.what)), true, "the discount is not in the journal");
+  assert.equal(rows.some((r) => /Refunded/.test(r.what)), true, "the refund is not in the journal");
+});
+
+test("★ a line nothing can price is still a LINE, refund or no refund", () => {
+  // ⚠️ Regressions caught while building this: skipping a group whose net is zero also skipped an
+  // order whose product simply has no price. The app keeps `null` apart from `0` on purpose, and only
+  // a REFUND may cancel a sale.
+  const st = state();
+  st.products[0].price = "";
+  st.orders = [row({ id: "a", refundedAt: REFUND })];
+  const p = profitBetween(st, "2026-09-01", "2026-09-30");
+  assert.equal(p.sales, 0);
+  assert.equal(tradingRows(st, "2026-09-01", "2026-09-30").length, 0,
+    "a fully refunded order is dropped from the journal, whatever its price");
+});

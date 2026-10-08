@@ -1,8 +1,43 @@
-# Munchies Furkidz — change history (v54 → v369)
+# Munchies Furkidz — change history (v54 → v382)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**8 Oct 2026 — engine v369 → v382, THIRTEEN VERSIONS
+(⚠️ ONE LINE OF SQL TO RUN AGAIN — see the end of this entry).**
+
+**A refund you choose.** The refund press used to be all-or-nothing. It now asks **how much** and
+**what it was for**, and the refund card shows **what was charged** beside it, so you can see the
+figure you are refunding part of. The amount is recorded with the receipt — and once recorded, a later
+press that carries no amount cannot wipe it.
+
+**One invoice over a period — More → 📑 Consolidated invoice.** Pick a scope — **a day, a week, a
+month, or a single customer** — and get ONE invoice covering every order in it, with its own
+reference. It lays out as a filing list, says what was ordered, and **says plainly why a number is
+missing** when one is, rather than leaving a gap you have to guess at. It is built for a desktop
+screen, so it prints and files properly.
+
+**A real "forget me".** Removing a customer's details now does what it says: their name and number
+come off the orders **and off the cards the shop publishes**, with an honest report of anything it
+could not finish — *"3 orders cleaned of their details — but 1 tracking card was not cleared"* —
+rather than a promise half kept. (Before this it was counting **items** rather than orders in that
+question, which is fixed too.)
+
+**The cost of an order is now frozen onto it.** Until now, changing an ingredient's price rewrote the
+cost of sales on **every past month** — your own question: *"when i change the ingredient cost, for
+age orders, will its COS change?"* It did. Each order now carries the cost it had at the time it was
+sold, and you can **adjust** it if you know better, order by order.
+
+**Every order number is now a door.** Press the order's code — on the receipt register, in a journal,
+on a customer's history — and the order itself opens. (On a customer's card it closes the card first,
+then opens the order, so the press never looks like it did nothing.)
+
+**Before you push — the one thing you must do.** In your Supabase project → SQL Editor, run
+**`supabase/receipts.sql`** again. It has changed: the refund now carries an amount, and until the
+script is run **the refund press will not work at all**. Safe to run as many times as you like.
+
+**Nothing to upload, no Edge Function, no setting to change on either phone.**
 
 **8 Oct 2026 — engine v368 → v369, ONE VERSION: the colours a customer actually reads
 (nothing to run, nothing to upload — pushing this one is the whole of it).**

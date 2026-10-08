@@ -5,7 +5,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { customerList, keyOf } from "../admin/js/customers.js";
-import { attachProfiles, canonicaliseCustomers, customerMatches, customerNameMatches, customerRowName, mergeCustomers, profileFor, profileForOrder, removeProfile, reconcileContacts, syncContactFromOrder, upsertProfile } from "../admin/js/profiles.js";
+import { attachProfiles, canonicaliseCustomers, customerMatches, customerNameMatches, customerRowName, forgetCustomer, mergeCustomers, profileFor, profileForOrder, removeProfile, reconcileContacts, syncContactFromOrder, upsertProfile } from "../admin/js/profiles.js";
+import { orderCode } from "../admin/js/state.js";
+import { customerTotal } from "../admin/js/courier.js";
 
 // A tiny app-password hash constant unused here — kept to match sibling files.
 
@@ -641,4 +643,122 @@ test("forgetting something that is not there reports failure rather than pretend
   assert.equal(st.customers.length, 1, "and nothing was touched");
   assert.equal(removeProfile(st, ""), false, "and no key at all is not a delete of everything");
   assert.equal(st.customers.length, 1);
+});
+
+// ── ★★ v374: FORGETTING SOMEONE WHO HAS ORDERED ──────────────────────────────
+//
+// Her privacy notice tells customers the sales record is kept and their details are deleted on request.
+// Until v374 that was kept BY HAND — the Forget press was deliberately withheld from anyone who had
+// ordered. These are the rules that make the whole job possible.
+
+const orderRow = (over = {}) => ({
+  id: "o1", groupId: "g1", status: "paid", paidReceived: true, paidMethod: "cash",
+  productId: "p1", qty: 1, unitPrice: 16, deliveryDate: "2026-10-05",
+  customerName: "Aunty Bee", whatsapp: "60111111111", orderDate: "2026-10-05",
+  address: "12 Jalan Besar", customerPlace: { lat: 5.4, lng: 100.3 }, note: "leave at the gate",
+  qty2: undefined, ...over,
+});
+
+const filled = () => ({
+  settings: { currency: "RM" },
+  products: [{ id: "p1", name: "Focaccia", price: 16 }],
+  deliveryDates: [], customers: [], credits: [], rewards: [], promoCodes: [],
+  orders: [
+    orderRow({ id: "a" }),
+    orderRow({ id: "b" }),          // a SECOND item row of the SAME order
+    orderRow({ id: "c", groupId: "g2", customerName: "Someone Else", whatsapp: "60999999999" }),
+  ],
+});
+
+test("★★ forgetting an ordering customer keeps their history as ONE row, not one per item", () => {
+  // ⚠️⚠️ THE FAULT THIS PREVENTS. Clearing a name and number leaves `keyOf` falling back to the ORDER
+  // ID — so without a shared key their history would EXPLODE into one "no name" customer per ITEM, and
+  // every row of a two-item order would become its own person.
+  const st = filled();
+  assert.equal(customerList(st).length, 2, "two customers to begin with");
+
+  const done = forgetCustomer(st, keyOf(st.orders[0]));
+  // ⚠️ ONE ORDER — a two-item order is two ROWS and one order, and the card behind the question says
+  // "1 order". Reporting the row count said "2 orders" and contradicted the screen she was reading.
+  assert.equal(done.orders, 1, `the count said ${done.orders} orders for a one-order customer`);
+  assert.equal(done.rows, 2, "both of their order rows were redacted");
+
+  const book = customerList(st);
+  assert.equal(book.length, 2, `the book fragmented into ${book.length} rows`);
+  const theirs = book.find((r) => /Details removed/.test(r.name));
+  assert.ok(theirs, "their row does not read as a redacted one");
+  assert.equal(theirs.orders, 1, "their two item rows stopped being one order");
+  assert.equal(theirs.whatsapp, "", "their number is still on the row");
+});
+
+test("★★ forgetting clears every personal field, and touches NO money", () => {
+  const st = filled();
+  const before = customerList(st).find((r) => r.name === "Aunty Bee").totalSpend;
+  forgetCustomer(st, keyOf(st.orders[0]));
+  for (const o of st.orders.slice(0, 2)) {
+    for (const f of ["customerName", "whatsapp", "address", "customerPlace", "note", "lineNote", "refundNote"]) {
+      assert.equal(o[f], undefined, `${f} survived the forget`);
+    }
+    assert.equal(o.qty, 1, "the quantity was touched");
+    assert.equal(o.unitPrice, 16, "the price was touched");
+    assert.ok(o.redactedAt && o.redactedKey, "the row does not carry the redaction");
+  }
+  const after = customerList(st).find((r) => /Details removed/.test(r.name)).totalSpend;
+  assert.equal(after, before, "the money moved — the sales record was not kept");
+});
+
+test("★★ an order carrying their COUPON keeps its price — the repricing fault", () => {
+  // ⚠️⚠️ `couponOn` reads `state.credits` to price `customerTotal`. Deleting a coupon that is already
+  // coming off an order would RAISE that order's Total — the exact fault v367 was built to prevent. So
+  // only the CLEARABLE coupons go.
+  const st = filled();
+  st.credits = [
+    { id: "spent", holder: "60111111111", amountRM: 3, role: "friendOff", orderCode: orderCode(st.orders[0]),
+      earnedAt: "2026-10-01T00:00:00.000Z", expiresAt: "", usedAt: null },
+    { id: "unspent", holder: "60111111111", amountRM: 5, role: "reward", orderCode: "ZZZZZZ",
+      earnedAt: "2026-10-01T00:00:00.000Z", expiresAt: "", usedAt: null },
+  ];
+  const before = customerTotal(st, { orders: st.orders.slice(0, 2) }).total;
+  forgetCustomer(st, keyOf(st.orders[0]));
+  assert.equal(st.credits.some((c) => c.id === "spent"), true,
+    "★ the coupon that IS on the order was deleted — that order's price has moved");
+  assert.equal(st.credits.some((c) => c.id === "unspent"), false, "their unspent coupon was left behind");
+  const after = customerTotal(st, { orders: st.orders.slice(0, 2) }).total;
+  assert.equal(after, before, `their order's Total moved from ${before} to ${after}`);
+});
+
+test("★★ their name is taken off OTHER people's records too", () => {
+  // ⚠️ A referrer's reward reads "Brought <them> as a new customer", so clearing only their own rows
+  // leaves their NAME sitting in somebody else's ledger.
+  const st = filled();
+  st.credits = [{ id: "c1", holder: "60999999999", amountRM: 3, role: "reward", orderCode: "ZZZZZZ",
+    earnedAt: "2026-10-01T00:00:00.000Z", expiresAt: "", usedAt: null,
+    note: "Brought Aunty Bee as a new customer" }];
+  st.rewards = [{ id: "r1", profileId: "cus_x", holder: "60999999999", holderName: "Someone Else",
+    what: "a free loaf", came: 0, at: "2026-10-01T00:00:00.000Z", note: "for Aunty Bee" }];
+  st.promoCodes = [{ code: "FRESH", holder: { id: "h1", name: "Aunty Bee" } }];
+
+  forgetCustomer(st, keyOf(st.orders[0]));
+  assert.equal(/Aunty Bee/.test(st.credits[0].note), false,
+    `their name is still in somebody else's ledger: "${st.credits[0].note}"`);
+  assert.equal(/Aunty Bee/.test(st.rewards[0].note), false, "their name is still on a hand-out record");
+  assert.equal(st.promoCodes[0].holder.name, "", "their name is still on a promo code");
+});
+
+test("★ referredBy is left ALONE — it is somebody else's number, not theirs", () => {
+  // ⚠️ `referredBy` holds the REFERRER's digits. Clearing it would change `broughtIn` and
+  // `rewardStanding` and make the Give-coupon press vanish from that order.
+  const st = filled();
+  st.orders[0].referredBy = "60777777777";
+  forgetCustomer(st, keyOf(st.orders[0]));
+  assert.equal(st.orders[0].referredBy, "60777777777",
+    "the referrer's number was cleared as if it were the forgotten customer's");
+});
+
+test("someone added by hand is simply removed — no orders, nothing to redact", () => {
+  const st = { customers: [{ key: "name:mei", name: "Mei", whatsapp: "" }], orders: [], credits: [], rewards: [] };
+  const done = forgetCustomer(st, "name:mei");
+  assert.equal(done.orders, 0);
+  assert.equal(st.customers.length, 0);
+  assert.equal(customerList(st).length, 0);
 });

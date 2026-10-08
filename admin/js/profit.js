@@ -17,10 +17,11 @@
 // you take back out is DRAWINGS; both move cash, neither changes profit. That is
 // why "My own withdrawal" is its own class here even though it lives in the same
 // money-out list as the rest.
-import { byId, orderLineName, orderLinePrice } from "./state.js";
+import { byId, groupOrders, orderLineName, orderLinePrice, round2 } from "./state.js";
 import { costOf } from "./bom.js";
 import { categoriesOf, classOfCategory } from "./accounts.js";
-import { isRefunded } from "./money.js";
+import { orderNet, refundedInFull, refundOf } from "./money.js";
+import { customerTotal } from "./courier.js";
 
 // The day an order is FOR: the delivery date record while it exists, its own
 // snapshot after the date was deleted. Sales are counted by delivery day, the same
@@ -33,10 +34,27 @@ export function orderDay(state, o) {
 
 const inRange = (iso, from, to) => !!iso && iso >= from && iso <= to;
 
-// What one sold line cost to make, from its recipe.
-export function lineCost(state, o) {
+// What ONE unit of a sold line cost to bake — the frozen cost when the order
+// carries one, else the live recipe. ★★ THE FREEZE (v380), and the exact mirror
+// of `orderLinePrice` in state.js, so a sale's cost is as fixed as its price.
+//
+// ⚠️ WHY IT MATTERS: `costOf` bottoms out in `effectiveUnitCost`, which reads
+// TODAY's supplier prices. Without this, editing one ingredient price rewrote
+// every past month's cost of sales — her words: "when i change the ingredient
+// cost, for age orders, will its COS change?" (yes, it did).
+export function orderLineCost(state, o) {
+  const frozen = o && o.unitCost;
+  if (frozen != null && frozen !== "" && Number.isFinite(Number(frozen))) return Number(frozen);
   const p = byId(state.products, o && o.productId);
-  return (Number(o && o.qty) || 0) * (p ? costOf(state, p) : 0);
+  return p ? costOf(state, p) : 0;
+}
+
+// What one sold line cost to bake, in total. ⚠️ THE ONLY READER of an order's
+// cost in the whole app — `costOf` appears in no view — so freezing it here
+// freezes the profit statement, its journal's cost column and every future
+// report at once.
+export function lineCost(state, o) {
+  return (Number(o && o.qty) || 0) * orderLineCost(state, o);
 }
 
 // The profit and loss account for a stretch of days.
@@ -57,17 +75,31 @@ export function profitBetween(state, from, to) {
   let cost = 0;
   let lines = 0;
   let uncosted = 0;
-  for (const o of state.orders || []) {
-    // ★ A REFUNDED SALE IS NOT A SALE (v361). The money came in and went back out, so it is
-    // not trading — and counting it would report a profit on money she handed back.
-    if (!o || isRefunded(o) || !inRange(orderDay(state, o), from, to)) continue;
-    const qty = Number(o.qty) || 0;
-    const price = orderLinePrice(state, o);
-    sales += qty * (price == null ? 0 : price);
-    const lined = lineCost(state, o);
-    if (!lined) uncosted++;
-    cost += lined;
-    lines++;
+  // ⚠️ SALES ARE SUMMED BY **GROUP**, COST BY **LINE** (v370), and the difference is deliberate.
+  // Sales was `qty × price` per row — the goods at their face price, with any discount left in
+  // and any refund ignored, which is what the Money screen used to do too. `orderNet` is what the
+  // customer's money for this order actually was, less what went back — the SAME number the till
+  // shows, so the statement and the Money screen cannot disagree about a sale.
+  //
+  // ★ AND A SALE REFUNDED IN FULL STILL DISAPPEARS WHOLE. `orderNet` is 0 for it and the group is
+  // dropped before a single line is counted, which is precisely what the v361 skip did — so no
+  // refund made before this version moves a single figure on this statement.
+  for (const g of groupOrders(state.orders || [])) {
+    const first = (g.orders || [])[0];
+    if (!first || !inRange(orderDay(state, first), from, to)) continue;
+    // ⚠️ ONLY A REFUND CANCELS A SALE — never a zero. An order whose product carries no price
+    // nets to zero too, and it must go on being counted as a line with no price (see
+    // `refundedInFull`).
+    if (refundedInFull(state, g)) continue;
+    sales += orderNet(state, g);
+    for (const o of g.orders) {
+      // ⚠️ COST IS NOT REFUNDED. The ingredients went into the bread whether or not the bread
+      // came back, so a partly refunded order costs what it always cost.
+      const lined = lineCost(state, o);
+      if (!lined) uncosted++;
+      cost += lined;
+      lines++;
+    }
   }
 
   const byCategory = new Map();
@@ -152,31 +184,63 @@ export function expenseRows(state, from, to, label = null) {
 // rows always add up to the line above them, exactly as expenseRows does.
 export function tradingRows(state, from, to) {
   const rows = [];
-  for (const o of state.orders || []) {
-    // ★ AND THE ROLL-UP MUST SKIP IT TOO (v361), or the journal behind the line would not
-    // add up to the line — the one fault this app calls a bug in every book it draws.
-    if (!o || isRefunded(o) || !inRange(orderDay(state, o), from, to)) continue;
-    const qty = Number(o.qty) || 0;
-    const price = orderLinePrice(state, o);
-    const cost = lineCost(state, o);
-    rows.push({
-      id: o.id,
-      date: orderDay(state, o),
-      // What was sold and how many, named as the order froze it — so a product she has
-      // since renamed or deleted still reads as the treat that was actually sold.
-      what: `${orderLineName(state, o)}${qty ? ` × ${qty}` : ""}`,
-      customer: String(o.customerName || "").trim(),
-      qty,
-      // null when nothing can price the line, so the journal can say "no price" rather
-      // than print a confident RM 0.00. The same distinction orderLinePrice exists to keep.
-      price,
-      sales: qty * (price == null ? 0 : price),
-      cost,
-      // A line whose recipe prices to nothing is counted as nothing, which is what makes a
-      // profit read too high. The journal marks it, so a 0.00 row is never mistaken for a
-      // row that failed to load.
-      uncosted: !cost,
+  // ★★ THE ROWS STILL HAVE TO ADD UP TO THE LINE ABOVE THEM, and from v370 the line is
+  // `orderNet` — the goods less the discount less anything refunded. A row per order line at its
+  // face price would therefore sum to MORE than the line. So the two things that make the
+  // difference are drawn as rows of their own: **a discount and a refund are visible in the
+  // journal rather than folded invisibly into the total**, which is the better answer for a book
+  // she is meant to be able to check.
+  for (const g of groupOrders(state.orders || [])) {
+    const first = (g.orders || [])[0];
+    if (!first || !inRange(orderDay(state, first), from, to)) continue;
+    // A sale refunded in full is dropped whole — no line rows and no adjustment rows — so the
+    // journal keeps saying exactly what it said before this version about a past refund.
+    // ⚠️ And ONLY a refund drops it: a line nothing can price nets to zero and still belongs here,
+    // marked "no price recorded".
+    if (refundedInFull(state, g)) continue;
+    const customer = String(first.customerName || "").trim();
+    for (const o of g.orders) {
+      const qty = Number(o.qty) || 0;
+      const price = orderLinePrice(state, o);
+      const cost = lineCost(state, o);
+      rows.push({
+        id: o.id,
+        date: orderDay(state, o),
+        // What was sold and how many, named as the order froze it — so a product she has
+        // since renamed or deleted still reads as the loaf that was actually sold.
+        what: `${orderLineName(state, o)}${qty ? ` × ${qty}` : ""}`,
+        customer,
+        qty,
+        // null when nothing can price the line, so the journal can say "no price" rather
+        // than print a confident RM 0.00. The same distinction orderLinePrice exists to keep.
+        price,
+        sales: qty * (price == null ? 0 : price),
+        cost,
+        // A line whose recipe prices to nothing is counted as nothing, which is what makes a
+        // profit read too high. The journal marks it, so a 0.00 row is never mistaken for a
+        // row that failed to load.
+        uncosted: !cost,
+      });
+    }
+    const t = customerTotal(state, g);
+    const back = refundOf(state, g);
+    // ⚠️ `price: 0`, NOT null — `openTradingJournal` reads a null price as "no price recorded"
+    // and would print that beside a discount, which has no price by nature rather than by
+    // omission. `qty: 0` keeps them out of anything that counts pieces.
+    const adjust = (id, what, amount) => rows.push({
+      id: `${first.id}-${id}`,
+      date: orderDay(state, first),
+      what,
+      customer,
+      qty: 0,
+      price: 0,
+      sales: -round2(amount),
+      cost: 0,
+      uncosted: false,
     });
+    if (t.promo > 0) adjust("promo", `Code ${t.promoCode || ""}`.trim(), t.promo);
+    if (t.coupon > 0) adjust("coupon", "Bring-a-friend discount", t.coupon);
+    if (back > 0) adjust("refund", "Refunded to the customer", back);
   }
   rows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   return rows;

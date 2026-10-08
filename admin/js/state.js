@@ -842,6 +842,20 @@ export function orderCode(order) {
   return hex || "??????";
 }
 
+// ★★ THE ADDRESS THAT OPENS ONE ORDER (v381). Her words: __"can make the order number
+// clickable to bring us to the order so i can admen it, or look at it detail"__.
+//
+// ⚠️ ONE DEFINITION, IN ONE PLACE, because the whole feature rests on the link and the
+// screen that honours it agreeing. Written here rather than in each view so a mistyped
+// parameter name cannot make a press land on the Orders screen and quietly do nothing —
+// which is exactly the control the register refused to draw in v366.
+//
+// ⚠️ It is a real `#` address, not just a handler: it can be long-pressed, copied, or
+// pasted back in, and it survives a reload — a deep link, not a trick.
+export function orderHref(code) {
+  return `#/orders?order=${encodeURIComponent(String(code || "").trim().toUpperCase())}`;
+}
+
 export { normalize };
 
 // Normalize a customer's WhatsApp number to the digits-only international form
@@ -890,6 +904,13 @@ export function fmtRM(n, currency = "RM") {
 // and it means a product deleted later still shows what it was that someone
 // bought. Orders saved before v70 carry no snapshot; the live product is the
 // best guess available for those.
+//
+// ★ AND WHAT IT COST TO BAKE (`unitCost`, v380) IS FROZEN THE SAME WAY. Her
+// words: "when i change the ingredient cost, for age orders, will its COS
+// change?" — and it did, because the books worked every line's cost out afresh
+// from today's ingredient prices, so editing one price quietly rewrote every
+// past month's profit. The cost now rides on the order beside the price, and
+// the books read that instead of re-deriving it.
 
 // The product name to print for an order line: the frozen one, else the live
 // product's, else the placeholder for a product that is truly gone.
@@ -910,15 +931,29 @@ export function orderLinePrice(state, o) {
   return p && p.price != null && p.price !== "" ? Number(p.price) : null;
 }
 
-// Freeze the sold name and price onto an order row from a product — or from a
-// storefront order line, which carries the same two fields ({ name, price }).
-// Never invents a value: a product with no price set leaves the line unpriced
-// so it keeps following the live product.
-export function stampOrderLine(o, product) {
+// Freeze the sold name, price and cost onto an order row from a product — or
+// from a storefront order line, which carries the same two fields ({ name,
+// price }). Never invents a value: a product with no price set leaves the line
+// unpriced so it keeps following the live product.
+//
+// `unitCost` is the recipe cost of ONE unit, worked out by the caller (which is
+// the only place `state` and `costOf` are both in hand — bom.js imports THIS
+// file, so this file cannot import bom.js back). Omit it and the line's cost is
+// left exactly as it was.
+export function stampOrderLine(o, product, unitCost) {
   if (!o || !product) return o;
   const name = String(product.name || "").trim();
   if (name) o.productName = name;
   const price = product.price;
   if (price != null && price !== "" && Number.isFinite(Number(price))) o.unitPrice = Number(price);
+  // ⚠️⚠️ A ZERO IS DELIBERATELY NOT STAMPED, and so is anything unreadable. A
+  // product whose recipe prices to nothing YET would otherwise have 0 locked
+  // onto every order it ever had — and stay 0 for ever once she builds the
+  // recipe, which is a wrong number that can never move again. Un-stamped, the
+  // line keeps following the live recipe, which is exactly what it does today,
+  // so nothing regresses. (Number(null) is 0 and Number("") is 0, so `> 0` is
+  // also what rejects an empty or missing argument.)
+  const cost = Number(unitCost);
+  if (Number.isFinite(cost) && cost > 0) o.unitCost = cost;
   return o;
 }

@@ -106,6 +106,14 @@ test("journey marks: later stages green on selection, Delivered ends all green",
 
 const inboxState = {
   products: [{ id: "p1", name: "Focaccia", active: true }],
+  // ⚠️ A REAL state always has these (loadState/normalize builds them), and the
+  // view has always assumed it: the New-order card's own total reads
+  // state.settings.currency. The Edit pop-up now reads it too, for the cost box's
+  // placeholder (v380), so the shim carries them rather than the app going
+  // defensive about a field that is never actually missing.
+  settings: { currency: "RM" },
+  ingredients: [],
+  uoms: [],
   deliveryDates: [
     { id: "d1", date: "2026-09-04" },
     { id: "d2", date: "2026-09-07" },

@@ -10,7 +10,10 @@ import { normRules } from "../../availability.js";
 import { publishOccasions } from "./occasion_catalog.js";
 import { flattenTree, primaryCategoryId, productsInCategory } from "./productCategories.js";
 import { isThumb, lineNoteOf } from "../../storefront-fields.js";
-import { bookedUnitsOnDate, effectiveCapacity, effectiveLimit, isPoolablePack, poolRemaining } from "./bom.js";
+// ⚠️ JERKY'S OWN READER, NOT THE BAKERY'S: this project deleted `totalUnitsOnDate` (a by-ID
+// counter) in the 7 Oct fix and reads `bookedUnitsOnDate(state, DATE)` — the whole day, counted
+// once. Taking the bakery's import line verbatim left a symbol that does not exist here.
+import { bookedUnitsOnDate, costOf, effectiveCapacity, effectiveLimit, isPoolablePack, poolRemaining } from "./bom.js";
 import { byId, fmtRM, newId, orderCode, orderLineName, round2, save, stampOrderLine } from "./state.js";
 import { phoneDigits } from "./customers.js";
 import { customerTotal } from "./courier.js";
@@ -799,11 +802,14 @@ function cardContent(row) {
 // after a reload always writes, and the most it can cost is one redundant write.
 const published = new Map();
 
+// ⚠️ IT RETURNS WHETHER IT WORKED (v374). It used to swallow the answer whole, which was fine while
+// every caller was a best-effort refresh — but the delete control has to be able to say **"their name
+// is still on the shop's public card"** rather than claim a promise it did not keep.
 async function pushTracking(c, row, content) {
   let token = cachedToken();
   if (!token) {
     try { token = await login(c.url, c.anonKey, c.email, c.password); }
-    catch { return; }
+    catch { return false; }
   }
   try {
     const res = await fetch(`${c.url}/rest/v1/order_tracking?on_conflict=code`, {
@@ -819,8 +825,9 @@ async function pushTracking(c, row, content) {
     // Remembered only for a write the server took. A publish that failed — a column
     // missing because a SQL script has not been run, a phone with no signal — must be
     // tried again by the next save rather than counted as done (19 Sep 2026).
-    if (res && res.ok) published.set(row.code, content);
-  } catch { /* best-effort */ }
+    if (res && res.ok) { published.set(row.code, content); return true; }
+    return false;
+  } catch { return false; }
 }
 
 // Push one order's tracking row to Supabase so the customer can look it up on
@@ -829,9 +836,13 @@ async function pushTracking(c, row, content) {
 // app's; best-effort and silent — a publish failure must never block the baker.
 export async function publishTracking(state, group) {
   const c = cfg(state);
-  if (!ready(c) || !group || !group.orders || !group.orders.length) return;
+  // ⚠️ AN EMPTY GROUP IS NOTHING TO PUBLISH, so it is not a failure. But a cloud that is not configured
+  // IS reported as one — a card published while sharing was on is still out there, and "I could not
+  // clear it" is the honest answer rather than silence.
+  if (!group || !group.orders || !group.orders.length) return true;
+  if (!ready(c)) return false;
   const row = trackingSnapshot(state, group);
-  await pushTracking(c, row, cardContent(row));
+  return pushTracking(c, row, cardContent(row));
 }
 
 // Publish only when the card's own content actually moved. Every door that can change
@@ -909,7 +920,15 @@ export async function claimReceipt(state, order) {
     // ⚠️ A REFUND IS CARRIED BACK TOO, and it only ever ADDS a mark. The server decides
     // whether this order has been refunded; a phone that has never seen the refund learns
     // about it here rather than by assuming the order is clean.
-    if (row.refunded_at) order.refundedAt = String(row.refunded_at);
+    //
+    // ★ AND IT CARRIES HOW MUCH (v370), so the second phone learns the SIZE of the refund and not
+    // merely that one happened. ⚠️ A register row written before v370 has no amount, which reads as
+    // "the whole order" — exactly what the old boolean meant, so an old refund still lands right.
+    if (row.refunded_at) {
+      order.refundedAt = String(row.refunded_at);
+      const was = Number(row.refunded_amount);
+      if (Number.isFinite(was) && was > 0) order.refundAmountRM = was;
+    }
     return true;
   } catch { return false; }
 }
@@ -937,7 +956,7 @@ export async function pullReceiptRegister(state) {
 
   try {
     const res = await fetch(
-      `${c.url}/rest/v1/receipt_numbers?select=number,order_code,issued_at,refunded_at&order=number.asc`,
+      `${c.url}/rest/v1/receipt_numbers?select=number,order_code,issued_at,refunded_at,refunded_amount&order=number.asc`,
       { headers: { apikey: c.anonKey, Authorization: `Bearer ${token}` } });
     if (!res || !res.ok) return { ok: false, rows: [] };
     const rows = await res.json().catch(() => null);
@@ -950,7 +969,7 @@ export async function pullReceiptRegister(state) {
 // not. ⚠️ KEEPING THE TWO IN ONE PLACE IS NOT TIDINESS. A refund and the undoing of it must
 // send the same body and read the same reply; two copies of that are two chances to drift,
 // and the thing that would drift is her books.
-async function receiptRpc(state, order, fn) {
+async function receiptRpc(state, order, fn, extra = {}) {
   if (!order) return false;
   const c = cfg(state);
   if (!ready(c)) return false;
@@ -969,7 +988,7 @@ async function receiptRpc(state, order, fn) {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ p_order_code: code }),
+      body: JSON.stringify({ p_order_code: code, ...extra }),
     });
     return !!(res && res.ok);
   } catch { return false; }
@@ -977,8 +996,15 @@ async function receiptRpc(state, order, fn) {
 
 // Mark one order's receipt refunded. ⚠️ IT MARKS, IT NEVER DELETES — the number stays
 // spent for ever, or the sequence shows a gap where money really moved.
-export async function refundReceipt(state, order) {
-  if (!(await receiptRpc(state, order, "refund_receipt"))) return false;
+//
+// ★ AND IT CARRIES THE AMOUNT (v370), because a refund can be a part of an order now. ⚠️ WITHOUT
+// THIS THE TWO PHONES DISAGREE: `claimReceipt` copies a refund back off the register, and one that
+// carried no amount would land on the other phone as a FULL refund — the same order reading as
+// RM5 back on one handset and RM22 on the other.
+export async function refundReceipt(state, order, amount = null) {
+  const value = Number(amount);
+  const sent = Number.isFinite(value) && value > 0 ? { p_amount: value } : {};
+  if (!(await receiptRpc(state, order, "refund_receipt", sent))) return false;
   order.refundedAt = new Date().toISOString();
   return true;
 }
@@ -1260,10 +1286,15 @@ function importIncoming(state, row) {
     // Freeze what the shop sold it as, at the price the shop charged. The
     // storefront sends its own name/price with the line; fall back to the
     // product only when the line didn't carry one.
+    //
+    // ★ AND ITS COST (v380), taken from HER OWN recipe rather than from anything
+    // in the payload. ⚠️ The cost is deliberately NOT read off the customer's
+    // message, however it is spelled: what a loaf costs her is her business and
+    // the shop has no version of it to send.
     stampOrderLine(order, {
       name: product.name,
       price: line.price != null && line.price !== "" ? line.price : product.price,
-    });
+    }, costOf(state, product));
     state.orders.push(order);
     created.push(order.id);
   }

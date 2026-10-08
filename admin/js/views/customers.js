@@ -6,13 +6,13 @@
 // send one note to many at once, so the copies are there to paste per chat.
 
 import { navigate } from "../app.js";
-import { customerList, ordersForCustomer, phoneDigits } from "../customers.js";
-import { attachProfiles, customerMatches, customerRowName, mergeCustomers, profileFor, removeProfile, upsertProfile } from "../profiles.js";
+import { customerList, keyOf, ordersForCustomer, phoneDigits } from "../customers.js";
+import { attachProfiles, customerMatches, customerRowName, forgetCustomer, mergeCustomers, profileFor, removeProfile, upsertProfile } from "../profiles.js";
 import { readPhoto } from "../photo.js";
 import { el, button, select, emptyState, showPopup, copyText, toast, confirmDialog } from "../ui.js";
-import { byId, fmtRM, orderLineName, save, waNumber } from "../state.js";
+import { byId, fmtRM, groupOrders, orderHref, orderLineName, save, waNumber } from "../state.js";
 import { longDate, todayISO, weekdayName } from "../dates.js";
-import { maybeSync } from "../supabase.js";
+import { maybeSync, publishTracking } from "../supabase.js";
 import {
   ROLE_LABEL, schemeOf, referralLink, shareMessage, followupMessage, creditRows,
   markCreditUsed, setCreditExpiry, removeCredit, addManualCredit,
@@ -64,6 +64,65 @@ function openChat(r) {
   const name = customerRowName(r);
   const text = name && name !== "(no name)" ? `Hi ${name}!` : "Hi!";
   window.open(`https://wa.me/${w}?text=${encodeURIComponent(text)}`, "_blank");
+}
+
+// ── ★★ FORGETTING SOMEONE (v374) ─────────────────────────────────────────────
+//
+// ⚠️ THE PRESS USED TO BE WITHHELD FROM ANYONE WHO HAD EVER ORDERED, and the comment beside it said why:
+// deleting the profile alone would have left their name on every sale while throwing away their reward
+// and their note — **a button that did half of what it says is worse than no button.** That was the right
+// call while it was the only thing on offer. **It is not the right call any more**, because the orders are
+// redacted too — so the press now does everything it says, for everyone, which is what the shop's own
+// privacy notice has been promising customers all along.
+function forgetPress(state, r, refresh, onSaved) {
+  const rows = (state.orders || []).filter((o) => o && (o.redactedKey || keyOf(o)) === r._key);
+  // ⚠️⚠️ THE COUNT IS **ORDERS**, NOT ROWS — and this was wrong until she read it on screen. A two-item
+  // order is TWO ROWS and ONE order, so `rows.length` told her "2 orders" while the card she was looking
+  // at read "1 order · 3 units". **A number that contradicts the screen it sits on is worse than no
+  // number**, and this is the sentence she weighs before an act that cannot be undone.
+  const n = groupOrders(rows).length;
+  const who = r.name || "this person";
+
+  // ⚠️ TWO WORDINGS, because they are two different acts. Someone she typed in by hand has no sales to
+  // keep, and her own settled sentence for that case is right; someone who has ordered needs telling
+  // exactly what stays, because what stays is the whole promise.
+  const question = n === 0
+    ? `Forget ${who}? They are in your list because you added them, and they have never ordered — so this removes the name, the number, any reward and any note. Nothing else in your book is touched, and you can add them again any time.`
+    : [
+        `Forget ${who}?`,
+        el("br"), el("br"),
+        `This removes their name, number, address, any pin and any note from ${n} order${n === 1 ? "" : "s"} — and their coupons and hand-outs with it. `,
+        "What STAYS is the sales record: the amounts and the dates are kept, and their orders stay together as one row reading \"Details removed\", because your privacy notice tells customers the record is kept. ",
+        "It cannot be undone from here.",
+        el("br"), el("br"),
+        "⚠️ It does not reach: your dated cloud backups, until those snapshots age out; any backup file you have downloaded; the copy in your Supabase project, until the next sync; or a courier booking that has already sent their name, phone and address.",
+      ];
+
+  confirmDialog(question, async () => {
+    const done = forgetCustomer(state, r._key);
+    save(state);
+    maybeSync(state);
+
+    // ⚠️ THE LOCAL REDACTION IS NOT BEST-EFFORT; THE PUBLIC CARD IS. Their details are gone the moment
+    // she confirms — that is a thing she did, not a thing this app decided. But their name sits on the
+    // shop's public track card under EVERY order of theirs, so **every one of them is re-published**, and
+    // a failure is SAID: one best-effort call would leave cards live with nothing on screen to say so,
+    // which is a promise half kept and reported as whole.
+    const mine = groupOrders((state.orders || []).filter((o) => o && o.redactedKey === done.key));
+    let left = 0;
+    for (const g of mine) {
+      if (!(await publishTracking(state, g))) left += 1;
+    }
+
+    toast(n === 0
+      ? "Removed from your list"
+      : left
+        ? `${done.orders} order${done.orders === 1 ? "" : "s"} cleaned of their details — but ${left} tracking card${left === 1 ? " was" : "s were"} not cleared. Share your data again and forget them once more to finish it.`
+        : `${done.orders} order${done.orders === 1 ? "" : "s"} cleaned of their details, and their tracking cards cleared`);
+
+    refresh();
+    if (onSaved) onSaved();
+  }, { danger: true, yesLabel: "Forget" });
 }
 
 export function renderCustomers(root, state, params) {
@@ -376,31 +435,20 @@ function profileBlockEl(state, r, refresh, onSaved) {
           ? button(empty ? "✎ Add details" : "✎ Edit",
               () => editProfilePopup(state, r, () => { refresh(); if (onSaved) onSaved(); }), "ghost small")
           : null,
-        // ★★ FORGET SOMEONE SHE ADDED BY HAND (v325). Her ask: __"i need a button to delete a
-        // customer as well, i found there is few stray customer"__.
+        // ★★ FORGET THIS PERSON (v325 → v374).
         //
-        // ⚠️⚠️ **IT IS OFFERED ON A HAND-ADDED ROW ONLY, AND THAT IS NOT A LIMITATION — IT IS THE
-        // DIFFERENCE BETWEEN A PROFILE AND A CUSTOMER.** The book is built from her ORDERS: someone
-        // she typed in has no orders, so **their row IS this record** and removing it removes them.
-        // **A customer who has ordered cannot be deleted from here at all** — their row is their
-        // sales history, and removing the profile would leave the row standing while quietly
-        // throwing away their reward, their note and their dog's name. **A button that did half of
-        // what it says would be worse than no button**, which is her own rule about dead controls:
-        // two rows that look alike must behave alike, and a press that cannot do what it says must
-        // say why rather than sit there looking available.
-        r.manual
-          ? button("🗑 Forget", () => {
-              confirmDialog(
-                `Forget ${r.name || "this person"}? They are in your list because you added them, and they have never ordered — so this removes the name, the number, any reward and any note. Nothing else in your book is touched, and you can add them again any time.`,
-                () => {
-                  removeProfile(state, r._key);
-                  save(state);
-                  toast("Removed from your list");
-                  refresh();
-                  if (onSaved) onSaved();
-                }, { danger: true, yesLabel: "Forget" });
-            }, "ghost small")
-          : null)),
+        // Her ask, v325: __"i need a button to delete a customer as well, i found there is few stray
+        // customer"__. **Between v325 and v374 the press was offered on a HAND-ADDED ROW ONLY, and the
+        // reason was sound:** the book is built from her orders, so someone she typed in has no sales to
+        // keep and their row IS the record — while a customer who HAD ordered could not be deleted at
+        // all, because removing the profile would have left their name standing on every sale while
+        // quietly throwing away their reward and their note. **A button that did half of what it says is
+        // worse than no button** — her own rule about dead controls.
+        //
+        // ★★ v374 IS WHY IT IS OFFERED TO EVERYONE NOW. `forgetCustomer` redacts the ORDERS as well, so
+        // the press finally does the whole of what it says: the details go, the sales record stays, and
+        // the two cases differ only in how much there is to say about it. See `forgetPress`.
+        button("🗑 Forget", () => forgetPress(state, r, refresh, onSaved), "ghost small"))),
     // WHAT THIS ADVOCATE GETS AND WHAT THEY HAVE HAD (v291). It sits UNDER the profile top rather
     // than inside `.profile-who`, because it carries a press and the who-column is a flex child
     // beside the avatar. It was a bare sentence from v289 until she asked how to EXERCISE the
@@ -663,7 +711,12 @@ function openHistory(state, r, onSaved) {
             : emptyState("No order history", "This customer's orders were removed."))
         : el("div", {},
             el("p", { class: "card-sub", style: "margin:12px 0 2px" }, "Order history — newest first"),
-            ...blocks.map((b) => historyBlock(state, b)))),
+            ...blocks.map((b) => historyBlock(state, b, () => {
+              // ⚠️ CLOSE, THEN GO. See historyBlock: the card would otherwise ride over the
+              // Orders screen and the press would read as having done nothing.
+              close();
+              navigate(orderHref(b.code));
+            })))),
     { wide: true });
 }
 
@@ -843,7 +896,7 @@ function addCreditRow(state, r, ui, refresh) {
     button("Add coupon", saveCredit, "primary small"));
 }
 
-function historyBlock(state, b) {
+function historyBlock(state, b, onOpen) {
   const placed = dateLine(b.orderDate);
   const del = dateLine(b.deliveryDate);
   const when = !placed && !del ? ""
@@ -854,7 +907,21 @@ function historyBlock(state, b) {
   const courier = b.fulfillment === "courier";
   return el("div", { class: "hist-ord" },
     el("div", { class: "li-row" },
-      el("span", { class: "hist-code" }, `#${b.code}`),
+      // ★★ THE ORDER NUMBER OPENS THE ORDER (v382). Her words: __"make the customer history one a
+      // door too"__. ⚠️ It was left plain at v381 **because this screen had no test harness and a
+      // press nobody has driven to its outcome is a press nobody knows works** — so the harness
+      // was written first (`test/customer-history-door.test.js`) and the door added second.
+      //
+      // ⚠️⚠️ `onOpen` IS REQUIRED, NOT OPTIONAL, and there is no fallback to a plain span. A guard
+      // for a caller that does not exist is a branch no test can reach — a bite proved exactly that
+      // when this was written with one — and the only caller is openHistory below.
+      //
+      // ⚠️⚠️ AND IT HAS TO CLOSE THE CARD IT IS SITTING IN. This is the one site of the four that
+      // lives INSIDE a pop-up: the Orders screen would render underneath while the customer's card
+      // stayed on top of it, so the press would look like it had done nothing. `onOpen` closes
+      // first, then navigates — the same close-then-act order the 💬 Chat press beside it uses.
+      el("a", { class: "hist-code ord-open", href: orderHref(b.code),
+        onclick: (ev) => { ev.preventDefault(); onOpen(); } }, `#${b.code}`),
       el("span", { class: `fulfill-tag${courier ? " courier" : ""}` }, courier ? "Post (nationwide)" : "Collect (local)"),
       el("span", { class: "qty-chip" }, STATUS_LABEL[b.status] || b.status)),
     when ? el("p", { class: "card-sub", style: "margin:2px 0 6px" }, when) : null,

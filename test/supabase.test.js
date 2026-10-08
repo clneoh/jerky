@@ -2090,3 +2090,41 @@ test("★ with nothing limited to publish, the sweep sends NO name-delete at all
 // the shipped API, including `unmatchedLinesNote`, which the wording moved into. Keeping both
 // sets would be two spellings of one rule, and the older one asserts a sentence that no longer
 // exists.
+
+test("★★ publishTracking REPORTS whether the card was written — the forget control rests on it", async () => {
+  // ⚠️⚠️ IT USED TO SWALLOW THE ANSWER WHOLE. That was fine while every caller was a best-effort
+  // refresh, but v374's forget control has to be able to say **"their name is STILL on the shop's
+  // public card"** — a promise half kept and reported as whole is the one outcome that feature exists
+  // to avoid.
+  const st0 = makeState();
+  const date = st0.deliveryDates[0];
+  const group = { orders: [{ id: "ord_1", groupId: "gg_112233", deliveryDateId: date.id, productId: "prd_1",
+    qty: 1, customerName: "Ain", createdAt: "2026-01-01T00:00:00.000Z" }] };
+
+  // Nothing to publish is not a failure.
+  assert.equal(await publishTracking(st0, { orders: [] }), true, "an empty group was reported as a failure");
+
+  // ⚠️ A cloud that cannot be written to must SAY so. A card published while sharing was on is still
+  // out there, so silence here would be the lie.
+  assert.equal(await publishTracking(st0, group), false, "a publish with no cloud configured reported success");
+
+  // And a write the server REFUSES — a column missing, a phone with no signal.
+  const on = makeState();
+  on.settings.supabase = { enabled: true, url: "https://p.supabase.co", anonKey: "a",
+    email: "a@b.c", password: "p" };
+  globalThis.localStorage = {
+    _d: new Map([["bakeadmin.supabase", JSON.stringify({ access_token: "t", expires_at: Date.now() + 3600000 })]]),
+    getItem(k) { return this._d.has(k) ? this._d.get(k) : null; },
+    setItem(k, v) { this._d.set(k, String(v)); },
+    removeItem(k) { this._d.delete(k); },
+  };
+  try {
+    globalThis.fetch = async () => ({ ok: false, json: async () => [] });
+    assert.equal(await publishTracking(on, group), false, "a REFUSED write reported success");
+    globalThis.fetch = async () => ({ ok: true, json: async () => [] });
+    assert.equal(await publishTracking(on, group), true, "a write the server took did not report success");
+  } finally {
+    globalThis.fetch = realFetch;
+    globalThis.localStorage = realLocalStorage;
+  }
+});

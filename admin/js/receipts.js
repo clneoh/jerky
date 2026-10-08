@@ -10,7 +10,7 @@
 // it READS the register and says what shape it is in. It still draws nothing.
 //
 
-import { orderCode } from "./state.js";
+import { fmtRM, orderCode } from "./state.js";
 
 // ★★ AND THE NUMBER BELONGS TO THE ORDER, NOT TO THE PRESS. It is claimed once, when the
 // money is recorded, and every later read — printing the receipt, opening it on the other
@@ -62,9 +62,16 @@ export function isRefunded(order) {
 
 // What the paper says about the number, in every state it can be in — including the two
 // that are not a number, which must say WHY rather than print nothing.
-export function receiptStatus(order) {
+export function receiptStatus(order, cur = "RM") {
   if (!order) return "";
-  if (isRefunded(order)) return `${receiptLabel(order)} — refunded`;
+  // ★ AND HOW MUCH WENT BACK (v370). A refund is a PART of an order now, so a bare "— refunded"
+  // would leave her unable to tell RM5 back from the whole receipt.
+  if (isRefunded(order)) {
+    const n = Number(order.refundAmountRM);
+    return Number.isFinite(n) && n > 0
+      ? `${receiptLabel(order)} — ${fmtRM(n, cur)} refunded`
+      : `${receiptLabel(order)} — refunded`;
+  }
   const n = receiptNoOf(order);
   if (n) return receiptLabel(order);
   // ⚠️ NO NUMBER IS NOT AN ERROR, AND NOT A BLANK. There are two honest reasons for it
@@ -114,6 +121,10 @@ export function registerRows(raw, orders) {
       code: String(r.order_code || "").trim().toUpperCase(),
       issuedAt: String(r.issued_at || ""),
       refundedAt: String(r.refunded_at || ""),
+      // ★ HOW MUCH WENT BACK (v370). Read from the REGISTER, not from her orders, so it is known
+      // even for a receipt whose order is no longer on this phone — which is the case the register
+      // exists for. A row written before v370 has no amount, and 0 reads as "no amount recorded".
+      refundedAmount: Number(r.refunded_amount) > 0 ? Number(r.refunded_amount) : 0,
     }))
     .sort((a, b) => a.number - b.number);
 

@@ -1,6 +1,7 @@
 // app.js — bootstrap, hash router, bottom-nav wiring, shared-data sync gate.
 
 import { byId, loadState, save, setSaveHook, stampOrderLine, updateOrderBadge, ensureSupabase } from "./state.js";
+import { costOf } from "./bom.js";
 import { el, button } from "./ui.js";
 import * as sync from "./sync.js";
 import { maybeAutoBackup } from "./backups.js";
@@ -31,6 +32,7 @@ import { renderMoney } from "./views/money.js";
 import { renderProfit } from "./views/profit.js";
 import { renderGuide } from "./views/guide.js";
 import { renderReceiptRegister } from "./views/receipt_register.js";
+import { renderConsolidated } from "./views/consolidated.js";
 import { renderProduction } from "./views/production.js";
 import { renderDeliveryRun } from "./views/delivery_run.js";
 import { renderScenario } from "./views/scenario.js";
@@ -68,6 +70,7 @@ const routes = {
   "/money":     { title: "Money",      tab: "more",      render: renderMoney },
   "/profit":    { title: "Profit",     tab: "more",      render: renderProfit },
   "/receipts":  { title: "Receipt register", tab: "more", render: renderReceiptRegister },
+  "/consolidated": { title: "Consolidated invoice", tab: "more", render: renderConsolidated },
   "/production":{ title: "Production line", tab: "more", render: renderProduction },
   "/scenario":  { title: "Scenario planner", tab: "more", render: renderScenario },
   "/units":     { title: "Units",      tab: "more",      render: renderUnits },
@@ -119,6 +122,40 @@ if (!state.settings.migratedV68) {
 if (!state.settings.migratedV70) {
   for (const o of state.orders || []) stampOrderLine(o, byId(state.products || [], o.productId));
   state.settings.migratedV70 = true;
+  save(state);
+}
+
+// ★★ One-time catch-up (v380) — the same shape as the v70 block above, for the
+// COST. Her words: "when i change the ingredient cost, for age orders, will its
+// COS change?" It did, because the books re-derived every line's cost from
+// today's ingredient prices on every read. An order taken from this version on
+// freezes its cost at the moment it is made; this stamps the orders she has
+// ALREADY taken so they stop moving too.
+//
+// ⚠️⚠️ THIS CHANGES NO FIGURE ON ANY SCREEN. What it writes is exactly what each
+// order is costing right now, because the live recipe is where the books were
+// reading it from a moment ago. What it changes is that the number stops moving
+// from here on.
+//
+// ⚠️⚠️ AND IT IS HONEST ABOUT WHAT IT IS NOT: the figure it locks on an order
+// from March is TODAY'S recipe cost, not what that order cost her in March. The
+// app never recorded one — `costLog` does not exist and the ingredient price log
+// is never replayed — so there is nothing truer to write, and inventing a
+// back-dated figure would be worse than freezing today's. The changelog says so
+// in plain words.
+//
+// ⚠️ `o.unitCost != null` IS THE REAL GUARD, not the flag beside it: a restored
+// backup, or a re-run after a lost setting, must never clobber a cost she has
+// adjusted by hand. And `stampOrderLine` itself refuses a zero, so a product
+// whose recipe prices to nothing yet is left following the live recipe rather
+// than having 0 locked onto it for ever.
+if (!state.settings.migratedV380) {
+  for (const o of state.orders || []) {
+    if (o.unitCost != null) continue;
+    const p = byId(state.products || [], o.productId);
+    if (p) stampOrderLine(o, p, costOf(state, p));
+  }
+  state.settings.migratedV380 = true;
   save(state);
 }
 

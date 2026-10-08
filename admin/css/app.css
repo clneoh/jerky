@@ -212,6 +212,128 @@ body { min-height: 100vh; }
   line-height: 1.45;
 }
 
+/* ---------- A COLUMN ROW inside a journal (v376) ----------
+   ⚠️ A FILING PAGE IS READ *DOWN* A COLUMN — that is what filing IS — and a composed sentence
+   ("5 Oct · C2FDA5 · #000001 · Aunty Bee") cannot be read down anything. So a row that carries
+   `cols` lays them out at FIXED widths, with tabular figures so the numbers stack, and the money
+   stays on the right where every other row in the app puts it. The invoice number carries the
+   weight, because it is the one being filed against. */
+.journal-cols { gap: 5px; }
+/* ⚠️⚠️ A FILING PAGE IS READ AT A DESK, and the backoffice is capped at a PHONE column (540px) on
+   every screen at every size. Her words: __"that page can be optimise for desktop brouwser"__.
+   The cap is lifted for this view ALONE — the class is added and removed by the consolidated view
+   itself, so no other screen moves. */
+.view.view-wide { max-width: 900px; }
+.journal-cols .j-col {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* ⚠️⚠️ THESE WIDTHS WERE MEASURED, NOT GUESSED. At 375px a row has about 299px: the money takes 74,
+   the gaps 18, so the three fixed columns have to leave room for a NAME. The first attempt sized them
+   at 4.4/5.6/6.6em — 232px between them — which squeezed the Customer column to **0px**, so on the phone
+   the page showed a header reading "Custo…" and no name on a single row. It printed correctly on paper,
+   which is exactly why a thing like this has to be looked at rather than reasoned about. */
+/* ⚠️ THE DATE GETS ROOM FOR "20 Oct" — a filing page wants the date, and the first pass cut it to
+   "20 …" while the customer's few spare pixels bought nothing. Everything here is a trade at 375px;
+   the SERIAL is the one column that may never be the one to lose. */
+.journal-cols .j-col-0 { width: 3.5em; color: var(--muted); }
+/* ⚠️⚠️ THE ORDER COLUMN IS SIZED SO THE CODE FITS, AND THE FIRST PASS DID NOT. At 3.9em a phone cut it
+   to "#052…" — and the order code is *what finds the order again*, so half a code is no code. A
+   7-character code ("#F447AB") needs about 60px, which is what this is. */
+.journal-cols .j-col-1 { width: 4.6em; color: var(--muted); }
+/* ⚠️⚠️ THE INVOICE COLUMN IS SIZED SO ITS NUMBER IS NEVER CUT. The second attempt at this gave it 4.3em
+   and a phone rendered "#0000…" — on a page whose entire purpose is filing, **a serial you cannot read
+   is the one thing that must not happen.** The shorter phrase in the empty case ("none yet") is why it
+   can be this narrow and still hold every number. */
+.journal-cols .j-col-2 { width: 4.9em; font-weight: 700; color: var(--brown-dark); }
+/* ⚠️⚠️ SIX COLUMNS, AND THE TWO WORD COLUMNS SHARE WHAT IS LEFT. Her ask, looking at her own data:
+   __"why no description?"__ — a filing list that cannot say what an order WAS is a list of numbers.
+   **The three number columns are FIXED and the two word columns FLEX**, so on a narrow screen it is the
+   words that shorten and never the serial, the order code or the date — those are what filing is read
+   against, and a cut serial is the one thing that must not happen on a filing page.
+   ⚠️ They share the leftover EQUALLY: her item names ("Sourdough ×3, Focaccia ×2") and her customer
+   names ("Ms Yeap Lian Sioh") are both long, and giving either more would only cut the other harder. */
+.journal-cols .j-col-3 { flex: 1 1 0; min-width: 0; }
+.journal-cols .j-col-4 { flex: 1 1 0; min-width: 0; }
+.journal-cols > .info-val { flex: 0 0 auto; white-space: nowrap; }
+/* A VOID NUMBER — issued, and belonging to an order that has since been removed (v378). Drawn
+   muted so it reads as a cancelled number on the page rather than as a sale, and it carries no
+   figure at all, because the money for it never existed. */
+.journal-cols.journal-void { color: var(--muted); }
+/* A COLUMN HEADING YOU CAN PRESS (v379). It has to LOOK pressable — a heading that sorts but reads
+   as plain text is a control nobody finds — and the marker inside it says which column and which
+   way. ⚠️ On paper it stays inert: the same row prints as ordinary headings. */
+.journal-cols-head .j-col.sortable { cursor: pointer; user-select: none; }
+/* ⚠️ `--brown-dark`, NOT `--brown` — the brand terracotta is a FILL and an EDGE colour, never text
+   (v369), and it measures 4.48:1 on a card against the 4.5 floor. The guard in
+   `test/readable-quiet-line.test.js` caught this very line the moment it was written. */
+.journal-cols-head .j-col.sortable:hover { color: var(--brown-dark); }
+
+/* ⚠️ FIVE COLUMNS DO NOT FIT ACROSS A PHONE AT FULL SIZE — and something has to give, so it is the
+   TYPE, not any of the columns. At 375px the fixed columns and the money eat the row and the name is
+   left with a few characters; one step down the type size hands about 25px back to it. **The printed
+   page is unaffected** — A4 is ~794 CSS px wide, so this query never matches on paper, and the columns
+   there have room for everything. Measuring rather than reasoning is what found this: the first two
+   attempts looked correct in the arithmetic and cut the SERIAL in half on the phone. */
+@media screen and (max-width: 480px) {
+  /* ⚠️ `screen AND`, so PAPER CAN NEVER INHERIT THE PHONE'S TYPE SIZE. A4 is about 680 CSS px wide
+     inside the sheet's own 180mm cap, so this would not have matched in print anyway — but a rule
+     that only stays off paper by arithmetic is one page-margin change away from shrinking a
+     document she is filing.
+     ⚠️ AND `.info-row.journal-cols`, NOT `.journal-cols` — the extra class is the whole point. `.info-row`
+     sets the 14px this is trying to override, at the SAME single-class specificity, and the plain selector
+     lost to whichever came last. **Naming both classes makes it win by weight rather than by position.** */
+  .info-row.journal-cols { font-size: 13px; }
+}
+
+/* ---------- A section heading inside a journal (v372) ----------
+   `.js-section` has always existed for the PRINTED sheet; the screen only needed it the day a
+   document first carried a heading (the consolidated invoice, whose rows are grouped by customer).
+   ⚠️ The screen and the paper share the class name on purpose: one document must not be two
+   documents depending on whether it is being read or printed. */
+.js-section {
+  margin: 12px 0 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.js-section:first-child { margin-top: 0; }
+
+/* ---------- The refund card (v370) ----------
+   Tick what came back, then change the figure if she wants to. Everything is one tap target
+   wide, and the amount is drawn as a column so the ticks and the money line up to be read
+   against each other — which is the whole point of ticking rather than typing. */
+/* What was charged, drawn in the same band the app already uses for "How it adds up" —
+   an order's own money, so it reads as a quoted fact rather than as something this card made up. */
+.refund-bill {
+  background: var(--strip);
+  border-radius: 10px;
+  padding: 8px 11px;
+}
+.refund-list { border-top: 1px solid var(--line); }
+.refund-line { border-bottom: 1px solid var(--line); }
+.refund-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 2px; min-height: 44px; cursor: pointer;
+}
+.refund-row input[type="checkbox"] { flex: 0 0 auto; width: 20px; height: 20px; accent-color: var(--brown); }
+.refund-what { flex: 1 1 auto; min-width: 0; font-size: 14px; }
+.refund-amt { flex: 0 0 auto; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+/* A quantity only appears on a row she can return PART of, and only once it is ticked —
+   a control that cannot do anything yet is a control that reads as broken. */
+.refund-qty { max-width: 90px; margin: 0 0 10px 30px; }
+.refund-qty:disabled { opacity: .45; }
+.refund-sum {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; margin-top: 12px; padding-top: 10px; border-top: 2px solid var(--line);
+  font-size: 14px;
+}
+
 /* ---------- Hero (Home) ---------- */
 .hero {
   position: relative;
@@ -837,6 +959,29 @@ option.tone-off { color: var(--muted); }
    width, so a "no nuts, write Happy Birthday" is readable as she types it rather
    than squeezed into the space left beside the price box. */
 .add-item .line-note { flex: 1 1 100%; width: 100%; }
+
+/* ★ WHAT THE LINE COST HER (v380) — its OWN line under the price, so the figure the
+   books use can never be typed into the box the customer pays. Her words: "yes,
+   freeze the cost onto the order" / "and allow me to adjust it,".
+   ⚠️ The word "Cost each" is on screen because two bare number boxes on one line is
+   how a cost ends up in the price. The press beside it says what the recipe says and
+   puts it back — ⚠️ an adjustment with no way back is a trap, so it is always there,
+   and it is a 36px target like every other control. */
+.add-item-ctl .line-cost-label { font-size: 13px; color: var(--brown-dark); }
+.add-item-ctl .line-cost { flex: 0 0 84px; width: 84px; text-align: right; }
+.add-item-ctl .line-cost-reset {
+  flex: 0 1 auto; min-height: 36px; padding: 0 10px;
+  font: inherit; font-size: 12px;
+  color: var(--brown-dark); background: none;
+  /* ⚠️ `--muted`, NOT `--line`: at ~1.2:1 against the surface a `--line` border is a
+     faint tint, and a press that does not read as pressable is a dead control. */
+  border: 1px dashed var(--muted); border-radius: 8px;
+  cursor: pointer; user-select: none;
+}
+.add-item-ctl .line-cost-reset:hover { border-style: solid; }
+/* ⚠️ `hidden` needs saying out loud: the press is a flex child, and a UA stylesheet's
+   `[hidden] { display: none }` loses to anything more specific that sets a display. */
+.add-item-ctl .line-cost-reset[hidden] { display: none; }
 
 /* Order-status flow map above the Orders list */
 .status-flow {
@@ -2185,6 +2330,33 @@ option.tone-off { color: var(--muted); }
 .hist-ord:first-of-type { border-top: none; padding-top: 4px; }
 .hist-line { font-size: 14px; padding: 2px 0; }
 .hist-code { font-weight: 800; color: var(--brown-dark); letter-spacing: .02em; }
+
+/* ★ AN ORDER NUMBER YOU CAN PRESS (v381). Her words: __"can make the order number clickable to
+   bring us to the order so i can admen it, or look at it detail"__.
+
+   ⚠️ IT KEEPS THE CODE'S OWN COLOUR AND WEIGHT and takes a dotted underline, rather than turning
+   into a generic link. The code is the thing she matches a WhatsApp message against — a number
+   that changed colour the moment it became pressable would be harder to recognise, not easier.
+   The underline is what says pressable; nothing else about the figure moves.
+
+   ⚠️⚠️ THE TOUCH TARGET IS WON WITH A NEGATIVE MARGIN, NOT BY GROWING THE BOX. A code is 11-13px of
+   text, well under the 36px a finger needs, so the pressable area is padded out vertically and
+   pulled back by the same amount: the element gets a 37px target while its LAYOUT BOX is unchanged.
+   That matters most in the filing page's order column, whose width took three attempts to get
+   right at v376 (a phone once cut the code to "#052...") — padding that grew the cell would start
+   eating the code again, and a half code is no code. Overlapping the row above and below costs
+   nothing here, because none of those rows is itself pressable. */
+.ord-open {
+  display: inline-block;
+  padding: 12px 0;
+  margin: -12px 0;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.ord-open:hover { text-decoration-style: solid; }
 
 /* "Set day's availability" pop-up (per-delivery-date product adjustments) */
 .day-adj-rows { display: flex; flex-direction: column; gap: 8px; }

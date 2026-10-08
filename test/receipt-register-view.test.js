@@ -49,6 +49,9 @@ globalThis.document = {
   body: createEl("body"),
 };
 globalThis.window = {};
+// ⚠️ The view navigates with `location.hash` directly (the choice history.js documents), so the
+// address has to exist for a press to be provable at all.
+globalThis.location = { hash: "" };
 
 // ⚠️ A LIVE SESSION IS SEEDED so the read never tries to log in — a test that let it would
 // be measuring the auth flow instead of the register.
@@ -124,7 +127,11 @@ test("★ the run is drawn as a column, with the number, the code and the date",
   const said = txt(root);
   assert.match(said, /#000001/, "the first receipt is not on the screen");
   assert.match(said, /#000002/);
-  assert.match(said, /Uncle Tan · Order #C2FDA5/,
+  // ⚠️ `\s+` AROUND THE SEPARATOR, and it is the HELPER's doing rather than the DOM's: `txt`
+  // joins every text node with a space, and the name, the " · " and the order link are three
+  // nodes (the link is a node of its own so it can be pressed — v381). A browser renders them
+  // flush, which is what the eye sees.
+  assert.match(said, /Uncle Tan\s+·\s+Order #C2FDA5/,
     `an order that IS on this phone was not named against its receipt: "${said.slice(0, 300)}"`);
   assert.match(said, /Order #999999/, "the second receipt's order code is missing");
   // Oldest first, and the register says why it is safe to print: nothing here changes anything.
@@ -147,6 +154,38 @@ test("★ a receipt whose order is gone is shown and MARKED, never dropped", asy
   assert.match(said, /#000002/, "a void receipt's number was left off the screen");
   assert.match(said, /The receipt stands, the money moved, and the number stays spent/,
     "the screen does not say what happens to a receipt whose order was removed");
+
+  // ⚠️⚠️ AND THERE IS NO PRESS ON THAT ROW (v381). The order is not on this phone, so there is
+  // nothing to open — and a press that landed on the Orders screen and opened nothing is the
+  // very control this screen refused to draw for three versions. One press, on the one row
+  // that can be opened; none here.
+  const presses = all(root).filter((n) => n.tagName === "A" && String(n.className).includes("ord-open"));
+  assert.equal(presses.length, 1, "a press was offered on a row with no order behind it");
+  assert.equal(presses[0].textContent, "Order #C2FDA5", "the press is on the wrong row");
+});
+
+test("★★ the order number on a receipt OPENS that order (v381)", async () => {
+  // Her words: __"can make the order number clickable to bring us to the order so i can admen
+  // it, or look at it detail"__. ⚠️ The register told her to retype the code into the Orders
+  // screen's own finder; this is that sentence retired.
+  const st = state();
+  globalThis.fetch = async () => ({ ok: true, json: async () => [row(1, "C2FDA5")] });
+  const root = createEl("div");
+  renderReceiptRegister(root, st);
+  await settle();
+
+  const a = all(root).find((n) => n.tagName === "A" && String(n.className).includes("ord-open"));
+  assert.ok(a, "the order number is not pressable — she would still be retyping the code");
+  assert.equal(a.attrs.href, "#/orders?order=C2FDA5", "the press does not carry the order's address");
+  assert.equal(a.textContent, "Order #C2FDA5", "the press does not read as the order number");
+  // ⚠️ A REAL `href`, not only a handler: that is what makes it a link she can long-press or
+  // copy, and what makes it survive a reload.
+  assert.doesNotMatch(txt(root), /To open one of these orders, search its code/,
+    "the screen still tells her to go and search the code herself");
+
+  globalThis.location.hash = "#/more/receipts";
+  a._listeners.click[0]({ preventDefault() {} });
+  assert.equal(globalThis.location.hash, "#/orders?order=C2FDA5", "pressing it went nowhere");
 });
 
 test("a missing number wears a banner of its own, and says it can never be filled in", async () => {
@@ -184,4 +223,18 @@ test("the screen offers no press that could change a number", async () => {
   const presses = all(root).filter((n) => n.tagName === "BUTTON").map((n) => txt(n).trim());
   assert.deepEqual(presses, ["Read again"],
     `the register offers a press beyond re-reading it: ${JSON.stringify(presses)}`);
+  // ⚠️⚠️ AND THE LINKS ARE COUNTED TOO (v381). This assertion used to look at BUTTONS alone,
+  // which made it blind the moment the order numbers became anchors — a control that could
+  // touch a number would not have to be a button to break the one guarantee this screen exists
+  // for. Every anchor on this page opens an order and can do nothing else.
+  const links = all(root).filter((n) => n.tagName === "A");
+  // ⚠️⚠️ THE COUNT IS THE POINT OF THIS ASSERTION, NOT A DETAIL. `[].every(...)` is TRUE, so the
+  // two `every` checks below would pass over a screen with NO links at all — including one where
+  // the doors had quietly vanished. **A bite caught exactly that**: emptying this list broke no
+  // test until the count was asserted. One receipt, one door.
+  assert.equal(links.length, 1, "the doors on this screen are not one per openable receipt");
+  assert.equal(links.every((a) => String(a.className).includes("ord-open")), true,
+    `the register carries a link that is not an order door: ${JSON.stringify(links.map((a) => a.attrs.href))}`);
+  assert.equal(links.every((a) => /^#\/orders\?order=/.test(String(a.attrs.href))), true,
+    "an order number links somewhere other than the order it names");
 });

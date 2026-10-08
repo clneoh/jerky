@@ -17,7 +17,16 @@
 // all. Meanwhile the money that HAS come in stays at the items — a charge the customer
 // bears and you pass straight to the courier is not your takings — which is why
 // customerTotal() rather than groupValue() is read here and nowhere else in this file.
-import { groupOrders, orderCode, orderLinePrice } from "./state.js";
+//
+// What "still to collect" counts was settled on 19 Sep 2026: the customer's total, the
+// charge included — "it should reflex rm72", where RM64 was the bread and RM8 the
+// courier (v129). A charge the customer bears and pays with the order IS money she
+// will be handed, so leaving it out made the row promise less than the customer's own
+// message asks for. A COD charge is different and stays out: the courier takes that
+// money at the door, so it is never hers to collect at all. Meanwhile the money that
+// HAS come in stays at the items — that pass-through charge is not her takings — which
+// is why customerTotal() rather than groupValue() is read here and nowhere else.
+import { fmtRM, groupOrders, orderCode, orderLinePrice, round2 } from "./state.js";
 import { isCash, isOther, isTng, methodLabel, methodRank } from "./accounts.js";
 import { customerTotal } from "./courier.js";
 
@@ -69,7 +78,73 @@ export function isCollected(group) {
 export function isRefunded(x) {
   if (!x) return false;
   const first = Array.isArray(x.orders) ? (x.orders[0] || null) : x;
-  return !!(first && first.refundedAt);
+  // ★ EITHER FACT WILL DO (v370). The mark and the amount are written together by the refund press,
+  // but a reader that needed BOTH would quietly ignore an order carrying only one — and the amount
+  // arrives on its own from the register on a phone that has never seen the refund itself.
+  return !!(first && (first.refundedAt || Number(first.refundAmountRM) > 0));
+}
+
+// ── ★★ A REFUND CAN BE A PART OF AN ORDER (v370) ────────────────────────────
+//
+// Her words: __"refund should not be a full without choice to how much to refund, what to refund"__.
+// Until v370 a refund was a boolean: the whole order, or nothing. It is now an AMOUNT, stamped on the
+// order beside the mark, plus the items that came back as the record of why.
+//
+// ⚠️⚠️ AND THAT FORCED A SECOND, DEEPER FIX. Her takings were counted at the goods' FACE price, with
+// the discount still in them — so a RM16 order with a RM3 coupon counted as RM16 in the till though
+// the customer handed over RM13. While a refund skipped the whole order those two errors cancelled.
+// **The moment a refund can be a part, they stop cancelling**, and a FULL refund of a discounted order
+// would leave a phantom RM3 behind — worse than the thing it replaced.
+//
+// Asked which she wanted, she chose **"count what the customer actually paid"**, knowing her past
+// Money figures for discounted orders would come down by the discount. That is what `orderTakings` is.
+
+// What the customer's money for THIS order actually was, before anything went back: the goods, less
+// the discounts she gave. The courier charge stays OUT — it is a pass-through to the courier and was
+// never her takings (see the note at the top of this file).
+export function orderTakings(state, group) {
+  const t = customerTotal(state, group);
+  return round2(Math.max(0, t.items - t.promo - t.coupon));
+}
+
+// The money given back on one order.
+//
+// ⚠️⚠️ A MISSING AMOUNT IS **THE FULL BILL**, NOT ZERO. Every order refunded before v370 carries
+// `refundedAt` and no amount, and reading that as "nothing went back" would put every one of those
+// sales straight back into her takings — the loudest possible way to be wrong about her books. The
+// full bill is exactly what the old boolean meant, so those orders behave identically.
+export function refundOf(state, group) {
+  const first = firstOf(group);
+  // ⚠️ THE AMOUNT IS ASKED FIRST, AND THE MARK IS THE FALLBACK — never the gate. Gating on the mark
+  // would make an amount with no mark do nothing at all, which is a silent way to lose the whole
+  // refund; and the amount is the more specific of the two facts.
+  const stored = Number(first.refundAmountRM);
+  if (Number.isFinite(stored) && stored > 0) return round2(stored);
+  if (first.refundedAt) return round2(customerTotal(state, group).total);
+  return 0;
+}
+
+// What one order leaves in her hands: the customer's money for the goods, less what went back.
+// ⚠️ FLOORED AT NOTHING. A refund may legitimately be larger than the goods — the postage went back
+// too — and a negative "takings" would read as money she owes herself.
+export function orderNet(state, group) {
+  return round2(Math.max(0, orderTakings(state, group) - refundOf(state, group)));
+}
+
+// ★★ WHETHER A REFUND HAS UNDONE THE ORDER ENTIRELY (v370) — and this is the ONLY thing that makes
+// a book skip an order.
+//
+// ⚠️⚠️ IT IS NOT "net is zero", AND THE DIFFERENCE COST A REGRESSION WHILE THIS WAS BEING BUILT.
+// An order whose product carries **no price** also nets to zero — and the app goes out of its way to
+// keep `null` (nothing can price this) apart from `0` (this is free), so the journal can say "no
+// price recorded" rather than print a confident RM 0.00. Skipping on "net is zero" made those orders
+// vanish from the trading journal entirely. **A refund is what cancels an order; a price that is
+// missing never did and never will.**
+export function refundedInFull(state, group) {
+  // ⚠️ THE MARK IS THE TEST, and the arithmetic only asks whether anything SURVIVED it. Gating on
+  // "some money went back" instead would have missed an order whose bill is RM0 — one whose product
+  // carries no price — and quietly let a refunded sale back into the books as a line.
+  return isRefunded(group) && orderNet(state, group) <= 0;
 }
 
 // The method as it should be read: the list's own label, whichever spelling the row
@@ -115,16 +190,26 @@ function tally(state, groups) {
   const out = { cash: 0, tng: 0, other: 0, unmarked: 0, toCollect: 0, toCollectCount: 0, count: 0, byMethod: new Map() };
   for (const g of groups) {
     out.count++;
-    // ★ A refunded sale is money that came in and went back out (v361) — skipped by every
-    // column rather than landing in one of them.
-    if (isRefunded(g)) continue;
-    const value = groupValue(state, g);
-    // Owed money is counted at what the customer will hand over: the items plus the
-    // delivery charge, which is the flat postage or the courier charge standing in its
-    // place. customerTotal() is the one helper the messages and the track card already
-    // quote, so the figure this row promises is the figure the customer was told to pay.
-    // A COD charge is not in it: that money goes to the courier at the door, never to you.
-    if (!isCollected(g)) { out.toCollect += customerTotal(state, g).total; out.toCollectCount++; continue; }
+    // Owed money is counted at what the customer will hand over — the items plus the
+    // courier charge when they pay it with the order. customerTotal() is the one
+    // helper the messages and the track card already quote, so the figure this row
+    // promises is the figure the customer was told to pay (19 Sep 2026). A COD charge
+    // is not in it: that money goes to the courier at the door, never to you.
+    //
+    // ★ AND A REFUNDED SALE IS NEVER OWED (v361), whatever its stage. That guard is kept
+    // EXPLICIT rather than left to fall out of the arithmetic: an order carrying a refund but
+    // never marked paid is a real shape, and without this line the refund would land in the
+    // owed column and read as a customer who still has to pay for a sale that was undone.
+    if (!isCollected(g)) {
+      if (!isRefunded(g)) { out.toCollect += customerTotal(state, g).total; out.toCollectCount++; }
+      continue;
+    }
+    // ★★ TAKINGS, LESS ANYTHING HANDED BACK (v370). Not `groupValue` any more: that counted the
+    // goods at their FACE price, so a discounted order read as money she never received. A fully
+    // refunded order now nets to 0 and is dropped below — **the same answer v361's skip gave**,
+    // which is what keeps every refund made before this version behaving exactly as it did.
+    const value = orderNet(state, g);
+    if (value <= 0) continue;
     const method = methodOf(g);
     // The same money, filed one way for the columns and one way per method: it is the
     // method totals that give a loan, the bank overdraft or a personal pocket a row of
@@ -220,13 +305,23 @@ export function journalFor(state, method, from, to) {
   const rows = [];
   for (const g of groupOrders(state.orders || [])) {
     const first = firstOf(g);
-    if (isRefunded(g) || !isCollected(g) || methodLabel(first.paidMethod) !== want) continue;
+    if (!isCollected(g) || methodLabel(first.paidMethod) !== want) continue;
+    // ★ THE ROW CARRIES THE NET, AND NAMES THE REFUND (v370). One row, not two: the refund went
+    // back the way it came, so an "in" of the balance and an "out" of the refund would say the
+    // same thing twice — and this book's whole job is to agree with the column above it.
+    const back = refundOf(state, g);
+    const value = orderNet(state, g);
+    // A FULLY REFUNDED order moved through the pocket and left it. A RM0.00 "in" row is noise in a
+    // reconciliation — ⚠️ but only a refund earns that skip: an order nothing can price keeps its
+    // row, exactly as it always has (see `refundedInFull`).
+    if (refundedInFull(state, g)) continue;
     const day = paidOf(state, g);
     if (!isWithin(day, from, to)) continue;
     rows.push({
       date: day,
-      what: `Order #${orderCode(first)} — ${first.customerName || "no name"}`,
-      amount: groupValue(state, g),
+      what: `Order #${orderCode(first)} — ${first.customerName || "no name"}`
+        + (back > 0 ? ` (refunded ${fmtRM(back, (state.settings && state.settings.currency) || "RM")})` : ""),
+      amount: value,
       dir: "in",
     });
   }

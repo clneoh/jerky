@@ -375,21 +375,34 @@ test("the customer's card counts what is ready, and says what is not", () => {
 });
 
 // ── ★★ THE FORGET BUTTON IS OFFERED WHERE IT CAN WORK (v325) ─────────────────
-test("Forget is offered on a hand-added person, and never on a customer with orders", () => {
-  // Her own rule about dead controls: **two rows that look alike must behave alike, and a press
-  // that cannot do what it says must say why or not be there at all.** A customer's row is built
-  // from their ORDERS, so a Forget button on one would either do nothing or silently throw away
-  // their reward and note while leaving the row standing. It is offered on `r.manual` only.
+test("★ Forget is offered on EVERY customer now, and says what goes and what stays", () => {
+  // ⚠️⚠️ THIS TEST SAID THE OPPOSITE UNTIL v374, AND IT WAS RIGHT AT THE TIME: **the press was gated on
+  // `r.manual`**, because a customer's row is built from their ORDERS — so removing the profile alone
+  // would have thrown away their reward and their note while leaving their name standing on every sale.
+  // **A button that does half of what it says is worse than no button.**
+  //
+  // ★ v374 IS WHY THE GATE IS GONE. `forgetCustomer` redacts the orders as well, so the press finally
+  // does the whole of what it says and can be offered to everyone — which is what the shop's own privacy
+  // notice has been promising customers all along.
   const src = readFileSync(new URL("../admin/js/views/customers.js", import.meta.url), "utf8");
   const at = src.indexOf('"🗑 Forget"');
   assert.ok(at > -1, "the Forget press is gone");
-  assert.match(src.slice(Math.max(0, at - 900), at), /r\.manual\s*\?/,
-    "Forget must be gated on the person having been added by hand");
-  assert.match(src, /removeProfile\(state, r\._key\)/, "and it must remove the record by the row's key");
-  // And the question it asks has to say what goes and what does not — a bare "Are you sure?" is
-  // not something she can weigh.
+  assert.equal(/r\.manual\s*\?/.test(src.slice(Math.max(0, at - 400), at + 200)), false,
+    "★ Forget is STILL gated on the person having been added by hand, so an ordering customer cannot be forgotten");
+  assert.match(src, /forgetPress\(state, r, refresh, onSaved\)/,
+    "the press does not call the one path that does the whole job");
+
+  // ⚠️ AND EACH QUESTION HAS TO NAME WHAT GOES AND WHAT STAYS — a bare "Are you sure?" is not something
+  // she can weigh, and for an ordering customer the thing that STAYS is the entire promise.
   assert.match(src, /never ordered — so this removes the name, the number, any reward and any note/,
-    "the confirmation must name what is removed");
+    "the hand-added wording must name what is removed");
   assert.match(src, /Nothing else in your book is touched/,
     "and say plainly what is NOT");
+  assert.match(src, /What STAYS is the sales record/,
+    "★ the ordering wording must say what is kept — it is the whole promise");
+  assert.match(src, /It cannot be undone from here/,
+    "and that it is final");
+  // ⚠️ AND IT NAMES WHAT IT CANNOT REACH. A promise kept only as far as the app is not the promise.
+  assert.match(src, /your dated cloud backups/,
+    "the confirmation does not say the backups still hold their details");
 });
