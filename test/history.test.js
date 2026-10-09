@@ -270,7 +270,7 @@ test("★★ a bought shop carries an Undo, and it puts BOTH halves back", () =>
   assert.equal(state.expenses.length, 0, "⚠️ the money stayed on her books after an undo");
   assert.equal(po.boughtShops.Mydin, undefined, "the shop is still marked bought");
   assert.equal(po.bought, false, "the list still reads as finished");
-  assert.ok(shopBtn(root, "Mydin", "Bought ✓"), "the shop cannot be bought again");
+  assert.ok(shopBtn(root, "Mydin", "Buy"), "the shop cannot be bought again");
   // ⚠️ AND THE REVERSAL IS ON THE CARD, so the journal still explains the figure it sits under.
   assert.match((state.ingredients[0].stockLog || []).map((e) => e.what).join(" "), /Un-bought — Mydin/,
     "the stock card was not told what moved");
@@ -428,8 +428,8 @@ test("★ every shop on a saved list carries its OWN Bought press", () => {
   twoShopPO(state);
   const root = mountHistory(state, "po=p1");
 
-  assert.ok(shopBtn(root, "Mydin", "Bought ✓"), "the first shop can be bought on its own");
-  assert.ok(shopBtn(root, "Yen Grocer", "Bought ✓"), "and so can the second");
+  assert.ok(shopBtn(root, "Mydin", "Buy"), "the first shop can be bought on its own");
+  assert.ok(shopBtn(root, "Yen Grocer", "Buy"), "and so can the second");
   assert.ok(!findBtn(root, "Bought ✓ — add to stock"),
     "the one press that claimed the whole run is gone");
   assert.ok(textOf(root).includes("Nothing goes into your stock until you do"),
@@ -447,10 +447,10 @@ test("⚠️ a list of loose estimates is still one shop that can be bought", ()
     needText: "3000g", estCost: 9, addBase: 3000 }];
 
   const root = mountHistory(state, "po=p1");
-  assert.ok(findBtn(root, "Bought ✓"),
+  assert.ok(findBtn(root, "Buy"),
     "⚠️ no supplier name — but still a shop's worth of packs to put away");
 
-  fireClick(findBtn(root, "Bought ✓"));
+  fireClick(findBtn(root, "Buy"));
   fireClick(popBtn("Skip the money"));
   assert.equal(state.ingredients[0].onHand, 3000, "and buying it still puts them on the shelf");
 });
@@ -461,7 +461,7 @@ test("★★ pressing Bought adds NOTHING — the shelf waits for her answer", (
   po.items = [boughtItem()];
 
   const root = mountHistory(state, "po=p1");
-  fireClick(shopBtn(root, "Mydin", "Bought ✓"));
+  fireClick(shopBtn(root, "Mydin", "Buy"));
 
   assert.ok(registry["popup-layer"], "the money question opens");
   assert.equal(state.ingredients[0].onHand || 0, 0,
@@ -476,12 +476,12 @@ test("★★ closing the pay box without answering leaves the shelf exactly as i
   po.items = [boughtItem()];
 
   const root = mountHistory(state, "po=p1");
-  fireClick(shopBtn(root, "Mydin", "Bought ✓"));
+  fireClick(shopBtn(root, "Mydin", "Buy"));
   fireClick(popBtn("✕")); // the close a card she walks away from uses
 
   assert.equal(state.ingredients[0].onHand || 0, 0, "a box she closed changed nothing");
   assert.equal((state.expenses || []).length, 0, "no money either");
-  assert.ok(shopBtn(root, "Mydin", "Bought ✓"), "and the shop is still there to buy");
+  assert.ok(shopBtn(root, "Mydin", "Buy"), "and the shop is still there to buy");
 });
 
 test("★ Save puts THAT shop's packs on the shelf and records what she paid", () => {
@@ -491,7 +491,7 @@ test("★ Save puts THAT shop's packs on the shelf and records what she paid", (
   po.buyTotal = 52.5;
 
   const root = mountHistory(state, "po=p1");
-  fireClick(shopBtn(root, "Mydin", "Bought ✓"));
+  fireClick(shopBtn(root, "Mydin", "Buy"));
   const box = walk(registry["popup-layer"])
     .find((n) => n.tagName === "INPUT" && n.attrs["aria-label"] === "What you paid");
   box.value = "48.90";
@@ -508,7 +508,7 @@ test("★ Save puts THAT shop's packs on the shelf and records what she paid", (
   assert.equal(state.expenses[0].poId, "p1");
   assert.equal(state.expenses[0].note, "Mydin",
     "⚠️ the shop goes in the note, so a run's rows can be told apart in her books");
-  assert.ok(!shopBtn(root, "Mydin", "Bought ✓"), "the press becomes a state, not a button");
+  assert.ok(!shopBtn(root, "Mydin", "Buy"), "the press becomes a state, not a button");
   assert.ok(textOf(root).includes("Bought ✓"), "the heading says which shop is done");
   assert.ok(findBtn(root, "Regenerate"), "the other actions stay available");
 });
@@ -519,7 +519,7 @@ test("★ Skip the money still adds the stock and records nothing — her choice
   po.items = [boughtItem()];
 
   const root = mountHistory(state, "po=p1");
-  fireClick(shopBtn(root, "Mydin", "Bought ✓"));
+  fireClick(shopBtn(root, "Mydin", "Buy"));
   fireClick(popBtn("Skip the money"));
 
   assert.equal(state.ingredients[0].onHand, 3000, "the packs are still on the shelf");
@@ -531,14 +531,14 @@ test("★★ buying one shop leaves the other shops and their stock alone", () =
   const po = twoShopPO(state);
   const root = mountHistory(state, "po=p1");
 
-  fireClick(shopBtn(root, "Mydin", "Bought ✓"));
+  fireClick(shopBtn(root, "Mydin", "Buy"));
   fireClick(popBtn("Skip the money"));
 
   const sugar = state.ingredients.find((i) => i.id === "ing_s");
   assert.equal(state.ingredients[0].onHand, 3000, "Mydin's flour is on the shelf");
   assert.equal(sugar.onHand || 0, 0,
     "⚠️⚠️ and Yen Grocer's sugar is NOT — one press bought one shop, not the run");
-  assert.ok(shopBtn(root, "Yen Grocer", "Bought ✓"), "the second shop is still offered");
+  assert.ok(shopBtn(root, "Yen Grocer", "Buy"), "the second shop is still offered");
   assert.equal(po.bought, false, "and the list is not finished");
   assert.ok(textOf(root).includes("still to buy: Yen Grocer"), "the card says what is left");
 });
@@ -560,11 +560,11 @@ test("★ Not buying closes a shop with no stock and no money, and lets the list
   assert.equal(sugar.onHand || 0, 0, "nothing came into stock from a shop she did not buy from");
   assert.equal((state.expenses || []).length, 0, "and no money was recorded");
   assert.equal(po.boughtShops["Yen Grocer"].skipped, true, "recorded as a decision, not a gap");
-  assert.ok(!shopBtn(root, "Yen Grocer", "Bought ✓"), "the shop is closed");
+  assert.ok(!shopBtn(root, "Yen Grocer", "Buy"), "the shop is closed");
 
   // …and once the other shop is bought the LIST can finish, rather than waiting for ever on a shop
   // she has decided against.
-  fireClick(shopBtn(root, "Mydin", "Bought ✓"));
+  fireClick(shopBtn(root, "Mydin", "Buy"));
   fireClick(popBtn("Skip the money"));
   assert.equal(po.bought, true, "a skipped shop still lets the run be finished");
   assert.ok(textOf(root).includes("1 not buying"),
@@ -608,7 +608,7 @@ test("the What-did-you-pay box is pre-filled from the list's own summary total",
   po.summary = { totalUnits: 1, totalEstCost: 76.5, buyTotal: 76.5 };
 
   const root = mountHistory(state, "po=p1");
-  fireClick(shopBtn(root, "Mydin", "Bought ✓"));
+  fireClick(shopBtn(root, "Mydin", "Buy"));
 
   const layer = registry["popup-layer"];
   const amount = walk(layer).find((n) => n.nodeType === 1 && String(n.className).includes("input"));
@@ -626,7 +626,7 @@ test("⚠️ a shop's box is pre-filled with THAT shop's subtotal, never the who
   po.summary = { totalUnits: 2, totalEstCost: 88.5, buyTotal: 88.5 };
 
   const root = mountHistory(state, "po=p1");
-  fireClick(shopBtn(root, "Yen Grocer", "Bought ✓"));
+  fireClick(shopBtn(root, "Yen Grocer", "Buy"));
   const box = walk(registry["popup-layer"])
     .find((n) => n.tagName === "INPUT" && n.attrs["aria-label"] === "What you paid");
   assert.equal(String(box.value), "12",
@@ -641,7 +641,7 @@ test("Amend is offered while nothing has landed, and gone once something has", (
   const root = mountHistory(state, "po=p1");
   assert.ok(findBtn(root, "Amend"), "she can correct the list at the shop");
 
-  fireClick(shopBtn(root, "Mydin", "Bought ✓"));
+  fireClick(shopBtn(root, "Mydin", "Buy"));
   assert.ok(findBtn(root, "Amend"), "⚠️ a pay box she has not answered has changed nothing");
 
   fireClick(popBtn("Skip the money"));
@@ -791,7 +791,7 @@ test("a legacy snapshot saved before stock carries no buy amounts, so no Bought 
   }];
 
   const root = mountHistory(state, "po=p1");
-  assert.equal(shopBtn(root, "Mydin", "Bought ✓"), undefined,
+  assert.equal(shopBtn(root, "Mydin", "Buy"), undefined,
     "no addBase anywhere means there is nothing to add, exactly as before the feature");
 });
 
@@ -806,7 +806,7 @@ test("⚠️ an old snapshot already marked Bought offers no press at all", () =
   po.boughtAt = "2026-10-03T02:00:00.000Z";
 
   const root = mountHistory(state, "po=p1");
-  assert.equal(shopBtn(root, "Mydin", "Bought ✓"), undefined,
+  assert.equal(shopBtn(root, "Mydin", "Buy"), undefined,
     "⚠️ there is nothing left to buy on it");
   assert.equal(shopBtn(root, "Mydin", "Not buying"), undefined, "and nothing to skip");
   assert.ok(textOf(root).includes("these packs are on your stock"),
@@ -821,7 +821,7 @@ test("Bought asks what she paid, pre-filled with the list's own total", () => {
   po.buyTotal = 52.5;
 
   const root = mountHistory(state, "po=p1");
-  fireClick(shopBtn(root, "Mydin", "Bought ✓"));
+  fireClick(shopBtn(root, "Mydin", "Buy"));
 
   const pop = registry["popup-layer"];
   const box = walk(pop).find((n) => n.tagName === "INPUT" && n.attrs["aria-label"] === "What you paid");
@@ -837,7 +837,7 @@ test("saving records money out, with the day and how she paid", () => {
   po.buyTotal = 52.5;
 
   const root = mountHistory(state, "po=p1");
-  fireClick(shopBtn(root, "Mydin", "Bought ✓"));
+  fireClick(shopBtn(root, "Mydin", "Buy"));
   const pop = registry["popup-layer"];
   const box = walk(pop).find((n) => n.tagName === "INPUT" && n.attrs["aria-label"] === "What you paid");
   box.value = "48.90"; // what she really paid
@@ -859,7 +859,7 @@ test("Skip the money adds the stock and records nothing, as the app always did",
   po.buyTotal = 52.5;
 
   const root = mountHistory(state, "po=p1");
-  fireClick(shopBtn(root, "Mydin", "Bought ✓"));
+  fireClick(shopBtn(root, "Mydin", "Buy"));
   const pop = registry["popup-layer"];
   fireClick(walk(pop).find((n) => n.tagName === "BUTTON" && textOf(n).trim() === "Skip the money"));
 
@@ -874,7 +874,7 @@ test("what she paid with comes from her own list, loan included (v106)", () => {
   po.buyTotal = 52.5;
 
   const root = mountHistory(state, "po=p1");
-  fireClick(shopBtn(root, "Mydin", "Bought ✓"));
+  fireClick(shopBtn(root, "Mydin", "Buy"));
   const pop = registry["popup-layer"];
   const pills = walk(pop).filter((n) => n.tagName === "BUTTON").map((b) => textOf(b).trim());
   assert.ok(pills.includes("Cash") && pills.includes("TNG"), "the two a customer uses");
@@ -886,4 +886,41 @@ test("what she paid with comes from her own list, loan included (v106)", () => {
   fireClick(walk(pop).find((n) => n.tagName === "BUTTON" && textOf(n).trim() === "Loan"));
   fireClick(walk(pop).find((n) => n.tagName === "BUTTON" && textOf(n).trim() === "Save"));
   assert.equal(state.expenses[0].method, "Loan", "recorded as she chose");
+});
+
+// ── ★★ the press says BUY, and the record says BOUGHT (v400) ──────────────────
+// Her words: __"can the button initially say buy, after buy it become bought?"__
+
+test("★★ the press says Buy while it is outstanding, and Bought once it is done", () => {
+  const state = freshState();
+  const po = addPO(state, "p1", ["del_a"]);
+  po.items = [boughtItem()];
+  const root = mountHistory(state, "po=p1");
+
+  // ⚠️ While nothing has landed, the control is the DOING word — and a tick here would claim a purchase
+  // that has not happened: since v389 pressing it only opens the pay box.
+  assert.ok(shopBtn(root, "Mydin", "Buy"), "the press is not the doing word");
+  assert.equal(shopBtn(root, "Mydin", "Bought ✓"), undefined,
+    "⚠️ a tick on the press claims the purchase is already done");
+
+  fireClick(shopBtn(root, "Mydin", "Buy"));
+  fireClick(popBtn("Skip the money"));
+
+  // ⚠️ And once it HAS happened, the press is gone entirely and the past tense with the time takes its
+  // place — which is what makes the tick mean something.
+  assert.ok(textOf(root).includes("Bought ✓"), "the record does not say the shop is done");
+  assert.equal(shopBtn(root, "Mydin", "Buy"), undefined,
+    "⚠️ the shop can still be bought again after it has been bought");
+  assert.equal(shopBtn(root, "Mydin", "Bought ✓"), undefined,
+    "⚠️ the tick is drawn as a PRESS — it is a record, not a control");
+});
+
+test("⚠️ the words are a PAIR: Buy and Not buying are the two answers to one question", () => {
+  const state = freshState();
+  const po = twoShopPO(state);
+  const root = mountHistory(state, "po=p1");
+  const head = shopHead(root, "Mydin");
+  const labels = walk(head).filter((n) => n.tagName === "BUTTON").map((b) => textOf(b).trim());
+  assert.deepEqual(labels, ["Buy", "Not buying"],
+    "⚠️ the two answers to 'did you buy at this shop' are not named as a pair");
 });

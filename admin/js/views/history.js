@@ -215,7 +215,17 @@ function shopControls(state, po, group, root) {
     return [label];
   }
   return [
-    button("Bought ✓", () => openPayBox(state, po, group, root), "primary small"),
+    // ★★ THE PRESS SAYS WHAT PRESSING IT DOES — **BUY** (v400). Her words: __"can the button initially
+    // say buy, after buy it become bought?"__ — and that is exactly the shape this already had: once a
+    // shop lands, `shopRec` above replaces these presses with the record.
+    //
+    // ⚠️⚠️ "BOUGHT ✓" WAS DOING TWO JOBS AND ONLY ONE OF THEM WELL. On the PRESS the past tense plus a
+    // tick read as *already done* — but since v389 pressing it only opens "What did you pay?", and
+    // **nothing moves until she answers**. The tick belongs to the RECORD, where it means something:
+    // `Bought ✓ 9 Oct, 11:42` can only appear once the packs really are on her shelf.
+    // ⭐ And it pairs properly with the press beside it — **Buy / Not buying** are the two answers to
+    // one question, where "Bought ✓ / Not buying" mixed a verdict with a decision.
+    button("Buy", () => openPayBox(state, po, group, root), "primary small"),
     // ⚠️⚠️ THIS ONE ASKS FIRST, AND IT IS THE ONLY PRESS HERE THAT DOES. "Bought ✓" opens a box that
     // must be answered, so a mis-tap on it changes nothing at all — but this one takes effect on the
     // tap and there is no way back from it, exactly like Delete. On a phone, one stray finger must not

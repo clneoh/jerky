@@ -756,6 +756,24 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## Engine v399 → v400 — the press says Buy, and becomes Bought (9 Oct 2026)
+
+Base `ebd90cf` → `1a567e3`. **Three files, 0 conflicts**, engine **v400**, suite **3215 → 3217 pass / 0
+fail**. The **jerky-only-line audit reported 0 lost lines**. No SQL, nothing to deploy.
+
+Her ask: *"can the button initially say buy, after buy it become bought?"* `admin/js/views/history.js`'s
+per-shop press said **"Bought ✓"** and now says **"Buy"**; the record it is replaced by still reads
+*"Bought 9 Oct, 11:42"*, with **Undo** beside it. The bakery's reasoning, which is worth keeping: *"Bought
+✓" was doing two jobs and only one well* — on the *press* the past tense plus a tick read as already
+done, while pressing it only opens *"What did you pay?"*; and the pair is now coherent, **Buy / Not
+buying** being the two answers to one question rather than a verdict beside a decision.
+
+**⚠️ ONE OPEN QUESTION PASSED TO HER, NOT SETTLED HERE.** The shopping list's table carries a column
+headed **BUY** (the quantity to buy — `admin/js/views/poTable.js:62`) and a **Buy** button now sits on
+the same screen beside each shop's name. Different things (a heading against a press), but the bakery
+flagged that the two may read as confusing and offered to rename one. **That is her call, not ours**,
+and renaming a heading is a copy change she should make knowingly.
+
 ## Engine v393 → v399 — your own money, more than one owner, your own order (9 Oct 2026)
 
 Base `136b78f` → `ebd90cf`. 14 files, ~1,029 insertions. **5 conflicts across 3 files** (`admin/js/money.js`

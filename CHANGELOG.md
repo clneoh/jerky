@@ -1,8 +1,35 @@
-# Munchies Furkidz — change history (v54 → v399)
+# Munchies Furkidz — change history (v54 → v400)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**9 Oct 2026 — engine v399 → v400, ONE VERSION: the button says Buy, and becomes Bought
+(nothing to run, nothing to upload — pushing this one is the whole of it).**
+
+**Why.** Your question: *"can the button initially say buy, after buy it become bought?"* — and it
+does now. A shop you have not bought from reads **Buy**; press it, answer what you paid, and the press
+is replaced by the record — **"Bought 9 Oct, 11:42"** — with **Undo** beside it:
+
+```
+Mydin        RM 96.00   [Buy] [Not buying]
+Yen Grocer   RM 34.00   Bought 9 Oct, 11:42  [Undo]
+```
+
+**The tick means something now.** *"Bought ✓"* was doing two jobs and only one of them well: on the
+press, the past tense plus a tick read as *already done* — but since the day you could undo it,
+pressing it only opens *"What did you pay?"*, and nothing moves until you answer. The tick belongs to
+the record, where it is true: **"Bought 11:42" can only appear once the packs really are on your
+shelf.**
+
+**And the two presses are a pair now.** **Buy** and **Not buying** are the two answers to one
+question — did you buy at this shop? Before, the row mixed a verdict with a decision (*"Bought ✓ / Not
+buying"*), which read as though one had already been settled.
+
+**Nothing else moved.** The record still says Bought, the stock card still says *"Bought — Mydin"*, and
+the card still counts *"Bought 1 of 2 shops"*. Only the press changed its word.
+
+**Nothing to run, no SQL, no upload, no setting to change on either phone.**
 
 **9 Oct 2026 — engine v393 → v399, SIX VERSIONS: your own money, more than one owner, and your own order
 (nothing to run, nothing to upload — pushing this one is the whole of it).**
