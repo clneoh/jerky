@@ -15,7 +15,7 @@
 import { el, button, toast, confirmDialog } from "../ui.js";
 import { save } from "../state.js";
 import { maybeSync } from "../supabase.js";
-import { categoriesOf, methodsOf } from "../accounts.js";
+import { categoriesOf, methodsOf, sourcesOf } from "../accounts.js";
 
 const CLASS_CHOICES = [
   ["expense", "A running cost"],
@@ -34,14 +34,19 @@ const rewrite = (state, listKey, field, from, to) => {
 // select it), and `onDone("")` after a delete.
 export function entryForm(state, { kind, current = "", onDone }) {
   const isCategory = kind === "category";
-  // Both lists read as { label, cls }: the ways to pay are plain strings, and the
+  // ★ WHERE HER MONEY CAME FROM (v394) — the third list, edited by this same form.
+  const isSource = kind === "source";
+  // All three lists read as { label, cls }: methods and sources are plain strings, and the
   // category-only `cls` is what tells the statement where a cost belongs.
-  const list = isCategory ? categoriesOf(state) : methodsOf(state).map((m) => ({ label: m, cls: "" }));
+  const list = isCategory ? categoriesOf(state)
+    : isSource ? sourcesOf(state).map((m) => ({ label: m, cls: "" }))
+      : methodsOf(state).map((m) => ({ label: m, cls: "" }));
   const existing = list.find((c) => c.label === current);
   const others = list.filter((c) => c.label !== current).map((c) => c.label);
 
   const name = el("input", { class: "input", value: current,
-    placeholder: isCategory ? "e.g. Pet expo" : "e.g. Bank OD", "aria-label": "Name" });
+    placeholder: isCategory ? "e.g. Pet expo" : isSource ? "e.g. Maybank savings" : "e.g. Bank OD",
+    "aria-label": "Name" });
   let cls = existing && existing.cls ? existing.cls : "expense";
   const clsPills = el("div", { class: "cal-modes" },
     ...CLASS_CHOICES.map(([id, text]) => button(text, () => {
@@ -60,6 +65,14 @@ export function entryForm(state, { kind, current = "", onDone }) {
         ? list.map((c) => (c.label === current ? { label, cls } : { label: c.label, cls: c.cls || "expense" }))
         : [...list.map((c) => ({ label: c.label, cls: c.cls || "expense" })), { label, cls }];
       if (current && current !== label) rewrite(state, "expenses", "category", current, label);
+    } else if (isSource) {
+      // ⚠️ RENAMING MOVES WHAT SHE HAS ALREADY RECORDED WITH IT — the same rule the other two lists keep,
+      // and the reason this is not merely cosmetic: a row stores the words it was written with, so a
+      // rename that only changed the list would split her history across two spellings of one pot.
+      state.settings.sources = current
+        ? list.map((c) => (c.label === current ? label : c.label))
+        : [...list.map((c) => c.label), label];
+      if (current && current !== label) rewrite(state, "deposits", "source", current, label);
     } else {
       state.settings.payMethods = current
         ? list.map((c) => (c.label === current ? label : c.label))
@@ -71,7 +84,7 @@ export function entryForm(state, { kind, current = "", onDone }) {
     }
     save(state);
     maybeSync(state);
-    toast(current ? "Updated" : (isCategory ? "Category added" : "Added"));
+    toast(current ? "Updated" : (isCategory ? "Category added" : isSource ? "Source added" : "Added"));
     if (onDone) onDone(label);
   };
 
@@ -81,9 +94,12 @@ export function entryForm(state, { kind, current = "", onDone }) {
     confirmDialog(
       isCategory
         ? `Delete the "${current}" category? Expenses already recorded under it are kept, and still count on the statement.`
-        : `Delete "${current}"? Entries already recorded as paid that way are kept.`,
+        : isSource
+          ? `Delete "${current}"? Money-in rows already recorded as coming from it are kept, and still count.`
+          : `Delete "${current}"? Entries already recorded as paid that way are kept.`,
       () => {
         if (isCategory) state.settings.categories = kept;
+        else if (isSource) state.settings.sources = kept.map((c) => c.label);
         else state.settings.payMethods = kept.map((c) => c.label);
         save(state);
         maybeSync(state);
@@ -96,7 +112,9 @@ export function entryForm(state, { kind, current = "", onDone }) {
     el("p", { class: "card-sub", style: "margin:0 0 6px" },
       isCategory
         ? "What an expense was for. Its kind tells the Profit statement where it belongs; renaming it moves what you have already recorded with it."
-        : "How the money moved. Cash and TNG come out of your purse or your phone; anything else — a loan, the bank overdraft — is kept out of those figures."),
+        : isSource
+          ? "Where your own money came from. ⚠️ A different question from how it was paid in — money can come from your savings and still go in as cash. Renaming it moves what you have already recorded with it."
+          : "How the money moved. Cash and TNG come out of your purse or your phone; anything else — a loan, the bank overdraft — is kept out of those figures."),
     name,
     isCategory ? clsPills : null,
     el("div", { class: "btn-row", style: "margin-top:8px" },
@@ -108,5 +126,8 @@ export function entryForm(state, { kind, current = "", onDone }) {
 // The ＋ chip that sits at the end of a row of pills, or under a list. Tapping it
 // calls `open()`; the caller shows the inline form wherever it belongs.
 export function newEntryChip(kind, open) {
-  return button(kind === "category" ? "＋ New category" : "＋ New way to pay", open, "ghost small");
+  const text = kind === "category" ? "＋ New category"
+    : kind === "source" ? "＋ New source"
+      : "＋ New way to pay";
+  return button(text, open, "ghost small");
 }

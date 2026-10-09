@@ -756,6 +756,53 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## Engine v393 → v399 — your own money, more than one owner, your own order (9 Oct 2026)
+
+Base `136b78f` → `ebd90cf`. 14 files, ~1,029 insertions. **5 conflicts across 3 files** (`admin/js/money.js`
+×2, `admin/js/views/accountsEditor.js` ×1, `admin/js/views/money.js` ×2). Suite **3197 → 3215 pass / 0
+fail**. Engine **v399**. **No SQL, no `store/` change, nothing to deploy.**
+
+**★ THE NEW GUARD CAUGHT STRIKE FOUR — on its first real use.** My "keep both sides" resolution of
+`views/money.js`'s import block inserted `import { clearCourierCharge } from "../courier.js"` while the
+file already had it. `test/no-duplicate-imports.test.js` (added yesterday, after the same mistake bit
+three times) **failed by name, naming the file and the binding** — no `Identifier … is not defined`
+hunt, no "why did every test file fail to load". That is the whole point of writing it as a test rather
+than a checklist item. *(The jerky-only-line audit flags it too, but as a "deliberately changed" line —
+the duplicate guard is what names it properly.)*
+
+**Conflicts, and how each was settled — jerky's localized wording kept, the bakery's new code taken:**
+- `admin/js/money.js` ×2 — jerky's "she"→"you" comment rewordings kept, the bakery's **new** comment and
+  its whole **v396 investment block** appended.
+- `admin/js/views/accountsEditor.js` — jerky's own example (`"e.g. Pet expo"`, where the bakery says
+  `"e.g. Baking class"`) **kept**, and the bakery's new `isSource ? "e.g. Maybank savings"` branch added.
+- `admin/js/views/money.js` ×2 — the import list merged (the bakery's `investmentOf`,
+  `classOfCategory`, `isOther`, `sourcesOf` **plus** jerky's `clearCourierCharge`), and the bakery's new
+  v394 sentence taken **in jerky's voice**: *"Money you have INVESTED in the business …"* where the
+  bakery says "in the bakery".
+
+**Localization — nine user-visible strings, all the same word.** The batch added an investment account
+whose copy says "the bakery" throughout. Jerky already says **"the business"** in its own money code, so
+these all moved: *"The business owes me"*, *"…it stays in the business"*, *"…so the business owes it
+back to you"*, *"So each owner's share of the business reads on its own"*, *"Still in the business"*,
+*"…gone into the business is listed here"*, *"Every ringgit of your own that has gone into the
+business…"*, *"…has already been spent on **ingredients**…"* (the bakery says **"flour"**), and
+*"Money of your own that has gone into the business · all time"*. **One test assertion moved with them**
+(`test/money-lists.test.js` asserts the visible label `"The business owes me"` — an assertion on
+user-visible copy, which localizes; the file's *comments* keep the bakery's voice on purpose).
+
+**Adopted:** **v394** — "Put money in" is an **investment**, the pocket stops claiming a debt for money
+she marked as invested (the same ringgit can never be counted twice), and *Put money in* asks **where
+the money came from** from a third list of her own beside categories and ways to pay; **v396** — the
+**Your investment** card (put in / taken back / still in, **all-time on purpose**, with an Open sheet she
+can Print or Share, counting by the **class** behind her withdrawal category rather than by its words);
+**v397** — **Transfer** between her own pots (never money in or out); **v398** — **more than one owner**,
+each share kept on its own, withdrawals naming their owner, and unowned money shown in its own section;
+**v399** — a **drag grip** on every ingredient, order written onto the ingredients themselves.
+
+**Browser-verified:** the Money screen carries **"Your investment"** with *"gone into the business ·
+all time"*, the **Transfer** button, and *"The business owes me"*; **no "bakery" or "flour" renders
+anywhere**, and nothing prints `null`/`undefined`.
+
 ## Engine v384 → v393 — stock, and the shopping that fills it (9 Oct 2026)
 
 Base `651cc94` → `136b78f`. 21 files, ~2,262 insertions. **One conflict** (`admin/js/views/money.js`:

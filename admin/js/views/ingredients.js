@@ -4,7 +4,10 @@
 // from the cheapest shop. New ingredients go in the always-visible card at the
 // top; tapping Edit opens the same form in a pop-up, like products and orders.
 
-import { el, button, select, emptyState, confirmDialog, showPopup, toast } from "../ui.js";
+import { el, button, select, emptyState, confirmDialog, showPopup, toast, wireRowReorder } from "../ui.js";
+// ⚠️ THE ORDER HELPERS ARE GENERIC AND ALREADY PROVEN on the Products screen — they work on any
+// `{ id, sort }` records, which an ingredient now is. See the note on `renderAll`.
+import { indexForDrop, moveInTail, tailOrder } from "../productCategories.js";
 import { byId, fmtRM, newId, round2, save } from "../state.js";
 import { fmtStockAmount, priceEntryLabels, belowReserve, chosenSupplier, trimNum } from "../purchasing.js";
 import { logPriceMoves, priceLogOf } from "../prices.js";
@@ -17,7 +20,18 @@ export function renderIngredients(root, state) {
 }
 
 function renderAll(root, state) {
-  const items = state.ingredients.filter((x) => x.active !== false);
+  // ★★ SHE ARRANGES HER OWN INGREDIENTS (v399). Her words: __"can you give me a handle to reorganise
+  // the ingredient card?"__ — and what she meant was **the grip the Products screen already has**, which
+  // the Ingredients screen had simply never been given.
+  //
+  // ⚠️⚠️ THE ORDER IS A `sort` FIELD ON EACH INGREDIENT, NOT THE ARRAY POSITION, and that is not a
+  // preference — **sync carries whole records keyed by id**, so where a row sits in `state.ingredients`
+  // never travels between her two phones. The helper's own note says exactly this; the Products screen
+  // learned it first.
+  //
+  // ⚠️ AND AN INGREDIENT SHE HAS NEVER DRAGGED HAS NO `sort` AND KEEPS THE ORDER IT WAS STORED IN — so
+  // nothing moves under her on the day this arrives, and the list reads exactly as it did yesterday.
+  const items = tailOrder(state.ingredients.filter((x) => x.active !== false));
   const hidden = state.ingredients.filter((x) => x.active === false);
 
   const form = newIngredientCard(state, root);
@@ -28,7 +42,36 @@ function renderAll(root, state) {
     ...low.map((ing) => el("p", { class: "low-stock-line" },
       `${ing.name} — have ${fmtStockAmount(state, ing, Math.max(0, Number(ing.onHand) || 0))}, keep ${fmtStockAmount(state, ing, Number(ing.safetyBase) || 0)}`))) : null;
 
-  const cards = items.map((ing) => ingredientCard(state, ing, root));
+  // ⚠️ ONLY THE LISTED INGREDIENTS CARRY A GRIP. A hidden one is not part of this list — it sits in a
+  // section of its own below — so it gets no `.ing-card-row` and no handle, which keeps it out
+  // entirely rather than letting a drag land among rows she is not looking at.
+  const fullIds = items.map((ing) => ing.id);
+  const cards = items.map((ing) => {
+    // ⚠️ THE HANDLE IS BUILT FIRST AND HANDED IN, exactly as the Products screen does it — the card
+    // never has to be searched for its own grip. (An earlier pass reached back with `querySelector`,
+    // which is both a wasted lookup and a call the test shims cannot make.)
+    const handle = el("span", { class: "ing-handle", title: "Drag to reorder", "aria-hidden": "true" }, "⠿");
+    const card = ingredientCard(state, ing, root, handle);
+    wireRowReorder({
+      row: card,
+      handle,
+      boxOf: () => root,
+      rowSelector: "ing-card-row",
+      // Every listed ingredient may be dropped among, since this list has no headings to divide it.
+      kin: (n) => fullIds.includes(n.dataset.id),
+      onDrop: (slot, kinIds) => {
+        const without = fullIds.filter((id) => id !== ing.id);
+        const at = indexForDrop(without, kinIds, slot);
+        // ⚠️ THE WHOLE ORDER IS WRITTEN, not one index — so an ingredient added or deleted elsewhere
+        // cannot silently shift every other row. The same rule the Products screen keeps.
+        state.ingredients = moveInTail(state.ingredients, ing.id, at, without);
+        save(state);
+        // Nothing else to tell: the shop's pages never read an ingredient's order, and this rides the
+        // ordinary whole-record sync, so the other phone has it on its next pull.
+      },
+    });
+    return card;
+  });
   const hiddenSection = hidden.length ? el("div", {},
     el("h2", { class: "section" }, "Hidden ingredients"),
     ...hidden.map((ing) => ingredientCard(state, ing, root))) : [];
@@ -286,7 +329,7 @@ function openEditIngredientPopup(state, ing, root) {
   }, { wide: true });
 }
 
-function ingredientCard(state, ing, root) {
+function ingredientCard(state, ing, root, handle = null) {
   const usedBy = state.products
     .filter((p) => (p.recipe || []).some((l) => l.ingredientId === ing.id))
     .map((p) => p.name);
@@ -303,8 +346,18 @@ function ingredientCard(state, ing, root) {
   const keep = Math.max(0, Number(ing.safetyBase) || 0);
   const below = belowReserve(keep, onHand);
 
-  return el("div", { class: "card" },
+  // ★★ THE GRIP (v399). ⚠️ `ing-card-row` IS ONLY ON A CARD THAT CAN BE MOVED, and the handle only
+  // with it — the reorder helper finds its list by that class, so a hidden ingredient (which has
+  // neither) can never be dropped among or dragged.
+  return el("div", { class: `card${handle ? " ing-card-row" : ""}`, dataset: handle ? { id: ing.id } : {} },
     el("div", { class: "card-row" },
+      // ⚠️ FIRST IN THE ROW, so it reads as a handle on the edge of the card rather than as another
+      // button among the three on the right.
+      handle,
+      // ⚠️⚠️ THE WRAPPER IS NOT DECORATION. `min-width: 0` is what lets this column SHRINK inside a
+      // flex row; without it the card overflows the phone by ~19px on a long name, and by ~65px once
+      // the grip takes its 36px too. **An edit that dropped this line still passed every test — the
+      // shim has no layout engine, so a flattened card and a nested one are identical to it.**
       el("div", { style: "min-width:0" },
         el("p", { class: "card-title" }, ing.name),
         el("p", { class: "card-sub" }, mainSub),

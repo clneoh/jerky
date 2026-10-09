@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { dayMoney, moneyBetween, isCollected, methodOf, groupValue, paidOf } =
+const { dayMoney, moneyBetween, isCollected, methodOf, groupValue, paidOf, investmentOf } =
   await import("../admin/js/money.js");
 
 // Focaccia at RM15; two delivery days. One order is a single row unless a test says
@@ -1083,4 +1083,127 @@ test("only the OPEN book in the Books list can print — the list itself never d
       "and every other method's book stays on the screen where it belongs");
     assert.equal(/book$/.test(onPaper), false, "the 'book' chips that open them do not print either");
   } finally { delete globalThis.window; }
+});
+
+// ── ★★ her investment in the bakery (v396) ────────────────────────────────────
+// Her words: __"SO investment is an account, a source of money, we are able to generate investment
+// account.?"__ — and, asked whether it should show money taken back out too, __"yes, with taken back
+// out too"__.
+
+test("★★ her investment is what she put in, minus what she took back", () => {
+  const st = state();
+  st.expenses = [
+    { id: "e1", date: "2026-09-10", amount: 50, category: "My own withdrawal", method: "Cash" },
+    { id: "e2", date: "2026-09-11", amount: 20, category: "Packaging", method: "Cash" }, // a cost, not her money
+  ];
+  st.deposits = [
+    { id: "d1", date: "2026-09-01", amount: 500, method: "Cash" },
+    { id: "d2", date: "2026-09-05", amount: 300, method: "TNG" },
+  ];
+  const inv = investmentOf(st);
+  assert.equal(inv.putIn, 800, "her money in is not counted");
+  assert.equal(inv.takenBack, 50, "money she took back out is not counted");
+  assert.equal(inv.stillIn, 750, "and the two do not come to what is still in the bakery");
+  assert.equal(inv.rows.length, 3, "the rows behind the balance are missing — a spending cost is not hers");
+});
+
+test("★★⚠️ money moved between her own pots is in NEITHER side of it", () => {
+  // ⚠️⚠️ A transfer's two rows sit under the DRAWINGS category and in `deposits` — which is exactly
+  // what this account reads. **Counting them would say she had taken RM200 out of the bakery when she
+  // had only moved it from TNG to Cash.**
+  const st = state();
+  st.deposits = [
+    { id: "d1", date: "2026-09-01", amount: 500, method: "Cash" },
+    { id: "d2", date: "2026-09-02", amount: 200, method: "TNG", source: "Cash", transfer: true },
+  ];
+  st.expenses = [{ id: "e1", date: "2026-09-02", amount: 200,
+    category: "My own withdrawal", method: "Cash", transfer: true }];
+  const inv = investmentOf(st);
+  assert.equal(inv.putIn, 500, "⚠️ a transfer was counted as her putting money in");
+  assert.equal(inv.takenBack, 0, "⚠️⚠️ a transfer was counted as her taking money out of the bakery");
+  assert.equal(inv.stillIn, 500);
+});
+
+test("⚠️ a payback's deposit is not her investing anew", () => {
+  // ⚠️ The till settling with a pocket of hers is money the business ALREADY owed — it is not money
+  // going in afresh, and counting it would inflate what she has put in.
+  const st = state();
+  st.deposits = [{ id: "d1", date: "2026-09-01", amount: 100, method: "Personal Pocket Kean", repay: true }];
+  st.expenses = [{ id: "e1", date: "2026-09-01", amount: 100,
+    category: "My own withdrawal", method: "Cash" }];
+  const inv = investmentOf(st);
+  assert.equal(inv.putIn, 0, "⚠️ a pocket being paid back was counted as her putting money in");
+  assert.equal(inv.takenBack, 100, "but the till really did pay that money out");
+});
+
+test("⚠️ a renamed withdrawal category is still counted — by CLASS, not by its words", () => {
+  // ⚠️ She may rename "My own withdrawal" to anything. The class is what says it is her own money
+  // rather than a cost of trading, and this account must follow the class.
+  const st = state();
+  st.settings.categories = [
+    { label: "Profit distribution", cls: "drawing" },
+    { label: "Packaging", cls: "expense" },
+  ];
+  st.expenses = [{ id: "e1", date: "2026-09-10", amount: 75,
+    category: "Profit distribution", method: "Cash" }];
+  assert.equal(investmentOf(st).takenBack, 75,
+    "⚠️ renaming her withdrawal category stopped it counting as money taken out");
+});
+
+test("★★⚠️ a pocket payment she marked as her INVESTMENT is not also a debt the bakery owes", () => {
+  // ⚠️⚠️ THE TWO MUST NEVER BOTH CLAIM THE SAME RINGGIT. The row still carries the pocket's name — that
+  // is HOW she paid — but if the pocket went on saying "the bakery owes this", her investment account
+  // would count the same money a second time and she would be owed money she had already put in.
+  const st = state();
+  st.expenses = [
+    { id: "e1", date: "2026-09-10", amount: 500, category: "Equipment & tools",
+      method: "Personal Pocket Kean", invested: true },
+    { id: "e2", date: "2026-09-11", amount: 60, category: "Packaging",
+      method: "Personal Pocket Kean" }, // an ordinary one — the bakery really does owe this
+  ];
+  assert.equal(pocketOwed(st, "Personal Pocket Kean", "2026-09-01", "2026-09-30"), 60,
+    "⚠️⚠️ the pocket still claims the investment as money it is owed — the same ringgit, twice");
+  const inv = investmentOf(st);
+  assert.equal(inv.putIn, 500, "⚠️ what she paid for out of her own pocket is not in her investment");
+  assert.equal(inv.stillIn, 500, "and nothing was taken back out");
+  assert.equal(inv.rows.length, 1, "the row behind it is missing");
+});
+
+// ── ★★ more than one owner (v398) ─────────────────────────────────────────────
+// Her question: __"investment can be from few owner, how to differentiate"__ — and she chose that money
+// going out names its owner too, because without it a per-owner balance is impossible.
+
+test("★★ each owner's share is kept on its own", () => {
+  const st = state();
+  st.settings.sources = ["Kean", "Impressive Direction"];
+  st.deposits = [
+    { id: "d1", date: "2026-09-01", amount: 1000, method: "Cash", source: "Kean" },
+    { id: "d2", date: "2026-09-02", amount: 2000, method: "TNG", source: "Impressive Direction" },
+  ];
+  st.expenses = [
+    { id: "e1", date: "2026-09-10", amount: 300, category: "My own withdrawal",
+      method: "Cash", source: "Kean" },
+  ];
+  const inv = investmentOf(st);
+  const kean = inv.bySource.find((b) => b.source === "Kean");
+  const id_ = inv.bySource.find((b) => b.source === "Impressive Direction");
+  assert.equal(kean.putIn, 1000, "Kean's own money in is not kept separate");
+  assert.equal(kean.takenBack, 300, "⚠️ what Kean took back is not counted against Kean");
+  assert.equal(kean.stillIn, 700, "⚠️ so one owner's balance cannot be read");
+  assert.equal(id_.stillIn, 2000, "and the other owner's share is untouched");
+  assert.equal(inv.stillIn, 2700, "the total must still be the sum of the owners");
+});
+
+test("⚠️ money with no owner named is SHOWN, not quietly dropped", () => {
+  // ⚠️ A withdrawal recorded before an owner was named — or one she simply did not attribute — is a
+  // fact about her books. Hiding it would make the owners' shares add up to more than the total.
+  const st = state();
+  st.deposits = [{ id: "d1", date: "2026-09-01", amount: 500, method: "Cash", source: "Kean" }];
+  st.expenses = [{ id: "e1", date: "2026-09-10", amount: 100,
+    category: "My own withdrawal", method: "Cash" }];
+  const inv = investmentOf(st);
+  const unnamed = inv.bySource.find((b) => b.source === "");
+  assert.ok(unnamed, "⚠️ the unattributed money vanished from the account");
+  assert.equal(unnamed.takenBack, 100);
+  assert.equal(inv.stillIn, 400, "⚠️ and the total no longer adds up");
 });

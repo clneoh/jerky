@@ -6,8 +6,9 @@
 
 import { el, button, select, showPopup, toast, confirmDialog } from "../ui.js";
 import { byId, fmtRM, newId, round2, save } from "../state.js";
-import { depositsBetween, expensesBetween, journalFor, moneyBetween, otherMethods, pocketOwed } from "../money.js";
-import { categoriesOf, categoryLabels, drawingLabel, isCash, isTng, methodLabel, methodRank, methodsOf, pocketMethods, purseMethods } from "../accounts.js";
+import { depositsBetween, expensesBetween, investmentOf, journalFor, moneyBetween, otherMethods, pocketOwed } from "../money.js";
+import { clearCourierCharge } from "../courier.js";
+import { categoriesOf, categoryLabels, classOfCategory, drawingLabel, isCash, isOther, isTng, methodLabel, methodRank, methodsOf, pocketMethods, purseMethods, sourcesOf } from "../accounts.js";
 import { entryForm, newEntryChip } from "./accountsEditor.js";
 // An ingredient's own unit, resolved exactly as the Ingredients screen resolves it, so a
 // stock count typed here lands as the same number of grams the On-hand line shows.
@@ -17,7 +18,6 @@ import { fmtStockAmount } from "../purchasing.js";
 import { dateField } from "../datepicker.js";
 import { journalSheet, journalBodyEl, journalButtons, bakeryName } from "../journal.js";
 import { dayMonth, longDate, todayISO, weekdayName } from "../dates.js";
-import { clearCourierCharge } from "../courier.js";
 import { maybePublishTracking, maybeSync } from "../supabase.js";
 
 // Which stretch is showing. Module scope, like the other screens' own pickers, so a
@@ -284,7 +284,7 @@ function openListsManager(state, redraw) {
 
     body.replaceChildren(
       el("p", { class: "card-sub", style: "margin:0 0 10px" },
-        "What an expense was for, and how the money moved. Tap a line to rename it, change what kind it is, or delete it."),
+        "What an expense was for, how the money moved, and where your own money came from. Tap a line to rename it, change what kind it is, or delete it."),
       el("h3", { style: "margin:0 0 4px" }, "Categories"),
       ...cats.map((c) => row(c.label, c.cls === "stock" ? "ingredients"
         : c.cls === "drawing" ? "your own money" : "running cost", "category")),
@@ -297,10 +297,22 @@ function openListsManager(state, redraw) {
       el("div", { class: "btn-row", style: "margin-top:8px" },
         editing && editing.kind === "method" && !editing.label
           ? entryForm(state, { kind: "method", current: "", onDone: done })
-          : newEntryChip("method", () => { editing = { kind: "method", label: "" }; show(); })));
+          : newEntryChip("method", () => { editing = { kind: "method", label: "" }; show(); })),
+      // ★ WHERE HER OWN MONEY COMES FROM (v394). ⚠️ Its own section, not a third row under Ways to
+      // pay: the two answer different questions, and a list that sat under the wrong heading would
+      // read as a way of paying.
+      el("h3", { style: "margin:16px 0 4px" }, "Where your own money comes from"),
+      ...sourcesOf(state).map((m) => row(m, "a pot of your own", "source")),
+      el("div", { class: "btn-row", style: "margin-top:8px" },
+        editing && editing.kind === "source" && !editing.label
+          ? entryForm(state, { kind: "source", current: "", onDone: done })
+          : newEntryChip("source", () => { editing = { kind: "source", label: "" }; show(); })));
   };
   show();
-  showPopup(el("div", { class: "popup-title-row" }, "Categories & ways to pay"), () => body);
+  // ⚠️ THE TITLE NAMES ALL THREE LISTS NOW (v394). It read "Categories & ways to pay", which stopped
+  // being true the moment a third list joined them — and a heading that is missing one of the things
+  // under it is how she fails to find the third.
+  showPopup(el("div", { class: "popup-title-row" }, "Categories, ways to pay & sources"), () => body);
 }
 
 // One entry in a money list. A spending row from a shopping run says so by its poId;
@@ -341,8 +353,16 @@ const expenseRow = (state, e, redraw, cur) =>
   pocketRow(state, e, e.poId ? "Shopping run (PO)"
     : e.courierFor ? `Courier (order #${e.courierFor})`   // the same words the journal uses
     : (e.category || "Expense"), "expenses", redraw, cur);
+// ★ A money-in row names the pot it came from (v394). ⚠️ It used to read a FIXED __From my pocket__
+// whatever her money actually came from — and a row written before v394 still says exactly that, which
+// is why this falls back to it rather than to a blank.
 const depositRow = (state, e, redraw, cur) =>
-  pocketRow(state, e, e.repay ? "Paid back by the till" : "From my pocket", "deposits", redraw, cur);
+  pocketRow(state, e, e.repay ? "Paid back by the till"
+    // ★ AND A TRANSFER SAYS SO (v395). ⚠️ It has a `source` like an ordinary pot label does, so without
+    // this branch a pot-to-pot move would read "From TNG" — which is true but reads as money arriving
+    // from outside, when the whole point is that nothing arrived.
+    : e.transfer ? `Transferred from ${e.source || "another pot"}`
+      : (e.source ? `From ${e.source}` : "From my pocket"), "deposits", redraw, cur);
 
 // One row of pills built from a list of names, ending in a ＋ chip that adds a new
 // one there and then (16 Sep 2026 — she asked why she could not find how to add a
@@ -387,6 +407,20 @@ function openExpenseForm(state, redraw) {
   let category = categoryLabels(state).includes("Packaging") ? "Packaging" : (categoryLabels(state)[0] || "Other");
   let method = methodsOf(state)[0] || "Cash";
   let adding = null; // "category" | "method" while the inline ＋ form is open
+  // ★★ WHOSE MONEY PAID FOR IT (v397). Her words: __"When i enter an expenses, like buying equipment,
+  // should i allow to credit investment account?"__ — and she chose to say so ON THE EXPENSE, because
+  // sometimes it is a debt the bakery owes back and sometimes it is her money staying in.
+  //
+  // ⚠️ IT ONLY MEANS ANYTHING FOR A POCKET. Money out of Cash or TNG came out of the till and is
+  // neither owed nor invested, so this question is asked only when the way she paid is one of her own
+  // pockets — and the row leaves it alone entirely for cash and TNG.
+  let mine = "owed";
+  // ★★ WHOSE INVESTMENT MONEY COMES OUT OF (v398). Her question: __"investment can be from few owner,
+  // how to differentiate"__ — and she chose that money going out names its owner too, **because without
+  // it a per-owner balance is impossible**: the app would know what Kean put in and never what Kean had
+  // taken back. ⚠️ Only asked when the category is one of her WITHDRAWALS; an ordinary cost is not
+  // anybody's money going back to them.
+  let whose = sourcesOf(state)[0] || "";
   const note = el("input", { class: "input", placeholder: "e.g. Mydin run, 2 boxes", value: "" });
   let date = todayISO();
   const datePick = dateField(date, (iso) => { date = iso; });
@@ -394,7 +428,11 @@ function openExpenseForm(state, redraw) {
   showPopup(el("div", { class: "popup-title-row" }, "Add an expense"), (refresh, close) => el("div", {},
     el("div", { class: "field" }, el("label", {}, "What did you spend?"), amount),
     el("div", { class: "field" }, el("label", {}, "What for"),
-      adding === "category" ? null : pillRow(categoryLabels(state), category, (c) => { category = c; },
+      // ⚠️ IT REDRAWS TOO (v398), for the same reason the ways to pay now do: **the question below is
+      // asked only for a WITHDRAWAL**, so the form has to re-look when the category changes or the
+      // "whose investment" row would never appear until something else happened to redraw.
+      adding === "category" ? null : pillRow(categoryLabels(state), category,
+        (c) => { category = c; refresh(); },
         { addKind: "category", state, onAdded: () => { adding = "category"; refresh(); } }),
       adding === "category"
         ? entryForm(state, { kind: "category", onDone: (label) => {
@@ -404,7 +442,12 @@ function openExpenseForm(state, redraw) {
           } })
         : null),
     el("div", { class: "field" }, el("label", {}, "Paid by"),
-      adding === "method" ? null : methodPills(state, method, (m) => { method = m; },
+      // ⚠️ PICKING A PILL NOW REDRAWS THE FORM (v397). It never used to — the pills mark themselves,
+      // and nothing else on this form depended on the method. **The question below does**, because it
+      // is asked only when a POCKET paid, so without this the switch never appeared until something
+      // else happened to redraw. ⚠️ Her typed amount and note are safe: the inputs are built ONCE,
+      // outside the body, and the redraw re-appends them.
+      adding === "method" ? null : methodPills(state, method, (m) => { method = m; refresh(); },
         () => { adding = "method"; refresh(); }),
       adding === "method"
         ? entryForm(state, { kind: "method", onDone: (label) => {
@@ -413,6 +456,30 @@ function openExpenseForm(state, redraw) {
             refresh();
           } })
         : null),
+    // ★★ THE QUESTION ONLY MAKES SENSE FOR A POCKET (v397). Paying from Cash or TNG is the till's own
+    // money — neither owed back nor invested — so this appears only when the way she paid is one of her
+    // own pockets, which is exactly the case where the money is hers rather than the bakery's.
+    isOther(method)
+      ? el("div", { class: "field" }, el("label", {}, "Whose money paid for it?"),
+          el("div", { class: "pill-row" },
+            button("The business owes me", () => { mine = "owed"; refresh(); },
+              `ghost small${mine === "owed" ? " cal-mode-on" : ""}`),
+            button("It is my investment", () => { mine = "invested"; refresh(); },
+              `ghost small${mine === "invested" ? " cal-mode-on" : ""}`)),
+          el("p", { class: "card-sub", style: "margin:6px 0 0" },
+            mine === "invested"
+              ? `${method} paid for this out of your own money, and it stays in the business — it counts as money you have PUT IN, and nothing is owed back to you for it.`
+              : `${method} paid for this out of your own money, so the business owes it back to you. Pay back a pocket settles it when the till has the money.`))
+      : null,
+    // ★★ WHOSE INVESTMENT IS THIS COMING OUT OF (v398). ⚠️ Asked only for a WITHDRAWAL — the category
+    // she takes her own money back under — because that is the only kind of expense that reduces what
+    // somebody has in the bakery. An ordinary cost is not anybody's money going back to them.
+    classOfCategory(state, category) === "drawing"
+      ? el("div", { class: "field" }, el("label", {}, "Whose investment does this come out of?"),
+          pillRow(sourcesOf(state), whose, (s) => { whose = s; }, {}),
+          el("p", { class: "card-sub", style: "margin:6px 0 0" },
+            "So each owner's share of the business reads on its own — what they have put in, and what they have taken back."))
+      : null,
     el("div", { class: "field" }, el("label", {}, "The day you paid it"), datePick),
     el("div", { class: "field" }, el("label", {}, "A note (optional)"), note),
     el("div", { class: "popup-actions" },
@@ -424,7 +491,13 @@ function openExpenseForm(state, redraw) {
         }
         state.expenses = Array.isArray(state.expenses) ? state.expenses : [];
         state.expenses.push({ id: newId("exp"), date, amount: value, category,
-          method, note: note.value.trim() });
+          method, note: note.value.trim(),
+          // ⚠️ ONLY EVER SET FOR A POCKET, and only when she said so — an ordinary expense row is built
+          // exactly as it always was, so nothing about her existing books moves.
+          ...(isOther(method) && mine === "invested" ? { invested: true } : {}),
+          // ⚠️ AND WHOSE MONEY WENT BACK OUT, on a withdrawal only (v398) — a row with no owner named
+          // lands in the account's own unnamed bucket rather than being guessed at.
+          ...(classOfCategory(state, category) === "drawing" && whose ? { source: whose } : {}) });
         save(state);
         maybeSync(state);
         toast(`Money out: ${fmtRM(value, state.settings.currency)}`);
@@ -443,19 +516,43 @@ function openMoneyInForm(state, redraw) {
   const note = el("input", { class: "input", placeholder: "e.g. from my pocket for the meat",
     value: "", oninput: function () { /* read at save */ } });
   let method = methodsOf(state)[0] || "Cash";
+  // ★★ WHERE IT CAME FROM (v394). Her words: __"should have additional field : from xxx"__ — and,
+  // asked whether it should be typed or picked, __"Which pot it came from — picked"__.
+  //
+  // ⚠️⚠️ A DIFFERENT QUESTION FROM "Paid in as", AND THE FORM MUST NOT LET THE TWO BLUR. "Paid in as"
+  // is Cash / TNG / Loan — HOW it went in. "From" is her own pocket, savings, a person — WHERE it came
+  // from. Money can come out of savings and still go in as cash, so both are asked.
+  //
+  // ⚠️ AND IT REPLACES A FIXED PHRASE: a money-in row has always read __From my pocket__ whatever her
+  // money actually came from. It opens on the first pot on her list, so the commonest answer is one tap.
+  let source = sourcesOf(state)[0] || "";
+  let addingSource = false;
   let adding = false;
   let date = todayISO();
   const datePick = dateField(date, (iso) => { date = iso; });
 
   showPopup(el("div", { class: "popup-title-row" }, "Put money in"), (refresh, close) => el("div", {},
     el("p", { class: "card-sub", style: "margin:0 0 10px" },
-      "Money of your own that went into the business — it counts into the money in for the day, and you can take it back out later with Add an expense → My own withdrawal."),
+      // ★ HER WORD FOR IT (v394). Her question: __"can i say put money in is an investment"__ — yes,
+      "Money you have INVESTED in the business — it counts into the money in for the day, and you can take it back out later as a withdrawal (Add an expense → My own withdrawal)."),
     el("div", { class: "field" }, el("label", {}, "How much?"), amount),
     el("div", { class: "field" }, el("label", {}, "Paid in as"),
       adding ? null : methodPills(state, method, (m) => { method = m; }, () => { adding = true; refresh(); }),
       adding ? entryForm(state, { kind: "method", onDone: (label) => {
         if (label) method = label;
         adding = false;
+        refresh();
+      } }) : null),
+    el("div", { class: "field" }, el("label", {}, "From"),
+      addingSource ? null : pillRow(sourcesOf(state), source, (s) => { source = s; }, {
+        addKind: "source", state,
+        // ⚠️ The ＋ chip opens the SAME inline form the other two lists use, and the name she types
+        // becomes the chosen pot — so adding one and picking it is a single movement, not two.
+        onAdded: () => { addingSource = true; refresh(); },
+      }),
+      addingSource ? entryForm(state, { kind: "source", onDone: (label) => {
+        if (label) source = label;
+        addingSource = false;
         refresh();
       } }) : null),
     el("div", { class: "field" }, el("label", {}, "The day you put it in"), datePick),
@@ -468,7 +565,8 @@ function openMoneyInForm(state, redraw) {
           return toast("Type how much you put in");
         }
         state.deposits = Array.isArray(state.deposits) ? state.deposits : [];
-        state.deposits.push({ id: newId("dep"), date, amount: value, method, note: note.value.trim() });
+        state.deposits.push({ id: newId("dep"), date, amount: value, method, source,
+          note: note.value.trim() });
         save(state);
         maybeSync(state);
         toast(`Money in: ${fmtRM(value, state.settings.currency)} of your own`);
@@ -575,6 +673,151 @@ function openPayBackForm(state, from, to, redraw, label) {
     (refresh, close) => { closePopup = close; return body; });
 }
 
+// ★★ MOVING MONEY BETWEEN HER OWN POTS (v395).
+//
+// Her words: __"if its for sometimes we want to transfer money from tnG to cash, or to bank"__ — said
+// while looking at the Put money in form, and it is a different act from what that form does.
+//
+// ⚠️⚠️ **A TRANSFER IS NOT MONEY IN.** Put money in says money of her own ENTERED the business, and
+// counts it into the Money screen's Cash in / TNG in. TNG to Cash is the same money moving: nothing
+// entered, nothing left. Recording it as a deposit would have **counted her own RM200 twice** and
+// inflated the figures she reads her takings from.
+//
+// ⚠️ SO IT WRITES BOTH SIDES AT ONCE — the same two-row shape `openPayBackForm` above uses, and for the
+// same reason (doing both halves by hand is what a busy morning gets wrong):
+//   • an expense OUT of the pot it came from, under her own DRAWINGS category — a drawing, so it never
+//     counts as a cost and the profit statement does not move;
+//   • a money-in row INTO the pot it went to, marked `transfer`, naming where it came from.
+// ⚠️ Two ordinary rows rather than a new kind of record, deliberately: every screen she already reads —
+// both lists, the journals, the statement, the backups — understands them as they are.
+//
+// ⚠️ AND `Net` IS UNCHANGED BY DESIGN. The out-side and the in-side move together, so the figure that
+// should be in her hand and on her phone is exactly what it was — which is why the form says so.
+function openTransferForm(state, redraw) {
+  const cur = state.settings.currency || "RM";
+  const pots = methodsOf(state);
+  // ⚠️ A transfer needs two DIFFERENT pots to be a transfer at all.
+  if (pots.length < 2) return toast("You need two ways to pay before you can move money between them");
+
+  let fromPot = pots.find(isCash) || pots[0];
+  let toPot = pots.find((m) => m !== fromPot) || pots[1];
+  let date = todayISO();
+  const amount = el("input", { class: "input", type: "number", inputmode: "decimal",
+    min: "0", step: "0.01", placeholder: "RM", "aria-label": "How much you moved" });
+  const note = el("input", { class: "input", placeholder: "e.g. banking the week's cash", value: "" });
+  const datePick = dateField(date, (iso) => { date = iso; });
+  const body = el("div", {});
+
+  // ⚠️ THE TWO PILL ROWS MUST NEVER SWAP INTO EACH OTHER. Moving TNG to TNG is not a movement, so
+  // picking the pot already chosen on the other side swaps them rather than allowing a double.
+  const pickFrom = (m) => { fromPot = m; if (toPot === m) toPot = pots.find((p) => p !== m) || toPot; paint(); };
+  const pickTo = (m) => { toPot = m; if (fromPot === m) fromPot = pots.find((p) => p !== m) || fromPot; paint(); };
+
+  const paint = () => {
+    body.replaceChildren(
+      el("p", { class: "card-sub", style: "margin:0 0 10px" },
+        "Moving money between your own pots — cash banked, TNG taken out for the float. Nothing enters "
+        + "the business and nothing leaves it, so this is not counted as money in or money out, and what "
+        + `should be with you does not move. The day you moved it is the day it shows in both books.`),
+      el("div", { class: "field" }, el("label", {}, "From"),
+        el("div", { class: "pill-row" },
+          ...pots.map((m) => button(m, () => pickFrom(m),
+            `ghost small${m === fromPot ? " cal-mode-on" : ""}`)))),
+      el("div", { class: "field" }, el("label", {}, "To"),
+        el("div", { class: "pill-row" },
+          ...pots.map((m) => button(m, () => pickTo(m),
+            `ghost small${m === toPot ? " cal-mode-on" : ""}`)))),
+      el("div", { class: "field" }, el("label", {}, "How much?"), amount),
+      el("div", { class: "field" }, el("label", {}, "The day you moved it"), datePick),
+      el("div", { class: "field" }, el("label", {}, "A note (optional)"), note),
+      el("p", { class: "card-sub", style: "margin:0 0 10px" },
+        `${fromPot} goes down, ${toPot} goes up, and the net is unchanged.`),
+      el("div", { class: "popup-actions" },
+        button("Cancel", closePopup, "ghost"),
+        button("Save", () => {
+          const value = Number(amount.value);
+          if (!amount.value.trim() || !Number.isFinite(value) || value < 0) {
+            return toast("Type how much you moved");
+          }
+          if (fromPot === toPot) return toast("Pick two different pots");
+          const typed = note.value.trim();
+          state.expenses = Array.isArray(state.expenses) ? state.expenses : [];
+          state.deposits = Array.isArray(state.deposits) ? state.deposits : [];
+          // ⚠️ THE DRAWINGS CATEGORY IS WHAT KEEPS THIS OFF THE PROFIT STATEMENT. An ordinary expense
+          // would make moving her own money look like a cost of trading.
+          // ⚠️⚠️ `transfer: true` IS NOT DECORATION. This row sits under the DRAWINGS category — which
+          // is what keeps it off the profit statement — and **the investment account reads drawings as
+          // money taken back out of the bakery.** Without this mark, moving RM200 from TNG to Cash would
+          // be counted as her taking RM200 out of her own business. The money never left.
+          state.expenses.push({ id: newId("exp"), date, amount: value,
+            category: drawingLabel(state), method: fromPot, transfer: true,
+            note: typed || `Transferred to ${toPot}` });
+          state.deposits.push({ id: newId("dep"), date, amount: value, method: toPot,
+            source: fromPot, transfer: true, note: typed });
+          save(state);
+          maybeSync(state);
+          toast(`Moved ${fmtRM(value, cur)} from ${fromPot} to ${toPot}`);
+          closePopup();
+          redraw();
+        }, "primary")));
+  };
+
+  let closePopup = () => {};
+  paint();
+  showPopup(el("div", { class: "popup-title-row" }, "Transfer money"),
+    (refresh, close) => { closePopup = close; return body; });
+}
+
+// ★★ HER OWN MONEY, AS AN ACCOUNT SHE CAN OPEN (v396).
+//
+// ⚠️ A journal like every other book in this app, built from ONE description so the screen, the paper
+// and the PDF cannot disagree — the rule `journalSheet` exists to keep.
+function investmentSheet(state) {
+  const cur = state.settings.currency || "RM";
+  const inv = investmentOf(state);
+  // ⚠️ A SOURCE WITH NO NAME IS STILL SHOWN. Money that went out of the bakery has to be visible
+  // somewhere — an unnamed owner is a fact about her books, not something to quietly drop.
+  const nameOf = (s) => s || "Not named";
+  const several = inv.bySource.length > 1;
+
+  // ★★ ONE SECTION PER OWNER (v398). Her question: __"investment can be from few owner, how to
+  // differentiate"__. ⚠️ Each owner's own rows sit under their own heading, closing on **their** balance
+  // — so "what does Kean still have in the bakery" is answered without doing arithmetic across the page.
+  const lines = [];
+  for (const b of inv.bySource) {
+    if (several) lines.push({ heading: true, what: nameOf(b.source) });
+    for (const r of inv.rows.filter((x) => x.source === b.source)) {
+      lines.push({ what: `${dayMonth(r.date)} · ${r.what}`, amount: r.amount,
+        dir: r.dir === "in" ? "" : "out" });
+    }
+    if (several) lines.push({ what: `${nameOf(b.source)} still in`, amount: b.stillIn, cls: "pl-total" });
+  }
+
+  return journalSheet({
+    title: "Your investment",
+    subtitle: `${fmtRM(inv.putIn, cur)} put in · ${fmtRM(inv.takenBack, cur)} taken back · all time`,
+    lines,
+    totals: [
+      { label: "Put in", amount: inv.putIn, cls: "pl-total" },
+      { label: "Taken back", amount: -inv.takenBack, cls: "pl-total" },
+      { label: "Still in the business", amount: inv.stillIn, cls: "pl-net" },
+    ],
+    empty: "Nothing yet. Put money in of your own, and every ringgit that has gone into the business is listed here.",
+    note: "Every ringgit of your own that has gone into the business, and every ringgit you have taken back out, counted from the beginning — this is a balance, so it is not tied to the Today / This week / This month buttons above. Money you put in that has already been spent on ingredients is still counted as in the business: it is your money, and it bought stock rather than leaving. Named after where each lot came from, so one owner's share reads on its own. Money moved between your own pots is NOT counted either way — it never left the business.",
+    where: "More → Money",
+    bakery: bakeryName(state),
+  });
+}
+
+function openInvestment(state) {
+  const cur = state.settings.currency || "RM";
+  const sheet = investmentSheet(state);
+  showPopup(el("div", { class: "popup-title-row" }, "Your investment"),
+    () => el("div", {},
+      journalBodyEl(sheet, cur),
+      el("div", { class: "popup-actions" }, ...journalButtons(sheet, cur))));
+}
+
 export function renderMoney(root, state) {
   const cur = state.settings.currency || "RM";
   // `opens` turns a figure into a door: tapping it shows that method's book for the
@@ -640,8 +883,17 @@ export function renderMoney(root, state) {
           ? null
           : el("p", { class: "card-sub", style: "margin:0 0 8px" }, "Nothing of your own put in this stretch."),
         ...mine.rows.map((e) => depositRow(state, e, () => draw(), cur)),
-        el("div", { class: "btn-row", style: "margin-top:10px" },
+        // ⚠️ ITS OWN CLASS ON THE ROW (v395), because this row now carries THREE presses and the
+        // app-wide `.btn-row .btn { flex: 1 }` splits the width equally between them — which folded
+        // each label onto three lines ("+ Put / money / in"). **Found by LOOKING at the screen.**
+        el("div", { class: "btn-row money-in-actions", style: "margin-top:10px" },
           button("＋ Put money in", () => openMoneyInForm(state, () => draw()), "soft"),
+          // ★ MOVING MONEY BETWEEN HER OWN POTS (v395) — its own press BESIDE Put money in, not inside
+          // it, because the two are different acts: that one says money ENTERED the business, this one
+          // says it only moved. ⚠️ Only where there are two pots to move between.
+          methodsOf(state).length > 1
+            ? button("⇄ Transfer", () => openTransferForm(state, () => draw()), "soft")
+            : null,
           // Only when there is a pocket to pay and a till to pay it out of.
           pocketMethods(state).length && purseMethods(state).length
             ? button("＋ Pay back a pocket", () => openPayBackForm(state, from, to, () => draw(), label), "soft")
@@ -657,9 +909,12 @@ export function renderMoney(root, state) {
       el("div", { class: "card" },
         el("div", { class: "card-row" },
           el("div", {},
-            el("p", { class: "card-title" }, "Categories & ways to pay"),
+            el("p", { class: "card-title" }, "Categories, ways to pay & sources"),
             el("p", { class: "card-sub" },
-              `${categoryLabels(state).length} categories · ${methodsOf(state).join(", ")}`)),
+              // ⚠️ THE WAYS TO PAY ARE STILL NAMED, not just counted: "Cash, TNG, Loan" is how she
+              // recognises that list. The third is added as a count, because three names in a row
+              // would read as one long list rather than as the separate thing it is.
+              `${categoryLabels(state).length} categories · ${methodsOf(state).join(", ")} · ${sourcesOf(state).length} sources`)),
           button("Edit", () => openListsManager(state, () => draw()), "ghost small")),
         // Its own door, always open: the money card's pocket rows only appear when that
         // pocket moved something in the stretch on screen, so a quiet pocket's book would
@@ -676,8 +931,27 @@ export function renderMoney(root, state) {
             el("p", { class: "card-sub" },
               "Where you stand when your books begin — the tin, the phone, the shelf")),
           button("Set", () => openDayOne(state, () => draw()), "ghost small"))),
+      // ★★ HER OWN MONEY AS AN ACCOUNT (v396). Her words: __"SO investment is an account, a source of
+      // money, we are able to generate investment account.?"__ — and, asked whether it should show money
+      // taken back out too, __"yes, with taken back out too"__.
+      //
+      // ⚠️⚠️ IT SITS OUTSIDE THE STRETCH CARDS ON PURPOSE, and the sub-line says so in words. Every
+      // other figure on this screen belongs to Today / This week / This month; **a balance does not** —
+      // "where do I stand with the bakery" only means anything counted from the beginning.
+      el("div", { class: "card" },
+        el("div", { class: "card-row" },
+          el("div", {},
+            el("p", { class: "card-title" }, "Your investment"),
+            el("p", { class: "card-sub" },
+              (() => {
+                const inv = investmentOf(state);
+                const nothing = !inv.putIn && !inv.takenBack;
+                return nothing ? "Money of your own that has gone into the business · all time"
+                  : `Put in ${fmtRM(inv.putIn, cur)} · taken back ${fmtRM(inv.takenBack, cur)} · all time`;
+              })())),
+          button("Open", () => openInvestment(state), "ghost small"))),
       el("p", { class: "card-sub", style: "margin:0 2px" },
-        "Tap Cash, TNG or a loan row to see that method's journal - every movement that way in this stretch, in order, ending on what it should hold. Money in is counted by the day it landed - an order paid by transfer today counts today, even if it delivers on Friday. Money out is counted on the day you paid it: a shopping run records itself when you tap Bought on it, and everything else goes in by hand. Net is what should be in your purse and on your phone for this stretch; what is still to collect is counted by delivery day, because that is when you hand it over. The two lists this screen reads - what you spend ON, and HOW you paid - are edited right above, or added on the spot with the ＋ chip on either form."),
+        "Tap Cash, TNG or a loan row to see that method's journal - every movement that way in this stretch, in order, ending on what it should hold. Money in is counted by the day it landed - an order paid by transfer today counts today, even if it delivers on Friday. Money out is counted on the day you paid it: a shopping run records itself when you tap Bought on it, and everything else goes in by hand. Net is what should be in your purse and on your phone for this stretch; what is still to collect is counted by delivery day, because that is when you hand it over. Money moved between your own pots with Transfer is in neither figure - it never entered or left the business. Your investment is the one card here that is NOT about this stretch: it is a balance, counted from the beginning. The three lists this screen reads - what you spend ON, HOW you paid, and WHERE your own money came from - are edited right above, or added on the spot with the ＋ chip on either form."),
     );
   };
 

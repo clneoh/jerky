@@ -541,7 +541,23 @@ body { min-height: 100vh; }
    screen. One rule for both, because it is one gesture — the two lists reorder
    with the same helper in ui.js and must feel identical under the thumb. */
 .cat-handle,
-.prod-handle {
+/* ★★ THE INGREDIENT CARD'S OWN ROW WRAPS (v399). ⚠️ MEASURED, NOT GUESSED: on a 375px phone the grip's
+   36px and its gap take 21px off the info column and 25px off the three buttons, and at 113px the
+   "Keep at least" strip folds onto THREE lines for two words. So on this card — and only this one —
+   the buttons drop onto their own line and the name and the two strips get the width.
+   ⚠️ Scoped to `.ing-card-row` so no other card in the app moves: `.card-row` is app-wide and a change
+   there would reflow every screen that uses one. */
+.ing-card-row .card-row { flex-wrap: wrap; }
+/* ⚠️ AND THE COLUMNS GROW, rather than the row's own `space-between` pushing the name away from the
+   grip it belongs to — which left a dead gap between the handle and the text on every card. */
+.ing-card-row .card-row > div { flex: 1 1 auto; }
+.ing-card-row .li-right { justify-content: flex-end; }
+
+/* ⚠️ `.ing-handle` IS THE SAME GRIP ON THE INGREDIENTS SCREEN (v399) — deliberately sharing one rule
+   rather than a second copy, because a handle that behaved or measured differently on one screen than
+   the other is the kind of difference she would only find by trying it twice. */
+.prod-handle,
+.ing-handle {
   flex: 0 0 auto;
   /* A 36px target, because this one is dragged with a thumb. */
   width: 36px;
@@ -565,7 +581,8 @@ body { min-height: 100vh; }
   -webkit-touch-callout: none;
 }
 .cat-handle:active,
-.prod-handle:active { cursor: grabbing; background: var(--strip); }
+.prod-handle:active,
+.ing-handle:active { cursor: grabbing; background: var(--strip); }
 /* The row in the air: lifted, and over the rows it is passing. `.card` rather
    than either row's own class because both lists lift the same way and the
    helper in ui.js puts the class on both. A pop-up head also carries `dragging`
@@ -805,6 +822,14 @@ h3.cat-head-tail { color: var(--muted); font-weight: 600; }
    because wrapping only engages when the content would otherwise overflow. */
 .btn-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .btn-row .btn { flex: 1; }
+/* ⚠️ THREE PRESSES ON ONE ROW, SIZED BY THEIR OWN LABELS (v395). `.btn-row .btn { flex: 1 }` splits the
+   width EQUALLY, which is right for two or three short words — and wrong for this row, whose labels are
+   sentences: at 375px "+ Put money in" and "+ Pay back a pocket" each folded onto three lines. Growing
+   from the CONTENT width instead lets each keep its words on one line and wrap the row when it must.
+   ⚠️ `min-width` is left at its default `auto` on purpose: shrinking below the content is exactly the
+   folding this rule exists to stop. Found by LOOKING, not by a test — nothing in the suite has a layout
+   engine, so this is guarded only by the changelog and this comment. */
+.money-in-actions .btn { flex: 1 1 auto; }
 
 /* ---------- Forms ---------- */
 .field { margin-bottom: 12px; }

@@ -491,3 +491,44 @@ test("opening the journal shows the price now on the SCREEN, not only on the pag
   assert.ok(walk(layer).find((n) => n.tagName === "BUTTON" && textOf(n).trim() === "Print"),
     "and the journal leaves the screen like every other one");
 });
+
+// ── ★★ her own order for the ingredient list (v399) ───────────────────────────
+// Her words: __"can you give me a handle to reorganise the ingredient card?"__ — and what she meant was
+// the grip the Products screen already has, which this screen had simply never been given.
+
+test("★★ the list is drawn in HER order, and every listed ingredient carries a grip", () => {
+  const state = freshState();
+  state.ingredients = [
+    { id: "ing_a", name: "Flour", unit: "g", uomId: "u_g", sort: 1 },
+    { id: "ing_b", name: "Sugar", unit: "g", uomId: "u_g", sort: 0 },
+    { id: "ing_c", name: "Salt", unit: "g", uomId: "u_g" }, // never dragged, so it has no `sort`
+  ];
+  const root = document.createElement("div");
+  renderIngredients(root, state);
+
+  const rows = walk(root).filter((n) => String(n.className).includes("ing-card-row"));
+  assert.deepEqual(rows.map((r) => r.dataset.id), ["ing_b", "ing_a", "ing_c"],
+    "⚠️ the list is not drawn in the order she set — the whole point of the grip");
+  for (const r of rows) {
+    assert.ok(walk(r).some((c) => String(c.className).includes("ing-handle")),
+      `⚠️ ${r.dataset.id} has no grip on it, so it cannot be moved`);
+  }
+});
+
+test("⚠️ an ingredient she has HIDDEN carries no grip — it is not part of the list she arranges", () => {
+  // ⚠️ The reorder helper finds the rows it may drop among by the `ing-row` class. A hidden ingredient
+  // lives in a section of its own below, so giving it that class would let a drag land among rows she
+  // is not looking at.
+  const state = freshState();
+  state.ingredients = [
+    { id: "ing_a", name: "Flour", unit: "g", uomId: "u_g" },
+    { id: "ing_z", name: "Old yeast", unit: "g", uomId: "u_g", active: false },
+  ];
+  const root = document.createElement("div");
+  renderIngredients(root, state);
+
+  assert.equal(walk(root).filter((n) => String(n.className).includes("ing-card-row")).length, 1,
+    "⚠️ the hidden ingredient was drawn as one of the list's own rows");
+  assert.equal(walk(root).filter((n) => String(n.className).includes("ing-handle")).length, 1,
+    "⚠️ the hidden ingredient was given a grip");
+});

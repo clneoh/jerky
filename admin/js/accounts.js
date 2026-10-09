@@ -1,14 +1,20 @@
-// accounts.js — the two lists the books are built from (16 Sep 2026), both hers to
-// shape:
+// accounts.js — the three lists the books are built from, all of them hers to shape
+// (16 Sep 2026; the third arrived at v394):
 //
 //   • CATEGORIES — what an expense was FOR. Each carries a class, which is what the
 //     profit and loss account needs to know: "stock" (ingredients, costed through
 //     the recipes), "expense" (a running cost), "drawing" (her money back out).
 //   • METHODS — HOW money moved. Cash and TNG are the two a customer uses; Loan and
 //     Bank OD are ways of paying for things with money that is not in the till.
+//   • SOURCES — WHERE her own money came from, on the Put money in form. ⚠️ A
+//     different question from METHODS, and a row carries both (see DEFAULT_SOURCES).
 //
-// Both live in state.settings once she has touched them, and both fall back to the
-// defaults here — so a phone that has never edited them behaves exactly as before.
+// All three live in state.settings once she has touched them, and all three fall back
+// to the defaults here — so a phone that has never edited them behaves exactly as before.
+// ⚠️ **A NEW LIST IS DEVICE-LOCAL UNTIL IT IS NAMED IN `sync.js`** — the settings row
+// carries a whitelist of keys, so `sources` had to be added to `recordPayload`, to
+// `GUARDED` and to `SPEAK_EMPTY` or it would have been silently per-phone (the v200
+// lesson, which found five keys device-local by OMISSION rather than by decision).
 // The label IS the stored value (rows keep the words they were written with), so a
 // method written before this list existed is understood by reading it, not by
 // translating it.
@@ -46,6 +52,26 @@ export function categoriesOf(state) {
 export function methodsOf(state) {
   const list = state && state.settings && state.settings.payMethods;
   return Array.isArray(list) && list.length ? list.map(String) : DEFAULT_METHODS.slice();
+}
+
+// ★★ WHERE HER OWN MONEY CAME FROM (v394). Her words, looking at the Put money in form:
+// __"should have additional field : from xxx"__ — and, asked whether it should be typed or picked,
+// __"Which pot it came from — picked"__.
+//
+// ⚠️⚠️ THIS IS NOT THE WAYS-TO-PAY LIST, AND THE TWO MUST NOT BE CONFUSED. __Paid in as__ says HOW the
+// money went in — Cash, TNG, a loan. __From__ says WHERE it came from: her own pocket, savings, a
+// person who lent it to her. **A row can be Cash AND from Savings, and the two questions have
+// different answers.**
+//
+// ⚠️ AND IT REPLACES A HARD-CODED PHRASE. A money-in row has always read __From my pocket__, whatever
+// her money actually came from — so this is not a new idea, it is the app finally letting her say which.
+// ⚠️ Two pots to start with, because the row must never be bare and the commonest answer is the first
+// one; the list is hers to shape, like the other two. See [[project-v394]].
+export const DEFAULT_SOURCES = ["My own pocket", "Savings"];
+
+export function sourcesOf(state) {
+  const list = state && state.settings && state.settings.sources;
+  return Array.isArray(list) && list.length ? list.map(String) : DEFAULT_SOURCES.slice();
 }
 
 export function categoryLabels(state) {

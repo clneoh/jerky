@@ -1763,6 +1763,17 @@ test("computeRecords: settings payload omits her chart and her ways to pay until
     "her own chart rides the settings row, so the other phone stops showing the built-in names");
   assert.deepEqual(withThem.data.payMethods, ["Cash", "TNG", "DuitNow"],
     "and so do the ways she actually gets paid");
+
+  // ⚠️⚠️ AND THE THIRD LIST, WHICH IS THE EASIEST OF THE THREE TO FORGET (v394). A list she shapes on
+  // one phone is **device-local until it is NAMED in `recordPayload`** — and the failure is SILENT:
+  // nothing errors, the other phone simply never receives it. That is exactly how five keys were lost
+  // in v200. Named here, and in `GUARDED` and `SPEAK_EMPTY` beside it, so all three carry together.
+  assert.equal(hasOwn(bare.data, "sources"), false,
+    "a phone that never chose a source pushes no list of its own");
+  st.settings.sources = ["My own pocket", "Maybank savings"];
+  const withSources = sync.computeRecords(st).find((r) => r.kind === "settings");
+  assert.deepEqual(withSources.data.sources, ["My own pocket", "Maybank savings"],
+    "⚠️⚠️ the sources list she shaped never reaches her other phone");
 });
 
 test("mergeRows: a cloud row without a chart never deletes the local one", () => {

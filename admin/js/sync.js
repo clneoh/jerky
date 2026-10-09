@@ -280,6 +280,13 @@ function recordPayload(kind, rec) {
         ? { categories: rec.categories } : {}),
       ...(Array.isArray(rec.payMethods) && rec.payMethods.length
         ? { payMethods: rec.payMethods } : {}),
+      // ★ WHERE HER OWN MONEY COMES FROM (v394). ⚠️⚠️ A NEW LIST IS DEVICE-LOCAL UNTIL IT IS NAMED
+      // HERE. The settings row carries a whitelist of keys, so without this line the sources list she
+      // shapes on one phone would simply never reach the other — silently, the same fault v200 found in
+      // five keys that had gone per-phone by OMISSION rather than by decision. It needs `GUARDED` and
+      // `SPEAK_EMPTY` below as well; all three, or it is half-carried.
+      ...(Array.isArray(rec.sources) && rec.sources.length
+        ? { sources: rec.sources } : {}),
       ...(String(rec.mailingAddress || "").trim()
         ? { mailingAddress: String(rec.mailingAddress) } : {}),
       ...(plainKeys(rec.personNames) ? { personNames: rec.personNames } : {}),
@@ -339,7 +346,7 @@ function recordPayload(kind, rec) {
 // happened to stamp the row newest, and rule 1 must let her EMPTY the four that
 // can be emptied without that reading as ignorance.
 const GUARDED = ["scenario", "scenarios", "tasks", "wishList", "boardAcks", "developer", "pickupPlace",
-  "categories", "payMethods", "mailingAddress", "personNames", "personCalls", "messageStyle"];
+  "categories", "payMethods", "sources", "mailingAddress", "personNames", "personCalls", "messageStyle"];
 
 // `production` — the numbers on More → Production line — is guarded by the same
 // three rules but cannot be judged the same way, and it was the one key left
@@ -380,7 +387,7 @@ const GUARDED_ALL = [...GUARDED, "production"];
 // as a phone that had never chosen, and the leaning greeting would come straight
 // back from the other phone.
 const SPEAK_EMPTY = ["scenarios", "boardAcks", "developer",
-  "categories", "payMethods", "mailingAddress", "personNames", "messageStyle"];
+  "categories", "payMethods", "sources", "mailingAddress", "personNames", "messageStyle"];
 
 function has(obj, k) {
   return Object.prototype.hasOwnProperty.call(obj, k);

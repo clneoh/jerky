@@ -27,7 +27,7 @@
 // HAS come in stays at the items — that pass-through charge is not her takings — which
 // is why customerTotal() rather than groupValue() is read here and nowhere else.
 import { fmtRM, groupOrders, orderCode, orderLinePrice, round2 } from "./state.js";
-import { isCash, isOther, isTng, methodLabel, methodRank } from "./accounts.js";
+import { classOfCategory, isCash, isOther, isTng, methodLabel, methodRank } from "./accounts.js";
 import { customerTotal } from "./courier.js";
 
 // The stages in order, so "is this past Paid?" can be asked here without importing
@@ -332,9 +332,12 @@ export function journalFor(state, method, from, to) {
       // A payback and money you put in are different things, though both arrive with the
       // pocket: "Put money in" is you funding the business, a payback is the till settling
       // up with you (17 Sep 2026).
+      // ★ AND THE POT IS NAMED (v394). ⚠️ A row written before v394 carries no `source` and reads
       what: d.repay
-        ? `Paid back to this pocket${d.note ? ` — ${d.note}` : ""}`
-        : `Your own money in${d.note ? ` — ${d.note}` : ""}`,
+        ? `Paid back to this pocket${d.source ? ` — from ${d.source}` : ""}${d.note ? ` — ${d.note}` : ""}`
+        : d.transfer
+          ? `Transferred from ${d.source || "another pot"}${d.note ? ` — ${d.note}` : ""}`
+          : `Your own money in${d.source ? ` — from ${d.source}` : ""}${d.note ? ` — ${d.note}` : ""}`,
       amount: Number(d.amount) || 0,
       dir: "in",
     });
@@ -368,11 +371,116 @@ export function journalFor(state, method, from, to) {
 // less what of its own money went in. Positive means it is out of pocket and the till
 // owes it. Read from the same two lists the Money screen totals, so the figure you are
 // offered as a payback is the figure your own line shows.
+// ★★ WHAT SHE HAS PUT INTO THE BAKERY, AND WHAT SHE HAS TAKEN BACK (v396).
+//
+// Her words: __"SO investment is an account, a source of money, we are able to generate investment
+// account.?"__ — and, asked whether it should show money taken back out as well, __"yes, with taken back
+// out too"__.
+//
+// ⚠️⚠️ IT IS ALL-TIME, NOT A STRETCH, AND THAT IS THE POINT OF IT. Every other figure on the Money
+// screen answers "what moved this week"; this one answers "where do I stand with the bakery" — and a
+// BALANCE only means anything counted from the beginning. A stretch-scoped version would say she was
+// RM 200 in on a week she had taken RM 900 out.
+//
+// ⚠️⚠️ AND TWO KINDS OF ROW MUST NOT BE COUNTED, or the balance is a lie. Both are rows this app writes
+// itself, under the DRAWINGS category — which is what keeps them off the profit statement, and which is
+// exactly why they would otherwise be read as her money leaving:
+//   • a TRANSFER (v395) never left the business. Counting one would say she had taken out money she
+//     merely moved from TNG to Cash.
+//   • a PAYBACK's deposit (marked `repay`) is the till settling with a pocket that paid for something.
+//     That is not her putting money in afresh — it is money the business already owed.
+// ★★ AND IT IS KEPT PER OWNER (v398). Her question: __"investment can be from few owner, how to
+// differentiate"__ — jienluv2bake is a trade mark of a company with more than one owner, so "what have
+// I put in" is the wrong question; **"what has EACH of us put in, and taken back"** is the right one.
+//
+// ⭐ THE SOURCES LIST ALREADY ANSWERS IT. A source does not have to be a place — she names them, so
+// they can be **Kean**, **Suan**, **Impressive Direction**. What was missing was that the account kept
+// one total, and that a withdrawal said nothing about whose money it was.
+//
+// ⚠️ SO EVERY ROW IS BUCKETED BY SOURCE, and a row with none is kept in its own bucket rather than
+// dropped — **money that went out has to be visible somewhere**, and an unnamed owner is a fact about
+// her books, not a rounding error.
+export function investmentOf(state) {
+  const buckets = new Map(); // "" is the bucket for money with no owner named on it
+  const bump = (source, side, amount) => {
+    const key = String(source == null ? "" : source);
+    if (!buckets.has(key)) buckets.set(key, { source: key, putIn: 0, takenBack: 0 });
+    buckets.get(key)[side] += amount;
+  };
+
+  for (const d of state.deposits || []) {
+    if (!d || d.repay || d.transfer) continue;
+    const amount = Number(d.amount) || 0;
+    if (!amount) continue;
+    bump(d.source, "putIn", amount);
+  }
+  for (const e of state.expenses || []) {
+    if (!e || e.transfer) continue;
+    const amount = Number(e.amount) || 0;
+    if (!amount) continue;
+    // ★★ SOMETHING SHE BOUGHT WITH HER OWN MONEY (v397). Her words: __"When i enter an expenses, like
+    // buying equipment, should i allow to credit investment account?"__ — and, asked how the app should
+    // tell the two apart, she chose to say so ON THE EXPENSE ITSELF. A row she marked that way is money
+    // that went into the business and stayed there: it is money SHE PUT IN, and it is not owed back.
+    if (e.invested) { bump(e.source, "putIn", amount); continue; }
+    // ⚠️ BY CATEGORY CLASS, not by the word — she can rename her withdrawal category to anything she
+    // likes, and the class is what says it is her own money rather than a cost of trading.
+    if (classOfCategory(state, e.category) !== "drawing") continue;
+    bump(e.source, "takenBack", amount);
+  }
+
+  const bySource = [...buckets.values()]
+    .map((b) => ({ ...b, putIn: round2(b.putIn), takenBack: round2(b.takenBack),
+      stillIn: round2(b.putIn - b.takenBack) }))
+    .sort((a, b) => (a.source || "￿").localeCompare(b.source || "￿"));
+
+  const total = (k) => round2(bySource.reduce((n, b) => n + b[k], 0));
+  return {
+    putIn: total("putIn"),
+    takenBack: total("takenBack"),
+    stillIn: round2(total("putIn") - total("takenBack")),
+    bySource,
+    // ⚠️ AND THE ROWS, for the book — in date order, each carrying whose money it was.
+    rows: buildInvestmentRows(state),
+  };
+}
+
+function buildInvestmentRows(state) {
+  const rows = [];
+  for (const d of state.deposits || []) {
+    if (!d || d.repay || d.transfer) continue;
+    const amount = Number(d.amount) || 0;
+    if (!amount) continue;
+    rows.push({ date: String(d.date || "").slice(0, 10), what: "Put in", amount, dir: "in",
+      source: String(d.source == null ? "" : d.source) });
+  }
+  for (const e of state.expenses || []) {
+    if (!e || e.transfer) continue;
+    const amount = Number(e.amount) || 0;
+    if (!amount) continue;
+    if (e.invested) {
+      rows.push({ date: String(e.date || "").slice(0, 10), what: "Paid for something yourself",
+        amount, dir: "in", source: String(e.source == null ? "" : e.source) });
+      continue;
+    }
+    if (classOfCategory(state, e.category) !== "drawing") continue;
+    rows.push({ date: String(e.date || "").slice(0, 10), what: "Took out", amount, dir: "out",
+      source: String(e.source == null ? "" : e.source) });
+  }
+  rows.sort((a, b) => a.date.localeCompare(b.date));
+  return rows;
+}
+
 export function pocketOwed(state, method, from, to) {
   const want = methodLabel(method);
   if (!want) return 0;
   const sum = (list) => (list || []).reduce((s, r) => {
     if (!r || methodLabel(r.method) !== want) return s;
+    // ⚠️⚠️ A ROW SHE MARKED AS HER INVESTMENT IS NOT A DEBT (v397). It still carries that pocket's
+    // name — that is how she paid — but the money is not owed back to her, so the pocket must not go
+    // on claiming the bakery owes it. **Without this the same ringgit would be counted twice: once as
+    // "the bakery owes me" here, and once as "put in" on her investment account.**
+    if (r.invested) return s;
     const day = String(r.date || "").slice(0, 10);
     return isWithin(day, from, to) ? s + (Number(r.amount) || 0) : s;
   }, 0);

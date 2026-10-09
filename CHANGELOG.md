@@ -1,8 +1,45 @@
-# Munchies Furkidz — change history (v54 → v393)
+# Munchies Furkidz — change history (v54 → v399)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**9 Oct 2026 — engine v393 → v399, SIX VERSIONS: your own money, more than one owner, and your own order
+(nothing to run, nothing to upload — pushing this one is the whole of it).**
+
+**Your own money has a name now: an investment.** When you pay for something out of your own pocket,
+the expense form used to treat it as one thing only — a debt the business owed you. It now asks
+**"Whose money paid for it?"** with two answers: **"The business owes me"** (what it always did — the
+pocket's line shows the debt, and *Pay back a pocket* settles it), or **"It is my investment"** (the
+money **stays in** the business, counts as money you have put in, and **nothing is owed back** for it).
+The two can never both claim the same ringgit — if you mark it as your investment, the pocket stops
+saying it is owed. **It is not asked at all when the till paid** — cash and TNG are the business's own
+money, neither owed back nor invested.
+
+**And there is a card called Your investment on the Money screen.** What you have put in, what you
+have taken back out, and what is **still in the business** — counted **from the beginning**, not for
+this week, because a balance only means something counted from the start. **Open** shows every row
+behind those figures, as a book you can Print or Share. Money you put in that has since been spent on
+ingredients is still counted as in: it is your money, and it bought stock rather than leaving.
+
+**You can also move money between your own pots.** A **Transfer** press beside *Put money in* — cash
+banked, TNG taken out for the float, and so on. Nothing enters the business and nothing leaves it, so
+a transfer is **not** counted as money in or money out. *Put money in* also asks **where the money came
+from** now, from a list of your own — beside your categories and your ways to pay.
+
+**More than one owner.** Each owner now has their own share of the investment account, kept on its
+own: what **they** have put in, and what **they** have taken back. There is nothing new to learn — an
+owner is just a name on the *From* list. **Money going out names its owner too**: recording a
+withdrawal now asks *"Whose investment does this come out of?"*. That question is asked **only** of a
+withdrawal — an ordinary cost like packaging is not anybody's money going back to them. Money with no
+owner named is still shown, in its own section, so nothing is hidden.
+
+**And you arrange your own ingredients.** Every ingredient now carries a small **grip** on its left —
+drag it and the order is yours to choose, and the order is written onto the ingredients themselves, so
+it follows you to your other phone. An ingredient you have never dragged keeps exactly the place it
+has today. The card is roomier than it was, too.
+
+**Nothing to run, no SQL, no upload, no setting to change on either phone.**
 
 **9 Oct 2026 — engine v384 → v393, NINE VERSIONS: your stock, and the shopping you do to fill it
 (nothing to run, nothing to upload — pushing this one is the whole of it).**

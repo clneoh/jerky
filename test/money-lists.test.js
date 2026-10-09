@@ -57,6 +57,7 @@ globalThis.fetch = async () => ({ ok: true, json: async () => [] });
 
 const { renderMoney } = await import("../admin/js/views/money.js");
 const { entryForm } = await import("../admin/js/views/accountsEditor.js");
+const { classOfCategory } = await import("../admin/js/accounts.js");
 
 function freshState() {
   return {
@@ -96,13 +97,17 @@ function openManager(state) {
   return root;
 }
 
-test("the Money screen says what the two lists hold, and a loan is among them", () => {
+test("the Money screen says what the lists hold, and a loan is among them", () => {
+  // ⚠️ THE TITLE NAMES ALL THREE LISTS NOW (v394). It read "Categories & ways to pay", which stopped
+  // being true the moment a third list joined them — **and a heading missing one of the things under
+  // it is how she fails to find that thing.**
   const root = mount(freshState());
   const line = walk(root).find((n) => (n.children || []).some((c) => String(c.className).includes("card-title")
-    && c.textContent === "Categories & ways to pay"));
+    && c.textContent === "Categories, ways to pay & sources"));
   assert.ok(line, "the lists are on the money screen, not tucked away in Settings");
   assert.match(line.textContent, /11 categories/);
   assert.match(line.textContent, /Cash, TNG, Loan/, "with the third choice she asked for");
+  assert.match(line.textContent, /2 sources/, "⚠️ and the third list is not mentioned at all");
 });
 
 test("Edit opens the lists, and every line can be opened to change it", () => {
@@ -204,4 +209,177 @@ test("the expense form can add a category without leaving the form", () => {
     "what she had typed is still there");
   const picked = again.filter((n) => String(n.className).includes("cal-mode-on")).map((b) => b.textContent.trim());
   assert.ok(picked.includes("Baking class"), "and the new category comes back picked, so she can carry on");
+});
+
+// ── ★★ the third list: where her own money came from (v394) ───────────────────
+// Her words, looking at the Put money in form: __"should have additional field : from xxx"__ — and,
+// asked whether it should be typed or picked, __"Which pot it came from — picked"__.
+
+test("★★ the sources list is on the screen she edits the other two on", () => {
+  const state = freshState();
+  openManager(state);
+  const names = walk(registry["popup-layer"])
+    .filter((n) => String(n.className).includes("info-row"))
+    .map((r) => r.children[0].textContent);
+  assert.ok(names.includes("My own pocket") && names.includes("Savings"),
+    "⚠️ the third list is not on the screen she edits the other two on");
+});
+
+test("★★ renaming a source moves the money-in rows already recorded under it", () => {
+  // ⚠️ A row stores the words it was WRITTEN with, so a rename that only changed the list would split
+  // her history across two spellings of one pot — the rule the other two lists already keep.
+  const state = freshState();
+  state.deposits = [{ id: "d1", date: "2026-09-10", amount: 50, method: "Cash", source: "Savings" }];
+  openManager(state);
+  fire(managerRow("Savings"));
+  editorBox().value = "Maybank savings";
+  fire(byText(registry["popup-layer"], "Save"));
+  assert.equal(state.deposits[0].source, "Maybank savings",
+    "⚠️ renaming the pot left the rows she recorded under it on the old name");
+});
+
+test("⚠️ the pot she picks on the money-in form is saved onto the row", () => {
+  const state = freshState();
+  const root = mount(state);
+  fire(byText(root, "＋ Put money in"));
+  const layer = registry["popup-layer"];
+  walk(layer).find((n) => n.tagName === "INPUT" && n.attrs["aria-label"] === "How much you put in").value = "200";
+  fire(byText(layer, "Savings"));
+  fire(byText(layer, "Save"));
+  assert.equal(state.deposits.length, 1, "the money-in row was not written");
+  assert.equal(state.deposits[0].source, "Savings", "⚠️ the pot she picked was not saved on the row");
+});
+
+// ── ★★ moving money between her own pots (v395) ───────────────────────────────
+// Her words: __"if its for sometimes we want to transfer money from tnG to cash, or to bank"__.
+
+test("★★ a transfer writes BOTH sides — out of one pot and into the other", () => {
+  // ⚠️⚠️ ONE SIDE ALONE IS THE WHOLE FAULT: a deposit on its own would count her own RM200 as money
+  // IN, and moving money between two pockets of hers would inflate the figures she reads her takings
+  // from. The two rows are what make it a movement rather than new money.
+  const state = freshState();
+  const root = mount(state);
+  fire(byText(root, "⇄ Transfer"));
+  const layer = registry["popup-layer"];
+  walk(layer).find((n) => n.tagName === "INPUT" && n.attrs["aria-label"] === "How much you moved").value = "200";
+  fire(byText(layer, "Save"));
+
+  assert.equal(state.expenses.length, 1, "nothing left the pot it came from");
+  assert.equal(state.deposits.length, 1, "the money never arrived in the other pot");
+  assert.equal(state.expenses[0].method, "Cash", "the out-side is not out of the pot it came from");
+  assert.equal(state.deposits[0].method, "TNG", "the in-side did not land in the other pot");
+  assert.equal(state.deposits[0].source, "Cash", "the row does not say where the money came from");
+  assert.equal(state.deposits[0].transfer, true, "so it would read as money arriving from outside");
+  // ⚠️⚠️ AND IT IS NOT A COST. An ordinary category would put moving her own money on the profit
+  // statement as a cost of trading — which is why the out-side goes under the DRAWINGS category, the
+  // same thing `Pay back a pocket` does and for the same reason.
+  assert.equal(classOfCategory(state, state.expenses[0].category), "drawing",
+    "⚠️ a transfer put a cost on the profit statement");
+});
+
+test("★★ the net does not move when money moves between her own pots", () => {
+  const netOf = (s) => {
+    const rows = walk(mount(s)).filter((n) => String(n.className).includes("info-row"));
+    return rows.find((r) => r.children[0].textContent === "Net").children[1].textContent;
+  };
+  const outOf = (s) => {
+    const rows = walk(mount(s)).filter((n) => String(n.className).includes("info-row"));
+    return rows.find((r) => r.children[0].textContent === "Cash out").children[1].textContent;
+  };
+  const state = freshState();
+  const before = netOf(state);
+
+  const root = mount(state);
+  fire(byText(root, "⇄ Transfer"));
+  const layer = registry["popup-layer"];
+  walk(layer).find((n) => n.tagName === "INPUT" && n.attrs["aria-label"] === "How much you moved").value = "200";
+  fire(byText(layer, "Save"));
+
+  assert.equal(outOf(state), "RM 200.00", "the pot it came from did not go down");
+  assert.equal(netOf(state), before,
+    "⚠️⚠️ moving her own money changed what should be with her — nothing entered or left the business");
+});
+
+test("⚠️ the transfer cannot pick the SAME pot on both sides", () => {
+  const state = freshState();
+  const root = mount(state);
+  fire(byText(root, "⇄ Transfer"));
+  const layer = registry["popup-layer"];
+  walk(layer).find((n) => n.tagName === "INPUT" && n.attrs["aria-label"] === "How much you moved").value = "200";
+  // From defaults to Cash; the first pill of each row is Cash, so pressing both "To"s second pill
+  // is not enough — drive it through the documented rule instead: picking the pot already chosen on
+  // the other side must not leave a double.
+  const pills = walk(layer).filter((n) => n.tagName === "BUTTON" && n.textContent.trim() === "Cash");
+  fire(pills[pills.length - 1]); // pick Cash as the destination too
+  fire(byText(layer, "Save"));
+  assert.notEqual(state.expenses.length && state.expenses[0].method,
+    state.deposits.length && state.deposits[0].method,
+    "⚠️ a transfer to the same pot went through — that is not a movement at all");
+});
+
+test("★★ the Money screen carries her investment as its own account", () => {
+  // ⚠️ Her words: __"we are able to generate investment account.?"__ — and it must name BOTH sides, or
+  // it answers only half of what she asked for.
+  const state = freshState();
+  state.deposits = [{ id: "d1", date: "2026-09-01", amount: 500, method: "Cash" }];
+  state.expenses = [{ id: "e1", date: "2026-09-10", amount: 50,
+    category: "My own withdrawal", method: "Cash" }];
+  const root = mount(state);
+  const line = walk(root).find((n) => (n.children || []).some((c) =>
+    String(c.className).includes("card-title") && c.textContent === "Your investment"));
+  assert.ok(line, "⚠️ her investment is not on the Money screen at all");
+  assert.match(line.textContent, /Put in RM 500\.00/, "the money she put in is not named");
+  assert.match(line.textContent, /taken back RM 50\.00/, "⚠️ money taken back out is not named");
+  assert.match(line.textContent, /all time/, "⚠️ and nothing says it is a balance, not this stretch");
+});
+
+// ── ★★ whose money paid for it (v397) ─────────────────────────────────────────
+// Her words: __"When i enter an expenses, like buying equipment, should i allow to credit investment
+// account?"__ — and, asked how the app should tell the two apart, she chose to say so on the expense.
+
+test("★★ the expense form asks whose money paid — and only when a POCKET did", () => {
+  const state = freshState();
+  const root = mount(state);
+  fire(byText(root, "＋ Add an expense"));
+  const layer = registry["popup-layer"];
+  walk(layer).find((n) => n.tagName === "INPUT" && n.attrs["aria-label"] === "Amount").value = "500";
+
+  // ⚠️ Cash paid, so the till's own money is in question — nothing is owed and nothing is invested.
+  assert.equal(byText(layer, "It is my investment"), undefined,
+    "⚠️ she is being asked whose money paid when the till paid it");
+
+  // Pay from one of her own pockets and the question appears.
+  fire(byText(layer, "Loan"));
+  assert.ok(byText(layer, "It is my investment"),
+    "⚠️ paying from her own pocket asks nothing about whose money it was");
+  // ⚠️ ASSERTION ON USER-VISIBLE COPY, so it moves with the string: jerky says "the business".
+  assert.ok(byText(layer, "The business owes me"), "and the debt it already was must still be offered");
+
+  fire(byText(layer, "It is my investment"));
+  fire(byText(layer, "Save"));
+  assert.equal(state.expenses.length, 1);
+  assert.equal(state.expenses[0].invested, true, "⚠️ the choice she made was not saved on the row");
+});
+
+test("★★ a withdrawal asks WHOSE investment it comes out of — an ordinary cost does not", () => {
+  // ⚠️ Only a withdrawal reduces somebody's share of the bakery. An ordinary cost is not anyone's money
+  // going back to them, so the question must not be put to it.
+  const state = freshState();
+  const root = mount(state);
+  fire(byText(root, "＋ Add an expense"));
+  const layer = registry["popup-layer"];
+  walk(layer).find((n) => n.tagName === "INPUT" && n.attrs["aria-label"] === "Amount").value = "300";
+
+  assert.equal(byText(layer, "My own pocket"), undefined,
+    "⚠️ an ordinary cost is being asked whose investment it comes out of");
+
+  fire(byText(layer, "My own withdrawal"));
+  assert.ok(byText(layer, "My own pocket"),
+    "⚠️ taking her own money out asks nothing about whose it is — no owner's balance can be right");
+
+  fire(byText(layer, "Savings"));
+  fire(byText(layer, "Save"));
+  assert.equal(state.expenses.length, 1);
+  assert.equal(state.expenses[0].source, "Savings",
+    "⚠️ the owner she picked was not saved on the withdrawal");
 });
