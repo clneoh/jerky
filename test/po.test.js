@@ -108,7 +108,7 @@ globalThis.window = {
   print() { printed.push(true); },
 };
 
-import { renderPO } from "../admin/js/views/po.js";
+import { renderPO, manualPO } from "../admin/js/views/po.js";
 import * as poTableModule from "../admin/js/views/poTable.js";
 import { readFileSync } from "node:fs";
 
@@ -612,4 +612,48 @@ test("⚠️ every other shop's section is the ONE that gets hidden, and the run
   // ⚠️ AND NOTHING WITHOUT THE BODY CLASS. Every rule is scoped, so a leaked marker cannot hide
   // anything on its own.
   assert.equal(/^\s*tbody:not/m.test(css), false, "an unscoped hiding rule would blank the ordinary PO print");
+});
+
+// ── ★★ A LIST WRITTEN BY HAND — NO BAKE DAY BEHIND IT (v401) ──────────────────
+// Her words: __"I want to add a manual PO issuing, the rest of the po process follow what we already
+// have for po processing. I think a thing only different is it dont tie to specific bake date"__
+
+test("★★⚠️ a hand-written list carries NO bake day — so it cannot mark one as shopped", () => {
+  // ⚠️⚠️ THE WHOLE FEATURE IS AN ABSENCE, AND IT IS TESTED AS ONE. `coveringPO` matches a saved list to
+  // a date by `dates[]`/`deliveryDate` and nothing else, so the way to prove "this never marks a day
+  // shopped" is to prove **neither key is written at all**. An assertion that merely checked "the day is
+  // not shopped" would pass for a list that happened to cover a different day.
+  const bom = { totalUnits: 21, orders: [{ productId: "prd_loaf" }], productLines: [], warnings: [] };
+  const po = manualPO(bom, [{ ingredientId: "ing_flour" }], 75);
+
+  assert.equal(po.manual, true, "nothing marks this as the hand-written kind");
+  assert.equal(Object.prototype.hasOwnProperty.call(po, "dates"), false,
+    "⚠️⚠️ a hand-written list recorded a `dates` array — it can now claim a bake day as shopped");
+  assert.equal(Object.prototype.hasOwnProperty.call(po, "deliveryDate"), false,
+    "⚠️⚠️ and a legacy `deliveryDate`, which `coveringPO` reads the same way");
+
+  // ⭐ AND THE REST OF THE SHAPE IS AN ORDINARY LIST'S, which is what makes every downstream step —
+  // Buy, Undo, Amend, Print, the stock push — work on it unchanged.
+  assert.equal(po.summary.totalUnits, 21);
+  assert.equal(po.summary.buyTotal, 75);
+  assert.deepEqual(po.productIds, ["prd_loaf"], "the products she picked are not recorded on it");
+  assert.ok(Array.isArray(po.items) && Array.isArray(po.warnings));
+});
+
+test("★★ a hand-written list leaves every bake day exactly as it was", () => {
+  // ⚠️ The end the absence is FOR: with the hand-written list sitting in her history, the PO screen must
+  // still offer every day as un-shopped — otherwise writing a list would quietly cost her a day's shop.
+  const state = freshState();
+  const bom = { totalUnits: 4, orders: [{ productId: "prd_loaf" }], productLines: [], warnings: [] };
+  state.purchaseOrders = [manualPO(bom, [{ ingredientId: "ing_flour" }], 20)];
+
+  const root = render(state);
+  const r = rows(root);
+  assert.equal(r.length, 2, "the two bake days are not on the screen");
+  for (const row of r) {
+    assert.equal(row.children[0].checked, true,
+      "⚠️⚠️ a hand-written list ticked a bake day off by itself");
+    assert.equal(rowTag(row), "",
+      `⚠️⚠️ a hand-written list made a bake day read as "${rowTag(row)}" — it is not tied to any day`);
+  }
 });

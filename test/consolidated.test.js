@@ -70,7 +70,7 @@ test("★ the week is the SUNDAY one, and the sheet says which basis it counts o
   // counts them as DELIVERED — both honest, and they will not match. The document states its own.
   const st = state();
   st.orders = [row({ deliveryDate: D(5) })];
-  assert.match(consolidatedSheet(st, { kind: "month", anchor: D(8) }).subtitle, /by bake day/);
+  assert.match(consolidatedSheet(st, { kind: "month", anchor: D(8) }).subtitle, /by delivery date/);
 });
 
 // ── the document's own reference (v374) ──────────────────────────────────────
@@ -259,7 +259,7 @@ test("one customer can be picked out of the period", () => {
 
 // ── what is left out, and SAID ───────────────────────────────────────────────
 
-test("★ an order with no bake day is counted and SAID, never merely dropped", () => {
+test("★ an order with no delivery date is counted and SAID, never merely dropped", () => {
   const st = state();
   st.orders = [
     row({ groupId: "g1", deliveryDate: D(5) }),
@@ -267,7 +267,7 @@ test("★ an order with no bake day is counted and SAID, never merely dropped", 
   ];
   const sheet = consolidatedSheet(st, { kind: "month", anchor: D(8) });
   assert.equal(sheet.totals[0].amount, 16, "the order with no day was counted anyway");
-  assert.match(sheet.note, /1 order has no bake day/,
+  assert.match(sheet.note, /1 order has no delivery date/,
     `the document is quietly short: "${sheet.note}"`);
 });
 
@@ -312,7 +312,7 @@ test("an order outside the period is simply not in it, and is not complained abo
   st.orders = [row({ groupId: "g1", deliveryDate: D(5) }), row({ groupId: "g2", deliveryDate: "2026-09-30" })];
   const sheet = consolidatedSheet(st, { kind: "month", anchor: D(8) });
   assert.equal(sheet.totals[0].amount, 16);
-  assert.equal(/no bake day/.test(sheet.note), false, "an order in September was reported as undated");
+  assert.equal(/no delivery date/.test(sheet.note), false, "an order in September was reported as undated");
 });
 
 test("a period with nothing in it says so rather than drawing an empty page", () => {

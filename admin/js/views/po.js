@@ -12,17 +12,23 @@
 // packs round on the combined total, and a running grand total shows below.
 
 import { longDate, todayISO, weekdayName, shortDate } from "../dates.js";
-import { explodeBomDates, ordersFingerprint, effectiveCapacity, dayChangeInfo, restockOnlyItems } from "../bom.js";
-import { el, button, emptyState, toast } from "../ui.js";
-import { save, newId } from "../state.js";
+import { explodeBomDates, explodePicks, ordersFingerprint, effectiveCapacity, dayChangeInfo, restockOnlyItems } from "../bom.js";
+import { el, button, emptyState, toast, select, showPopup } from "../ui.js";
+import { byId, save, newId } from "../state.js";
 import { priceItems, notPurchasedNames, fmtQtyText } from "../purchasing.js";
 import { poTableEl, totalOf } from "./poTable.js";
 
 export function renderPO(root, state, params) {
   const dates = [...(state.deliveryDates || [])].sort((a, b) => a.date.localeCompare(b.date));
   if (!dates.length) {
-    root.replaceChildren(emptyState("No delivery dates",
-      "Add delivery dates and orders first — then the PO writes itself."));
+    // ⚠️⚠️ THE HAND-WRITTEN LIST MUST SURVIVE THIS BRANCH. With no dates at all the screen used to
+    // stop at one sentence — and a list that **is not tied to a day** is exactly the thing she needs
+    // when there are none. **A feature reachable only in the state it was built to avoid is not reachable.**
+    root.replaceChildren(
+      emptyState("No delivery dates",
+        "Add delivery dates and orders first — then the PO writes itself. Or write a list by hand, which needs no delivery date at all."),
+      el("div", { class: "btn-row" },
+        button("＋ Write a list by hand", () => openManualPO(state, root), "soft")));
     return;
   }
   const initialMetas = dates.map((rec) => metaOf(state, rec));
@@ -39,7 +45,8 @@ export function renderPO(root, state, params) {
     const bom = chosen.length ? explodeBomDates(state, chosen) : null;
     const needsReview = metas.some((m) => m.changed);
     root.replaceChildren(
-      pickerCard(state, metas, ticked, toggle, open, toggleOpen, onIgnore, onCover),
+      pickerCard(state, metas, ticked, toggle, open, toggleOpen, onIgnore, onCover,
+        () => openManualPO(state, root)),
       previewCard(state, chosen, bom, needsReview));
   };
   // Ticking or unticking a day switches to the explicit ?dates= URL (empty when
@@ -236,7 +243,7 @@ function explicitSelection(params, dates) {
   return null;
 }
 
-function pickerCard(state, metas, ticked, toggle, open, toggleOpen, onIgnore, onCover) {
+function pickerCard(state, metas, ticked, toggle, open, toggleOpen, onIgnore, onCover, onManual) {
   const rows = [];
   for (const m of metas) {
     const { rec, past, units, hasOrders } = m;
@@ -270,7 +277,16 @@ function pickerCard(state, metas, ticked, toggle, open, toggleOpen, onIgnore, on
     el("h3", { style: "margin:0 0 2px" }, "Shop for which days?"),
     el("p", { class: "card-sub", style: "margin:0 0 4px" },
       "Tick the posting days to shop for — their ingredient needs add up into ONE list. Days you've already saved stay unticked; a day marked \"orders changed\" has a new order since you shopped — tap it to review. Extra orders keep adding onto that day's one open list until you save it."),
-    rows.length ? el("div", { class: "po-day-list" }, ...rows) : null);
+    rows.length ? el("div", { class: "po-day-list" }, ...rows) : null,
+    // ★★ AND A LIST WRITTEN BY HAND (v401). Her words: __"I want to add a manual PO issuing, the rest of
+    // the po process follow what we already have for po processing. I think a thing only different is it
+    // dont tie to specific bake date"__ — and, asked what she puts on it, **products and how many**, with
+    // Amend for the detail afterwards.
+    // ⚠️ `onManual` IS PASSED IN, like every other action on this card: `root` belongs to `render()`,
+    // and reaching for it from here was a `ReferenceError` that only pressing the button could find —
+    // the `press-everything` smoke harness (v368) caught it, and a render-only test never would.
+    el("div", { class: "btn-row", style: "margin-top:12px" },
+      button("＋ Write a list by hand", onManual, "soft")));
 }
 
 // Revealed under an "orders changed" day: what actually changed and the extra
@@ -391,6 +407,133 @@ function emptyPreview(state, chosen, needsReview) {
   return el("div", { class: "card po-card" },
     emptyState("Nothing to buy",
       "None of the ticked days have orders yet, so there is nothing to add up."));
+}
+
+// ★★ A LIST WRITTEN BY HAND — NO BAKE DAY BEHIND IT (v401).
+//
+// Her words: __"I want to add a manual PO issuing, the rest of the po process follow what we already
+// have for po processing. I think a thing only different is it dont tie to specific bake date"__ — and,
+// asked what goes on it, __"Just pick products to bake"__ with __"then i can use the amend to adjust the
+// details"__.
+//
+// ⚠️⚠️ THE WHOLE FEATURE IS ONE ABSENCE: **the saved list carries no `dates` AND no `deliveryDate`.**
+// `coveringPO` matches a saved list to a bake day by exactly those two fields and nothing else, so a list
+// with neither **can never mark a day as shopped** — the "not tied to a bake date" requirement falls out
+// of the data shape rather than needing a rule to be remembered in three places.
+//
+// ⭐ AND EVERYTHING DOWNSTREAM IS UNCHANGED BY CONSTRUCTION, because she picks PRODUCTS: they explode
+// through `explodePicks` — the same function a bake day's orders go through — and are priced by the same
+// `priceItems`. The per-shop groups, Buy / Not buying, Undo, the stock push, the money row, Print and
+// **Amend** are all the machinery that already exists.
+function openManualPO(state, root) {
+  const products = (state.products || []).filter((p) => p && p.active !== false && Array.isArray(p.recipe));
+  if (!products.length) return toast("Add a product with a recipe first");
+  let picks = []; // [{ productId, qty }]
+
+  const body = el("div", {});
+  const paint = () => {
+    const bom = explodePicks(state, picks);
+    const items = priceItems(state, bom.items).filter(Boolean);
+    const total = totalOf(items);
+    const notBought = notPurchasedNames(state, items);
+
+    const rows = picks.map((p, i) => {
+      const product = byId(state.products, p.productId);
+      const qty = el("input", { class: "input", type: "number", inputmode: "numeric", min: "1",
+        step: "1", value: String(p.qty), style: "max-width:88px",
+        "aria-label": `How many ${product ? product.name : "of it"}` });
+      qty.addEventListener("input", () => {
+        picks[i].qty = Math.max(1, Math.round(Number(qty.value) || 1));
+        paint();
+      });
+      return el("div", { class: "info-row" },
+        el("span", {}, product ? product.name : "(a product that is gone)"),
+        el("span", { class: "info-val" }, qty,
+          button("✕", () => { picks.splice(i, 1); paint(); }, "ghost small")));
+    });
+
+    // ⚠️ THE PICKER OFFERS PRODUCTS SHE CAN ACTUALLY EXPLODE — a product with no recipe would cost
+    // nothing and warn, which reads as a fault on a list she wrote herself.
+    const available = products.filter((p) => !picks.some((x) => x.productId === p.id));
+    // ⚠️⚠️ `select` CALLS ITS HANDLER WITH THE ELEMENT AS `this`, NOT WITH A VALUE ARGUMENT — the
+    // contract every caller in this app has been written against since v121, and it is spelled out in
+    // `ui.js` beside the listener. ⚠️ **It must therefore be a `function`, never an arrow**: an arrow
+    // cannot carry a `this`, which is exactly what broke every handler when v121 wrapped the call to
+    // repaint the tone. A handler written as `(id) => …` receives **`undefined`** — and because it then
+    // returns early, the picker changes on screen and nothing happens, with no error anywhere.
+    const picker = available.length
+      ? select(available.map((p) => ({ value: p.id, label: p.name })), "", function () {
+          const id = this.value;
+          if (!id) return;
+          picks.push({ productId: id, qty: 1 });
+          paint();
+        }, "Add a product…")
+      : el("p", { class: "card-sub", style: "margin:0" }, "Every product is on the list.");
+
+    body.replaceChildren(
+      el("p", { class: "card-sub", style: "margin:0 0 10px" },
+        // ⚠️ JERKY'S DAY WORD: "posting day", never "bake day" — this screen was localized at the first
+        // sync and the new copy must follow it (see the playbook's vocabulary rule).
+        "Pick the products and how many — the ingredients come out of your recipes, the same way a "
+        + "posting day's list does. ⚠️ Nothing here is tied to a posting day, so saving it never marks a day as shopped. "
+        + "Change any detail afterwards with Amend."),
+      picks.length ? el("div", {}, ...rows) : el("p", { class: "card-sub" }, "Nothing picked yet."),
+      el("div", { class: "field", style: "margin-top:8px" }, picker),
+      // ⭐ THE PREVIEW IS THE LIST ITSELF — the same table the day-driven screen draws, so what she reads
+      // here is what she saves.
+      picks.length
+        ? el("div", {},
+            el("p", { class: "section", style: "margin:14px 0 4px" }, "The list this makes"),
+            // ⚠️ NO TOTAL OF MY OWN HERE. `poTableEl` already closes with a `tfoot` carrying the run's
+            // total, and a second one right under it would say the same figure twice — the "one
+            // explanation, not two" fault of v386, found by looking at it that time.
+            poTableEl(state, items, {}),
+            notBought.length ? el("p", { class: "po-snapshot-note" },
+              `Not on this list: ${notBought.join(", ")} — marked as not something you buy. Their cost still counts in the products that use them.`) : null)
+        : null,
+      el("div", { class: "popup-actions" },
+        button("Cancel", () => closeManual(), "ghost"),
+        picks.length ? button("Save list", () => saveManual(state, bom, items, total, root), "primary") : null));
+  };
+
+  let closeManual = () => {};
+  paint();
+  showPopup(el("div", { class: "popup-title-row" }, "Write a list by hand"),
+    (refresh, close) => { closeManual = close; return body; });
+}
+
+// ★★ THE SHAPE A HAND-WRITTEN LIST IS SAVED IN — its own function so the ONE thing that makes it
+// what it is can be tested directly. ⚠️ A pop-up cannot be driven by the test shims, so if this were
+// built inline inside the Save handler the crux would be untestable — the v385 rule: **put the rule in
+// one tested place rather than in a view callback no test can reach.**
+export function manualPO(bom, items, total) {
+  return {
+    id: newId("po"),
+    manual: true,
+    generatedAt: new Date().toISOString(),
+    items,
+    // ⚠️⚠️ NO `dates` AND NO `deliveryDate`, DELIBERATELY — AND THIS IS THE WHOLE FEATURE.
+    // `coveringPO` finds a bake day's saved list by exactly those two fields and nothing else, so a list
+    // carrying neither **matches no day**: it can never make a day read as shopped, deleting it can
+    // never un-save one, and no rule has to be remembered anywhere else to keep it that way.
+    // **The absence IS the feature.** Her words: __"it dont tie to specific bake date"__.
+    summary: {
+      totalUnits: bom.totalUnits,
+      totalEstCost: total,
+      buyTotal: total,
+      productLines: bom.productLines,
+    },
+    productIds: bom.orders.map((o) => o.productId),
+    warnings: bom.warnings,
+  };
+}
+
+function saveManual(state, bom, items, total, root) {
+  if (!bom.totalUnits) return toast("Pick at least one product");
+  state.purchaseOrders.unshift(manualPO(bom, items, total));
+  save(state);
+  toast("List saved to history");
+  location.hash = `#/history?po=${state.purchaseOrders[0].id}`;
 }
 
 function generate(state, recs, bom, items, total) {

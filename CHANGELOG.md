@@ -1,8 +1,40 @@
-# Munchies Furkidz — change history (v54 → v400)
+# Munchies Furkidz — change history (v54 → v401)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**9 Oct 2026 — engine v400 → v401, ONE VERSION: a shopping list you can write yourself
+(nothing to run, nothing to upload — pushing this one is the whole of it).**
+
+**Your ask:** *"I want to add a manual PO issuing, the rest of the po process follow what we already
+have for po processing. I think a thing only different is it dont tie to specific bake date"* — and,
+asked what goes on it, *"Just pick products to bake"*, with *"then i can use the amend to adjust the
+details"*.
+
+**The Purchase Order screen has a new press: Write a list by hand.** Pick the products and how many,
+and the app works the ingredients out of your recipes and prices them in whole packs from your cheapest
+supplier — **exactly as a day's list does**. Nothing about it is tied to a posting day.
+
+**Everything else is the same machinery**, so nothing new to learn: the list appears in PO history
+with the same per-shop groups, the same **Buy / Not buying**, the same **Undo**, the same *Print this
+shop*, the same **Amend** for changing any detail afterwards, and the same stock and money behaviour
+when you buy from it.
+
+**Saving it never marks a day as shopped.** A normal list remembers which days it covers; this one
+records **no day at all** — so it can never tick a day off your list, and deleting it can never
+un-tick one. That is the entire difference, and it is an **absence** rather than a rule, which means
+there is nothing that can forget it.
+
+**One corner worth knowing about.** With **no posting days at all**, that screen used to stop at a
+single sentence — so the new press would have been invisible **exactly when it is most useful**. A list
+that needs no day has to be reachable when there are none, so the empty screen offers it too.
+
+**And a correction to some wording.** Two lines that came over from the bakery in earlier updates still
+called the day a **"bake day"** — on the consolidated invoice and in the notice about an order that
+could not be taken in. Your app says **delivery date**, so they do now.
+
+**Nothing to run, no SQL, no upload, no setting to change on either phone.**
 
 **9 Oct 2026 — engine v399 → v400, ONE VERSION: the button says Buy, and becomes Bought
 (nothing to run, nothing to upload — pushing this one is the whole of it).**

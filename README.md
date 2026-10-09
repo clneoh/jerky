@@ -756,6 +756,44 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## Engine v400 → v401 — a shopping list you write yourself (9 Oct 2026)
+
+Base `1a567e3` → `cc83293`. 7 files, ~248 insertions. **3 conflicts across 2 files**, suite
+**3217 → 3219 pass / 0 fail**, engine **v401**, **0 lost jerky-only lines**. No SQL, nothing to deploy.
+
+**Adopted:** the **hand-written shopping list** — a new *＋ Write a list by hand* press on the PO screen
+(and on its **empty** state, which previously stopped at one sentence and would have hidden the new
+press exactly when it is most useful). Pick products and quantities; the ingredients come out of her
+recipes and price in whole packs from the cheapest supplier, the same as a day's list. The whole rest of
+the process is unchanged machinery — PO history, per-shop groups, **Buy / Not buying**, Undo, *Print
+this shop*, **Amend** — and **`po.manual` records no day at all**, so saving it can never tick a day off
+and deleting it can never un-tick one (an *absence*, not a rule, so nothing can forget it). Also
+`admin/js/bom.js`'s manual-list support and the new "Written by hand" label.
+
+**⚠️ TWO USER-VISIBLE "bake day" STRINGS FOUND IN JERKY'S OWN ADMIN — MISSED IN EARLIER SYNCS, FIXED
+HERE.** Both arrived with batches reviewed for the word "*bakery*" and not for the word "*bake day*":
+
+- `admin/js/consolidated.js` — *"Every order is listed on the day it is FOR — the bake day"*, the
+  undated-orders note, and the subtitle's *"by bake day"* (from the v369→v382 batch).
+- `admin/js/supabase.js` — `whyUnimportable`'s *"it arrived with no bake day on it"*, which is the
+  amber notice on the Orders screen (from the v364 batch).
+
+Jerky's admin says **delivery date**, so all four now do. **Five assertions on that copy moved with it**
+(`test/consolidated.test.js` ×3, `test/consolidated-view.test.js`, `test/supabase.test.js`) — an
+assertion on user-visible text localizes; the bakery-voice *comments* stay.
+
+**⚠️ EXAMPLE OF THE BIGGER MISS.** The real lesson is that **a per-sync localization check keyed to one
+word will miss the others.** "*bakery*" was checked every pass; "*bake day*", "*flour*" (also caught this
+week) and "*loaf*" were not. The remaining `bake day` strings in `production.js`, `scenario.js` and the
+Guide are **deliberate** (the Production line's bread vocabulary, ported exactly as she asked).
+
+**Localization of the new feature:** the panel's copy and the delete confirmation say **"posting day"**
+(the PO screen's own day word, localized at the first sync), not the bakery's "bake day".
+
+**Browser-verified:** the PO screen's empty state reads *"No delivery dates … Or write a list by hand,
+which needs no delivery date at all"* with the new press; the panel opens; **no "bake day" renders**, and
+nothing prints `null`/`undefined`.
+
 ## Engine v399 → v400 — the press says Buy, and becomes Bought (9 Oct 2026)
 
 Base `ebd90cf` → `1a567e3`. **Three files, 0 conflicts**, engine **v400**, suite **3215 → 3217 pass / 0

@@ -163,7 +163,7 @@ test("★★ the period pill really re-scopes the document", () => {
   press(root, "‹");
   press(root, "‹"); // back to the 5th
   const said = txt(root);
-  assert.match(said, /by bake day/, "the basis stopped being stated");
+  assert.match(said, /by delivery date/, "the basis stopped being stated");
   assert.match(said, /A day/, "the day pill did not take");
 });
 

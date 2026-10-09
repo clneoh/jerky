@@ -1091,7 +1091,7 @@ export function forgetStuckOrders() {
 // Why a row could not be read, in words she can act on. ⚠️ NEVER a code and never a shrug — the one
 // thing this whole feature exists to stop is something happening and not being said.
 export function whyUnimportable(state, data) {
-  if (!data || !data.date) return "it arrived with no bake day on it";
+  if (!data || !data.date) return "it arrived with no delivery date on it";
   if (!Array.isArray(data.lines) || !data.lines.length) return "it arrived with nothing on it";
   const unknown = data.lines
     .filter((l) => l && l.name

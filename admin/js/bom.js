@@ -35,8 +35,21 @@ export function effectiveUnitCost(state, ingredient) {
 }
 
 export function explodeBom(state, deliveryDateId) {
+  return explodePicks(state, state.orders.filter((o) => o.deliveryDateId === deliveryDateId));
+}
+
+// ★★ THE EXPLOSION ITSELF, TAKING A LIST OF PICKS RATHER THAN A DAY (v401).
+//
+// ⚠️⚠️ IT WAS ALREADY THIS, ALMOST — `explodeBom` filtered the orders by a delivery day and then read
+// nothing off an order but `productId` and `qty`. So a list she writes BY HAND explodes through **the
+// same arithmetic as a list built from orders**, and the two cannot drift apart: there is one function.
+// The day-filtering is the wrapper's job now; the explosion is this.
+//
+// ⚠️ `picks` ARE ORDER-SHAPED (`{productId, qty}`) but need no date, no customer and no status — which
+// is exactly what "a PO not tied to a bake day" means at this level.
+export function explodePicks(state, picks) {
   const warnings = [];
-  const orders = state.orders.filter((o) => o.deliveryDateId === deliveryDateId);
+  const orders = picks || [];
   const acc = new Map();
   const memo = new Map(); // per-product per-unit demand, shared across orders
   let totalUnits = 0;

@@ -40,6 +40,10 @@ function poDateStrs(po) {
 
 // Headline with a muted "+N more days" tail when the snapshot spans several.
 function poHeadline(po) {
+  // ★ A LIST WRITTEN BY HAND SAYS SO (v401). ⚠️ It has no dates, so without this it would fall to the
+  // generic "Purchase order" — which is true of every list here and therefore says nothing about which
+  // kind this is. Her words: __"I want to add a manual PO issuing … it dont tie to specific bake date"__.
+  if (po && po.manual) return "Written by hand";
   const dates = poDateStrs(po);
   const base = dates.length
     ? `${weekdayName(dates[0])}, ${longDate(dates[0])}`
@@ -407,11 +411,15 @@ function renderDetail(root, state, po) {
       el("span", {}, poHeadline(po)),
       po.topup ? " — Extra ingredients to buy" : " — Ingredients to buy"),
     el("p", { class: "card-sub", style: "margin:0 0 8px" },
-      po.topup
-        ? `Extra-only list — covers the ${po.summary?.totalUnits ?? "?"} new order unit${po.summary?.totalUnits === 1 ? "" : "s"} added after you shopped this day`
-        : multi
-          ? `${po.summary?.totalUnits ?? "?"} units planned across ${dates.length} posting days`
-          : `${po.summary?.totalUnits ?? "?"} units planned (capacity ${po.summary?.capacity ?? "?"})`),
+      // ⚠️ A HAND-WRITTEN LIST HAS NO DAY AND NO CAPACITY — the sentence the other two branches share
+      // would print "planned (capacity undefined)".
+      po.manual
+        ? `${po.summary?.totalUnits ?? "?"} unit${po.summary?.totalUnits === 1 ? "" : "s"} you asked for — not tied to a posting day, so no day counts as shopped`
+        : po.topup
+          ? `Extra-only list — covers the ${po.summary?.totalUnits ?? "?"} new order unit${po.summary?.totalUnits === 1 ? "" : "s"} added after you shopped this day`
+          : multi
+            ? `${po.summary?.totalUnits ?? "?"} units planned across ${dates.length} posting days`
+            : `${po.summary?.totalUnits ?? "?"} units planned (capacity ${po.summary?.capacity ?? "?"})`),
     table,
     el("p", { class: "po-snapshot-note" },
       `Snapshot from ${fmtTime(po.generatedAt)} — later order changes don't affect this PO.`),
@@ -437,7 +445,10 @@ function renderDetail(root, state, po) {
       // oversight: it builds a list from the need as it stands NOW, and the bought packs are already
       // on the shelf — so the regenerated list reads "already have" and buys only what is genuinely
       // new since. An existing test asserts this button survives, and the arithmetic agrees with it.
-      button("Regenerate", () => navigate(regenerateTarget(po)), "soft"),
+      // ⚠️ NO REGENERATE ON A HAND-WRITTEN LIST (v401) — it reopens BAKE DAYS, and this list has none:
+      // the press would build an address with no days in it and land her on a screen showing someone
+      // else's list. **A press that cannot do what it says must not be offered.**
+      po.manual ? null : button("Regenerate", () => navigate(regenerateTarget(po)), "soft"),
       button("Delete", () => confirmDialog(
         // ★★ AND IT NAMES THE MONEY THAT STAYS (v391). Her words: __"when we delete a po, money paid
         // dont reverse out?"__ — a fair question, and the answer was that nothing said so. Deleting a
@@ -452,7 +463,11 @@ function renderDetail(root, state, po) {
         //
         // ⚠️ NAMED ONLY WHEN THERE IS SOME. A list nobody has bought from prints the sentence it always
         // did — a warning about RM 0.00 on every ordinary delete would be noise she learns to skip.
-        `Delete this saved shopping list? It covers ${dates.length} day${dates.length === 1 ? "" : "s"} and can't be brought back. The covered day${dates.length === 1 ? "" : "s"} will count as not-yet-shopped again and return to the PO tick list.`
+        // ⚠️ AND A HAND-WRITTEN LIST PROMISES NOTHING ABOUT DAYS (v401) — the sentence below would say
+        // it covers 0 days and un-saves nothing, which reads as a fault rather than as the truth.
+        (po.manual
+          ? "Delete this hand-written list? It can't be brought back. No posting day is affected — it was never tied to one."
+          : `Delete this saved shopping list? It covers ${dates.length} day${dates.length === 1 ? "" : "s"} and can't be brought back. The covered day${dates.length === 1 ? "" : "s"} will count as not-yet-shopped again and return to the PO tick list.`)
         + (paid > 0
             ? ` The ${fmtRM(paid, state.settings.currency)} you recorded on it stays on your books, and its packs stay on your stock — remove the money on the Money screen if you want it gone.`
             : ""),

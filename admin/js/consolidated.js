@@ -290,7 +290,7 @@ export function consolidatedSheet(state, { kind = "month", anchor = "", customer
       ? `This customer has nothing${kind === "all" ? " yet" : " in this period"}.`
       : kind === "all" ? "Nothing has been sold yet." : "Nothing was sold in this period.");
   } else {
-    said.push(`Every order is listed on the day it is FOR — the bake day. In invoice-number order.`);
+    said.push(`Every order is listed on the day it is FOR — the delivery date. In invoice-number order.`);
     if (owed > 0) said.push(`Still to collect from these orders: ${cur} ${owed.toFixed(2)}.`);
     else said.push("Every order in this period has been paid.");
     // ★★ "none yet" IS ABOUT THE NUMBER, NOT ABOUT THE MONEY — and the page has to say so, or a paid
@@ -316,7 +316,7 @@ export function consolidatedSheet(state, { kind = "month", anchor = "", customer
   if (noDay) {
     // ⚠️ WORDED FOR EVERY SCOPE, "Everything" INCLUDED. "cannot belong to any period" read oddly on
     // the one scope that is not a period at all.
-    said.push(`${noDay} order${noDay === 1 ? " has" : "s have"} no bake day on ${noDay === 1 ? "it" : "them"} and ${noDay === 1 ? "is" : "are"} not listed — give ${noDay === 1 ? "it" : "them"} a day and ${noDay === 1 ? "it" : "they"} will appear here.`);
+    said.push(`${noDay} order${noDay === 1 ? " has" : "s have"} no delivery date on ${noDay === 1 ? "it" : "them"} and ${noDay === 1 ? "is" : "are"} not listed — give ${noDay === 1 ? "it" : "them"} a day and ${noDay === 1 ? "it" : "they"} will appear here.`);
   }
 
   // The document's own number, worked out once so the field and the subtitle cannot disagree.
@@ -334,7 +334,7 @@ export function consolidatedSheet(state, { kind = "month", anchor = "", customer
       ref,
       kind === "all" ? "" : span.label,
       customerKey ? byKey.get(customerKey)?.name || "One customer" : "all customers",
-      "by bake day",
+      "by delivery date",
     ].filter(Boolean).join(" · "),
     lines,
     totals: keep.length

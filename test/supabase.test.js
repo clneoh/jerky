@@ -653,7 +653,8 @@ const intakeFetch = (rows, { unreachable = false } = {}) => async (url, opts) =>
 
 test("whyUnimportable says WHY in words she can act on, never a code", () => {
   const st = intakeState();
-  assert.match(whyUnimportable(st, { lines: [{ name: "Focaccia" }] }), /no bake day/);
+  // ⚠️ AN ASSERTION ON USER-VISIBLE COPY → it moves with the string (jerky says "delivery date").
+  assert.match(whyUnimportable(st, { lines: [{ name: "Focaccia" }] }), /no delivery date/);
   assert.match(whyUnimportable(st, { date: "2026-10-09", lines: [] }), /nothing on it/);
   assert.equal(whyUnimportable(st, { date: "2026-10-09", lines: [{ name: "Pizza" }] }),
     "it is for Pizza, which is not in your Products");
