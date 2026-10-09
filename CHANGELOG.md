@@ -1,8 +1,48 @@
-# Munchies Furkidz — change history (v54 → v384)
+# Munchies Furkidz — change history (v54 → v393)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**9 Oct 2026 — engine v384 → v393, NINE VERSIONS: your stock, and the shopping you do to fill it
+(nothing to run, nothing to upload — pushing this one is the whole of it).**
+
+**The journal now says where your stock went.** Five different things move an ingredient's stock — a
+bake, a bought shopping list, a stocktake, an adjustment, a line coming off — and every one of them
+used to simply **overwrite the number**. Your question was *"i dont see a journal button, maybe there
+is never price movement"*. The journal now opens in two parts: **PRICE**, as before, and **STOCK** —
+every movement, in order, with what caused it.
+
+**It is called the Stock card now, and every ingredient has one.** You asked for it twice (*"i want
+stock card"*, after *"cannot find it"*) and you were right: the thing existed but was hidden on the
+ingredients that happened not to show it, and it led with the price. **Stock comes first on it now**,
+and an empty card says what it is for rather than being left out.
+
+**The stock card is a real table**, with three columns — **WHEN · WHAT HAPPENED · CHANGE** — and each
+line carries a small **✕** to take that one line off, after asking. On a wide screen it opens wider
+than a phone column, so the words do not have to be cut.
+
+**Shopping lists now work one shop at a time.** Each shop's list prints on its own (the day's ordinary
+Print is untouched), each shop's heading carries its **own Bought** press, and **Not buying** closes a
+shop you did not buy from — no stock, no money. Pressing Bought now puts only **that shop's** packs on
+your stock, where before it put every ingredient on the whole list on.
+
+**And Bought can be undone.** Once a shop was marked bought there was no way back — you found that
+gap yourself. A bought shop now carries an **Undo** beside it, and it touches **only that one shop**:
+Undo Mydin and the other shop stays bought. It is called Undo rather than Delete because it is not
+removing a document, it is taking back a decision. The stock card is told: the packs coming back off
+are written as their own line, and **stock never goes below zero** — if a bake has already used those
+packs, the number stops at nothing rather than going negative. Two kinds of list deliberately do not
+offer it (one bought before it existed, and the paperwork behind it).
+
+**Deleting a shopping list now says what it leaves behind** — it names the exact money figure before
+you agree, when there is one. The money stays on purpose. **And a row of buttons now wraps instead of
+running off the side of the phone** — your words: *"i cant find the delete button"*, and you were
+right: the row measured 403px across on a 360px screen, and Delete sat entirely off the edge.
+
+**Also:** ticking a bake day on the Purchase Order page no longer throws the whole page back to the top.
+
+**Nothing to run, no SQL, no upload, no setting to change on either phone.**
 
 **8 Oct 2026 — engine v382 → v384, TWO VERSIONS
 (⚠️ ONE LINE OF SQL TO RUN AGAIN — see the end of this entry).**

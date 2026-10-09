@@ -12,9 +12,11 @@ import { entryForm, newEntryChip } from "./accountsEditor.js";
 // An ingredient's own unit, resolved exactly as the Ingredients screen resolves it, so a
 // stock count typed here lands as the same number of grams the On-hand line shows.
 import { currentUomId, cookingFamilyOf } from "./ingredients.js";
+import { setStock } from "../stock.js";
+import { fmtStockAmount } from "../purchasing.js";
 import { dateField } from "../datepicker.js";
 import { journalSheet, journalBodyEl, journalButtons, bakeryName } from "../journal.js";
-import { longDate, todayISO, weekdayName } from "../dates.js";
+import { dayMonth, longDate, todayISO, weekdayName } from "../dates.js";
 import { clearCourierCharge } from "../courier.js";
 import { maybePublishTracking, maybeSync } from "../supabase.js";
 
@@ -31,10 +33,6 @@ function isoOf(d) {
 }
 
 // "14 Sep" — the date without the year, for a range line or an expense row.
-function dayMonth(iso) {
-  return longDate(iso).slice(0, -5);
-}
-
 // The stretch a choice covers, always ending today: a week or a month still running
 // is counted up to now, not to a day in the future.
 function spanFor(which) {
@@ -185,7 +183,16 @@ function openDayOne(state, redraw) {
         state.deposits = Array.isArray(state.deposits) ? state.deposits : [];
         if (cashVal > 0) state.deposits.push({ id: newId("dep"), date, amount: cashVal, method: "Cash", note });
         if (tngVal > 0) state.deposits.push({ id: newId("dep"), date, amount: tngVal, method: "TNG", note });
-        for (const { r, v } of stock) r.ing.onHand = round2(v * r.toBase());
+        for (const { r, v } of stock) {
+          // ★★ AND THE STARTING STOCK IS A MOVEMENT (v385). It is the first thing that ever puts a
+          // number on the shelf, so without a row here the journal would begin mid-story and the
+          // earliest balance would have no explanation at all. ⚠️ Same rule as a stocktake, so the
+          // same tested function.
+          setStock(r.ing, v * r.toBase(), {
+            why: "dayone",
+            label: (was, now) => `Day one — ${fmtStockAmount(state, r.ing, now)}`,
+          });
+        }
         save(state);
         maybeSync(state);
         const bits = [];

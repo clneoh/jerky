@@ -11,21 +11,35 @@ import { addDays, todayISO, shortDate } from "../admin/js/dates.js";
 
 // --- DOM shim (mirrors test/products-editor.test.js) ---
 function createEl(tag) {
-  return {
+  const node = {
     tagName: String(tag || "").toUpperCase(), nodeType: 1, children: [], attrs: {}, dataset: {},
     className: "", style: {}, textContent: "", value: "", checked: false, disabled: false,
-    scrollTop: 0, hidden: false, _listeners: {},
+    scrollTop: 0, hidden: false, _listeners: {}, parentNode: null,
+    // ⚠️⚠️ THIS WAS A NO-OP UNTIL v387 — `add() {}`, and `contains()` always FALSE. **A shim that cannot
+    // remember a class cannot test any code that sets one**, and the per-shop print is exactly that
+    // code. Same rule as everywhere else in this suite: when the stand-in cannot express what the view
+    // does, the stand-in is what is wrong.
     classList: {
-      add() {}, remove() {}, toggle() {},
-      contains() { return false; },
+      add(c) { const set = new Set(String(node.className).split(/\s+/).filter(Boolean)); set.add(c); node.className = [...set].join(" "); },
+      remove(c) { node.className = String(node.className).split(/\s+/).filter((x) => x && x !== c).join(" "); },
+      contains(c) { return String(node.className).split(/\s+/).includes(c); },
+      toggle(c, on) { if (on === undefined ? !this.contains(c) : on) this.add(c); else this.remove(c); },
     },
-    appendChild(c) { if (c != null) this.children.push(c); return c; },
-    append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
-    replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) this.children.push(c); },
-    addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
-    removeEventListener() {},
-    setAttribute(k, v) { this.attrs[k] = String(v); },
-    getAttribute(k) { return this.attrs[k]; },
+    // ⚠️ `parentNode` IS SET ON APPEND, because `closest()` below walks up it. Without it the per-shop
+    // print could not find its own section and would silently do nothing.
+    appendChild(c) { if (c != null) { if (c.nodeType === 1) c.parentNode = node; node.children.push(c); } return c; },
+    append(...cs) { for (const c of cs) if (c != null) { if (c.nodeType === 1) c.parentNode = node; node.children.push(c); } },
+    replaceChildren(...cs) { node.children = []; for (const c of cs) if (c != null) { if (c.nodeType === 1) c.parentNode = node; node.children.push(c); } },
+    addEventListener(t, f) { (node._listeners[t] ||= []).push(f); },
+    removeEventListener(t, f) { node._listeners[t] = (node._listeners[t] || []).filter((x) => x !== f); },
+    setAttribute(k, v) { node.attrs[k] = String(v); },
+    getAttribute(k) { return node.attrs[k]; },
+    closest(sel) {
+      const want = String(sel || "").toUpperCase();
+      let at = node;
+      while (at) { if (at.tagName === want) return at; at = at.parentNode; }
+      return null;
+    },
     focus() {}, click() {},
     querySelector(sel) {
       const wantId = sel.startsWith("#");
@@ -41,6 +55,7 @@ function createEl(tag) {
       return walk(this);
     },
   };
+  return node;
 }
 const doc = {
   createElement: createEl,
@@ -63,9 +78,39 @@ globalThis.localStorage = {
   setItem: (k, v) => store.set(k, String(v)),
   removeItem: (k) => store.delete(k),
 };
-globalThis.location = { hash: "" };
+// ⚠️⚠️ `location.hash` IS BACKED BY A VARIABLE AND ITS WRITES ARE COUNTED (v388). Setting
+// `location.hash` is what FIRES the app's hashchange and therefore its router; `history.replaceState`
+// is what does NOT. The two must be told apart by a test, and a plain `{ hash: "" }` object — which
+// cannot say whether anyone wrote to it — cannot tell them apart.
+let hashValue = "";
+const hashWrites = [];
+globalThis.location = {
+  get hash() { return hashValue; },
+  set hash(v) { hashValue = String(v); hashWrites.push(hashValue); },
+};
+// ⚠️ AND A BARE `history` REFERENCE THROWS IN NODE, so this is not optional: without it every path
+// that reaches the line is a ReferenceError rather than a pass. The rest of this suite shims it for
+// exactly this reason; this file did not need it until the PO stopped navigating to change its URL.
+const replacedUrls = [];
+globalThis.history = {
+  replaceState(_s, _t, url) { replacedUrls.push(String(url == null ? "" : url)); },
+};
+// ⚠️ NO `window` EXISTED HERE BEFORE, because nothing this suite rendered had ever called one — the
+// fixture had no suppliers, so the Copy/Message buttons never drew. The per-shop Print does need it,
+// and the spy is what lets a test prove the press really ASKED the browser to print rather than
+// quietly doing nothing.
+const printed = [];
+globalThis.window = {
+  _listeners: {},
+  addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
+  removeEventListener(t, f) { this._listeners[t] = (this._listeners[t] || []).filter((x) => x !== f); },
+  open() {},
+  print() { printed.push(true); },
+};
 
 import { renderPO } from "../admin/js/views/po.js";
+import * as poTableModule from "../admin/js/views/poTable.js";
+import { readFileSync } from "node:fs";
 
 const P = { id: "prd_loaf", name: "Sourdough", unit: "loaf", active: true,
   recipe: [{ ingredientId: "ing_flour", qty: 500, unit: "g" }] };
@@ -260,6 +305,56 @@ test("ticking an extra day updates the combined list and grand total live", () =
   assert.ok(all.includes("RM 6.00"), "grand total now covers both days");
 });
 
+// ★★⚠️ TICKING A DAY MUST NOT FIRE THE ROUTER (v388). Her words: __"the po page when click, the page
+// jump, rerender"__.
+//
+// ⚠️⚠️ THE FAULT IS NOT VISIBLE IN THE RENDERED TEXT — after a tick the list is correct either way.
+// What differed was HOW the address got written: `location.hash = …` fires the app's hashchange, the
+// router empties #view, rebuilds the whole screen and leaves the document scrolled to the top, so a
+// tick near the bottom of a long day list threw her back up the page. So this test asserts on the
+// ADDRESS MECHANISM, which is the thing that actually broke — asserting on the list would have passed
+// over the fault and pinned nothing.
+test("⚠️ ticking a day writes the address instead of navigating — so the screen is never torn down", () => {
+  const state = freshState();
+  const root = render(state, `dates=del_a`);
+
+  hashWrites.length = 0;   // the initial render is allowed to be wherever it is; the TICK is what matters
+  replacedUrls.length = 0;
+
+  const r = rows(root);
+  r[1].children[0].checked = true;
+  fireChange(r[1].children[0]);   // tick day B
+
+  assert.equal(hashWrites.length, 0,
+    "a tick must NOT assign location.hash — that fires hashchange and the router wipes the screen");
+  assert.equal(replacedUrls.length, 1,
+    "a tick must rewrite the address exactly once, so a shared or reopened PO still knows its days");
+  assert.equal(replacedUrls[0], `#/po?dates=del_a,del_b`,
+    "the address names exactly the ticked days");
+
+  // ⚠️ AND THE LIST STILL UPDATED — the point of the fix is that she keeps her place, not that the
+  // screen stopped working.
+  assert.ok(nodeTexts(root).includes("RM 6.00"), "the combined total still redrew in place");
+});
+
+// ⚠️ UNTICKING EVERYTHING still has to write the address, and it has to be an EMPTY ?dates= rather
+// than a bare #/po — a bare one silently re-defaults to every day, which is the trap the original
+// comment named. The mechanism changed; that rule did not.
+test("⚠️ unticking every day writes an empty ?dates=, never a bare #/po that would re-default", () => {
+  const state = freshState();
+  const root = render(state);          // opens with both days ticked
+  replacedUrls.length = 0;
+
+  for (const row of rows(root)) {
+    const box = row.children[0];
+    if (box.checked) { box.checked = false; fireChange(box); }
+  }
+
+  assert.equal(replacedUrls.at(-1), "#/po?dates=",
+    "the last write must be an explicitly empty list, not #/po");
+  assert.ok(!replacedUrls.includes("#/po"), "a bare #/po would silently re-tick every day");
+});
+
 test("tapping an \"orders changed\" day reveals the new order and its extra need", () => {
   const state = freshState();
   fireClick(genButton(render(state)));
@@ -399,4 +494,122 @@ test("an ingredient she never buys is left off the list, and the list says so", 
   assert.ok(textOf(table).includes("Strong flour"), "while the one she does buy is untouched");
   assert.ok(nodeTexts(root).includes("Not on this list: Labour"),
     "and the list names it rather than looking as if it forgot");
+});
+
+// ── ★★ one shopping list per shop, on its own (v387) ──────────────────────────
+// Her words: __"now the PO, lump together all supplier in one po is not practical"__, then, asked
+// which problem she meant, __"i want a separate list per shop"__.
+//
+// ⚠️ THE GROUPING ALREADY EXISTED — heading, subtotal, Copy and Message, one section per shop. **The
+// only exit still SHARED was the printer**: Print gave her every shop on one sheet, so she could not
+// take Mydin's page to Mydin. These tests are about that gap and nothing else.
+
+// A run that splits two ways — each ingredient cheapest at a DIFFERENT shop, which is what makes a PO
+// have more than one section at all.
+function shopState() {
+  const st = freshState();
+  st.suppliers = [
+    { id: "sup_m", name: "Mydin", whatsapp: "60123456789" },
+    { id: "sup_y", name: "Yen Grocer", whatsapp: "60199999999" },
+  ];
+  st.ingredients = [
+    // cheapest at Mydin: RM22 for 4000 g beats RM27.50 for 3000 g per gram
+    { id: "ing_flour", name: "Strong flour", unit: "g", uomId: "u_g", costPerUnit: 0.006,
+      supplierPrices: [{ supplierId: "sup_m", qty: 4000, uomId: "u_g", price: 22 },
+                       { supplierId: "sup_y", qty: 3000, uomId: "u_g", price: 27.5 }] },
+    // and cheapest at Yen Grocer
+    { id: "ing_butter", name: "Butter", unit: "g", uomId: "u_g", costPerUnit: 0.05,
+      supplierPrices: [{ supplierId: "sup_y", qty: 500, uomId: "u_g", price: 18 },
+                       { supplierId: "sup_m", qty: 250, uomId: "u_g", price: 12 }] },
+  ];
+  st.products = [{ ...P, recipe: [
+    { ingredientId: "ing_flour", qty: 500, unit: "g" },
+    { ingredientId: "ing_butter", qty: 20, unit: "g" },
+  ] }];
+  return st;
+}
+
+const shopPresses = (root) => walk(root).filter((n) =>
+  n.nodeType === 1 && n.tagName === "BUTTON" && textOf(n).trim() === "🖨 Print this shop");
+const sections = (root) => walk(root).filter((n) => n.nodeType === 1 && n.tagName === "TBODY");
+
+test("★★ each shop's heading carries its OWN Print, beside its Copy and Message", () => {
+  const root = render(shopState());
+  const heads = walk(root).filter((n) => n.nodeType === 1 && String(n.className).includes("po-supplier"));
+  assert.equal(heads.length, 2, `the run should split two ways, it drew ${heads.length} section(s)`);
+  assert.equal(shopPresses(root).length, 2,
+    "⚠️ a shop's list cannot leave on paper on its own — the printer is still shared");
+  assert.equal(findBtn(root, "⧉ Copy order") !== undefined, true, "the per-shop Copy is still there");
+
+  // ⚠️⚠️ AND ONE SECTION PER SHOP IS WHAT THE WHOLE THING RESTS ON. It used to be ONE `<tbody>` holding
+  // every shop, which is exactly why a single sheet could not be separated — there was nothing in the
+  // markup to hide. **A bite found this gap: merging the sections back into one broke no test at all**,
+  // because the presses still existed and the CSS still matched nothing. The structure IS the feature.
+  assert.equal(sections(root).length, 2,
+    "⚠️ the shops share one section, so there is nothing to print one of them on its own");
+});
+
+test("⚠️ the saved list in History offers NO per-shop Print — a record is not a shopping run", () => {
+  // ⚠️ History renders through the same table with `interactive:false`. A saved list is a RECORD of
+  // what was bought, so it gains the per-shop sections but must not sprout buttons.
+  const { poTableEl } = poTableModule;
+  const st = shopState();
+  const table = poTableEl(st, [
+    { ingredientId: "ing_flour", ingredientName: "Strong flour", unit: "g", estCost: 22,
+      supplierId: "sup_m", supplier: "Mydin", packQty: 4000, packUomName: "g" },
+  ], { interactive: false, dateTitle: "Mon" });
+  assert.equal(shopPresses(table).length, 0, "a saved list grew a shopping-run press");
+});
+
+test("★★⚠️ printing one shop marks THAT section — and cleans up after, never leaving a class behind", () => {
+  // ⚠️⚠️ THE TRAP, AND IT IS THE ONE THAT WOULD DAMAGE SOMETHING ELSE SILENTLY. `printActiveLabel`'s own
+  // comment names it: *"a leftover class can never blank a later PO print."* So this pins BOTH halves —
+  // the class goes on, and it comes off again.
+  //
+  // ⚠️ THIS FILE STUBS `setTimeout` TO RUN IMMEDIATELY (to stop toast timers stalling the run), which
+  // would fire the cleanup during the press and hide the whole thing. A deferred stub is what models a
+  // browser, where the cleanup happens LATER.
+  const realST = globalThis.setTimeout;
+  const pending = [];
+  globalThis.setTimeout = (fn) => { pending.push(fn); return 1; };
+  printed.length = 0;
+  try {
+    const root = render(shopState());
+    const presses = shopPresses(root);
+    const myshop = presses[0].closest("tbody");
+    assert.ok(myshop, "the press could not find its own section — it would silently do nothing");
+
+    presses[0]._listeners.click[0]();
+
+    assert.equal(doc.body.classList.contains("po-shop-print"), true,
+      "⚠️ the press did not mark the page for printing, so Print would print EVERY shop");
+    assert.equal(myshop.classList.contains("print-shop"), true,
+      "⚠️ the press did not mark ITS OWN section, so the one-shop sheet would be blank");
+    assert.equal(printed.length, 1, "the press never asked the browser to print");
+
+    // ⚠️ AND NOW THE HALF THAT MATTERS MOST: the cleanup, the way a browser delivers it.
+    const afterprint = (globalThis.window._listeners.afterprint || [])[0];
+    assert.ok(afterprint, "nothing is listening for the print finishing — a leftover class would blank a later PO print");
+    afterprint();
+    assert.equal(doc.body.classList.contains("po-shop-print"), false,
+      "⚠️⚠️ THE BODY CLASS WAS LEFT BEHIND — the next ordinary PO print would come out blank");
+    assert.equal(myshop.classList.contains("print-shop"), false, "the section marker was left behind");
+  } finally {
+    globalThis.setTimeout = realST;
+  }
+});
+
+test("⚠️ every other shop's section is the ONE that gets hidden, and the run's total goes with it", () => {
+  // ⚠️ A rule about hiding two of three sections cannot be proved by pressing one — this reads the CSS
+  // that does the hiding, so "print one shop" cannot quietly become "print them all" or "print none".
+  const css = readFileSync(new URL("../admin/css/print.css", import.meta.url), "utf8");
+  const block = /@media print \{[\s\S]*?body\.po-shop-print[\s\S]*?\n\}/.exec(css);
+  assert.ok(block, "print.css has no body.po-shop-print block — the press would print every shop");
+  assert.match(block[0], /tbody:not\(\.print-shop\)\s*\{\s*display:\s*none/,
+    "⚠️ the OTHER shops are not hidden, so a one-shop print still carries every shop");
+  assert.match(block[0], /tfoot\s*\{\s*display:\s*none/,
+    "⚠️ the whole run's total is printed on a one-shop sheet — it is not that shop's total");
+  // ⚠️ AND NOTHING WITHOUT THE BODY CLASS. Every rule is scoped, so a leaked marker cannot hide
+  // anything on its own.
+  assert.equal(/^\s*tbody:not/m.test(css), false, "an unscoped hiding rule would blank the ordinary PO print");
 });

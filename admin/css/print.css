@@ -51,6 +51,22 @@
   body.label-print .label-sheet.style-mailing { max-width: 110mm; }
 }
 
+/* ★★ Printing ONE SHOP's list (v387). Her words: __"now the PO, lump together all supplier in one po
+   is not practical"__, then __"i want a separate list per shop"__.
+
+   ⚠️⚠️ THE PO ALREADY GROUPED BY SHOP — heading, subtotal, Copy and Message, each on its own — so the
+   only exit still SHARED was the printer, and this is the third use of the pattern the two blocks
+   around it already use: a body class added for the instant of printing, cleaned up on afterprint and
+   by a timer so **a leftover class can never blank a later PO print**.
+
+   ⚠️ EVERY SECTION EXCEPT THE CHOSEN ONE GOES, and so does the grand total: the run's total is not
+   Mydin's total, and the shop's own subtotal is already on its heading. The card's title and the day's
+   line stay, so the sheet still says what it is. */
+@media print {
+  body.po-shop-print .po-table tbody:not(.print-shop) { display: none !important; }
+  body.po-shop-print .po-table tfoot { display: none !important; }
+}
+
 /* Printing a journal, or the profit statement, shows ONLY that sheet (3 Oct 2026). Scoped to
    body.journal-print, which is added only for the instant of printing — like label-print
    above — so a purchase order or a packing label is never affected by it.

@@ -274,6 +274,48 @@ body { min-height: 100vh; }
    muted so it reads as a cancelled number on the page rather than as a sale, and it carries no
    figure at all, because the money for it never existed. */
 .journal-cols.journal-void { color: var(--muted); }
+
+/* ---------- THE STOCK CARD'S OWN COLUMN SHAPE (v390) ----------
+   Her words: __"a stock card should be as clear as a table with row and column"__ and __"can optimise
+   for desktop as well"__.
+
+   ⚠️⚠️ THE FIXED WIDTHS ABOVE BELONG TO THE FILING PAGE, AND USING THEM HERE IS THE FAULT v385 ALREADY
+   SHIPPED ONCE: `.j-col-0` is 3.5em for a filing date and `.j-col-1` is 4.6em for an order code, so a
+   stock row drawn with them came out as "1 Oct…" and "Stockta…" — the words she needs, cut off. **A
+   test asserting a cell's TEXT cannot see a column that truncates it**; this was found by looking at a
+   phone.
+
+   ⚠️⚠️ AND THE MIDDLE COLUMN WRAPS INSTEAD OF TRUNCATING. "Baked — Sourdough ×2" and "Bought — Mydin
+   (12 Oct 2026)" are sentences, and a sentence in a nowrap cell loses its end. Everything above
+   ellipsises because a filing page is read DOWN a column and a code is what it is read against; here
+   the sentence is the point, so it is allowed to take a second line. */
+.stock-journal .journal-cols { gap: 8px; }
+.stock-journal .journal-cols .j-col-0 { width: 4.4em; color: var(--muted); }
+.stock-journal .journal-cols .j-col-1 {
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+.stock-journal .journal-cols > .info-val { font-variant-numeric: tabular-nums; }
+.stock-journal .journal-cols-head .j-col,
+.stock-journal .journal-cols-head > .info-val {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ★★ A WIDER CARD ON A BIG SCREEN (v390). Her words: __"can optimise for desktop as well"__.
+   ⚠️ THE BACKOFFICE IS CAPPED AT A PHONE COLUMN on every screen (`.view { max-width: 540px }`), which
+   is right for a form and wrong for a table — and a pop-up is not inside that cap anyway, so this
+   moves THIS card and nothing else. It asks for room only where there really is some: below 900px the
+   card keeps the width it has always had. */
+@media screen and (min-width: 900px) {
+  .popup-card.stock-card { max-width: 760px; }
+}
 /* A COLUMN HEADING YOU CAN PRESS (v379). It has to LOOK pressable — a heading that sorts but reads
    as plain text is a control nobody finds — and the marker inside it says which column and which
    way. ⚠️ On paper it stays inert: the same row prints as ordinary headings. */
@@ -753,7 +795,15 @@ h3.cat-head-tail { color: var(--muted); font-weight: 600; }
 .btn.small { font-size: 13px; padding: 8px 13px; min-height: 36px; border-radius: 11px; }
 .btn[disabled] { opacity: .5; }
 
-.btn-row { display: flex; gap: 10px; margin-top: 12px; }
+/* ⚠️⚠️ IT WRAPS, AND IT MUST (v392). Her words: __"i cant find the delete button"__ — she was right.
+   This row had NO `flex-wrap`, so it defaulted to `nowrap`, and a flex item cannot shrink below the
+   width of the word inside it: on a 360px phone a PO's five buttons (Back · Amend · Print · Regenerate
+   · Delete) measured **403px across, on a 360px screen** — the page overflowed by 108px and **Delete
+   sat ENTIRELY off the right edge**, reachable only by scrolling sideways, which is not something
+   anyone does on a phone. A row of buttons that does not fit belongs on the next line.
+   ⚠️ It changes nothing where the row ALREADY fits — every other screen measures the same as before,
+   because wrapping only engages when the content would otherwise overflow. */
+.btn-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .btn-row .btn { flex: 1; }
 
 /* ---------- Forms ---------- */
@@ -1521,6 +1571,11 @@ option.tone-off { color: var(--muted); }
 .po-sup-name.muted { font-weight: 600; color: var(--muted); }
 .po-sup-side { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .po-sup-sub { font-weight: 700; color: var(--brown-dark); }
+/* ★★ A shop that has landed shows its STATE where its presses were (v389). ⚠️ It has to read as a
+   settled fact rather than a control — same weight as the subtotal beside it, and the skipped one
+   quieter, because "not buying" is a decision rather than something that arrived. */
+.po-shop-done { font-size: 13px; font-weight: 700; color: var(--green); }
+.po-shop-done.skipped { font-weight: 600; color: var(--muted); }
 .po-buy { font-weight: 600; }
 .po-need { font-size: 12px; font-weight: 400; color: var(--muted); }
 

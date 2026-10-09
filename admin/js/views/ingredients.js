@@ -8,7 +8,8 @@ import { el, button, select, emptyState, confirmDialog, showPopup, toast } from 
 import { byId, fmtRM, newId, round2, save } from "../state.js";
 import { fmtStockAmount, priceEntryLabels, belowReserve, chosenSupplier, trimNum } from "../purchasing.js";
 import { logPriceMoves, priceLogOf } from "../prices.js";
-import { longDate } from "../dates.js";
+import { setStock, stockLogOf, stockRowUndo, undoStockRow } from "../stock.js";
+import { dayMonth, longDate } from "../dates.js";
 import { bakeryName, journalBodyEl, journalButtons, journalSheet } from "../journal.js";
 
 export function renderIngredients(root, state) {
@@ -332,16 +333,24 @@ function ingredientCard(state, ing, root) {
         usedBy.length ? el("p", { class: "po-breakdown" }, `Used in: ${usedBy.join(", ")}`) : null),
       el("div", { class: "li-right" },
         button("Edit", () => openEditIngredientPopup(state, ing, root), "ghost small"),
-        // Her ask, 3 Oct 2026: *"ingredient price journaled … So an ingredient need a
-        // journals."* Offered only once there is something in it — a Journal press that
-        // opened an empty page would read as a fault rather than as nothing having happened.
-        priceLogOf(ing).length
-          ? button("Journal", () => openPriceJournal(state, ing), "ghost small")
-          : null,
+        // ★★ IT IS CALLED **STOCK CARD**, AND IT IS ALWAYS THERE (v386). Her words, after a hunt:
+        // __"i want stock card"__ — and she had already said __"cannot find it"__ twice before that.
+        //
+        // ⚠️⚠️ WHAT WAS WRONG WAS THE WORD AND THE HIDING, NOT THE FEATURE. The record she was asking
+        // for was built at v385 and sat behind a press labelled **"Journal"** — a word that does not
+        // appear anywhere in her kitchen — and it was **hidden entirely** until something moved, so
+        // most of her ingredients offered nothing at all to press. **A card she cannot find is a card
+        // that does not exist.**
+        //
+        // ⚠️ So it is on EVERY ingredient now, and it says what will fill it when it is empty. That is
+        // the opposite of the v285 rule it replaces — which hid the press because "an empty page would
+        // read as a fault" — and the difference is that the page is no longer empty of WORDS: it names
+        // the card and says what will appear on it.
+        button("Stock card", () => openStockCard(state, ing), "ghost small"),
         button(usedBy.length ? "Hide" : "Delete", () => deleteIngredient(state, ing, usedBy.length > 0, root), "ghost small"))));
 }
 
-// ── The ingredient's price journal (v285) ────────────────────────────────────
+// ── The ingredient's STOCK CARD (v285 as a price journal, v385 stock added, v386 named) ───
 //
 // Only the MOVEMENTS are listed — her choice: *"only when the price moves, plus today"*.
 // Buying the same thing at the same price again is stock, not news, so it is not here.
@@ -359,41 +368,153 @@ function priceNowText(state, ing) {
     : "no price on file yet";
 }
 
-export function priceSheet(state, ing) {
+export function stockCardSheet(state, ing, refresh = null) {
   const cur = state.settings.currency || "RM";
   // Oldest first, so the page reads as a history rather than a feed. The log itself is newest
   // first, which is right for a record and wrong for a book.
   const log = priceLogOf(ing).slice().reverse();
+  const priceLines = log.map((e) => ({
+    what: `${longDate(e.at)} · ${e.supplierName || "no supplier"} · ${trimNum(e.qty)}${e.uomName} pack · was ${e.was == null ? "not on file" : fmtRM(e.was, cur)}`,
+    amount: e.price,
+  }));
+
+  // ★★ AND THE STOCK SECTION (v385). Her words: __"why only show when there is price movement, qty
+  // movement cannot?"__ — and the honest answer was that quantity movements were never recorded at
+  // all. They are now, and they belong on the same page: "why is my flour at 2 kg" is the other half
+  // of the same question as "what did the flour cost".
+  //
+  // ⚠️⚠️ THE QUANTITY IS NOT MONEY, AND THE MONEY COLUMN MUST NOT PRETEND IT IS. `amount` is
+  // formatted by `money()` in the screen, the paper, the shared text and the PDF alike, so 500 grams
+  // in it would print as "RM 500.00". Its money cell is therefore left EMPTY, which draws as an em
+  // dash: the app's existing way of saying "there is no figure here", and true of a stock row.
+  // **Dashes are honest; grams dressed as ringgit are not.**
+  //
+  // ⚠️⚠️ AND THE ROW IS ONE SENTENCE, NOT A COLUMN ROW — FOUND BY LOOKING, not by a test. The first
+  // version put the date, the amount and the reason in `cols`, which the journal draws as aligned
+  // columns. **On a phone that was unreadable**: `.journal-cols` widths are fixed for the FILING
+  // page's five columns (a date column 3.5em wide, an order column 4.6em), so a four-column stock row
+  // came out as "1 Oct..." and "Stockta..." — the words she needs, cut off. **A test asserting the
+  // cell's TEXT cannot see a column that truncates it.** One wrapping sentence is what actually reads
+  // on a phone, and it is exactly what the paper and the PDF will print, because they read `what`.
+  // The amount goes LAST so the shape matches the price rows above it: date · what happened · figure.
+  const stockLines = stockLogOf(ing).slice().reverse().map((e) => ({
+    // ★★ COLUMNS, AND A FIGURE THAT IS NOT MONEY (v390). Her words: __"a stock card should be as clear
+    // as a table with row and column"__. The three cells are When / What happened / Change, and the
+    // change goes in its own cell through `val` — ⚠️ NOT through `amount`, which `money()` would print
+    // as ringgit, so 500 grams would read "RM 500.00". **Dashes are honest; grams dressed as ringgit
+    // are not** (v385), and a separate cell is how the number leaves the sentence without becoming a
+    // price.
+    cols: [dayMonth(e.at), e.what],
+    val: stockDeltaText(state, ing, e.delta),
+    // ⚠️ `what` IS STILL BUILT. The paper, the shared text and the PDF read it, and the columns are an
+    // ARRANGEMENT of the same facts rather than a different set of them — the rule `journalSheet` sets
+    // for `cols`, kept here.
+    what: `${longDate(e.at)} · ${e.what} · ${stockDeltaText(state, ing, e.delta)}`,
+    amount: null,
+    // ★ AND THE LINE CAN BE TAKEN OFF THE CARD (v390). ⚠️⚠️ THIS RETURNS A BUTTON; IT DOES NOT DO THE
+    // DELETING. The renderer calls `action()` once per row while DRAWING the card, so a function that
+    // performed the removal would open a confirm for every line the moment the card was opened —
+    // found by looking at the rendered screen, where the button was missing and nothing had asked.
+    // ⚠️ `refresh` rebuilds the whole card, because the amount at the top moves with the row.
+    action: typeof refresh === "function"
+      ? () => button("✕", () => stockRowDelete(state, ing, e, refresh), "ghost small")
+      : null,
+  }));
+
+  // ⚠️ A TABLE NEEDS ITS HEADINGS, or the columns are three unexplained stacks of text. ⚠️ AND THE
+  // HEADER ROW CARRIES NO FIGURE OF ITS OWN BEYOND NAMING THE LAST COLUMN, so `val` is a NAME here.
+  const STOCK_HEAD = { head: true, cols: ["When", "What happened"], val: "Change",
+    what: "When · What happened · Change" };
+
+  // ⚠️ A SECTION APPEARS ONLY WHEN IT HAS ROWS. A heading over nothing reads as a fault, and with
+  // headings always present the sheet's own "nothing recorded yet" line could never show again.
+  // ★★ AND **STOCK LEADS** (v386). Her words: __"i want stock card"__. This is a stock card first —
+  // the amount on the shelf and where it went — and the price story is the second half of the same
+  // page. Reading the price section first would bury the thing she opened it for.
+  const lines = [
+    ...(stockLines.length ? [{ heading: true, what: "Stock" }, STOCK_HEAD, ...stockLines] : []),
+    ...(priceLines.length ? [{ heading: true, what: "Price" }, ...priceLines] : []),
+  ];
+
   return journalSheet({
-    title: `${ing.name} — price`,
-    subtitle: `Price now: ${priceNowText(state, ing)}`,
-    lines: log.map((e) => ({
-      what: `${longDate(e.at)} · ${e.supplierName || "no supplier"} · ${trimNum(e.qty)}${e.uomName} pack · was ${e.was == null ? "not on file" : fmtRM(e.was, cur)}`,
-      amount: e.price,
-    })),
+    title: `${ing.name} — stock card`,
+    subtitle: `On hand: ${fmtStockAmount(state, ing, Number(ing.onHand) || 0)} · Price now: ${priceNowText(state, ing)}`,
+    lines,
     totals: [],
-    empty: "No price change recorded yet.",
-    note: "Every time this ingredient's price moved — what it moved to, and what it was before. Buying it again at the same price is not a change, so it is not listed. The price the app uses for recipes and costs is the one at the top.",
+    // ⚠️ A CARD THAT IS EMPTY STILL HAS TO SAY WHAT IT IS FOR — see the note on the press above. This
+    // is the one line that replaces the hiding rule: it names the card and says what will fill it.
+    empty: "Nothing on this card yet. It fills up as this ingredient moves: baking takes the recipe off your shelf, un-baking puts it back, Bought adds what you bought, and a stocktake or Day one sets the real amount. A price change goes on it too. So the first time you bake with this, or buy it, or count it, a line appears here.",
+    // ⚠️ ONE EXPLANATION, NOT TWO. The `empty` line and this note say overlapping things, so on an
+    // empty card both together read as a wall she has to wade through — found by looking at it. The
+    // note is for a card that HAS rows, where it explains the columns; an empty card is explained by
+    // its own sentence.
+    note: lines.length
+      ? "Stock: every time the amount on your shelf moved, and what moved it — baking takes the recipe off, un-baking puts it back, Bought adds what you bought, and a stocktake or Day one sets the real amount. Price: every time this ingredient's cost moved — what it moved to, and what it was before. Buying the same thing again at the same price is not a change, so it is not listed. The amount on the shelf and the price your recipes use are the two figures at the top."
+      : "",
     where: "Ingredients",
     bakery: bakeryName(state),
   });
 }
 
-function openPriceJournal(state, ing) {
+// The signed amount of one stock movement, with its unit — "+500 g", "−2.5 kg". ⚠️ MINUS IS THE
+// TYPOGRAPHIC ONE (U+2212), the same glyph the money journals use, so a printed column lines up.
+function stockDeltaText(state, ing, delta) {
+  const n = Number(delta) || 0;
+  return `${n < 0 ? "−" : "+"}${fmtStockAmount(state, ing, Math.abs(n))}`;
+}
+
+// ★★ TAKE ONE LINE OFF THE CARD (v390). Her words: __"certain listed i might want to delete after
+// testing"__.
+//
+// ⚠️⚠️ A LINE ON THIS CARD IS A MOVEMENT, SO THE TWO GO TOGETHER — the row leaves the card AND its
+// amount comes back off the shelf. Reversing only the list would leave her shelf holding packs she had
+// just deleted the record of, and reversing only the shelf would leave a card whose rows no longer
+// explain the figure it sits under. **They are one act, and this is the one place that does it.**
+//
+// ⚠️ AND THE CONFIRM SAYS THE NUMBER FIRST. `stockRowUndo` works out what the shelf would hold
+// WITHOUT doing it, so she is told the figure before she commits — a one-way change to her stock is
+// not something a phone tap should discover afterwards. ⚠️ Stock never goes below zero, so a reversal
+// that would is clamped, and this is exactly why the clamp is named in advance rather than met later.
+function stockRowDelete(state, ing, entry, refresh) {
+  const plan = stockRowUndo(ing, entry);
+  if (!plan) return;
+  confirmDialog(
+    `Remove this line from the card? Your ${ing.name} is ${fmtStockAmount(state, ing, plan.was)} now, and taking this movement back leaves ${fmtStockAmount(state, ing, plan.now)}. This cannot be undone.`,
+    () => {
+      undoStockRow(ing, entry);
+      save(state);
+      toast(`${ing.name} is now ${fmtStockAmount(state, ing, Number(ing.onHand) || 0)}`);
+      refresh();
+    },
+    { danger: true, yesLabel: "Remove" });
+}
+
+function openStockCard(state, ing) {
   const cur = state.settings.currency || "RM";
-  const sheet = priceSheet(state, ing);
-  showPopup(el("div", { class: "popup-title-row" }, `${ing.name} — price`),
-    () => el("div", {},
-      // THE PRICE NOW, ON SCREEN AND NOT ONLY ON PAPER. `journalBodyEl` deliberately does not
-      // draw a sheet's subtitle — every other journal leans on the section wording above its
-      // card — but her answer was "only when the price moves, PLUS TODAY", and "today" is the
-      // half a movement list cannot carry by itself. So the card says it in its own line, the
-      // same way the Money and Profit journals label their books, while the sheet keeps its
-      // subtitle so the printed page and the PDF say it too.
-      el("p", { class: "card-sub", style: "margin:0 0 10px" },
-        `Price now: ${priceNowText(state, ing)}`),
-      journalBodyEl(sheet, cur),
-      el("div", { class: "popup-actions" }, ...journalButtons(sheet, cur))));
+  // ⚠️ THE SHEET IS BUILT INSIDE `makeBody`, NOT BEFORE IT. Removing a line moves the amount at the
+  // top of the card as well as the list under it, so a sheet built once and merely re-shown would draw
+  // the old figure — and `refresh` is what re-runs this.
+  showPopup(el("div", { class: "popup-title-row" }, `${ing.name} — stock card`),
+    (refresh) => {
+      const sheet = stockCardSheet(state, ing, refresh);
+      // ⚠️ `stock-journal` IS THE COLUMN SHAPE'S OWN SCOPE, and it is on the CALLER's wrapper rather
+      // than baked into the renderer: the journal's column widths are measured for the filing page's
+      // five columns, and this card's three need different ones. A scope named here moves this card
+      // and nothing else.
+      return el("div", { class: "stock-journal" },
+        // THE TWO FIGURES NOW, ON SCREEN AND NOT ONLY ON PAPER. `journalBodyEl` deliberately does not
+        // draw a sheet's subtitle — every other journal leans on the section wording above its
+        // card — but her answer was "only when the price moves, PLUS TODAY", and "today" is the
+        // half a movement list cannot carry by itself. ⚠️ Both figures, because a stock section
+        // without the amount on the shelf would leave the reader doing the sum.
+        el("p", { class: "card-sub", style: "margin:0 0 10px" },
+          `On hand: ${fmtStockAmount(state, ing, Number(ing.onHand) || 0)} · Price now: ${priceNowText(state, ing)}`),
+        journalBodyEl(sheet, cur),
+        el("div", { class: "popup-actions" }, ...journalButtons(sheet, cur)));
+    },
+    // Her words: __"can optimise for desktop as well"__ — a table is the one thing that gets better
+    // with width, so this card asks for a wider column on a big screen. See app.css.
+    { className: "stock-card" });
 }
 
 // Set how much of an ingredient is on the shelf ("On hand"), or the level she
@@ -448,7 +569,14 @@ function openAmountPopup(state, ing, root, kind) {
       }
       const base = round2(v * (toBase(unitSel.value) || 1));
       if (isStock) {
-        ing.onHand = base;
+        // ★★ A STOCKTAKE IS A MOVEMENT TOO (v385), so it goes in the journal. ⚠️ The row names BOTH
+        // figures — "1.5 kg to 2 kg" — because a stocktake is a correction, and the only useful thing
+        // about it later is what she changed it FROM. ⚠️ The setting-and-logging rule itself lives in
+        // `setStock` (stock.js), where it is tested, rather than in this callback.
+        setStock(ing, base, {
+          why: "stocktake",
+          label: (was, now) => `Stocktake — ${fmtStockAmount(state, ing, was)} to ${fmtStockAmount(state, ing, now)}`,
+        });
         toast(`${ing.name}: on hand ${fmtStockAmount(state, ing, base)}`);
       } else if (base <= 0) {
         clearLevel(close);

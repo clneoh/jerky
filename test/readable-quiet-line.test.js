@@ -255,3 +255,25 @@ test("★ no stylesheet here reads a token that only ANOTHER document declares",
   assert.match(shop.slice(at, shop.indexOf("}", at)), /color:\s*var\(--brown-dark\)/,
     "the shop's privacy WhatsApp number is not drawing the brand TEXT colour");
 });
+
+test("★★⚠️ a row of buttons WRAPS instead of running off the side of the phone (v392)", () => {
+  // Her words: __"i cant find the delete button"__ — and she was right.
+  //
+  // ⚠️⚠️ NO TEST IN THIS SUITE CAN SEE THIS, which is exactly why the RULE is pinned instead. There is
+  // no layout engine here, so a row that overflows the screen renders identically in every DOM shim.
+  // What the browser measured was a PO's five buttons at **403px across on a 360px screen** — the page
+  // overflowed by 108px and **Delete sat entirely off the right edge**, reachable only by scrolling
+  // sideways, which is not a thing anyone does on a phone.
+  //
+  // ⚠️ The cause is not how many buttons there are. A flex item **cannot shrink below the width of the
+  // word inside it**, so once "Regenerate" has taken its share there is nothing left to give and the
+  // next button is pushed straight off the edge. `flex-wrap: wrap` is the whole fix — and it changes
+  // nothing wherever the row already fits, because wrapping only engages when it would otherwise
+  // overflow.
+  const css = read("admin/css/app.css");
+  const at = css.indexOf(".btn-row {");
+  assert.notEqual(at, -1, "the admin's button row rule has gone missing");
+  const rule = css.slice(at, css.indexOf("}", at));
+  assert.match(rule, /flex-wrap:\s*wrap/,
+    "⚠️⚠️ .btn-row does not wrap, so its last button runs off the side of a narrow phone");
+});

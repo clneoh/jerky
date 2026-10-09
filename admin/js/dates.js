@@ -96,6 +96,14 @@ export function longDate(dateStr) {
   return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+// "1 Oct" — the day and the month, without the year. ★ IT IS A COLUMN-WIDTH DECISION (v390): on the
+// stock card the When cell is the NARROW one, and "Thu, 1 Oct 2026" would be cut to "Thu, 1…" — the
+// same trap the filing page's fixed widths set at v385. ⚠️ The full date stays in the sentence every
+// renderer reads, so nothing is lost by shortening the cell.
+export function dayMonth(dateStr) {
+  return longDate(dateStr).slice(0, -5);
+}
+
 // Compact "Wed, 9 Sep" — same style as the storefront's chosen delivery day, so
 // the two pages show dates the same way.
 export function shortDate(dateStr) {

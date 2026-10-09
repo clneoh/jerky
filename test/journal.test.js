@@ -122,6 +122,35 @@ test("the paper and the message are the same book as the screen", () => {
   assert.ok(total.endsWith(fmtRM(42.5)), `the message's total is the sheet's total, not a second sum: ${total}`);
 });
 
+test("★★⚠️ a line's own FIGURE reaches the paper and the message, not just the screen (v390)", () => {
+  // ⚠️⚠️ THE STOCK CARD'S Change COLUMN CARRIES GRAMS, and `money()` would print them as ringgit — so
+  // the line carries its own figure. **Four renderings read one sheet, and this is the test that says
+  // they agree.** Had `val` been honoured only on the screen, the shared message and the printed and
+  // PDF sheets would have shown an em dash where the quantity belongs — a document she would only find
+  // out about after sending it.
+  const s = sheetOf({ lines: [
+    { what: "9 Oct · Baked — Sourdough ×2 · −500 g", cols: ["9 Oct", "Baked — Sourdough ×2"],
+      val: "−500 g", amount: null },
+  ], totals: [] });
+
+  assert.equal(lineStarting(buildJournalText(s), "9 Oct · Baked").endsWith("−500 g"), true,
+    "the shared message did not carry the line's own figure");
+
+  const figureCells = (node) => walk(node)
+    .filter((n) => String(n.className).includes("info-val"))
+    .map((n) => n.textContent);
+  assert.equal(figureCells(journalSheetEl(s))[0], "−500 g",
+    "the printed sheet did not carry the line's own figure");
+  assert.equal(figureCells(journalBodyEl(s))[0], "−500 g",
+    "the screen's row lost the line's own figure");
+});
+
+test("⚠️ and a line with no figure of its own still falls back to its money", () => {
+  // The other half of the rule: `val` is EXTRA, never a replacement for every row.
+  const s = sheetOf({ lines: [{ what: "10 Sep · a sale", amount: 30 }], totals: [] });
+  assert.equal(moneyRows(journalSheetEl(s))[0][1], "RM 30.00");
+});
+
 test("the figure on the paper is the figure on the screen, to the cent", () => {
   // The Money screen writes a movement out as "−RM 8.00". A sheet that let each renderer
   // choose would print "RM -8.00" on one and "−RM 8.00" on the other, which is exactly the

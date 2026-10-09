@@ -408,7 +408,7 @@ export function keepStill(anchor, fn) {
 // screen with a dimmed scrim; `makeBody(refresh, close)` is called to (re)fill
 // the scrollable body, so callers re-invoke `refresh()` after changing anything
 // that should re-render the form (e.g. adding an item row). Returns close().
-export function showPopup(title, makeBody, { wide = false, onTitle = null } = {}) {
+export function showPopup(title, makeBody, { wide = false, onTitle = null, className = "" } = {}) {
   const layer = document.getElementById("popup-layer");
   if (!layer) return () => {};
   const close = () => {
@@ -446,7 +446,10 @@ export function showPopup(title, makeBody, { wide = false, onTitle = null } = {}
   const head = el("div", { class: "popup-head" },
     titleEl,
     button("✕", close, "ghost small"));
-  const card = el("div", { class: `popup-card${wide ? " wide" : ""}` }, head, body);
+  // ⚠️ A CARD MAY NAME ITSELF (v390), so a stylesheet can size THAT card without a rule broad enough to
+  // move every other one. Her words: __"can optimise for desktop as well"__ — the stock card is a
+  // table, and a table is the one thing that gets better with width.
+  const card = el("div", { class: `popup-card${wide ? " wide" : ""}${className ? ` ${className}` : ""}` }, head, body);
   layer.replaceChildren(card);
   layer.hidden = false;
   dragByHead(card, head, layer);

@@ -756,6 +756,45 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## Engine v384 → v393 — stock, and the shopping that fills it (9 Oct 2026)
+
+Base `651cc94` → `136b78f`. 21 files, ~2,262 insertions. **One conflict** (`admin/js/views/money.js`:
+the bakery's v390 `dayMonth` import against jerky's `clearCourierCharge` import — **kept both**). Suite
+**3148 → 3197 pass / 0 fail**. Engine **v393**. **No SQL, no `store/` change, nothing to deploy.**
+
+**⚠️⚠️ AND THE SAME RESOLUTION SHAPE BIT FOR THE THIRD TIME — SO IT IS NOW A TEST.** "Keep both
+sides" on `views/money.js` inserted the bakery's `dates.js` import while jerky's own stayed above it:
+`Identifier 'longDate' has already been declared`, and **every test file failed to load.** The three
+occurrences are all one mistake — *a hand resolution inserting a line the other side already had*:
+
+| version | file | duplicate |
+|---|---|---|
+| v368 | `admin/js/app.js` | `renderReceiptRegister` ×3 |
+| v382 | `admin/js/supabase.js` | the `bom.js` import |
+| v393 | `admin/js/views/money.js` | the `dates.js` import |
+
+**New `test/no-duplicate-imports.test.js`** walks `admin/js/**` and `store/**`, collects every named
+and default binding each module imports, and fails **naming the file and the bindings**. **Bitten:**
+re-introducing the `dates.js` line fails it with both bindings listed. A check nobody runs is the fault
+it was written for — the suite caught all three, and now it catches them before the diagnosis is needed.
+
+**Adopted:** **v385** — the ingredient journal opens in two parts, **PRICE** and **STOCK**, recording
+every movement and what caused it (five things move stock and every one used to overwrite the number);
+**v386** — the **Stock card**, on every ingredient, stock before price, with an empty card explaining
+itself; **v387** — each shop's list prints on its own (the day's ordinary Print untouched); **v388** —
+ticking a bake day uses `history.replaceState` so the PO page stops jumping to the top (the
+`scrollTop = 0` that looked like the culprit was doing nothing); **v390** — the stock card becomes a
+real table (*WHEN · WHAT HAPPENED · CHANGE*), a line can be removed with a ✕, and **each shop's
+heading carries its own Bought press** (before it put every ingredient on the whole list into stock);
+**v391** — deleting a list names the money it leaves behind; **v393** — **Undo one shop's Bought**,
+touching only that shop, never letting stock go below zero, and deliberately not offered on lists
+bought before it existed; and the **`.btn-row` wrap** fix (her words: *"i cant find the delete button"*
+— the row measured 403px on a 360px screen and Delete sat off the edge).
+
+**Localization:** every user-visible string added in this batch was reviewed — all generic ("shop"
+here means the supplier she buys from, e.g. Mydin). No bakery wording, no bakery identity; `CNAME` and
+her Supabase project untouched.
+
 ## Engine v382 → v384 — a review's picture, and a phone that updates first (8 Oct 2026)
 
 Base `8beb8f7` → `651cc94`. 14 files, ~995 insertions. **0 conflicts in all 12 source files.** Suite

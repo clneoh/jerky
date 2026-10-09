@@ -45,10 +45,22 @@ export function renderPO(root, state, params) {
   // Ticking or unticking a day switches to the explicit ?dates= URL (empty when
   // everything is unticked — a bare #/po would silently re-default), then the
   // preview and its running total redraw in place.
+  //
+  // ⚠️⚠️ THE ADDRESS IS WRITTEN, NOT NAVIGATED TO. Her words: __"the po page when click, the page
+  // jump, rerender"__. `location.hash = …` FIRES the app's hashchange, so the router ran: it emptied
+  // #view, rebuilt the whole screen and left the document scrolled to the top — a tick near the
+  // bottom of a long day list threw her back to the top, every time. (Measured: 2,500px → 0, and it
+  // stays there once the screen is rebuilt. `viewEl.scrollTop = 0` in `app.js` is not what did it —
+  // `.view` is `overflow: visible`, it is not the scroll container; emptying the page is.)
+  //
+  // ⭐ `replaceState` is the same thing the Orders screen already uses to keep its address truthful
+  // without a rerender, and it is the whole fix: the URL she can share or reopen is unchanged, and
+  // nothing is thrown away. ⚠️ THE GUARD IS NOT DECORATION — a bare `history` throws a ReferenceError
+  // under the test shim, and the rest of this suite shims it for exactly that reason.
   const toggle = (id, checked) => {
     if (checked) ticked.add(id); else ticked.delete(id);
     const ids = dates.filter((d) => ticked.has(d.id)).map((d) => d.id).join(",");
-    location.hash = `#/po?dates=${ids}`;
+    if (history && history.replaceState) history.replaceState(null, "", `#/po?dates=${ids}`);
     render();
   };
   const toggleOpen = (id) => {
