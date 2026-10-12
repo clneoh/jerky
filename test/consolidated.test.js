@@ -194,6 +194,35 @@ test("★ one row per ORDER, never per item — a discount is a fact about the w
   assert.equal(sheet.totals[0].amount, 34);
 });
 
+test("★★ an order's invoice number is found whichever of its ROWS carries it (v445)", () => {
+  // ⚠️⚠️ HER OWN TWO SCREENS DISAGREED ABOUT ONE ORDER. The RECEIPT REGISTER said `#000003` was issued for
+  // **Mr Tan Eng Boo · Order #F447EE**; the INVOICE column on her consolidated page read **"none yet"** for
+  // that same order. ⭐ The register reads the shared cloud by ORDER CODE; the invoice read `receiptNo` —
+  // **a fact stamped onto a ROW — from the group's FIRST row only.** So a group whose rows sit on two bake
+  // days, or whose first row changed after the money was recorded, handed the column a row that had never
+  // carried the number. ⭐ **A fact about the ORDER, held by a row** — the same fault v432 fixed for status
+  // and v441 for the order code, in a third place.
+  const st = state();
+  st.orders = [
+    // ⚠️ THE FIRST ROW HAS NO NUMBER, AND THE SECOND DOES — exactly the shape the invoice could not read.
+    row({ id: "f1", groupId: "g1", deliveryDate: D(7), customerName: "Mr Tan Eng Boo", qty: 6, unitPrice: 17.5 }),
+    row({ id: "f2", groupId: "g1", deliveryDate: D(8), productId: "p2", qty: 1, unitPrice: 18, receiptNo: 3 }),
+  ];
+  const sheet = consolidatedSheet(st, { kind: "month", anchor: D(8) });
+  const line = sheet.lines.filter((l) => !l.heading && !l.head && !l.cls)[0];
+  assert.ok(line, "the fixture drew no order line at all, so this proves nothing");
+  // ⚠️ ASSERTED ON THE COLUMN THE PAGE DRAWS, not on an object field — `cols` is what goes on the paper,
+  // and the invoice column is the third (Date, Order, Invoice, What, Customer).
+  assert.equal(line.cols[2], "#000003",
+    `★ the invoice column could not see the number because a different ROW of the order carried it (it drew ${JSON.stringify(line.cols[2])})`);
+  assert.match(line.what, /#000003/, "the number did not reach the line the page prints");
+  assert.doesNotMatch(line.what, /none yet/,
+    "★ a PAID order that IS numbered was printed as still waiting for one");
+  // ⚠️ AND ONE ORDER IS STILL ONE ROW — reading widely must not split it back into its rows.
+  assert.equal(sheet.lines.filter((l) => !l.heading && !l.head && !l.cls).length, 1,
+    "reading the number from the whole order split one order into several lines");
+});
+
 test("★★ every row ADDS UP to the Total beneath it — the filing list has no subtotals to hide behind", () => {
   // ⚠️ THIS TEST USED TO CHECK THE PER-CUSTOMER SUBTOTALS. v376 replaced the grouping with one flat
   // filing list — her choice, shown both — so the invariant that survives is the one that always

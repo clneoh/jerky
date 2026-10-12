@@ -5,7 +5,7 @@
 
 import { byId, fmtRM, groupOrders, newId, orderLinePrice, save } from "./state.js";
 import { orderNet } from "./money.js";
-import { addDays, todayISO } from "./dates.js";
+import { addDays, isWithin, todayISO } from "./dates.js";
 import { orderDateOf } from "./customers.js";
 import { capacityStatus } from "./bom.js";
 
@@ -43,7 +43,7 @@ export function weekStats(state, { today = todayISO() } = {}) {
   const from = weekStartISO(today);
   const rows = (state.orders || []).filter((o) => {
     const d = orderDateOf(o);
-    return !!d && d >= from && d <= today;
+    return isWithin(d, from, today); // ⚠️ the shared rule (v403) — this was a third copy
   });
 
   // ⚠️ THE SELL VALUE IS SUMMED BY **GROUP**, NOT BY ROW (v370). A refund is a fact about the

@@ -108,7 +108,7 @@ test("several manual items for one customer land as a single order group", () =>
   assert.equal(byClass(rows[0], "line-price").length, 1, "and the row carries its selling price");
   change(rows[0].children[0], "p1"); // product select
   click(stepperOf(rows[0]).children[2]); // stepper "+" → qty 2
-  assert.equal(stepperOf(rows[0]).children[1].textContent, "2");
+  assert.equal(stepperOf(rows[0]).children[1].value, "2");   // v458: a box now, read as a value
 
   // Add a second item and pick it.
   const addAnother = byText(root, "＋ Add another item")[0];
@@ -119,7 +119,7 @@ test("several manual items for one customer land as a single order group", () =>
   change(rows[1].children[0], "p2");
   click(stepperOf(rows[1]).children[2]);
   click(stepperOf(rows[1]).children[2]); // qty 3
-  assert.equal(stepperOf(rows[1]).children[1].textContent, "3");
+  assert.equal(stepperOf(rows[1]).children[1].value, "3");   // v458: a box now, read as a value
 
   // Customer details apply to the whole order.
   byPlaceholder(root, "Customer name (optional)")[0].value = "Ain";

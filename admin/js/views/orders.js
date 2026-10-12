@@ -15,19 +15,21 @@ import { availSummary, sellOpen } from "../../../availability.js";
 // same pair the shop applies, from the one module both sides read, so a note can
 // never be longer on this side than the box that collected it allowed.
 import { lineNoteOf, LINE_NOTE_MAX } from "../../../storefront-fields.js";
-import { byId, fmtRM, groupOrders, moveOrderGroup, newId, orderCode, orderLineName, orderLinePrice, round2, save, stampOrderLine, updateOrderBadge, waNumber } from "../state.js";
+import { byId, fmtRM, groupOrders, moveOrderGroup, newId, orderCode, orderLineName, orderLinePrice, removeOrders, restoreRemovedOrder, round2, save, stampOrderLine, updateOrderBadge, waNumber } from "../state.js";
+import { orderedProducts } from "../productCategories.js";
 import { strictestCancelDays } from "../../../store/pool.js";
 import { buildConfirmation } from "../confirm.js";
 import { buildPaymentReminder, buildPickupReminder, buildShippedMessage } from "../messages.js";
 import { claimReceipt, maybePublishTracking, maybeSync, publishTracking, refundReceipt, stuckOrders, unrefundReceipt } from "../supabase.js";
-import { receiptLine, receiptNoOf, receiptStatus } from "../receipts.js";
+import { receiptLine, receiptNoOf, receiptNoOfGroup, receiptStatus } from "../receipts.js";
+import { couponDeclined, couponOnAny } from "../referrals.js";
 import { writeCourierCharge, courierFeeOf, courierPayerOf, courierCodOf, customerCourierFee, isCourierOrder, codeMissed, codeNotApplied, couponAgainst, customerTotal, receiptNote, receiptRows, promoOn, promoValue } from "../courier.js";
 import { methodsOf } from "../accounts.js";
 import { schemeOf, referralFlag, giveCredits, validCredits, markOneUsed, referrerName, couponOn } from "../referrals.js";
 import { adjustForStatus } from "../stock.js";
 import { customerList, keyOf } from "../customers.js";
 import { strictNumber } from "../courier_place.js";
-import { fmtStamp, jobOf } from "../courier_job.js";
+import { courierDayOf, fmtStamp, jobOf } from "../courier_job.js";
 // The app's ONE time window (v304): how it is read, packed, checked and said. The van's window on an
 // order asks the same questions as the run screen's, so it asks the same functions.
 import { fmtWindow, windowAt, windowParts, windowProblem } from "../time_window.js";
@@ -40,7 +42,8 @@ import { attachProfiles, customerNameMatches, customerRowName, syncContactFromOr
 // pin's lookup uses, so the Google key stays on the server and never touches this page.
 import { bakeryName, journalBodyEl, journalButtons } from "../journal.js";
 import { invoiceCurrency, invoiceNo, invoiceSheet } from "../invoice.js";
-import { orderPointName, pointChoices, setOrderPoint } from "../points.js";
+import { orderPointName, setOrderPoint } from "../points.js";
+import { pointChoices } from "../pointAreas.js";
 // ★ THE PARCEL SEAM (v307). `parcels.js` is pure — it reads her own mailing block and the
 // order into the two parties EasyParcel wants, and says what is missing. `parcels/api.js` is
 // the one channel to the `parcel` function, where the key lives.
@@ -337,9 +340,33 @@ export function packingLabelData(state, group, style = "full") {
   const orders = (group && group.orders) || [];
   const first = orders[0] || {};
   const dateEl = first.deliveryDateId ? byId(state.deliveryDates, first.deliveryDateId) : null;
-  const dateStr = (dateEl && dateEl.date) || first.deliveryDate || "";
-  const dateLine = dateStr ? shortDate(dateStr) : "";
+  const bakeStr = (dateEl && dateEl.date) || first.deliveryDate || "";
+  const bakeDay = bakeStr ? shortDate(bakeStr) : "";
   const courier = first.fulfillment === "courier";
+  // ★★ AND THE VAN'S OWN DAY, WHICH IS A DIFFERENT DAY (v429).
+  //
+  // Her report: __"when i entered a specific delivery date favour by customer over bake date, the
+  // print label still took the bake day?"__ — ⚠️ **and she was right: this model never looked at
+  // `courierDay` at all.** The label is what somebody packs a bag from, so it was naming the day the
+  // bread is MADE while a van took it away the next morning.
+  //
+  // ⭐ **AND SHE CHOSE THE SHAPE: BOTH, EACH NAMED** — *"so whoever packs a bag sees when to make it
+  // and when it leaves."* So a van order with its own day reads **`Bake Wed 7 Oct · Van Thu 8 Oct`**.
+  //
+  // ⚠️⚠️ WITH NO VAN DAY TYPED THIS IS BYTE-FOR-BYTE WHAT IT WAS. A delivery day she has not decided
+  // cannot be named — the rule `courierDayOf` states about itself — so the common case (a courier
+  // order whose van day she has not filled in yet) prints exactly as it always has.
+  // ⚠️⚠️ THE TEST IS "DOES A VAN BRING THIS", NOT `fulfillment === "courier"` — AND THOSE ARE NOT THE
+  // SAME QUESTION. ⭐ **A Self-collect-at-a-Point order keeps `fulfillment: "collect"` while its
+  // bread still arrives BY VAN**, and the Delivery run writes a courier day onto it when the trip is
+  // booked. ⚠️ So a Point order reaches the shop the morning after the bake, and the bag waiting
+  // there was labelled with the bake day. **The presence of the day IS the answer**, exactly as
+  // `courierDayOf` says of itself: nothing here is ever derived from the bake day.
+  const vanRaw = courierDayOf(first);
+  const vanDay = vanRaw ? shortDate(vanRaw) : "";
+  const dateLine = vanDay
+    ? [bakeDay && `Bake ${bakeDay}`, `Van ${vanDay}`].filter(Boolean).join(" · ")
+    : bakeDay;
   // WHICH PLACE, on the label too (v299). A collection from the kitchen reads exactly as it
   // always has; a collection from a Point names it, because a label that says only "Collect"
   // tells whoever is packing the bag nothing about where the bag is going.
@@ -377,7 +404,12 @@ export function packingLabelData(state, group, style = "full") {
     if (phone) rows.push(["mail-line", phone]);
     for (const ln of recipientAddress) rows.push(["mail-line", ln]);
     rows.push(["mail-sec", "ORDER"]);
-    rows.push(["mail-line", [code, dateLine && `Post ${dateLine}`].filter(Boolean).join(" · ")]);
+    // ⚠️ AND ON A PARCEL, "DELIVER" IS THE DAY IT ARRIVES — NOT THE DAY IT IS BAKED (v429). ⚠️ This
+    // printed the BAKE day on the OUTSIDE of the box, so a parcel baked Wednesday and sent Thursday
+    // was addressed **"Deliver Wed 7 Oct"**. ⭐ The van's day is when it gets there, so that is what
+    // this says; with no van day typed it falls back to the bake day, exactly as before.
+    const arrives = vanDay || bakeDay;
+    rows.push(["mail-line", [code, arrives && `Post ${arrives}`].filter(Boolean).join(" · ")]);
     for (const o of orders) rows.push(sheetItemRow(state, o, "mail-line"));
     const mailNote = sheetNoteRow(note, "mail-line");
     if (mailNote) rows.push(mailNote);
@@ -898,6 +930,8 @@ function renderAll(root, state, params) {
   // moved and no cloud field was added.
   const stuckNote = stuckOrdersEl();
   if (stuckNote) body.append(stuckNote);
+  const removedCard = removedOrdersEl(state, root);
+  if (removedCard) body.append(removedCard);
   if (inbox) body.append(inbox);
   body.append(topCal.el, content);
   const finder = orderFinderEl(state, root, selectDate, body);
@@ -1411,7 +1445,10 @@ export function productOptions(state, dateId, excludeOrderId = null) {
   // Drafts are never for sale yet, so they have no orders — keep them out of
   // the backoffice picker too. Hidden products stay (marked below) so an order
   // for something temporarily off the menu can still be added or edited.
-  return state.products
+  // ★★ IN HER ORDER, NOT THE ARRAY'S (v418). ⚠️ `state.products` is the order the RECORDS sit in, and
+  // a drag writes `sort` / `productOrder` — so without this the picker ignored every reorder she made
+  // with the handle. See `orderedProducts`.
+  return orderedProducts(state, state.products)
     .filter((p) => p.draft !== true)
     .map((p) => {
       const hidden = p.active === false;
@@ -1477,6 +1514,57 @@ function promoTag(order) {
 // priced — a saved order, or the lines she is typing.
 // ⚠️ EXPORTED (v342) so the Delivery run can draw an order's money with the SAME renderer — see the
 // unfolded order on that screen. Two renderings of one order's figures is two figures that can disagree.
+// ★★ THE COUPON'S OWN LINE — WHO APPLIED IT, AND ONE PRESS TO TAKE IT OFF (v450).
+//
+// HER WORDS: __"when a coupon is send over with order, the back office just take it itself, without asking
+// for my action to whether apply it or not"__
+//
+// ⚠️⚠️ AND SHE WAS RIGHT ON BOTH HALVES. A friend's coupon is stamped spent and pointed at its order the
+// moment it is created, so **it came off by itself with nothing asking her** — while the reward she EARNS
+// waits for her to press Apply. **Two kinds of coupon, two rules, and only one of them consulted her.**
+//
+// ⭐ BUT ASKING FIRST IS THE WRONG FIX, and this is why: a press she forgot would leave the friend's discount
+// off an order **whose customer was already sent a message saying they had it** — which is the v322 fault
+// exactly, through a different door. **So it still comes off by itself. What she gets is the SIGHT of it and
+// one press to take it off.**
+//
+// ⚠️ AND THE CONFIRMATION NAMES THE CONSEQUENCE, because there is one: the customer was promised this money.
+// Taking it off means they pay more than the message they were sent — a fact she should meet BEFORE the
+// press, not after it.
+function couponControlEls(state, first, group, repaint) {
+  const hit = couponOnAny(state, group.orders);
+  if (!hit.id || !(hit.amount > 0)) return [];
+  const declined = couponDeclined(state, hit.id);
+  const what = hit.role === "reward" ? "the reward you earned" : "the discount they were sent";
+  const cur = state.settings.currency || "RM";
+
+  const put = (on) => {
+    const id = String(hit.id);
+    state.declinedCoupons = (state.declinedCoupons || []).filter((x) => String(x) !== id);
+    if (on) state.declinedCoupons.push(id);
+    save(state);
+    maybeSync(state);
+    repaint();
+  };
+
+  return [
+    el("p", { class: "coupon-note" },
+      declined
+        ? `Bring-a-friend ${what} — taken off this order by you. They will pay what the order comes to without it.`
+        : `Bring-a-friend ${what} — came off this order by itself, because they were sent it.`),
+    el("div", { class: "row-actions" },
+      declined
+        // ⚠️ THE WAY BACK IS PART OF THE CONTROL. A choice she cannot reverse is not a choice.
+        ? button("Put it back", () => put(false), "soft small")
+        : button("Take it off this order", () => {
+            confirmDialog(
+              `Take the discount off this order? They were sent this coupon — so taking it off means they pay `
+              + `${fmtRM(hit.amount, cur)} more than the message they were already sent.`,
+              () => put(true), { danger: true, yesLabel: "Take it off" });
+          }, "ghost small")),
+  ];
+}
+
 export function receiptEls(state, parts) {
   const rows = receiptRows(state, parts).map((r) =>
     el("div", { class: "info-row" + (r.total ? " pl-total" : "") },
@@ -1868,7 +1956,30 @@ function orderForm(state, dateId, root, selectDate) {
           it.price = priceForProduct(state, it.productId);
           renderRows();
         }, "Product…");
-      const qtySpan = el("span", { class: "stepper-val" }, String(it.qty));
+      // ★★★ THE QTY CAN BE TYPED, NOT ONLY PRESSED (v458). Her words: __"for qty field i should be allow
+      // to key in qty also instead of just press the + & -"__ — ⭐ **because twenty loaves is twenty
+      // presses.**
+      // ⚠️⚠️ AND THE BOX IS NEVER REBUILT FROM ITS OWN HANDLER. `renderRows()` rebuilds every row, so a
+      // repaint on `input` would delete the box mid-keystroke and eat the second digit — **the exact fault
+      // she reported on the PO card**, where the same mistake was made. ⭐ The `+` and `−` presses already
+      // touch only the number and the total, so typing is given the same treatment.
+      const qtyBox = el("input", {
+        class: "stepper-val", type: "number", inputmode: "numeric", min: "1", step: "1",
+        value: String(it.qty), "aria-label": "How many",
+        // While she is typing: take the number if it is usable, but leave the box exactly as she left it.
+        oninput: function () {
+          const n = parseInt(this.value, 10);
+          if (Number.isFinite(n) && n >= 1) it.qty = n;
+          paintTotal();
+        },
+        // And when she is done: settle it — an empty or nonsense box gets a real number back.
+        onchange: function () {
+          const n = Math.max(1, Math.round(Number(this.value) || 1));
+          it.qty = n;
+          this.value = String(n);
+          paintTotal();
+        },
+      });
       // A note that belongs to THIS line (v236) — "no nuts", "write Happy Birthday".
       // Offered once a product is picked, because a note with no item to belong to
       // has nowhere to go; and offered on EVERY line whatever that product's own
@@ -1890,9 +2001,9 @@ function orderForm(state, dateId, root, selectDate) {
         prodSel,
         el("div", { class: "add-item-ctl" },
           el("div", { class: "stepper" },
-            el("button", { onclick: () => { it.qty = Math.max(1, it.qty - 1); qtySpan.textContent = String(it.qty); paintTotal(); } }, "−"),
-            qtySpan,
-            el("button", { onclick: () => { it.qty = it.qty + 1; qtySpan.textContent = String(it.qty); paintTotal(); } }, "＋")),
+            el("button", { onclick: () => { it.qty = Math.max(1, it.qty - 1); qtyBox.value = String(it.qty); paintTotal(); } }, "−"),
+            qtyBox,
+            el("button", { onclick: () => { it.qty = it.qty + 1; qtyBox.value = String(it.qty); paintTotal(); } }, "＋")),
           linePriceBox(it, paintTotal),
           el("button", { class: "inbox-del", "aria-label": "Remove item",
             onclick: () => { items.splice(i, 1); renderRows(); } }, "✕")),
@@ -1969,7 +2080,10 @@ function orderForm(state, dateId, root, selectDate) {
   function paintDay() {
     dayBtn.setAttribute("aria-expanded", newFormDayOpen ? "true" : "false");
     dayBtn.replaceChildren(
-      el("span", { class: "datepick-val" }, `Delivering ${shortDate(date.date)}`),
+      // ⚠️ "BAKING", NOT "DELIVERING" (v429). ⚠️ The box was labelled "Bake day" and sat directly
+      // above a **"Courier delivery date"** box, so the card said the bake day was the delivery and
+      // offered a separate delivery date two lines down. **The card contradicted itself.**
+      el("span", { class: "datepick-val" }, `Baking ${shortDate(date.date)}`),
       el("span", { class: "datepick-ico", "aria-hidden": "true" },
         newFormDayOpen ? "· close" : "· change"));
     // replaceChildren is not el(): it prints a bare null as the text "null" on her screen,
@@ -2116,7 +2230,7 @@ function orderForm(state, dateId, root, selectDate) {
     pointField,
     el("div", { class: "card-sub", style: "margin:0 0 10px" },
       "Order date = when it was placed (defaults to today). WhatsApp is kept in your delivery history for marketing follow-ups."),
-    el("div", { class: "field" }, el("label", {}, "Delivery note (optional)"), note),
+    el("div", { class: "field" }, el("label", {}, "Notes for Collection/Delivery (optional)"), note),
     button("＋ Place Order", submit, "block primary"));
 
   const caret = el("span", { class: "fold-caret" }, newFormOpen ? "▾" : "▸");
@@ -2160,14 +2274,6 @@ function deliveryDayList(state) {
   return [...state.deliveryDates]
     .sort((a, b) => a.date.localeCompare(b.date))
     .map((d) => ({ id: d.id, date: d.date }));
-}
-
-// The days the Edit-order pop-up's "Delivery date" calendar offers: every day
-// still to come, plus the order's own day even if that has passed (so an order
-// left on an old date still shows where it is).
-function deliveryDayOptions(state, curId) {
-  const today = todayISO();
-  return deliveryDayList(state).filter((d) => d.date >= today || d.id === curId);
 }
 
 // Soft notes under the "Delivery date" select: the window the customer was told,
@@ -2342,9 +2448,24 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
   // calendar is always open here: a pop-up the baker opened on purpose has no
   // room for another thing to unfold. Its view is settled fresh on every rebuild
   // (see deliveryCal), which is what keeps it on the day this order is actually on.
+  // ★★ THE PAST IS PICKABLE HERE TOO (v430). Her question: __"when i edit an order should it allow me
+  // to select the past date,?"__ ⚠️ **It did not.** This picker was handed a list with every day
+  // BEFORE TODAY stripped out — so a past bake day came out as a dead grey square, the same as a day
+  // she never bakes, and an order taken by hand on Friday could only be entered against a FUTURE
+  // day. That put Friday's takings nowhere and put the order's stock on the wrong bake.
+  //
+  // ⚠️⚠️ AND IT CONTRADICTED THE CALENDAR'S OWN COMMENT, and the app's own rule that nothing may
+  // stand in the way of a sale she would take by hand. Every other calendar in the app — the Orders
+  // screen's own (see `topCal`) and the New order card's — has always been handed the WHOLE list,
+  // and a day already gone opens there deliberately: *"she backfills and reviews old days"*.
+  //
+  // ⚠️ THE WARNING IS NOT LOST BY ALLOWING IT, WHICH IS THE OTHER HALF OF THE DECISION. A picked day
+  // that has passed already writes "That bake day is already past." under this calendar — the note
+  // reads `curId`, which is the DRAFT's day and so is rebuilt from the pick. She is told, and she
+  // may still do it, exactly as she may everywhere else (see `moveNoteLines`).
   const deliveryPick = deliveryCal({
     state,
-    days: deliveryDayOptions(state, curId),
+    days: deliveryDayList(state),
     getActiveId: () => draft.deliveryDateId || curId,
     view: { offset: null },
     onPick: (id) => { draft.deliveryDateId = id; refresh(); },
@@ -2354,6 +2475,9 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     ...moveNoteLines(state, group, curId).map((t) => el("p", { style: "margin:2px 0" }, t)));
 
   const totalEl = el("div", { class: "receipt", style: "margin:8px 0 0" });
+  // ★★ AND THE COUPON'S OWN LINE, WITH HER PRESS (v450) — see `couponControlEls`.
+  const couponEl = el("div", { style: "margin:8px 0 0" });
+  // ★★ AND THE COUPON'S OWN LINE, WITH HER PRESS (v450) — see `couponControlEls`.
   // A charge the customer bears belongs in this total, because this is the number she
   // reads to know what the order is worth. Named when it is there, so a figure RM8
   // above the items explains itself rather than looking like a mistake; a charge SHE
@@ -2414,6 +2538,8 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       coupon: coupon.amount,
       total: Math.max(0, itemsTotal + here - off - coupon.amount),
     }) : []));
+    // ★ AND THE COUPON SAYS WHO PUT IT THERE, AND OFFERS IT BACK (v450).
+    couponEl.replaceChildren(...couponControlEls(state, first, group, paintTotal));
   }
   // The courier charge, asked for here as well as in the Note / tracking box (19 Sep
   // 2026): the charge is part of what this order is, and Edit is where she changes what
@@ -2436,7 +2562,24 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
         line.cost = rc > 0 ? rc : null;
         refresh();
       }, "Product…");
-    const qtySpan = el("span", { class: "stepper-val" }, String(line.qty));
+    // ★★★ AND THE SAME HERE (v458) — one qty behaves the same wherever it appears, which is this app's
+    // rule for two rows that look alike. ⚠️ **A box she can type into on the New-order card and only
+    // press here would be the "dead control" fault in a new suit.**
+    const qtyBox = el("input", {
+      class: "stepper-val", type: "number", inputmode: "numeric", min: "1", step: "1",
+      value: String(line.qty), "aria-label": "How many",
+      oninput: function () {
+        const n = parseInt(this.value, 10);
+        if (Number.isFinite(n) && n >= 1) line.qty = n;
+        paintTotal();
+      },
+      onchange: function () {
+        const n = Math.max(1, Math.round(Number(this.value) || 1));
+        line.qty = n;
+        this.value = String(n);
+        paintTotal();
+      },
+    });
     // This line's own note (v236), the same box the New-order card offers and on the
     // same terms: shown once there is a product, and shown whether or not that
     // product's shop switch is on — a note already collected must stay readable and
@@ -2459,9 +2602,9 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       prodSel,
       el("div", { class: "add-item-ctl" },
         el("div", { class: "stepper" },
-          el("button", { onclick: () => { line.qty = Math.max(1, line.qty - 1); qtySpan.textContent = String(line.qty); paintTotal(); } }, "−"),
-          qtySpan,
-          el("button", { onclick: () => { line.qty = line.qty + 1; qtySpan.textContent = String(line.qty); paintTotal(); } }, "＋")),
+          el("button", { onclick: () => { line.qty = Math.max(1, line.qty - 1); qtyBox.value = String(line.qty); paintTotal(); } }, "−"),
+          qtyBox,
+          el("button", { onclick: () => { line.qty = line.qty + 1; qtyBox.value = String(line.qty); paintTotal(); } }, "＋")),
         linePriceBox(line, paintTotal),
         el("button", { class: "inbox-del", "aria-label": "Remove item",
           onclick: () => { lines.splice(i, 1); refresh(); } }, "✕")),
@@ -2505,6 +2648,13 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     const whyWindow = draft.fulfillment === "courier"
       ? windowProblem(draft.courierWhen.from, draft.courierWhen.to) : "";
     if (whyWindow) return toast(whyWindow);
+    // ⚠️⚠️ WHAT THE POP-UP STILL HAS ON SCREEN (v440) — the lines that survived the ✕. It is
+    // built HERE, from `lines` itself, because `lines` is the pop-up's own array and it is the
+    // only thing that knows what she removed: an entry leaves it in exactly one place, the ✕.
+    // ⚠️ **`chosen` cannot stand in for it.** `chosen` is `lines.filter((l) => l.productId)`, so a
+    // line the picker could not name is missing from `chosen` without her having removed it — and
+    // the Save used to read that absence as a deletion and take the row away.
+    const liveIds = new Set(lines.map((l) => l.id).filter(Boolean));
     applyPopupEdits(state, date, group, first, chosen, {
       customerName: customer.value.trim(),
       whatsapp: waNumber(whatsapp.value.trim()),
@@ -2544,7 +2694,7 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       parcel: { carrierId: draft.carrierId || "", handedAt: draft.handedAt || "" },
       orderDate: draft.orderDate,
       deliveryDateId: destId,
-    }, close, root);
+    }, close, root, liveIds);
   };
 
   // Where the price section draws the door block (v201). Under the address row rather than
@@ -2582,7 +2732,7 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       pointSel,
       el("p", { class: "hint" },
         "Your kitchen is the default. An order collecting at a Point goes on the Delivery run to that Point, with the fee you set there.")),
-    el("div", { class: "field" }, el("label", {}, "Delivery note (optional)"), note),
+    el("div", { class: "field" }, el("label", {}, "Notes for Collection/Delivery (optional)"), note),
     draft.fulfillment === "courier" && !jobOf(first) ? courierKind("parcel") : null,
     el("div", { class: "field" },
       el("label", {}, "Courier tracking number (optional)"),
@@ -2642,7 +2792,8 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
         "Cost each is what that loaf cost you to bake. It is frozen onto this order when you take it, so changing an ingredient price later never rewrites an order already sold. Type over it if this batch cost you more, or press Recipe to go back to what the recipe says."),
       rowsEl,
       button("＋ Add another item", () => { lines.push({ productId: "", qty: 1, price: null }); refresh(); }, "ghost"),
-      totalEl),
+      totalEl,
+      couponEl),
     el("div", { class: "card-sub", style: "margin:0 0 10px" },
       "Hidden products are listed as \"(hidden)\" — you can still add or keep one."),
     button("Save changes", saveEdits, "block primary"),
@@ -2680,7 +2831,7 @@ function writeParcel(state, first, rows, parcel) {
 // single-item order that gains a second line becomes a group so it still shows
 // as one customer order). Removed lines' orders are deleted. Guards against
 // pushing the day over capacity.
-function applyPopupEdits(state, date, group, first, chosen, shared, close, root) {
+function applyPopupEdits(state, date, group, first, chosen, shared, close, root, liveIds) {
   // The charge travels beside the shared row fields, never among them: they are copied
   // straight onto the order rows with Object.assign, and a nested object riding along
   // there would be saved onto every row as a field of its own. The parcel (v226) is the
@@ -2703,16 +2854,63 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root)
   const totalAfter = cap.total - qtyNow + qtyAfter;
 
   const commit = () => {
-    const keptIds = new Set(chosen.map((l) => l.id).filter(Boolean));
-    const dropIds = new Set(group.orders.filter((o) => !keptIds.has(o.id)).map((o) => o.id));
-    if (dropIds.size) state.orders = state.orders.filter((o) => !dropIds.has(o.id));
+    // ⚠️⚠️ WHAT SHE REMOVED, NOT WHAT SHE LEFT (v440). This used to drop every row of the group
+    // whose line was not in `chosen` — and **`chosen` is `lines.filter((l) => l.productId)`**. So
+    // **a line the picker could not name was read as "she deleted it"**, and its row went with no
+    // ✕ ever pressed on it. ⭐ `lines` loses an entry in exactly ONE place — the ✕ — so `liveIds`,
+    // which is built from `lines` and handed in by the pop-up that OWNS it, is what says what was
+    // deleted. `chosen` still says what to WRITE, which is all it was ever for.
+    // Her report: __"change one to 3 then delete the 10 & 2, in the process, other order get
+    // deleted"__.
+    //
+    // ⚠️ IT IS PASSED IN RATHER THAN DEFAULTED. A default here would be a second way to reach the
+    // old rule, and a caller who omitted it would delete rows with no sign on screen that the
+    // guard had gone — the same trap v404 removed the `ask` flag for.
+    //
+    // ⚠️⚠️ AND A ROW WITH NO `id` IS NEVER DROPPED. The `.filter(Boolean)` on `liveIds` is the
+    // author saying, in code, that an order row can have no id. Without the `o.id &&`, a dropped
+    // row with no id would put `undefined` into `dropIds` — and the sweep below would then take
+    // **every id-less order in the whole book** out with it, on every day, for every customer,
+    // from an edit that never named them. ⭐ **Deleting what cannot be named is not a deletion, it
+    // is a sweep**, and it is silent.
+    const dropIds = new Set(group.orders.filter((o) => o.id && !liveIds.has(o.id)).map((o) => o.id));
+    // ⚠️ `dropIds` can no longer contain `undefined`, so a row with no id cannot match this filter.
+    // ★ AND IT GOES ON THE SHELF RATHER THAN INTO NOTHING (v444) — see `removeOrders`. ⚠️ The word here
+    // is not a cause: this is a line that left with no ✕ pressed on it, and that is what it says, so a
+    // removal nobody asked for is the one she can see at a glance in the Removed list.
+    if (dropIds.size) removeOrders(state, [...dropIds], "an edit");
     // The order screen is not a second copy of the customer: a name or number
     // fixed here carries to their other orders and to their saved record too.
     // keyOf(first) is read before the loop below rewrites these rows, so it
     // still gives the person's pre-edit key.
     syncContactFromOrder(state, keyOf(first), { customerName: fields.customerName, whatsapp: fields.whatsapp });
     let gid = first.groupId;
-    if (!gid && chosen.length > 1) gid = newId("ordg"); // single order gains a second item
+    // ★★ A ONE-ITEM ORDER MUST NOT CHANGE ITS CODE WHEN IT GAINS A SECOND ITEM (v441).
+    //
+    // This is the ONE place in the whole app where an existing order ever gained a group name — and
+    // gaining one used to move its code, because `orderCode` reads `groupId || id`. **Same order, a
+    // different key.** Verified on a real screen before this was written: one item `#1`, a second
+    // item added, `#55568B`. Her words: __"it is a unique identify of an order … like giving a key to
+    // a customer."__
+    //
+    // ⭐ SO THE GROUP NAME IS BUILT FROM THE ORDER'S OWN ROW rather than drawn at random. The code is
+    // the LAST SIX hex characters of `groupId || id`, so a group name that already carries the row's
+    // id leaves those six characters exactly where they were — **the code does not move, and nothing
+    // of hers had to be rewritten to hold it still.** ⚠️ A `code` field stamped onto every order was
+    // the other way, and two tests caught what it cost: loading her book would have rewritten every
+    // order row she owns, which this app's first rule forbids.
+    //
+    // ⚠️⚠️ AND THE PREFIX IS `group_`, NOT `ordg_`, ON PURPOSE. The code is read by STRIPPING every
+    // character that is not a hex digit — and **`ordg` ends in a `d`, which IS one.** So `ordg_` + a
+    // short id pushed that `d` into the six characters and moved the code anyway: a test with the id
+    // `o1` came out `#1 → #D1`. Nothing in the app looks for an `ordg` prefix, so the marker is one
+    // whose characters contribute NOTHING — **and the code is then the same whatever the id's length.**
+    //
+    // ⚠️ THIS BRANCH ONLY EVER SEES ONE ROW. `groupOrders` gives every row without a groupId a group
+    // of its own, so a falsy `first.groupId` means the order IS that single row — and a row with no
+    // id at all falls back to a random name, because a group name built from a missing id would be
+    // the same name for every such order.
+    if (!gid && chosen.length > 1) gid = first.id ? `group_${first.id}` : newId("ordg");
     const keptRows = [];
     for (const l of chosen) {
       const o = l.id ? byId(state.orders, l.id) : null;
@@ -3638,7 +3836,11 @@ async function openInvoice(state, group) {
   if (first.paidReceived && !(Number(first.receiptNo) > 0)) {
     if (await claimReceipt(state, first)) {
       const n = Number(first.receiptNo);
-      for (const o of group.orders) {
+      // ⚠️⚠️ EVERY ROW OF THE ORDER, NOT THE SLICE THIS SCREEN IS SHOWING (v445). `group.orders` is the
+      // day's rows — and an order whose lines sit on two bake days left the other day's rows unnumbered,
+      // so the invoice column could read a row that had never carried the number and say "none yet" about
+      // an order the register could name. `familyOfOrder` is the same whole-order helper v432 added.
+      for (const o of familyOfOrder(state, group.orders)) {
         o.receiptNo = n;
       }
       save(state);
@@ -3802,7 +4004,7 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
       const doorSlot = el("div", {});
       return el("div", {},
         doorSlot,
-        el("div", { class: "field" }, el("label", {}, "Delivery note (optional)"), note),
+        el("div", { class: "field" }, el("label", {}, "Notes for Collection/Delivery (optional)"), note),
         // ★ THE SAME TWO HEADINGS AS EVERY OTHER CARD, from ONE definition (v310). This card
         // carries BOTH kinds too — a parcel carrier and a courier charge — so it gets the same
         // divide. Her second report was exactly this: consistent over the app, not only on the
@@ -4106,15 +4308,48 @@ function stageWritten(state, group, { root = null, dateId = "", quiet = false, m
   if (root) renderAll(root, state, new URLSearchParams({ date: dateId }));
 }
 
+// ★ EVERY ROW OF THE ORDER THESE ROWS BELONG TO (v432).
+//
+// A storefront cart with several items arrives as several rows sharing one `groupId`, and they are
+// one order to her whatever the app is looking at. ⚠️ A single-line order carries NO `groupId` at
+// all (`supabase.js` sets it only when `lines.length > 1`), so it is only ever its own row — and
+// that case must be returned untouched, byte for byte.
+//
+// ⚠️ THE ROWS PASSED IN COME FIRST, so the caller's own first row stays first — `stageWritten`
+// anchors the screen on it, and a repaint must not move her.
+function familyOfOrder(state, rows) {
+  const gid = rows[0] && rows[0].groupId;
+  if (!gid) return rows;
+  const rest = (state.orders || []).filter((o) => o && o.groupId === gid && !rows.includes(o));
+  return rest.length ? rows.concat(rest) : rows;
+}
+
 // Move a group of orders onto another stage, with everything a stage carries: the stock
 // it takes or gives back, and the flags that say what the stage means about the money.
 function setStage(state, group, nextStatus, opts = {}) {
   const rows = ((group && group.orders) || []).filter(Boolean);
   if (!rows.length) return;
+  // ★★ THE WHOLE ORDER MOVES, WHEREVER ITS LINES SIT (v432).
+  //
+  // Her report: __"why a new order already change to confirm yet appear in new order at the top of
+  // order page?"__ — ⚠️⚠️ **and the day list hands this function ONLY the rows on the day she is
+  // looking at** (`orderList`: `state.orders.filter((o) => o.deliveryDateId === dateId)`). So an
+  // order whose lines had drifted onto two different bake days had **only half of itself moved**:
+  // the other half stayed New, and **the New-orders inbox — which scans EVERY day — went on
+  // showing the order she had just handled, under the same order code**, which is why it read as
+  // "the order I confirmed is still there". ⭐ Reproduced live before this was written.
+  //
+  // ⭐ THE ORDER IS THE THING BEING MOVED, not the day's slice of it — the same rule the stock,
+  // the badge and the customer's own track card already follow. `filterOrderGroups` has carried a
+  // comment about a "mixed-status group" since it was written; this is where they came from.
+  //
+  // ⚠️ THE DAY'S OWN ROWS STAY FIRST so `stageWritten`'s anchor is the row she actually pressed,
+  // and the screen does not jump under her thumb.
+  const family = familyOfOrder(state, rows);
   // Baked takes the orders' ingredients off your stock; stepping back to before
   // Baked (an undo) puts them back. Forward moves leave stock be.
-  adjustForStatus(state, rows, nextStatus, STATUSES.map(([id]) => id));
-  for (const o of rows) {
+  adjustForStatus(state, family, nextStatus, STATUSES.map(([id]) => id));
+  for (const o of family) {
     o.status = nextStatus;
     // Stepping into Confirmed / Paid means the stage is being worked, not
     // finished: it only turns green when Send confirmation / the Paid
@@ -4748,7 +4983,10 @@ function markPaid(state, group, root, dateId, method) {
     // Stamped on EVERY row of the sale, not just the first, so any row read on its own
     // still knows the number — the same rule `courierDay` and `pickupTime` follow.
     const n = Number(first.receiptNo);
-    for (const o of group.orders) {
+    // ⚠️⚠️ THE WHOLE ORDER, NOT THIS SCREEN'S SLICE OF IT (v445) — see the note at the other stamp site.
+    // A row on the order's other bake day was left unnumbered, so the invoice column could read a row that
+    // never carried the number and print "none yet" about an order the register could name in full.
+    for (const o of familyOfOrder(state, group.orders)) {
       o.receiptNo = n;
     }
     save(state);
@@ -4802,6 +5040,14 @@ function refundOrder(state, group, first, { root, dateId } = {}) {
       const q = ticks.get(r.line.id) || 0;
       r.box.checked = on;
       r.amt.textContent = fmtRM(q * (r.line.price == null ? 0 : r.line.price), cur);
+      // ⚠️⚠️ AND THIS BOX IS DELIBERATELY LEFT EXACTLY AS IT WAS (v458). I changed it — holding the value
+      // back while she typed — **and then looked at what that would do, and put it back.**
+      // ⭐ A refund line clamps to what was sold, and this box is rewritten from that clamped figure on
+      // every keystroke, so **the number in the box and the money underneath it can never disagree.**
+      // ⚠️ **Stop the rewrite and they can**: on a line of two, typing "12" would leave the box reading 12
+      // while the amount said RM 32 until she tapped away — the "two things on one screen saying different
+      // numbers" fault, which is worse than the caret jump it would have saved. ⭐ **A clamp is not a limit
+      // on typing; you cannot return more than you sold.** She reported no fault here, and I found none.
       if (r.qtyBox) { r.qtyBox.value = String(on ? q : r.line.qty); r.qtyBox.disabled = !on; }
     }
     if (courierUI) {
@@ -4947,6 +5193,54 @@ function undoRefundOrder(state, group, first, { root, dateId } = {}) {
   });
 }
 
+// ★★ WHAT WAS REMOVED, AND A WAY BACK (v444). See `removeOrders` in state.js for why this exists.
+//
+// ⚠️ IT SITS ABOVE THE INBOX AND ONLY WHEN THERE IS SOMETHING IN IT — an empty card would be one more
+// thing on a busy screen that never means anything. ⚠️ AND IT IS FOLDED SHUT, because its job is not to be
+// read every day: it is to be THERE, so that a loss she notices a week later is still recoverable.
+function removedOrdersEl(state, root) {
+  const gone = (Array.isArray(state.removedOrders) ? state.removedOrders : []).slice()
+    .sort((a, b) => String(b.removedAt || "").localeCompare(String(a.removedAt || "")));
+  if (!gone.length) return null;
+  let open = false;
+  const wrap = el("div", { class: "card" });
+  const paint = () => {
+    const rows = gone.map((o) => {
+      const day = o.deliveryDateId ? byId(state.deliveryDates, o.deliveryDateId) : null;
+      const when = day ? `Bake ${shortDate(day.date)}`
+        : (o.deliveryDate ? `Bake ${String(o.deliveryDate).slice(0, 10)}` : "no bake day on it");
+      return el("div", { class: "removed-row" },
+        el("div", { class: "removed-main" },
+          el("div", { class: "removed-what" },
+            `${orderLineName(state, o)} ×${o.qty} `, orderCodeTag(o)),
+          el("div", { class: "removed-sub" },
+            `${String(o.customerName || "").trim() || "(no name)"} · ${when} · taken off ${fmtStamp(o.removedAt)}`
+            + (o.removedWhy ? ` · ${o.removedWhy}` : ""))),
+        button("Put it back", () => {
+          const back = restoreRemovedOrder(state, o.id);
+          if (!back) return;
+          save(state);
+          maybeSync(state);
+          updateOrderBadge(state);
+          // ⚠️ LAND ON ITS BAKE DAY when that day still exists, so she sees it arrive. When the day went
+          // with it, the order comes back as an orphan — which the inbox opens, and the Edit card is where
+          // a bake day is chosen (v332) — and the screen is left where she was rather than throwing her.
+          const dest = back.deliveryDateId && byId(state.deliveryDates, back.deliveryDateId);
+          renderAll(root, state, dest ? new URLSearchParams({ date: dest.id }) : undefined);
+        }, "soft small"));
+    });
+    wrap.replaceChildren(
+      el("h3", { style: "margin:0 0 2px" }, `↩ ${gone.length} removed order${gone.length === 1 ? "" : "s"}`),
+      el("p", { class: "card-sub", style: "margin:0 0 6px" },
+        "Kept for 48 hours so a mistake can be put right. Nothing here is lost."),
+      el("div", { class: "btn-row", style: "margin:0" },
+        button(open ? "Hide them" : "Show them", () => { open = !open; paint(); }, "ghost small")),
+      ...(open ? rows : []));
+  };
+  paint();
+  return wrap;
+}
+
 function removeOrder(state, group, root, dateId) {
   const label = group.orders.map((o) => `${orderLineName(state, o)} ×${o.qty}`).join(", ");
   // ★★ A NUMBERED RECEIPT IS NOT CANCELLED BY REMOVING THE ORDER (v365). The number was
@@ -4957,7 +5251,7 @@ function removeOrder(state, group, root, dateId) {
   // CANNOT UNDO, so it is said BEFORE the press rather than discovered afterwards. She
   // found this by doing it: a test order paid, then removed, then an older order invoiced
   // took the NEXT number, and nothing on screen had ever mentioned the first one.
-  const num = receiptNoOf(group.orders[0]);
+  const num = receiptNoOfGroup(group.orders);
   const message = num
     ? [`Remove order "${label}"?`, el("br"), el("br"),
         `Receipt #${num} was issued when the payment was recorded, and this does NOT cancel it. `,
@@ -4965,8 +5259,15 @@ function removeOrder(state, group, root, dateId) {
     : `Remove order "${label}"?`;
   confirmDialog(message,
     () => {
-      const ids = new Set(group.orders.map((o) => o.id));
-      state.orders = state.orders.filter((o) => !ids.has(o.id));
+      // ⚠️ `filter(Boolean)` for the same reason the Edit pop-up carries it (v440): a row with no
+      // id would put `undefined` in this set, and the line below would then remove **every id-less
+      // order in the book** — orders this press never named. Removing what cannot be named is a
+      // sweep, not a removal.
+      const ids = new Set(group.orders.map((o) => o.id).filter(Boolean));
+      if (!ids.size) return;
+      // ★ KEPT, NOT DESTROYED (v444) — a removal she DID ask for still goes on the shelf, because a
+      // mis-tap on this ✕ takes a whole order away in one press and the confirm cannot undo it.
+      removeOrders(state, [...ids], "removed by hand");
       save(state);
       maybeSync(state);
       updateOrderBadge(state);

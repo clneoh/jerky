@@ -190,14 +190,22 @@ test("the headings are her words, in the order she reads them", () => {
   ]);
 });
 
-test("'Logistic' is her own word for the delivery set, and carries all four", () => {
+test("'Logistic' is her own word for the delivery set, and carries all five", () => {
   // ⚠️ **"SEND A VAN", AND THE TWO KINDS ARE SAID APART (v309, v315).** The van row
   // sits directly above **Parcel couriers**, and those two must never blur: a parcel
   // is something she POSTS, a van is a trip she BOOKS. v309 gave the two kinds her own
   // words and the order cards say them.
+  //
+  // ⚠️ AND THE COLLECTION AREAS JOINED THEM (v410), directly under the Points they group. Her
+  // words: __"top level is Penang Island & Prai. Under Penang Island will be Area like Sg Ara"__ —
+  // **the headings belong beside the places they head**, not in a group of their own, or she has
+  // to remember which of two screens the line she is looking at lives on.
   const logistic = groupsOf(drawMore()).find((g) => g.name === "Logistic");
+  // ⚠️ AND THE VAN ROUTES JOINED THEM (v419), directly under the places they carry. Her words:
+  // __"now i need few delivery routes, for one day delivery run day"__ — a route is one van's run
+  // round a few nearby Places, so it belongs beside the Points it holds and the run that uses it.
   assert.deepEqual(logistic.hrefs,
-    ["#/run", "#/send-van", "#/points", "#/parcel-couriers"],
+    ["#/run", "#/send-van", "#/points", "#/point-areas", "#/delivery-routes", "#/parcel-couriers"],
     "an order leaving the kitchen is one job — every way it leaves is under Logistic");
 });
 

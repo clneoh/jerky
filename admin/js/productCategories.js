@@ -249,6 +249,19 @@ export function groupByCategory(state, products) {
   return out;
 }
 
+// ★★ THE ORDER SHE SET, FOR ANY FLAT LIST OF PRODUCTS (v418) — the Products screen's own draw order,
+// read by the places that OFFER a product rather than draw one.
+//
+// ⚠️⚠️ WITHOUT THIS THE PICKERS LIST THE RAW ARRAY, which is the order the records happen to sit in —
+// **her drag writes `sort` (the unfiled tail) and `productOrder` (inside a heading), and neither of
+// those is the array.** So the handle moved the shelves and left every drop-down as it was; her words
+// were __"after i reposition with the handle, the drop drop list have to organise is my preference"__.
+// ⭐ It is the SAME order the screen draws, taken from the same function — headings in her order, the
+// products under each, then the unfiled tail — so a picker and the shelf it feeds cannot disagree.
+export function orderedProducts(state, products) {
+  return groupByCategory(state, products).flatMap((g) => g.products);
+}
+
 // How many products are TICKED here, in any position — the number a delete
 // refuses over and nothing else. It counts drafts and taken-down products too,
 // because a delete has to answer for everything her record points at, not just

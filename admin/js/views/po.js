@@ -16,6 +16,7 @@ import { explodeBomDates, explodePicks, ordersFingerprint, effectiveCapacity, da
 import { el, button, emptyState, toast, select, showPopup } from "../ui.js";
 import { byId, save, newId } from "../state.js";
 import { priceItems, notPurchasedNames, fmtQtyText } from "../purchasing.js";
+import { orderedProducts } from "../productCategories.js";
 import { poTableEl, totalOf } from "./poTable.js";
 
 export function renderPO(root, state, params) {
@@ -426,11 +427,23 @@ function emptyPreview(state, chosen, needsReview) {
 // `priceItems`. The per-shop groups, Buy / Not buying, Undo, the stock push, the money row, Print and
 // **Amend** are all the machinery that already exists.
 function openManualPO(state, root) {
-  const products = (state.products || []).filter((p) => p && p.active !== false && Array.isArray(p.recipe));
+  // ★★ IN HER ORDER (v418) — see `orderedProducts`. The picker used to list the raw array, so a
+  // reorder made with the handle never reached it.
+  const products = orderedProducts(state, (state.products || []).filter((p) => p && p.active !== false && Array.isArray(p.recipe)));
   if (!products.length) return toast("Add a product with a recipe first");
   let picks = []; // [{ productId, qty }]
 
   const body = el("div", {});
+  // ⚠️ BOTH DECLARATIONS LIVE ABOVE THE BODY THAT READS THEM. `writtenOn` is read by the date box's own
+  // handler and `closeManual` by the Cancel and Save presses — and the two must be bound before `paint()`
+  // builds that body, or a press lands on a binding in its dead zone. That is the `is not defined` shape
+  // this file already carries a note about, and the smoke pass caught it here by name.
+  let closeManual = () => {};
+  // ★ THE DATE THIS LIST IS FOR (v452) — declared with the CARD's own drafts, and deliberately ABOVE the
+  // body that reads it. ⚠️ Below it, the box would capture a binding in its dead zone: the same `is not
+  // defined` shape this file already has a note about, and one that only shows when a customer opens the
+  // card. Her rule: __"by default the shown date will be today's date unless user change it"__.
+  let writtenOn = todayISO();
   const paint = () => {
     const bom = explodePicks(state, picks);
     const items = priceItems(state, bom.items).filter(Boolean);
@@ -442,10 +455,22 @@ function openManualPO(state, root) {
       const qty = el("input", { class: "input", type: "number", inputmode: "numeric", min: "1",
         step: "1", value: String(p.qty), style: "max-width:88px",
         "aria-label": `How many ${product ? product.name : "of it"}` });
+      // ⚠️⚠️ TYPING HERE MUST NOT REBUILD THE CARD, AND IT DID (v458). Her report, from using it:
+      // __"some can type in single digit only"__ — and this was the field she meant.
+      // ⭐ **The reason a second digit never landed: `paint()` ends in `body.replaceChildren(...)`, and
+      // these boxes live INSIDE `body` — so the first keystroke deleted the box she was typing into and
+      // its caret with it. The second digit went nowhere.**
+      // ⭐⭐ AND THIS APP ALREADY KNOWS THE RULE — it is written out twice, in `history.js` (*"Typing
+      // repaints NOTHING but the two figures below it — the row is not rebuilt and the caret stays in the
+      // box she is typing in"*) and in `production.js` (*"the field itself is never rebuilt, so her cursor
+      // and her keypad stay where they are"*). **This card was the one place that broke it.**
+      // ⚠️ THE MODEL IS STILL UPDATED ON EVERY KEYSTROKE, so Save writes what she typed even if she never
+      // leaves the box — **only the REBUILD waits until she is done.** The preview table catches up on the
+      // way out, which is the moment it is worth reading.
       qty.addEventListener("input", () => {
         picks[i].qty = Math.max(1, Math.round(Number(qty.value) || 1));
-        paint();
       });
+      qty.addEventListener("change", paint);
       return el("div", { class: "info-row" },
         el("span", {}, product ? product.name : "(a product that is gone)"),
         el("span", { class: "info-val" }, qty,
@@ -491,12 +516,28 @@ function openManualPO(state, root) {
             notBought.length ? el("p", { class: "po-snapshot-note" },
               `Not on this list: ${notBought.join(", ")} — marked as not something you buy. Their cost still counts in the products that use them.`) : null)
         : null,
+      // ★★ THE DATE THIS LIST IS FOR (v452). Her words: __"the date is for back date PO. by default the
+      // shown date will be today's date unless user change it"__
+      //
+      // ⚠️⚠️ A LABEL, NOT A TIE — AND THE FIELD NAME IS THE WHOLE OF IT. `coveringPO` finds a bake day's
+      // saved list by `dates` and `deliveryDate` and NOTHING else, so this is called **`writtenOn`** on
+      // purpose: a list carrying that name matches no bake day, **can never make a day read as shopped, and
+      // deleting it can never un-save one.** ⭐ The absence is still the feature she asked for — __"it dont
+      // tie to specific bake date"__ — and this only lets a list SAY when it was written, so one written on
+      // Monday and entered on Wednesday still records Monday.
+      el("div", { class: "field", style: "margin-top:12px" },
+        el("label", { class: "field-label" }, "The date this list is for"),
+        el("input", { class: "input", type: "date", value: todayISO(),
+          oninput: function () { writtenOn = this.value || todayISO(); } }),
+        el("p", { class: "card-sub", style: "margin:4px 0 0" },
+          "Today unless you change it. ⚠️ This is a label on the list only — it does not tie the list to a "
+          + "bake day, and it never marks one as shopped.")),
       el("div", { class: "popup-actions" },
         button("Cancel", () => closeManual(), "ghost"),
-        picks.length ? button("Save list", () => saveManual(state, bom, items, total, root), "primary") : null));
+        picks.length ? button("Save list", () => saveManual(state, bom, items, total, root, writtenOn), "primary") : null));
   };
 
-  let closeManual = () => {};
+
   paint();
   showPopup(el("div", { class: "popup-title-row" }, "Write a list by hand"),
     (refresh, close) => { closeManual = close; return body; });
@@ -506,11 +547,15 @@ function openManualPO(state, root) {
 // what it is can be tested directly. ⚠️ A pop-up cannot be driven by the test shims, so if this were
 // built inline inside the Save handler the crux would be untestable — the v385 rule: **put the rule in
 // one tested place rather than in a view callback no test can reach.**
-export function manualPO(bom, items, total) {
+export function manualPO(bom, items, total, writtenOn) {
   return {
     id: newId("po"),
     manual: true,
     generatedAt: new Date().toISOString(),
+    // ★ THE DAY THIS LIST IS FOR (v452) — a LABEL, and nothing reads it but the screen. See the note on the
+    // date box: it is deliberately not `dates` and not `deliveryDate`, because either of those would make
+    // this list start counting as a bake day's shopping.
+    writtenOn: String(writtenOn || todayISO()),
     items,
     // ⚠️⚠️ NO `dates` AND NO `deliveryDate`, DELIBERATELY — AND THIS IS THE WHOLE FEATURE.
     // `coveringPO` finds a bake day's saved list by exactly those two fields and nothing else, so a list
@@ -528,9 +573,9 @@ export function manualPO(bom, items, total) {
   };
 }
 
-function saveManual(state, bom, items, total, root) {
+function saveManual(state, bom, items, total, root, writtenOn) {
   if (!bom.totalUnits) return toast("Pick at least one product");
-  state.purchaseOrders.unshift(manualPO(bom, items, total));
+  state.purchaseOrders.unshift(manualPO(bom, items, total, writtenOn));
   save(state);
   toast("List saved to history");
   location.hash = `#/history?po=${state.purchaseOrders[0].id}`;

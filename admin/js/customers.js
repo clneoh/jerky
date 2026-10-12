@@ -5,7 +5,10 @@
 // last ordered/delivered — enough for a history pop-up and a marketing list.
 
 import { byId, groupOrders, orderCode, orderLinePrice, round2, waNumber } from "./state.js";
-import { groupValue, orderNet } from "./money.js";
+import { groupValue, moneyTagOf, orderNet } from "./money.js";
+// ⚠️ THE VAN'S OWN DAY (v429) — the same reader every other surface uses, never a second reading
+// of "which day does the van go". See courier_job.js.
+import { courierDayOf } from "./courier_job.js";
 
 // The delivery date for an order. New orders snapshot their delivery date, so
 // history survives a delivery date being deleted; older orders fall back to
@@ -102,7 +105,12 @@ export function customerList(state, sort = "recent", filter = "all", today = "")
     if (product) {
       row.productQty.set(product.name, (row.productQty.get(product.name) || 0) + (Number(o.qty) || 0));
     }
-    const d = deliveryDateOf(state, o);
+    // ★★ "LAST DELIVERY" MEANS THE DAY IT WAS DELIVERED, NOT THE DAY IT WAS BAKED (v429). ⚠️ This
+    // fed three surfaces at once — the row's own line ("delivered Wed 7 Oct"), the CSV column
+    // HEADED "Last delivery", and the recency sort — and all three were naming the bake day while
+    // the van went the next morning. ⚠️ BY DESIGN it still falls back to the bake day, because a
+    // collection IS delivered on its bake day and the van's day is empty until she types it.
+    const d = courierDayOf(o) || deliveryDateOf(state, o);
     const od = orderDateOf(o);
     if (d && (!row.last || d > row.last)) row.last = d;
     if (od && (!row.lastOrdered || od > row.lastOrdered)) row.lastOrdered = od;
@@ -224,7 +232,7 @@ function bestOf(qtyByProduct) {
 // A customer's history as ONE block per storefront order, newest-placed first,
 // for the history pop-up. Multi-item orders keep their lines together under a
 // shared code (groupId || id), exactly as the Orders screen shows them.
-// Each block: { code, orderDate, deliveryDate, status, fulfillment, lines }.
+// Each block: { code, orderDate, deliveryDate, courierDay, status, moneyTag, fulfillment, lines }.
 export function ordersForCustomer(state, row) {
   const key = row && row._key;
   if (!key) return [];
@@ -238,6 +246,10 @@ export function ordersForCustomer(state, row) {
         code: orderCode(o),
         orderDate: orderDateOf(o),
         deliveryDate: deliveryDateOf(state, o),
+        // ★★ AND THE VAN'S OWN DAY, WHICH CAN BE A DIFFERENT DAY (v429). ⚠️ ADDED rather than
+        // swapped: `deliveryDate` is what the history is SORTED by and it stays the bake day, so the
+        // list is still arranged by the day's work. This is what the words "deliver" read.
+        courierDay: courierDayOf(o),
         status: String(o.status || "new"),
         fulfillment: o.fulfillment === "courier" ? "courier" : "collect",
         lines: [],
@@ -246,6 +258,12 @@ export function ordersForCustomer(state, row) {
     }
     b.lines.push(o);
   }
+  // ★★ AND WHAT THE MONEY ON IT IS (v430). Her report: __"at Peggy's customer card, has that her
+  // order is paid, but it is not??"__ — ⚠️ the chip was drawn from `status` alone, so it said
+  // **Paid** over an order whose money had never come in. The word is computed HERE, where the
+  // whole group is in hand, because the answer needs the money flags and the refund mark rather
+  // than the single row the view is holding — and so that nothing downstream re-derives it.
+  for (const b of blocks.values()) b.moneyTag = moneyTagOf({ orders: b.lines });
   const out = [...blocks.values()];
   out.sort((a, b) =>
     (b.orderDate || "").localeCompare(a.orderDate || "") ||

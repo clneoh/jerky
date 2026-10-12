@@ -37,8 +37,19 @@ const MENU_GROUPS = [
     // POSTS. v309 gave the two kinds her own words, and the order cards say them:
     // **Post a parcel** / **Send a van**. The screen inside names Lalamove, and
     // asks the registry rather than knowing, so a second courier needs no change here.
-    ["#/send-van", "🚚 Send a van", "Your own door for the driver, and the van service that collects from it"],
+    // ★ THE NAME AND THE MARK ARE HERS (v402). ⚠️ The 🚚 said "trip"; this screen holds the PIN — the
+    // one point a trip starts from — so the mark is the pin, and the line names what the screen actually
+    // does rather than only the courier half of it.
+    ["#/send-van", "📍 Location pin for Kitchen",
+      "Your kitchen's own door, the pin every trip starts from, and the van service that collects there"],
     ["#/points", "📍 Self collection Points", "The places your customers collect from instead of your kitchen"],
+    ["#/point-areas", "🗂 Collection areas",
+      "The headings those places sit under — Penang Island, Prai — so a customer finds his own area first"],
+    // ★★ THE VAN ROUTES (v419). Her words: __"now i need few delivery routes, for one day delivery
+    // run day"__. ⚠️ THE MARK AND THE LINE NAME WHAT IT IS FOR, not just what it holds: a route is
+    // ONE van's run round a few nearby Places — not a region, which is what the areas row above is.
+    ["#/delivery-routes", "🗺 Delivery routes",
+      "The vans' runs — which Places each one visits, so a run day groups its stops by route"],
     ["#/parcel-couriers", "📦 Parcel couriers", "Posting dry goods yourself — J&T, Ninja Van, Line Clear"],
   ]],
   // The three she named, together, under the name of the screen they belong to.
@@ -110,6 +121,12 @@ export function renderMore(root, state) {
   const devBy = developerName(state) ? `Website by ${developerName(state)}` : "";
   const thisApp = [
     menuItem("#/guide", "📖 Guide", "How this app works — plain English"),
+    // ★★ "CHECK MY SYSTEM" (v446). Her question, and she says she always asks it: __"is the system robust
+    // enough in many ways. What measure, what test, we can do to effectively measure it?"__ ⭐ It sits
+    // beside Settings because it is about the app rather than about the bakery — and because on 11 Oct
+    // 2026 the app had 3,335 passing tests while three of her paid orders were missing, which is the whole
+    // reason a measure she can run herself had to exist.
+    menuItem("#/health", "🩺 Check my system", "Reads your records and tells you what is wrong"),
     menuItem("#/settings", "⚙️ Settings", "Defaults, backup, transfer"),
     linkRow("../changelog.pdf", "📄 Full change history", "Every version from v54, as a PDF"),
     ...(devWa ? [linkRow(devWa, "💬 WhatsApp the developer",

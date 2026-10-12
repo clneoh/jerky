@@ -22,6 +22,7 @@ import { costOf } from "./bom.js";
 import { categoriesOf, classOfCategory } from "./accounts.js";
 import { orderNet, refundedInFull, refundOf } from "./money.js";
 import { customerTotal } from "./courier.js";
+import { isWithin } from "./dates.js";
 
 // The day an order is FOR: the delivery date record while it exists, its own
 // snapshot after the date was deleted. Sales are counted by delivery day, the same
@@ -32,7 +33,8 @@ export function orderDay(state, o) {
   return rec ? rec.date : "";
 }
 
-const inRange = (iso, from, to) => !!iso && iso >= from && iso <= to;
+// ⚠️ THE RANGE RULE IS SHARED (v403) — it had been written out here a second time, and it was this
+// copy that left Profit's "All" reading Sales RM 0.00. See `isWithin` in dates.js.
 
 // What ONE unit of a sold line cost to bake — the frozen cost when the order
 // carries one, else the live recipe. ★★ THE FREEZE (v380), and the exact mirror
@@ -86,7 +88,7 @@ export function profitBetween(state, from, to) {
   // refund made before this version moves a single figure on this statement.
   for (const g of groupOrders(state.orders || [])) {
     const first = (g.orders || [])[0];
-    if (!first || !inRange(orderDay(state, first), from, to)) continue;
+    if (!first || !isWithin(orderDay(state, first), from, to)) continue;
     // ⚠️ ONLY A REFUND CANCELS A SALE — never a zero. An order whose product carries no price
     // nets to zero too, and it must go on being counted as a line with no price (see
     // `refundedInFull`).
@@ -106,7 +108,7 @@ export function profitBetween(state, from, to) {
   let expensesTotal = 0;
   let drawings = 0;
   for (const e of state.expenses || []) {
-    if (!e || !inRange(String(e.date || ""), from, to)) continue;
+    if (!e || !isWithin(String(e.date || ""), from, to)) continue;
     const amount = Number(e.amount) || 0;
     const cls = classOfCategory(state, e.category);
     if (cls === "drawing") { drawings += amount; continue; }
@@ -118,7 +120,7 @@ export function profitBetween(state, from, to) {
 
   let capital = 0;
   for (const d of state.deposits || []) {
-    if (d && inRange(String(d.date || ""), from, to)) capital += Number(d.amount) || 0;
+    if (d && isWithin(String(d.date || ""), from, to)) capital += Number(d.amount) || 0;
   }
 
   return {
@@ -155,7 +157,7 @@ export function profitBetween(state, from, to) {
 export function expenseRows(state, from, to, label = null) {
   const rows = [];
   for (const e of state.expenses || []) {
-    if (!e || !inRange(String(e.date || ""), from, to)) continue;
+    if (!e || !isWithin(String(e.date || ""), from, to)) continue;
     const cls = classOfCategory(state, e.category);
     if (cls === "drawing" || cls === "stock") continue;
     const category = e.category || "Other";
@@ -192,7 +194,7 @@ export function tradingRows(state, from, to) {
   // she is meant to be able to check.
   for (const g of groupOrders(state.orders || [])) {
     const first = (g.orders || [])[0];
-    if (!first || !inRange(orderDay(state, first), from, to)) continue;
+    if (!first || !isWithin(orderDay(state, first), from, to)) continue;
     // A sale refunded in full is dropped whole — no line rows and no adjustment rows — so the
     // journal keeps saying exactly what it said before this version about a past refund.
     // ⚠️ And ONLY a refund drops it: a line nothing can price nets to zero and still belongs here,

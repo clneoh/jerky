@@ -274,7 +274,17 @@ function quiet() {
   fireDoc("pointerdown", {});
 }
 
-test("a holiday that IS a delivery date is named AND taken back off by the same tap", () => {
+// ⚠️⚠️ REWRITTEN AT v404, NOT DELETED — and the OLD behaviour it pinned is worth remembering, because it
+// was deliberate and she overruled it. It read: **"the tap takes the date back off — the calendar is where
+// she both adds and removes"**, and a green day carrying no orders came off on ONE tap, with the reasoning
+// written into the code: *"taking back a date she just added is the reverse of the tap that added it, so it
+// happens on the spot."*
+// ⚠️ **Her report: __"it is just a click to take away baking day, it should be with confirmation"__** —
+// and the calendar is a MONTH GRID that scrolls under the thumb, which is the worst place in this app for
+// a control that acts on one stray touch. **The tap now always asks**, for a day with orders and for a day
+// without, so this is the case that CHANGED and the one below (a day holding orders) is the case that
+// already agreed with her.
+test("a holiday that IS a delivery date is named on the tap, and the date only goes when she confirms", () => {
   quiet();
   const root = createEl("div");
   const state = DSTATE();
@@ -283,10 +293,18 @@ test("a holiday that IS a delivery date is named AND taken back off by the same 
   const day = gridCell(root, 16);
   assert.equal(day.tagName, "BUTTON", "a delivery day can be tapped");
   assert.ok(day.className.includes("added"), "and is drawn as one of her delivery dates");
+
   fire(day);
+  const layer = registry["confirm-layer"];
+  assert.ok(layer.children.length, "⚠️ a bare tap removed a bake day with no question asked");
+  assert.deepEqual(state.deliveryDates.map((d) => d.id), ["d16", "d20"],
+    "⚠️⚠️ and nothing may be removed while she is being asked");
+
+  const yes = walk(layer).find((n) => n.tagName === "BUTTON" && (n.children[0] || {}).text === "Delete");
+  fire(yes);
   redraw(root, state);
   assert.deepEqual(state.deliveryDates.map((d) => d.id), ["d20"],
-    "the tap takes the date back off — the calendar is where she both adds and removes");
+    "confirming takes it off — the calendar is still where she both adds and removes");
   assert.equal(tipIn(gridCell(root, 16)).hidden, false,
     "and a marked day still names itself on the way out");
   assert.ok(gridCell(root, 20).className.includes("tappable"),
@@ -310,6 +328,18 @@ test("taking a date off asks first when that day already holds orders", () => {
   assert.ok(layer.children.length, "a question is put to her rather than a silent removal");
   assert.deepEqual(state.deliveryDates.map((d) => d.id), ["d16", "d20"],
     "and nothing is removed while she is being asked");
+  // ⚠️ AND THE QUESTION CARRIES THE REASSURANCE, not just the danger. Deleting a bake day that holds
+  // orders sounds like it might delete the ORDERS — and it does not: they are kept, and the date is
+  // un-set from the day. **A confirmation that leaves her guessing at the worst is one she learns to
+  // cancel**, which is the same as having no confirmation at all.
+  // ⚠️ READ AS `children[0].text`, the way every assertion in this file reads text: this shim's
+  // `textContent` is a plain string field, so it is always empty and an assertion against it would
+  // pass or fail for no reason at all.
+  const question = walk(layer).find((n) => String(n.className).includes("confirm-text")).children[0].text;
+  assert.match(question, /has 1 order\(s\) on it/,
+    "⚠️ the question does not say the day has orders on it");
+  assert.match(question, /kept in your delivery history/,
+    "⚠️ the question does not say the orders are KEPT — so it reads as though the orders go too");
 
   const yes = walk(layer).find((n) => n.tagName === "BUTTON" && (n.children[0] || {}).text === "Delete");
   fire(yes);
@@ -571,4 +601,63 @@ test("a day of collections from the KITCHEN offers no Run at all (v302)", () => 
   renderDeliveries(root, POINTED(false));
   assert.equal(runButton(root), undefined,
     "she hands kitchen collections over herself — there is no trip to price");
+});
+
+// ── v464: a PAST bake day can be written down ────────────────────────────────
+test("★★★ a past bake day can be added — ALLOWED, with a warning", () => {
+  // ⚠️⚠️ HER WORDS: __"i want to open a post date bake day, system should allow with a warning"__
+  // ⭐ **IT WAS A GATE ON BOTH SIDES: the ‹ arrow was DISABLED at the current month, and a past day in the
+  // grid was a dead cell.** ⚠️ So a bake day she had taken by hand — the sale her standing rule says nothing
+  // here may block — could not be written down at all. ⭐ Today is Thu 10 Sep 2026, so the 1st–9th are past.
+  quiet();
+  const root = createEl("div");
+  const state = DSTATE();
+  renderDeliveries(root, state);
+  // ⚠️⚠️ AND IT MUST BE IN **ADD** MODE (v464). ⭐ `occMode` is module-level state that survives between
+  // tests in this file — so a test that skipped this line read the OCCASION grid and concluded, wrongly,
+  // that the add calendar had not changed. ⚠️ **The grid it was reading was not the grid under test.**
+  fire(walk(root).find((n) => n.tagName === "BUTTON"
+    && (n.children[0] || {}).text === "Add dates"));
+  redraw(root, state);
+
+  const back = walk(root).find((n) => n.tagName === "BUTTON" && (n.children[0] || {}).text === "‹");
+  assert.ok(back, "there is no ‹ on the add calendar at all");
+  assert.equal(back.disabled, false,
+    "★ the ‹ is still switched off at the current month — the calendar cannot reach the past");
+
+  const past = gridCell(root, 3);
+  assert.ok(past, "there is no cell for the 3rd, so nothing below proves anything");
+  assert.equal(past.tagName, "BUTTON", "★ a past day is still a dead cell — it cannot be picked");
+  assert.ok(String(past.className).includes("pick-cell"), "★ and it is not offered to the drag either");
+
+  tapDayOnGrid(root, past);
+  redraw(root, state);
+
+  // ⭐ AND IT SAYS SO, RATHER THAN STOPPING HER. The warning IS the ask.
+  const warn = walk(root).find((n) => String(n.className).includes("add-past-warn"));
+  assert.ok(warn, "★ the past date was picked and NOTHING was said about it");
+  const words = String((warn.children[0] || {}).text || "");
+  assert.match(words, /in the past/i, "the warning does not say what is unusual about it");
+  assert.match(words, /3 Sep/, "★ and it does not NAME the day, so she cannot check the one she meant");
+
+  // ⚠️ AND ADD STILL ADDS IT — a warning, never a gate.
+  fire(addButton(root));
+  assert.ok(state.deliveryDates.some((d) => d.date === "2026-09-03"),
+    "★ the past bake day was refused — her ask is ALLOW WITH A WARNING");
+});
+
+test("★ and OCCASION mode still will not touch a past day", () => {
+  // ⚠️ The two grids share `dayCell`, so the flag that opens the past in ADD mode must NOT open it here:
+  // a mark on a past day would change what a past day meant.
+  quiet();
+  const root = createEl("div");
+  const state = DSTATE();
+  renderDeliveries(root, state);
+  fire(walk(root).find((n) => n.tagName === "BUTTON"
+    && (n.children[0] || {}).text === "Mark an occasion"));
+  redraw(root, state);
+
+  const past = gridCell(root, 3);
+  assert.notEqual(past.tagName, "BUTTON",
+    "★ a past day became markable in occasion mode — the flag leaked out of the add grid");
 });

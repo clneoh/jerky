@@ -176,7 +176,7 @@ function domShim() {
   };
   return registry;
 }
-const { todayISO } = await import("../admin/js/dates.js");
+const { todayISO, addDays } = await import("../admin/js/dates.js");
 const { renderMoney } = await import("../admin/js/views/money.js");
 const { stockLogOf } = await import("../admin/js/stock.js");
 const screen = domShim();
@@ -557,6 +557,7 @@ test("each of those lines opens its own book, listing that method and nothing el
 // back is two movements — money out of the till, and the pocket's line cleared — so the
 // form writes both, and this pins that both land right and nothing counts twice.
 const { pocketOwed } = await import("../admin/js/money.js");
+const { isWithin } = await import("../admin/js/dates.js");
 const { expensesBetween: spentIn, depositsBetween: putIn } = await import("../admin/js/money.js");
 
 function pocketState() {
@@ -1206,4 +1207,35 @@ test("⚠️ money with no owner named is SHOWN, not quietly dropped", () => {
   assert.ok(unnamed, "⚠️ the unattributed money vanished from the account");
   assert.equal(unnamed.takenBack, 100);
   assert.equal(inv.stillIn, 400, "⚠️ and the total no longer adds up");
+});
+
+// ── ★★ the range rule, and the "All" window (v403) ────────────────────────────
+// Her words: __"I need something more vasatile, like what we have for invoice"__ — and the invoice
+// answers "all of it" with the pair `{from:"", to:""}`.
+
+test("★★⚠️ an EMPTY bound means no bound — the rule that makes 'All' work at all", () => {
+  // ⚠️⚠️ THIS IS THE WHOLE REASON "All" WORKS. `"2026-10-01" <= ""` is FALSE, so with the plain
+  // comparison an unbounded window matched **NOTHING** — Profit's "All" read Sales RM 0.00 beside a
+  // month of real orders, and Money read every figure as zero, with no error anywhere to say so.
+  assert.equal(isWithin("2026-10-01", "", ""), true,
+    "⚠️⚠️ an unbounded window matched nothing — every figure on both screens reads zero");
+  assert.equal(isWithin("2026-10-01", "", "2026-09-30"), false, "an upper bound still bites");
+  assert.equal(isWithin("2026-10-01", "2026-10-02", ""), false, "and so does a lower one");
+  assert.equal(isWithin("2026-10-01", "2026-09-01", "2026-11-01"), true, "a real window is unchanged");
+  // ⚠️ AND A ROW WITH NO DAY AT ALL IS NEVER IN ANY WINDOW, open or not — an undated row has no place
+  // on a date-ranged figure, and 'All' is not an excuse to count one.
+  assert.equal(isWithin("", "", ""), false, "an undated row was counted inside 'All'");
+  // The time of day never decides it: only the day does, the same as every other window here.
+  assert.equal(isWithin("2026-10-01T22:00:00.000Z", "2026-10-01", "2026-10-01"), true);
+});
+
+test("★★ 'All' reaches money that is older than any window the buttons offer", () => {
+  // ⚠️ The end the whole chooser exists for: a row from 40 days ago is inside "All" and outside
+  // "This month", and before v403 there was no way to ask for it at all.
+  const st = state();
+  const old = addDays(todayISO(), -40);
+  st.expenses = [{ id: "e_old", date: old, amount: 44, category: "Packaging", method: "Cash" }];
+  const all = expensesBetween(st, "", "");
+  assert.equal(all.total, 44, "⚠️ a row outside every preset window is unreachable — 'All' does not see it");
+  assert.equal(all.rows.length, 1);
 });

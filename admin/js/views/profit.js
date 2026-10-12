@@ -6,12 +6,13 @@
 
 import { el, button, showPopup } from "../ui.js";
 import { fmtRM } from "../state.js";
-import { monthSpan, profitBetween, expenseRows, tradingRows } from "../profit.js";
-import { longDate } from "../dates.js";
+import { profitBetween, expenseRows, tradingRows } from "../profit.js";
+import { addDays, longDate, todayISO } from "../dates.js";
+import { periodSpan } from "../consolidated.js";
 import { journalSheet, journalButtons, bakeryName } from "../journal.js";
 
-const MONTHS = ["January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December"];
+// ⚠️ THE LOCAL `MONTHS` LIST WENT WITH THE MONTH STEPPER (v403) — `periodSpan` now names every window,
+// including a month, so a second copy of the month names here would be a second thing to keep in step.
 
 // "14 Sep" — a journal line needs the day, not the year.
 const dayMonth = (iso) => longDate(String(iso).slice(0, 10)).slice(0, -5);
@@ -157,18 +158,58 @@ function openTradingJournal(state, which, from, to, monthTitle) {
     el("div", { class: "popup-actions" }, ...journalButtons(sheet, cur))));
 }
 
-// The month on screen, as { year, month } — module scope, like the other screens'
-// own pickers, so a rebuild she did not ask for does not move the month.
-let shown = null;
+// ★★ THE SAME CHOOSER THE MONEY SCREEN AND THE INVOICE HAVE (v403). Her words, after Money:
+// __"same thing for Profit"__ — and the reasoning is the same one: a month-at-a-time stepper can pick
+// WHICH month but never a DAY or a WEEK, and a week's profit is a question she can ask.
+//
+// ⭐ `periodSpan` is the invoice's own builder — one function, three screens — so a week means the same
+// seven days on all three. ⚠️ It brings the **Sunday** week with it, which is what Home and the invoice
+// already use.
+//
+// ⚠️⚠️ AND THE RULE MONEY KEEPS APPLIES HERE EVEN MORE CLEARLY: **a period that includes today stops at
+// today.** A sale counts on the day it is DELIVERED, so a delivery in the future has no sale yet — a
+// statement for the rest of this month would claim figures for days that have not happened. A finished
+// period is shown whole, because every day of it really did.
+let pRange = "month";
+let pAnchor = ""; // the day/week/month being looked at; "" follows today
 
-function currentMonth() {
-  const d = new Date();
-  return { year: d.getFullYear(), month: d.getMonth() };
+const MODES = [["day", "A day"], ["week", "A week"], ["month", "A month"], ["all", "All"]];
+
+function isoOf(d) {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+function pSpan() {
+  const today = todayISO();
+  if (pRange === "all") return periodSpan("all", today);
+  const span = periodSpan(pRange, pAnchor || today);
+  const to = span.to > today ? today : span.to;
+  if (!span.from || span.from > today) return { from: today, to: today, label: longDate(today) };
+  return { from: span.from, to, label: span.label };
+}
+
+const canGoForward = () => {
+  const today = todayISO();
+  if (pRange === "all") return false;
+  const span = periodSpan(pRange, pAnchor || today);
+  return !!span.from && span.to < today;
+};
+
+function stepSpan(dir) {
+  const today = todayISO();
+  const from = pAnchor || today;
+  if (pRange === "day") { pAnchor = addDays(from, dir); return; }
+  if (pRange === "week") { pAnchor = addDays(from, dir * 7); return; }
+  if (pRange === "month") {
+    const d = new Date(`${from}T00:00:00`);
+    pAnchor = isoOf(new Date(d.getFullYear(), d.getMonth() + dir, 1));
+  }
 }
 
 export function renderProfit(root, state) {
   const cur = state.settings.currency || "RM";
-  if (!shown) shown = currentMonth();
 
   // `opens` makes a line tappable. EVERY line with rows behind it has it — the spending
   // lines, and since 2 Oct 2026 Sales and Cost of sales too — including one reading 0.00:
@@ -181,18 +222,19 @@ export function renderProfit(root, state) {
     el("span", {}, label),
     el("span", { class: "info-val" }, fmtRM(amount, cur)));
 
-  const draw = (year, month) => {
-    shown = { year, month };
-    // Read fresh on every draw, NOT once per visit: these were computed before `draw` ran,
-    // so after stepping back a month the "›" arrow stayed disabled as it had been on the
-    // month she started on, and she could not come forward again — one way traffic
-    // (17 Sep 2026: "the profit month can move earlier but cannot move later").
-    const now = currentMonth();
-    const canNext = shown.year < now.year || (shown.year === now.year && shown.month < now.month);
-    const { from, to } = monthSpan(shown.year, shown.month);
+  const draw = (which) => {
+    // ⚠️ PICKING A NEW KIND OF WINDOW STARTS AT TODAY AGAIN — stepping back to last November and then
+    // tapping "A day" should show today, not the 1st of that November.
+    if (which) { pRange = which; pAnchor = ""; }
+    // ⚠️ READ FRESH ON EVERY DRAW, never computed once per visit: the arrows were once computed before
+    // `draw` ran, so after stepping back the "›" stayed disabled and she could not come forward again —
+    // one-way traffic (17 Sep 2026: "the profit month can move earlier but cannot move later").
+    const { from, to, label } = pSpan();
     const pl = profitBetween(state, from, to);
     const margin = pl.sales > 0 ? Math.round((pl.gross / pl.sales) * 100) : 0;
-    const monthTitle = `${MONTHS[shown.month]} ${shown.year}`;
+    // ⚠️ THE STATEMENT'S OWN SENTENCES SAY THE WINDOW OUT LOUD ("Nothing was sold in …"), so they take
+    // the span's label rather than a month name — a day or a week has no month to name.
+    const monthTitle = label;
 
     // The whole statement as one sheet, so the card can leave the screen the way a journal
     // does. "Running costs" is a HEADING rather than a line: the screen leans on the section
@@ -217,19 +259,18 @@ export function renderProfit(root, state) {
       bakery: bakeryName(state),
     });
 
-    const move = (delta) => {
-      const d = new Date(shown.year, shown.month + delta, 1);
-      // Never past this month: there are no numbers after today.
-      if (d.getFullYear() > now.year || (d.getFullYear() === now.year && d.getMonth() > now.month)) return;
-      draw(d.getFullYear(), d.getMonth());
-    };
-
     root.replaceChildren(
       el("h2", { class: "section" }, "Profit"),
-      el("div", { class: "cal-head" },
-        button("‹", () => move(-1), "ghost small cal-nav"),
-        el("span", { class: "cal-title" }, `${MONTHS[shown.month]} ${shown.year}`),
-        (() => { const b = button("›", () => move(1), "ghost small cal-nav"); if (!canNext) b.disabled = true; return b; })()),
+      // ★★ WHAT KIND OF WINDOW, AND THEN WHICH ONE (v403) — the same two-part chooser as Money and the
+      // invoice, so all three screens ask the same question the same way.
+      el("div", { class: "cal-modes" },
+        ...MODES.map(([id, text]) => button(text, () => draw(id),
+          `ghost small${pRange === id ? " cal-mode-on" : ""}`))),
+      // ⚠️ NO ARROWS ON "All" — nothing to step to, and a dead arrow reads as a fault.
+      el("div", { class: "range-stepper" },
+        pRange === "all" ? null : button("‹", () => { stepSpan(-1); draw(); }, "ghost small range-nav"),
+        el("span", { class: "range-label" }, label),
+        pRange === "all" || !canGoForward() ? null : button("›", () => { stepSpan(1); draw(); }, "ghost small range-nav")),
       el("div", { class: "card" },
         el("p", { class: "card-title" }, "Profit and loss"),
         el("p", { class: "card-sub", style: "margin:0 0 2px" },
@@ -269,5 +310,5 @@ export function renderProfit(root, state) {
     );
   };
 
-  draw(shown.year, shown.month);
+  draw();
 }

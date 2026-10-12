@@ -52,6 +52,8 @@
 
 import { button, confirmDialog, el, emptyState, guarded, saidOf, select, toast } from "../ui.js";
 import { shortDate } from "../dates.js";
+import { routeById, routesOf, routesOfPoint } from "../deliveryRoutes.js";
+import { openRoutePicker } from "./deliveryRoutes.js";
 import { byId, groupOrders, save } from "../state.js";
 import { maybePublishTracking, maybeSync } from "../supabase.js";
 import { runChargeAmounts, splitEven, writeCourierCharge } from "../courier.js";
@@ -396,7 +398,9 @@ export function renderDeliveryRun(root, state, params) {
     // flatMap, NOT map: each row hands back `[row, ...tail]` — the row itself plus any blocks
     // that belong under it — and a plain map would leave those as nested arrays, which the DOM
     // then converts with String() into the words "[object HTMLElement]".
-    const rows = rowsNow().flatMap((r) => {
+    // Read once, because the grouping and the rows must agree about whether she has any route at all.
+    const routeList = routesOf(state);
+    const built = rowsNow().map((r) => {
       // ★ A POINT ROW IS A PLACE, NOT A PERSON (v301). Its door is the Point's own pin, the
       // name on the row is the Point's, and the customer's own name and delivery address have
       // nothing to do with it — the bread is going to Farlim, and the customer is meeting it
@@ -456,17 +460,35 @@ export function renderDeliveryRun(root, state, params) {
       // than a day later. Silent when she has not set any — the card already says so, and a row
       // that repeats "no hours" on every run is noise on the screen she reads while working.
       const hours = isPoint ? pointWindowText(point) : "";
+      // ★★ AND THE OTHER ROUTES IT IS ALSO ON (v419). ⚠️ Named, never a second row — see the grouping
+      // below for why one stop is one row on this screen. It reads as a fact about the stop, so the
+      // heading it sits under is never mistaken for the only van that could take it.
+      const alsoOn = isPoint
+        ? routesOfPoint(state, point).slice(1).map((x) => x.name).filter(Boolean)
+        : [];
       const row = el("div", { class: `run-row${isPoint ? " run-row-point" : ""}` },
         el("label", { class: "run-who" },
           tick,
           el("span", { class: "run-words" },
             el("span", { class: "run-name" }, isPoint ? rowName(state, r) : nameOf(first)),
-            el("span", { class: "run-sub" }, [carried, where, hours ? `collect ${hours}` : "", what].filter(Boolean).join(" · ")))),
+            el("span", { class: "run-sub" }, [carried, where, hours ? `collect ${hours}` : "",
+              alsoOn.length ? `also on ${alsoOn.join(", ")}` : "", what].filter(Boolean).join(" · ")))),
         // A Point is pinned on its own card, where the pin belongs to the PLACE — not from
         // here, where the press would look like it pinned this run's version of it.
         isPoint
           ? (place ? null : button("Pin the Point", () => openPointPinPicker(state, point, () => { paintList(); paintLoad(); }), "ghost small"))
-          : (place ? null : button("Put it on the map", () => pinDoorstep(first), "ghost small")));
+          : (place ? null : button("Put it on the map", () => pinDoorstep(first), "ghost small")),
+        // ★★ AND THE TUG, AS A TAG (v421). Her words: __"not to belong but i manually tug into a
+        // route"__ — and, choosing the shape, a **tag that is the press**.
+        // ⚠️ A DOORSTEP ONLY: a Place's routes are a standing arrangement she sets on the Place's own
+        // card, and offering the same press here for a Place would be a second door to one room — the
+        // fault `points.js` names about the pin.
+        // ⚠️⚠️ AND IT IS OFFERED EVEN WHEN SHE HAS NO ROUTE AT ALL (v421, her correction). It used to
+        // wait until a route existed — ⭐ **which hid the way in behind the thing it makes**: from a run
+        // day with no routes there was nothing to press, and nothing said so. Her words: __"if there is
+        // no collection point route, i would choose to create manual route, tag doors into same manual
+        // route"__ — so the press is always there, and with no routes it offers to make one.
+        (!isPoint) ? routeTag(state, r, () => { paintList(); paintLoad(); }) : null);
       // ALREADY ON A TRIP (v242). Her report: a customer whose courier booking is already made
       // must never be swept onto a second van. The block sits OUTSIDE the row's <label> for the
       // same reason the door offer below does — a press in there would tick the customer rather
@@ -542,14 +564,113 @@ export function renderDeliveryRun(root, state, params) {
                 // which no lookup wrote, so there is nothing to carry.
                 () => keepPin(first, offer.place, theirs, theirs ? "" : doorRoadOf(state, first)),
                 "ghost small"))));
-      return [row, ...tail];
+      return { r, parts: [row, ...tail] };
     });
+
+    // ★★ AND THE DAY'S STOPS ARE GROUPED BY ROUTE (v419). Her words: __"now i need few delivery
+    // routes, for one day delivery run day"__ — the whole point of a route is that **one van does
+    // one small, smooth run**, so a day of stops read as one flat list tells her nothing about which
+    // stops belong together.
+    //
+    // ⚠️⚠️ A STOP IS STILL EXACTLY ONE ROW, and a Place on two routes draws UNDER ITS FIRST ONE with
+    // the others NAMED on its own row. Drawing it under both would put one stop on the screen twice
+    // — **and this screen's whole design rests on "a row is one stop"** (see `rowsNow`): every tick,
+    // every price and the double-booking guard name a row by `stopKeyOf`, so a second copy of the
+    // same key is a row she can tick in one place and not see ticked in the other. ⚠️ A redraw on
+    // every tick is not the repair for that: this list is repainted wholesale, and the tick handler
+    // deliberately does not repaint it.
+    //
+    // ⚠️ A STOP ON NO ROUTE COMES FIRST, with no heading — the same choice the shop makes for a
+    // Point no area carries, and for the same reason: it is a real stop a van is going to, and
+    // burying it under her headings helps nobody. Its row is byte-for-byte what it always was.
+    //
+    // ⚠️⚠️ the HEADING IS NOT A ROW AND CARRIES NO ID AT ALL. Tick state, prices and the guard all
+    // read the MODEL (`rowsNow()`), never the DOM — but a heading that LOOKED like a row is exactly
+    // the v415 fault, where the area headings were handed `active` because they carried no id. So
+    // it carries none rather than an empty one, and it is not a `.run-row`.
+    const firstRouteOf = new Map(built.map(({ r }) => {
+      const point = r.pointId ? pointById(state, r.pointId) : null;
+      if (point) {
+        const on = routesOfPoint(state, point);
+        return [r.key, on.length ? on[0].id : ""];
+      }
+      // ★★ A CUSTOMER'S OWN DOORSTEP, TUGGED IN BY HAND (v421). Her words: __"not to belong but i
+      // manually tug into a route"__ — so this is read off the ORDER, for this run, and not off the
+      // customer. ⚠️ An id naming a route she has since DELETED falls back to no route, so the
+      // doorstep draws at the top as it always did rather than under a heading that is gone.
+      const id = String((r.groups[0] && r.groups[0].orders[0] && r.groups[0].orders[0].routeId) || "");
+      return [r.key, routeById(state, id) ? id : ""];
+    }));
+    const rows = [];
+    for (const b of built) if (!firstRouteOf.get(b.r.key)) rows.push(...b.parts);
+    for (const route of routeList) {
+      const mine = built.filter((b) => firstRouteOf.get(b.r.key) === route.id);
+      // A route with no stop on this day draws nothing at all — a heading over an empty run would
+      // read as a van that went out with nothing on it.
+      if (!mine.length) continue;
+      // ★★ THE HEADING CARRIES THE PRESS (v421) — the route's name and its count on the left, and
+      // "Take this route" on the right. ⚠️ STILL NOT A ROW: it has no id, no `data-id` and is not a
+      // `.run-row`, so nothing that ticks, prices or counts a stop can mistake it for one.
+      rows.push(el("div", { class: "run-route" },
+        el("span", {}, `${route.name} · ${mine.length} stop${mine.length === 1 ? "" : "s"}`),
+        takeRouteButton(mine.map((b) => b.r.key))));
+      for (const b of mine) rows.push(...b.parts);
+    }
 
     listBox.replaceChildren(
       el("div", { class: "run-head" }, headTitle, headBtn),
       ...rows.filter(Boolean),
     );
     paintHead();
+  }
+
+  // ★★ THE ROUTE TAG ON A DOORSTEP — **THE TAG IS THE PRESS** (v421). Her words: __"not to belong but
+  // i manually tug into a route"__, and, offered a tag or words, she chose the tag.
+  //
+  // ⚠️ IT HAS TO READ AS PRESSABLE, and that is why it is a `<button>` wearing its own class rather
+  // than the `.st-chip` the Point cards use — **a chip is a LABEL**, and a label that looked like a
+  // control is the shape of fault this app treats as a bug ([[feedback_affordances]]). The title says
+  // what the press does, so a tag she has not met before still explains itself.
+  //
+  // ⚠️ `+ Route` when it is on none — the same shape as the row's other presses, and it says what the
+  // press will do rather than only what the state is. ⚠️ And the row is a flex line with NO wrap, so
+  // this stays deliberately small: it is the third thing on a doorstep row that also offers to place
+  // the door, and a wide control here would squeeze the name it sits beside.
+  function routeTag(state, r, after) {
+    const id = String((r.groups[0] && r.groups[0].orders[0] && r.groups[0].orders[0].routeId) || "");
+    const route = routeById(state, id);
+    const b = button(route ? `${route.name} ▾` : "+ Route",
+      () => openRoutePicker(state, r.groups[0], after), "route-tag");
+    b.title = route
+      ? `On ${route.name} — tap to tug it into another route`
+      : "Tug this doorstep into a route";
+    return b;
+  }
+
+  // ★★ TAKE A WHOLE ROUTE IN ONE PRESS (v421). Her words: __"my question if the day should call 3
+  // route and 2 doors, how to go about?"__ — and, shown that day drawn, she chose a press beside each
+  // route heading rather than a tick on the heading itself.
+  //
+  // ⚠️⚠️ THE KEYS COME FROM THE VERY MAP THE GROUPING USED (`firstRouteOf`), so the press and the block
+  // underneath it can never disagree about which stops a route holds. ⭐ A stop TUGGED into two routes
+  // is drawn under its FIRST one — so it is taken with that one, because **the block IS the route.**
+  //
+  // ⚠️⚠️ IT REBUILDS THE LIST, UNLIKE A ROW'S OWN TICK. A row's tick flips its own box in the browser
+  // and only the money lines need repainting; this one changes MANY boxes at once, and every one of
+  // them has to show it. ⚠️ And the prices go inert for the same reason one row's tick makes them —
+  // **a price asked for a list she has since changed describes a journey she is no longer taking.**
+  // ⚠️ It says what it will DO, and turns over when the whole route is already on — the same
+  // spelling the day's own press uses ("Tick them all" / "Untick them all").
+  function takeRouteButton(keys) {
+    const allOn = keys.length > 0 && keys.every((k) => ticked.has(k));
+    return button(allOn ? "Untick this route" : "Take this route", () => {
+      for (const k of keys) { if (allOn) ticked.delete(k); else ticked.add(k); }
+      compare = {};
+      paintList();
+      paintLoad();
+      paintPay();
+      paintPrices();
+    }, "ghost small");
   }
 
   // WHY THIS ROW IS NOT TICKED, in words (v242). The courier is named, and so is its own word

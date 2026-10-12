@@ -8,6 +8,7 @@ import { occColour, upcomingOccasions } from "../calendar.js";
 import { el, button, emptyState, confirmDialog } from "../ui.js";
 import { gauge } from "../gauge.js";
 import { newId, save } from "../state.js";
+import { localChecks } from "../health.js";
 import { pendingReviewCount } from "../supabase.js";
 import {
   addTask, comingWeeks, loadRoutine, money, newOrderCount, nextBake,
@@ -440,6 +441,7 @@ function renderInner(root, state) {
   // turn a trailing null into a stray "null" text node in the real DOM.
   root.replaceChildren(
     hero,
+    ...(healthLine(state) ? [healthLine(state)] : []),
     ...atAGlanceBlocks(root, state, today, fc),
     ...(upcoming.length
       ? upcomingSection(root, state, fc, upcoming.length)
@@ -475,6 +477,27 @@ function pastSection(state, past) {
         el("span", { class: "qty-chip" }, `${cap.total} ordered`))));
   }
   return el("div", { style: "margin-top:18px" }, head, list);
+}
+
+// ★★ ONE LINE, WHEN HER OWN RECORDS HAVE SOMETHING WRONG IN THEM (v446).
+//
+// ⚠️⚠️ WHY THIS IS ON HOME AND NOT ONLY ON THE CHECK SCREEN. **A screen she has to remember to open is not
+// a measure.** The three orders lost on 11 Oct 2026 sat in her data and were reported by nothing — she
+// found them herself, days later, by opening the receipt register. ⭐ So the LOCAL checks — the ones that
+// need no network and cost nothing — run on every Home visit, and say so in one line she cannot miss.
+//
+// ⚠️ THE CLOUD CHECKS ARE DELIBERATELY NOT HERE: they need two network reads, and a Home screen that stalls
+// behind a fetch would be a worse fault than the one it reports. `#/health` runs all ten.
+function healthLine(state) {
+  let bad = [];
+  try { bad = localChecks(state).filter((r) => r.status === "fail"); } catch { return null; }
+  if (!bad.length) return null;
+  const n = bad.reduce((s, r) => s + r.count, 0);
+  return el("div", { class: "card hc-home" },
+    el("p", { class: "card-title", style: "margin:0 0 2px" },
+      `🩺 ${n} thing${n === 1 ? "" : "s"} in your records ${n === 1 ? "needs" : "need"} a look`),
+    el("p", { class: "card-sub", style: "margin:0 0 8px" }, bad.map((r) => r.title).join(" · ")),
+    button("Check my system", () => navigate("#/health"), "soft small"));
 }
 
 export function renderDashboard(root, state) {

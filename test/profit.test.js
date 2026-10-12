@@ -572,10 +572,17 @@ test("the statement says the cost is a recipe cost, and that it is FROZEN onto t
 // state was worked out once when the screen was opened and then reused on every redraw, so
 // after stepping back a month the "›" arrow was still disabled as it had been on the month
 // she started on — one-way traffic.
-test("the month arrows let her come back forward after stepping back", () => {
+// ⚠️⚠️ REWRITTEN AT v403, NOT DELETED — the FAULT it was written for is still the fault to watch for.
+// Her words: __"same thing for Profit"__, so the month-at-a-time stepper became the four-way chooser
+// Money and the invoice use, and the arrows moved from `.cal-nav`/`.cal-title` to `.range-nav`/
+// `.range-label`. ⚠️ What the test is FOR is unchanged — **17 Sep 2026: "the profit month can move
+// earlier but cannot move later"**, because the arrows were computed once before `draw` ran, so after
+// stepping back the `›` stayed disabled and she was stuck in the past. **That is why `canGoForward()` is
+// a live function called on every draw, and this is the test that keeps it one.**
+test("the arrows let her come back forward after stepping back — she is never stuck in the past", () => {
   const walkAll = screenOf();
-  const arrows = (root) => walkAll(root).filter((n) => String(n.className).includes("cal-nav"));
-  const title = (root) => walkAll(root).find((n) => String(n.className).includes("cal-title")).textContent;
+  const arrows = (root) => walkAll(root).filter((n) => String(n.className).includes("range-nav"));
+  const title = (root) => walkAll(root).find((n) => String(n.className).includes("range-label")).textContent;
   const press = (n) => n._listeners.click.forEach((f) => f());
 
   const root = document.createElement("div");
@@ -584,18 +591,19 @@ test("the month arrows let her come back forward after stepping back", () => {
   const MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"];
   const thisMonth = `${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`;
-  assert.equal(title(root), thisMonth, "it opens on this month");
-  assert.equal(arrows(root)[1].disabled, true, "and › is off: there are no numbers after today");
+  // ⚠️ It still OPENS on this month — "A month" is the default, as it always was.
+  assert.equal(title(root), thisMonth, "it no longer opens on this month");
+  // ⚠️ AND `›` IS NOT DRAWN AT ALL when there is nothing to step forward to — an arrow that is present
+  // but does nothing reads as a fault, so the bound is expressed by the arrow being absent.
+  assert.equal(arrows(root).length, 1, "⚠️ a forward arrow is offered on the current month");
 
   press(arrows(root)[0]); // ‹
-  assert.notEqual(title(root), thisMonth, "‹ steps back a month");
-  assert.equal(arrows(root)[1].disabled, false, "and › must come alive again, or she is stuck");
+  assert.notEqual(title(root), thisMonth, "‹ does not step back a month");
+  assert.equal(arrows(root).length, 2, "⚠️ and › must come alive again, or she is stuck in the past");
 
   press(arrows(root)[1]); // ›
-  assert.equal(title(root), thisMonth, "› steps forward again");
-  assert.equal(arrows(root)[1].disabled, true, "and stops at this month, not a future one");
-  press(arrows(root)[1]);
-  assert.equal(title(root), thisMonth, "pressing it there does nothing at all");
+  assert.equal(title(root), thisMonth, "› does not step forward again");
+  assert.equal(arrows(root).length, 1, "⚠️ and it stops at this month, not a future one");
 });
 
 // ── the statement can leave the screen (v282) ─────────────────────────────────
@@ -687,4 +695,20 @@ test("every journal behind a statement line wears the pair, and shares its own b
       "and it lands on that line's own figure");
     assert.match(shared.text, /From More → Profit\./, "with where it came from on it");
   } finally { delete globalThis.navigator.share; }
+});
+
+// ── ★★ Profit's own "All" (v403) ──────────────────────────────────────────────
+test("★★⚠️ Profit's 'All' counts a sale from long ago — it read ZERO before this was fixed", () => {
+  // ⚠️⚠️ FOUND BY DRIVING THE SCREEN, NOT BY A TEST. Money's range rule was fixed first, and Profit kept
+  // reading **Sales RM 0.00 for "All"** beside a month of real orders — because `profit.js` had written
+  // its OWN copy of the range comparison, and an empty bound (`"" <= ""` fails) matched nothing. **A
+  // green suite said everything was fine.** The rule now lives once, in `dates.js`, and this is the
+  // assertion that keeps Profit pointed at it.
+  const st = state();
+  st.deliveryDates = [{ id: "d_old", date: "2026-01-05", notes: "" }];
+  st.orders = [{ id: "o_old", deliveryDateId: "d_old", productId: "prd_f", qty: 4,
+    status: "delivered", unitPrice: 15, paidReceived: true, paidMethod: "cash" }];
+  const all = profitBetween(st, "", "");
+  assert.equal(all.sales, 60,
+    "⚠️⚠️ Profit's 'All' does not reach an old sale — it is reading zero for a window with no bounds");
 });

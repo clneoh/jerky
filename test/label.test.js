@@ -98,6 +98,54 @@ test("multi-item storefront group: one shared code, every item on its own line",
   ]);
 });
 
+test("★★ a van order with its own delivery day names BOTH days (v429)", () => {
+  // Her report: __"when i entered a specific delivery date favour by customer over bake date, the
+  // print label still took the bake day?"__ — ⚠️ **and she was right: this model never read
+  // `courierDay` at all**, so a bag a van collected the next morning was labelled with the day the
+  // bread was made. ⭐ **She chose the shape: BOTH, EACH NAMED** — *"so whoever packs a bag sees when
+  // to make it and when it leaves."*
+  const VAN = "2026-09-05";
+  const data = packingLabelData(makeState(),
+    group(singleOrder({ fulfillment: "courier", courierDay: VAN })), "full");
+  assert.equal(data.rows.find(([k]) => k === "meta")[1],
+    // ⚠️ ASSERTIONS ON USER-VISIBLE COPY → jerky says "Post (nationwide)".
+    `Bake ${dateLine} · Van ${shortDate(VAN)} · Post (nationwide)`);
+
+  // ⚠️⚠️ AND IT IS THE PRESENCE OF THE DAY THAT DECIDES, NOT THE FULFILMENT — ⭐ **a Self-collect-at-
+  // a-Point order keeps `fulfillment: "collect"` while its bread still arrives BY VAN**, and the
+  // Delivery run writes that day onto it when the trip is booked. A first cut guarded this with
+  // `courier ?` and was wrong for exactly that order.
+  const atPoint = packingLabelData(makeState(),
+    group(singleOrder({ fulfillment: "collect", courierDay: VAN })), "full");
+  assert.match(atPoint.rows.find(([k]) => k === "meta")[1],
+    new RegExp(`^Bake .* · Van ${shortDate(VAN)}`),
+    "a Point order's bread arrives by van too — and the bag waiting at the shop was labelled with the bake day");
+});
+
+test("★★ with NO van day the label is byte-for-byte what it always was (v429)", () => {
+  // ⚠️ The common case by far: a courier order whose delivery day she has not filled in yet.
+  // **A day she has not decided cannot be named** — the rule `courierDayOf` states about itself, and
+  // the reason every order that carries no courier day reads exactly as it did before this version.
+  const data = packingLabelData(makeState(), group(singleOrder({ fulfillment: "courier" })), "full");
+  assert.equal(data.rows.find(([k]) => k === "meta")[1], `${dateLine} · Post (nationwide)`);
+});
+
+test("★★ the MAILING label's Deliver is the day it ARRIVES, not the day it is baked (v429)", () => {
+  // ⚠️⚠️ This printed the BAKE day on the OUTSIDE of the parcel — so a box baked Friday and sent
+  // Saturday was addressed **"Deliver Fri 4 Sep"**, and the customer read it off their own doorstep.
+  const VAN = "2026-09-05";
+  const withVan = packingLabelData(makeState(),
+    group(singleOrder({ fulfillment: "courier", courierDay: VAN })), "mailing");
+  // ⚠️ ASSERTIONS ON USER-VISIBLE COPY → jerky's mailing line says "Post <day>", not "Deliver <day>".
+  const arrived = withVan.rows.find(([k, t]) => k === "mail-line" && /Post/.test(t));
+  assert.match(arrived[1], new RegExp(`Post ${shortDate(VAN)}`), "the van's day, not the day it is made");
+
+  const noVan = packingLabelData(makeState(),
+    group(singleOrder({ fulfillment: "courier" })), "mailing");
+  const fallback = noVan.rows.find(([k, t]) => k === "mail-line" && /Post/.test(t));
+  assert.match(fallback[1], new RegExp(`Post ${dateLine}`), "no van day → the day it is made, as it always did");
+});
+
 test("courier orders print the address, collect orders never do", () => {
   const courier = packingLabelData(
     makeState(), group(singleOrder({ fulfillment: "courier", address: "12 Jalan Bunga" })), "full");

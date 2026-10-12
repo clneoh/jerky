@@ -758,6 +758,194 @@ test("the Point's row says what it is, and how much it is carrying", async () =>
   assert.equal(row.textContent.includes("Ain"), false, "no customer's name on a Point's row");
 });
 
+// Two Points on two routes, plus an unrouted doorstep — the shape a day's run takes once she has
+// vans. ⚠️ FARLIM IS ON BOTH ROUTES, and its FIRST is Route A, so it must draw under A and name B.
+function worldOnRoutes() {
+  const st = world();
+  for (const o of st.orders) {
+    o.fulfillment = "collect";
+    o.pointId = o.groupId === "g2" ? "pt_prai" : "pt_farlim";
+  }
+  st.deliveryRoutes = [
+    { id: "rt_a", name: "Route A", sort: 0 },
+    { id: "rt_b", name: "Route B", sort: 1 },
+  ];
+  st.points = [
+    { id: "pt_farlim", name: "Farlim, Air Itam", address: "Lebuhraya Thean Teik, 11500 Air Itam",
+      receiver: "Aunty Lim", phone: "60123456789", feeRM: 0.5, paused: false,
+      createdAt: "2026-10-12T00:00:00.000Z", routeIds: ["rt_b", "rt_a"],
+      place: { lat: 5.4, lng: 100.28, label: "Farlim, Air Itam" } },
+    { id: "pt_prai", name: "Chai Leng Park", address: "9 Jalan Ria",
+      receiver: "Aunty Lim", phone: "60123456789", feeRM: 0.5, paused: false,
+      createdAt: "2026-10-11T00:00:00.000Z", routeIds: ["rt_b"],
+      place: { lat: 5.38, lng: 100.39, label: "Chai Leng Park" } },
+  ];
+  return st;
+}
+
+test("★★ a day's stops are grouped by the route they are on (v419)", async () => {
+  // Her words: __"now i need few delivery routes, for one day delivery run day"__ — the whole point
+  // of a route is that one van does one small, smooth run, so a day read as one flat list tells her
+  // nothing about which stops belong together.
+  const st = withThirdCustomer(worldOnRoutes());
+  stubCourier();
+  const { root } = openRun(st);
+
+  const heads = all(root).filter((n) => String(n.className).includes("run-route"))
+    .map(headLabel);
+  assert.deepEqual(heads, ["Route A · 1 stop", "Route B · 1 stop"],
+    "⚠️ HER route order, and a heading only for a route that actually has a stop today — a heading "
+    + "over an empty run would read as a van that went out carrying nothing");
+
+  const drawn = all(root).filter((n) => String(n.className).includes("run-row"));
+  assert.equal(drawn.length, 3, "three stops, three rows");
+  assert.ok(drawn[0].textContent.includes("Chandra"),
+    "⚠️ the stop on NO route leads, with no heading over it — it is a real doorstep a van is going "
+    + "to, and burying it under her routes would help nobody");
+
+  // ⚠️⚠️ AND A PLACE ON TWO ROUTES IS STILL ONE ROW. It draws under its FIRST route and NAMES the
+  // other, because a second row would put one stop on the screen twice — and "a row is one stop" is
+  // what every tick, every price and the double-booking guard on this screen rests on.
+  const farlim = drawn.find((r) => r.textContent.includes("Farlim"));
+  assert.match(farlim.textContent, /also on Route B/,
+    "the second route is NAMED on the row, so the heading it sits under is never mistaken for the only van");
+  const prai = drawn.find((r) => r.textContent.includes("Chai Leng Park"));
+  assert.equal(/also on/.test(prai.textContent), false, "a Place on one route says nothing extra");
+
+  const ticks = all(root).filter((n) => n.tagName === "INPUT" && String(n.className).includes("run-tick"));
+  assert.equal(ticks.length, 3, "⚠️ and ONE tick per stop, never one per appearance");
+});
+
+test("★★ a whole route is taken in ONE press, and it touches nothing else (v421)", async () => {
+  // Her words: __"my question if the day should call 3 route and 2 doors, how to go about?"__ — and,
+  // shown that day drawn, she chose a press beside each route heading. ⚠️ **Without it a three-route
+  // day is ticked stop by stop for each van**, and the only bulk press is "Untick them all", which is
+  // for the whole day rather than for one route.
+  const st = withThirdCustomer(worldOnRoutes());
+  st.orders.find((o) => o.customerName === "Chandra").routeId = "rt_b";
+  stubCourier();
+  const { root } = openRun(st);
+
+  const headText = () => (all(root).find((n) => String(n.className).includes("run-head-title")) || {}).textContent;
+  // ⚠️ The press is found THROUGH its own heading, never by position — a list of look-alike buttons
+  // read by index is a test that passes on the wrong one.
+  const routePress = (name) => {
+    const head = all(root).find((n) => String(n.className).includes("run-route")
+      && (n.textContent || "").startsWith(name));
+    assert.ok(head, `the ${name} heading was drawn`);
+    return all(head).find((n) => n.tagName === "BUTTON");
+  };
+
+  // Ain is Route A; Bala and Chandra are Route B — three stops, all on as the day opens.
+  assert.match(headText(), /3 of 3/, "the day arrives with every stop on it");
+  assert.equal(all(root).filter((n) => n.tagName === "BUTTON" && n.textContent === "Untick this route").length, 2,
+    "⚠️ and BOTH presses already read 'Untick this route', because both routes are wholly on");
+
+  // ── take Route A's block off ──────────────────────────────────────────────
+  routePress("Route A")._listeners.click[0]();
+  assert.match(headText(), /2 of 3/, "⚠️ ONLY Route A came off — two stops are still on the run");
+  assert.equal(routePress("Route A").textContent, "Take this route",
+    "⚠️ and the press turned over, so it says what it will DO next");
+
+  // ── and put it back ───────────────────────────────────────────────────────
+  routePress("Route A")._listeners.click[0]();
+  assert.match(headText(), /3 of 3/, "and back it comes");
+  assert.equal(routePress("Route A").textContent, "Untick this route", "the press turned over again");
+
+  // ── Route B is its own block, untouched by any of that ────────────────────
+  routePress("Route B")._listeners.click[0]();
+  assert.match(headText(), /1 of 3/, "Route B's two stops came off, and Route A's one stayed");
+});
+
+// ⚠️ A HEADING'S LABEL, NOT ITS WHOLE `textContent` (v421). The heading now carries its own press —
+// the **Take this route** button — so `textContent` returns the name and the button's words run
+// together: `"Route A · 1 stopTake this route"`. ⭐ **Reading the first span is what the heading SAYS;
+// reading the whole node is what it CONTAINS**, and those stopped being the same thing the moment it
+// gained a control. Two tests failed on exactly that when the press went in, which is the check doing
+// its job rather than an inconvenience.
+const headLabel = (n) => String(((n && n.children && n.children[0]) || {}).textContent || "");
+
+// The route tag on one row, read off the row it belongs to rather than by position.
+const tagFor = (root, name) => {
+  const row = all(root).find((n) => String(n.className).includes("run-row")
+    && (n.textContent || "").includes(name));
+  if (!row) return "(no such row)";
+  const t = all(row).find((n) => String(n.className).includes("route-tag"));
+  return t ? t.textContent : "(no tag)";
+};
+
+test("★★ a doorstep TUGGED into a route draws under it — and one left out draws first (v421)", async () => {
+  // Her words: __"not to belong but i manually tug into a route"__. ⚠️ IT IS AN ACT ON THE DAY, not
+  // a membership: it lives on the ORDER, and a doorstep left out keeps drawing exactly where it
+  // always did — first, with no heading over it.
+  const st = withThirdCustomer(worldOnRoutes());
+  const chandra = st.orders.find((o) => o.customerName === "Chandra");
+  assert.ok(chandra && !chandra.pointId, "⚠️ the fixture really has a customer's own doorstep");
+  stubCourier();
+
+  // ── left out ─────────────────────────────────────────────────────────────
+  let opened = openRun(st);
+  let rows = all(opened.root).filter((n) => String(n.className).includes("run-row"));
+  assert.ok(rows[0].textContent.includes("Chandra"), "the unrouted doorstep still leads");
+  assert.equal(tagFor(opened.root, "Chandra"), "+ Route",
+    "⚠️ and its tag says what the press WILL DO, not merely that it has no route");
+
+  // ── tugged in ────────────────────────────────────────────────────────────
+  chandra.routeId = "rt_b";
+  opened = openRun(st);
+  const heads = all(opened.root).filter((n) => String(n.className).includes("run-route"))
+    .map(headLabel);
+  assert.deepEqual(heads, ["Route A · 1 stop", "Route B · 2 stops"],
+    "⚠️ it is counted into the route it was tugged into, and the other route is untouched");
+  assert.equal(tagFor(opened.root, "Chandra"), "Route B ▾", "and its tag now names that route");
+
+  // ⚠️ BOTH POSITIONS ARE READ OFF THE SAME WALK. Comparing a filtered list's index with the whole
+  // tree's index is comparing two different rulers — which is what the first version of this did.
+  const flat = all(opened.root);
+  const rowEl = flat.find((n) => String(n.className).includes("run-row")
+    && (n.textContent || "").includes("Chandra"));
+  const headEl = flat.find((n) => String(n.className).includes("run-route")
+    && headLabel(n).startsWith("Route B"));
+  assert.ok(headEl && rowEl, "both the heading and the row were drawn");
+  assert.ok(flat.indexOf(headEl) < flat.indexOf(rowEl),
+    "⚠️ the row is drawn UNDER Route B's heading, not above it");
+});
+
+test("★ a route she has since DELETED leaves the doorstep where it was (v421)", async () => {
+  // ⚠️ The same rule a Point's routes already keep: an id naming something gone falls away, and the
+  // stop is never lost. It draws first, with no heading, exactly as an unrouted one does.
+  const st = withThirdCustomer(worldOnRoutes());
+  st.orders.find((o) => o.customerName === "Chandra").routeId = "rt_long_gone";
+  stubCourier();
+  const { root } = openRun(st);
+  const rows = all(root).filter((n) => String(n.className).includes("run-row"));
+  assert.equal(rows.length, 3, "⚠️ the stop is still on the run — nothing vanished with the route");
+  assert.ok(rows[0].textContent.includes("Chandra"), "and it is back at the top, as it was");
+  assert.equal(tagFor(root, "Chandra"), "+ Route", "its tag reads as on no route, because it is");
+});
+
+test("★★ with NO routes at all the tag is STILL there — it is the only way in (v421)", async () => {
+  // ⚠️⚠️ THIS TEST USED TO READ THE OPPOSITE WAY, and her correction is why. v421 first hid the tag
+  // until a route existed, so that an unrouted run stayed byte-for-byte as it was. ⭐ **That hid the
+  // way in behind the thing it makes:** from a run day with no routes there was nothing to press and
+  // nothing said so. Her words: __"if there is no collection point route, i would choose to create
+  // manual route, tag doors into same manual route"__.
+  const st = withThirdCustomer(worldOnRoutes());
+  st.deliveryRoutes = [];
+  stubCourier();
+  const { root } = openRun(st);
+  const tags = all(root).filter((n) => String(n.className).includes("route-tag"));
+  assert.equal(tags.length, 1, "⚠️ the doorstep offers the tug even with no route to tug it into");
+  assert.equal(tags[0].textContent, "+ Route", "and it says what the press will do");
+  assert.equal(all(root).filter((n) => String(n.className).includes("run-route")).length, 0,
+    "⚠️ and still no heading — a heading needs a route to name");
+  // ⚠️ AND A PLACE STILL GETS NO TAG: its routes are set on the Place's own card, which is a standing
+  // arrangement, not something decided on the day.
+  assert.equal(all(root).filter((n) => String(n.className).includes("run-row-point")
+    && all(n).some((c) => String(c.className).includes("route-tag"))).length, 0,
+    "no Place row carries a tug tag");
+});
+
 test("a Point and a doorstep are two stops, and neither is counted twice", async () => {
   // The mixed run she actually wants: a Point carrying one customer, and another customer
   // whose own door the van goes to. Two stops — and if the Point's customer were counted

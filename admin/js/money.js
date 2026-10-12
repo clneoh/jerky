@@ -27,6 +27,7 @@
 // HAS come in stays at the items — that pass-through charge is not her takings — which
 // is why customerTotal() rather than groupValue() is read here and nowhere else.
 import { fmtRM, groupOrders, orderCode, orderLinePrice, round2 } from "./state.js";
+import { isWithin } from "./dates.js";
 import { classOfCategory, isCash, isOther, isTng, methodLabel, methodRank } from "./accounts.js";
 import { customerTotal } from "./courier.js";
 
@@ -37,7 +38,8 @@ const STAGES = ["new", "confirmed", "paid", "baking", "ready", "delivered"];
 const PAID_STAGE = STAGES.indexOf("paid");
 
 const firstOf = (g) => ((g && g.orders) || [])[0] || {};
-const isWithin = (iso, from, to) => !!iso && iso >= from && iso <= to;
+// ⚠️ THE RANGE RULE LIVES IN dates.js NOW (v403) — three modules had written it out separately
+// and only one of them was fixed when "All" arrived. See `isWithin`.
 
 // What one customer order is worth: every row of its group, at the price it was sold
 // at — so a price she changed on the order is the price counted here.
@@ -153,6 +155,32 @@ export function refundedInFull(state, group) {
 // left every order paid since v106 looking unaccounted for.
 export function methodOf(group) {
   return methodLabel(firstOf(group).paidMethod);
+}
+
+// ★★ WHAT THE MONEY ON THIS ORDER IS, IN ONE WORD, FOR A CHIP TO WEAR (v430).
+//
+// ⚠️⚠️ THE STAGE IS NOT THE MONEY, AND THAT IS THE WHOLE REASON THIS EXISTS. `order.status` says
+// how far the order has got; `paidReceived` says whether the money actually arrived. Picking
+// "Paid" in the dropdown moves the STAGE and leaves the money out, so any screen that prints the
+// stage word on its own will say **Paid** over money nobody has handed over. Every money surface
+// reads `isCollected` for exactly that reason (v268); this is the same rule cut to the shape a
+// chip needs, so a chip and a till can never disagree about the same order.
+//
+// Refunded is asked FIRST: that money came in AND went back, so it is neither hers nor owed, and
+// the order must not go on wearing the method it was once paid by.
+//
+// "Not paid" is only said FROM THE PAYING STAGE ONWARDS. Before that an order is not owed
+// anything — it simply has not got there yet — and a chip calling every new order unpaid would be
+// noise on every row. That is the same bound `isCollected` uses to read a missing answer.
+//
+// "" means there is nothing to say: the money is in and no method was recorded, or the order has
+// not reached paying. Callers draw nothing on it, so those rows are byte-for-byte as they were.
+export function moneyTagOf(group) {
+  const first = firstOf(group);
+  if (isRefunded(group)) return "Refunded";
+  if (isCollected(group)) return methodLabel(first.paidMethod) || "";
+  const at = STAGES.indexOf(String(first.status || "new"));
+  return at >= PAID_STAGE ? "Not paid" : "";
 }
 
 // The day a customer order is for: the delivery date record while it exists, its own

@@ -1,8 +1,58 @@
-# Munchies Furkidz — change history (v54 → v401)
+# Munchies Furkidz — change history (v54 → v476)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**12 Oct 2026 — engine v401 → v476, THE BIG CATCH-UP, PART ONE: your back office
+(⚠️ ONE DATABASE SCRIPT TO RE-RUN — see the end of this entry. Your SHOP PAGE is deliberately NOT
+changed by this update — see "What is not in this one" at the foot).**
+
+**This is the largest catch-up this app has taken: seventy-two versions at once.** It is being done
+in two parts on purpose. **This part is everything behind the scenes — the back office and your
+records. Your shop page is untouched**, so nothing your customers see changes today.
+
+**☝ The one that matters most: your syncing is now protected.** The bakery hit a fault in this batch
+where **one unsendable record made the server refuse the whole queue** — so every phone stopped
+syncing, and it lost real work. Munchies had the same unguarded code. **A record that cannot be sent
+is now left out of the batch instead of poisoning it**, so the rest still goes, and the app tells you
+what is stuck rather than sitting there quietly.
+
+**🩺 Check my system** — a new screen under More. Press it and it reads your records, your shared data
+and your oldest recent backup, and tells you in plain words what is wrong: an order that appears
+twice, an order on the list *and* on the Removed list, an order sitting on a day you no longer have,
+a coupon counted twice. **A check that could not look says so rather than counting as a pass.**
+
+**A removed order is no longer gone.** Delete an order by mistake and it sits in a **Removed** list
+for two days, where you can put it back. The bakery added this after losing orders it could not get
+back.
+
+**Receipts you can void, with a reason.** A receipt number stays spent for ever, but you can now mark
+one void and say why — so your register reads as explained rather than as a hole.
+
+**Money and Profit can look at any day, week or month.** Both screens gain a picker, so you are no
+longer limited to today / this week / this month.
+
+**"Paid" now means the money actually arrived.** You reported this yourself: a customer's card said
+they had paid when they had not. The stage and the money are two different facts, and the screen now
+says which is which.
+
+**☝ And an order can be fixed after the fact.** You can move an order to a **past** day, and changing
+its status now moves the **whole** order rather than only the lines still on it.
+
+**Smaller repairs from the same batch.** An order's number is now fixed when it is created and never
+moves (it used to be possible to end up with two orders sharing a number); editing a saved shopping
+list removes only the lines you actually removed; a coupon survives an order being split; and a
+hand-written list can be back-dated.
+
+**Before you push — the one thing you must do.** In your Supabase project → SQL Editor, run
+**`supabase/order_alerts.sql`** again. One line in the phone notification now names the day honestly.
+It is a plain "create or replace" and is safe to run as many times as you like.
+
+**What is NOT in this one — on purpose.** The same batch also rebuilt the **shop page** (a four-step
+order flow, and a good deal more). That is your customers' page, so it is being done as its own
+separate pass where it can be tested properly on your phone, rather than bundled in here. **Until
+then your shop works exactly as it does today.**
 
 **9 Oct 2026 — engine v400 → v401, ONE VERSION: a shopping list you can write yourself
 (nothing to run, nothing to upload — pushing this one is the whole of it).**

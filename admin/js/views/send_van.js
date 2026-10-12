@@ -6,13 +6,20 @@
 // Courier(Lalamove) ... to Logistic"__. The card below is the same card, moved
 // whole — nothing about the courier changed.
 //
-// ⚠️ **THE SCREEN IS CALLED "Send a van", NOT "Lalamove", AND THAT IS DELIBERATE.**
-// v309 gave the two kinds of courier her own words — **Post a parcel** (dry goods,
-// nation-wide) and **Send a van** (today, inside Penang) — and the order cards say
-// them. Naming this screen after the van keeps one word for one idea. The card
-// INSIDE still names Lalamove, and it still asks the registry rather than knowing:
+// ⚠️ **THE SCREEN IS NOT CALLED "Lalamove", AND THAT IS STILL DELIBERATE.** The card
+// INSIDE names Lalamove, and it still asks the registry rather than knowing:
 // **this screen does not know its courier's name**, which is what "ready for
 // another courier" means at this end of the app.
+//
+// ⚠️⚠️ **AND IT IS CALLED "Location pin for Kitchen", WHICH REVERSES v309's REASONING — ON HER WORD
+// (v402).** v309 said: *"naming this screen after the van keeps one word for one idea"*, because an
+// order card's **Send a van** (today, inside Penang) is one of the two ways an order LEAVES, and the
+// screen was named to match. ⭐ **The idea it was keeping one word for was the wrong one.** This
+// screen's job is not to send anything: it holds **the one point every trip starts from — her own
+// door** — and the van is one of the things that USES that pin. Her words:
+// __"instead of send a van, change the term to Location pin for Kitchen"__.
+// ⚠️ **THE ORDER CARDS KEEP "Send a van"** — asked which to rename, she chose **the screen only** —
+// so the two are now named for their own jobs rather than matching each other. See [[project-v402]].
 
 import { el, button, toast, menuRow } from "../ui.js";
 import { save } from "../state.js";
@@ -94,7 +101,7 @@ export function renderSendVan(root, state) {
   // wrong place is what sends her looking, so the way to it is HERE, named as a
   // pointer rather than copied as a second box.
   root.replaceChildren(
-    el("h2", { class: "section" }, "Send a van"),
+    el("h2", { class: "section" }, "Location pin for Kitchen"),
     courierCard,
     el("h2", { class: "section" }, "The address the labels print"),
     el("div", { class: "card", style: "padding:4px 14px" },

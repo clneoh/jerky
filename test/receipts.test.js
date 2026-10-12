@@ -25,7 +25,7 @@ globalThis.localStorage.setItem("bakeadmin.supabase",
   JSON.stringify({ access_token: "tok", expires_at: Date.now() + 3600000 }));
 
 const { receiptNoOf, receiptLabel, receiptLine, isRefunded, receiptStatus,
-  registerRows, registerSummary } = await import("../admin/js/receipts.js");
+  copyKnowsCode, lastSeenIn, registerRows, registerSummary, voidedIndex } = await import("../admin/js/receipts.js");
 const { claimReceipt, pullReceiptRegister } = await import("../admin/js/supabase.js");
 const { journalSheet } = await import("../admin/js/journal.js");
 const { orderCode } = await import("../admin/js/state.js");
@@ -236,6 +236,100 @@ test("★ a receipt whose order is gone is MARKED, and its number is untouched",
   assert.equal(reg.notOnThisPhone, 1);
   assert.equal(reg.rows[1].number, 2, "the number of a void receipt was altered");
   assert.match(registerSummary(reg), /no longer on this phone/);
+});
+
+test("★★ a receipt written before the order was GROUPED still finds it (v441)", () => {
+  // ⚠️⚠️ THE FAULT THIS ANSWERS, AND IT WAS LIVE ON HER PHONE. A one-item order has no groupId, so
+  // its code was drawn from its own id. **Giving it a second item invented a group name, and the
+  // code was redrawn from that** — so a receipt already written kept the old code and the register
+  // read "not in this phone's orders" for ever, **about an order that was still there.** Verified on
+  // a real screen: one item `#1`, a second item added, `#55568B`. Her words: __"it is a unique
+  // identify of an order … like giving a key to a customer."__
+  // ⭐ v441 stops the code moving; this is the other half — the rows already written under the old
+  // code find their order again.
+  const moved = { id: "ord_c2fda5", groupId: "ordg_111111", customerName: "LK Lucy" };
+  const reg = registerRows([raw(1, "C2FDA5")], [moved]);
+  assert.equal(reg.rows[0].orphan, false,
+    "★ a receipt holding the code the order wore before it was grouped is still reported as void");
+  assert.equal(reg.rows[0].order, moved, "the old code did not reach the order it belongs to");
+  assert.equal(reg.notOnThisPhone, 0);
+  assert.doesNotMatch(registerSummary(reg), /no longer on this phone/);
+
+  // ⚠️⚠️ AND AN OLD CODE NEVER OUTRANKS A CODE AN ORDER WEARS TODAY. The six characters are random,
+  // so an alias can collide with another order's LIVE code — and a historical row stealing a live
+  // one would be the same fault pointing the other way. Every current code is claimed first, and a
+  // second pass that could overwrite would need the alias pass to run last to show it: ⚠️ **so the
+  // order of the two orders below is the test.** `other` is listed FIRST, which puts `moved`'s alias
+  // last of all — the one position from which overwriting would steal a live code.
+  const other = { id: "ord_00c2fda5", customerName: "Peggy" };  // its live code IS C2FDA5
+  const reg2 = registerRows([raw(1, "C2FDA5")], [other, moved]);
+  assert.equal(reg2.rows[0].order, other,
+    "★ an order's own live code was taken by another order's historical alias");
+  assert.equal(reg2.rows[0].orphan, false);
+});
+
+test("★★ 'when was it last here' looks for BOTH numbers and stops at the newest copy (v443)", () => {
+  // ⚠️⚠️ THE QUESTION THE REGISTER COULD ONLY POSE. "Not in this phone's orders" is true of an order she
+  // removed on purpose, an order a fault swept away, and an order this phone never had — three different
+  // problems in one sentence. On 11 Oct 2026 three paid receipts sat like that and nobody could say which.
+  // ⭐ The press looks through her own saved copies and answers when the order was still there.
+  const moved = { id: "ord_c2fda5", groupId: "ordg_111111" };  // wears #111111, wore #C2FDA5
+  const plain = { id: "ord_aaaaaa" };
+
+  // ⚠️ BOTH NUMBERS ARE LOOKED FOR — the one it wears today, and the one it wore before it was grouped.
+  assert.equal(copyKnowsCode([moved], "111111"), true, "the number the order wears TODAY was not looked for");
+  assert.equal(copyKnowsCode([moved], "C2FDA5"), true, "the number it wore BEFORE it was grouped was not looked for");
+  assert.equal(copyKnowsCode([moved], "ABCDEF"), false, "a copy was credited with an order it never held");
+  assert.equal(copyKnowsCode([moved], "??????"), false, "the placeholder was treated as a real number");
+  assert.equal(copyKnowsCode([], "C2FDA5"), false);
+
+  const older = { label: "Weekly", createdAt: "2026-10-09T07:00:00.000Z", orders: [moved] };
+  const newest = { label: "Daily", createdAt: "2026-10-11T08:20:00.000Z", orders: [plain] };
+
+  // ⚠️⚠️ AND THE ANSWER IS A *WINDOW*, NOT A MOMENT — her own instruction: __"you should say that something
+  // entered abt 8am, is deleted later in the afternoon, by me or by the system error itself"__. One time
+  // would read as the moment it vanished, which the app cannot know. **Two copies bracket it.**
+  const w = lastSeenIn([newest, older], "C2FDA5");
+  assert.equal(w.hit, older, "★ the search did not reach the copy that still holds the order");
+  assert.equal(w.goneBy, newest,
+    "★ the window is open-ended — the copy that shows it was ALREADY gone was not found");
+  // ⭐ AND WHEN THE NEWEST COPY ITSELF STILL HAS IT, THERE IS NO UPPER EDGE — it left after that copy.
+  const only = lastSeenIn([{ ...newest, orders: [moved] }, older], "C2FDA5");
+  assert.equal(only.hit.createdAt, newest.createdAt, "★ the answer was taken from an older copy than needed");
+  assert.equal(only.goneBy, null, "★ an upper edge was invented out of a copy that still holds the order");
+  // ⚠️ AND AN ORDER IN NO COPY AT ALL SAYS SO rather than being handed a copy at random.
+  assert.deepEqual(lastSeenIn([newest, older], "ABCDEF"), { hit: null, goneBy: null });
+  assert.deepEqual(lastSeenIn([], "ABCDEF"), { hit: null, goneBy: null });
+});
+
+test("★★ a receipt she has declared VOID is marked, not deleted — and stops counting (v448)", () => {
+  // ⚠️⚠️ HER WORDS: __"can you have me to clear the invoice, or rearrange it, ok for me in this software
+  // trial stage"__ ⭐ **AND THE ANSWER IS MARK, NEVER DELETE.** The number stays spent and the row stays on
+  // the page — a register you can edit is not a register, and this one exists because she once removed a
+  // paid order and watched `#000001` stay spent.
+  const st = stateWith();
+  const raw2 = [raw(1, "C2FDA5"), raw(9, "D06D27")];
+  const before = registerRows(raw2, []);
+  assert.equal(before.notOnThisPhone, 2, "the fixture did not start with two unaccounted receipts");
+  assert.equal(before.rows.length, 2);
+
+  const voided = [{ no: 9, code: "D06D27", at: "2026-10-12T09:00:00.000Z", reason: "trial order" }];
+  const after = registerRows(raw2, [], voided);
+  // ⚠️ THE ROW IS STILL THERE. A count that dropped because the row vanished would be the delete this
+  // whole screen exists to refuse.
+  assert.equal(after.rows.length, 2, "★ a voided receipt was removed from the run");
+  assert.equal(after.rows[1].no, "000009", "the run was re-ordered by the void mark");
+  assert.equal(after.rows[1].orphan, true, "the row stopped saying it has no order behind it");
+  // ⭐ AND IT IS NO LONGER COUNTED AS UNACCOUNTED FOR — the decision is recorded, so it is not a mystery.
+  assert.equal(after.notOnThisPhone, 1, "★ a receipt she has explained was still counted as unexplained");
+  assert.equal(after.voided, 1, "the void decision was not counted");
+  assert.match(after.rows[1].voided.reason, /trial/, "her reason was not carried onto the row");
+  assert.equal(registerSummary(after).includes("no longer on this phone"), true,
+    "the headline does not mention the remaining one at all");
+  // ⚠️ AND IT IS KEYED ON THE NUMBER, so a void mark cannot land on a different receipt by a code clash.
+  assert.equal(voidedIndex(voided).get(9).reason, "trial order");
+  assert.equal(voidedIndex(voided).get(1), undefined);
+  assert.equal(voidedIndex(null).size, 0, "a missing void list threw rather than reading as none");
 });
 
 test("a refunded receipt keeps its row, its number, and wears its mark", () => {

@@ -193,6 +193,25 @@ test("computeRecords: parcel courier rows ride the sync", () => {
   assert.deepEqual(carriers[1].data, { id: "pc_ninja", name: "Ninja Van", note: "counter at Prangin Mall" });
 });
 
+// The vans a Place is served by (v419). ⚠️ THE SAME TRAP THE CARRIER ROWS ABOVE GUARD AGAINST: a
+// list left out of `LISTS` is silently device-local — and the fault is nastier here than for a
+// carrier, because a Place carries a route's ID and not its name, so a route that never synced
+// leaves the other phone holding an id that resolves to nothing.
+test("computeRecords: delivery route rows ride the sync", () => {
+  const st = baseState();
+  st.deliveryRoutes = [
+    { id: "rt_a", name: "Route A", sort: 0 },
+    { id: "rt_b", name: "Route B", sort: 1 },
+  ];
+
+  const rows = sync.computeRecords(st);
+  const routes = rows.filter((r) => r.kind === "deliveryRoutes");
+  assert.equal(routes.length, 2, "both routes reach the cloud");
+  assert.deepEqual(routes[0].data, { id: "rt_a", name: "Route A", sort: 0 },
+    "the row goes whole — no field whitelist to fall out of date");
+  assert.deepEqual(routes[1].data, { id: "rt_b", name: "Route B", sort: 1 });
+});
+
 test("mergeRows: a carrier added on one phone arrives on the phone that lacked it", () => {
   const { store, restore } = installStorage();
   try {
@@ -2060,5 +2079,91 @@ test("mergeRows: a category newly saved on this phone is queued to be pushed", (
     const r = sync.markDirty(st, "2026-09-28T00:00:00.000Z");
     assert.equal(r.pending["productCategories:cat_food"]._deleted, false);
     assert.equal(r.pending["productCategories:cat_food"].data.name, "Food");
+  } finally { restore(); }
+});
+
+// ── v467: one un-keyable record must not poison the whole batch ──────────────
+test("★★★ flush: every row it sends has the SAME KEYS — the fault that stopped every device syncing", async () => {
+  // ⚠️⚠️ THE FAULT, EXACTLY AS THE SERVER REPORTED IT ON HER OWN SCREEN:
+  //   `Sync failed: Push failed (HTTP 400) — {"code":"PGRST102","message":"All object keys must match"}`
+  // ⭐ **`JSON.stringify` DROPS a key whose value is `undefined`** — so ONE record with no id went out as
+  // `{kind, data, _deleted, updated_at}`: **four keys where every other object in the same array had FIVE.**
+  // ⚠️ **PostgREST refuses the WHOLE BATCH for that one object** — and because the journal had already
+  // recorded every one of them as handed over, **nothing was ever offered again.**
+  // ⭐ MEASURED ON HER SCREEN: **21 changes stuck, 11 records not in the shared data, and every other
+  // device blind to all of it.** ⭐ And an order with no id is not an invented fixture — **her book really
+  // contains them** (v440's lesson, which is why the shelf had to use `.filter(Boolean)`).
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    st.orders = [{ productId: "p1", qty: 2 }, { id: "o2", productId: "p1", qty: 1 }];
+    seedToken(store);
+    sync.markDirty(st, "2026-01-01T00:00:00.000Z");
+
+    let captured = null;
+    const restoreFetch = installFetch(async (url, opts) => {
+      captured = { url, opts };
+      return { ok: true, text: async () => "" };
+    });
+    try {
+      const r = await sync.flush(st);
+      assert.equal(r.ok, true, "the push itself failed, so nothing below proves anything");
+
+      const body = JSON.parse(captured.opts.body);
+      assert.ok(body.length, "nothing was sent at all, so nothing below proves anything");
+
+      // ⭐⭐ THE RULE THE SERVER ENFORCES, ASSERTED HERE. ⚠️ It is checked on the PARSED body precisely
+      // because a key `JSON.stringify` dropped is simply ABSENT once parsed — which is the whole fault.
+      const first = JSON.stringify(Object.keys(body[0]));
+      for (const row of body) {
+        assert.equal(JSON.stringify(Object.keys(row)), first,
+          `★ a row was sent with different keys (${JSON.stringify(Object.keys(row))} against ${first}) — `
+          + "PostgREST refuses the WHOLE BATCH for one of them, and that is what stopped every device syncing");
+      }
+      assert.equal(body.some((row) => typeof row.id !== "string" || !row.id), false,
+        "★ a record that cannot be keyed was sent anyway — it can never land, and it poisons the rest");
+      // ⚠️ AND THE GOOD RECORD BESIDE IT STILL GOES: one bad record must not cost her the other twenty.
+      assert.ok(body.some((row) => row.id === "o2"),
+        "★ the good order was dropped from the batch along with the bad one");
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});
+
+// ── v475: a queue holding ONLY an un-sendable record ─────────────────────────
+test("★★★ flush: a queue holding only a record that can never be sent is swept, and still reports ok", async () => {
+  // ⚠️⚠️ HER REPORT, IN TWO LINES: __"after sync now, the phone still say 1 changes waiting to be send"__
+  // — and, asked what the shared-data card said, __"there is no error under sync"__.
+  // ⭐⭐ **NO ERROR AND A COUNT THAT NEVER MOVES. That is this condition exactly.**
+  // ⚠️⚠️ THE v467 SWEEP SAT *AFTER* THE POST — so it only ever ran when there was something to post. **When
+  // the ONLY thing queued was the record that cannot be keyed, `sendable` came out empty, `flush` returned
+  // "ok", and the queue was never swept.** The record sat there for ever, on her phone, while the app told
+  // her everything was fine. ⭐ **"It says ok" and "it is done" are two different sentences.**
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    st.orders = [{ productId: "p1", qty: 2 }];   // ⚠️ NO ID — a shape her book really contains (v440)
+    seedToken(store);
+    sync.markDirty(st, "2026-01-01T00:00:00.000Z");
+
+    // ⚠️ AND ONLY THAT ONE IS LEFT QUEUED, so `sendable` is empty — **the exact state her phone was in.**
+    // Anything else queued (settings, on a fresh cloud) would make this pass for the wrong reason.
+    const b = JSON.parse(store.get("bakeadmin.sync"));
+    for (const key of Object.keys(b.pending)) if (key !== "orders:undefined") delete b.pending[key];
+    store.set("bakeadmin.sync", JSON.stringify(b));
+    assert.equal(sync.pendingCount(), 1, "the fixture did not leave exactly one queued record");
+
+    let posted = null;
+    const restoreFetch = installFetch(async (url, opts) => {
+      if (opts && opts.method === "POST") posted = JSON.parse(opts.body);
+      return { ok: true, text: async () => "" };
+    });
+    try {
+      const r = await sync.flush(st);
+      assert.equal(r.ok, true, "flush did not report ok, so her no-error half is not being reproduced");
+      assert.equal(sync.pendingCount(), 0,
+        "★ the record that can never be sent was left in the queue — the count she watched that never moved");
+      assert.ok(!posted || posted.every((row) => typeof row.id === "string" && row.id),
+        "★ a record that cannot be keyed was posted anyway, which poisons the whole batch");
+    } finally { restoreFetch(); }
   } finally { restore(); }
 });

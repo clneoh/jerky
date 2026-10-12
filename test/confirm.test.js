@@ -119,6 +119,26 @@ test("a customer collecting at a Point is told the place, the address AND when (
   assert.ok(!built.message.includes("10-12"), "never the van's arrival window");
 });
 
+test("★★ the address switch does NOT silence the confirmation (v410)", () => {
+  // ⚠️⚠️ THIS IS A DECISION, NOT AN OMISSION, AND IT IS WORTH A TEST BECAUSE THE TEMPTING CHANGE
+  // IS THE WRONG ONE. v410 gave each Point a switch, "Show this address on the shop" — and the
+  // obvious reading of "hidden" is that no customer should ever be handed it. **They must.**
+  //
+  // ⭐ A customer who has PAID has to be told where to walk or the order is uncollectable, and the
+  // two surfaces are not the same kind of thing: the shop is a public page with no login that
+  // anyone can read, and this is a private message to one person who has already chosen. So the
+  // switch governs the public page only, and suppressing this line would strand somebody.
+  //
+  // ⚠️ If a future change DOES want the switch to reach here, it has to delete this test on
+  // purpose — which is the point of writing it down.
+  const hidden = { ...FARLIM, showAddress: false };
+  const built = buildConfirmation(state({ points: [hidden] }), atPoint(), "");
+  assert.ok(built.message.includes("Where: Lebuhraya Thean Teik, 11500 Air Itam"),
+    "the confirmation still says where to collect, switch or no switch");
+  // ⚠️ ASSERTION ON USER-VISIBLE COPY → it moves with the string: jerky says "Collect (local)".
+  assert.ok(built.message.includes("Collect (local) at Farlim, Air Itam"), "and still names the place");
+});
+
 test("a Point with no hours set promises the day and says nothing about a time (v304)", () => {
   const noHours = { ...FARLIM, collectWindow: "" };
   const built = buildConfirmation(state({ points: [noHours] }), atPoint(), "");

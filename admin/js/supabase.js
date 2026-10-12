@@ -22,6 +22,7 @@ import { customerTotal } from "./courier.js";
 // by the time it reaches an order (normCode).
 import { normCode, publishCodes } from "./promo.js";
 import { pointById, publishPoints } from "./points.js";
+import { publishPointAreas, shopPointOrder } from "./pointAreas.js";
 import { usageByCode } from "./promo-usage.js";
 // The trip on the order, read through the one helper that decides what a half-written
 // record means. NOT the courier registry: this module is imported by the channel that
@@ -29,7 +30,7 @@ import { usageByCode } from "./promo-usage.js";
 // registry here would close a loop between the two. Everything published about a trip
 // is therefore already ON the record — its courier's name, its phase and its driver are
 // written there when the trip is booked or checked, and this only carries them across.
-import { jobOf, promisedWindowSuffix, courierDeliveryText } from "./courier_job.js";
+import { courierDayOf, jobOf, promisedWindowSuffix, courierDeliveryText } from "./courier_job.js";
 // The parcel record (v226) — the second KIND of courier. See js/parcel.js.
 import { parcelOf, parcelHanded } from "./parcel.js";
 // The shop's own payload is untrusted input, so the one rule about what a place
@@ -311,7 +312,13 @@ export function maybeSync(state) {
 // config to a row the storefront reads, so edits go live without a redeploy.
 // ────────────────────────────────────────────────────────────────────────────
 
-function storefrontPayload(state) {
+// ⚠️ EXPORTED SO THE PAYLOAD ITSELF CAN BE JUDGED (v410). Until then this function was private and
+// the publish tests could only count that a request was SCHEDULED — **nothing anywhere read what
+// was in it.** ⭐ `points-publish.test.js` predicted exactly this in its own header: *"It is a
+// WHOLE-CLASS bug, not one bug: **the next list that reaches the shop will forget the same call
+// unless something fails when it does.**"* The collection areas are that next list, and what fails
+// now is a test on the shape rather than a silence.
+export function storefrontPayload(state) {
   const sf = (state.settings && state.settings.storefront) || {};
   // The storefront menu is the backoffice's product list (active only) — one
   // list, so adding/editing/hiding a product in the app updates the customer
@@ -475,10 +482,21 @@ function storefrontPayload(state) {
     // advertised, never secret. See publishCodes in js/promo.js.
     promoCodes: publishCodes(state, (c) => usage.get(c.code) || { used: 0, given: 0 }),
     // The Self collection Points the shop may OFFER (v299) — id and name only, and active
-    // ones only. The receiver, their phone, the fee and even the address stay here: the
-    // shop is public, and the message that tells a customer where to go is built from her
-    // own copy. Always sent, even empty, for the same reason the lists above are.
-    points: publishPoints(state),
+    // ones only. The receiver, their phone and the fee stay here: the shop is public, and the
+    // message that tells a customer where to go is built from her own copy. Always sent, even
+    // empty, for the same reason the lists above are.
+    // ⚠️ THE ORDER IS THE SHOP'S ORDER (v410), taken from the same grouping the headings come
+    // from — the customer page walks this list and puts an area heading in front of the first
+    // Point under it, so the order and the headings have to be ONE decision.
+    // ⚠️ AND A POINT'S ADDRESS NOW RIDES WITH IT **only** when she has ticked "Show this address
+    // on the shop" on that Point. See publishPoints.
+    points: publishPoints(state, shopPointOrder(state)),
+    // The AREAS those Points are grouped under (v410). Her words: __"top level is Penang Island &
+    // Prai. Under Penang Island will be Area like Sg Ara, Balik Pulau, Farlim, Georgetown"__.
+    // ⚠️ IDS, never Point names, and only areas that carry something — an empty heading would draw
+    // a shelf with nothing on it. Always sent, even empty, so deleting her last area takes the
+    // headings off a page that is already open.
+    pointAreas: publishPointAreas(state),
   };
   // The "Website by …" credit for the homepage/store footers — name, the email
   // link(s) and the optional WhatsApp number. Published only when set; the
@@ -775,7 +793,13 @@ export function trackingSnapshot(state, group) {
     // is a time on a day the van never comes. `courierDeliveryText` words the van's day and window
     // together, or the window alone when no day has been typed — **byte-for-byte what this line
     // produced before, so every order that carries no courier day is untouched.**
-    delivery: `${date ? shortDate(date) : ""} · ${fulfillment}${address}${whenText}`,
+    // ★★ AND THE FIRST DATE ON THIS CARD IS LABELLED (v429). ⚠️⚠️ It read **"Sat 26 Sep · Courier …"**
+    // — the BAKE day immediately in front of the word *Courier*, which is **the exact shape that
+    // produced the original "is it Wednesday or Thursday?" confusion.** The card carried BOTH days
+    // (the van's day and window ride `whenText`) and **named neither**.
+    // ⭐ A COLLECTION KEEPS THE BARE DATE: for a collection the bake day IS the day they get their
+    // bread, and the word "Delivery" on that line is honest.
+    delivery: `${date ? (courierDayOf(first) ? `Bake ${shortDate(date)}` : shortDate(date)) : ""} · ${fulfillment}${address}${whenText}`,
     items,
     total,
     customer: String(first.customerName || ""),

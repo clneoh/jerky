@@ -10,7 +10,7 @@
 // it READS the register and says what shape it is in. It still draws nothing.
 //
 
-import { fmtRM, orderCode } from "./state.js";
+import { fmtRM, codeFromId, orderCode } from "./state.js";
 
 // ★★ AND THE NUMBER BELONGS TO THE ORDER, NOT TO THE PRESS. It is claimed once, when the
 // money is recorded, and every later read — printing the receipt, opening it on the other
@@ -33,6 +33,27 @@ export function receiptNoOf(order) {
   const n = Number(order && order.receiptNo);
   if (!Number.isFinite(n) || n <= 0) return "";
   return String(Math.floor(n)).padStart(WIDTH, "0");
+}
+
+// ★★ THE NUMBER BELONGS TO THE ORDER, NOT TO ONE OF ITS ROWS (v445).
+//
+// ⚠️⚠️ HER CONSOLIDATED INVOICE SHOWED THE FAULT. Two screens read the same order and disagreed: the
+// RECEIPT REGISTER said `#000003` was issued for **Mr Tan Eng Boo · Order #F447EE**, and the INVOICE
+// column for that same order read **"none yet"**. ⭐ The register reads the shared cloud by ORDER CODE;
+// the invoice reads `receiptNo`, **a fact stamped onto a ROW** — and it was reading the group's FIRST row.
+//
+// ⭐ THE STAMP IS COPIED TO EVERY ROW OF THE SALE when it is issued, so the number is not lost — **it is
+// read from the wrong place.** A group whose rows sit on more than one bake day, or whose first row has
+// changed since the money was recorded, hands the invoice a row that never carried it. ⭐ **The same fault
+// in a new place as v432 (`familyOfOrder`) and v441 (the order code): a fact about the ORDER, held by a
+// ROW.** So it is read the same way — from whichever row of the order knows it.
+export function receiptNoOfGroup(orders) {
+  const list = Array.isArray(orders) ? orders : (orders ? [orders] : []);
+  for (const o of list) {
+    const n = receiptNoOf(o);
+    if (n) return n;
+  }
+  return "";
 }
 
 // "Receipt #000123" — the paper's own heading. Empty when the order has no number.
@@ -112,7 +133,29 @@ export function receiptStatus(order, cur = "RM") {
 // the shared truth; her orders are only what this device holds. Calling a number "void" when
 // the phone simply has not synced yet would invent a hole that does not exist — so the row
 // says what was actually observed.
-export function registerRows(raw, orders) {
+// ★★ A RECEIPT SHE HAS DECLARED VOID (v448).
+//
+// ⚠️⚠️ HER QUESTION: __"can you have me to clear the invoice, or rearrange it, ok for me in this software
+// trial stage"__ — and the answer is **mark, never delete.** ⭐ A register you can edit is not a register;
+// that is the one guarantee this screen makes, and it exists because of the day she removed a paid order
+// and watched `#000001` stay spent. **A number is never given back and never re-used.**
+//
+// ⭐ SO WHAT SHE CAN HAVE IS THE HONEST FORM OF "CLEAR": a row marked VOID, with HER reason on it. The run
+// stays whole, an auditor reads exactly what happened, and the row stops looking like an unexplained hole.
+// ⚠️ AND IT IS A DECISION, SO IT IS REVERSIBLE — an annotation she can take back, not a fact she cannot.
+//
+// ⚠️ KEYED ON THE NUMBER, NOT THE CODE. Numbers are unique by construction (the table's own constraint);
+// a six-hex code collides about once in 16M, which is why the register matches on both and this does not.
+export function voidedIndex(voided) {
+  const map = new Map();
+  for (const v of (Array.isArray(voided) ? voided : [])) {
+    const n = Math.floor(Number(v && v.no));
+    if (Number.isFinite(n) && n > 0) map.set(n, v);
+  }
+  return map;
+}
+
+export function registerRows(raw, orders, voided) {
   const list = (Array.isArray(raw) ? raw : [])
     .filter((r) => r && Number(r.number) > 0)
     .map((r) => ({
@@ -129,16 +172,36 @@ export function registerRows(raw, orders) {
     .sort((a, b) => a.number - b.number);
 
   // The codes this phone can actually match. A lookup, not a count.
+  //
+  // ⚠️⚠️ AND IT MATCHES THE CODE THE RECEIPT WAS WRITTEN WITH, NOT ONLY THE CODE THE ORDER WEARS
+  // TODAY (v441). Until v441 an order's code was re-derived every time it was read, so adding a
+  // second item to a one-item order MOVED it — and the receipt already in this register kept the old
+  // one. Every such row has read "not in this phone's orders" ever since, **about an order that is
+  // still here**, which is the worst thing this screen can say. ⭐ The id-only code is therefore
+  // accepted as an alias.
+  //
+  // ⚠️ TWO PASSES, AND THE ORDER MATTERS. Every CURRENT code is claimed first, so an alias can never
+  // displace a code some other order genuinely wears today — it only fills a gap nothing else claims.
+  // A 6-hex code collides about once in 16M (see `orderCode`), so the ordering is what keeps a
+  // historical alias from ever outranking a live one.
   const here = new Map();
-  for (const o of (Array.isArray(orders) ? orders : [])) {
+  const list2 = Array.isArray(orders) ? orders : [];
+  for (const o of list2) {
     const c = orderCode(o);
     if (c && c !== "??????" && !here.has(c)) here.set(c, o);
   }
+  for (const o of list2) {
+    const legacy = codeFromId(o);
+    if (legacy && legacy !== "??????" && !here.has(legacy)) here.set(legacy, o);
+  }
 
+  const voidedBy = voidedIndex(voided);
   const rows = list.map((r) => ({
     ...r,
     order: here.get(r.code) || null,
     orphan: !here.has(r.code),
+    // ★ The row as it now reads: an order, a void decision, or genuinely unexplained.
+    voided: voidedBy.get(r.number) || null,
   }));
 
   // ★ A GAP IS ANY WHOLE NUMBER THE RUN NEVER USED — including at the head, because the
@@ -160,9 +223,53 @@ export function registerRows(raw, orders) {
     last: list.length ? list[list.length - 1].number : 0,
     gaps,
     // ⚠️ NAMED FOR WHAT WAS SEEN, NOT FOR WHAT IT MEANS. See the note above.
-    notOnThisPhone: rows.filter((r) => r.orphan).length,
+    // ★ AND A VOIDED ROW IS NO LONGER COUNTED (v448). A receipt she has explained is not a receipt that
+    // is unaccounted for — counting it again would leave her register reciting the same four numbers for
+    // ever, and **a warning that can never be satisfied is one she learns to ignore.**
+    notOnThisPhone: rows.filter((r) => r.orphan && !r.voided).length,
+    voided: rows.filter((r) => !!r.voided).length,
     refunded: rows.filter((r) => r.refundedAt).length,
   };
+}
+
+// ★★ DOES A SAVED COPY CONTAIN THIS ORDER? (v443)
+//
+// ⚠️ THE QUESTION THE REGISTER COULD NOT ANSWER. A void row said *"not in this phone's orders"* — which is
+// true of an order she removed on purpose, an order swept away by a fault, and an order this phone simply
+// never had, **and it cannot tell those apart.** On 11 Oct 2026 three such rows sat there under three paid
+// receipts and nobody could say which of the three it was. ⭐ This is the half that fixes it: the same two
+// numbers the register already matches on — the one an order wears today, and the one it wore before it was
+// grouped (v441) — looked for inside one of her own saved copies.
+export function copyKnowsCode(orders, code) {
+  const want = String(code || "").trim().toUpperCase();
+  if (!want || want === "??????") return false;
+  return (Array.isArray(orders) ? orders : []).some(
+    (o) => o && (orderCode(o) === want || codeFromId(o) === want));
+}
+
+// ★★ AND IT ANSWERS WITH A WINDOW, NOT A MOMENT (v443) — HER OWN INSTRUCTION.
+//
+// __"you should say that something entered abt 8am, is deleted later in the afternoon, by me or by the
+// system error itself"__
+//
+// ⚠️⚠️ SHE IS RIGHT, AND ONE TIME COULD NOT SAY IT. "Last seen at 08:20" proves the order existed at 08:20
+// and says nothing about when it left — and a single time invites her to read it as the moment it vanished,
+// which the app cannot know. ⭐ **Two copies BRACKET it instead:** the newest copy that still HAS the order,
+// and the copy immediately newer than it, which does not. **It was there at the first and gone by the
+// second, so it left between the two** — which is a fact, and a much tighter one than "after 08:20".
+//
+// ⚠️ AND IT NEVER NAMES THE CAUSE. Removed by her, or removed by the app itself — **the data cannot tell
+// those apart, and a sentence that guessed would be the same fault as reading "this fits" as "this is it".**
+// Both are said, and neither is chosen. ⭐ It gets carried into her records: overstating here is worse than
+// saying less.
+//
+// `copies` MUST BE NEWEST FIRST — the caller orders them. Returns { hit, goneBy }: the newest copy that
+// knows the code, and the copy one step newer that does NOT (null when the newest copy itself still has it).
+export function lastSeenIn(copies, code) {
+  const list = Array.isArray(copies) ? copies : [];
+  const i = list.findIndex((c) => c && copyKnowsCode(c.orders, code));
+  if (i < 0) return { hit: null, goneBy: null };
+  return { hit: list[i], goneBy: i > 0 ? list[i - 1] : null };
 }
 
 // The register's headline, in one sentence, with the two things worth acting on first.

@@ -26,7 +26,11 @@ import assert from "node:assert/strict";
 import { bookedUnitsOnDate, effectiveCapacity, capacityStatus, productRemaining, poolRemaining } from "../admin/js/bom.js";
 import { computeSlots, computeProductSlots } from "../admin/js/supabase.js";
 
-const DATE = "2026-10-09"; // "the 9th" of her report
+// ⚠️⚠️ A HARDCODED FUTURE DATE IS A TEST THAT EXPIRES — and this one did (found 2026-10-12, when
+// nextDeliveryDates began filtering the 9th out as past). The fixture keeps her report's shape
+// — one day, booked — but the day is built from today so it can never rot again.
+const DATE = (() => { const d = new Date(); d.setDate(d.getDate() + 7);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
 
 function state({ products, deliveryDates, orders, defaultCapacity = 12 }) {
   return {

@@ -56,9 +56,17 @@ function createEl(tag) {
     },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener() {},
-    setAttribute(k, v) { this.attrs[k] = String(v); },
+    // ⚠️ AND A BOOLEAN ATTRIBUTE IS READ BACK AS A PROPERTY (v411). `el("div", { hidden: true })`
+    // writes the ATTRIBUTE — and a browser reflects that onto `.hidden`, so `body.hidden` is true.
+    // This shim did not, so a card `el()` had built hidden read as visible here and the assertion
+    // was about the shim rather than the view. **A boolean attribute is the same fact however it is
+    // asked for**, and `hidden` is the one this screen leans on for every folded card.
+    setAttribute(k, v) {
+      this.attrs[k] = String(v);
+      if (k === "hidden") this.hidden = true;
+    },
     getAttribute(k) { return this.attrs[k]; },
-    removeAttribute(k) { delete this.attrs[k]; },
+    removeAttribute(k) { delete this.attrs[k]; if (k === "hidden") this.hidden = false; },
     focus() {},
     click() { for (const f of this._listeners.click || []) f({}); },
     getBoundingClientRect() { return { top: 0, left: 0, right: 300, bottom: 60, width: 300, height: 60 }; },
@@ -376,4 +384,159 @@ test("a Point with no minimum keeps the sentence it has always had (v306)", () =
   const st = liveState([{ ...FARLIM }]);
   const root = mount(st);
   assert.ok(/No minimum order — one loaf still goes\./.test(deepText(root)), deepText(root).slice(0, 200));
+});
+
+// ── v410: what is actually IN the payload ───────────────────────────────────
+//
+// ⚠️ THIS FILE'S OWN HEADER CALLED IT: *"It is a WHOLE-CLASS bug, not one bug: the next list that
+// reaches the shop will forget the same call unless something fails when it does."* The collection
+// areas are that next list — so the payload is now READ rather than only counted, and a forgotten
+// line fails here instead of going quiet.
+
+const { storefrontPayload } = await import("../admin/js/supabase.js");
+
+function areaState({ areas = [], points = [] } = {}) {
+  const st = liveState(points);
+  st.pointAreas = areas;
+  return st;
+}
+
+test("★★ the published payload carries the AREAS, and the Points in the order the shop draws them", () => {
+  const st = areaState({
+    areas: [
+      { id: "pa_island", name: "Penang Island", parentId: "", sort: 0 },
+      { id: "pa_prai", name: "Prai", parentId: "", sort: 1 },
+      { id: "pa_sgara", name: "Sg Ara", parentId: "pa_island", sort: 0 },
+    ],
+    // ⚠️⚠️ THE `createdAt` DATES ARE DELIBERATELY IN THE OPPOSITE ORDER TO THE AREAS, and must stay
+    // that way. A Point has two possible orders: **hers** (`shopPointOrder`, loose first then each
+    // area in tree order) and **the one they were opened in** (`activePoints` sorts by `createdAt`).
+    // If the fixture's dates happened to agree with her order, this test would pass whichever one
+    // the payload used — a test of nothing. Inverted here so only the right one can pass.
+    points: [
+      { id: "pt_loose", name: "Somewhere unfiled", feeRM: 0.5, createdAt: "2026-10-03T00:00:00.000Z" },
+      { id: "pt_sgara", name: "Sg Ara", areaId: "pa_sgara", feeRM: 0.5, createdAt: "2026-10-02T00:00:00.000Z" },
+      { id: "pt_prai", name: "Chai Leng Park", areaId: "pa_prai", feeRM: 0.5, createdAt: "2026-10-01T00:00:00.000Z" },
+    ],
+  });
+  const out = storefrontPayload(st);
+
+  // ⭐ The headings: her names, her depths, and the IDS of what each carries. The island is sent
+  // even though it carries no Point of its own, because Sg Ara under it does — an indent with
+  // nothing to be indented from is not a tree.
+  assert.deepEqual(out.pointAreas, [
+    { name: "Penang Island", depth: 0, points: [] },
+    { name: "Sg Ara", depth: 1, points: ["pt_sgara"] },
+    { name: "Prai", depth: 0, points: ["pt_prai"] },
+  ], "her areas, in her order, carrying ids");
+
+  // ⚠️ AND THE ORDER IS THE ONE THE HEADINGS ARE READ AGAINST. The customer page walks this list
+  // and puts a heading in front of the first Point under it, so **the order and the headings have
+  // to be one decision** — taken by shopPointOrder, not by the order the records happen to sit in.
+  // ⭐ The loose Point is FIRST: a Point is a real place a customer can go, and burying one below
+  // her headings because she has not filed it yet helps nobody.
+  assert.deepEqual(out.points.map((p) => p.id), ["pt_loose", "pt_sgara", "pt_prai"]);
+});
+
+test("★ and the payload still carries every key it carried before", () => {
+  // ⚠️ A new key added to a payload that is REPLACED WHOLE is exactly how a list goes missing.
+  const out = storefrontPayload(areaState());
+  for (const k of ["name", "whatsapp", "deliveryDays", "cutoff", "products", "points", "pointAreas"]) {
+    assert.ok(k in out, `the payload still carries ${k}`);
+  }
+  assert.deepEqual(out.pointAreas, [], "no areas is an empty list, not a missing key");
+});
+
+test("★ a Point she ticks publishes its address, and one she does not, does not", () => {
+  const st = areaState({
+    points: [
+      { ...FARLIM, id: "pt_shown", name: "Shown", showAddress: true, areaId: "" },
+      { ...FARLIM, id: "pt_hidden", name: "Hidden", showAddress: false, areaId: "" },
+    ],
+  });
+  const rows = storefrontPayload(st).points;
+  const by = (id) => rows.find((r) => r.id === id);
+  assert.equal(by("pt_shown").address, "Lebuhraya Thean Teik", "the ticked one carries its address");
+  assert.equal("address" in by("pt_hidden"), false, "and the other carries no address key at all");
+  assert.equal(JSON.stringify(rows).includes("Aunty Lim"), false, "the receiver still never leaves");
+});
+
+test("★ the Points screen draws her areas as headings, and the unfiled ones first", () => {
+  const st = areaState({
+    areas: [
+      { id: "pa_island", name: "Penang Island", parentId: "", sort: 0 },
+      { id: "pa_sgara", name: "Sg Ara", parentId: "pa_island", sort: 0 },
+    ],
+    points: [
+      { ...FARLIM, id: "pt_loose", name: "Somewhere unfiled", areaId: "" },
+      { ...FARLIM, id: "pt_sgara", name: "A place in the village", areaId: "pa_sgara" },
+    ],
+  });
+  const root = mount(st);
+  // ⚠️ Matched on the exact class TOKENS, not on a substring: `.point-row-body` contains
+  // "point-row", so a substring match finds every card twice and reads the body as a row. And a
+  // row's own text starts with the grip glyph, so the name is read off its `.card-title`.
+  const has = (n, c) => !!(n._classes && n._classes.has(c));
+  // ⚠️ The name lives on the card's FOLD HEAD since v411, and that line carries the status chips
+  // after it ("… Active") plus the caret — none of which this test is about, so they are stripped.
+  // A chip changing must not be able to make the ORDER assertion look wrong.
+  const titleOf = (row) => deepText(walk(row).find((x) => has(x, "fold-head")))
+    .replace(/\s*(🏠 The kitchen)?\s*(Active|Paused)?\s*[▸▾]?$/, "").trim();
+  const seq = walk(root)
+    .filter((n) => has(n, "point-area-head") || has(n, "point-row"))
+    .map((n) => (has(n, "point-area-head") ? `# ${deepText(n)}` : `· ${titleOf(n)}`));
+  assert.deepEqual(seq, [
+    "# No area yet",           // ⚠️ FIRST — a Point is a real place a customer can go, so an
+    "· Somewhere unfiled",     //    unfiled one is never buried below her headings
+    "# Penang Island",         // ⭐ kept although it carries nothing itself, because Sg Ara under
+    "# Sg Ara",                //    it does — an indent needs something to be indented from
+    "· A place in the village",
+  ], "heading, then its Points — the unfiled ones first, then each area in her order");
+
+  // ⚠️ AND NO AREAS AT ALL IS THE SCREEN IT HAS ALWAYS BEEN, bar the one "No area yet" heading —
+  // so nothing jumps under her the day this version opens on a phone with no areas built yet.
+  const bare = mount(liveState([{ ...FARLIM }]));
+  assert.deepEqual(walk(bare).filter((n) => has(n, "point-area-head")).map(deepText),
+    ["No area yet"], "one heading, and every Point under it");
+  assert.equal(walk(bare).filter((n) => has(n, "point-row")).length, 1, "and her Point is still there");
+});
+
+test("★★ a Point card arrives FOLDED, and stays open once she opens it", () => {
+  // Her words: __"can the point fold up by default?"__ — with an area or two above them, a screen of
+  // fully-opened Points is a long scroll with the list she came to read buried in it.
+  const st = liveState([{ ...FARLIM }]);
+  const root = mount(st);
+  const has = (n, c) => !!(n._classes && n._classes.has(c));
+  const row = walk(root).find((n) => has(n, "point-row"));
+  const head = walk(row).find((n) => has(n, "fold-head"));
+  const body = walk(row).find((n) => has(n, "fold-body"));
+  assert.ok(head && body, "the card has a head to press and a body to fold");
+  assert.equal(body.hidden, true, "⚠️ and it arrives SHUT — that is the whole request");
+
+  // ⚠️ WHAT THE FOLDED CARD STILL SAYS. A list of names alone would be a list she had to open row by
+  // row, so the head carries the name, its chips, and the one line she reads at a glance.
+  const headText = deepText(head);
+  assert.ok(headText.includes("Farlim, Air Itam"), `the name is on the head: ${headText}`);
+  assert.ok(headText.includes("Active"), "and its status chip");
+  const summary = deepText(walk(row).find((n) => has(n, "card-sub")));
+  assert.ok(/Aunty Lim/.test(summary) && /RM0\.50 per order/.test(summary),
+    `and the line under it says who receives and what it costs her: ${summary}`);
+
+  // A tap opens it, and the detail is one tap away rather than gone.
+  press(head);
+  assert.equal(body.hidden, false, "tapping the head opens the card");
+
+  // ⚠️⚠️ AND IT IS STILL OPEN AFTER A REDRAW. Every change on this screen repaints the whole list —
+  // pausing, editing, dragging — so without remembering what she opened, the card she was working in
+  // would snap shut the moment she used it.
+  // ⚠️ THE SAME ROOT, re-rendered — not `mount(st)`, which builds a SECOND root and leaves this one
+  // alone. Written that way the assertion read a card nobody had redrawn and passed whatever the
+  // code did: a test of nothing, found by biting it.
+  renderPoints(root, st);
+  const again = walk(root).find((n) => has(n, "point-row"));
+  assert.equal(walk(again).find((n) => has(n, "fold-body")).hidden, false,
+    "a redraw leaves the card she opened open");
+
+  press(walk(again).find((n) => has(n, "fold-head"))); // put it back, so the next test starts folded
+  assert.equal(walk(again).find((n) => has(n, "fold-body")).hidden, true, "and tapping again shuts it");
 });

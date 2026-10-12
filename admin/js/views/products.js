@@ -1369,7 +1369,11 @@ function recipeLine(state, line, i, draft, refresh, selfId, cost) {
   const ing = byId(state.ingredients, line.ingredientId);
   const mismatch = ing && line.unit && ing.unit && line.unit !== ing.unit;
 
-  let ingOpts = state.ingredients.filter((x) => x.active !== false)
+  // ★★ IN HER ORDER (v418). ⚠️ The Ingredients screen draws `tailOrder(...)` and a drag writes
+  // `sort` onto the record — **the raw array is a different order entirely**, so this picker used to
+  // ignore every reorder made with the handle. Her words: __"after i reposition with the handle, the
+  // drop drop list have to organise is my preference"__.
+  let ingOpts = tailOrder(state.ingredients.filter((x) => x.active !== false))
     .map((x) => ({ value: x.id, label: x.name }));
   if (line.ingredientId && !ingOpts.some((o) => o.value === line.ingredientId)) {
     const hidden = byId(state.ingredients, line.ingredientId);

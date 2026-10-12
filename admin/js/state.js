@@ -170,6 +170,16 @@ export function defaultState() {
     productCategories: [],
     deliveryDates: [],
     orders: [],
+    // ★★ ORDERS THAT WERE REMOVED, KEPT SO THEY CAN BE PUT BACK (v444). See `removeOrders` — this is
+    // what stops any removal, hers or the engine's, from being permanent.
+    removedOrders: [],
+    // ★★ COUPONS SHE HAS TAKEN OFF AN ORDER BY HAND (v450). ⚠️ The credit itself is NOT touched — this is
+    // a note that says "not on this one", so putting it back needs no repair.
+    declinedCoupons: [],
+    // ★★ RECEIPTS SHE HAS DECLARED VOID, WITH HER REASON (v448). ⚠️ NOT A DELETE, EVER — see the note on
+    // `voidedReceipts` in views/receipt_register.js. The number stays spent; this is the annotation that
+    // says why, so a register row stops reading as an unexplained hole.
+    voidedReceipts: [],
     customers: [], // customer profiles (pet name/photo, likes, notes) keyed to orders
     purchaseOrders: [],
     // Money out: what you spent, and how. Written by a shopping run marked Bought
@@ -194,6 +204,23 @@ export function defaultState() {
     // never a setting: she opens them one at a time and expects most to end, so each has to
     // sync on its own and be pausable without touching the others. See js/points.js.
     points: [],
+    // The AREAS that group those Points (v410): {id, name, parentId, sort} — a tree of any depth,
+    // the same shape as productCategories. Her words: "top level is Penang Island & Prai. Under
+    // Penang Island will be Area like Sg Ara, Balik Pulau, Farlim, Georgetown".
+    //
+    // ⚠️ A SEPARATE LIST, NOT A FIELD ON A POINT, because an area is not a place: it has no
+    // address, no receiver, no fee and no pin, and a customer must never be offered "Penang
+    // Island" as somewhere to collect. One record each, so an area built on one phone syncs on
+    // its own. See js/pointAreas.js.
+    pointAreas: [],
+    // The VAN ROUTES those Points are served by (v419): {id, name, sort} — a flat list she grows,
+    // not a tree. Her words: "now i need few delivery routes, for one day delivery run day".
+    //
+    // ⚠️ A ROUTE CARRIES NO DAYS. Her words: "we don control by route, we control by point" — the
+    // days live on the POINT (`point.days`), so there is exactly one place a day is ever typed.
+    // ⚠️ AND MEMBERSHIP IS SEVERAL: "a point might belong to 2 or more routes", so a Point carries
+    // `routeIds`, an ARRAY — unlike `areaId`, which is one id. See js/deliveryRoutes.js.
+    deliveryRoutes: [],
     // Promo codes she hands out — one row per code, carrying the six rule
     // families and the offer (see js/promo.js for the engine and the shape). A
     // list she grows, like the credits ledger above, not a setting.
@@ -427,6 +454,16 @@ function normalize(s) {
     orders: Array.isArray(s.orders)
       ? s.orders.map((o) => (o && typeof o === "object" ? { ...o, status: o.status || "new" } : o))
       : [],
+    // Guarded like every other list she owns: a phone that has never removed an order, and a state
+    // written before v444, both behave exactly as before.
+    // ⚠️⚠️ AND A ROW FOR AN ORDER THAT IS BACK IN THE LIVE LIST IS DROPPED HERE (v474) — the invariant
+    // `dropStaleShelfRows` exists for, applied on every load. ⭐ It reads `s.orders`, the same source the
+    // `orders` key above uses, so the two can never disagree about what is live.
+    removedOrders: (Array.isArray(s.removedOrders) ? s.removedOrders : [])
+      .filter((r) => !(r && r.id && Array.isArray(s.orders) && s.orders.some((o) => o && o.id === r.id))),
+    voidedReceipts: Array.isArray(s.voidedReceipts) ? s.voidedReceipts : [],
+    declinedCoupons: Array.isArray(s.declinedCoupons) ? s.declinedCoupons : [],
+    customers: Array.isArray(s.customers) ? s.customers : [],
     purchaseOrders: Array.isArray(s.purchaseOrders) ? s.purchaseOrders : [],
     expenses: Array.isArray(s.expenses) ? s.expenses : [],
     deposits: Array.isArray(s.deposits) ? s.deposits : [],
@@ -435,6 +472,8 @@ function normalize(s) {
     rewards: Array.isArray(s.rewards) ? s.rewards : [],
     occasions: Array.isArray(s.occasions) ? s.occasions : [],
     points: Array.isArray(s.points) ? s.points : [],
+    pointAreas: Array.isArray(s.pointAreas) ? s.pointAreas : [],
+    deliveryRoutes: Array.isArray(s.deliveryRoutes) ? s.deliveryRoutes : [],
     // Guarded like every other list she owns. The rows themselves are cleaned by
     // js/promo.js on every read, so a half-synced or hand-edited record can never
     // reach a screen or the shop un-clamped.
@@ -710,6 +749,98 @@ function splitSharedDateIds(deliveryDates, orders) {
   return { deliveryDates: out, orders: (orders || []).map(reId) };
 }
 
+// ★★ THE ONE DOOR OUT, AND IT DOES NOT DESTROY (v444).
+//
+// WHY THIS EXISTS, IN HER WORDS: __"What my concern is it dont happen again"__ — asked after three PAID
+// orders left her data on 11 Oct 2026 and were in **none** of her eleven saved copies.
+//
+// ⚠️⚠️ THE THING THAT MADE IT PERMANENT WAS NOT THE REMOVAL — IT WAS WHAT HAPPENED NEXT. `sync.js`
+// tombstones **every record that was in the last snapshot and is gone now**, whatever removed it: a press,
+// a fault, a hand-edit. The tombstone goes to the shared cloud, the other phone deletes its copy, and **every
+// backup taken afterwards is a copy of data the order is already missing from.** ⭐ So the loss propagated
+// in one direction and there was no way back on any device.
+//
+// ⭐ THE GUARD IS NOT "STOP THE REMOVAL" — I still cannot prove what removed them, and a promise I cannot
+// back is worse than none. **It is that a removed order is KEPT.** It moves into `state.removedOrders`:
+// - a SEPARATE record, so the tombstone written for the order does not touch it — it survives on both
+//   phones and inside every copy, which is exactly what the orders did not;
+// - listable and restorable, so **whatever** removes an order — her, me, a fault, or the cloud — it can be
+//   put back.
+//
+// ⚠️ EVERY REMOVAL MUST COME THROUGH HERE. `test/order-removal-guard.test.js` fails the moment anything
+// else drops rows from `state.orders`, so a future screen cannot quietly go round it.
+// ★★ HER NUMBER, IN HER UNIT (v452): __"the deleted order just need to keep for 48hrs"__
+// ⚠️ TWO DAYS, NOT THIRTY — thirty was mine, and it was a guess dressed as a policy. **In HOURS, because
+// that is how she said it**, so the constant needs no conversion to be read against her words.
+export const REMOVED_KEEP_HOURS = 48;
+const REMOVED_MAX = 200;
+
+export function removeOrders(state, ids, reason = "") {
+  const want = new Set((Array.isArray(ids) ? ids : [ids]).filter(Boolean));
+  if (!want.size) return [];
+  const gone = [];
+  const keep = [];
+  for (const o of (state.orders || [])) {
+    if (o && want.has(o.id)) gone.push(o);
+    else keep.push(o);
+  }
+  if (!gone.length) return [];
+  state.orders = keep;
+  if (!Array.isArray(state.removedOrders)) state.removedOrders = [];
+  const at = new Date().toISOString();
+  for (const o of gone) {
+    const kept = { ...o, removedAt: at };
+    if (reason) kept.removedWhy = reason;
+    state.removedOrders.unshift(kept);
+  }
+  pruneRemovedOrders(state);
+  return gone;
+}
+
+// ⚠️ A SHELF THAT ONLY GROWS IS A LEAK. Thirty days is long enough to notice a loss and long enough for
+// the customer to come back about it, and 200 rows is far more than a bakery removes in a month.
+function pruneRemovedOrders(state) {
+  const list = Array.isArray(state.removedOrders) ? state.removedOrders : [];
+  const cut = new Date(Date.now() - REMOVED_KEEP_HOURS * 3600000).toISOString();
+  state.removedOrders = list.filter((r) => r && String(r.removedAt || "") >= cut).slice(0, REMOVED_MAX);
+}
+
+// ★★★ AND A SHELF ROW FOR AN ORDER THAT IS BACK IS STALE BY DEFINITION (v474).
+//
+// HER REPORT, with the check's own line: __"Nothing is on the orders list and the Removed list at once —
+// 3"__, naming `#9F47F5 · #D06D27 · #5C55CF` ⭐ **the three she put back after the 11 October loss.**
+// ⚠️⚠️ **THEIR SHELF ROWS SURVIVED THE RESTORE, BECAUSE SENDING WAS BROKEN AT THE TIME** — the removal of
+// the shelf row was queued and never left, so it came back down on the next pull. **The same damage as
+// every other line that week.**
+// ⭐ **AND IT IS NOT A THING SHE SHOULD HAVE TO CLEAR BY HAND: an order that is in the live list AND on the
+// shelf cannot be both.** The shelf's whole purpose is to hold what is NOT in the live list — so the row is
+// **stale, and dropping it cannot lose anything, because the order itself is right there.**
+// ⚠️ **SAFE BY CONSTRUCTION**: `removeOrders` takes the order OUT of the live list first and only then puts
+// it on the shelf, so the tidy can never race a removal. **A row for a genuinely removed order is kept.**
+export function dropStaleShelfRows(state) {
+  const live = new Set((Array.isArray(state.orders) ? state.orders : [])
+    .filter(Boolean).map((o) => o && o.id).filter(Boolean));
+  const shelf = Array.isArray(state.removedOrders) ? state.removedOrders : [];
+  const kept = shelf.filter((r) => !(r && r.id && live.has(r.id)));
+  state.removedOrders = kept;
+  return shelf.length - kept.length;
+}
+
+// Put one back exactly as it was — the same id, its group, its day, its price. ⚠️ The `removedAt` mark is
+// taken off, because it is a record of the loss and not a fact about the order.
+export function restoreRemovedOrder(state, id) {
+  const list = Array.isArray(state.removedOrders) ? state.removedOrders : [];
+  const i = list.findIndex((r) => r && r.id === id);
+  if (i < 0) return null;
+  const back = { ...list[i] };
+  delete back.removedAt;
+  delete back.removedWhy;
+  list.splice(i, 1);
+  if (!Array.isArray(state.orders)) state.orders = [];
+  state.orders.push(back);
+  return back;
+}
+
 // Move a whole customer order to another delivery day. `group` is a group from
 // groupOrders() ({ orders: [...] }) or a single order row; `dest` is a
 // deliveryDates row ({ id, date }). Every row moves together — deliveryDateId
@@ -834,8 +965,46 @@ export function isNewCustomer(state, group) {
 // of the order id (or its groupId, so a multi-item order shares one code),
 // uppercased. ids are 12 random hex chars from newId, so a collision needs 1
 // in ~16M — fine for a home bakery. Display code adds "#" (e.g. "#A3F9C2").
+// ★★ AND IT MUST NEVER MOVE (v441) — a code that has been issued is the order's for life.
+//
+// Her words, and she is describing a KEY rather than a label: __"the randon order number is a plus
+// point in our system, it is a unique identify of an order. Even the merchant dont control. Giving
+// this to a customer is like giving a key to a customer, we know and customer know. delivery man
+// will not know, a stranger trying to take advantage, will not be able to do so."__
+//
+// ⚠️⚠️ UNTIL v441 THE KEY SILENTLY CHANGED. This derivation reads `groupId || id`, and a one-item
+// order has NO groupId — so its code came from its own id, and **the moment that order gained a
+// second item a group name was invented for it and the visible code was re-derived from THAT.**
+// Same order, same customer, same money, a different code. Verified on a real screen before it was
+// fixed: one item `#1`, a second item added, **`#55568B`.**
+//
+// ⭐ WHAT THAT COST, and every one of these was live:
+//   - a RECEIPT already written held the old code, so the register reported "not in this phone's
+//     orders" about an order that was still there — and it would have gone on saying so forever;
+//   - the CONFIRMATION sent to the customer quoted the old code, so searching the code she gave them
+//     found nothing at all;
+//   - ⭐ **and that is exactly how an order comes to look like it vanished when it never did.**
+//
+// ⭐ THE FIX IS NOT A FIELD ON THE ORDER. A frozen `code` copied onto every row would have rewritten
+// her whole book the first time it loaded, and this app's first rule is that nothing of hers is
+// rewritten by a change she asks for. **The code is held still by BUILDING THE GROUP NAME OUT OF THE
+// ORDER'S OWN ROW instead** — see `applyPopupEdits`, which is the only place an existing order ever
+// gained a group name. Those six characters are then the same before and after, and not one stored
+// order was touched to achieve it.
 export function orderCode(order) {
   const hex = String((order && (order.groupId || order.id)) || "")
+    .replace(/[^0-9a-f]/gi, "")
+    .slice(-6)
+    .toUpperCase();
+  return hex || "??????";
+}
+
+// ★ THE CODE AN ORDER CARRIED BEFORE IT WAS EVER GROUPED (v441) — the id-only derivation, kept for
+// ONE job: a receipt written before this fix holds THAT code, and the register must still be able to
+// find the order it belongs to. ⚠️ It is a look-up alias and nothing else — `orderCode` is what every
+// screen and every new receipt shows.
+export function codeFromId(order) {
+  const hex = String((order && order.id) || "")
     .replace(/[^0-9a-f]/gi, "")
     .slice(-6)
     .toUpperCase();

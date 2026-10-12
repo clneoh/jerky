@@ -22,7 +22,7 @@ import { isCollected, isRefunded, refundOf } from "./money.js";
 import { orderDay, monthSpan } from "./profit.js";
 import { weekStartISO } from "./weekly.js";
 import { customerList, keyOf } from "./customers.js";
-import { receiptNoOf } from "./receipts.js";
+import { receiptNoOf, receiptNoOfGroup } from "./receipts.js";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"];
@@ -177,7 +177,11 @@ export function consolidatedSheet(state, { kind = "month", anchor = "", customer
       // ⚠️ "none yet" AND NOT A LONGER SENTENCE. The Invoice column is sized for a SERIAL, because that
       // is what it holds every other day of the week; a long phrase in the one row that has none would
       // either widen the column for every row or be cut off mid-word.
-      invoice: receiptNoOf(first) ? `#${receiptNoOf(first)}` : "",
+      // ⚠️⚠️ READ FROM THE WHOLE ORDER, NOT FROM ITS FIRST ROW (v445) — see `receiptNoOfGroup`. A group
+      // whose rows sit on two bake days, or whose first row changed after the money was recorded, used to
+      // hand this column a row that never carried the number, and the page said "none yet" about an order
+      // the RECEIPT REGISTER could name. **Two screens, one order, two answers** — her own filing page.
+      invoice: receiptNoOfGroup(g.orders) ? `#${receiptNoOfGroup(g.orders)}` : "",
       customer,
       // ★ WHAT WAS ORDERED, BACK ON THE PAGE (v377). Her words, looking at her own data: __"why no
       // description?"__ — and she is right. A filing list that cannot tell her what an order WAS is a list
@@ -197,7 +201,7 @@ export function consolidatedSheet(state, { kind = "month", anchor = "", customer
       // of them still to collect. **"none yet" says there is no NUMBER; it does not say the money is
       // missing**, and a column that reads as the second while meaning the first is the fault this app
       // calls a bug everywhere else.
-      unnumberedPaid: !receiptNoOf(first) && isCollected(g),
+      unnumberedPaid: !receiptNoOfGroup(g.orders) && isCollected(g),
     };
   });
   // ★★ AND THE NUMBERS THAT BELONG TO NO ORDER SHE STILL HAS (v378). Her question, reading the printout:

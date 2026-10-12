@@ -10,7 +10,7 @@
 // decider: one tap Give credit / Skip. She applies the actual RM amounts herself
 // when she confirms each order on WhatsApp.
 
-import { fmtRM, groupOrders, isNewCustomer, newId, orderCode, round2, waNumber } from "./state.js";
+import { codeFromId, isNewCustomer, fmtRM, groupOrders, newId, orderCode, round2, waNumber } from "./state.js";
 import { codesOf, normCode } from "./promo.js";
 import { addDays, todayISO } from "./dates.js";
 import { nameFor, servingFor } from "../../i18n.js";
@@ -231,12 +231,58 @@ export function validCredits(state, whatsapp, today = todayISO()) {
 // pick up the referrer's reward (which is for a LATER order), it cannot leak the discount
 // onto the friend's second order, and it does not care whether the coupon reads as used,
 // because being spent on this order is exactly what it is.
+// ★★ SHE HAS DECIDED ABOUT THIS ONE (v450). Her words: __"when a coupon is send over with order, the
+// back office just take it itself, without asking for my action to whether apply it or not"__
+//
+// ⚠️⚠️ AND THE ASYMMETRY WAS REAL: a friend's coupon is stamped spent and pointed at its order the moment it
+// is created, so **it came off by itself with nothing asking her** — while the reward she EARNS waits for her
+// to press Apply. Two kinds, two rules, and only one of them consulted her.
+//
+// ⭐ THE FIX DOES NOT STOP IT COMING OFF BY ITSELF. Asking first would mean a press she forgot on a busy
+// morning left the friend's discount off an order **whose customer was already told they had it** — which is
+// the v322 fault exactly, through a different door. So it still applies; **what she gets is the sight of it
+// and one press to take it off.**
+//
+// ⚠️ AND THE CREDIT IS NOT TOUCHED — this is a note that says "not on this one", so putting it back needs no
+// repair and nothing about the friend's coupon is lost.
+export function couponDeclined(state, id) {
+  const want = String(id || "");
+  return !!want && (state.declinedCoupons || []).some((x) => String(x) === want);
+}
+
 export function couponOn(state, orders) {
+  const hit = couponOnAny(state, orders);
+  if (!hit.id || !couponDeclined(state, hit.id)) return hit;
+  return { ...hit, amount: 0, declined: true };
+}
+
+// ⚠️ THE SAME LOOK-UP WITHOUT HER DECISION APPLIED — so the screen can still NAME a coupon she has taken off
+// and offer it back. **A mark with no way back is a delete wearing a different word** (v448's lesson).
+export function couponOnAny(state, orders) {
   const rows = Array.isArray(orders) ? orders : [];
   const first = rows[0];
   if (!first) return { amount: 0, id: "", code: "", role: "" };
   const code = orderCode(first);
   if (!code) return { amount: 0, id: "", code: "", role: "" };
+  // ★★★ A COUPON MUST STILL COME OFF AN ORDER THAT HAS SINCE BEEN SPLIT (v449).
+  //
+  // ⚠️⚠️ THE FAULT, MEASURED BEFORE THIS WAS WRITTEN. An order's number is stamped onto its coupon when she
+  // presses **Apply** (`markOneUsed(..., orderCode(first))`), and read back here by comparing it. **Until
+  // v441 an order's number MOVED the moment it gained a second item** — so a coupon applied while it wore
+  // `#E61119` was looked for under `#B9C955` afterwards, matched nothing, **came off nothing, and stayed
+  // spent.** ⭐ The coupon was BURNED and moved no money — the same fault v336 fixed once already, recurring
+  // for every order split before v441. And the friend's own coupon died the same way, so **they never got
+  // the RM3 they were promised either.**
+  //
+  // ⭐ SO BOTH NUMBERS THE ORDER HAS EVER WORN ARE ACCEPTED — the one it wears today, and the one it wore
+  // before it was grouped (`codeFromId`, the same alias v445's register match uses). ⚠️ It heals the old
+  // ones automatically: the credit was never altered, only un-findable, so it simply starts counting again.
+  const alsoWore = codeFromId(first);
+  const wore = (x) => {
+    const v = String(x || "");
+    if (!v) return false;
+    return v === code || (alsoWore && alsoWore !== code && v === alsoWore);
+  };
   const friend = waNumber(first.whatsapp);
   const hit = (state.credits || []).find((c) => c
     && Number(c.amountRM) > 0
@@ -246,7 +292,7 @@ export function couponOn(state, orders) {
     && (c.role === "friendOff"
       // THE FRIEND'S, come off the first order it names — and `orderCode` IS that order, so
       // matching on it is exact, exactly as it has been since v322.
-      ? String(c.orderCode || "") === code
+      ? wore(c.orderCode)
       // ★★ THE REFERRER'S REWARD, WHICH IS A DIFFERENT KIND OF THING (v336). Hers is earned on
       // the FRIEND's order and spent on one of HER OWN, later — so **its `orderCode` names the
       // order that earned it and must NOT be matched against this one.** What says it belongs
@@ -255,7 +301,7 @@ export function couponOn(state, orders) {
       // offered, applied, marked used — and came off nothing at all.** Her report: __"when i
       // refer a friend and get a coupon, but redeem that coupon will not reduce my order
       // price"__.
-      : c.role === "reward" && !!c.usedAt && String(c.appliedTo || "") === code));
+      : c.role === "reward" && !!c.usedAt && wore(c.appliedTo)));
   if (!hit) return { amount: 0, id: "", code: "", role: "" };
   return { amount: round2(Number(hit.amountRM)), id: hit.id, code, role: hit.role };
 }

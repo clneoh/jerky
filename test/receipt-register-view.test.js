@@ -211,6 +211,89 @@ test("a missing number wears a banner of its own, and says it can never be fille
     "a run with no holes still wore the missing-number banner");
 });
 
+test("★★ a void row can say WHEN it left — and never says by whom (v443)", async () => {
+  // ⚠️⚠️ THE QUESTION THE SCREEN COULD ONLY POSE. *"Not in this phone's orders"* is true of an order she
+  // removed on purpose, an order a fault swept away, and an order this phone never had — and on
+  // 11 Oct 2026 three paid receipts sat like that with nobody able to say which.
+  // ⭐ Her own instruction: __"you should say that something entered abt 8am, is deleted later in the
+  // afternoon, by me or by the system error itself"__ — **a WINDOW, and both possible removers named,
+  // neither chosen.**
+  const st = state();                            // holds o_c2fda5 only; the receipt is for another order
+  // ⚠️⚠️ THE SAVED COPIES ARE READ THROUGH THE SHARED-DATA SWITCH (`backups.auth` needs `cloud.on`), so a
+  // fixture without it makes the press answer "there are no saved copies" — which is exactly the wrong
+  // sentence, and how this test caught the view saying it.
+  st.settings.cloud = { enabled: true };
+  const inCopy = { id: "ord_a1b2d06d27" };       // the number it wore before grouping was #D06D27
+  const NEWEST = { id: "s2", kind: "daily", created_at: "2026-10-11T17:30:00.000Z" };  // it is gone by here
+  const OLDER = { id: "s1", kind: "daily", created_at: "2026-10-11T08:20:00.000Z" };   // still here
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    let body = [];
+    if (u.includes("receipt_numbers")) body = [row(9, "D06D27")];
+    else if (u.includes("backup_snapshots") && u.includes("id=eq.s1")) {
+      body = [{ data: JSON.stringify({ orders: [inCopy] }), kind: "daily", created_at: OLDER.created_at }];
+    } else if (u.includes("backup_snapshots") && u.includes("id=eq.s2")) {
+      body = [{ data: JSON.stringify({ orders: [] }), kind: "daily", created_at: NEWEST.created_at }];
+    } else if (u.includes("backup_snapshots")) body = [NEWEST, OLDER];
+    return { ok: true, json: async () => body };
+  };
+  const root = createEl("div");
+  renderReceiptRegister(root, st);
+  await settle();
+  assert.match(txt(root), /not in this phone's orders/, "the fixture did not draw a void row");
+
+  const ask = all(root).find((n) => n.tagName === "BUTTON" && /last here/i.test(txt(n)));
+  assert.ok(ask, "★ a void row did not offer the question it is the only row able to answer");
+  ask._listeners.click[0]();
+  for (let i = 0; i < 12; i++) await settle();
+
+  const said = txt(root);
+  const { localWhen } = await import("../admin/js/backups.js");
+  // ⭐ THE TWO EDGES OF THE WINDOW, each read off the function the screen itself uses — so this asserts
+  // the MEANING and not a date format.
+  assert.match(said, /Still in your data in the copy saved/,
+    `the window's earlier edge is not stated — the row reads: "${said.slice(0, 400)}"`);
+  assert.ok(said.includes(localWhen(OLDER.created_at)),
+    `★ the copy that still held the order was not named: "${said.slice(0, 300)}"`);
+  assert.match(said, /gone from the copy saved/, "the window's later edge is not stated");
+  assert.ok(said.includes(localWhen(NEWEST.created_at)),
+    `★ the copy that shows it already gone was not named: "${said.slice(0, 300)}"`);
+  assert.match(said, /removed between those two/,
+    "★ the two edges were given without saying what they bracket");
+  // ⚠️⚠️ AND THE CAUSE IS LEFT OPEN. The data cannot tell her removal from the app's own, and a sentence
+  // that picked one would be the same fault as reading "this fits" as "this is it" — written into her records.
+  assert.match(said, /by you or by the app itself/,
+    "★ the row did not name both possible removers");
+  assert.doesNotMatch(said, /you removed it|the app removed it|a fault removed/,
+    "★ the row chose a cause the data cannot support");
+});
+
+test("★★ a voided row still SHOWS, still wears its number, and offers the way back (v448)", async () => {
+  // ⚠️⚠️ THE ASSERTION THAT MATTERS IS THE ONE ABOUT THE ROW STILL BEING THERE. Her words: __"can you have
+  // me to clear the invoice, or rearrange it"__ — and **the answer is mark, never delete.** A register you
+  // can edit is not a register; this one exists because she once removed a paid order and watched `#000001`
+  // stay spent. **If a void mark ever made the row disappear, that would be the delete in a different word.**
+  const st = state();
+  st.voidedReceipts = [{ no: 3, code: "999999", at: "2026-10-12T09:00:00.000Z", reason: "trial order" }];
+  globalThis.fetch = async () => ({ ok: true,
+    json: async () => [row(1, "C2FDA5"), row(3, "999999")] });
+  const root = createEl("div");
+  renderReceiptRegister(root, st);
+  await settle();
+
+  const said = txt(root);
+  // ⚠️ THE SERIAL IS STILL ON THE PAGE — it is never given back and never re-used.
+  assert.match(said, /000003/, "★ a voided receipt vanished from the run");
+  assert.match(said, /void/i, "the row is not marked as void");
+  assert.match(said, /trial order/, "★ her own reason is not on the row she explained it on");
+  assert.match(said, /Put it back/, "★ a mark with no way back is a delete wearing a different word");
+  // ⚠️ AND THE ROW NO LONGER READS AS A MYSTERY — the count and the sentence both drop it.
+  assert.doesNotMatch(said, /1 number above is for an order that is not/,
+    "an explained receipt is still being recited as unaccounted for");
+  // and the other receipt is untouched
+  assert.match(said, /Uncle Tan/, "the void mark disturbed a receipt that is perfectly fine");
+});
+
 test("the screen offers no press that could change a number", async () => {
   // ⚠️ A REGISTER YOU CAN EDIT IS NOT A REGISTER. The one guarantee this run exists for is
   // that no number is ever re-used or removed — including by her, by accident.

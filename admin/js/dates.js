@@ -130,3 +130,20 @@ export function fmtPlaced(createdAt, orderDate) {
   }
   return orderDate ? String(orderDate) : "";
 }
+
+// ★★ IS THIS DAY INSIDE THE WINDOW? — AND AN EMPTY BOUND MEANS "NO BOUND" (v403).
+//
+// ⚠️⚠️ THIS RULE HAD BEEN WRITTEN OUT THREE TIMES — `isWithin` in `money.js:32`, `inRange` in
+// `profit.js:35`, and a third copy inline in `weekly.js:46` — and the duplication bit the moment it
+// mattered. Her words: __"I need something more vasatile, like what we have for invoice"__, and the
+// invoice answers "all of it" with the pair `{from:"", to:""}` (`periodSpan`). ⚠️ **`"2026-10-01" <=
+// ""` is FALSE**, so an unbounded window matched NOTHING: Profit's "All" read **Sales RM 0.00** beside
+// a month of real orders, with no error anywhere. Fixing it in one copy left the other two broken —
+// which is the argument for it living HERE, once.
+//
+// ⚠️ Every caller that passes real dates is unaffected: `!from` and `!to` are only true for "".
+export function isWithin(iso, from, to) {
+  const day = String(iso || "").slice(0, 10);
+  if (!day) return false;
+  return (!from || day >= from) && (!to || day <= to);
+}

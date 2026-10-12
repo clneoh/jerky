@@ -57,10 +57,17 @@ function createEl(tag) {
   };
   return node;
 }
+// ⚠️⚠️ THIS ANSWERED `null` FOR EVERY ID UNTIL v458, AND THAT IS WHY NOTHING HERE HAD EVER OPENED A POP-UP.
+// `showPopup` (ui.js) mounts into `#popup-layer` and hands back a **no-op** when that element is missing —
+// so every card built with it was invisible to this file, and **the "Write a list by hand" card — the one
+// whose quantity box the baker reported — had no test that could reach it at all.** ⭐ She found the fault
+// by using it; the suite could not have. **A shim that cannot express what the view does cannot test it**,
+// which is the rule this suite has already paid for more than once.
+const registry = {};
 const doc = {
   createElement: createEl,
   createTextNode: (s) => ({ nodeType: 3, text: String(s) }),
-  getElementById: () => null,
+  getElementById: (id) => (registry[id] ||= createEl("div")),
   querySelector: () => null,
   querySelectorAll: () => [],
   body: createEl("body"),
@@ -640,6 +647,38 @@ test("★★⚠️ a hand-written list carries NO bake day — so it cannot mark
   assert.ok(Array.isArray(po.items) && Array.isArray(po.warnings));
 });
 
+test("★★ a hand-written list can be BACK-DATED — and the date is a LABEL, not a tie (v452)", () => {
+  // ⚠️ HER WORDS: __"the date is for back date PO. by default the shown date will be today's date unless
+  // user change it"__
+  //
+  // ⚠️⚠️ AND THE WHOLE RISK IS IN THE FIELD'S NAME. `coveringPO` finds a bake day's saved list by `dates`
+  // and `deliveryDate` and NOTHING else — so a back-date stored under either of those would turn this list
+  // into a day's shopping, **undoing the absence v401 exists for with a label.**
+  const bom = { totalUnits: 4, orders: [{ productId: "prd_loaf" }], productLines: [], warnings: [] };
+  const today = manualPO(bom, [{ ingredientId: "ing_flour" }], 10);
+  assert.equal(today.writtenOn, todayISO(), "a list given no date does not default to today");
+  const old = manualPO(bom, [{ ingredientId: "ing_flour" }], 10, "2026-10-06");
+  assert.equal(old.writtenOn, "2026-10-06", "the day she typed is not the day recorded");
+
+  // ⚠️⚠️ AND THE LABEL DID NOT BECOME A TIE — asserted on both of the two names that would do it.
+  for (const po of [today, old]) {
+    assert.equal(Object.prototype.hasOwnProperty.call(po, "dates"), false,
+      "★ the back-date wrote a `dates` array — a label just became a bake day");
+    assert.equal(Object.prototype.hasOwnProperty.call(po, "deliveryDate"), false,
+      "★ the back-date wrote a `deliveryDate`, which `coveringPO` reads the same way");
+  }
+
+  // ⭐ AND THE BEHAVIOUR, not only the keys: a back-dated list still leaves every bake day un-shopped.
+  const state = freshState();
+  state.purchaseOrders = [old];
+  const root = render(state);
+  assert.equal(rows(root).length, 2, "the two bake days are not on the screen");
+  for (const row of rows(root)) {
+    assert.equal(rowTag(row), "",
+      "★ a back-dated hand-written list made a bake day read as shopped");
+  }
+});
+
 test("★★ a hand-written list leaves every bake day exactly as it was", () => {
   // ⚠️ The end the absence is FOR: with the hand-written list sitting in her history, the PO screen must
   // still offer every day as un-shopped — otherwise writing a list would quietly cost her a day's shop.
@@ -656,4 +695,49 @@ test("★★ a hand-written list leaves every bake day exactly as it was", () =>
     assert.equal(rowTag(row), "",
       `⚠️⚠️ a hand-written list made a bake day read as "${rowTag(row)}" — it is not tied to any day`);
   }
+});
+
+// ── v458: the quantity on a hand-written list can be TYPED ───────────────────
+test("★★★ the quantity can be TYPED — and the box survives the second digit", () => {
+  // ⚠️⚠️ HER WORDS, AND THIS IS THE FIELD SHE MEANT: __"some can type in single digit only"__ — and, on
+  // why it matters: __"when i want to enter 30 loaves, imagine pressing 30times"__.
+  // ⭐ **THE CAUSE WAS NOT A LIMIT ON THE NUMBER. It was `paint()`.** The handler ran on every keystroke and
+  // `paint()` ends in `body.replaceChildren(...)` — and these boxes live INSIDE `body` — **so the first
+  // digit deleted the box that had just received it, and the second went nowhere.**
+  const state = freshState();
+  const root = render(state);
+
+  const open = findBtn(root, "＋ Write a list by hand");
+  assert.ok(open, "the card's own button is not on the screen, so nothing below proves anything");
+  fireClick(open);
+
+  const layer = document.getElementById("popup-layer");
+  // Pick the product first — it is what makes a quantity box appear at all.
+  const picker = walk(layer).find((n) => n.tagName === "SELECT");
+  assert.ok(picker, "the hand card drew no product picker");
+  picker.value = P.id;
+  fireChange(picker);
+
+  const qtyBoxOf = () => walk(layer).find((n) => n.tagName === "INPUT"
+    && /How many/.test(String((n.attrs || {})["aria-label"] || "")));
+  const qtyBox = qtyBoxOf();
+  assert.ok(qtyBox, "no quantity box was drawn for the picked product");
+
+  // ⚠️ ONE DIGIT AT A TIME, exactly as a thumb types them.
+  const type = (v) => { qtyBox.value = v; (qtyBox._listeners.input || []).forEach((f) => f.call(qtyBox)); };
+  type("1");
+  type("12");
+
+  // ⭐⭐ THE ASSERTION THAT WOULD HAVE CAUGHT IT: the box she is typing into is STILL THERE.
+  assert.equal(qtyBoxOf(), qtyBox,
+    "★ the card was rebuilt out from under her mid-keystroke — that is what eats the second digit");
+
+  // ⚠️ AND THE NUMBER IS THE NUMBER. The card is rebuilt FROM the model here, so a box that comes back
+  // reading 12 is proof both digits reached the list rather than only the first.
+  fireChange(qtyBox);
+  assert.equal(qtyBoxOf().value, "12",
+    "★ only the first digit reached the list — 30 loaves would still be 30 presses");
+
+  // ⭐ AND THE LIST ITSELF FOLLOWS: 12 loaves × 500 g is 6,000 g of flour.
+  assert.match(textOf(layer), /6,000|6000/, "the ingredient quantities did not follow the typed number");
 });

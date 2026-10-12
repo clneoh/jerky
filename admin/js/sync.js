@@ -17,7 +17,7 @@
 // Pure helpers run under Node for tests; fetch/localStorage are guarded.
 
 import { login as loginSupabase, cachedToken } from "./supabase.js";
-import { save, STOCK_PRODUCTION } from "./state.js";
+import { removeOrders, dropStaleShelfRows, save, STOCK_PRODUCTION } from "./state.js";
 import { mergeWeekCheck } from "./weekly.js";
 // The one answer to "is this a place" — see placeForSync below for why the courier
 // module's own rule is asked rather than a copy of it written here.
@@ -27,6 +27,15 @@ const SYNC_KEY = "bakeadmin.sync";
 
 const LISTS = {
   orders: "orders",
+  // ⚠️⚠️ NAMED HERE OR IT DOES NOT TRAVEL (v444). A new list is device-local until it is registered in
+  // this map — and this one MUST travel: an order removed on one phone has to be puttable-back on the
+  // other, which is the whole point of keeping it. ⭐ And it is a SEPARATE record from the order, so the
+  // tombstone written for the order does not touch this one.
+  removedOrders: "removedOrders",
+  // ⚠️ A VOID DECISION IS HERS, and it must reach the other phone — otherwise the same register reads
+  // as four unexplained holes on one device and as four voided rows on the other.
+  voidedReceipts: "voidedReceipts",
+  declinedCoupons: "declinedCoupons",
   products: "products",
   productCategories: "productCategories", // the shop's category tree — a heading built on one phone must exist on the other
   ingredients: "ingredients",
@@ -40,6 +49,11 @@ const LISTS = {
   credits: "credits", // bring-a-friend ledger rows
   rewards: "rewards", // reward hand-outs — a record per grant, so neither phone can overwrite the other's
   points: "points", // Self collection Points — one record each, so opening one on a phone does not disturb the others
+  // ⚠️ A NEW LIST IS NOT CARRIED UNTIL IT IS NAMED HERE. A new FIELD on an existing record needs
+  // no registration (records travel whole, as JSON), but this is a list of its own — so an area
+  // built on one phone reaches the other only because of this line.
+  pointAreas: "pointAreas", // the collection AREA tree that groups the Points (v410)
+  deliveryRoutes: "deliveryRoutes", // the VAN routes a Point is served by (v419) — a route named on one phone has to exist on the other, or the Points screen offers a different list of vans on every device
   occasions: "occasions", // delivery-calendar reminder marks
   // A promo code made on one phone has to exist on the other, or a card she
   // prints and hands out works on the phone that made it and nowhere else.
@@ -533,6 +547,99 @@ function writeSync(b) {
   } catch (err) { /* storage full — pending stays in memory only */ }
 }
 
+// ★★★ WHAT THIS PHONE IS STILL HOLDING, AND WHAT THE SHARED DATA ACTUALLY HAS (v466).
+//
+// HER REPORT: __"i add a bake date 10/10, other user dont see it"__ — and, of the sync thread generally,
+// __"why my other user dont see some order that is on my device?"__.
+//
+// ⚠️⚠️ AND HERE IS THE GAP THE TWO OF THOSE EXPOSE, MEASURED IN THE CODE RATHER THAN GUESSED AT: **the
+// journal records a change as HANDED OVER at the moment it is QUEUED — not when it actually leaves.** The
+// queue is what retries, and it is careful. ⭐ **But if the queue is ever lost while that note survives — a
+// reinstall, a cleared key, a phone out of storage — then this app believes the record is already shared,
+// `markDirty` finds nothing to send, and NOTHING ON ANY SCREEN WOULD EVER SAY SO.** ⚠️ **I have NOT proved
+// that is what happened to her; it is one mechanism that fits, and the two functions below are what will
+// tell her which.**
+//
+// ⭐ `pendingCount` is the number of changes THIS phone is still holding — **the number nobody could see
+// before** — and `cloudKeys` is a plain READ of what the shared data holds, so the check can compare it with
+// this phone. ⚠️ **Neither of them writes anything, anywhere.**
+
+// How many changes are waiting to be sent. ⚠️ Read from the journal, so it counts what would be lost.
+export function pendingCount() {
+  return Object.keys(readSync().pending || {}).length;
+}
+
+// Every record key THIS phone holds, as `kind:id`. ⚠️ **READ FROM `LISTS` ITSELF** — the same map the sync
+// uses to decide what travels — **so a list added later is compared by the check whether or not anybody
+// remembers it exists.** ⭐ A second hand-written list here is the v394 fault in a new dress.
+export function localKeys(state) {
+  const keys = [];
+  for (const [kind, field] of Object.entries(LISTS)) {
+    const list = state && state[field];
+    if (!Array.isArray(list)) continue;
+    for (const rec of list) if (rec && rec.id) keys.push(`${kind}:${rec.id}`);
+  }
+  // ⚠️⚠️ AND THE SETTINGS RECORD, WHICH IS NOT IN `LISTS` (v469). ⭐ **`computeRecords` sends it
+  // SEPARATELY, by hand, and this function reads `LISTS` — so it was the one record every phone HAS and
+  // this list did not mention.** ⚠️ **The reverse check then reported `settings` as "in your shared data
+  // and not on this phone", on every device, for ever** — ⭐ **exactly the warning that can never be
+  // satisfied which the check's own comment warns against.** ⭐ Found on her Mac, one version after it was
+  // written, **by running it** — which is the whole argument for building the check rather than reasoning
+  // about the data.
+  keys.push("settings:default");
+  return keys;
+}
+
+// The set of record keys the shared data holds, as `kind:id` — or `{ ok: false, reason }` when it could not
+// be read. ⚠️ **A record marked deleted is NOT "held"**, because nothing can read it.
+export async function cloudKeys(state) {
+  const c = cloudCfg(state);
+  if (!c.on) return { ok: false, reason: "Shared data is switched off on this phone." };
+  const token = cachedToken();
+  if (!token) return { ok: false, reason: "This phone is not signed in to your shared data." };
+  try {
+    // ⚠️ AND `data` COMES WITH IT NOW (v471) — **the same single read answers "which records are there" and
+    // "what is IN them".** ⭐ One fetch, not two: this page already reads a register and your copies, and a
+    // third round trip for a comparison nobody could see would be a poor trade.
+    const res = await fetch(`${c.url}/rest/v1/bakery?select=kind,id,data,_deleted&limit=5000`, {
+      headers: { apikey: c.anonKey, Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return { ok: false, reason: `Your shared data could not be read (HTTP ${res.status}).` };
+    const rows = await res.json().catch(() => null);
+    if (!Array.isArray(rows)) return { ok: false, reason: "Your shared data could not be read." };
+    const keys = new Set();
+    const data = new Map();
+    for (const r of rows) {
+      if (!r || !r.kind) continue;
+      if (r._deleted) continue;
+      keys.add(`${r.kind}:${r.id}`);
+      data.set(`${r.kind}:${r.id}`, typeof r.data === "string" ? r.data : JSON.stringify(r.data));
+    }
+    return { ok: true, keys, data };
+  } catch {
+    return { ok: false, reason: "Your shared data could not be read — check this phone is online." };
+  }
+}
+
+// What THIS phone holds, as key → the exact text the app would send for it. ⭐ **Built from `recordPayload`
+// and `canonical-ish` serialisation, so the two sides are compared on the SAME spelling** — ⚠️ a comparison
+// that stringifies two things differently would report every record as different.
+export function localPayloads(state) {
+  const out = new Map();
+  for (const rec of computeRecords(state)) {
+    if (!rec || typeof rec.kind !== "string" || !rec.kind || typeof rec.id !== "string" || !rec.id) continue;
+    out.set(`${rec.kind}:${rec.id}`, JSON.stringify(rec.data) ?? "null");
+  }
+  return out;
+}
+
+// The changes this phone has queued and not yet sent. ⚠️ **A record waiting to be sent is SUPPOSED to differ
+// from the shared data — so it must never be reported as a difference, or the check would fire on every
+// edit she has just made.**
+export function pendingKeys() {
+  return new Set(Object.keys(readSync().pending || {}));
+}
+
 // ── markDirty: queue what changed since the last baseline ────────────────
 
 export function markDirty(state, nowIso = new Date().toISOString()) {
@@ -696,7 +803,18 @@ function mergeCloudRows(state, rows, b, nowIso = new Date().toISOString()) {
       // A pending local edit newer than this delete keeps the record alive —
       // it stays pending and resurrects the row on the next flush.
       if (localNewerOrSame) continue;
-      if (idx >= 0) { list.splice(idx, 1); changed = true; }
+      // ⚠️⚠️ AN ORDER DELETED ON THE OTHER PHONE GOES ON THIS PHONE'S SHELF (v444). **This is the path
+      // that made her loss permanent** — a tombstone is a removal nobody here made, it takes the whole
+      // order away in one line, and until v444 there was nothing left on either phone or in any copy to
+      // point at. ⭐ Everything else about the merge is unchanged: the record still leaves the live list
+      // and the tombstone is still recorded. **It just does not leave without a trace any more.**
+      if (row.kind === "orders" && idx >= 0) {
+        removeOrders(state, [String(list[idx] && list[idx].id)], "came back as a removal through your shared data");
+        changed = true;
+      } else if (idx >= 0) {
+        list.splice(idx, 1);
+        changed = true;
+      }
       delete b.pending[key];
       delete b.meta[key];
       delete b.snapshot[key];
@@ -730,8 +848,17 @@ function mergeCloudRows(state, rows, b, nowIso = new Date().toISOString()) {
 export function mergeRows(state, rows) {
   const b = readSync();
   const { changed } = mergeCloudRows(state, rows, b);
+  // ★★★ AND A MERGED-IN SHELF ROW FOR AN ORDER THAT IS BACK IS DROPPED HERE (v474).
+  // ⚠️⚠️ **THIS IS THE PATH THAT MADE HER THREE STRAY ROWS: a phone put an order back, the removal of its
+  // shelf row was queued while sending was broken, and the row came down again on the next pull.** ⭐ So the
+  // invariant is applied **wherever the data lands, not only on load** — `normalize` carries it on a load
+  // and this carries it on a merge.
+  // ⚠️ **AND IF ANYTHING WAS DROPPED, THE STATE IS SAVED — which queues the removal so it goes UP**, or the
+  // shared data would hand the same stale row back on every pull, for ever.
+  const dropped = dropStaleShelfRows(state);
+  if (dropped) save(state);
   writeSync(b);
-  return { state, changed };
+  return { state, changed: changed || dropped > 0 };
 }
 
 // ── pull ──────────────────────────────────────────────────────────────────
@@ -784,7 +911,40 @@ export async function flush(state) {
   // `data` is `text not null` in the bakery table, so a tombstone can't carry
   // JSON null. Send the string "null" instead — tombstones are matched on
   // `_deleted` during the merge and never have their data parsed.
-  const body = pending.map((p) => ({
+  // ⚠️⚠️ AND ONE RECORD WITH NO `id` MUST NEVER ENTER THIS BATCH (v467) — **THIS IS THE FAULT THAT
+  // STOPPED HER OTHER PHONES SEEING ANYTHING, AND THE SERVER NAMED IT:**
+  //   `Sync failed: Push failed (HTTP 400) — {"code":"PGRST102","message":"All object keys must match"}`
+  // ⭐⭐ **`JSON.stringify` DROPS A KEY WHOSE VALUE IS `undefined`.** So a record with no id — which
+  // `computeRecords` can produce, because an order in her book can have none — goes out as
+  // `{kind, data, _deleted, updated_at}`: **FOUR keys, where every other object in the same array has
+  // FIVE.** PostgREST refuses the WHOLE BATCH for that one object, ⚠️ **and because the journal had
+  // already recorded all of them as handed over, nothing was ever offered again.** ⭐ **Measured on her
+  // own screen: 21 changes stuck, 11 records not in the shared data, and every device blind to all of it.**
+  // ⭐ PROVEN in one line before this was written: `JSON.stringify({kind:"orders", id:undefined, …})` is
+  // `{"kind":"orders", …}` — the `id` is simply not there.
+  // ⚠️ **A record that cannot be keyed cannot travel — so it is LEFT OUT and left for the check to name,
+  // NEVER sent in a shape that poisons the twenty good records sitting beside it.**
+  const sendable = pending.filter((p) => p && typeof p.kind === "string" && p.kind && typeof p.id === "string" && p.id);
+  // ⚠️⚠️ AND THE ONES THAT CAN NEVER BE SENT ARE SWEPT **HERE — BEFORE THE EARLY RETURN** (v475).
+  //
+  // ⭐⭐ **THIS IS A BUG I WROTE, AND HER PHONE FOUND IT:** __"after sync now, the phone still say 1 changes
+  // waiting to be send"__ — and, asked what the shared-data card said, __"there is no error under sync"__.
+  // ⚠️⚠️ **NO ERROR, AND A COUNT THAT NEVER MOVES — which is this line exactly.** The v467 sweep that
+  // clears un-sendable records sat **after** the POST, so it only ever ran when there was something to post.
+  // **When the ONLY thing queued is the record that cannot be keyed, `sendable` is empty, this returned
+  // "ok", and the queue was never swept** — the record sat there for ever and the app reported success.
+  // ⭐ **The lesson is the one this whole day has been about: "it says ok" and "it is done" are two
+  // different sentences.**
+  if (sendable.length !== pending.length) {
+    const b0 = readSync();
+    for (const key of Object.keys(b0.pending)) {
+      const rec = b0.pending[key];
+      if (!rec || typeof rec.kind !== "string" || !rec.kind || typeof rec.id !== "string" || !rec.id) delete b0.pending[key];
+    }
+    writeSync(b0);
+  }
+  if (!sendable.length) return { ok: true, pushed: 0 };
+  const body = sendable.map((p) => ({
     kind: p.kind,
     id: p.id,
     data: p._deleted ? "null" : JSON.stringify(p.data) ?? "null",
@@ -814,14 +974,21 @@ export async function flush(state) {
 
   // Clear only the rows that are still byte-identical to what we sent; an edit
   // queued mid-flight has a newer timestamp and stays pending.
+  // ⚠️⚠️ AND ONLY WHAT WAS ACTUALLY SENT COMES OFF THE QUEUE (v467). ⭐ Iterating the WHOLE queue here
+  // would clear the un-sendable records too — **marking them "handed over" when they never left, which is
+  // the very lie that caused this.** ⚠️ **A record that cannot be keyed can never travel, so holding it on
+  // the queue for ever would give her a warning she cannot act on** — this file's own rule is that a
+  // warning which can never be satisfied is one she learns to ignore. ⭐ **It is dropped from the SENDING
+  // queue, and it is NOT hidden: the check on the health page lists it, because it is a record on this
+  // phone that is not in the shared data — which is exactly what that check is for.**
   const b2 = readSync();
-  for (const p of pending) {
+  for (const p of sendable) {
     const key = `${p.kind}:${p.id}`;
     const cur = b2.pending[key];
     if (cur && cur.updated_at === p.updated_at) delete b2.pending[key];
   }
   writeSync(b2);
-  return { ok: true, pushed: pending.length };
+  return { ok: true, pushed: sendable.length };
 }
 
 // ── refresh: pull-then-flush ──────────────────────────────────────────────

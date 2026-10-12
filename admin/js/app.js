@@ -15,6 +15,8 @@ import { renderSuppliers } from "./views/suppliers.js";
 import { renderProductCategories } from "./views/productCategories.js";
 import { renderParcelCouriers } from "./views/parcelCouriers.js";
 import { renderPoints } from "./views/points.js";
+import { renderPointAreas } from "./views/pointAreas.js";
+import { renderDeliveryRoutes } from "./views/deliveryRoutes.js";
 import { renderPromoCodes } from "./views/promo.js";
 import { renderReferrals } from "./views/referrals.js";
 import { renderSendVan } from "./views/send_van.js";
@@ -28,6 +30,7 @@ import { renderCustomers } from "./views/customers.js";
 import { renderSettings } from "./views/settings.js";
 import { renderReviews } from "./views/reviews.js";
 import { renderMore } from "./views/more.js";
+import { renderHealth } from "./views/health.js";
 import { renderMoney } from "./views/money.js";
 import { renderProfit } from "./views/profit.js";
 import { renderGuide } from "./views/guide.js";
@@ -62,9 +65,22 @@ const routes = {
   "/deliveries":{ title: "Delivery Dates", tab: "more", render: renderDeliveries },
   "/parcel-couriers":{ title: "Parcel couriers", tab: "more", render: renderParcelCouriers },
   "/points":    { title: "Self collection Points", tab: "more", render: renderPoints },
+  // ⚠️ THE AREAS ARE THE HEADINGS AND THE POINTS ARE THE PLACES — two screens, because they are
+  // two jobs, and because the Points screen had to keep its shape (its own tests drive its first
+  // child as the New-Point card). It is the Categories screen's twin, which is what she asked for.
+  "/point-areas": { title: "Collection areas", tab: "more", render: renderPointAreas },
+  // ★★ THE VAN ROUTES (v419). Her words: __"now i need few delivery routes, for one day delivery run
+  // day"__. ⚠️ THE PATH AND THE TITLE BOTH SAY "DELIVERY", and that is not decoration: **"route" is
+  // already this app's word for a hash route** — the table this line sits in is `const routes` — so a
+  // bare `#/routes` would name two different things and a search would answer both.
+  "/delivery-routes": { title: "Delivery routes", tab: "more", render: renderDeliveryRoutes },
   "/promo":     { title: "Promo codes", tab: "more",    render: renderPromoCodes },
   "/bring-a-friend": { title: "Bring a friend", tab: "more", render: renderReferrals },
-  "/send-van":  { title: "Send a van", tab: "more",    render: renderSendVan },
+  // ★ THE NAME IS HERS (v402). Her words: __"instead of send a van, change the term to Location pin for
+  // Kitchen"__. ⚠️ **THE PATH IS DELIBERATELY UNCHANGED** — `#/send-van` is an address she may have
+  // bookmarked or reached from another screen, and the app has never moved an address when it renamed
+  // something. Only the words she reads change.
+  "/send-van":  { title: "Location pin for Kitchen", tab: "more",    render: renderSendVan },
   "/message-style": { title: "Message style", tab: "more", render: renderMessageStyle },
   "/run":       { title: "Delivery run", tab: "more", render: renderDeliveryRun },
   "/money":     { title: "Money",      tab: "more",      render: renderMoney },
@@ -80,6 +96,7 @@ const routes = {
   "/settings":  { title: "Settings",  tab: "more",      render: renderSettings },
   "/more":      { title: "More",      tab: "more",      render: renderMore },
   "/guide":     { title: "Guide",     tab: "more",      render: renderGuide },
+  "/health":    { title: "System check", tab: "more",   render: renderHealth },
 };
 
 const viewEl = document.getElementById("view");

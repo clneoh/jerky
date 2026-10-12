@@ -471,7 +471,7 @@ test("the day line keeps what she has typed, and its grid, across the rebuild a 
   type(all(body).find((n) => n.tagName === "INPUT"
     && n.attrs.placeholder === "Customer name (optional)"), "Aunty Bee");
   pickProduct(root, 3);
-  assert.equal(byClass(root, "stepper-val").textContent, "3");
+  assert.equal(byClass(root, "stepper-val").value, "3");   // v458: a box now
 
   // Open the grid — the one under the day line, not the month at the top of the screen.
   tap(dayLine.children[0]);
@@ -492,7 +492,7 @@ test("the day line keeps what she has typed, and its grid, across the rebuild a 
   assert.equal(all(body2).find((n) => n.tagName === "INPUT"
     && n.attrs.placeholder === "Customer name (optional)").value, "Aunty Bee",
     "the name she typed survives");
-  assert.equal(byClass(root, "stepper-val").textContent, "3",
+  assert.equal(byClass(root, "stepper-val").value, "3",
     "and so do the item rows — a day tap used to wipe them back to one empty line");
 });
 
@@ -507,7 +507,7 @@ test("a finished add starts the next order clean", () => {
   // The screen was rebuilt by the add, so this is a genuinely fresh card.
   const body = byClass(root, "fold-body");
   const qty = byClass(root, "stepper-val");
-  if (qty) assert.equal(qty.textContent, "1", "the quantity is back to one");
+  if (qty) assert.equal(qty.value, "1", "the quantity is back to one");
   assert.equal(chargeBox(root), undefined, "and the courier half is shut again");
   assert.ok(body, "the card itself is still there for the next customer");
 });
@@ -607,4 +607,51 @@ test("⚠️ a half-typed window is refused in words and writes nothing (v338)",
   addOrder(root);
   assert.equal(st.orders.length, 0, "a promise to arrive before the van left is refused too");
   assert.ok(/ends before it starts/.test(lastToast()), `read "${lastToast()}"`);
+});
+
+// ── v458: the New-order quantity can be TYPED ────────────────────────────────
+test("★★★ the New-order quantity can be TYPED — and the box survives the second digit", () => {
+  // ⚠️⚠️ HER WORDS: __"for qty field i should be allow to key in qty also instead of just press the + & -"__
+  // and, on why: __"when i want to enter 30 loaves, imagine pressing 30times"__. ⭐ This is the card she
+  // writes a customer's order on, so the twenty-press problem lands hardest here.
+  const st = state();
+  const root = openCard(st);
+  const row = rowsOf(root, "add-item")[0];
+  choose(all(row).find((n) => n.tagName === "SELECT"), "p1");
+
+  const box = byClass(root, "stepper-val");
+  assert.equal(box.tagName, "INPUT",
+    "★ the quantity is still a label with no way to type into it — 30 loaves is 30 taps");
+
+  // ⚠️ ONE DIGIT AT A TIME, as a thumb types them.
+  type(box, "1");
+  type(box, "12");
+
+  // ⭐⭐ THE BOX SURVIVES. `renderRows()` rebuilds every row, so a repaint on `input` would delete the box
+  // mid-keystroke — exactly the fault she reported on the PO card.
+  assert.equal(byClass(root, "stepper-val"), box,
+    "★ the row was rebuilt under her mid-keystroke — that is what eats the second digit");
+
+  // ⚠️ AND THE NUMBER REACHES THE ORDER. `change` settles the box, and Save reads the line — so this is
+  // the assertion that says 30 loaves went in as 30, rather than as 3 and a shrug.
+  (box._listeners.change || []).forEach((f) => f.call(box));
+  addOrder(root);
+  assert.equal(st.orders.length, 1, "the order was not placed, so nothing below is proved");
+  assert.equal(st.orders[0].qty, 12, "★ only the first digit reached the order");
+});
+
+// ── v458: the + and − still work, and still say the same number ──────────────
+test("★ the + press still moves the typed box, so the two ways agree", () => {
+  const root = openCard(state());
+  const row = rowsOf(root, "add-item")[0];
+  choose(all(row).find((n) => n.tagName === "SELECT"), "p1");
+  const stepper = all(byClass(root, "add-item")).find((n) => String(n.className).includes("stepper"));
+
+  tap(stepper.children[2]);   // +
+  assert.equal(stepper.children[1].value, "2", "★ + did not update the box it now sits beside");
+
+  // ⚠️ AND THE OTHER WAY ROUND: what she TYPES is what the − press steps down from.
+  type(stepper.children[1], "9");
+  tap(stepper.children[0]);   // −
+  assert.equal(stepper.children[1].value, "8", "★ − stepped from somewhere other than what she typed");
 });

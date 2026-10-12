@@ -756,6 +756,72 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## Engine v401 → v476 — the big catch-up, PASS A: the back office (12 Oct 2026)
+
+Base `cc83293` (bakery v401) → `ad70390` (v476). **72 commits, 87 files in the bakery's range; 68
+written here, 18 deferred to Pass B.** Suite **3219 → 3373 pass / 0 fail**, engine **v476**.
+
+**⚠️ THIS IS A DELIBERATE SPLIT — AGREED WITH THE OWNER BEFORE ANY FILE WAS WRITTEN.** The range
+contains a 1,338-line rewrite of `store/app.js` (the customer-facing shop). Porting that in the same
+pass as 60 admin versions would put a rewrite of her shop in front of customers in one step, with no
+phone test. So the split is:
+
+- **Pass A (this):** the whole back office — `admin/js/**`, `admin/css/app.css`, `supabase/order_alerts.sql`, the eight new admin tests. 40 source files written from merges, 6 new modules/views, 8 new tests.
+- **Pass B (next):** `store/app.js`, `store/index.html`, `store-lang.js`, `store/app.css`, `store/pin_map.js` and the 11 shop tests — **untouched and byte-identical today.**
+
+### ★ THE ONE THAT MATTERS: the sync batch guard (v467)
+
+The bakery hit a fault where **one record that cannot be sent makes the server refuse the whole
+batch** — every device stops syncing, and it cost them real work on 11 October. Measured here:
+`admin/js/sync.js`'s `flush` built its POST body from **every** pending record with **no guard**, so
+munchies had the same exposure. The guard now drops a record with no usable `id`/`kind` from the batch
+so the rest still goes, and v475's sweep runs **before** the send decision so a queue holding only such
+a record clears instead of reporting "OK" for ever.
+
+### Adopted (admin side)
+
+**New: `health.js` + `views/health.js`** — *Check my system*, a read-only screen running fifteen
+record-integrity checks (an order twice, an order on the live AND Removed list, an order on a day that
+no longer exists, a coupon counted twice, a receipt matched by number rather than by a quoted name, the
+reach and content sync checks), **with "could not run" counted separately from a pass**.
+**New: `pointAreas.js` + view** — collection Points grouped under Areas. **New: `deliveryRoutes.js` +
+view** — van runs, with the days a Place is served.
+
+**`state.js`** gains the lists these need (`removedOrders` 48-hour keep, `voidedReceipts`,
+`declinedCoupons`, `pointAreas`, `deliveryRoutes`), `removeOrders` as the single removal door,
+`dropStaleShelfRows`, and `codeFromId`. **`orders.js`** gains the Removed card, the coupon control,
+typeable quantities, whole-order moves and past-day editing. Plus the Receipt register's void marking,
+Money/Profit period pickers, the `moneyTagOf` truth fix, `courierDay` on the mailing label, and the
+rest of the 72.
+
+### ⚠️ THE AUDIT DID ITS JOB — a real regression caught
+
+The jerky-only-line audit (diff each merged file against the bakery base, then assert every jerky line
+survives) reported six files. Four were deliberate changes; **three were real losses from taking the
+bakery's side of a conflict** and were restored:
+
+| file | what was lost |
+|---|---|
+| `admin/js/views/customers.js` | jerky's **"Post (nationwide)" / "Collect (local)"** replaced by the bakery's "Courier"/"Self collect" — **a user-visible regression** |
+| `admin/js/state.js` | jerky's "pet name" comment (bakery: "dog name") |
+| `admin/js/views/orders.js` | jerky's "Delivery date" comment (bakery: "Bake day") |
+
+The re-run reports **0 unexplained losses across 68 files**.
+
+### Also found and fixed
+
+- **`no-duplicate-imports` caught two more** "keep both sides" duplicates — `referrals.js` (`fmtRM` ×4)
+  and `views/money.js` (`dayMonth`) — the sixth and seventh of that mistake. Merged, not dropped, so
+  both jerky's and the bakery's names survive.
+- **A test of my own had expired.** `test/availability-agrees.test.js` hardcoded `2026-10-09`, and
+  `nextDeliveryDates` now filters past days — so it began failing on its own on 2026-10-12. The date is
+  built from today now. **A hardcoded future date is a test that rots.**
+- **Localized:** `health.js`'s copy said "bake day" ×5 and "bread" ×2 → jerky's **"delivery date"** and
+  **"treats"**; `points.js`'s comment reworded so it stops reading as a `More → X` signpost; and four
+  assertions on that copy moved with it (`health.test.js` ×3, `label.test.js` ×2, `confirm.test.js`).
+
+**⚠️ Re-run `supabase/order_alerts.sql`** — one line, idempotent.
+
 ## Engine v400 → v401 — a shopping list you write yourself (9 Oct 2026)
 
 Base `1a567e3` → `cc83293`. 7 files, ~248 insertions. **3 conflicts across 2 files**, suite

@@ -193,8 +193,29 @@ body { min-height: 100vh; }
   flex: 0 0 auto;
 }
 .reg-what { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+/* ★★ THE REMOVED SHELF (v444). A row per removed order, with its own way back. ⚠️ Deliberately NOT a
+   red or warning style: nothing here is wrong any more — it is the record of something put right, or
+   that can be, and a shelf she learns to dread is one she will not open when it matters. */
+.removed-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.removed-main { min-width: 0; }
+.removed-what { font-size: 13.5px; font-weight: 600; }
+.removed-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
 .reg-name { font-size: 13px; }
 .reg-when { font-size: 11.5px; color: var(--muted); }
+/* ★★ THE VOID ROW'S OWN QUESTION (v443). The press and its answer sit inside the sentence they
+   belong to, on their own line, so a long answer wraps under the row rather than pushing the
+   number out of the column. ⚠️ The answer is not a colour change and not a chip: it is a
+   sentence, because what it says is "still there THEN", which is a fact and not a status. */
+.reg-ask { display: block; margin-top: 4px; }
+.reg-ask .btn { margin: 0 0 4px; }
+.reg-seen { display: block; font-size: 11.5px; line-height: 1.45; color: var(--muted); }
 /* A refunded row keeps its number and says so. It is a chip, never a colour on the number
    itself, because the number is the one thing on this screen that must never look different. */
 .reg-tag {
@@ -537,27 +558,34 @@ body { min-height: 100vh; }
   margin-left: calc(var(--depth, 0) * 16px);
 }
 .cat-row-text { flex: 1 1 auto; min-width: 0; }
-/* The grip a row is dragged by, on the Categories screen and on the Products
-   screen. One rule for both, because it is one gesture — the two lists reorder
-   with the same helper in ui.js and must feel identical under the thumb. */
-.cat-handle,
 /* ★★ THE INGREDIENT CARD'S OWN ROW WRAPS (v399). ⚠️ MEASURED, NOT GUESSED: on a 375px phone the grip's
    36px and its gap take 21px off the info column and 25px off the three buttons, and at 113px the
    "Keep at least" strip folds onto THREE lines for two words. So on this card — and only this one —
    the buttons drop onto their own line and the name and the two strips get the width.
    ⚠️ Scoped to `.ing-card-row` so no other card in the app moves: `.card-row` is app-wide and a change
-   there would reflow every screen that uses one. */
+   there would reflow every screen that uses one.
+   ⚠️⚠️ AND IT IS WRITTEN **BEFORE** THE GRIP RULE BELOW, NOT INSIDE IT. From v399 to v410 this block
+   sat between `.cat-handle,` and the rest of that selector list, so a browser read the list as
+   `.cat-handle, .ing-card-row .card-row { flex-wrap: wrap; }` — **and the Categories grip therefore
+   never got its 36px target, its `cursor: grab`, or `touch-action: none`.** The last of those is the
+   one that matters: without it the page scrolls under the finger and a category cannot be dragged at
+   all. ⭐ **A selector list is not a place to put a comment or a rule.** */
 .ing-card-row .card-row { flex-wrap: wrap; }
 /* ⚠️ AND THE COLUMNS GROW, rather than the row's own `space-between` pushing the name away from the
    grip it belongs to — which left a dead gap between the handle and the text on every card. */
 .ing-card-row .card-row > div { flex: 1 1 auto; }
 .ing-card-row .li-right { justify-content: flex-end; }
 
-/* ⚠️ `.ing-handle` IS THE SAME GRIP ON THE INGREDIENTS SCREEN (v399) — deliberately sharing one rule
-   rather than a second copy, because a handle that behaved or measured differently on one screen than
-   the other is the kind of difference she would only find by trying it twice. */
+/* The grip a row is dragged by — the Categories, Products, Ingredients and collection-Point lists.
+   One rule for all of them, because it is one gesture: the lists reorder with the same helper in
+   ui.js and must feel identical under the thumb. ⚠️ `.ing-handle` joined it in v399 and `.point-handle`
+   in v410, and each was added HERE rather than as a second copy, because a handle that behaved or
+   measured differently on one screen than another is the kind of difference she would only find by
+   trying it twice. */
+.cat-handle,
 .prod-handle,
-.ing-handle {
+.ing-handle,
+.point-handle {
   flex: 0 0 auto;
   /* A 36px target, because this one is dragged with a thumb. */
   width: 36px;
@@ -582,7 +610,35 @@ body { min-height: 100vh; }
 }
 .cat-handle:active,
 .prod-handle:active,
-.ing-handle:active { cursor: grabbing; background: var(--strip); }
+.ing-handle:active,
+.point-handle:active { cursor: grabbing; background: var(--strip); }
+
+/* The heading over a group of collection Points (v410), indented by its depth in the area tree so
+   "Sg Ara" reads as sitting inside "Penang Island" rather than beside it. ⚠️ The unfiled block wears
+   the same class with depth 0, so the list never grows a second kind of heading. */
+.point-area-head {
+  margin-left: calc(var(--depth, 0) * 16px);
+  margin-top: 14px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--brown-dark);
+}
+/* A Point row is a dragged row — the grip sits at its left, so the row is a flex line rather than the
+   plain block `.card` was. ⚠️ Scoped to `.point-row` so the New-Point card above the list, which shares
+   `.card` and is NOT draggable, cannot move. */
+.point-row { display: flex; align-items: flex-start; gap: 8px; }
+.point-row > .point-row-body { flex: 1 1 auto; min-width: 0; }
+/* ⚠️⚠️ AND ITS PRESSES ARE SIZED BY THEIR OWN LABELS, NOT SPLIT EQUALLY (v411). `.btn-row .btn` is
+   `flex: 1`, which shares the width evenly — right for three short words, wrong for this row, whose
+   first label is the sentence "Put the pin on the map". ⚠️ **AND THE CARD'S BODY IS NARROWER THAN THE
+   CARD** because the drag grip takes 44px off it, so a row that fitted before v410 now folds that
+   label onto FIVE lines. ⭐ The same fix the Put-money-in row already carries (v395), for the same
+   reason: growing from the CONTENT width lets each button keep its words and wraps the row instead.
+   ⚠️ Scoped to `.point-row` so no other screen moves — nothing in the suite has a layout engine, so
+   this is guarded only by this comment and by looking at the card. */
+.point-row .btn-row .btn { flex: 1 1 auto; }
 /* The row in the air: lifted, and over the rows it is passing. `.card` rather
    than either row's own class because both lists lift the same way and the
    helper in ui.js puts the class on both. A pop-up head also carries `dragging`
@@ -636,6 +692,16 @@ body { min-height: 100vh; }
   cursor: pointer;
 }
 .cat-pick input { flex: 0 0 auto; width: 20px; height: 20px; margin: 0; }
+
+/* The seven day boxes on a Self collection Point (v419) — tick the days this Place is served.
+   Mon first, wrapping, each a whole 36px row to tap like `.cat-pick` above.
+
+   ⚠️ A NEW CLASS, NOT the `.daycheck`/`.daychecks` pair the Settings screen uses: those two have
+   NO styling of their own at all, so borrowing them would inherit nothing today and — worse —
+   any rule later added for one screen would silently move the other. */
+.day-pick { display: flex; flex-wrap: wrap; gap: 0 14px; }
+.day-pick label { display: flex; align-items: center; gap: 6px; min-height: 36px; cursor: pointer; }
+.day-pick input { flex: 0 0 auto; width: 20px; height: 20px; margin: 0; }
 
 /* The picture beside a product's name in the products list, so she can see at a
    glance which ones still need one. The same standard 120 x 120 SQUARE window as
@@ -831,6 +897,13 @@ h3.cat-head-tail { color: var(--muted); font-weight: 600; }
    engine, so this is guarded only by the changelog and this comment. */
 .money-in-actions .btn { flex: 1 1 auto; }
 
+/* ★★ THE RANGE STEPPER (v403) — which day/week/month is showing, with the arrows either side of it, the
+   shape the Consolidated invoice and the Profit statement already use. ⚠️ The label is centred and given
+   the room to say a whole window ("Sun 4 – Sat 10 Oct"), because the window it names is the only place
+   on this screen that says WHICH week the figures below are for. */
+.range-stepper { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 8px 0 2px; }
+.range-stepper .range-label { font-size: 13px; font-weight: 600; color: var(--brown-dark); text-align: center; }
+
 /* ---------- Forms ---------- */
 .field { margin-bottom: 12px; }
 .field label {
@@ -978,12 +1051,29 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
   color: var(--brown-dark);
   cursor: pointer;
 }
+/* ★★★ AND IT IS A FIELD NOW, NOT A LABEL (v458) — in the New-order card, in the Edit pop-up and in the
+   shop alike, because **two boxes that look the same must behave the same**. Her words: __"for qty field i
+   should be allow to key in qty also instead of just press the + & -"__. ⚠️ Stripped back to the look the
+   number already had, and the number box's own up/down spinners removed — **the + and − either side are
+   that control, and two ways to do one thing on one row is the fault this project has a rule about.** */
 .stepper .stepper-val {
+  width: 60px;
   min-width: 52px;
   text-align: center;
   font-size: 17px;
   font-weight: 700;
+  font-family: inherit;
+  color: var(--ink);
+  border: none;
+  background: transparent;
+  padding: 0;
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
+.stepper .stepper-val::-webkit-outer-spin-button,
+.stepper .stepper-val::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+/* ⚠️ AND A DISABLED ONE IS DRAWN AS INERT, as the buttons beside it are. */
+.stepper .stepper-val:disabled { opacity: .45; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .form-grid .span2 { grid-column: 1 / -1; }
 .edit-item {
@@ -2175,6 +2265,11 @@ option.tone-off { color: var(--muted); }
   border-radius: 999px;
 }
 .paid-tag.tng { color: var(--brown-dark); background: var(--brown-soft); }
+/* ★ "Not paid" — the order has reached the paying stage and the money is still out (v430).
+   ⚠️ AMBER, NOT RED: red on this card would read as an error, and this is a "still to do", the
+   same register the app already gives money that has not come in (`.paid-tag.courier.mine`).
+   Contrast on --amber-bg measures 4.96:1, clear of the 4.5 the app holds itself to. */
+.paid-tag.owed { color: var(--amber); background: var(--amber-bg); }
 /* The courier's charge, in the paid-tag's family so a row reads as one more fact
    about the order rather than a new kind of thing. Quiet when the customer bore it
    — that charge costs you nothing — and amber when it came out of your own pocket,
@@ -2801,6 +2896,27 @@ option.tone-off { color: var(--muted); }
    day a product sells (.avail-on is declared further down and so wins on order) —
    because those answer a question the screen is asking. */
 .cal-cell.past { color: #ded6cd; }
+/* ⚠️⚠️ AND A PICKED PAST DAY MUST LOOK PICKED (v464). ⭐ `.cal-cell.past` is declared AFTER `.cal-cell.sel`
+   in this file and the two have EQUAL specificity — **so the past day's faint grey won over the selection
+   fill, and a past day she had tapped looked exactly like one she had not.** ⚠️ That is the dead-control
+   shape again: a tap with no visible answer. **Three classes beat two**, so this has to be said out loud. */
+.cal-cell.past.sel { background: var(--brown); color: #fff; font-weight: 700; }
+
+/* ★★★ THE PAST-DATE WARNING ON THE BAKE DAYS CARD (v464). Her words: __"i want to open a post date bake
+   day, system should allow with a warning"__. ⭐ It wears the app's OWN warning colours - the amber the
+   shared-data strip wears - so "this needs a look, and nothing is blocked" reads the same wherever she
+   meets it. ⚠️ A line in the card, not a toast: a toast is gone in two seconds, and this is something she
+   reads WHILE deciding whether to press Add. */
+.add-past-warn {
+  margin: 10px 0 0;
+  padding: 9px 11px;
+  background: var(--amber-bg);
+  border-left: 3px solid var(--amber);
+  border-radius: 0 8px 8px 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink);
+}
 /* Every day here is one height. A delivery day is taller because its booking count
    sits under the number, and a plain day left at the app's usual 34px held its
    number — and any mark washed behind it — 6px higher than the delivery days beside
@@ -4897,7 +5013,53 @@ tr.po-covered td { color: var(--muted); }
    "Put it on the map" press is a sibling OUTSIDE that label so tapping it pins a door
    rather than ticking a customer. */
 .run-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; }
+/* The route heading over a group of stops (v419) — "Route A · 3 stops".
+   ⚠️ A HEADING, NOT A ROW: it carries no id and is not a `.run-row`, so nothing that ticks, prices
+   or counts a stop can find it. Deliberately plain for the same reason — a heading that LOOKED
+   pressable would read as a control that does nothing. */
+.run-route {
+  /* ⚠️ A FLEX LINE, because the heading now carries its own press (v421) — the name on the left and
+     "Take this route" on the right. `wrap` so a long route name and the press can never fight over a
+     360px screen. */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 14px 0 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: var(--brown-dark);
+  text-transform: uppercase;
+}
+/* ⚠️ AND THE PRESS INSIDE IT IS NOT SHOUTED. A button inherits its parent's typography, so without
+   this the words "Take this route" would print in upper case at 12px bold, and read as a LABEL on the
+   heading rather than as something to press. */
+.run-route .btn {
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 600;
+}
 .run-head-title { font-weight: 600; font-size: 14px; }
+/* The route tag on a doorstep row (v421) — AND THE TAG IS THE PRESS.
+   ⚠️ Its own class rather than the Point cards' `.st-chip`, because a CHIP IS A LABEL: this one has
+   to look like something you can press, and a label that looked like a control is the fault this app
+   treats as a bug. ⚠️ Kept small and `nowrap` on purpose: `.run-row` is a flex line with NO wrap, so
+   a wide control here would squeeze the name it sits beside — the v411 fault. */
+.btn.route-tag {
+  flex: 0 0 auto;
+  font-size: 12px;
+  line-height: 1.2;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--brown-dark);
+  white-space: nowrap;
+}
 .run-row {
   display: flex;
   align-items: center;
@@ -4931,3 +5093,33 @@ tr.po-covered td { color: var(--muted); }
 .run-price .run-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .run-compare { flex: 1 1 100%; margin-top: 4px; }
 .run-compare .card-sub { margin: 0; }
+
+/* ★★ THE SYSTEM CHECK (v446). ⚠️ THREE STATES, THREE MARKS, AND THE SKIPPED ONE IS NEITHER — a check that
+   could not look must never wear the same tick as a check that looked and found nothing. The mark carries
+   that, so the colour is not doing the work alone. */
+.hc-verdict { font-size: 14px; font-weight: 700; margin: 0 0 10px; }
+.hc-row { padding: 9px 0; border-top: 1px solid var(--line); }
+.hc-row:first-of-type { border-top: 0; }
+.hc-head { display: flex; align-items: baseline; gap: 8px; }
+.hc-mark { flex: 0 0 auto; font-weight: 800; font-size: 14px; }
+.hc-row.pass .hc-mark { color: #3b7449; }
+.hc-row.fail .hc-mark { color: var(--amber); }
+.hc-row.skipped .hc-mark { color: var(--muted); }
+.hc-title { font-size: 13.5px; font-weight: 600; }
+.hc-count { margin-left: auto; font-size: 12px; font-weight: 800; color: var(--amber); }
+.hc-why { font-size: 12px; line-height: 1.45; margin: 4px 0 0 22px; }
+.hc-fix { font-size: 12px; line-height: 1.45; margin: 4px 0 0 22px; color: var(--muted); }
+.hc-detail { font-size: 11.5px; line-height: 1.5; margin: 4px 0 0 22px; color: var(--brown-dark);
+  font-family: ui-monospace, Menlo, monospace; word-break: break-word; }
+.hc-row.skipped .hc-title { color: var(--muted); }
+
+/* ★★ A VOID ROW (v448). ⚠️ NOT A DELETE AND NOT A WARNING: the number is still spent and the row still
+   matters — what it is NOT any more is unexplained. So it reads quietly, in the register's own voice,
+   and it never wears the mark that says something is wrong. */
+.reg-void { display: block; font-size: 11.5px; line-height: 1.45; margin-bottom: 4px; color: var(--muted); }
+.reg-row .reg-ask .btn + .btn { margin-left: 6px; }
+
+/* ★★ THE COUPON'S OWN LINE (v450). ⚠️ Not a warning and not a chip — it is an explanation of a figure
+   already in the Total above it, so it reads in the register's quiet voice. The press beside it is the
+   control; the sentence is why she would use it. */
+.coupon-note { font-size: 12px; line-height: 1.5; margin: 0 0 6px; color: var(--muted); }

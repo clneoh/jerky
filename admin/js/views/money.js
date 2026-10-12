@@ -17,14 +17,26 @@ import { setStock } from "../stock.js";
 import { fmtStockAmount } from "../purchasing.js";
 import { dateField } from "../datepicker.js";
 import { journalSheet, journalBodyEl, journalButtons, bakeryName } from "../journal.js";
-import { dayMonth, longDate, todayISO, weekdayName } from "../dates.js";
+// ⚠️ `dayMonth` MOVED TO dates.js AT v390 rather than being written a second time for the stock
+// card's When column. Two private copies of the same short date is how two screens end up showing one
+// day differently, which is the fault the shared `journalSheet` exists to prevent.
+import { addDays, dayMonth, longDate, todayISO, weekdayName } from "../dates.js";
+import { periodSpan } from "../consolidated.js";
 import { maybePublishTracking, maybeSync } from "../supabase.js";
 
 // Which stretch is showing. Module scope, like the other screens' own pickers, so a
-// rebuild she did not ask for does not throw her back to Today.
-let range = "today";
+// rebuild she did not ask for does not throw her back to where she was.
+let range = "day";
+let anchor = ""; // the day/week/month being looked at; "" follows today
 
-const RANGES = [["today", "Today"], ["week", "This week"], ["month", "This month"]];
+// ★★ THE SAME CHOOSER THE CONSOLIDATED INVOICE HAS (v403). Her words: __"At money, we have 3 choice to
+// look at the money, today, this week, this month. I need something more vasatile, like what we have for
+// invoice."__ ⚠️ The old three could pick the KIND of window but never WHICH one — "This week" was
+// always the current week, and there was no way at all to look at last week.
+// ⭐ `periodSpan` is the invoice's own builder, imported rather than re-written, so the two screens cannot
+// disagree about what a week or a month is. ⚠️ **It brings the SUNDAY week with it**, which is what Home
+// and the invoice already use — Money used to run a **Monday** week and was the only screen that did.
+const MODES = [["day", "A day"], ["week", "A week"], ["month", "A month"], ["all", "All"]];
 
 function isoOf(d) {
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -32,17 +44,40 @@ function isoOf(d) {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
-// "14 Sep" — the date without the year, for a range line or an expense row.
-// The stretch a choice covers, always ending today: a week or a month still running
-// is counted up to now, not to a day in the future.
-function spanFor(which) {
+// The stretch on screen. ⚠️⚠️ ONE RULE OF MONEY IS BOLTED ON TOP OF THE INVOICE'S BUILDER, and it is the
+// rule the old `spanFor` was written around: **money stops at today.** A till has no takings from a day
+// that has not happened, so a week or month STILL RUNNING is counted up to now — while one that has
+// already finished is shown whole, because every day of it really happened. The invoice shows whole
+// periods instead, correctly: it says what she supplied, not what she holds.
+function spanFor() {
   const today = todayISO();
-  if (which === "today") return { from: today, to: today, label: `${weekdayName(today)}, ${dayMonth(today)}` };
-  const d = new Date(`${today}T00:00:00`);
-  const from = isoOf(which === "week"
-    ? new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7)) // Monday first
-    : new Date(d.getFullYear(), d.getMonth(), 1));
-  return { from, to: today, label: from === today ? `${weekdayName(today)}, ${dayMonth(today)}` : `${dayMonth(from)} – ${dayMonth(today)}` };
+  if (range === "all") return periodSpan("all", today);
+  const span = periodSpan(range, anchor || today);
+  // ⚠️ `min(end of the period, today)` — and the string compare is safe because both are ISO days.
+  const to = span.to > today ? today : span.to;
+  if (!span.from || span.from > today) return { from: today, to: today, label: longDate(today), future: true };
+  return { from: span.from, to, label: span.label };
+}
+
+// Can she step forward from here? A period that already reaches today is the end of the road — the same
+// bound the invoice's own arrows keep, for the same reason: there is nothing further to look at yet.
+const canGoForward = () => {
+  const today = todayISO();
+  if (range === "all") return false;
+  const span = periodSpan(range, anchor || today);
+  return !!span.from && span.to < today;
+};
+
+// Step the anchor by one of whatever is showing: a day, a week or a month.
+function stepSpan(dir) {
+  const today = todayISO();
+  const from = (anchor || today);
+  if (range === "day") { anchor = addDays(from, dir); return; }
+  if (range === "week") { anchor = addDays(from, dir * 7); return; }
+  if (range === "month") {
+    const d = new Date(`${from}T00:00:00`);
+    anchor = isoOf(new Date(d.getFullYear(), d.getMonth() + dir, 1));
+  }
 }
 
 // One method's book, as a description the screen and the paper both read. The rows come from
@@ -831,8 +866,8 @@ export function renderMoney(root, state) {
       extra ? el("span", { class: "muted" }, `  ${extra}`) : null));
 
   const draw = (which) => {
-    if (which) range = which;
-    const { from, to, label } = spanFor(range);
+    if (which) { range = which; anchor = ""; } // a new kind of window starts at today again
+    const { from, to, label } = spanFor();
     const m = moneyBetween(state, from, to);
     const out = expensesBetween(state, from, to);
     const mine = depositsBetween(state, from, to);
@@ -852,9 +887,18 @@ export function renderMoney(root, state) {
 
     root.replaceChildren(
       el("h2", { class: "section" }, "Money"),
+      // ★★ WHAT KIND OF WINDOW, AND THEN WHICH ONE (v403) — the invoice's own two-part chooser.
+      // ⚠️ The old row of three picked the kind and stopped there, so "This week" could only ever be
+      // the current week. The arrows are what let her look at LAST week, which she had no way to do.
       el("div", { class: "cal-modes" },
-        ...RANGES.map(([id, text]) => button(text, () => draw(id),
+        ...MODES.map(([id, text]) => button(text, () => draw(id),
           `ghost small${range === id ? " cal-mode-on" : ""}`))),
+      // ⚠️ NO ARROWS ON "All" — there is nothing to step to, and a pair of dead arrows on a screen
+      // reads as a fault (the v290 rule about controls that do not do what they look like they do).
+      el("div", { class: "range-stepper" },
+        range === "all" ? null : button("‹", () => { stepSpan(-1); draw(); }, "ghost small range-nav"),
+        el("span", { class: "range-label" }, label),
+        range === "all" || !canGoForward() ? null : button("›", () => { stepSpan(1); draw(); }, "ghost small range-nav")),
       el("div", { class: "card" },
         el("p", { class: "card-title" }, label),
         el("div", { class: "money-rows" },

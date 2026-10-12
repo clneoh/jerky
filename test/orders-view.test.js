@@ -9,6 +9,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 function createEl(tag) {
   const node = {
@@ -63,6 +64,7 @@ class MockDate extends RealDate {
 globalThis.Date = MockDate;
 
 const { renderOrders, productOptions } = await import("../admin/js/views/orders.js");
+const { orderedProducts, groupByCategory } = await import("../admin/js/productCategories.js");
 
 const STATE = {
   deliveryDates: [
@@ -143,7 +145,12 @@ test("opened, it reads the day on one line, then the items, then the customer", 
   const dayLine = body.children[0].children[1];
   assert.ok(String(dayLine.className).includes("datepick"), "the day is the one-line control");
   const dayBtn = dayLine.children[0];
-  assert.match(dayBtn.textContent, /^Delivering /, "and it names the day already chosen");
+  // ⚠️⚠️ AND THE WORD IS "BAKING", NOT "DELIVERING" (v429). ⚠️ The button names the BAKE day and sits
+  // directly above a box headed **"Courier delivery date"** — so the card said the bake day was the
+  // delivery and offered a separate delivery date two lines down. **Her report, and the card was
+  // contradicting itself.** ⭐ Moved in the same edit as the wording, because an absence-assertion
+  // left on the old word is a vacuous one.
+  assert.match(dayBtn.textContent, /^Baking /, "and it names the day already chosen — as the BAKE day");
   assert.equal(dayBtn.attrs["aria-expanded"], "false", "shut at first");
   assert.equal(dayLine.children[1].children.length, 0, "with nothing drawn under it");
   assert.equal(all(body).some((n) => String(n.className).includes("cal-wrap")), false,
@@ -859,4 +866,76 @@ test("a day whose order was given a bring-a-friend coupon still opens", () => {
     "the day opens — it must not throw while building the order's row");
   assert.ok(text().includes("Bring-a-friend"), "and the discount names itself on the row");
   assert.ok(text().includes("RM 3.00"), "with its figure");
+});
+
+test("the note field names BOTH ways an order can leave (v408)", () => {
+  // ★★ Her words: __"change the Delivery Notes(optional) to Notes for Collection/Delivery"__.
+  // ⚠️ It is the same fault as the shop's "Delivery note" and as v407's "delivery day": the label
+  // named ONE of the two ways an order leaves, and the person it misreads is the one COLLECTING —
+  // they skip a box that asks for the gate code or the landmark, which is what actually gets them
+  // their bread.
+  //
+  // ⚠️ She asked for this on the SHOP. It is changed here too because **it is the same field with
+  // the same label on a card that takes both kinds of order**, and two screens disagreeing about
+  // what one box is for is how the next confusion starts.
+  const { root } = build();
+  byClass(root, "fold-head")._listeners.click[0](); // the card arrives folded
+  const labels = all(root).filter((n) => n.tagName === "LABEL")
+    .map((n) => n.children[0] && n.children[0].text);
+  assert.ok(labels.includes("Notes for Collection/Delivery (optional)"),
+    `the note field names both ways — labels on the card: ${JSON.stringify(labels)}`);
+
+  // ⚠️ AND THE SAME LABEL LIVES IN TWO MORE CARDS THIS FILE CANNOT REACH — the Edit pop-up and the
+  // Note / tracking pop-up — so the rule is taken over the SOURCE as well. **A word comes back one
+  // call site at a time**, and pinning only the one card a test happens to open is how the other
+  // two would quietly keep the old words.
+  const src = readFileSync(new URL("../admin/js/views/orders.js", import.meta.url), "utf8");
+  assert.deepEqual(src.match(/"Delivery note[^"]*"/g) || [], [],
+    "no admin label calls that box a delivery note any more");
+  assert.equal((src.match(/Notes for Collection\/Delivery/g) || []).length, 3,
+    "and all three cards — New order, Edit, Note / tracking — carry the new words");
+});
+
+test("★★ a product she dragged is in HER order in the pickers too (v418)", () => {
+  // Her words: __"after i reposition with the handle, the drop drop list have to organise is my
+  // preference"__. ⚠️⚠️ The Products SCREEN drew her order, and the SHOP drew her order — but the
+  // drop-downs that OFFER a product listed `state.products` raw, **which is the order the records
+  // happen to sit in and not the order a drag writes.** The handle moved the shelves and left every
+  // picker as it was.
+  //
+  // ⚠️ `orderedProducts` is the ONE rule all three pickers read (the order card, a product's recipe,
+  // and the manual shopping list), so this is where it is judged.
+  const st = {
+    products: [
+      { id: "p1", name: "Focaccia", active: true, recipe: [], unit: "pc", sort: 2 },
+      { id: "p2", name: "Sandwich", active: true, recipe: [], unit: "pc", sort: 0 },
+      { id: "p3", name: "Brownie", active: true, recipe: [], unit: "pc", sort: 1 },
+    ],
+    productCategories: [],
+  };
+  assert.deepEqual(orderedProducts(st, st.products).map((p) => p.name),
+    ["Sandwich", "Brownie", "Focaccia"], "the tail order she set with the grip, not the array's");
+
+  // ⭐ AND THE TWO ARE THE SAME ORDER — the screen draws `groupByCategory` and this flattens it, so a
+  // picker and the shelf it feeds can never disagree.
+  const drawn = groupByCategory(st, st.products).flatMap((g) => g.products).map((p) => p.name);
+  assert.deepEqual(orderedProducts(st, st.products).map((p) => p.name), drawn);
+});
+
+test("★★ and the order card's own product picker reads it (v418)", () => {
+  // ⚠️ The rule above is only worth having if the picker USES it — **a helper proven right and a
+  // screen never wired to it is exactly the fault the publish tests were written for.**
+  const st = {
+    products: [
+      { id: "p1", name: "Focaccia", active: true, recipe: [], unit: "pc", sort: 2 },
+      { id: "p2", name: "Sandwich", active: true, recipe: [], unit: "pc", sort: 0 },
+      { id: "p3", name: "Brownie", active: true, recipe: [], unit: "pc", sort: 1 },
+    ],
+    productCategories: [],
+    deliveryDates: [{ id: "d1", date: "2026-10-12" }],
+    orders: [],
+  };
+  assert.deepEqual(productOptions(st, "d1").map((o) => o.label),
+    ["Sandwich", "Brownie", "Focaccia"],
+    "the order card's picker offers them in the order she put them in");
 });

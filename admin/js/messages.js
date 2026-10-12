@@ -10,7 +10,7 @@ import { byId, orderCode, orderLineName, waNumber } from "./state.js";
 import { shortDate } from "./dates.js";
 import { customerTotal, moneyLines } from "./courier.js";
 import { fulfillmentText, orderPointName } from "./points.js";
-import { dayLine, promisedWindowSuffix, trackingLine, vanLine } from "./courier_job.js";
+import { courierDayOf, dayLine, promisedWindowSuffix, trackingLine, vanLine } from "./courier_job.js";
 
 // The opening line, in the voice she chose on Settings (2 Oct 2026). WhatsApp
 // carries no fonts at all — the letters always come from the customer's own phone
@@ -144,13 +144,13 @@ export function buildPickupReminder(state, group, trackUrl) {
   if (!b || !b.recipient) return null;
   let msg = `${greeting(state, `Hi ${b.first.customerName || ""}! Good news from ${b.bakery} - your order is ready.`)}\n`;
   msg += `Order #${orderCode(b.first)}\n`;
-  // ★ AND WHERE TO COLLECT IT (v304). This line said "ready for pickup" and named no place at
+  // ★ AND WHERE TO COLLECT IT (v304). This line said "ready for collection" and named no place at
   // all, so a customer collecting at a Point was told their order was ready and never where to
   // go — while the confirmation, the payment reminder and the shipped message all named it. v299
   // claimed all four later messages named the Point; three of them did, and this one did not.
   //
   // The place comes from HER OWN record, frozen onto the order when it was taken, and the KITCHEN
-  // keeps the word it has always had — "ready for pickup" IS the kitchen, and it needs no name.
+  // keeps the word it has always had — "ready for collection" IS the kitchen, and it needs no name.
   // ⚠️ **NO COURIER BRANCH HERE ANY MORE (v344).** One lived here — *"Packed and will be sent for
   // delivery on <the day>"* — and it had been **UNREACHABLE since v340**, when the row stopped offering
   // this reminder to a courier order: a posted customer is told nothing at Packed, because nothing has
@@ -158,9 +158,20 @@ export function buildPickupReminder(state, group, trackUrl) {
   // day** — the very thing the last batch spent a day taking off every other surface — so it is deleted
   // rather than left in place as a trap for whoever reads this file next.
   const place = orderPointName(state, b.first);
+  // ★★ AND IT IS THE DAY THE BREAD IS ACTUALLY THERE (v429).
+  //
+  // ⚠️⚠️ **A POINT ORDER CAN CARRY A COURIER DAY** — the Delivery run writes one when the van is
+  // booked — so a run that reaches the Point **the morning after the bake** was telling the customer
+  // to collect on the wrong day. ⭐ **That is a customer standing outside a shop that has no bread**,
+  // and it is the most serious of this version's faults: the rest are a word on a screen or a label.
+  // ⚠️ The bake day remains the FALLBACK, which is exactly right for every order collected straight
+  // from the kitchen — and for the common case, a Point order whose run day she has not booked yet,
+  // **this message is byte-for-byte what it was.**
+  const vanDay = courierDayOf(b.first);
+  const readyOn = vanDay ? shortDate(vanDay) : b.date;
   msg += place
-    ? `Packed and ready to collect from ${place} on ${b.date}.\n`
-    : `Packed and ready for collection on ${b.date}.\n`;
+    ? `Packed and ready to collect from ${place} on ${readyOn}.\n`
+    : `Packed and ready for collection on ${readyOn}.\n`;
   msg += `\nTrack your order: ${b.trackUrl}`;
   return { recipient: b.recipient, message: msg };
 }

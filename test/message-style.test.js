@@ -64,6 +64,26 @@ const BUILDERS = [
 
 const GREETING = "Hi Mei Ling!";
 
+test("★★ a Point order with a van day tells the customer the day the bread is THERE (v429)", () => {
+  // ⚠️⚠️ **A POINT ORDER KEEPS `fulfillment: "collect"` WHILE ITS BREAD ARRIVES BY VAN** — the
+  // Delivery run writes `courierDay` onto it when the trip is booked. ⭐ So a run that reaches the
+  // shop **the morning after the bake** was telling the customer to collect **on the wrong day**:
+  // **a customer standing outside a shop that has no bread.** ⚠️ It is the most serious of this
+  // version's faults — the rest are a word on a screen or a label.
+  const s = state();
+  s.points = [{ id: "pt_farlim", name: "Farlim, Air Itam", place: { lat: 5.4, lng: 100.28 } }];
+  const order = group().orders[0];
+  const withVan = buildPickupReminder(s,
+    { orders: [{ ...order, pointId: "pt_farlim", courierDay: "2026-09-08" }] }, URL).message;
+  assert.match(withVan, /collect from Farlim, Air Itam on .*8 Sep/,
+    "the day the van reaches the Point, not the day it was baked");
+
+  // ⚠️ AND WITH NO VAN DAY IT IS BYTE-FOR-BYTE WHAT IT WAS — the common case, and for an order
+  // collected straight from the kitchen the bake day IS the day they get their bread.
+  const plain = buildPickupReminder(s, { orders: [{ ...order, pointId: "pt_farlim" }] }, URL).message;
+  assert.match(plain, /collect from Farlim, Air Itam on .*7 Sep/, "the bake day, as before");
+});
+
 // ── 1. Plain is untouched ─────────────────────────────────────────────────
 
 test("a phone that never chose sends byte for byte what it sent before", () => {

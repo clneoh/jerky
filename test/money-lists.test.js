@@ -22,7 +22,20 @@ function createEl(tag) {
     },
     appendChild(c) { if (c != null) this.children.push(c); return c; },
     append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
-    replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) this.children.push(c); },
+    // ⚠️⚠️ THIS SHIM WAS MORE FORGIVING THAN THE BROWSER, AND IT HID A REAL FAULT (v404).
+    // It **skipped** a null child. The DOM does not: `replaceChildren` takes nodes *or strings*, so a
+    // `null` is converted with `String()` and **prints the word "null" on her screen**. The Money
+    // screen's window stepper read *"Week of 4 Oct – 10 Oct  null"* whenever the forward arrow was
+    // absent, and this shim drew a clean row — found by LOOKING at 375px, not by any test.
+    // ⭐ `el()` DOES skip nulls (that is why most of the app is safe); **`replaceChildren` does not.**
+    // A stand-in that cannot express what the browser does is the stand-in that is wrong.
+    replaceChildren(...cs) {
+      this.children = [];
+      for (const c of cs) {
+        if (c == null) this.children.push({ nodeType: 3, text: String(c) });
+        else this.children.push(c);
+      }
+    },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener() {},
     setAttribute(k, v) { this.attrs[k] = String(v); if (k === "hidden") this.hidden = true; },
@@ -58,6 +71,8 @@ globalThis.fetch = async () => ({ ok: true, json: async () => [] });
 const { renderMoney } = await import("../admin/js/views/money.js");
 const { entryForm } = await import("../admin/js/views/accountsEditor.js");
 const { classOfCategory } = await import("../admin/js/accounts.js");
+const { weekStartISO } = await import("../admin/js/weekly.js");
+const { todayISO, longDate } = await import("../admin/js/dates.js");
 
 function freshState() {
   return {
@@ -382,4 +397,49 @@ test("★★ a withdrawal asks WHOSE investment it comes out of — an ordinary 
   assert.equal(state.expenses.length, 1);
   assert.equal(state.expenses[0].source, "Savings",
     "⚠️ the owner she picked was not saved on the withdrawal");
+});
+
+// ── ★★ Money's week is the SUNDAY one now (v403) ──────────────────────────────
+test("★★ Money's 'A week' is the SAME week Home and the invoice use — Sunday first", () => {
+  // ⚠️⚠️ MONEY WAS THE ONLY SCREEN USING A MONDAY WEEK. Home's "This week" tile and the invoice's
+  // "A week" both start on **Sunday** (`weekStartISO`), so the app offered two different windows under
+  // one name. Her call, asked which to use: __"Sunday, to match the rest"__.
+  // ⭐ The test is written against the shared builder's own answer rather than a hand-computed date, so
+  // it cannot drift from `periodSpan` the way a second week rule would.
+  const state = freshState();
+  const root = mount(state);
+  const week = walk(root).find((n) => n.tagName === "BUTTON" && n.textContent.trim() === "A week");
+  assert.ok(week, "the week choice is not offered");
+  fire(week);
+  const label = walk(root).find((n) => String(n.className).includes("range-label")).textContent;
+  const sunday = weekStartISO(todayISO());
+  assert.ok(label.includes(longDate(sunday)),
+    `⚠️ Money's week does not start on Sunday: ${label} — Home and the invoice start ${longDate(sunday)}`);
+});
+
+// ── ★★⚠️ nothing on this screen ever prints the word "null" (v404) ─────────────
+test("★★⚠️ the window stepper never prints the word 'null' — the arrow that is absent is ABSENT", () => {
+  // ⚠️⚠️ FOUND BY LOOKING, NOT BY A TEST. The stepper is built with `replaceChildren`, and **a `null`
+  // handed to it is a node-or-string argument — the DOM converts it with `String()` and renders the
+  // word "null"**. The screen read *"Week of 4 Oct 2026 – 10 Oct 2026  null"* whenever the forward
+  // arrow was absent, which is the CURRENT period — i.e. the state it opens in.
+  // ⭐ `el()` skips a null child; `replaceChildren` does not. This shim was made as unforgiving as the
+  // browser for exactly this, so the fault could not hide behind it again.
+  const state = freshState();
+  const root = mount(state);
+  // ⚠️⚠️ THE MODE IS SET EXPLICITLY, AND THAT IS NOT TIDINESS — IT IS THE TEST WORKING AT ALL.
+  // `range` and `anchor` are MODULE scope, so an earlier test in this file leaves them wherever it
+  // finished; the first version of this test then ran on whatever window that was, **never took the
+  // arrow-absent branch, and passed while the fault sat in the code.** A guard that depends on the test
+  // order before it is not a guard.
+  const day = walk(root).find((n) => n.tagName === "BUTTON" && n.textContent.trim() === "A day");
+  fire(day);
+  assert.ok(!/null/.test(root.textContent),
+    "⚠️⚠️ the word 'null' is on her screen — an absent arrow was passed to replaceChildren as a node");
+
+  // ⚠️ AND EVERY mode, not just the one it opens on: "All" has BOTH arrows absent, which is the other
+  // way to hand this builder two nulls in a row.
+  const all = walk(root).find((n) => n.tagName === "BUTTON" && n.textContent.trim() === "All");
+  fire(all);
+  assert.ok(!/null/.test(root.textContent), "⚠️ the word 'null' appears on the All window");
 });

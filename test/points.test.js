@@ -6,10 +6,15 @@
 //
 // The three things worth pinning, and each is a way of being confidently wrong:
 //
-//   1. THE KITCHEN IS NOT A POINT. Collecting from the bakery is `fulfillment: "collect"`
-//      with no point, and it must stay that way — free, no minimum, no record, no fee, no
-//      provider. A Point that quietly became the kitchen would inherit a fee she does not
-//      owe and a life she cannot end.
+//   1. THE KITCHEN IS NOT LIKE OTHER POINTS — it is free, has no minimum and cannot be
+//      paused, whatever is stored on it.
+//      ⚠️⚠️ THIS FILE USED TO SAY "THE KITCHEN IS NOT A POINT" and took it further: *"a Point
+//      that quietly became the kitchen would inherit a fee she does not owe and a life she
+//      cannot end."* **She overruled it at v406** — "I want all self collection thru collection
+//      point, not from the kitchen", with a switch to say which one is the kitchen. The
+//      sentence she overruled is kept here on purpose, because **the danger it names is real
+//      and the answer to it is the test below, not the ban**: `kitchenExempt` reads the kitchen
+//      as fee 0, minimum 0 and never paused, so it cannot inherit what she was warned about.
 //   2. DELETE MUST NOT REWRITE HISTORY. The Point's name is frozen onto the order, so an
 //      order that went to Farlim still says Farlim after the Point is deleted.
 //   3. PAUSE IS THE NORMAL ENDING. She opens them one at a time and expects most to end, so
@@ -20,13 +25,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  DEFAULT_FEE_RM, addPoint, blankPoint, deletePoint, fulfillmentText, normalizePoint,
-  collectionWindowText,
-  orderPointName, pointAddressFor, pointById, pointPhoneText, pointPlace, pointPlaceText,
-  pointMinOrder, pointProblem, pointShortfall, pointWindow, pointWindowText, pointsOf,
-  activePoints, publishPoints,
-  setPointPaused, setPointPlace, updatePoint,
+  DEFAULT_FEE_RM, addPoint, blankPoint, deletePoint, fulfillmentText, normalizePoint, collectionWindowText, orderPointName, pointAddressFor, pointById, pointPhoneText, pointPlace, pointPlaceText, pointMinOrder, pointProblem, pointShortfall, pointWindow, pointWindowText, pointsOf, activePoints, publishPoints, setPointPaused, setPointPlace, updatePoint, markKitchen, kitchenPoint, kitchenExempt,
 } from "../admin/js/points.js";
+import { pointChoices } from "../admin/js/pointAreas.js";
 
 function state(extra = {}) {
   return { orders: [], points: [], ...extra };
@@ -229,7 +230,8 @@ test("the pin stays in her app", () => {
   const st = state();
   const p = addPoint(st, FEE);
   setPointPlace(st, p.id, { lat: 5.41405, lng: 100.31408, label: "Farlim" });
-  assert.deepEqual(Object.keys(publishPoints(st)[0]).sort(), ["id", "minOrderRM", "name"]);
+  assert.deepEqual(Object.keys(publishPoints(st)[0]).sort(),
+    ["id", "isKitchen", "minOrderRM", "name"]);
   assert.equal(JSON.stringify(publishPoints(st)).includes("100.31408"), false);
 });
 
@@ -245,16 +247,57 @@ test("the shop is told a Point's name and its smallest basket, and NOTHING else"
   // private: it is exactly what a customer has to know before choosing, and without it the shop
   // could only take an order the Point does not want. The key list is asserted WHOLE, so a
   // fourth key cannot be added by accident.
+  //
+  // ★★ AND `isKitchen` IS THAT FOURTH KEY (v407), added deliberately rather than by drift — which
+  // is the whole reason this list is asserted whole. ⚠️ It is not a fact about her, it is a fact
+  // about the PAGE: until it was published the shop had no way to know which Point was her
+  // kitchen, so it went on printing its own invented "Our kitchen" row above the list and **a
+  // customer saw her kitchen twice** — once invented, once under the name she gave it. It is
+  // exactly as public as the name it sits beside, and it is the smallest thing that stops the
+  // shop inventing a row. See store/app.js.
   const st = state();
   addPoint(st, { ...FEE, minOrderRM: 30 });
   const [published] = publishPoints(st);
-  assert.deepEqual(Object.keys(published).sort(), ["id", "minOrderRM", "name"]);
+  assert.deepEqual(Object.keys(published).sort(), ["id", "isKitchen", "minOrderRM", "name"]);
   assert.equal(published.minOrderRM, 30, "the smallest basket, as a plain number");
+  assert.equal(published.isKitchen, false, "an ordinary Point is not the kitchen");
   const blob = JSON.stringify(published);
   assert.equal(blob.includes("Aunty Lim"), false, "the receiver is never published");
   assert.equal(blob.includes("60123456789"), false, "nor their phone");
   assert.equal(blob.includes("Lebuhraya"), false, "nor the address — the message that tells a customer where to go is built from HER copy");
   assert.equal(blob.includes("0.5"), false, "nor the fee, which is what she pays out");
+});
+
+test("exactly one Point is published as the kitchen, and it is the one she marked", () => {
+  // ★★ THE SHOP DEPENDS ON "EXACTLY ONE" (v407): it drops its invented kitchen row the moment it
+  // sees a marked one, so **two marks would leave a customer with two kitchens and no fallback**,
+  // and the house rule her own words set is __"Allow only one collection point as kitchen"__.
+  const st = state();
+  const a = addPoint(st, { ...FEE, name: "Farlim, Air Itam" }, "2026-10-12T00:00:00.000Z");
+  const b = addPoint(st, { ...FEE, name: "Chai Leng Park, Prai" }, "2026-10-13T00:00:00.000Z");
+  assert.equal(publishPoints(st).filter((p) => p.isKitchen).length, 0,
+    "no kitchen marked means none published — the shop keeps its own invented row");
+
+  markKitchen(st, b.id);
+  const marked = publishPoints(st).filter((p) => p.isKitchen);
+  assert.equal(marked.length, 1, "one kitchen, never two");
+  assert.equal(marked[0].name, "Chai Leng Park, Prai", "and it is the one she marked");
+  assert.equal(publishPoints(st).find((p) => p.name === "Farlim, Air Itam").isKitchen, false,
+    "the other Point is not swept up with it");
+
+  markKitchen(st, a.id);
+  assert.deepEqual(publishPoints(st).filter((p) => p.isKitchen).map((p) => p.name),
+    ["Farlim, Air Itam"], "marking a new one moves the kitchen rather than adding a second");
+
+  markKitchen(st, null);
+  assert.equal(publishPoints(st).filter((p) => p.isKitchen).length, 0,
+    "and un-marking leaves the shop with its fallback row, which is why the row stays");
+
+  // ⚠️ A KITCHEN SHE PAUSED IS STILL PUBLISHED — the one place that must always exist.
+  markKitchen(st, a.id);
+  setPointPaused(st, a.id, true);
+  assert.equal(publishPoints(st).find((p) => p.id === a.id).isKitchen, true,
+    "the kitchen is offered even paused, because it is where the bread is");
 });
 
 test("the shop is offered only the Points she has open", () => {
@@ -432,4 +475,105 @@ test("switching the minimum off is a minimum of zero, not a remembered number (v
   assert.equal(pointMinOrder(pointById(st, p.id)), 0, "the switch off IS no minimum");
   updatePoint(st, p.id, { ...FEE, minOrderRM: 45 });
   assert.equal(pointMinOrder(pointById(st, p.id)), 45, "and it can be set again");
+});
+
+// ── ★★ THE KITCHEN AS A POINT (v406) ──────────────────────────────────────────
+// Her words: __"I want all self collection thru collection point, not from the kitchen"__ and __"at
+// self collection point, add a switch whether that collection is a kitchen. Allow only one collection
+// point as kitchen for the time being. NO pin is needed if it is kitchen"__ — and then, correcting me,
+// __"a point need a pin"__.
+//
+// ⚠️⚠️ THIS FILE'S OWN HEADER ARGUED THE OTHER WAY, AND IT WAS RIGHT TO: *"THE KITCHEN IS NOT A POINT…
+// a Point that quietly became the kitchen would inherit a fee she does not owe and a life she cannot
+// end."* **She has overruled it, and the concern it raised is handled rather than dropped** — the
+// `kitchenExempt` tests below are what keeps it true.
+
+const SPOT = { lat: 5.4141, lng: 100.3290, label: "Farlim" };
+
+test("★★ marking a kitchen is EXCLUSIVE — one call, and only one Point can hold it", () => {
+  // ⚠️⚠️ THE EXCLUSIVITY IS `markKitchen`'S JOB AND NOBODY ELSE'S. Her words: __"Allow only one
+  // collection point as kitchen for the time being"__ — and a rule kept by three call sites is a rule
+  // that is wrong in two of them. **Marking one clears the rest in the same breath.**
+  const st = state();
+  const a = addPoint(st, { ...FEE, name: "A", place: SPOT });
+  const b = addPoint(st, { ...FEE, name: "B", place: SPOT });
+  markKitchen(st, a.id);
+  assert.equal(kitchenPoint(st).id, a.id, "the kitchen was not marked");
+  markKitchen(st, b.id);
+  assert.equal(kitchenPoint(st).id, b.id, "the second mark did not take");
+  assert.equal(pointsOf(st).filter((p) => p.isKitchen).length, 1,
+    "⚠️⚠️ TWO Points are the kitchen at once");
+  // ⚠️ And passing null clears it, which is how she un-marks one without deleting the place.
+  markKitchen(st, null);
+  assert.equal(kitchenPoint(st), null, "the mark could not be taken off");
+});
+
+test("★★⚠️ HER OWN PICKER OFFERS EVERY PLACE SHE HAS MADE — a pin is not asked for (v420)", () => {
+  // ⚠️⚠️ THIS TEST USED TO READ THE OPPOSITE WAY, and what it asserted was true of the wrong list.
+  // v406 put a PIN gate inside `pointChoices` believing it was the list a CUSTOMER picks from. ⭐ It
+  // is not — it is called from ONE file, `views/orders.js`, and from nowhere else, while the shop
+  // builds its own list from the published Points (`shopPointOrder`).
+  // **So the gate hid her own Places from HER OWN screens while the customer's page went on offering
+  // every one of them.** Her report: __"the point i setup is not available for selection in +order,
+  // edit order and other"__.
+  // ⚠️ And it broke her standing rule with it: nothing may block or hide a sale she takes by hand —
+  // she could not even record an order collecting at a Place she had just made.
+  const st = state();
+  addPoint(st, { ...FEE, name: "Unpinned" });
+  addPoint(st, { ...FEE, name: "Pinned", place: SPOT });
+  const offered = pointChoices(st).map((c) => c.name);
+  assert.ok(offered.includes("Pinned"), "a pinned Place is offered");
+  assert.ok(offered.includes("Unpinned"),
+    "⚠️⚠️ and so is one with no pin — a pin is what a VAN is given, and a customer walking to a Place "
+    + "is told its ADDRESS, which is a different field this Place can have without one");
+});
+
+test("⚠️ and the pin is still enforced where it actually belongs: a Place with no pin cannot be sent a van", () => {
+  // ⭐ THE RULE WAS NOT DROPPED, IT WAS PUT BACK WHERE IT LIVES. A Point with no pin is a name a van
+  // cannot be sent to — the delivery run says exactly that and offers to fix it, __"this Point is not
+  // pinned yet"__ / **Pin the Point** (see views/delivery_run.js).
+  // ⚠️ And `pointPlace` still refuses a HALF-typed one, so a Place can never be a point in the sea.
+  const st = state();
+  const loose = addPoint(st, { ...FEE, name: "Unpinned" });
+  const pinned = addPoint(st, { ...FEE, name: "Pinned", place: SPOT });
+  assert.equal(pointPlace(loose), null, "no pin reads as no pin");
+  assert.ok(pointPlace(pinned), "and a real one reads back");
+  assert.equal(pointPlace({ place: { lat: 91, lng: 100 } }), null,
+    "⚠️ and one number with no other is NOT a place");
+});
+
+test("★★⚠️ a MARKED kitchen stops the invented \"My kitchen\" row — every collection is a Point", () => {
+  // ⚠️⚠️ THIS IS THE "not from the kitchen" HALF. Until v406 the kitchen was **the ABSENCE of a Point**,
+  // so this had to invent a row for it. ⭐ The fallback is kept for the day she has not marked one — and
+  // that is what keeps every order taken before today, which carries no point id, meaning the kitchen.
+  const st = state();
+  const k = addPoint(st, { ...FEE, name: "Farlim shop", feeRM: 0 });
+  markKitchen(st, k.id);
+  assert.deepEqual(pointChoices(st).map((c) => c.name), ["Farlim shop"],
+    "⚠️ the invented kitchen row is still there beside the marked one — two kitchens on the page");
+  // ⚠️ And with NOTHING marked, the fallback is still offered, so a customer can always collect.
+  markKitchen(st, null);
+  assert.ok(pointChoices(st).some((c) => !c.id), "⚠️ with no kitchen marked there is nowhere to collect");
+});
+
+test("★★⚠️ the KITCHEN inherits no fee, no minimum, and cannot be paused", () => {
+  // ⚠️⚠️ THE OLD HEADER'S CONCERN, ANSWERED IN CODE. *"A Point that quietly became the kitchen would
+  // inherit a fee she does not owe and a life she cannot end."* It cannot, because the kitchen is read
+  // through `kitchenExempt` — wherever it is read.
+  const st = state();
+  const k = addPoint(st, { ...FEE, name: "My kitchen", feeRM: 0.5, place: SPOT });
+  markKitchen(st, k.id);
+  k.minOrderRM = 30;          // as if she had set one before marking it
+  k.paused = true;            // and paused it
+  const read = kitchenExempt(k);
+  assert.equal(read.feeRM, 0, "⚠️ the kitchen carries a fee she does not owe");
+  assert.equal(pointMinOrder(k), 0, "⚠️ the kitchen demands a minimum basket at her own door");
+  assert.equal(read.paused, false, "the kitchen reads as paused");
+  assert.ok(activePoints(st).some((p) => p.isKitchen),
+    "⚠️⚠️ a PAUSED kitchen dropped off the list — that leaves a customer nowhere to collect, and the "
+    + "kitchen is the one place that must always exist because it is where the bread is");
+  // ⚠️ And an ordinary Point keeps all three of its own — the exemption is the kitchen's alone.
+  const plain = { ...blankPoint(), name: "Shop", feeRM: 0.5, minOrderRM: 30, paused: true };
+  assert.equal(kitchenExempt(plain).feeRM, 0.5, "an ordinary Point lost its fee");
+  assert.equal(kitchenExempt(plain).paused, true, "an ordinary Point could no longer be paused");
 });

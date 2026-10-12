@@ -10,10 +10,10 @@ import {
   giveCredits, markOneUsed, markCreditUsed, setCreditExpiry, removeCredit,
   addManualCredit, ROLE_LABEL,
   broughtIn, rewardStanding, rewardGrants, giveReward, removeRewardGrant,
-  appliedCreditIds, clearableTotal, removeClearableCredits, couponOn,
+  appliedCreditIds, clearableTotal, removeClearableCredits, couponOn, couponOnAny, couponDeclined,
 } from "../admin/js/referrals.js";
 import { customerTotal } from "../admin/js/courier.js";
-import { orderCode } from "../admin/js/state.js";
+import { codeFromId, orderCode } from "../admin/js/state.js";
 import { addDays, todayISO } from "../admin/js/dates.js";
 
 const T = "2026-09-05"; // a fixed "today" so expiry math is deterministic
@@ -566,6 +566,84 @@ test("a hand-out can be taken back", () => {
 // ⚠️⚠️ THE ASSERTION THIS FILE EXISTS FOR IS THE LAST ONE. A coupon already coming off an
 // order IS the discount on that order's Total, so a clear that took it away would RAISE the
 // price of an order she has already promised — from a cleanup screen, silently.
+
+test("★★★ a coupon still comes off an order that was SPLIT after it was applied (v449)", () => {
+  // ⚠️⚠️ MEASURED BEFORE THE FIX, AND IT WAS BURNING HER MONEY. An order's number is stamped onto its
+  // coupon when she presses Apply, and read back by comparing it — **but until v441 an order's number
+  // MOVED the moment it gained a second item.** So a coupon applied while it wore `#E61119` was looked
+  // for under `#B9C955`, matched nothing, **came off nothing, and stayed spent.** ⭐ The same fault v336
+  // fixed once already, recurring for every order split before v441 — and the friend's own coupon died
+  // the same way, so **they never got the RM3 they were promised either.**
+  const st = baseState();
+  const moved = order({ id: "ord_4c7d26e61119", groupId: "ordg_c532ddb9c955", whatsapp: "60123456789" });
+  const wore = codeFromId(moved);      // what it wore when the coupon was applied
+  const wears = orderCode(moved);      // what it wears now
+  assert.notEqual(wore, wears, "the fixture's number never moved, so this test proves nothing");
+
+  st.credits = [{ id: "c1", role: "reward", amountRM: 3, holder: "60123456789",
+    usedAt: "2026-10-11T09:00:00.000Z", appliedTo: wore }];
+  assert.equal(couponOn(st, [moved]).amount, 3,
+    `★ a coupon applied while the order wore #${wore} came off nothing once it wore #${wears}`);
+
+  // ⭐ AND THE FRIEND'S KIND, stamped by the same press the same way — they are owed it most of all.
+  st.credits = [{ id: "c2", role: "friendOff", amountRM: 3, holder: "60123456789",
+    usedAt: "2026-10-11T09:00:00.000Z", orderCode: wore }];
+  assert.equal(couponOn(st, [moved]).amount, 3, "★ the friend's own coupon died the same way");
+
+  // ⚠️⚠️ AND THE HOLDER GUARD IS UNTOUCHED. Accepting a second number must not let somebody else's
+  // coupon through — a discount landing on the wrong person's order is the one outcome guarded twice.
+  st.credits = [{ id: "c3", role: "reward", amountRM: 3, holder: "60999999999",
+    usedAt: "2026-10-11T09:00:00.000Z", appliedTo: wore }];
+  assert.equal(couponOn(st, [moved]).amount, 0, "★ a coupon belonging to another number was let through");
+
+  // and the ordinary case is unchanged
+  st.credits = [{ id: "c4", role: "reward", amountRM: 3, holder: "60123456789",
+    usedAt: "2026-10-11T09:00:00.000Z", appliedTo: wears }];
+  assert.equal(couponOn(st, [moved]).amount, 3, "an ordinary reward coupon stopped working");
+});
+
+test("★★★ a coupon can be TAKEN OFF an order by hand — and put back (v450)", () => {
+  // ⚠️⚠️ HER WORDS: __"when a coupon is send over with order, the back office just take it itself, without
+  // asking for my action to whether apply it or not"__ — **and the asymmetry she was pointing at was real:**
+  // a friend's coupon comes off by itself, while the reward she EARNS waits for her to press Apply.
+  //
+  // ⭐ AND THE FIX IS NOT "ASK FIRST". A press she forgot would leave the friend's discount off an order
+  // **whose customer was already sent a message saying they had it** — the v322 fault, through a new door.
+  // So it still comes off by itself; **what she gets is the sight of it and one press to take it off.**
+  const st = baseState();
+  const friend = order({ groupId: "gaaaa01", whatsapp: "60123456789", referredBy: "60199999999" });
+  st.orders = [friend];
+  giveCredits(st, { orders: [friend] });
+  const coupon = couponOn(st, [friend]);
+  assert.ok(coupon.amount > 0, "the fixture did not put a coupon on the order to begin with");
+
+  // ⚠️ THE PROMISE STANDS UNTIL SHE DECIDES — it comes off by itself, and that is deliberate.
+  assert.equal(customerTotal(st, { orders: [friend] }).coupon, coupon.amount,
+    "the friend's promise stopped being honoured without her asking");
+
+  // ⭐ AND NOW SHE TAKES IT OFF.
+  st.declinedCoupons = [coupon.id];
+  assert.equal(couponDeclined(st, coupon.id), true);
+  assert.equal(couponOn(st, [friend]).amount, 0, "★ a coupon she took off is still coming off the order");
+  assert.equal(customerTotal(st, { orders: [friend] }).coupon, 0, "the Total still carries the discount");
+  // ⚠️ AND IT IS STILL FINDABLE, or the screen could not name it and there would be no way back —
+  // **a mark with no way back is a delete wearing a different word.**
+  assert.equal(couponOnAny(st, [friend]).id, coupon.id,
+    "★ a coupon she took off cannot be found any more, so it can never be put back");
+  assert.equal(couponOnAny(st, [friend]).amount, coupon.amount);
+
+  // ⚠️⚠️ AND THE CREDIT ITSELF IS UNTOUCHED — the note says "not on this one", so putting it back needs no
+  // repair. Compare the whole record, not just the amount.
+  const before = JSON.parse(JSON.stringify(st.credits.find((c) => c.id === coupon.id)));
+  st.declinedCoupons = [];
+  assert.deepEqual(st.credits.find((c) => c.id === coupon.id), before,
+    "★ taking the coupon off rewrote the credit, so putting it back could not be exact");
+  assert.equal(couponOn(st, [friend]).amount, coupon.amount, "putting it back did not restore the discount");
+
+  // ⚠️ AND A DECISION ABOUT ONE COUPON IS NOT A DECISION ABOUT ANOTHER.
+  assert.equal(couponDeclined(st, "some-other-id"), false);
+  assert.equal(couponDeclined(st, ""), false, "a blank id was read as a declined coupon");
+});
 
 test("★ a coupon ON an order is never clearable; an orphaned one is", () => {
   const st = baseState();
