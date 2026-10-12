@@ -756,6 +756,65 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## Engine v493 → v498 — no van to your own kitchen, and a receipt that offers to clear the page (13 Oct 2026)
+
+Five versions from the bakery. **10 files changed (`+867 / −32`); no SQL and nothing to deploy** — the
+same push carries it. Suite **3469 → 3477 pass / 0 fail**.
+
+### ★ v494 — the fix for what she reported
+
+Her words on 12 October: *"we dont do delivery run on self collection point which is the kitchen."*
+`needsVan()` in `admin/js/courier_job.js` asked **"does this order have a Point?"** — exactly right when
+the kitchen was *the absence of a Point*, and wrong from the moment the kitchen **became** a Point (so
+it could be picked in the shop), because then it had an `id` and the run began sending a van to her own
+kitchen. It now reads **`return !!point && point.isKitchen !== true`** — off the **kitchen switch**,
+never the name. One function, so the run screen and the Delivery dates screen's own "Run (N)" count fix
+together. ⚠️ **3,422 tests were green while a van was being sent to her own kitchen** — the two tests
+beside it were both correct and neither was watching this case, because when they were written the
+kitchen had no Point to be watched by. **Bitten here:** revert the line and `test/courier-job.test.js`
+fails by name.
+
+### The shop's receipt offer (v495, v497, v498)
+
+`store/app.js` + `store/app.css` + `store-lang.js` ×3. The form has always cleared itself on an order
+(v465); **the PAGE did not** — it rested on the receipt, so the next customer had to work out that the
+shop above was already fresh. A minute later the receipt carries **"All done? Clearing the page starts a
+fresh shop for the next order"** with one press; **showing it moves nothing**; leave it and the same wait
+again, then the page clears itself. **The receipt stays** (her answer when asked which she wanted:
+*"clear the form"* — the order number and code are the two things the customer needs next), and **it
+never drags someone who has scrolled** since the offer went up.
+
+⚠️ **v498 corrects my own build.** The first version was a scroll to the top labelled *"Back to the top"*
+— her ask was to clear the page, and the label was my words for my action, so every report back read
+"no reload" and was exactly right. It now **reloads** (a genuinely fresh shop, and an old build picks up
+the new one) and says what it costs first. ⚠️ **And "relatively small" was measurably correct:** the
+sentence wore a caption's style and the button the build notice's inline-link style — a **~26px target**
+for the one control the whole feature exists to get pressed, against a 44px floor. Now 16px in the shop's
+own ink (12.6:1) and a real 44px target in terracotta (5.92:1). **The fault was the REUSE** — a style
+belongs to its job, the same shape as "CashMove these" at v486.
+
+⚠️ **v497: a timer in a page nobody is looking at does not run**, and that is the ordinary case here (she
+puts the phone down, or opens WhatsApp). Measured: `visibilityState` was `hidden` and the 60-second timer
+had never fired. The shop now asks the clock on **focus / visibilitychange / pointerdown** as well as on
+the timer, and clears the page only once the OFFER itself has been readable for its own minute.
+
+### ★ v496 — the shop can tell which build it is (a hole in her own feature)
+
+Her report: *"now v495, but store at v494, why no update warning at store?"* ⚠️ **The notice read BOTH
+of its numbers out of `admin/js/version.js`** — which build this page is, and which build the site is
+serving. **Two readings of one file cannot disagree about which build the code is**, so a browser that
+revalidated that little file made a month-old shop report itself as current and say nothing. **`export
+const SHOP_BUILD` is now a literal in `store/app.js`**, so an old copy carries its own old number with
+it; the footer prints it and the probe compares against it. ⚠️ **A second place for one fact, accepted
+only because a test fails the moment the two disagree** — verified here by drifting `SHOP_BUILD` to
+`497` and watching two tests go red. And **`newerBuild` no longer has a default build** — a default was
+exactly what a caller could lean on by accident, and the default WAS this fault; **`store/build.js` no
+longer imports the file it probes** (it now has no imports at all).
+
+**⚠️ THE DELIBERATE NON-PORT, UNCHANGED.** jerky's shop still opens with Post (nationwide) chosen —
+none of these five versions touches the fulfilment default, and `test/store.test.js`'s care with
+`dayPicked` (the cold-start test must run first) is unaffected.
+
 ## Engine v476 → v493 — every place money sits is an account, and one warning at the field (12 Oct 2026)
 
 Seventeen versions from the bakery. **22 files changed (`+2,806 / −864`) plus one new file

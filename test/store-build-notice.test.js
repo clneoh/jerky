@@ -22,9 +22,99 @@ import { BUILD_TRIED_KEY, VERSION_URL, buildIn, newerBuild } from "../store/buil
 import { ENGINE_VERSION } from "../admin/js/version.js";
 
 const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
+// ⚠️ THE BUILD THE SHOP'S OWN FILE CARRIES — read out of its source, because `store/app.js`
+// calls `render()` at the top level and **no test can import it at all** (v492).
+const SHOP_BUILD = (() => {
+  const m = /export const SHOP_BUILD = "(\d+)"/.exec(read("../store/app.js"));
+  return m ? m[1] : null;
+})();
 const app = read("../store/app.js");
 const html = read("../store/index.html");
 const css = read("../store/app.css");
+
+test("★★★ the shop's own build is written into the shop's own file, and kept in step (v496)", () => {
+  // ⚠️⚠️ HER REPORT: __"now v495, but store at v494, why no update warning at store?"__ ⭐ **The notice
+  // used to read BOTH numbers out of `admin/js/version.js`** — this page's build by importing it, and the
+  // site's by fetching it. ⚠️ **Two readings of one file cannot disagree about which build the CODE is**,
+  // so a browser that revalidated that little file made a shop running month-old `store/app.js` report
+  // itself as current. **The one fault the notice exists to catch was the one it could not see.**
+  assert.ok(SHOP_BUILD, "the shop's own file no longer carries a SHOP_BUILD at all — the notice has "
+    + "nothing honest to compare the site against");
+  // ⭐ AND IT MUST MATCH THE MASTER. This is a SECOND place for one fact, accepted only because a
+  // forgotten bump is a red suite rather than a shop that lies about which build it is.
+  assert.equal(SHOP_BUILD, String(ENGINE_VERSION),
+    `⚠️⚠️ the shop's file says it is build ${SHOP_BUILD} and \`admin/js/version.js\` says ${ENGINE_VERSION} `
+    + "— bump SHOP_BUILD in store/app.js with the engine, or the shop will report the wrong build and the "
+    + "update notice will compare the wrong number");
+  // ⚠️ AND THE PAGE MUST MEASURE ITSELF WITH THAT LITERAL, NEVER WITH AN IMPORTED DEFAULT.
+  assert.match(app, /newerBuild\(text, SHOP_BUILD\)/,
+    "★ the probe is not comparing against the build THIS FILE is — a page whose version import is fresh "
+    + "will call itself current while running old code");
+  // ⚠️ `running` HAS NO DEFAULT ANY MORE, and that is the guard: a default is a number a caller can lean
+  // on by accident, and the default WAS the fault.
+  const fn = read("../store/build.js");
+  assert.doesNotMatch(fn, /newerBuild\(servedText,\s*running\s*=/,
+    "★ `newerBuild` has a default build again — the caller must say which build it is");
+  assert.doesNotMatch(fn, /import \{ ENGINE_VERSION \}/,
+    "★ `store/build.js` imports the version file again, which is the file it probes");
+});
+
+test("★★★ a page running OLD code says so — the exact case she reported (v496)", () => {
+  // ⭐ The whole point, written as the case that failed on her phone: the site is serving 496 and this page
+  // was loaded as 495. ⚠️ Before v496 this comparison could not be made at all, because the "495" would
+  // have come out of the same file the site's number did.
+  assert.equal(newerBuild(`export const ENGINE_VERSION = "496";`, "495"), true,
+    "★ a page one build behind is being told it is current — this is the report, unfixed");
+  // ⚠️ AND THE OTHER DIRECTION, so this is not a greater-than: an older site is still a different build.
+  assert.equal(newerBuild(`export const ENGINE_VERSION = "494";`, "495"), true);
+  assert.equal(newerBuild(`export const ENGINE_VERSION = "495";`, "495"), false,
+    "★ a current page is being told it is stale — the shop would cry wolf on every visit");
+});
+
+test("★★★ the offer that clears the page is BIG ENOUGH TO SEE AND TO PRESS (v498)", () => {
+  // ⚠️⚠️ HER WORDS: __"it comout with message 'back to the top' relatively small"__ — ⭐ **and she was
+  // measuring it exactly right.** ⚠️ MEASURED IN THE STYLESHEET BEFORE THIS: the sentence wore
+  // `.confirm-sub` — **12px at 85% opacity, a caption** — and the button wore `.build-btn`, the shop's
+  // **inline link inside a sentence**, giving it a **~26px target**. ⭐ The skill's floor for anything a
+  // thumb hits is **44px, with 24px the absolute hard floor** — **so the one control this whole feature
+  // exists to get pressed was the smallest thing on the page.**
+  //
+  // ⚠️ NO TEST CAN SEE A SCREEN, so the numbers are pinned as NUMBERS — the same way this file pins the
+  // version pattern rather than trusting it. ⭐ A style that can quietly shrink back is a style that will.
+  const rule = (sel) => {
+    const at = css.indexOf(`${sel} {`);
+    assert.ok(at >= 0, `${sel} has no rule at all — the offer is unstyled and reads as another receipt line`);
+    return css.slice(at, css.indexOf("}", at));
+  };
+  const px = (body, prop) => {
+    const m = new RegExp(`${prop}:\\s*([\\d.]+)px`).exec(body);
+    return m ? Number(m[1]) : null;
+  };
+
+  const say = rule(".reset-offer-say");
+  assert.ok(px(say, "font-size") >= 16,
+    `★ the offer's sentence is ${px(say, "font-size")}px — a caption, not a message. **Body is 16px minimum, `
+    + "and this is the one message on the page a customer has to act on.**");
+  assert.match(say, /color:\s*var\(--ink\)/,
+    "★ the sentence is not in the shop's own ink — `--ink` on `--surface` is 12.6:1, and a customer reads "
+    + "this in Penang daylight");
+
+  const go = rule(".reset-offer-go");
+  assert.ok(px(go, "min-height") >= 44,
+    `★ the offer's button is ${px(go, "min-height")}px tall — **44px is what a thumb needs**, and 24px is the `
+    + "absolute floor. This is the control the customer is meant to press.");
+  assert.match(go, /background:\s*var\(--brown-dark\)/,
+    "★ the button has left the shop's terracotta fill — it is an ACTION, not a link inside a sentence");
+  assert.doesNotMatch(go, /build-btn/,
+    "★ the button is wearing the build notice's inline-link style again — **a style belongs to its job, and "
+    + "that one belongs to a press inside a sentence, not to a call to action**");
+
+  // ⚠️ AND THE JS MUST USE THOSE CLASSES, not the caption and the link it borrowed before.
+  assert.match(app, /class: "reset-offer-say"/, "the offer's sentence is not using the size pin above");
+  assert.match(app, /class: "reset-offer-go"/, "the offer's button is not using the size pin above");
+  assert.doesNotMatch(app, /class: "build-btn", id: "reset-offer-btn"/,
+    "★ the button is back on `.build-btn` — the ~26px inline link the customer could not see");
+});
 
 test("★★ the pattern still matches the version file the site actually ships", () => {
   // ⚠️⚠️ THE ONE SILENT DEATH OF THIS FEATURE. The pattern is matched against a HAND-WRITTEN file.
@@ -41,7 +131,7 @@ test("★★ the pattern still matches the version file the site actually ships"
   assert.equal(buildIn(onDisk), String(ENGINE_VERSION),
     "the pattern no longer reads the build number out of the file the site actually ships — "
     + "⚠️ the notice would go silent for ever, and nothing would look broken");
-  assert.equal(newerBuild(onDisk), false,
+  assert.equal(newerBuild(onDisk, SHOP_BUILD), false,
     "the shipped version file is being read as a DIFFERENT build — the shop would show a "
     + "stale-page warning on a page that is current");
   // And it is the file the shop is pointed at, not just any file: the probe's address has to be the
@@ -67,20 +157,20 @@ test("★★ it answers FALSE whenever it cannot tell — every way that happens
     ["the name glued to another word, as in a comment about it", "// ENGINE_VERSION_OLD = \"1\""],
   ];
   for (const [what, served] of cases) {
-    assert.equal(newerBuild(served), false, `${what} must read as "cannot tell", not as a warning`);
+    assert.equal(newerBuild(served, SHOP_BUILD), false, `${what} must read as "cannot tell", not as a warning`);
   }
 });
 
 test("it says so when the site is serving a different build, in either direction", () => {
   const here = String(ENGINE_VERSION);
-  assert.equal(newerBuild(`export const ENGINE_VERSION = "${here}";`), false, "the same build is not news");
-  assert.equal(newerBuild(`export const ENGINE_VERSION = "${Number(here) + 1}";`), true,
+  assert.equal(newerBuild(`export const ENGINE_VERSION = "${here}";`, here), false, "the same build is not news");
+  assert.equal(newerBuild(`export const ENGINE_VERSION = "${Number(here) + 1}";`, here), true,
     "a newer build on the site must raise it");
   // ⚠️ AND THE OTHER DIRECTION, which is what an inequality buys: a phone holding a stale COPY of
   // the version file would make this page look AHEAD of the site. That is just as wrong as being
   // behind, and it deserves the same sentence — a "greater than" comparison would sit there and
   // say nothing at all.
-  assert.equal(newerBuild(`export const ENGINE_VERSION = "${Number(here) - 1}";`), true,
+  assert.equal(newerBuild(`export const ENGINE_VERSION = "${Number(here) - 1}";`, here), true,
     "an OLDER build on the site is still a different build — this is not a greater-than");
 });
 

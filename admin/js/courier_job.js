@@ -116,6 +116,19 @@ export function senderOf(state) {
 // exists.** An order collected from the KITCHEN needs no vehicle at all: she hands that one
 // over herself, and it has never appeared on a run.
 //
+// ⚠️⚠️ AND THAT LAST SENTENCE WAS A LIE FROM v406 ONWARDS — HER REPORT, AND THIS IS THE FIX.
+//
+// Her words: __"we dont do delivery run on self collection point which is the kitchen"__.
+// ⭐ **When this comment was written the kitchen WAS NOT A POINT.** The kitchen was *the absence of
+// a Point* — every order without a `pointId` — so reading "has a Point" as "the van goes there"
+// was exactly right, and a kitchen collection could not appear on a run because it had no Point to
+// be found by. ⚠️ **THEN v406 MADE THE KITCHEN A POINT**, at her own request (*"at self collection
+// point, add a switch whether that collection is a kitchen"*), so it could be picked in the shop
+// like any other place. ⭐ **From that moment the kitchen had an `id`, and this function's second
+// line started sending a van to her own kitchen to fetch bread that was already there.**
+// ⚠️ **A rule written when the world had a shape and never revisited when the world changed** —
+// see also the `stopOf` fallback below, which carries the same stale assumption in its prose.
+//
 // ⚠️ ONE FUNCTION, because this rule is asked in TWO places that must agree: the run screen
 // (which decides whether there is anything to run) and the Delivery dates screen's own
 // "Run (N)" button (which decides how many stops it will find). They disagreed for one
@@ -128,10 +141,18 @@ export function senderOf(state) {
 // already promised — so this asks `pointById`, never `activePoints`. A DELETED Point resolves
 // to nothing, so that order is treated as a kitchen collection and stays off the run, exactly
 // as `stopOf` falls back rather than sending a driver to coordinates nobody has.
+//
+// ⭐ AND THE KITCHEN IS STILL READ BY WHAT IT IS, not by its name: `isKitchen` is the flag
+// `markKitchen` is the only thing that sets, and it is kept exclusive there. ⚠️ **The name must never
+// be the test — she may call it anything, and she has already renamed a Point once.**
 export function needsVan(state, order) {
   if (!order) return false;
   if (order.fulfillment === "courier") return true;
-  return !!pointById(state, order.pointId);
+  const point = pointById(state, order.pointId);
+  // ⚠️ A collection at the kitchen is handed over by her, so there is nothing for a van to do —
+  // whether the flag is on the row or the row IS the one she marked. Both are read, because a Point
+  // published to the shop carries `isKitchen` (v407) and the one kept here does too.
+  return !!point && point.isKitchen !== true;
 }
 
 // The identity of the STOP a group sits at, for COUNTING stops — which is what both the run's

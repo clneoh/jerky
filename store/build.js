@@ -14,7 +14,10 @@
 // ⭐ SELF-CONTAINED ON PURPOSE. The baker's own plan is that munchies copies this from the bakery
 // afterwards, so it is one leaf module with one export and no other file to bring along.
 
-import { ENGINE_VERSION } from "../admin/js/version.js";
+// ⚠️⚠️ AND THIS FILE NO LONGER IMPORTS THE VERSION AT ALL (v496). It used to, so that `newerBuild` had a
+// default to fall back on — ⭐ **and that default is what made the notice blind**: the page measured itself
+// with the number from the very file it was probing. **The running build is now passed in by the caller,
+// from a literal in the file that runs.** See `store/app.js`'s `SHOP_BUILD`.
 
 // The little file that says which build the SITE is serving right now. ⚠️ Relative, because the
 // shop is served from `/store/` and the version file lives in `/admin/js/` — the same path the
@@ -55,8 +58,17 @@ export function buildIn(servedText) {
  * Is the page the site is serving a DIFFERENT build from the one running here?
  *
  * @param {string} servedText the version file exactly as the site handed it over
- * @param {string} running    this page's own build (defaults to the build this file was compiled in)
+ * @param {string} running    **the build the CALLING FILE is — and the caller must say so**
  * @returns {boolean} true when they differ — and **false whenever that cannot be told**
+ *
+ * ⚠️⚠️ `running` HAS NO DEFAULT, AND THAT IS THE FIX IN v496. It used to fall back to the build imported
+ * from `admin/js/version.js` — ⭐ **which is the very file this function is given the text of.** A page
+ * whose `store/app.js` was old and whose `version.js` had been revalidated therefore compared the SITE's
+ * number with the SITE's number, agreed, and said nothing: **a shop running month-old code reporting
+ * itself as current**, which is the one fault this whole feature exists to catch.
+ * ⭐ So the caller passes `SHOP_BUILD` — a literal written into the file that runs — and a stale page
+ * carries its own honest number with it. **Making the argument required is what stops the mistake coming
+ * back quietly**: there is no longer a default that anyone could lean on by accident.
  *
  * ⚠️⚠️ IT ANSWERS **FALSE** WHEN IT CANNOT TELL, and that is the whole safety of it. An empty
  * answer, a stub, a file that is not a version file, a build number it cannot read — every one of
@@ -68,7 +80,7 @@ export function buildIn(servedText) {
  * *version file* would make this page look AHEAD of the site, and that is just as wrong as being
  * behind — **both deserve the same sentence.**
  */
-export function newerBuild(servedText, running = ENGINE_VERSION) {
+export function newerBuild(servedText, running) {
   const seen = buildIn(servedText);
   return seen === null ? false : seen !== String(running);
 }

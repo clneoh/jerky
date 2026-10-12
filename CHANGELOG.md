@@ -1,8 +1,76 @@
-# Munchies Furkidz — change history (v54 → v493)
+# Munchies Furkidz — change history (v54 → v498)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**13 Oct 2026 — engine v498: NO VAN TO YOUR OWN KITCHEN, AND A RECEIPT THAT OFFERS TO CLEAR THE PAGE
+(nothing to run, nothing to upload — pushing this is the whole of it).**
+
+**Five versions from the bakery (v494 to v498).** Two of them come straight from things you reported,
+and one of those is the delivery-run item you spotted on 12 October.
+
+**1. NO VAN IS SENT TO YOUR OWN KITCHEN ANY MORE. This fixes what you reported.** Your words:
+__"we dont do delivery run on self collection point which is the kitchen"__. You were right, and the
+reason is worth keeping: **the rule for what needs a vehicle was written back when your kitchen was
+NOT a place in the app at all** — a kitchen collection was simply an order with no collection Point,
+so asking "does this order have a Point?" was exactly the right question and a van could never be sent
+to your own kitchen. **Then the kitchen became a Point** (so you could pick it in the shop like any
+other place), and from that moment it had a name and an id — and the run started sending a van to your
+own kitchen to fetch treats that were already there. **Nothing about the rule changed; the world it
+described did.** A rule written when the world had one shape, and never revisited when the shape
+changed. It is now read off the **kitchen switch** on that Point, never off what the Point is called —
+so a place you happen to name "kitchen" is still an ordinary place a van has to reach, and an order
+collecting at a friend's shop still needs the van, because the treats have to get there.
+
+**2. After an order, the receipt offers to clear the page — and then does it by itself.** The form has
+always cleared itself the moment an order lands; **what did not clear was where the page was sitting** —
+at the bottom, resting on the receipt. So the next customer picks up the same phone, sees a
+confirmation, and has to work out that the shop above it is already fresh. A minute later a quiet line
+appears on the receipt — **"All done? Clearing the page starts a fresh shop for the next order"** — with
+one press. **Showing it moves nothing:** it only speaks, and if nobody attends to it the page makes the
+same wait again and then clears itself. **And the receipt stays** — the order number and the tracking
+code are on it, and those are the two things the customer needs next. **It never moves a page somebody
+is reading:** if the page has been scrolled at all since the offer appeared, the automatic clear does
+not happen.
+
+**3. And it is a press that does what it says.** The first build of this was a **scroll to the top**
+labelled "Back to the top" — my words for my action, when what you asked for was to clear the page. So
+every round you were told about something that was not what you asked for, and every report back said
+"no reload", which was exactly right. **A button that says something other than what it does is a lie,
+however small.** It now genuinely clears the page — a fresh shop for the next customer, and a phone
+sitting on an old build picks up the new one — and it says what it costs before you press it: the order
+number and code on that receipt go with it, and nothing else does.
+
+**4. And it is big enough to press.** Measured in the stylesheet: the sentence was wearing a caption's
+style and the button was the build notice's small inline link, giving it a **26-pixel target**. The
+floor for anything a thumb hits is 44 pixels. **So the one control this whole feature exists to get
+pressed was the smallest thing on the page.** The sentence is now 16px in the shop's own ink and the
+button a real 44-pixel target in the shop's terracotta. The fault was reusing a style that belongs to
+another job.
+
+**5. The shop can now tell which build it is — and this was a real hole in the warning you asked
+for.** Your report: __"now v495, but store at v494, why no update warning at store?"__ **You had found
+the one hole that matters.** The out-of-date line was reading **both** of its numbers out of the same
+little file — which build this page is, and which build the site is serving. **Two readings of one file
+cannot disagree about which build the code is.** So a browser that refreshed that little file made a
+shop running month-old code report itself as perfectly current, and say nothing — **the one fault the
+notice exists to catch was the one it could not see.** The number is now written into the shop's own
+file, so an old copy carries its own old number with it and no cache can separate the code from its
+build. **And a test fails the moment the two numbers disagree**, so a forgotten bump is a red suite
+rather than a shop that lies about which build it is. **One honest note on the same report:** a page
+that is *already* stale when a fix lands has no code in it to warn about the fix — it needs one reload.
+That is the shape of the problem, not a fault.
+
+**6. And the offer no longer waits on a clock nobody is winding.** Measured on the real page: a tab
+nobody is looking at has its timers frozen, and that is the ordinary case here — a customer who has just
+ordered puts the phone down or opens WhatsApp to send it. So the one moment this is for (the next
+customer picking the phone up) was exactly when the timer had not run. **The shop now looks at the clock
+when someone looks at it** — the page coming back into view, the tab being focused, or a finger on the
+page — so it can only make the offer arrive, never arrive early. And the page only clears itself once
+the offer has itself been readable for its own minute, rather than the two happening in the same breath.
+
+**Nothing to run, no SQL, no upload, no setting to change on either phone.**
 
 **12 Oct 2026 — engine v493: EVERY PLACE YOUR MONEY SITS IS AN ACCOUNT, AND THE WHOLE MONEY SCREEN IS
 ONE TABLE (nothing to run, nothing to upload — pushing this is the whole of it).**

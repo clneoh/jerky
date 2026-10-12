@@ -18,11 +18,28 @@ import { sendFeedback, loadDraft, saveDraft } from "./feedback.js";
 // read her phone and know which build the shop is running — and the address fed back with
 // a customer's words names it too. One number, one file, no second copy to forget.
 import { ENGINE_VERSION } from "../admin/js/version.js";
-// ★★ v492: the "is this page the newest one?" DECISION now lives in its own leaf module. It has no
-// DOM and no network, so it can be PINNED ON ITS OWN (`store/app.js` cannot even be imported by a
-// test — it calls `render()` at the top level), and `buildIn` is exported separately because
-// `newerBuild` answers `false` both for "they agree" and for "I could not read the file", which a
-// test asking only `newerBuild` could never tell apart.
+
+// ★★★ WHICH BUILD THIS FILE IS — A LITERAL, NOT AN IMPORT, AND THAT IS THE WHOLE OF v496.
+//
+// ⚠️⚠️ HER REPORT: __"now v495, but store at v494, why no update warning at store?"__ ⭐ **And she is
+// right, and the reason is that the notice was asking a question it could not be wrong about.**
+//
+// ⭐ THE OLD DESIGN compared the build this page is against the build the site is serving — and it read
+// BOTH from `admin/js/version.js`: this page's number came from importing that file, and the probe
+// fetched that same file. ⚠️ **TWO READINGS OF ONE FILE CANNOT DISAGREE ABOUT WHICH BUILD THE CODE IS.**
+// ⭐ A browser that revalidates that little file — which it will, it is fetched with `no-store` — hands
+// back the SITE's number, so **a shop running month-old `store/app.js` cheerfully reports itself as
+// current and says nothing.** ⚠️ The one fault the notice exists to catch was the one it could not see,
+// and it could not see it because the number describing the page was being cached apart from the page.
+//
+// ⭐⭐ SO THE NUMBER IS WRITTEN INTO THIS FILE. If the browser serves an old copy of `store/app.js`, the
+// old number comes with it — **the code and its build are one artefact and cannot be separated by any
+// cache.** ⚠️ And it must be kept in step with `admin/js/version.js` by hand, which is a second place for
+// one fact: ⭐ **that is accepted here ONLY because a test fails the moment they disagree** (see
+// `store-build-notice.test.js`), so a forgotten bump is a red suite rather than a shop that lies.
+export const SHOP_BUILD = "498";
+// "Is this page the newest one?" — the comparison and the probe's address, kept on their own so a
+// test can pin them (this file calls `render()` at the top level and cannot be imported at all).
 import { BUILD_TRIED_KEY, VERSION_URL, newerBuild } from "./build.js";
 // The promo-code engine, shared with the backoffice so a code the shop accepts is
 // exactly a code her app recognises. It is a leaf module (imports nothing), which
@@ -86,6 +103,11 @@ let repaintPromo = null;
 // refresh — and **a fulfilment choice is the one thing that changes a step from OUTSIDE it.** The
 // picker is wired at module scope, so it cannot reach the function; this is the handle it uses.
 let paintStepsForFulfillment = null;
+// ★★ AND THE SAME SEAM FOR "SOMEONE IS LOOKING AT THIS PAGE AGAIN" (v497). ⚠️ **A timer in a hidden tab is
+// frozen**, so the ordinary case — a customer puts the phone down after ordering and the next one picks it
+// up — is the case a timer cannot cover. ⭐ The listeners for that live at the foot of this file, outside
+// `render()`, where the order's own clock does not reach; this is the handle they use.
+let shopLookedAgain = null;
 
 /* ── Counting a label being opened (v288) ──────────────────────────────────────
    A label's QR — and the link she copies into WhatsApp — land here carrying `?promo=CODE`.
@@ -1146,7 +1168,11 @@ function renderDevFoot(cfg) {
   // corner with the credit above it, so it is there when the owner looks for it and out of
   // the way of everything a customer came for. It goes with the credit rather than instead
   // of it: a shop with no developer set has no credit to hang it under.
-  holder.appendChild(el("div", { class: "dev-engine" }, `Engine v${ENGINE_VERSION}`));
+  // ⚠️⚠️ `SHOP_BUILD`, NOT `ENGINE_VERSION` (v496). This line is what the baker reads to answer "which
+  // build is my shop running?" — so it has to be **the build the file she is reading actually is**, not the
+  // number that happens to be in a little file beside it. ⭐ Measured: with the import it said **v495 on a
+  // page running v494**, which is precisely the sentence the update notice exists to make impossible.
+  holder.appendChild(el("div", { class: "dev-engine" }, `Engine v${SHOP_BUILD}`));
 }
 
 
@@ -1535,11 +1561,11 @@ let stepNoteEl = null;
 // the whole problem being solved). ⚠️ Every use is guarded: a browser that refuses storage simply
 // loses the memory, and the worst case is that a press which did not work is offered once more.
 function buildTried() {
-  try { return sessionStorage.getItem(BUILD_TRIED_KEY) === String(ENGINE_VERSION); }
+  try { return sessionStorage.getItem(BUILD_TRIED_KEY) === String(SHOP_BUILD); }
   catch { return false; }
 }
 function rememberBuildTried() {
-  try { sessionStorage.setItem(BUILD_TRIED_KEY, String(ENGINE_VERSION)); }
+  try { sessionStorage.setItem(BUILD_TRIED_KEY, String(SHOP_BUILD)); }
   catch { /* no storage — the press is simply offered again next time */ }
 }
 
@@ -1571,7 +1597,10 @@ async function checkBuild() {
     const res = await fetch(VERSION_URL, { cache: "no-store" });
     if (!res || !res.ok) return;
     const text = await res.text();
-    if (newerBuild(text)) paintBuildNotice();
+    // ⚠️⚠️ `SHOP_BUILD`, NAMED EXPLICITLY — **the build THIS FILE is**, which is the only thing a page can
+    // honestly claim about itself. Letting `newerBuild` fall back to an imported default was the fault
+    // v496 fixes: the page then measured itself with the SITE's number.
+    if (newerBuild(text, SHOP_BUILD)) paintBuildNotice();
   } catch { /* offline, or a stub — say nothing rather than guess */ }
 }
 
@@ -1701,6 +1730,176 @@ function clearFieldMarks() {
 
   // ⚠️ MOVES THE PAGE ONLY IF THE THING IS NOT ALREADY ON IT. A customer tapping + on a card who can
   // already see the step being named must not be thrown up the page for nothing.
+  // ★★★ PUTTING THE PAGE BACK AT THE TOP ONCE THE ORDER IS A MINUTE OLD (v495). Her words, and the number
+  // is hers: __"after the order confirmation, and waited for 1min, the page should reset itself"__.
+  // ⚠️ ONE NUMBER, IN ONE PLACE — the only thing anyone would ever want to change, and changing it must not
+  // mean touching the code that uses it. ⭐ It is used TWICE: the wait before the offer, and the wait after
+  // it before the shop does it by itself.
+  const RESET_TO_TOP_MS = 60000;
+  // ⚠️ WHERE THE PAGE WAS RESTING WHEN THE OFFER WENT UP, so the shop can tell "he has not touched it" from
+  // "he is reading something". Cleared with the offer, so one order raises one offer.
+  let offerRestingAt = null;
+  // ★★★ AND WHEN THE RECEIPT WENT UP, AND WHEN THE OFFER DID (v497). ⚠️⚠️ **THESE EXIST BECAUSE A TIMER IS
+  // NOT ENOUGH, AND HER PHONE PROVED IT.**
+  //
+  // Her report: __"footer say v496, but no offer to reload"__ — ⭐ the code was current and the offer still
+  // never came. **MEASURED ON THE LIVE PAGE: `document.visibilityState` was `hidden`, and the sixty-second
+  // timer simply never fired.** ⚠️ A hidden tab has its timers frozen or throttled to the minute — **and a
+  // customer who has just placed an order puts the phone down or switches to WhatsApp.** ⭐⭐ **So the one
+  // moment this whole feature is for — the next customer picking the phone up — is exactly when the timer
+  // has not run.** The offer waited on a clock nobody was winding.
+  let orderedAt = 0;
+  let offerShownAt = 0;
+  let offerTimers = [];
+  // ⚠️ THE NODES THE OFFER IS MADE OF, HELD AS THEY ARE MADE — **never looked up again to remove them**,
+  // because `getElementById` returns the first match in the document and the shop learned at v460 what a
+  // lookup answers once a node has been torn out of the page.
+  let offerNodes = [];
+
+  // ⚠️⚠️ A TIMER THAT ONLY PAINTS MUST NEVER BE THE REASON A PAGE IS KEPT ALIVE. In a browser this is a
+  // no-op — `setTimeout` hands back a number, which has no `unref`. ⭐ In Node, where this shop's own tests
+  // run, it is the difference between the runner exiting and a sixty-second timer holding it open: measured,
+  // the whole suite timed out at 20 seconds with the plain `setTimeout`.
+  function shopTimer(fn, ms) {
+    const id = setTimeout(fn, ms);
+    if (id && typeof id.unref === "function") id.unref();
+    offerTimers.push(id);
+    return id;
+  }
+  function clearShopTimers() {
+    for (const id of offerTimers) { if (typeof clearTimeout === "function") clearTimeout(id); }
+    offerTimers = [];
+  }
+
+  // ⭐ THE OFFER ITSELF — a line ON THE RECEIPT, because the receipt is what he is looking at, with a press
+  // that does it now. ⚠️ **It is an offer, never a move:** showing it changes nothing on the page.
+  function showResetOffer() {
+    const box = document.getElementById("confirm-msg");
+    if (!box || box.hidden) return;               // ⚠️ the receipt has gone — there is nothing to offer on
+    // ⚠️⚠️ ONE OFFER, ASKED OF WHAT THIS CODE IS HOLDING — never of a lookup. `getElementById` answers by
+    // ID, and **a test harness that hands back a node for any id it is asked about would make this guard
+    // permanent**, so the offer could never appear and the rule could never be proved. ⭐ The same reason
+    // `endOffer` removes the nodes it made rather than looking them up (v460).
+    if (offerNodes.length) return;
+    offerRestingAt = (typeof window !== "undefined" && Number(window.scrollY)) || 0;
+    offerShownAt = Date.now();
+    // ⚠️⚠️ AND IT IS MADE TO BE SEEN, WHICH IT WAS NOT (v498). ⭐ HER WORDS: __"it comout with message 'back
+    // to the top' relatively small"__ — ⚠️ **and she was measuring it exactly right.** ⭐ MEASURED IN THE
+    // STYLESHEET: the sentence was `.confirm-sub` — **12px at 85% opacity, a CAPTION** — and the button wore
+    // `.build-btn`, which is the shop's **INLINE LINK INSIDE A SENTENCE** (the build notice's own press),
+    // giving it a **~26px target**. ⚠️ The skill's floor for anything a thumb hits is **44px, with 24px the
+    // absolute hard floor** — so the one control this whole feature exists to get pressed was the smallest
+    // thing on the page.
+    // ⭐ **The lesson is the reuse, not the numbers: a control's look belongs to its job.** ⭐ Taking the
+    // build notice's inline-link style for a call to action is the same fault as "CashMove these" (v486) —
+    // two different things wearing one style, and the smaller job losing.
+    const say = el("p", { class: "reset-offer-say" }, t("resetOfferBody"));
+    const go = el("button", { type: "button", class: "reset-offer-go", id: "reset-offer-btn" }, t("resetOfferBtn"));
+    go.addEventListener("click", () => { endOffer(); clearThePage(); });
+    const card = el("div", { class: "reset-offer", id: "reset-offer" }, say, go);
+    offerNodes = [card];      // ⚠️ held as it is made, so `endOffer` removes THE box and everything in it
+    box.append(card);
+    // ⚠️ AND IF NOBODY ATTENDS TO IT, THE SHOP DOES IT BY ITSELF — her words: __"if no body attend to it then
+    // reset itself"__. ⭐ The same wait again, and then the same move the press would have made.
+    shopTimer(() => autoReset(Date.now()), RESET_TO_TOP_MS);
+  }
+
+  // ⚠️ TAKES THE OFFER DOWN AND STOPS ITS TIMERS. Called by the press, by the automatic move, and by a new
+  // offer being raised — **so a second order can never be looking at the first one's offer.**
+  function endOffer() {
+    clearShopTimers();
+    // ⚠️ A LOOKUP IS WRONG HERE for the reason v460 gives: the node is one this code made, and a lookup can
+    // answer a DIFFERENT node — the shop's own step line learned that the hard way. ⭐ So the two pieces are
+    // held as they are made, and removed as themselves.
+    offerRestingAt = null;
+    offerShownAt = 0;
+    for (const node of offerNodes) node.remove();
+    offerNodes = [];
+  }
+
+  // ★★★ AND THE PAGE BEING LOOKED AT AGAIN IS THE TRIGGER THAT MATTERS (v497).
+  //
+  // ⚠️⚠️ HER REPORT, AND THE MEASUREMENT BEHIND IT: __"footer say v496, but no offer to reload"__ — the code
+  // was current, and on the live page `document.visibilityState` was **`hidden`** with the sixty-second
+  // timer never having fired. ⭐ **A timer in a hidden tab is frozen; a customer who has just ordered puts
+  // the phone down.** ⚠️ **So the shop cannot wait to be told the minute is up — it has to look at the clock
+  // when someone looks at IT.**
+  //
+  // ⭐ It answers the same question the timer does, at the moment the answer actually matters, and it is
+  // deliberately BOTH: the timer serves a customer sitting there watching, and this serves the next customer
+  // picking the phone up — which is the ordinary case.
+  // ⚠️ Neither can fire before its minute: both ask the clock, so a page that comes back after ten seconds
+  // is left alone.
+  shopLookedAgain = (now) => {
+    if (!orderedAt) return;                       // ⚠️ no order — there is nothing to offer about
+    if (offerRestingAt === null) {
+      // ⭐ the offer has not been made. The timer due to make it may never have run, so ask the clock.
+      if (Number(now) - orderedAt >= RESET_TO_TOP_MS) showResetOffer();
+      return;
+    }
+    // ⭐ the offer IS up and nobody has dealt with it — so the same rule again, from when it went up.
+    if (Number(now) - offerShownAt >= RESET_TO_TOP_MS) autoReset();
+  };
+
+  // ⚠️⚠️ AND `autoReset` WAITS ITS OWN MINUTE ON THE CLOCK, WHICH IS THE SECOND HALF OF HER REPORT (v497).
+  //
+  // Her words: __"after about 1 min, it scroll up but no reload"__ — ⭐ **the page went to the top and she
+  // never saw the offer that was supposed to come first.** ⚠️ **MEASURED REASON: when a page that has been
+  // hidden wakes up, EVERY TIMER THAT CAME DUE WHILE IT SLEPT FIRES AT ONCE, back to back.** ⭐ So the offer
+  // went up and this ran in the same breath, took it straight back down and moved the page — **the offer was
+  // on screen for milliseconds and nobody could have read it.**
+  // ⭐ THE RULE: **the shop only clears the page once the OFFER has been readable for its minute.** The clock
+  // decides, not the timer — because a chain of timers cannot survive a tab that sleeps, and the phone is
+  // put down exactly when this matters most.
+  function autoReset(at) {
+    if (offerRestingAt === null) return;          // ⚠️ the offer has already been dealt with
+    const now = Number(at) || Date.now();
+    // ⚠️⚠️ AND IT COMES BACK IF IT WAS TOO EARLY — **because being fired early CONSUMES the only timer it
+    // had.** ⭐ Caught by the test, not by reading: with the burst firing it the instant the offer went up,
+    // the refusal was also the last anyone would hear of it, **so the page would never have gone back to the
+    // top at all for a customer sitting there watching.** ⚠️ A guard that refuses and does not re-arm is a
+    // guard that switches the thing off.
+    const wait = RESET_TO_TOP_MS - (now - offerShownAt);
+    if (wait > 0) { shopTimer(() => autoReset(Date.now()), wait); return; }
+    const where = (typeof window !== "undefined" && Number(window.scrollY)) || 0;
+    // ⚠️⚠️ AND IT DOES NOT DRAG HIM IF HE HAS MOVED THE PAGE HIMSELF. v423's rule, and the same one the
+    // refusal line keeps: **a page that moves while he is doing something else.** ⭐ The offer stays up —
+    // he can still press it — it simply does not move the page out from under him.
+    if (where !== offerRestingAt) { offerTimers = []; return; }
+    endOffer();
+    clearThePage();
+  }
+
+  // ⚠️ THE SAME "ASK, THEN CHECK" THE REFUSAL LINE USES (v493). A smooth scroll is an ANIMATION, and an
+  // animation the browser declines to run would leave the page exactly where it was — **measured on the
+  // real shop: the same call with `behavior: "smooth"` moved nothing, and an instant one to the same place
+  // worked.** So the smooth move is asked for and then checked; if nothing has moved, it is done instantly.
+  // ★★★ AND IT **CLEARS THE PAGE** — IT DOES NOT SCROLL IT (v498).
+  //
+  // ⚠️⚠️ THIS IS THE WORD I MISSED FOR THREE VERSIONS, AND IT WAS IN HER FIRST MESSAGE ALL ALONG: __"after
+  // the order confirmation, there should be a pop up, offering to CLEAR THE PAGE … if customer dont click to
+  // clear, it page should clear itself after 1min"__ — and then, every time she reported back, __"no
+  // reload"__. ⭐⭐ **I built a scroll to the top and called it "Back to the top"** — my words for my action —
+  // so every round she was told about something that was not the thing she asked for, and ⚠️ **her correct
+  // report each time was that it does not reload.**
+  //
+  // ⭐ **WHAT A RELOAD DOES THAT A SCROLL CANNOT:** the page is rebuilt from the server, so the shop is
+  // genuinely fresh — the basket, the day, the fields, the scroll position, every scrap of state — **and a
+  // phone that has been sitting on an old build picks up the new one.** ⚠️ **A scroll was a shrug.**
+  // ⚠️⚠️ AND THE COST, SAID OUT LOUD: **the receipt goes with it, and the receipt carries the order number
+  // and the tracking code.** That is why the offer NAMES that in its own words — the customer is told what
+  // they are about to lose, and it is their press. ⭐ Nothing else on the page is worth keeping: the order
+  // is already in the bakery's app, and the bakery confirms it on WhatsApp.
+  function clearThePage() {
+    if (typeof location !== "undefined" && typeof location.reload === "function") location.reload();
+  }
+
+  // ⚠️ AND `scrollPageToTop` IS GONE, NOT LEFT BESIDE IT (v498). ⭐ It was a genuine build with a genuine
+  // problem behind it — **measured: a smooth scroll did not move the page at all while an instant one to the
+  // same place worked** — and it is still the right answer for the REFUSAL line, which uses the same
+  // ask-then-check through `bringIntoView`. ⚠️ **It is simply not what this feature was asked for, and a
+  // helper kept "just in case" is a thing left to look load-bearing.** See `clearThePage` above.
+
   function bringIntoView(what) {
     if (!what) return;
     if (typeof what.getBoundingClientRect !== "function" || typeof what.scrollIntoView !== "function") return;
@@ -3711,6 +3910,28 @@ function clearFieldMarks() {
       // page comes to rest. ⚠️ **The shop is already reset behind it** — the next customer scrolls up into
       // a fresh shop with step ① at the top, which is exactly what the top-scroll was for, without the
       // round trip. ⭐ ONE `scrollIntoView`, in `showConfirm`, and nothing to fight it.
+      //
+      // ★★★ AND IT STILL GOES BACK TO THE TOP — A MINUTE LATER (v495). Her question: __"how to make the
+      // storefront page reset itself, after place order"__.
+      //
+      // ⚠️⚠️ EVERY FORM FIELD HAS ALREADY GONE BY THIS LINE (v465) — the basket, the notes, the name, the
+      // number, the address, the door pin, the code and the bake day. ⭐ **What does not reset is the PAGE:
+      // it stays where it is, resting on the receipt.** So the next customer takes the same phone, sees a
+      // confirmation, and has to work out for himself that the shop above it is fresh.
+      // ⚠️ AND IT CANNOT MOVE NOW — v489 measured why: this used to scroll to the top, and `showConfirm`
+      // scrolled to the notice about a second later, so a customer watched the whole shop fly past him
+      // upward and then all the way back down. **Two scrolls fighting over one press.**
+      // ⭐ So it WAITS. A minute after the receipt, when nothing else on the page is moving, it goes quietly
+      // back to the top, where the fresh shop already is. ⚠️⚠️ **AND ONLY IF THE PAGE IS EXACTLY WHERE THE
+      // ORDER LEFT IT** — if he has scrolled at all, he is reading something and the shop does not drag him
+      // anywhere: that is v423's rule (the parked place), and it is the same rule the refusal line keeps.
+      // ⚠️ THE PREVIOUS ORDER'S OFFER IS STOPPED HERE — a second order on the same phone must never be
+      // looking at the first one's offer. ⭐ The new one is armed from the RECEIPT, forty lines below.
+      endOffer();
+      // ⚠️ AND THE CLOCK STARTS HERE (v497) — at the RECEIPT, not at the order, because the offer is about
+      // the receipt. ⭐ **It is a timestamp and not only a timer**, so the shop can still answer "has the
+      // minute passed?" after a phone has been asleep and its timers frozen.
+      orderedAt = Date.now();
       renderBar();
       // ⚠️ `renderBar` empties the bar for the next customer, so the green is set AGAIN here — and then
       // HELD for her one second **before the received notice covers it**. ⭐ The order is already in the
@@ -3733,14 +3954,25 @@ function clearFieldMarks() {
       // the same shape would hold any caller that awaits the press. ⭐ **The order has already landed, so
       // there is nothing to wait FOR: the green is simply held while the handler returns.** The figures
       // above are computed now, at the moment of the sale, and only the SHOWING is late.
-      setTimeout(() => showConfirm([
+      setTimeout(() => {
+        showConfirm([
         el("p", { class: "confirm-title" }, t("orderRecvTitle")),
         el("p", { class: "confirm-body" },
           order.customer ? sub(t("orderRecvThanksBody"), order.customer, CONFIG.name) : sub(t("orderRecvBody"), CONFIG.name)),
         el("p", { class: "confirm-body" }, sub(t("orderRecvLine"), dayLabel, items, total.toFixed(2))),
         cancelLine,
         el("p", { class: "confirm-sub" }, t("orderRecvSub")),
-      ], "ok"), GREEN_HOLD_MS);
+      ], "ok");
+        // ★★★ AND THE OFFER IS ARMED FROM IN HERE, NOT FROM THE ORDER (v495) — **because the offer is about
+        // the RECEIPT, and the receipt is what this callback has just put on the page.** ⚠️⚠️ Arming it when
+        // the order landed looked equivalent and was not: `showResetOffer` returns quietly if the receipt is
+        // not up, so **any page where this second ran late would lose the offer altogether and never try
+        // again.**
+        // ⚠️ AND THIS WAS WRITTEN WRONG ONCE, IN THE OBVIOUS WAY: the call was put on the line AFTER the
+        // closing `), GREEN_HOLD_MS);` — **which reads as "inside the callback" and is not.** ⭐ The test
+        // that asks *whether anything is armed before the receipt exists* caught it on its first run.
+        shopTimer(showResetOffer, RESET_TO_TOP_MS);
+      }, GREEN_HOLD_MS);
     } else {
       // ⚠️ IT DID NOT LAND, SO THE STEP IS NOT DONE. The page falls back to WhatsApp, and a green ball
       // sitting over an order the bakery never received would be the worst thing this ball could say.
@@ -5177,6 +5409,46 @@ if (typeof document !== "undefined" && document.documentElement) {
   applyTo(document, STORE, loadLang());
   paintPillsHook(loadLang());
   pills.forEach((b) => b.addEventListener("click", () => setLang(b.dataset.lang)));
+
+  // ★★★ SOMEONE LOOKING AT THE PAGE AGAIN (v497) — the trigger that actually happens.
+  //
+  // ⚠️⚠️ BOUND HERE, ONCE, IN THE SAME BLOCK THE PRIVACY NOTICE USES, AND FOR THE SAME REASON: **a listener
+  // added inside a repaint is a listener repeated**, and an even number of them cancel out — the v350/v351
+  // fault, where a control looked dead until the language was switched. ⭐ These two events never change for
+  // the life of the page, so one binding each lasts it.
+  //
+  // ⭐ `visibilitychange` IS THE PHONE BEING PICKED UP — **the moment this whole feature is for** — and
+  // `focus` is the tab or the window coming back, which on a laptop is the same act. ⚠️ Both are needed
+  // because a phone and a desktop do not agree on which one fires.
+  // ⚠️ A HIDDEN page is ignored: `visibilitychange` fires on the way OUT as well, and asking the clock then
+  // would raise the offer onto a screen nobody is looking at.
+  const shopLookedAt = () => { if (shopLookedAgain) shopLookedAgain(Date.now()); };
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState && document.visibilityState !== "visible") return;
+      shopLookedAt();
+    });
+  }
+  if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+    window.addEventListener("focus", shopLookedAt);
+  }
+  // ⚠️⚠️ AND A FINGER ON THE PAGE COUNTS TOO — WHICH IS THE SIGNAL THAT CANNOT MISS (v498).
+  //
+  // ⚠️ Her report after v497: __"still no offer"__. ⭐ And v497's own mechanism was proved working — driven
+  // on a HIDDEN page with the timer frozen, a `focus` brought the offer up on the receipt. **So what is left
+  // is that `focus` and `visibilitychange` are not things a phone can be relied on to deliver: which of them
+  // fires, and when, differs by browser, by version, and by whether the page came back from the back/forward
+  // cache.**
+  // ⭐ **The one signal no phone can fail to send is a finger on the glass.** A customer picking the phone up
+  // touches it before they can read anything — so the first press anywhere on the page asks the clock too.
+  // ⭐ It is deliberately the SAME question the other two ask (`shopLookedAgain`), so this can only ever make
+  // the offer arrive, never change what it says, and never make it arrive early: **the minute is still the
+  // minute.**
+  // ⚠️ `pointerdown` and not `click`: a click can be swallowed by a control that stops propagation, and the
+  // shop has plenty of those. A pointer going down is the plainest event there is.
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    document.addEventListener("pointerdown", shopLookedAt);
+  }
 
   // ★★ THE NOTICE'S OWN PRESS (v492) — bound here, ONCE, for the same reason the privacy notice
   // below is: the markup is static HTML that is never replaced, so one binding lasts the life of

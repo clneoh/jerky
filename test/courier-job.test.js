@@ -628,6 +628,38 @@ test("an order collected from the KITCHEN needs no van at all", () => {
   assert.equal(needsVan(emptyState(), { id: "o1", fulfillment: "collect", pointId: "pt_gone" }), false);
 });
 
+test("★★★ a Self collection Point that IS the kitchen never needs a van (v494)", () => {
+  // ⚠️⚠️ HER REPORT: __"we dont do delivery run on self collection point which is the kitchen"__.
+  //
+  // ⭐ THE TWO TESTS ABOVE ARE BOTH RIGHT AND NEITHER OF THEM WAS WATCHING THIS. They were written when
+  // **the kitchen was NOT a Point** — it was *the absence of a `pointId`* — so "has no Point" and "is the
+  // kitchen" were the same sentence, and reading "has a Point" as "the van goes there" was exactly right.
+  // ⚠️ **THEN v406 MADE THE KITCHEN A POINT**, at her own request (__"at self collection point, add a switch
+  // whether that collection is a kitchen"__) so it could be picked in the shop like any other place. ⭐ **From
+  // that moment the kitchen had an id — and a van started being sent to her own kitchen to fetch bread that
+  // was already there.** ⚠️ And it was sent by BOTH readers of the rule at once, because they read one
+  // function: the run screen and the Delivery dates screen's own "Run (N)" count.
+  const kitchen = { ...POINT, id: "pt_kitchen", name: "Our kitchen", isKitchen: true };
+  const st = withPoints([POINT, kitchen]);
+  assert.equal(needsVan(st, { id: "o1", fulfillment: "collect", pointId: "pt_kitchen" }), false,
+    "★ a van is being sent to her own kitchen — the bread is already there and she hands it over herself");
+
+  // ⚠️ AND THE ORDINARY POINT BESIDE IT STILL NEEDS THE VAN — the half a careless fix breaks.
+  assert.equal(needsVan(st, { id: "o2", fulfillment: "collect", pointId: "pt_farlim" }), true,
+    "★ the fix took the van off EVERY Point rather than only the kitchen, so a customer collecting at "
+    + "Farlim is never going to get their bread");
+
+  // ⚠️ AND IT IS THE FLAG, NEVER THE NAME. She may call a Point anything at all — and a real place that
+  // happens to be called "kitchen" is still a place a van has to reach.
+  const named = { ...POINT, id: "pt_named", name: "Ah Ma's kitchen" };
+  assert.equal(needsVan(withPoints([named]), { id: "o3", fulfillment: "collect", pointId: "pt_named" }), true,
+    "★ the NAME is being used as the test, so a Point she has merely called 'kitchen' has lost its van");
+
+  // ⚠️ AND A DOOR DELIVERY IS UNTOUCHED, whatever Point the order happens to carry.
+  assert.equal(needsVan(st, { id: "o4", fulfillment: "courier", pointId: "pt_kitchen" }), true,
+    "★ a courier order stopped needing a vehicle because of a Point it is not being collected from");
+});
+
 test("a PAUSED Point still sends the van, and a DELETED one does not", () => {
   // Pausing decides what is OFFERED, never what an order already promised — the customer was
   // already told to go to Farlim and their bread still has to get there. A deleted Point has
