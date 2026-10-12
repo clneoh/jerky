@@ -278,6 +278,8 @@ export function wireRowReorder({ row, handle, boxOf, rowSelector, kin, onDrop })
   const kinRows = () => otherRows().filter((n) => kin(n));
 
   let drag = null;
+  // ⚠️ WHETHER THIS GESTURE WAS A DRAG OR A PRESS (v477) — read by the click guard at the foot.
+  let moved = false;
 
   const clearMarks = () => {
     for (const n of boxOf().children) n.classList.remove(...ROW_MARKS);
@@ -322,12 +324,16 @@ export function wireRowReorder({ row, handle, boxOf, rowSelector, kin, onDrop })
     e.preventDefault();
     const at = row.getBoundingClientRect();
     drag = { pointerId: e.pointerId, y: e.clientY, top: at.top, height: at.height, slot: 0, marked: false };
+    moved = false;
     mark();
     try { handle.setPointerCapture(e.pointerId); } catch { /* older engine, or a pointer already gone */ }
   });
 
   handle.addEventListener("pointermove", (e) => {
     if (!drag || e.pointerId !== drag.pointerId) return;
+    // A thumb that has travelled this far is dragging, not pressing. ⚠️ The threshold is what keeps
+    // a genuine tap — a thumb always jitters a pixel or two — from being read as a drag.
+    if (Math.abs(e.clientY - drag.y) > 6) moved = true;
     row.style.transform = `translateY(${e.clientY - drag.y}px)`;
     const mid = drag.top + (e.clientY - drag.y) + drag.height / 2;
     const rest = kinRows();
@@ -351,6 +357,23 @@ export function wireRowReorder({ row, handle, boxOf, rowSelector, kin, onDrop })
     drop();
   });
   handle.addEventListener("pointercancel", finish);
+
+  // ⚠️⚠️ A DRAG MUST NOT ALSO READ AS A PRESS (v477). `setPointerCapture` retargets the pointerup to
+  // this grip, so the browser dispatches a `click` on it after every drop — and on a row that is ALSO
+  // tappable that click bubbles up and opens the editor she just dragged.
+  //
+  // Her words when the money lists asked for a handle: __"make me a handle, and the handle rule is a
+  // universal one."__ ⭐ **A rule about handles is a rule about every handle**, so this guard lives
+  // here beside the gesture rather than in each row remembering to defend itself — the file's own
+  // reason for owning the gesture at all.
+  //
+  // ⚠️ `moved` is cleared on the NEXT pointerdown rather than in `finish()`, because `finish()` runs
+  // BEFORE the click arrives: clearing it there would let every drop through.
+  handle.addEventListener("click", (e) => {
+    if (!moved) return;
+    e.stopPropagation();
+    moved = false;
+  });
 }
 
 // ── NOTHING MOVES UNDER HER THUMB ────────────────────────────────────────────

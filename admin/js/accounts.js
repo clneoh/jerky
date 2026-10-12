@@ -111,14 +111,37 @@ export const isOther = (method) => {
   return !!label && !isCash(label) && !isTng(label);
 };
 
+// ★★ THE TWO ACCOUNTS THAT CANNOT BE DELETED (v487).
+//
+// Her words: __"lock cash and TNG from deletion"__ — ⭐ and the reason is two lines above: **`isCash`
+// and `isTng` are EXACT matches on those two words**, and the tin figure and the phone figure are built
+// on them. ⭐ **Delete one and no account is left that a new order can be recorded as cash with** — the
+// books go on reading, but nothing new can ever be filed under it again.
+//
+// ⚠️⚠️ AND SHE HAD ALREADY BEEN BURNT BY IT ONCE, THE SAME DAY: the "Cash" block she asked about three
+// times was an account that had left her list. **Renaming stays allowed** — and since v486 a rename
+// moves every record with it — so there is nothing a delete is needed for.
+export const isLockedAccount = (method) => isCash(method) || isTng(method);
+
 // Where a method sits in her list, for reading a row back in the same order the
 // form offers. An unknown one sorts last, which is where a row from an old list
 // belongs.
-// Her ways of paying, split by what they are to the till: the purse and the phone (the
-// two that hold her takings), and the pockets — a loan, the bank overdraft, someone's own
-// pocket — which pay for things without the money ever going near the till.
-export const purseMethods = (state) => methodsOf(state).filter((m) => isCash(m) || isTng(m));
-export const pocketMethods = (state) => methodsOf(state).filter((m) => isOther(m));
+// ★★ EVERY PLACE MONEY SITS IS AN ACCOUNT (v481), AND THERE IS ONE WORD FOR IT NOW.
+//
+// Her words: __"In finance term we call it account, in our daily, we treat it like a pocket, and a
+// pocket means a place money kept. Should we call it account from now on?"__ — ⭐ **yes.**
+// `methodsOf(state)` is the list; **every one of them is an account**, every one of them counts in
+// the Net (v480), and every one of them gets the same block on the Money screen.
+//
+// ⚠️⚠️ AND THE LAST SPLIT IS GONE TOO. There used to be two derived lists here — the "purse and
+// phone" against the "pockets", and then the accounts a debt could be settled against. ⭐ **Her own
+// worked day retired them both.** She measures an account by WHAT IT HOLDS, so an account that holds
+// negative is simply down and can be topped up from any other — ⚠️ **and the tin can be down like any
+// other, which is why "the tin cannot owe itself" stopped being a fact about anything.**
+// See [[project-v481]] and `accountBalance` in money.js.
+//
+// ⭐ `isCash` / `isTng` / `isOther` stay: they name which block is which and which two she counts by
+// hand. They are a LABEL on an account, not a second kind of account.
 
 // The category a drawing is recorded under — her own money going back to her. Taken
 // from HER chart rather than hard-coded, since she can rename it.
@@ -131,4 +154,30 @@ export function methodRank(state, method) {
   const list = methodsOf(state);
   const at = list.indexOf(methodLabel(method));
   return at < 0 ? list.length : at;
+}
+
+// ★★ MOVING ONE ENTRY TO WHERE SHE DROPPED IT (v477) — the handle's own write, shared by all three
+// money lists.
+//
+// Her words: __"make me a handle, and the handle rule is a universal one."__ ⭐ The rule is the one
+// she gave for the shelves: **whatever she repositions with the handle, every drop-down that offers
+// those items follows.** ⚠️ So the ORDER IS THE LIST, and this writes it as the list — the reader on
+// the other side (`methodsOf`, `categoriesOf`, `sourcesOf`) already hands the array back in its own
+// order, which is why no picker needs changing for this to hold.
+//
+// ⚠️ THE WHOLE LIST IS REWRITTEN, not one index: an entry added or deleted elsewhere must not
+// silently shift every other row. The same rule `moveRoute` (deliveryRoutes.js) and `moveInTail`
+// (ingredients.js) keep.
+//
+// ⚠️ AND IT MOVES BY LABEL, because on these lists a LABEL IS THE IDENTITY — the three are arrays
+// of `{ label, cls }` and of plain strings, with no id anywhere between them. A rename rewrites the
+// rows already recorded under the old name (views/accountsEditor.js), so a label that moves is the
+// entry it always was.
+export function moveListEntry(list, keyOf, key, toIndex) {
+  const rows = Array.isArray(list) ? list : [];
+  const at = rows.findIndex((x) => keyOf(x) === key);
+  if (at < 0) return rows;
+  const rest = rows.filter((_, i) => i !== at);
+  const to = Math.max(0, Math.min(Number(toIndex) || 0, rest.length));
+  return [...rest.slice(0, to), rows[at], ...rest.slice(to)];
 }

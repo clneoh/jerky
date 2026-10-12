@@ -222,34 +222,32 @@ test("the language pills are wired to the in-place switch", () => {
   assert.equal(barTotal(), ONE_FOCACCIA, "the basket is still intact after a pill tap");
 });
 
-test("the language switch never reloads the page — it repaints in place", () => {
-  // ⚠️⚠️ NARROWED 2026-10-12, AND THE NARROWING IS THE POINT. This was a WHOLE-FILE ban on
-  // `location.reload(`, written as a proxy for the v71 rule — *"the switch must stay in place"*.
-  // ⭐ **The shop now reloads for exactly one reason** (the build notice's press, when the site is
-  // serving a newer build), and a whole-file ban cannot tell a language switch from a build
-  // notice: it would have forbidden both. **So the rule is pinned where it belongs — the thing
-  // that changes the language must not reload** — and a third assertion keeps the ban's real
-  // value, that no SECOND reload can appear unreviewed.
-  const bodyOf = (from, to) => {
-    const at = SRC.indexOf(from);
-    assert.notEqual(at, -1, `${JSON.stringify(from)} has gone — this guard would prove nothing`);
-    return SRC.slice(at, SRC.indexOf(to, at));
-  };
-  // 1 · the switch itself
-  assert.equal(/reload\s*\(/.test(bodyOf("export function setLang", "\n}")), false,
-    "the language switch reloads the page");
-  // 2 · the press that calls it
-  assert.equal(/reload\s*\(/.test(bodyOf('document.querySelectorAll("#lang-switch .lang-pill")', "});")), false,
-    "a language pill reloads the page");
-  // 3 · ⭐ AND THE OTHER HALF — the shop carries ONE reload, and it is the build notice's. Removing
-  // the ban without this would let a second one in unseen, which is how a guard goes quiet.
-  const reloads = SRC.match(/reload\s*\(/g) || [];
-  assert.equal(reloads.length, 1, `the shop carries ${reloads.length} reloads, not the one the build notice owns`);
-  // ⚠️ THE PRESS'S WIRING, not the first mention of its id — `paintBuildNotice` looks it up too, so
-  // anchoring on the id alone would measure from the wrong place and pass or fail for no reason.
-  const pressAt = SRC.indexOf('if (buildBtn) buildBtn.addEventListener("click"');
-  assert.notEqual(pressAt, -1, "the build notice's press is not wired in the shop");
-  const reloadAt = SRC.search(/reload\s*\(/);
-  assert.ok(reloadAt > pressAt && reloadAt < SRC.indexOf("\n  });", pressAt),
-    "the shop's one reload is not inside the build notice's press");
+test("store/app.js never reloads the page for a language change", () => {
+  // A regression guard for the v71 fix: the switch must stay in place.
+  //
+  // ⚠️⚠️ THIS USED TO ASSERT THE FILE CONTAINS NO `location.reload(` ANYWHERE, AND v492 BROKE IT —
+  // correctly. ⭐ The rule was never "this page must never reload"; it was "**a LANGUAGE CHANGE**
+  // must not reload". The build notice's press is a different act for a different reason: the
+  // customer asked for the page again BECAUSE the page told them it was out of date.
+  // ⚠️ **A guard written as an absolute outlaws the correct case the first time one arrives** (the
+  // v439 lesson), so this now says the thing it always meant: the SWITCH does not reload, and the
+  // one reload in the file belongs to the notice's own press.
+  const setLangAt = SRC.indexOf("export function setLang(");
+  assert.ok(setLangAt > 0, "setLang has been renamed — this guard is no longer watching anything");
+  const setLangBody = SRC.slice(setLangAt, SRC.indexOf("}", setLangAt));
+  assert.equal(/location\s*\.\s*reload\s*\(/.test(setLangBody), false,
+    "the language switch itself reloads — every tap would re-download the page and re-fetch the "
+    + "menu, the slots-left numbers and the photos, which is the v71 pause on a phone");
+
+  const hits = SRC.match(/location\s*\.\s*reload\s*\(/g) || [];
+  assert.equal(hits.length, 1,
+    `store/app.js reloads the page in ${hits.length} places — the only reload this page may make `
+    + "is the build notice's own press");
+  // ⭐ AND THE ONE THAT IS ALLOWED IS THAT PRESS: inside the button's own handler, which remembers
+  // BEFORE it reloads so a browser serving the old script back cannot land the customer on the same
+  // notice with the same button doing nothing a second time.
+  const bindAt = SRC.indexOf('buildBtn.addEventListener("click"');
+  const reloadAt = SRC.indexOf("location.reload(");
+  assert.ok(bindAt > 0 && reloadAt > bindAt && reloadAt - bindAt < 400,
+    "the reload has moved away from the build notice's press — that press is the only one allowed");
 });

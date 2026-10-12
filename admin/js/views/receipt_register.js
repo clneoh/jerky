@@ -70,7 +70,7 @@ export function renderReceiptRegister(root, state) {
         el("div", { class: "card" },
           el("p", { class: "card-title" }, "Receipts issued"),
           el("p", { class: "card-sub", style: "margin:0" },
-            "No receipt has been issued yet, and that is the honest answer rather than a blank. A number is drawn the first time you record money against an order — press Paid · Cash or Paid · TNG."),
+            "No receipt has been issued yet, and that is the honest answer rather than a blank. A number is drawn the first time you record money against an order — press Pay on the order row."),
           el("div", { class: "btn-row", style: "margin-top:10px" },
             button("Read again", () => load(), "soft small"))));
       return;

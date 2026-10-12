@@ -28,7 +28,7 @@
 // is why customerTotal() rather than groupValue() is read here and nowhere else.
 import { fmtRM, groupOrders, orderCode, orderLinePrice, round2 } from "./state.js";
 import { isWithin } from "./dates.js";
-import { classOfCategory, isCash, isOther, isTng, methodLabel, methodRank } from "./accounts.js";
+import { classOfCategory, isCash, isOther, isTng, methodLabel, methodRank, methodsOf } from "./accounts.js";
 import { customerTotal } from "./courier.js";
 
 // The stages in order, so "is this past Paid?" can be asked here without importing
@@ -49,8 +49,8 @@ export function groupValue(state, group) {
 }
 
 // Has the money actually been collected? Picking Paid in the dropdown only says the
-// order has reached the paying stage: it stays uncollected until the Paid · Cash /
-// Paid · TNG button is pressed (paidReceived). An order from before those flags
+// order has reached the paying stage: it stays uncollected until Pay is pressed on the
+// row and an account is picked (paidReceived). An order from before those flags
 // existed has none, which reads as collected — the same rule the journey map has
 // always used, so an old order does not suddenly look unpaid.
 //
@@ -296,16 +296,54 @@ function tallyRows(rows) {
 //
 // `inTallies` add (orders collected that way, money of her own she put in that way),
 // `outTallies` subtract (spending paid that way) — the same net the Money screen shows.
-export function otherMethods(state, inTallies = [], outTallies = []) {
-  const labels = new Set();
+// ★★★ WHAT EVERY ACCOUNT DID IN A STRETCH — ONE SHAPE FOR ALL OF THEM (v481).
+//
+// Her words: __"In finance term we call it account, in our daily, we treat it like a pocket, and a
+// pocket means a place money kept. Should we call it account from now on?"__ — ⭐ **so every place
+// money sits is an ACCOUNT, and every one of them gets the same three figures: what came in, what
+// went out, and what it HOLDS.**
+//
+// ⚠️⚠️ THIS IS THE FUNCTION THE WHOLE OF v481 RESTS ON, AND IT REPLACED `otherMethods`. That one
+// returned a NET for the accounts that were neither Cash nor TNG, so the Money screen had to draw
+// **two different shapes**: four special cash/TNG rows above, and a `Paid by X` line per other
+// account below. ⭐ **Now there is one loop over every account, so the screen, the Net and the
+// reconciliation sheet are all built from the same numbers** — they cannot disagree.
+//
+// ⚠️ AND IT READS `byMethod` OFF THE TALLIES, WHICH IS THE ONE PLACE EVERY MOVEMENT ALREADY LANDS —
+// orders (`inFrom`), her own money put in (`inMine`) and spending (`out`). No account is special-cased.
+//
+// ⚠️ A LABEL THAT MOVED BUT IS NO LONGER ON HER LIST KEEPS ITS LINE — the rule this has always kept:
+// its money is still in the books, and a figure she cannot open is a figure she has to take on faith.
+// ⭐ And an account on her list that moved NOTHING keeps its line at zero (v479), so a name she has
+// just added is never invisible.
+export function accountsBetween(state, inTallies = [], outTallies = []) {
+  const labels = new Set(methodsOf(state));
   for (const t of [...inTallies, ...outTallies]) {
-    for (const label of (t && t.byMethod ? t.byMethod.keys() : [])) if (isOther(label)) labels.add(label);
+    for (const label of (t && t.byMethod ? t.byMethod.keys() : [])) labels.add(label);
   }
   const sum = (list, label) =>
     list.reduce((s, t) => s + ((t && t.byMethod && t.byMethod.get(label)) || 0), 0);
   return [...labels]
     .sort((a, b) => methodRank(state, a) - methodRank(state, b) || a.localeCompare(b))
-    .map((label) => ({ label, net: sum(inTallies, label) - sum(outTallies, label) }));
+    .map((label) => {
+      const inTotal = sum(inTallies, label);
+      const outTotal = sum(outTallies, label);
+      return {
+        label,
+        in: inTotal,
+        out: outTotal,
+        holds: inTotal - outTotal,
+        // ⭐ IS THIS STILL ONE OF HER ACCOUNTS? (v486) ⚠️ A retired one keeps its block — its money is
+        // still in the books — but the screen has to be able to SAY so, and to offer a way to move what
+        // it holds onto an account she does use. Her words: __"move the transaction it is owning to
+        // cash LS"__. ⭐ A block she can see but cannot act on is the fault this app keeps being taught.
+        onList: methodsOf(state).includes(label),
+        // ⭐ The two she counts by hand — her tin and her phone. ⚠️ It is a FACT about the account,
+        // not a second kind of account, and it is used for exactly two things: marking those two on
+        // the screen, and knowing which accounts a debt cannot be settled against.
+        counted: isCash(label) || isTng(label),
+      };
+    });
 }
 
 // What she spent in a stretch, and how she paid for it — one half of the Money
@@ -391,6 +429,20 @@ export function journalFor(state, method, from, to) {
   for (const r of rows) {
     if (r.dir === "in") inTotal += r.amount;
     else outTotal += r.amount;
+  }
+  // ★★ AND WHERE THE ACCOUNT STOOD AFTER EACH LINE (v481). Her words: __"i need a printable journeys
+  // so that i can do reconciliation"__ — ⭐ **reconciliation is ticking down a running balance**, and
+  // without it the journey ends on one figure and tells her nothing about the way it got there.**
+  //
+  // ⚠️⚠️ IT RIDES IN `what`, AND THAT IS DELIBERATE — NOT LAZINESS. The journal has FOUR renderings
+  // (screen, paper, shared text, PDF) and `journalSheet` can carry extra columns on the SCREEN, but
+  // ⚠️ **the PDF reads only `what` and the amount, and never `cols`** — so a balance put in a column
+  // would print as a BLANK description on paper, which is the silent loss this app keeps being taught
+  // to avoid. ⭐ **In `what`, all four renderings show it, and it cannot go missing from one of them.**
+  let bal = 0;
+  for (const r of rows) {
+    bal += r.dir === "in" ? r.amount : -r.amount;
+    r.bal = bal;
   }
   return { rows, inTotal, outTotal, net: inTotal - outTotal };
 }
@@ -499,20 +551,24 @@ function buildInvestmentRows(state) {
   return rows;
 }
 
-export function pocketOwed(state, method, from, to) {
+// ★★ WHAT AN ACCOUNT HOLDS IN A STRETCH (v481) — and it is the ONE measure the settlement needs.
+//
+// ⚠️⚠️ HER OWN WORKED DAY EXPOSED WHY THE OLD MEASURE WAS WRONG. `pocketOwed` counted ONLY expenses
+// and deposits — **it never read the money a customer paid INTO the account.** ⭐ So on her day it
+// said *"Cash LK is owed RM100"* while the block beside it plainly said Cash LK **holds RM60** — two
+// answers to one question, on the same screen.
+//
+// Her words: __"End of the month, if LK account is -rm60, than probably Cash LS would need to payback
+// Cash LK RM60, CAsh LK, would be nullify."__ ⭐ **A NEGATIVE BALANCE IS THE DEBT, and paying it back
+// brings the account to zero — her word is nullify.** There is no second measure: `holds` is the
+// balance, and the settlement reads it.
+export function accountBalance(state, method, from, to) {
   const want = methodLabel(method);
   if (!want) return 0;
-  const sum = (list) => (list || []).reduce((s, r) => {
-    if (!r || methodLabel(r.method) !== want) return s;
-    // ⚠️⚠️ A ROW SHE MARKED AS HER INVESTMENT IS NOT A DEBT (v397). It still carries that pocket's
-    // name — that is how she paid — but the money is not owed back to her, so the pocket must not go
-    // on claiming the bakery owes it. **Without this the same ringgit would be counted twice: once as
-    // "the bakery owes me" here, and once as "put in" on her investment account.**
-    if (r.invested) return s;
-    const day = String(r.date || "").slice(0, 10);
-    return isWithin(day, from, to) ? s + (Number(r.amount) || 0) : s;
-  }, 0);
-  return sum(state.expenses) - sum(state.deposits);
+  const blocks = accountsBetween(state,
+    [moneyBetween(state, from, to), depositsBetween(state, from, to)],
+    [expensesBetween(state, from, to)]);
+  return (blocks.find((b) => b.label === want) || { holds: 0 }).holds;
 }
 
 // A stretch of days, for the Money screen.

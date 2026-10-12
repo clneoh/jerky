@@ -1,183 +1,192 @@
-// test/store-build-notice.test.js — does the SHOP know when it is out of date?
+// test/store-build-notice.test.js — can a CUSTOMER's phone tell that the shop it is looking at is
+// not the shop we are serving?
 //
-// ★★★ HER AFTERNOON, 12 Oct 2026. She reported the shop "behaving differently from the bakery's" —
-// and it was not: **her phone was running a two-month-old build** and there was no way to tell. The
-// app on that same phone has had an amber "Update now" strip since v255; **the shop had nothing.**
+// Her words: __"just build the shop warning"__ (v492).
 //
-// ⚠️⚠️ WHY THE SHOP NEEDS IT MORE THAN THE APP DOES. It re-fetches its DATA every 30 seconds and
-// **never its own code**, so a stale page shows FRESH numbers on STALE behaviour — every figure on
-// the screen agreeing with her, which is the worst way round for a fault to be. And a shop is a page
-// a customer can leave open across an update, where an order placed against old code is a real order
-// placed wrongly.
+// ⚠️⚠️ WHY THE SHOP NEEDED THIS AND THE APP ALREADY HAD IT: GitHub Pages serves `store/` with
+// `cache-control: max-age=600` and no build number in any URL, so a price change, a closed day or a
+// new field can be pushed and NOT arrive. The backoffice has had a strip saying so since v255; the
+// shop never did — **and it matters more here, because the person reading it is a customer who has
+// no way of knowing, and an order placed against old code is a real order placed wrongly.**
 //
-// The decision is pure (`newerBuild`, exported for the same reason `clockWords`/`postsOn` are), so
-// this file pins the DECISION directly and the WIRING against the sources — the split this suite uses
-// where a full page render would prove less.
+// ⭐ THE WHOLE VALUE RESTS ON ONE THING, and this file exists to pin it: **a page that cried "out of
+// date" on a bad connection would be worse than one that never spoke.** So the comparison answers
+// FALSE whenever it cannot tell, and every "cannot tell" that could plausibly happen on a phone is
+// written out below as its own case.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-// ⚠️ THE SHOP BOOTS ITSELF ON IMPORT (`render()` at the foot of store/app.js), so this file needs
-// just enough of a document for that to run. It is deliberately PERMISSIVE — every id answers with a
-// fresh stand-in — because what this file is testing is ONE COMPARISON and the notice's wiring, not
-// the page. A shim that tried to be faithful here would be a second copy of the shop's own tests.
-function stubNode(tag = "div") {
-  const n = {
-    tagName: String(tag).toUpperCase(), nodeType: 1, children: [], attrs: {}, dataset: {},
-    className: "", style: {}, textContent: "", value: "", checked: false, hidden: false,
-    disabled: false, id: "", parentNode: null, _listeners: {},
-    appendChild(c) { this.children.push(c); return c; },
-    append(...cs) { for (const c of cs) this.children.push(c); },
-    replaceChildren(...cs) { this.children = cs.filter((c) => c != null); },
-    insertBefore(c) { this.children.unshift(c); return c; },
-    remove() {}, focus() {}, blur() {}, scrollIntoView() {}, select() {}, setSelectionRange() {},
-    addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
-    removeEventListener() {},
-    setAttribute(k, v) { this.attrs[k] = String(v); },
-    getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; },
-    removeAttribute(k) { delete this.attrs[k]; },
-    querySelector: () => null, querySelectorAll: () => [], closest: () => null, contains: () => false,
-    classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
-  };
-  return n;
-}
-// ⚠️⚠️ UNREF EVERY TIMER THE PAGE STARTS. The shop boots itself on import and schedules its own
-// offer-turn and its 30-second poll; an un-unref'd timer keeps `node --test` alive for ever and the
-// run reports a TIMEOUT for a file whose assertions all passed. **This is the same rule the
-// press-everything pass records.**
-for (const fn of ["setInterval", "setTimeout"]) {
-  const real = globalThis[fn];
-  globalThis[fn] = (cb, ms, ...rest) => {
-    const t = real(cb, ms, ...rest);
-    if (t && typeof t.unref === "function") t.unref();
-    return t;
-  };
-}
-const registry = new Map();
-globalThis.document = {
-  createElement: (t) => stubNode(t),
-  createTextNode: (t) => ({ nodeType: 3, text: String(t) }),
-  createDocumentFragment: () => stubNode("fragment"),
-  getElementById: (id) => { if (!registry.has(id)) registry.set(id, stubNode()); return registry.get(id); },
-  querySelector: () => null, querySelectorAll: () => [],
-  addEventListener() {}, removeEventListener() {},
-  documentElement: stubNode("html"), body: stubNode("body"), title: "", activeElement: null,
-  visibilityState: "hidden",
-};
-globalThis.window = { addEventListener() {}, location: { hash: "" } };
-globalThis.location = { hash: "", href: "http://localhost/store/", reload() {} };
-globalThis.fetch = async () => ({ ok: true, text: async () => "" });
+import { BUILD_TRIED_KEY, VERSION_URL, buildIn, newerBuild } from "../store/build.js";
+import { ENGINE_VERSION } from "../admin/js/version.js";
 
-const { newerBuild } = await import("../store/app.js");
+const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
+const app = read("../store/app.js");
+const html = read("../store/index.html");
+const css = read("../store/app.css");
 
-const SRC = readFileSync(new URL("../store/app.js", import.meta.url), "utf8");
-const HTML = readFileSync(new URL("../store/index.html", import.meta.url), "utf8");
-const LANG = readFileSync(new URL("../store-lang.js", import.meta.url), "utf8");
-
-test("★ a newer build is FOUND — the site's number differs from this page's", () => {
-  assert.equal(newerBuild('export const ENGINE_VERSION = "477";', "476"), true,
-    "a page on v476 never noticed the site serving v477");
-  assert.equal(newerBuild('export const ENGINE_VERSION = "500";', "476"), true,
-    "any later build counts, not only the next one");
+test("★★ the pattern still matches the version file the site actually ships", () => {
+  // ⚠️⚠️ THE ONE SILENT DEATH OF THIS FEATURE. The pattern is matched against a HAND-WRITTEN file.
+  // Reformat `admin/js/version.js` — a line break, a different quote, a `const` with no spaces — and
+  // the notice simply stops speaking for ever. **Nothing looks broken, no test about the notice
+  // fails, and the customer goes on ordering off a stale page.**
+  const onDisk = read("../admin/js/version.js");
+  assert.match(onDisk, /ENGINE_VERSION/, "the version file no longer contains ENGINE_VERSION at all");
+  // ⚠️⚠️ THE READ IS ASKED FOR BY NAME, NOT THROUGH `newerBuild`, AND THAT IS THE WHOLE POINT.
+  // `newerBuild` answers `false` both when the two builds AGREE and when it could not read the file
+  // — so an assertion on `newerBuild` alone **passes with the pattern broken**, which is exactly
+  // what the first version of this test did. ⭐ MEASURED: biting the pattern to single quotes left
+  // this test green. The number has to be read back and named.
+  assert.equal(buildIn(onDisk), String(ENGINE_VERSION),
+    "the pattern no longer reads the build number out of the file the site actually ships — "
+    + "⚠️ the notice would go silent for ever, and nothing would look broken");
+  assert.equal(newerBuild(onDisk), false,
+    "the shipped version file is being read as a DIFFERENT build — the shop would show a "
+    + "stale-page warning on a page that is current");
+  // And it is the file the shop is pointed at, not just any file: the probe's address has to be the
+  // page's own build number, or the two numbers being compared are not the same kind of thing.
+  assert.equal(VERSION_URL, "../admin/js/version.js");
+  assert.match(app, /fetch\(VERSION_URL, \{ cache: "no-store" \}\)/,
+    "the probe no longer uses VERSION_URL, or no longer refuses the cache — "
+    + "⚠️ a probe answered from a cache is the very thing it is checking for");
 });
 
-test("★★ and the page it is RUNNING is not called newer than itself", () => {
-  // ⚠️ The ordinary case by far: the site serves exactly what this page is running. A notice here
-  // would appear on every shop, always — the fault that makes a real one invisible.
-  assert.equal(newerBuild('export const ENGINE_VERSION = "476";', "476"), false);
-});
-
-test("★★⚠️ WHEN IT CANNOT TELL IT SAYS NOTHING — never a guess", () => {
-  // ⚠️⚠️ This is the safety of the whole feature. A page that cried "out of date" on a bad
-  // connection, a captive-portal login page, or a half-fetched file would be worse than one that
-  // never spoke — **and the customer has done nothing wrong.** Every one of these must be SILENT.
-  const silent = [
-    ["", "an empty answer"],
-    ["   ", "whitespace"],
-    ["<!doctype html><html>Sign in to WiFi</html>", "a captive portal, not a version file at all"],
-    ["export const SOMETHING_ELSE = 999;", "a file with no engine number in it"],
-    ['export const ENGINE_VERSION = "latest";', "a build number that is not a number"],
-    [null, "nothing at all"],
-    [undefined, "and the same, undefined"],
+test("★★ it answers FALSE whenever it cannot tell — every way that happens on a phone", () => {
+  // ⚠️⚠️ THIS IS THE SAFETY OF THE WHOLE FEATURE, so each case is separate and named. A customer
+  // reading "close this page and open it again" over a bakery's prices, when nothing is wrong, is a
+  // customer who has been told the shop is broken. **The doubt is spent on silence.**
+  const cases = [
+    ["an empty answer — offline, or a response with no body", ""],
+    ["no answer at all (a failed fetch handing over nothing)", null],
+    ["undefined", undefined],
+    ["a figure the file cannot be reached — a router's login page", "<html><body>Sign in</body></html>"],
+    ["the file, but the name is not on it", "export const OTHER = \"1\";"],
+    ["the name, but the value is not quoted — a build script's edit", "ENGINE_VERSION = 492"],
+    ["a value that is not a number at all", "ENGINE_VERSION = \"v492\""],
+    ["the name glued to another word, as in a comment about it", "// ENGINE_VERSION_OLD = \"1\""],
   ];
-  for (const [text, what] of silent) {
-    assert.equal(newerBuild(text, "476"), false, `${what} was read as a newer build`);
+  for (const [what, served] of cases) {
+    assert.equal(newerBuild(served), false, `${what} must read as "cannot tell", not as a warning`);
   }
 });
 
-test("★★ the page ASKS the site, and asks PAST the browser's own copy", () => {
-  // ⚠️⚠️ `cache: "no-store"` IS THE WHOLE MECHANISM. Without it the browser answers from the copy it
-  // is holding — the very copy that is out of date — and the page would compare the stale file with
-  // itself and always agree. **The one thing that must not be cached is the answer to "is this
-  // cached?"**
-  assert.match(SRC, /fetch\(\s*"\.\.\/admin\/js\/version\.js"\s*,\s*\{[^}]*cache:\s*"no-store"/,
-    "the build check does not ask for the version file with cache: no-store");
-  // ⚠️ AND IT IS THE SAME FILE THE PAGE ALREADY IMPORTS, so the number compared is the number the
-  // foot prints — one source, and the two can never be different builds.
-  assert.match(SRC, /import \{ ENGINE_VERSION \} from "\.\.\/admin\/js\/version\.js";/,
-    "the shop no longer imports its own build number from the file it checks against");
+test("it says so when the site is serving a different build, in either direction", () => {
+  const here = String(ENGINE_VERSION);
+  assert.equal(newerBuild(`export const ENGINE_VERSION = "${here}";`), false, "the same build is not news");
+  assert.equal(newerBuild(`export const ENGINE_VERSION = "${Number(here) + 1}";`), true,
+    "a newer build on the site must raise it");
+  // ⚠️ AND THE OTHER DIRECTION, which is what an inequality buys: a phone holding a stale COPY of
+  // the version file would make this page look AHEAD of the site. That is just as wrong as being
+  // behind, and it deserves the same sentence — a "greater than" comparison would sit there and
+  // say nothing at all.
+  assert.equal(newerBuild(`export const ENGINE_VERSION = "${Number(here) - 1}";`), true,
+    "an OLDER build on the site is still a different build — this is not a greater-than");
 });
 
-test("★ the check runs once on arrival and again whenever the page comes back", () => {
-  // ⚠️ THE PAGE'S OWN 30-SECOND `poll` ALREADY MEANS "the customer is here and looking" — it skips a
-  // backgrounded tab and fires on visibility, focus and coming back online. Riding it is what makes
-  // the notice appear while she is actually watching.
-  assert.match(SRC, /const poll = async \(\) => \{[\s\S]{0,400}?checkBuild\(\)/,
-    "the build check is not part of the page's own poll");
-  assert.match(SRC, /setInterval\(poll, 30000\);[\s\S]{0,200}?checkBuild\(\)/,
-    "the build check does not run once on arrival");
-  // ⚠️ AND NEVER AWAITED: a customer must not be held up by a question about which build they are on.
-  assert.match(SRC, /checkBuild\(\)/);
-  assert.equal(/await checkBuild\(\)/.test(SRC), false, "the page waits on the build check");
-});
-
-test("★★⚠️ the RELOAD press remembers first, then reloads — and stops offering on the second sight", () => {
-  // ⚠️⚠️ A BROWSER STILL HOLDING THE OLD SCRIPT SERVES IT STRAIGHT BACK, so the first press can
-  // return the customer to the same notice with the same button — **a button that did nothing, which
-  // is the fault the app's own strip learned at v256.** The remembered flag is what turns the second
-  // sight into the honest "close the page and open it again".
-  assert.match(SRC, /rememberBuildTried\(\);\s*\n\s*paintBuildNotice\(\);[\s\S]{0,120}?location\.reload\(\)/,
-    "the reload press does not remember before it reloads");
-  assert.match(SRC, /sessionStorage\.setItem\(BUILD_TRIED_KEY/, "the memory is not kept across a reload");
-  // The second state: the sentence changes and the press goes.
-  assert.match(SRC, /if \(say\) say\.hidden = tried;/, "the first sentence is not replaced on the second sight");
-  assert.match(SRC, /if \(btn\) btn\.hidden = tried;/, "the press is still offered on the second sight");
-});
-
-test("★ the notice is AUTHORED hidden, so nothing flashes before the check has answered", () => {
-  assert.match(HTML, /id="build-notice"[^>]*hidden/, "the build notice is not hidden in the markup");
-  assert.match(HTML, /id="build-say"[^>]*data-i18n="buildStale"/, "the first sentence is not authored with its key");
-  assert.match(HTML, /id="build-stuck"[^>]*data-i18n="buildStuck"[^>]*hidden/, "the second sentence is not authored hidden");
-  assert.match(HTML, /id="build-reload"[^>]*data-i18n="buildReload"/, "the press is not authored with its key");
-});
-
-test("★★ a CUSTOMER reads all three languages, and the English matches the page", () => {
-  const secs = ["en", "zh", "ms"];
-  const values = {};
-  for (const l of secs) {
-    const at = LANG.indexOf(`const ${l} = {`);
-    assert.notEqual(at, -1, `${l} is not in the dictionary`);
-    const body = LANG.slice(at, LANG.indexOf("\n};", at));
-    values[l] = ["buildStale", "buildStuck", "buildReload"].map((k) => {
-      const m = new RegExp(`^\\s*${k}: "([^"]*)",`, "m").exec(body);
-      assert.ok(m, `${l}.${k} is missing — a customer would meet a hole`);
-      return m[1];
-    });
-    assert.ok(values[l].every((v) => v.trim().length > 0), `${l} has an empty build string`);
+test("★ the notice is in the page, above everything, and starts hidden", () => {
+  // ⚠️ It is static markup rather than something app.js builds, because the first paint of an order
+  // is the moment that matters and a bar that appears one script later is a bar a customer has
+  // already scrolled past.
+  const bar = html.match(/<div class="build-notice" id="build-notice"[^>]*>/);
+  assert.ok(bar, "the shop page has no build notice at all");
+  assert.match(bar[0], /\bhidden\b/, "⚠️⚠️ it must START hidden — a notice that is up from the "
+    + "first paint of every order is the fault wearing the fix's clothes");
+  assert.ok(html.indexOf('id="build-notice"') < html.indexOf('class="hero"'),
+    "it must sit ABOVE the header — it is about the whole page, not about the shop's front");
+  // The three pieces the paint turns between, each addressed by name.
+  for (const id of ["build-say", "build-stuck", "build-reload"]) {
+    assert.ok(html.includes(`id="${id}"`), `the notice has no #${id}`);
   }
-  // ⚠️ THE DICTIONARY'S ENGLISH MUST BE THE MARKUP'S ENGLISH — the rule test/store-i18n.test.js
-  // enforces for every authored line, and the reason the two cannot drift.
-  for (const [i, key] of ["buildStale", "buildStuck", "buildReload"].entries()) {
-    const inHtml = new RegExp(`data-i18n="${key}"[^>]*>([^<]*)<`).exec(HTML);
-    assert.ok(inHtml, `${key} is not authored in the page`);
-    assert.equal(inHtml[1].trim(), values.en[i], `${key}: the page and the dictionary disagree`);
+  // ⚠️ AND EVERY ONE OF THEM IS A TRANSLATED STRING. A sentence about the page, left in English
+  // inside an otherwise Chinese shop, reads as a machine's line rather than the bakery's.
+  for (const key of ["buildStale", "buildStuck", "buildReload"]) {
+    assert.ok(html.includes(`data-i18n="${key}"`), `${key} is not keyed in the markup`);
   }
-  // ⚠️ AND THEY MUST NOT BE THE SAME SENTENCE THREE TIMES. A copy-paste that left the English in the
-  // other two is the exact fault the shop's own i18n test exists for.
-  for (const l of ["zh", "ms"]) {
-    for (const [i, key] of ["buildStale", "buildStuck", "buildReload"].entries()) {
-      assert.notEqual(values[l][i], values.en[i], `${l}.${key} was left in English`);
-    }
-  }
+});
+
+test("★★ the reload press belongs to the SECOND state, and the first has one too", () => {
+  // Her page's own rule, stated all over the shop: **a dead button is worse than no button.** The
+  // press is offered while it can still help, and once it has been tried and shown not to work the
+  // page stops offering it and says what actually does.
+  assert.match(app, /if \(say\) say\.hidden = tried;/, "the first sentence is no longer turned off after a try");
+  assert.match(app, /if \(stuck\) stuck\.hidden = !tried;/, "the second sentence is no longer turned ON after a try");
+  assert.match(app, /if \(btn\) btn\.hidden = tried;/, "⚠️ the press is still offered after it has failed");
+});
+
+test("★★ the try is remembered across the reload THAT IS THE WHOLE PROBLEM", () => {
+  // ⚠️⚠️ Memory cannot hold it: pressing Reload reloads the page, and a page reload wipes memory —
+  // which is precisely the flag that has to survive. `sessionStorage` is the only one of the three
+  // that is both durable across a reload and gone by tomorrow (a `localStorage` flag would still be
+  // set on the next visit and would hide a genuine notice).
+  assert.match(app, /sessionStorage\.getItem\(BUILD_TRIED_KEY\)/);
+  assert.match(app, /sessionStorage\.setItem\(BUILD_TRIED_KEY,/);
+  assert.doesNotMatch(app, /localStorage\.setItem\(BUILD_TRIED_KEY\)/,
+    "localStorage would carry the flag into tomorrow and hide a real notice");
+  // ⚠️ The flag names THIS site, so a phone with both shops open cannot read the other's.
+  // ⚠️⚠️ MUNCHIES' OWN NAMESPACE, NOT THE BAKERY'S — the bakery's shop runs on the same phones.
+  assert.match(BUILD_TRIED_KEY, /^munchies\./,
+    "the flag must be namespaced to this site — the bakery's shop runs on the same phones");
+  // And the press REMEMBERS BEFORE IT RELOADS, or the reload lands back on the same button.
+  const bind = app.indexOf('buildBtn.addEventListener("click"');
+  assert.ok(bind > 0, "nothing presses the reload button");
+  assert.ok(app.slice(bind, bind + 260).indexOf("rememberBuildTried()") > 0,
+    "⚠️ it reloads before it remembers — the customer lands back on the same button, which then "
+    + "does nothing a second time");
+});
+
+test("★ the notice is bound ONCE, outside the repaint", () => {
+  // ⚠️⚠️ THE FAULT THIS PAGE HAS SHIPPED TWICE (v350, v351): a listener bound inside `renderStatic`
+  // is bound again on every render and on every language switch, and an EVEN number of bindings
+  // cancel out — so the control looks dead on a fresh page and works after one language switch.
+  // The markup for this notice is static HTML that is never replaced, so one binding lasts the life
+  // of the page — and it has to be exactly one.
+  const hits = app.split('buildBtn.addEventListener("click"').length - 1;
+  assert.equal(hits, 1, `the reload press is bound ${hits} times — it must be bound exactly once`);
+});
+
+test("★ it asks on arrival, on the same beat as the order data, and never holds the page up", () => {
+  // A customer who has just opened the shop is the one most likely to be holding a ten-minute-old
+  // page, so the check rides the refresh that is already there rather than a timer of its own.
+  assert.match(app, /setInterval\(poll, 30000\);[\s\S]{0,900}?\n\s*checkBuild\(\);/,
+    "the arrival check is gone from the polling block");
+  const pollAt = app.indexOf("const poll = async () => {");
+  assert.ok(pollAt > 0, "the polling function has been renamed");
+  const pollBody = app.slice(pollAt, app.indexOf("};", pollAt));
+  assert.match(pollBody, /checkBuild\(\)/,
+    "the 30-second beat no longer re-checks the build — a customer sitting on the shop would "
+    + "never be told, however long they sat there");
+  // ⚠️ AND IT IS NOT AWAITED on the way in: an order must never be held up by a question about
+  // which build the phone is on.
+  assert.doesNotMatch(app, /await checkBuild\(\)/, "the check is being waited on");
+  // ⚠️ Once the notice is up there is nothing more to learn, and this runs every 30 seconds.
+  assert.match(app, /if \(box && !box\.hidden\) return;/, "it re-asks every 30s for an answer it has");
+});
+
+test("★★ `display: flex` cannot beat `[hidden]` — the rule that stops the bar showing always", () => {
+  // ⚠️⚠️ THIS IS ONE LINE AND IT IS THE DIFFERENCE BETWEEN THE FEATURE AND A PERMANENT BANNER.
+  // The bar is `display: flex`, and the browser's own `[hidden] { display: none }` is a UA rule —
+  // **a class selector outranks it.** Without these rules the notice would be on screen from the
+  // first paint of EVERY order, which is the fault wearing the fix's clothes.
+  assert.match(css, /\.build-notice\s*\{[^}]*display:\s*flex/,
+    "the bar is no longer flex, so this test's premise has moved");
+  assert.match(css, /\.build-notice\[hidden\]\s*\{\s*display:\s*none;?\s*\}/,
+    "⚠️⚠️ `.build-notice[hidden]` has no rule — `display: flex` outranks the browser's `[hidden]`, "
+    + "so the notice would be on screen on every order, always");
+  assert.match(css, /\.build-say\[hidden\]\s*\{\s*display:\s*none;?\s*\}/, "the two sentences need it too");
+  assert.match(css, /\.build-btn\[hidden\]\s*\{\s*display:\s*none;?\s*\}/, "and so does the press");
+});
+
+test("the notice is a sentence with a press in it, not an alarm", () => {
+  // ⚠️ Nothing has gone wrong and the customer did nothing wrong, so it must not read as a failure.
+  // The shop's own worst background is `--surface`, and `--brown-dark` on it is 5.92:1 — over the
+  // 4.5 every word of this page is held to, and the same pair the shop's inline links already use.
+  const rule = css.slice(css.indexOf(".build-notice {"));
+  const btn = rule.slice(rule.indexOf(".build-btn {"), rule.indexOf(".build-btn:hover"));
+  assert.match(btn, /color:\s*var\(--brown-dark\)/,
+    "the press has left the shop's own inline-link colour");
+  assert.doesNotMatch(btn, /var\(--red\)/,
+    "a red press over a bakery's prices reads as a failure — nothing has failed");
+  assert.doesNotMatch(rule.slice(0, rule.indexOf(".build-btn {")), /var\(--red\)/,
+    "the bar itself must not be the shop's warning red");
 });

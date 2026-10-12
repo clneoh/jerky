@@ -125,7 +125,17 @@
     <p class="bake-day-what" data-i18n="bakeDayWhat">A posting day is the day we make and post your treats. They are made that morning, so they are at their freshest — and the earliest they can be ready for you is the afternoon, not the morning.</p>
     <div id="dates"></div>
 
-    <!-- ★★★ WHERE A STEP SAYS WHY IT IS NOT OPEN YET (v455). Her words: __"the message show in the wrong place and the screen jump, it should shown up at the appropriate place, or the missing field turn red embossed, or how a form filling would behave"__ ⚠️ **A form marks the thing that is missing, where it sits** — not a pop-up at the top. -->
+    <!-- ★★★ WHERE A STEP SAYS WHY IT IS NOT OPEN YET (v455). Her words: __"the message show in the wrong
+         place and the screen jump, it should shown up at the appropriate place, or the missing field turn
+         red embossed, or how a form filling would behave"__ ⚠️ **A form marks the thing that is missing,
+         where it sits** — not a pop-up at the top.
+         ⚠️⚠️ IT MOVES, AND SINCE v493 IT ALWAYS MOVES TO THE SAME KIND OF PLACE: **directly under the
+         heading of the step it is about** (v493 — her words: __"the screen should scroll to step1, and
+         below step one flashing the warning meaasge"__). ⭐ Where it sits in this file is only where it
+         rests before the first refusal; its `hidden` attribute is set from the start, so it is never read
+         from here. ⚠️ **The headings are static markup that no repaint replaces, so a line hung under one
+         can no longer be torn out of the page** — which is what let v493 retire the re-hanging machinery
+         v460 needed. -->
     <p class="step-note" id="step-note" role="status" hidden></p>
     <div class="step-head" id="step2"><span class="step-num">2</span>
       <h2 class="section" data-i18n="sWhat">What would you like?</h2></div>

@@ -117,6 +117,24 @@ const buttonByText = (root, text) =>
 // so a select is picked by an option it offers rather than by being the only one.
 const selWith = (root, label) => all(root).find((n) => n.tagName === "SELECT"
   && all(n).some((o) => o.tagName === "OPTION" && o.textContent === label));
+// ⚠️⚠️ AND SINCE v478 THAT IS NOT ENOUGH FOR THIS CARD. "Paid by the customer" and "How you paid the
+// courier" are BOTH fed by `methodsOf(state)` now, so they offer the same accounts and `selWith`
+// returns whichever comes first in the card — a test that meant one and got the other would still
+// pass. ⭐ These two name the FIELD, by the label directly above the select, which is how she tells
+// them apart on the screen. ⚠️ `selWith` still earns its place: the courier's payer select and its
+// method select are still picked by an option.
+const selAfter = (root, label) => {
+  const nodes = all(root);
+  const at = nodes.findIndex((n) => n.tagName === "LABEL" && n.textContent.trim() === label);
+  return at < 0 ? undefined : nodes.slice(at).find((n) => n.tagName === "SELECT");
+};
+const paidSelect = (root) => selAfter(root, "Paid by the customer");
+const courierSelect = (root) => selAfter(root, "How you paid the courier");
+// ⚠️ WHICH OPTION THE BOX OPENS ON, read the way a browser decides it — off the `selected` flag.
+// ⚠️ NOT off `.value`: `select()` (ui.js) marks the option (`selected: o.value === value`) and leaves
+// the browser to derive `.value` from it, and this shim's `<select>` does no such derivation. Reading
+// `.value` here would report "" whatever the code did, so the assertion could never fail.
+const chosenOption = (sel) => (sel.children || []).find((o) => o.selected === true);
 
 function openPopup(st) {
   const root = createEl("div");
@@ -337,21 +355,22 @@ test("Note / tracking opens just those fields, and save writes them onto the ord
   assert.equal(inputs[2].attrs["aria-label"], "The time the van collects from you",
     "the pickup time (v341) — her ask, and this box is the third door onto the same record");
   assert.equal(inputs[3].attrs.placeholder, "e.g. 8.00", "and what the courier charged");
-  const paidSel = selWith(pop, "TNG transfer");
+  const paidSel = paidSelect(pop);
   assert.ok(paidSel, "with how it was paid");
   assert.deepEqual(paidSel.children.map((o) => o.children[0].text),
-    ["Not recorded", "Cash", "TNG transfer"], "as a three-way choice, not recorded by default");
+    ["Not recorded", "Cash", "TNG", "Loan"],
+    "⚠️ HER WHOLE ACCOUNT LIST now, not a fixed pair (v478) — so Bank and Cash to LK are recordable");
 
   inputs[0].value = "extra sauce";
   inputs[1].value = " JT999 888 ";
   inputs[2].value = "09:00"; // the time the van collects (v341)
-  paidSel.value = "cash";
+  paidSel.value = "Cash"; // ⚠️ the option's value is the LABEL now, not the old lowercase word
   buttonByText(pop, "Save")._listeners.click[0]();
   assert.equal(st.orders[0].note, "extra sauce", "the note reaches the order");
   assert.equal(st.orders[0].trackingNo, "JT999 888", "and so does the number, trimmed at the ends");
   assert.equal(st.orders[0].pickupTime, "09:00",
     "and the pickup time she typed on THIS card — her ask: note/tracking needs it too");
-  assert.equal(st.orders[0].paidMethod, "cash", "and how it was paid is recorded for reconciling");
+  assert.equal(st.orders[0].paidMethod, "Cash", "and which account took it is recorded for reconciling");
 
   // "Not recorded" is the absent key, not an empty string, so a row that never had
   // a method reads exactly as it did before this existed.
@@ -359,7 +378,7 @@ test("Note / tracking opens just those fields, and save writes them onto the ord
   renderOrders(root2, st, new URLSearchParams({ date: "d10" }));
   buttonByText(root2, "Note / tracking")._listeners.click[0]();
   const pop2 = layers["popup-layer"];
-  selWith(pop2, "TNG transfer").value = "";
+  paidSelect(pop2).value = "";
   buttonByText(pop2, "Save")._listeners.click[0]();
   assert.equal("paidMethod" in st.orders[0], false, "choosing Not recorded deletes the key");
 });
@@ -368,8 +387,8 @@ test("Note / tracking opens just those fields, and save writes them onto the ord
 // The box is called "Paid by the customer", so picking a method is her saying the money
 // is IN. It used to write only `paidMethod`, which left a row wearing a "Cash" tag while
 // the day's till and the Money screen still counted that order as owing — one screen
-// saying paid, two saying unpaid. It now writes the same three keys the Paid · Cash /
-// Paid · TNG buttons write, and the row's tag reads the app's own question (isCollected).
+// saying paid, two saying unpaid. It now writes the same three keys the row's Pay press
+// writes, and the row's tag reads the app's own question (isCollected).
 const loadTag = (root) => all(root).find((n) => String(n.className).split(/\s+/).includes("paid-tag"));
 const moneyLine = (root) => byClass(root, "money-line");
 
@@ -386,21 +405,23 @@ test("a method picked in the payment box records the payment itself", () => {
   const pop = layers["popup-layer"];
   assert.ok(all(pop).some((n) => n.tagName === "LABEL" && n.textContent === "Paid by the customer"),
     "the box names whose payment it records");
-  const paidSel = selWith(pop, "TNG transfer");
-  paidSel.value = "tng";
+  const paidSel = paidSelect(pop);
+  paidSel.value = "TNG";
   buttonByText(pop, "Save")._listeners.click[0]();
 
   assert.equal(st.orders[0].paidReceived, true, "the money is recorded as in");
-  assert.equal(st.orders[0].paidMethod, "tng", "and how it came");
+  assert.equal(st.orders[0].paidMethod, "TNG", "and which account it came into");
   assert.ok(st.orders[0].paidAt, "stamped the day it landed, which is what the Money screen counts");
 
-  // Every screen that counts money now agrees: the row, the day's till, and the buttons
-  // that were the only way in.
+  // Every screen that counts money now agrees: the row, the day's till, and the press
+  // that was the only way in.
   const after = createEl("div");
   renderOrders(after, st, new URLSearchParams({ date: "d10" }));
-  assert.equal(loadTag(after).children[0].text, "TNG", "the row says how it was paid");
-  assert.equal(moneyLine(after).textContent, "TNG RM 30.00", "and the day's till counts it, with nothing left to collect");
-  assert.equal(buttonByText(after, "Paid · Cash"), undefined, "the two Paid buttons are gone — there is nothing left to record");
+  assert.equal(loadTag(after).children[0].text, "Paid",
+    "⚠️ the tag says the one word now, not the account (v478) — her words: \"the tag just need one. Paid\"");
+  assert.equal(moneyLine(after).textContent, "TNG RM 30.00",
+    "and the day's till still splits it by account, with nothing left to collect");
+  assert.equal(buttonByText(after, "Pay"), undefined, "the Pay press is gone — there is nothing left to record");
 });
 
 test("Not recorded is the way back, so a payment marked by mistake is not a one-way door", () => {
@@ -412,12 +433,12 @@ test("Not recorded is the way back, so a payment marked by mistake is not a one-
   st.orders[0].paidAt = "2026-09-09T04:00:00.000Z";
   const root = createEl("div");
   renderOrders(root, st, new URLSearchParams({ date: "d10" }));
-  assert.equal(loadTag(root).children[0].text, "Cash", "the row says how it was paid");
-  assert.equal(buttonByText(root, "Paid · Cash"), undefined, "and the quick way in is gone while it is recorded");
+  assert.equal(loadTag(root).children[0].text, "Paid", "the row says the money is in");
+  assert.equal(buttonByText(root, "Pay"), undefined, "and the quick way in is gone while it is recorded");
 
   buttonByText(root, "Note / tracking")._listeners.click[0]();
   const pop = layers["popup-layer"];
-  selWith(pop, "Cash").value = "";
+  paidSelect(pop).value = "";
   buttonByText(pop, "Save")._listeners.click[0]();
 
   assert.equal("paidMethod" in st.orders[0], false, "the method goes");
@@ -428,7 +449,7 @@ test("Not recorded is the way back, so a payment marked by mistake is not a one-
   const after = createEl("div");
   renderOrders(after, st, new URLSearchParams({ date: "d10" }));
   assert.equal(loadTag(after), undefined, "so the row stops calling itself paid");
-  assert.ok(buttonByText(after, "Paid · Cash"), "and the two ways to record it come back");
+  assert.ok(buttonByText(after, "Pay"), "and the press that records it comes back");
 });
 
 test("a payment she records before the paying stage is money she has, and counts straight away", () => {
@@ -446,13 +467,13 @@ test("a payment she records before the paying stage is money she has, and counts
 
   buttonByText(root, "Note / tracking")._listeners.click[0]();
   const pop = layers["popup-layer"];
-  selWith(pop, "Cash").value = "cash";
+  paidSelect(pop).value = "Cash";
   buttonByText(pop, "Save")._listeners.click[0]();
 
   assert.equal(st.orders[0].paidReceived, true, "the payment is on the order");
   const after = createEl("div");
   renderOrders(after, st, new URLSearchParams({ date: "d10" }));
-  assert.equal(loadTag(after).children[0].text, "Cash", "the row says how it was paid");
+  assert.equal(loadTag(after).children[0].text, "Paid", "the row says the money is in");
   assert.equal(moneyLine(after).textContent, "Cash RM 30.00", "and the day's till counts it as in");
   // The journey strip is about the STAGE, not the money: this order has not reached the
   // paying step, so that step stays where it is — the same thing the strip says for any
@@ -460,6 +481,43 @@ test("a payment she records before the paying stage is money she has, and counts
   const paidStep = all(after).filter((n) => String(n.className).includes("oj-step"))
     .find((s) => s.children[1].children[0].text === "Paid");
   assert.ok(!String(paidStep.className).includes("done"), "while the route still shows the step it is on");
+});
+
+test("⚠️ the day's till names an account that is neither cash nor TNG", () => {
+  // ⚠️⚠️ BEFORE v478 THIS LINE READ CASH AND TNG ONLY. The moment a customer's bank transfer could be
+  // recorded, that money was counted in her takings, counted in "what should be in your purse and on
+  // your phone" — and **printed nowhere on the day's own line**. ⭐ A total that quietly omits money
+  // is worse than no total at all: this is the line she checks against her purse at the end of a run.
+  const st = state();
+  st.products[0].price = 15; // Focaccia, RM15 × 2 = RM30
+  st.orders[0].status = "ready";
+  st.orders[0].paidReceived = true;
+  st.orders[0].paidMethod = "Bank";
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+  // ⚠️ THE GUARD IS THE ASSERTION'S OWN MESSAGE, not a TypeError. Without the other-account line the
+  // day has no cash, no TNG and nothing to collect, so `moneyLine` returns NOTHING AT ALL — and a
+  // test that read `.textContent` off that would fail as a crash rather than as the fault it is.
+  const line = moneyLine(root);
+  assert.ok(line, "⚠️ the day has money in it, so the day's line must not be empty");
+  assert.equal(line.textContent, "Bank RM 30.00",
+    "⚠️ the bank transfer appears on the day's line, under the account's own name");
+});
+
+test("⚠️ an order paid before v478 opens its account back up in the box", () => {
+  // ⚠️ Old orders hold the lowercase "cash"/"tng" while the option's value is the label
+  // ("Cash"/"TNG"). Comparing the two raw would leave this box BLANK on exactly the orders she is
+  // most likely to be correcting — a row still owing money on every other screen, and nothing at all
+  // here. `methodLabel` is what makes the old spelling find its own option.
+  const st = state();
+  st.orders[0].paidMethod = "cash";
+  st.orders[0].paidReceived = true;
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+  buttonByText(root, "Note / tracking")._listeners.click[0]();
+  const chosen = chosenOption(paidSelect(layers["popup-layer"]));
+  assert.ok(chosen, "⚠️ the old lowercase row opened on NOTHING — no option is chosen, so the box is blank");
+  assert.equal(chosen.children[0].text, "Cash", "⚠️ and it opens on Cash, the account it was paid into");
 });
 
 // ── v124: the courier's charge, and who bore it ────────────────────────────
@@ -481,8 +539,11 @@ test("the courier charge reaches every row, and only she paying makes it an expe
 
   buttonByText(root, "Note / tracking")._listeners.click[0]();
   let pop = layers["popup-layer"];
-  assert.equal(selWith(pop, "Loan"), undefined,
-    "how she paid is not asked until she says she paid it");
+  // ⚠️ THE COURIER'S OWN FIELD, BY ITS LABEL — the customer's payment box now offers the same
+  // accounts, so `selWith(pop, "Loan")` would find THAT one and this assertion would be testing the
+  // wrong select (v478).
+  assert.equal(courierSelect(pop), undefined,
+    "how she paid the courier is not asked until she says she paid it");
   const box = feeInput(pop);
   box.value = "8";
   box._listeners.input[0].call(box); // the handler reads this.value
@@ -491,7 +552,7 @@ test("the courier charge reaches every row, and only she paying makes it an expe
   payerSel._listeners.change[0]();
 
   pop = layers["popup-layer"]; // the body was rebuilt to reveal the question
-  const methodSel = selWith(pop, "Loan");
+  const methodSel = courierSelect(pop);
   assert.ok(methodSel, "now it asks how she paid the courier");
   methodSel.value = "TNG";
   buttonByText(pop, "Save")._listeners.click[0]();

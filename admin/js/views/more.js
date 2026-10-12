@@ -65,7 +65,10 @@ const MENU_GROUPS = [
     ["#/suppliers", "🏪 Suppliers", "Who you buy from, with their WhatsApp"],
   ]],
   ["Money", [
-    ["#/money", "💰 Money", "What came in — cash, TNG, still to collect"],
+    // ⚠️ IT NAMED TWO ACCOUNTS AND A SETTING THAT NO LONGER EXISTS (v481): "What came in — cash, TNG,
+    // still to collect" was written when Cash and TNG were the only books. ⭐ Every account counts
+    // now, each with what came in, what went out and what it HOLDS — so the line says that instead.
+    ["#/money", "💰 Money", "Every account — in, out and what it holds"],
     ["#/profit", "📈 Profit", "Sales, ingredient cost, what the month left"],
     // ★ THE RECEIPT RUN (v366). It belongs with the books rather than with the app's own
     // settings, because it is the one page here that answers a question from outside — the

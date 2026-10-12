@@ -112,7 +112,7 @@ test("a register that reads empty says THAT, and says what draws the first numbe
 
   const said = txt(root);
   assert.match(said, /No receipt has been issued yet/);
-  assert.match(said, /Paid · Cash or Paid · TNG/,
+  assert.match(said, /press Pay on the order row/,
     "an empty register does not say what issues the first number, so it reads as broken");
 });
 

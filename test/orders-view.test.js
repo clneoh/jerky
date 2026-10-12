@@ -40,10 +40,15 @@ function createEl(tag) {
   });
   return node;
 }
+// ⚠️ A REAL REGISTRY, NOT A FRESH DIV ON EVERY CALL (v478) — the same fault the money-lists shim had.
+// `showPopup` writes the card into `#popup-layer` and hands back a `close` that empties it; with a
+// new div per call, the sheet the Pay press opens lands somewhere nothing can ever find it, and a
+// test could only ever assert that the press did nothing at all.
+const layers = {};
 globalThis.document = {
   createElement: createEl,
   createTextNode: (s) => ({ nodeType: 3, text: String(s) }),
-  getElementById: () => createEl("div"),
+  getElementById: (id) => (layers[id] ||= createEl("div")),
   querySelector: () => null,
   querySelectorAll: () => [],
   scrollingElement: createEl("html"),
@@ -278,10 +283,10 @@ test("every order offers Note / tracking beside Edit, and Packed speaks only to 
 });
 
 // ── v101: which way the money came in ────────────────────────────────────────
-test("Paid · Cash and Paid · TNG each mark it paid and record which, and when", () => {
+test("the Pay press opens her own accounts, and picking one records which, and when", () => {
   // `paidReceived: false` is what the app itself writes when Paid is picked in the dropdown:
   // the order is on the money stage and the money has not landed yet (which is also why the
-  // Paid buttons have to be here).
+  // Pay press has to be here).
   const state = { ...STATE, orders: [{
     id: "o1", deliveryDateId: "d7", productId: "p1", qty: 1, customerName: "Ain",
     whatsapp: "60123456789", status: "paid", paidReceived: false,
@@ -290,18 +295,23 @@ test("Paid · Cash and Paid · TNG each mark it paid and record which, and when"
   renderOrders(root, state, PARAMS());
 
   const labels = all(root).filter((n) => n.tagName === "BUTTON").map((n) => n.textContent);
-  assert.ok(labels.includes("Paid · Cash") && labels.includes("Paid · TNG"),
-    "one tap each — no pop-up for something she does twenty times a week");
+  assert.ok(labels.includes("Pay"), "one press, opening her own account list");
+  // ⚠️ THE TWO FIXED BUTTONS ARE GONE, and that is the whole point of v478: with only Cash and TNG
+  // offered, a customer's bank transfer had nowhere to go at all.
+  assert.ok(!labels.includes("Paid · Cash") && !labels.includes("Paid · TNG"),
+    "⚠️ the fixed Cash / TNG pair is gone — it is why a bank transfer could not be recorded");
 
-  all(root).find((n) => n.tagName === "BUTTON" && n.textContent === "Paid · TNG")._listeners.click[0]();
+  press(root, "Pay");
+  pickAccount("TNG");
   assert.equal(state.orders[0].paidReceived, true, "the order is paid");
-  assert.equal(state.orders[0].paidMethod, "tng", "and the row remembers how");
+  assert.equal(state.orders[0].paidMethod, "TNG", "and the row remembers which account took it");
   assert.ok(state.orders[0].paidAt, "stamped when the money landed, which is what the Money screen counts");
 
   const again = createEl("div");
   renderOrders(again, state, PARAMS());
   const tag = all(again).find((n) => String(n.className).split(/\s+/).includes("paid-tag"));
-  assert.equal(tag.children[0].text, "TNG", "and the row says so beside its status");
+  assert.equal(tag.children[0].text, "Paid",
+    "and the row says one word beside its status — her words: \"the tag just need one. Paid\"");
 });
 
 test("the day header carries its own till — cash, TNG, still to collect", () => {
@@ -337,6 +347,16 @@ const withOrder = (extra) => ({ ...STATE, orders: [{
 const buttons = (root) => all(root).filter((n) => n.tagName === "BUTTON").map((n) => n.textContent);
 const press = (root, text) =>
   all(root).find((n) => n.tagName === "BUTTON" && n.textContent === text)._listeners.click[0]();
+// ★ THE PAYMENT SHEET (v478) — the press opens HER account list, and this picks one off it. ⚠️ The
+// account is matched on the row's FIRST cell, so a name that is a prefix of another ("Cash" beside
+// "Cash to LK") can never pick the wrong account.
+const paySheet = () => layers["popup-layer"];
+const pickAccount = (label) => {
+  const row = all(paySheet()).find((n) => String(n.className).includes("tappable")
+    && n.children[0] && n.children[0].textContent === label);
+  assert.ok(row, `the payment sheet offers ${label}`);
+  row._listeners.click[0]();
+};
 
 test("a bypassed order's Paid step wears an X, in its own place", () => {
   const root = createEl("div");
@@ -362,38 +382,96 @@ test("a bypassed order's Paid step wears an X, in its own place", () => {
     "✓", "with the tick it always had");
 });
 
-test("Paid · Cash and Paid · TNG stay on at every stage from Paid onwards, until paid", () => {
+test("the Pay press stays on at every stage from Paid onwards, until paid", () => {
   for (const status of ["paid", "baking", "ready", "delivered"]) {
     const root = createEl("div");
     renderOrders(root, withOrder({ status, paidReceived: false }), PARAMS());
-    assert.ok(buttons(root).includes("Paid · Cash") && buttons(root).includes("Paid · TNG"),
+    assert.ok(buttons(root).includes("Pay"),
       `the money can be recorded at ${status} — that is when she collects it`);
   }
 
-  // Once it is recorded they go: there is nothing left to press, and the row wears the tag.
+  // Once it is recorded it goes: there is nothing left to press, and the row wears the tag.
   const done = createEl("div");
   renderOrders(done, withOrder({ status: "ready", paidReceived: true, paidMethod: "tng" }), PARAMS());
-  assert.ok(!buttons(done).includes("Paid · Cash"), "no buttons on an order that is already paid");
+  assert.ok(!buttons(done).includes("Pay"), "no press on an order that is already paid");
   assert.ok(all(done).some((n) => String(n.className).split(/\s+/).includes("paid-tag")),
-    "the row says how it was paid instead");
+    "the row says the money is in instead");
 
   // And an order that has not reached the money stage yet is left alone.
   const early = createEl("div");
   renderOrders(early, withOrder({ status: "confirmed", confirmedSent: true }), PARAMS());
-  assert.ok(!buttons(early).includes("Paid · Cash"),
-    "no Paid buttons before the order is at least on the money stage");
+  assert.ok(!buttons(early).includes("Pay"),
+    "no Pay press before the order is at least on the money stage");
 });
 
 test("taking the money at the counter records it where the order already is", () => {
   const state = withOrder({ status: "ready", paidReceived: false });
   const root = createEl("div");
   renderOrders(root, state, PARAMS());
-  press(root, "Paid · Cash");
+  press(root, "Pay");
+  pickAccount("Cash");
 
   assert.equal(state.orders[0].status, "ready", "the order stays packed — the money does not move it back");
   assert.equal(state.orders[0].paidReceived, true);
-  assert.equal(state.orders[0].paidMethod, "cash");
+  assert.equal(state.orders[0].paidMethod, "Cash");
   assert.ok(state.orders[0].paidAt, "stamped when the money landed, which is the day the Money screen counts");
+});
+
+test("★ the Pay press offers every account on her OWN list, in her OWN order", () => {
+  const state = withOrder({ status: "ready", paidReceived: false });
+  // ⚠️ A list she has shaped — including two accounts the old fixed pair had no word for at all.
+  state.settings = { ...state.settings, payMethods: ["Cash", "TNG", "Bank", "Cash to LK"] };
+  const root = createEl("div");
+  renderOrders(root, state, PARAMS());
+  press(root, "Pay");
+
+  const names = all(paySheet()).filter((n) => String(n.className).includes("tappable"))
+    .map((n) => n.children[0].textContent);
+  assert.deepEqual(names, ["Cash", "TNG", "Bank", "Cash to LK"],
+    "⚠️ HER accounts in HER order — the order v477's handle is what lets her set");
+
+  pickAccount("Cash to LK");
+  assert.equal(state.orders[0].paidReceived, true, "the money is in");
+  assert.equal(state.orders[0].paidMethod, "Cash to LK",
+    "⚠️ and an account the fixed pair had no word for is recorded as itself, not as one of two words");
+});
+
+test("⚠️⚠️ a method that is neither Cash nor TNG no longer prints as TNG", () => {
+  // ⚠️ The tag used to read `first.paidMethod === "cash" ? "Cash" : "TNG"` — so EVERY label that was
+  // not the old lowercase "cash" printed as **TNG**, and a bank transfer wore a TNG tag. ⭐ A value
+  // that looks right and is wrong, which is the fault this app keeps having to be taught.
+  const root = createEl("div");
+  renderOrders(root, withOrder({ status: "ready", paidReceived: true, paidMethod: "Bank" }), PARAMS());
+  const tag = all(root).find((n) => String(n.className).split(/\s+/).includes("paid-tag"));
+  assert.ok(tag, "the row still says the money is in");
+  assert.equal(tag.children[0].text, "Paid",
+    "⚠️⚠️ one word, so it cannot be wrong about WHICH account — the old tag printed \"TNG\" here");
+});
+
+test("★ an account can be added while recording the payment, and it comes back picked", () => {
+  const state = withOrder({ status: "ready", paidReceived: false });
+  const root = createEl("div");
+  renderOrders(root, state, PARAMS());
+  press(root, "Pay");
+
+  // The ＋ chip is the money screen's OWN (accountsEditor's newEntryChip), so what it writes here is
+  // the same record as one added there — and adding it at the moment of payment is the whole of her
+  // ask ("+add or delete a money account").
+  const chip = all(paySheet()).find((n) => n.tagName === "BUTTON" && n.textContent === "＋ New way to pay/receive");
+  assert.ok(chip, "the sheet offers to add an account on the spot");
+  chip._listeners.click[0]();
+  // ⚠️ THE GUARD IS THE ASSERTION'S OWN MESSAGE. `showPopup` repaints by calling its body builder
+  // AGAIN, so a flag declared inside that builder is reset every time and the form is drawn and then
+  // immediately drawn back over — the chip would look dead. Without this line that fault fails as a
+  // TypeError on an undefined box, which reads as a broken test rather than as the bug it is.
+  const box = all(paySheet()).find((n) => n.tagName === "INPUT" && n.attrs["aria-label"] === "Name");
+  assert.ok(box, "⚠️ the ＋ chip drew no form — its flag is being reset by the repaint");
+  box.value = "Bank";
+  all(paySheet()).find((n) => n.tagName === "BUTTON" && n.textContent === "Add")._listeners.click[0]();
+
+  assert.ok(state.settings.payMethods.includes("Bank"), "the account is on her list");
+  assert.equal(state.orders[0].paidReceived, true, "the money is in");
+  assert.equal(state.orders[0].paidMethod, "Bank", "and the payment is recorded against the NEW account");
 });
 
 // ── Engine v121/v122 — the product picker's three kinds, in her order ────────

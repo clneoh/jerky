@@ -18,6 +18,12 @@ import { sendFeedback, loadDraft, saveDraft } from "./feedback.js";
 // read her phone and know which build the shop is running — and the address fed back with
 // a customer's words names it too. One number, one file, no second copy to forget.
 import { ENGINE_VERSION } from "../admin/js/version.js";
+// ★★ v492: the "is this page the newest one?" DECISION now lives in its own leaf module. It has no
+// DOM and no network, so it can be PINNED ON ITS OWN (`store/app.js` cannot even be imported by a
+// test — it calls `render()` at the top level), and `buildIn` is exported separately because
+// `newerBuild` answers `false` both for "they agree" and for "I could not read the file", which a
+// test asking only `newerBuild` could never tell apart.
+import { BUILD_TRIED_KEY, VERSION_URL, newerBuild } from "./build.js";
 // The promo-code engine, shared with the backoffice so a code the shop accepts is
 // exactly a code her app recognises. It is a leaf module (imports nothing), which
 // is why the shop can take it without pulling the backoffice's storage in.
@@ -1143,90 +1149,6 @@ function renderDevFoot(cfg) {
   holder.appendChild(el("div", { class: "dev-engine" }, `Engine v${ENGINE_VERSION}`));
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// ★★★ IS THIS PAGE OLDER THAN THE SITE? (12 Oct 2026, her ask)
-// ════════════════════════════════════════════════════════════════════════════
-//
-// ⚠️⚠️ WHY THIS EXISTS, IN HER OWN AFTERNOON. She reported the shop "behaving differently from the
-// bakery's" — and it was not: **her phone was running a two-month-old build** and she had no way to
-// tell. The app on that same phone has had an amber "Update now" strip since v255; **the shop had
-// nothing.** ⭐ **The shop re-fetches its DATA every 30 seconds and NEVER its own code**, so a phone
-// holding an old copy shows FRESH numbers on STALE behaviour — the worst combination there is,
-// because every number on the page agrees with her.
-//
-// ⚠️ AND IT IS NOT ONLY HER. A customer can leave a shop open across an update, and an order placed
-// against old code is a real order placed wrongly. **This is the same class of fault v255 fixed for
-// the app; the shop was simply never given it.**
-//
-// ⭐ HOW IT KNOWS: the page is already carrying its own build number (the `Engine v<n>` at the foot,
-// imported from `admin/js/version.js`). So it asks the SITE for that same little file, with
-// `cache: "no-store"` so the browser cannot answer from its own copy, and compares the two numbers.
-// **One small file, and only a number is compared** — nothing about the customer, nothing sent
-// anywhere.
-//
-// ⚠️⚠️ IT SAYS NOTHING WHEN IT CANNOT TELL. Offline, a stub, a file it cannot read, a build it cannot
-// parse — all silent. **A page that cried "out of date" on a bad connection would be worse than one
-// that never spoke**, and the customer did nothing wrong.
-const BUILD_TRIED_KEY = "munchies.shop.build";
-
-// ⚠️ THE SECOND STATE EXISTS BECAUSE THE FIRST ONE CANNOT ALWAYS WORK. Pressing Reload asks the
-// browser to fetch the page again — and a browser still holding the old script will happily serve it,
-// so the customer lands back here with the same notice and a button that did nothing. **The app's
-// strip learned this at v256 and stops offering the press; this does the same, and it remembers
-// across the reload through `sessionStorage`** (a page reload wipes memory, which is the whole
-// problem). Every use is guarded: a browser that refuses storage just loses the memory, and the
-// worst case is that the Reload press is offered twice.
-function buildTried() {
-  try { return sessionStorage.getItem(BUILD_TRIED_KEY) === String(ENGINE_VERSION); }
-  catch { return false; }
-}
-function rememberBuildTried() {
-  try { sessionStorage.setItem(BUILD_TRIED_KEY, String(ENGINE_VERSION)); }
-  catch { /* no storage — the press is simply offered again next time */ }
-}
-
-function paintBuildNotice() {
-  const box = document.getElementById("build-notice");
-  if (!box) return;
-  box.hidden = false;
-  const tried = buildTried();
-  const say = document.getElementById("build-say");
-  const stuck = document.getElementById("build-stuck");
-  const btn = document.getElementById("build-reload");
-  // ⚠️ THE PRESS GOES ON THE SECOND STATE, and never before: a customer who has not yet tried has
-  // something useful to press, and one who has is told what actually works. **A dead button is worse
-  // than no button** — the shop's own rule, stated all over this file.
-  if (say) say.hidden = tried;
-  if (stuck) stuck.hidden = !tried;
-  if (btn) btn.hidden = tried;
-}
-
-// ⭐ THE DECISION ITSELF, PURE AND EXPORTED — the same shape as `clockWords`/`postsOn` here: the
-// part worth pinning is a comparison, and a comparison needs no page to be true. `servedText` is the
-// little version file as the SITE just handed it over; the running build is this page's own.
-//
-// ⚠️⚠️ IT ANSWERS **FALSE** WHEN IT CANNOT TELL, AND THAT IS THE WHOLE SAFETY OF IT. An empty
-// answer, a file that is not a version file, a build number that is not a number — all "no". **A
-// page that cried "out of date" on a bad connection would be worse than one that never spoke**, and
-// the customer has done nothing wrong.
-export function newerBuild(servedText, running = ENGINE_VERSION) {
-  const m = /ENGINE_VERSION\s*=\s*["'](\d+)["']/.exec(String(servedText == null ? "" : servedText));
-  if (!m) return false;
-  return m[1] !== String(running);
-}
-
-async function checkBuild() {
-  // ⚠️ Once the notice is up there is nothing more to learn, and the poll runs every 30 seconds —
-  // re-asking would be a request a minute for an answer already known. It clears itself by reloading.
-  const box = document.getElementById("build-notice");
-  if (box && !box.hidden) return;
-  try {
-    const res = await fetch("../admin/js/version.js", { cache: "no-store" });
-    if (!res || !res.ok) return;
-    const text = await res.text();
-    if (newerBuild(text)) paintBuildNotice();
-  } catch { /* offline, or a stub — say nothing rather than guess */ }
-}
 
 // The suggestion box's own state, held OUTSIDE the DOM for the same reason the
 // cart is: renderStatic() runs again on every language switch, and a textarea
@@ -1544,9 +1466,9 @@ function renderReferralBanner() {
 // ⭐ The node is therefore captured ONCE and kept for the life of the page, so a rebuild can never destroy
 // it — it is moved, never lost.
 let stepNoteEl = null;
-// ⚠️ AND WHERE IT IS SPEAKING — the product NAME, not the card, **because the card is rebuilt on every
-// repaint and the name is what the rebuild keys on.** Null when it is speaking at a step heading instead.
-let stepNoteAt = null;
+// ⚠️ AND WHERE IT IS SPEAKING IS NO LONGER THE PRODUCT CARD (v493). v460 kept the card's NAME here and
+// re-hung the line above that card after every menu rebuild; **the line lives under a step heading now,
+// which no rebuild touches, so the product name — and the re-hanging itself — are gone.**
 
   // ⚠️⚠️ IF THEY DISAGREE THE FLASH IS CUT OFF MID-BLINK — and it could only ever have been wrong in
   // that direction, because the timer is the thing that fires while `animation: none` fires nothing.
@@ -1587,6 +1509,72 @@ let stepNoteAt = null;
     }, flashMs());
   };
 
+// ---------------------------------------------------------------------------------
+// ★★ IS THIS PAGE THE NEWEST ONE? (v492)
+//
+// Her words: __"just build the shop warning"__.
+//
+// ⭐ THE DECISION ITSELF LIVES IN `store/build.js`, ALONE AND PURE — a comparison of two numbers
+// needs no page to be true, and it can be pinned by a test that way (this file cannot: it calls
+// `render()` at the top level, so no test can import it at all). **Everything in this block is the
+// asking; everything worth proving is over there.**
+//
+// ⚠️ NONE OF IT WAS HERE BEFORE, AND IT IS NOT ONLY HER: the backoffice has carried a
+// "you are on an old build" strip since v255, and the shop — the page a CUSTOMER uses, who has no
+// way of knowing and whose order is real money — had nothing. **It asks the site which build it is
+// serving, with `cache: "no-store"` so the browser cannot answer out of its own copy, and compares
+// it with this page's own build.** One small file, one number compared; nothing about the customer,
+// nothing sent anywhere.
+// ---------------------------------------------------------------------------------
+
+// ⚠️ THE SECOND STATE EXISTS BECAUSE THE FIRST ONE CANNOT ALWAYS WORK. Pressing Reload asks the
+// browser to fetch the page again — and a browser still holding the old script will happily serve
+// it, so the customer lands back here with the same notice and a button that did nothing. **The
+// backoffice's strip learned this at v256 and stops offering the press; this does the same, and it
+// remembers across the reload through `sessionStorage`** (a page reload wipes memory, and that is
+// the whole problem being solved). ⚠️ Every use is guarded: a browser that refuses storage simply
+// loses the memory, and the worst case is that a press which did not work is offered once more.
+function buildTried() {
+  try { return sessionStorage.getItem(BUILD_TRIED_KEY) === String(ENGINE_VERSION); }
+  catch { return false; }
+}
+function rememberBuildTried() {
+  try { sessionStorage.setItem(BUILD_TRIED_KEY, String(ENGINE_VERSION)); }
+  catch { /* no storage — the press is simply offered again next time */ }
+}
+
+function paintBuildNotice() {
+  const box = typeof document === "undefined" ? null : document.getElementById("build-notice");
+  if (!box) return;
+  box.hidden = false;
+  const tried = buildTried();
+  const say = document.getElementById("build-say");
+  const stuck = document.getElementById("build-stuck");
+  const btn = document.getElementById("build-reload");
+  // ⚠️ THE PRESS GOES ON THE SECOND STATE, AND NEVER BEFORE: a customer who has not yet tried has
+  // something useful to press, and one who has is told what actually works. **A dead button is
+  // worse than no button** — this page's own rule, and the reason a closed day and a sold-out line
+  // say their state in words instead of going grey.
+  if (say) say.hidden = tried;
+  if (stuck) stuck.hidden = !tried;
+  if (btn) btn.hidden = tried;
+}
+
+async function checkBuild() {
+  if (typeof document === "undefined") return;
+  // ⚠️ ONCE THE NOTICE IS UP THERE IS NOTHING MORE TO LEARN, and this runs on every 30-second beat
+  // — re-asking would be a request every half minute for an answer already known. It clears itself
+  // when the customer reloads.
+  const box = document.getElementById("build-notice");
+  if (box && !box.hidden) return;
+  try {
+    const res = await fetch(VERSION_URL, { cache: "no-store" });
+    if (!res || !res.ok) return;
+    const text = await res.text();
+    if (newerBuild(text)) paintBuildNotice();
+  } catch { /* offline, or a stub — say nothing rather than guess */ }
+}
+
 export function render() {
   renderStatic(CONFIG);
   const dateWrap = document.getElementById("dates");
@@ -1623,7 +1611,7 @@ export function render() {
 // form filling would behave"__ ⭐ **This is ordinary form behaviour: the input that is wrong takes the red
 // edge, and its reason sits directly under it.** ⚠️ **Not a pop-up over the shop and no scroll** — the
 // message belongs where the thing that is missing lives.
-function markField(input, key) {
+function markField(input, key, extraKey = null) {
   if (!input) return;
   input.classList.add("bad");
   // ⚠️⚠️ AND IT IS TIED TO THE BOX, NOT ONLY SITTING UNDER IT (v455). The skill, 1.6: *"status shown by
@@ -1638,7 +1626,12 @@ function markField(input, key) {
     said = el("p", { class: "field-note", id, role: "status" });
     if (input.parentNode && input.parentNode.appendChild) input.parentNode.appendChild(said);
   }
-  said.textContent = t(key);
+  // ⚠️ A SECOND SENTENCE WHEN THE FIRST ONE IS NOT THE WHOLE STORY (v493). The WhatsApp box's reason used
+  // to be a two-part banner at the foot of the page — *"Please add your WhatsApp number."* then *"We use it
+  // to confirm your order and send your payment QR."* ⭐ **The banner is retired and the box says it now, so
+  // both sentences have to come with it** — otherwise the customer is told what is missing and not why the
+  // bakery needs it.
+  said.textContent = extraKey ? `${t(key)} ${t(extraKey)}` : t(key);
   said.hidden = false;
   // ★★★ AND THE REASON BLINKS (v462). Her report: __"i skip step 3, go for step4, not warning"__ — ⚠️ **the
   // warning WAS there: the box turned red with its reason underneath it.** ⭐ **But it was a still red edge,
@@ -1672,66 +1665,127 @@ function clearFieldMarks() {
   }
 }
 
-  function sayStepFirst(titleKey, bodyKey, stepId, near = null) {
-    // ⚠️⚠️ IT DOES NOT MOVE THE PAGE (v455). Her words: __"the message show in the wrong place and the
-    // screen jump"__ — ⭐ **and the jump was mine: this called `scrollIntoView`, which drags the page to
-    // the step.** ⚠️ **v423 already settled this rule for the parked place — *the page does not move* —
-    // and a customer part-way down the menu being thrown back to the top is exactly that fault.**
-    // ⭐ The message will be redrawn where the step IS; until then it must simply not move him.
-    // ★★★ AND "WHERE THE STEP IS" IS WHAT `stepId` IS FOR (v456). Until this version there was **one**
-    // place a refusal could appear — the line she asked for at v455, which sits under step 1 — and only
-    // a step-1 refusal was ever raised. ⭐ The moment step 3 can refuse a press, a step-3 sentence
-    // rendered under step 1 **is the very fault v455 was fixing**: her words then were __"the message
-    // show in the wrong place"__. ⚠️ **So the line is MOVED to sit under the head of the step that is
-    // speaking** — the element itself, never a second copy, so there is one note and one rule.
-    // ⚠️ A page without the head (or a test shim whose nodes have no parent) simply leaves it where it
-    // is and still says the words — the message is the point, its address is the polish.
-    // ★★★ AND IT SPEAKS WHERE THE CUSTOMER ACTUALLY IS (v459). ⚠️⚠️ HER REPORT, and she is right:
-    // __"when i skip step one try enter qty, it refuse to allow, but i dont know why, because the message
-    // appear somewhere not within my screen, i have to scrol up to find it"__.
-    // ⭐ **MEASURED ON THE REAL SHOP BEFORE CHANGING ANYTHING: with the customer at the menu, the line sat
-    // 262 pixels ABOVE the top of the screen — invisible.** ⚠️ The refusal worked and he was told nothing.
-    // ⚠️⚠️ AND THE FAULT WAS MY OWN JUDGEMENT, NOT A BUG: at v456 I wrote *"a customer at the bottom of the
-    // page pressing a delivery card therefore has to look back up to read it… I chose the missing step over
-    // the customer's thumb."* **That was the wrong way round.** A message nobody sees is not a message.
-    // ⭐ So `near` — the thing that refused, the card whose + was pressed — wins, and the line is put
-    // **directly above it**, on the screen he is already looking at. The rule it belongs to is unchanged:
-    // **the page still does not move** (v423, v455). It is the LINE that comes to him.
-    // ⚠️ With no `near` it falls back to the step's own heading, exactly as it did from v456.
-    // ⚠️⚠️ THE HELD NODE, NOT A LOOKUP (v460). **Once the line has been torn out of the page by a menu
-    // rebuild, `getElementById` can never find it again** — that is why her warning "never came back".
+  // ★★★ THE ONE VOICE FOR "NOT YET — DO THIS FIRST" (v453) — AND SINCE v493 IT IS THE ONLY ONE.
+  //
+  // Her words, and they are the whole of this version: __"we should cleanup the store behavior, there is 4
+  // steps ordering process, 1. step 1 not fill up. no matter the user is clicking on step 2, step3 or step
+  // 4, the screen should scroll to step1, and below step one flashing the warning meaasge. 2. step 2 is not
+  // fill up, and step 1 complete. The user clicking on step 3 or 4, the screen should scroll to step2, and
+  // below step 2 flashing the warning message, 3. step 3 not fill up, step1 &2 done, clicking step 4,
+  // screen will scroll to the field below it and flash the warning, Any other warning message serve the
+  // purpose if not behave in such a way should be retired"__
+  //
+  // ⭐⭐ SO THE WARNING BELONGS TO THE STEP, NOT TO WHATEVER HE HAPPENED TO TOUCH. The line is put
+  // **directly under the heading of the step it names**, and the page is carried to it. Two earlier
+  // judgements are reversed here, at her instruction, and it is worth saying which:
+  //
+  //   * v455 — *"it does not move the page"*, after her report __"the message show in the wrong place and
+  //     the screen jump"__. ⚠️ **That was right for a line appearing ON ITS OWN. It is not this: he
+  //     PRESSED something and the page is answering him** — the same distinction `markField` settled at
+  //     v462, where she reported a warning sitting **825 pixels above** the button she had pressed.
+  //   * v459 — the line was put **directly above the control that refused**, so it would land on the screen
+  //     he was already looking at. ⚠️ **Measured then: with the customer at the menu, a line under step 1
+  //     sat 262 pixels ABOVE the top of the screen.** ⭐ Putting the line at the step fixes the same fault
+  //     from the other end: **the line stays where it belongs, and the PAGE comes to it.**
+  //
+  // ⚠️ AND THE PAGE IS ONLY MOVED WHEN THERE IS SOMETHING TO MOVE TO. If the step is already fully on
+  // screen, nothing scrolls — a page that jumps while he is looking straight at the thing being named is
+  // the fault v423 settled for the parked place.
+  //
+  // ⚠️⚠️ THE HELD NODE, NOT A LOOKUP (v460). **Once the line had been torn out of the page by a menu
+  // rebuild, `getElementById` could never find it again** — that is why her warning "never came back".
+  // ⭐ That can no longer happen: the line now lives under a step HEADING, and the headings are static
+  // markup that no repaint replaces. **The re-hanging machinery that v460 needed (`placeStepNote`) is
+  // therefore retired in this version** — it existed only because the line used to be hung inside the menu.
+  let stepNoteStep = null;   // which step the line is currently speaking about — see `paintSteps`
+
+  // ⚠️ MOVES THE PAGE ONLY IF THE THING IS NOT ALREADY ON IT. A customer tapping + on a card who can
+  // already see the step being named must not be thrown up the page for nothing.
+  function bringIntoView(what) {
+    if (!what) return;
+    if (typeof what.getBoundingClientRect !== "function" || typeof what.scrollIntoView !== "function") return;
+    let onScreen = false;
+    try {
+      const r = what.getBoundingClientRect();
+      const h = (typeof window !== "undefined" && window.innerHeight) || 0;
+      // ⚠️ NO HEIGHT MEANS NOTHING CAN BE INSIDE IT (a collapsed pane, a stub) — so it falls through to
+      // moving, which is the behaviour that needs no measurement to be right.
+      onScreen = h > 0 && r.top >= 0 && r.bottom <= h;
+    } catch { onScreen = false; }
+    if (onScreen) return;
+    // ⚠️ CENTRED, LIKE `markField` — **the line is what he must read, so it goes in the MIDDLE of the
+    // screen rather than under the bar fixed to the foot of the page.** ⚠️ `block: "start"` was the first
+    // thing I wrote, and it put a step-1 line at the very top with the calendar it is about still below it:
+    // on a long menu the sentence simply fell off the bottom.
+    //
+    // ⚠️⚠️ AND THE MOVE IS ASKED FOR SMOOTHLY, THEN CHECKED (v493). **MEASURED IN THE PREVIEW PANE: an
+    // instant `scrollIntoView` on the line moved the page (1947 → 985, the line landing 367px down an
+    // 812px screen) — and the SAME CALL with `behavior: "smooth"` did not move it at all.** ⭐ A smooth
+    // scroll is an ANIMATION, and an animation the browser declines to run (a backgrounded tab, a phone
+    // under load, a pane that is not painting) **leaves the customer looking at nothing, which is the whole
+    // fault this feature exists to fix.** ⚠️ So the smooth move is asked for first — it is gentler, and it
+    // is what `markField` has used since v462 — and then the page is asked whether it actually moved. **If
+    // it has not moved by the time the animation should be under way, it is done instantly.**
+    const before = (typeof window !== "undefined" && Number(window.scrollY)) || 0;
+    try { what.scrollIntoView({ block: "center", behavior: "smooth" }); }
+    catch { try { what.scrollIntoView({ block: "center" }); } catch { /* a page that refuses */ } }
+    if (typeof setTimeout !== "function") return;
+    setTimeout(() => {
+      if (!what) return;
+      const now = (typeof window !== "undefined" && Number(window.scrollY)) || 0;
+      if (now !== before) return;               // ⭐ it moved — the smooth move is running
+      let stillOff = false;
+      try {
+        const r = what.getBoundingClientRect();
+        const h = (typeof window !== "undefined" && window.innerHeight) || 0;
+        stillOff = h > 0 && (r.top < 0 || r.bottom > h);
+      } catch { stillOff = true; }
+      if (!stillOff) return;
+      try { what.scrollIntoView({ block: "center" }); }
+      catch { /* a page that refuses is not a reason to fail */ }
+    }, 350);
+  }
+
+  // ⭐ WHERE EACH STEP'S LINE BELONGS: DIRECTLY BELOW THE FIELD THAT STEP IS FILLED IN WITH (v493).
+  // Her words, in three messages as she followed the build: __"the screen should scroll to step1, and below
+  // step one flashing the warning meaasge"__ · __"the field and steps should be in sequence, the appropriate
+  // warning should be below that field"__ · and then the last piece: __"step3 is a big step, can be a very
+  // tall step window, then it shold go by field."__
+  // ⭐ **So it is not the heading and it is not the control he touched: it is the foot of the field that is
+  // missing, in the order the page already reads.**
+  // ⚠️ AND STEP 3 IS THE ONE THAT MAKES THAT MATTER. It is the tall one — a name, a number, the two ways to
+  // get the order and the address — so "the foot of step 3" is a screen and a half below the thing he must
+  // actually fix. ⭐ Its line hangs under **the two cards**, which is the field that refusal is about; the
+  // name and the number do not come here at all — they mark themselves, with their reason under the box
+  // (`markField`), which is the same rule read one field further in.
+  const STEP_FIELD = { step1: "dates", step2: "menu", step3: "fulfillment" };
+
+  function sayStepFirst(titleKey, bodyKey, stepId, bodyText = null) {
     const note = stepNoteEl || document.getElementById("step-note");
     if (!note) return;
     stepNoteEl = note;
-    let parent = null;
-    let before = null;
-    if (near && near.parentNode && typeof near.parentNode.insertBefore === "function") {
-      parent = near.parentNode;
-      before = near;
-      // ⭐ AND IT REMEMBERS WHICH PRODUCT IT IS SPEAKING ABOUT, by the name the menu keys its cards on —
-      // **because the card ELEMENT is rebuilt on every repaint and the name is not.**
-      stepNoteAt = near.dataset && near.dataset.product ? near.dataset.product : null;
-    } else {
-      stepNoteAt = null;
-      const head = document.getElementById(stepId);
-      if (head && head.parentNode && typeof head.parentNode.insertBefore === "function") {
-        parent = head.parentNode;
-        before = head.nextSibling;
-      }
+    // ⚠️ `previousSibling`, not `nextSibling`: if the line is already sitting in the right place, moving it
+    // again would be work done for nothing — and it would show up as a second copy in a naive shim.
+    const field = document.getElementById(STEP_FIELD[stepId] || stepId);
+    if (field && field.parentNode && typeof field.parentNode.insertBefore === "function"
+        && note.previousSibling !== field) {
+      field.parentNode.insertBefore(note, field.nextSibling);
     }
-    if (parent && note.nextSibling !== before) parent.insertBefore(note, before);
-    note.replaceChildren(
-      el("strong", {}, t(titleKey)), " ", t(bodyKey));
+    stepNoteStep = stepId;
+    // ⚠️ `bodyText` IS FOR THE ONE REFUSAL WHOSE WORDS ARE BUILT, NOT KEYED — the day that closed while
+    // the page sat open, whose sentence names the cut-off time (v493's cleanup brought it here too).
+    note.replaceChildren(el("strong", {}, t(titleKey)), " ", bodyText == null ? t(bodyKey) : bodyText);
     note.hidden = false;
     note.classList.add("on");
     // ★★★ AND IT BLINKS (v461). Her question, and it is the right one: __"did you blink the warning?"__
     // ⚠️ **It did not — the line simply appeared**, and her report a moment earlier was __"it just dont
-    // allow, but no warning"__. ⭐ **A sentence that arrives silently part-way down a long page can still be
-    // missed**, which is the whole fault this thread has been about.
-    // ⭐ It goes through the shop's OWN flash, so the blink length, the number of blinks and the moment the
-    // mark comes off are **one fact in one place** (v427) — and a reduced-motion reader gets the same rule
-    // the parked place gets. ⚠️ Through a SEAM, because `flashRow` is not in this scope.
+    // allow, but no warning"__. ⭐ It goes through the shop's OWN flash, so the blink length, the number of
+    // blinks and the moment the mark comes off are **one fact in one place** (v427).
     flashRow(note);
+    // ⭐ AND THE PAGE COMES TO IT (v493) — after the words are in, so the distance measured is the real one.
+    // ⚠️ THE LINE ITSELF IS WHAT MOVES INTO VIEW, not the field above it: the field can be long (a five-week
+    // calendar, a menu of every product), and the sentence at its foot is the thing he must read.
+    bringIntoView(note);
   }
   let avail = null;      // { 'YYYY-MM-DD': slots_left } — day-level, for the calendar
   let prodAvail = null;  // { 'YYYY-MM-DD': { product: slots_left } } — for the item stamps
@@ -2314,7 +2368,7 @@ function clearFieldMarks() {
           // bread into the basket with no day chosen, because `change` does not fire until he leaves the
           // box — by which time the item was already in and the lock had been walked straight past.
           // ⭐ **A typed number is the same act as a tap, and v454 refused the tap.**
-          if (!dayPicked) { sayStepFirst("needDayTitle", "needDayBody", "step1", here()); return; }
+          if (!dayPicked) { sayStepFirst("needDayTitle", "needDayBody", "step1"); return; }
           const n = parseInt(this.value, 10);
           if (!Number.isFinite(n) || n < 1) return;   // ⚠️ an empty box mid-edit is not an order for zero
           cart.set(p.name, Math.min(cap, n));
@@ -2326,7 +2380,7 @@ function clearFieldMarks() {
         // refuse the other**, or the lock would have a door in it that nobody had noticed.
         onchange: function () {
           if (!dayPicked) {
-            sayStepFirst("needDayTitle", "needDayBody", "step1", here());
+            sayStepFirst("needDayTitle", "needDayBody", "step1");
             this.value = String(cart.get(p.name) || 0);
             return;
           }
@@ -2336,10 +2390,9 @@ function clearFieldMarks() {
           redraw();
         },
       });
-      // ⭐ WHERE A MISSING BAKE DAY IS SPOKEN ABOUT (v459): **directly above the card he just touched.**
-      // ⚠️ It is a thunk, not the element itself, because the card does not exist yet while these handlers
-      // are being built — and the answer is only needed at the moment of the press, when it does.
-      const here = () => (inc && inc.closest ? inc.closest(".card") : null);
+      // ⚠️ AND THE CARD HE TOUCHED IS NO LONGER WHERE A MISSING BAKE DAY IS SPOKEN ABOUT (v493) — the
+      // sentence belongs to STEP 1 and the page is carried to it, so the `here()` thunk that used to find
+      // this product's card is gone with the rest of the "speak where he is looking" machinery.
       // A stepper move repaints the whole menu: a pool card needs it (every
       // sibling's cap/stamp depends on this quantity) and so does every
       // Next-available line, which is a control only while the basket is empty.
@@ -2389,7 +2442,7 @@ function clearFieldMarks() {
         // __"dont allow and a message inform about why"__ · __"ask user to tap on the bake day to confirm
         // it"__. ⭐ **`sayStepFirst` was defined and NEVER CALLED** — the helper, the three message pairs and
         // the comment above all sat here as DEAD CODE, which is why the shop behaved as if none of it existed.
-        if (!dayPicked) { sayStepFirst("needDayTitle", "needDayBody", "step1", here()); return; }
+        if (!dayPicked) { sayStepFirst("needDayTitle", "needDayBody", "step1"); return; }
         const q = Math.min(cap, (cart.get(p.name) || 0) + 1);
         cart.set(p.name, q);
         qtyBox.value = String(q);
@@ -2593,24 +2646,15 @@ function clearFieldMarks() {
     menu.replaceChildren(...children);
   };
 
-  // ★★★ AND EVERY REBUILD PUTS THE REFUSAL LINE BACK (v460). ⚠️⚠️ **This is the fix for her report:**
-  // __"if i press -, the warning disappear and never come back again??"__ ⭐ The line lives directly above a
-  // product card since v459, **so it lives inside the menu — and `renderMenu` empties the menu and rebuilds
-  // it, which took the line with it.** ⭐⭐ **A warning is not a decoration that a repaint may erase: it is
-  // the answer to something the customer just did, and it stands until the thing it is about is fixed.**
-  // ⚠️ It is re-hung here rather than at each caller, **because EVERY path funnels through `renderMenu`** —
-  // the ± press, a typed quantity, the day tap, the 30-second refresh — and a rule written at seven call
-  // sites is a rule that will be missing from the eighth.
-  const placeStepNote = () => {
-    if (!stepNoteEl || stepNoteEl.hidden || !stepNoteAt) return;
-    const card = Array.from(menu.children)
-      .find((c) => c.dataset && c.dataset.product === stepNoteAt);
-    if (card && stepNoteEl.nextSibling !== card) menu.insertBefore(stepNoteEl, card);
-  };
-  // ⚠️⚠️ THE NAME IS WRAPPED RATHER THAN EDITED INTO THE BODY, because `renderMenuCards` returns EARLY on
-  // two paths (an empty menu, and a shop with no categories) — **so a line added at the foot of it would
-  // have been skipped by exactly the shops that need it most.**
-  const renderMenu = () => { renderMenuCards(); placeStepNote(); };
+  // ⚠️⚠️ `placeStepNote` USED TO LIVE HERE, AND v493 RETIRED IT. It re-hung the refusal line inside the
+  // menu after every rebuild, because v459 had put the line directly above a product card — **and the card
+  // is rebuilt from scratch on every quantity change, which is what took the line with it**: her report was
+  // __"if i press -, the warning disappear and never come back again??"__, and the fix held the node and put
+  // it back by the product's name.
+  // ⭐ **The line now lives under a step HEADING, and no repaint touches the headings — so the machinery
+  // that existed only to survive a rebuild is gone rather than left to look load-bearing.** The held node
+  // (`stepNoteEl`) stays; the re-hanging does not need to.
+  const renderMenu = () => renderMenuCards();
 
   // Live slots left for `name` on the day currently shown. undefined (no live
   // counts published for this day/product) means "unknown" — never treated as
@@ -2983,7 +3027,20 @@ function clearFieldMarks() {
   // basket has something in it, and their name and number are filled in. ⚠️ The third turns green as they
   // finish typing it — which is the moment before they press Place order, which is exactly when a nervous
   // customer wants to be told they have done everything.
-  function paintSteps() {
+  // ★★ WHICH STEPS ARE DONE — ONE RULE, TWO READERS (v493).
+  //
+  // ⚠️⚠️ HER WORDS: __"when step 1 is skip, it should always go back to step1"__. ⭐ **That is a rule about
+  // the FIRST thing missing, not about the control he happened to press** — and until this version each
+  // refusal named the step its own control belonged to, so a customer who had not chosen a bake day and
+  // pressed a DELIVERY CARD was sent to step 2, and one who pressed PLACE ORDER was sent to step 2 as well.
+  // ⭐⭐ **He would be told about step 2 while step 1 was the thing he had not done.**
+  //
+  // ⚠️ AND IT IS THE SAME QUESTION THE CIRCLES ALREADY ASK. The `done` list below was computed inside
+  // `paintSteps` and read by nothing else — **so the circles could say "step 1 is not done" while the
+  // sentence on the screen named step 2.** ⭐ One rule with two readers is the only way those two can never
+  // disagree, and this file has already paid for splitting one fact across two places (v427: a duration in
+  // CSS and a moment in JS).
+  function stepsDone() {
     const nameEl = document.getElementById("name-input");
     const waEl = document.getElementById("whatsapp-input");
     // ★★ AND THE THIRD STEP IS NOT DONE UNTIL HE HAS SAID HOW HE IS GETTING IT (v415). Her words:
@@ -2993,7 +3050,7 @@ function clearFieldMarks() {
     // anything. ⭐ **What it asks is whether HE chose**, which is the same distinction the places
     // above now keep: **the page does not credit him with a choice he did not make.**
     const fulfilled = document.getElementById("fulfillment");
-    const done = [
+    return [
       // ⚠️⚠️ `dayPicked`, NOT `!!selected` (v434). A day is ALWAYS selected — the first open one is
       // chosen for him on load — so asking "is a day selected" turned this circle green before he
       // had touched anything, and it was the only one of the three that did. **All three now read
@@ -3005,6 +3062,35 @@ function clearFieldMarks() {
         && !!(nameEl && String(nameEl.value || "").trim())
         && !!(waEl && String(waEl.value || "").trim()),
     ];
+  }
+
+  // ⭐ THE FIRST STEP THAT IS NOT DONE, and `null` when there is nothing left to do.
+  // ⚠️⚠️ IT IS THE ONLY PLACE THAT ANSWERS THIS QUESTION. Every refusal in this shop goes through it, so a
+  // press can never be answered with a step later than the one that is actually outstanding — her rule:
+  // __"when step 1 is skip, it should always go back to step1"__.
+  function firstMissingStep() {
+    const done = stepsDone();
+    for (let i = 0; i < done.length; i++) if (!done[i]) return `step${i + 1}`;
+    return null;
+  }
+
+  // ⭐ AND EACH STEP REFUSES IN ITS OWN WORDS — the sentence belongs to the step, so the WORDS have to be
+  // chosen by the same answer that chose the step.
+  const STEP_SAY = {
+    step1: ["needDayTitle", "needDayBody"],
+    step2: ["needItemTitle", "needItemBody"],
+    step3: ["fulfilAskTitle", "fulfilAskBody"],
+  };
+  function refuseAtFirstMissing() {
+    const step = firstMissingStep();
+    if (!step) return false;              // ⚠️ nothing is missing — there is nothing to refuse
+    const [titleKey, bodyKey] = STEP_SAY[step];
+    sayStepFirst(titleKey, bodyKey, step);
+    return true;
+  }
+
+  function paintSteps() {
+    const done = stepsDone();
     for (let i = 0; i < done.length; i++) {
       const head = document.getElementById(`step${i + 1}`);
       if (head && head.classList) head.classList.toggle("done", done[i]);
@@ -3014,8 +3100,20 @@ function clearFieldMarks() {
     // pick a day, after he has picked one, would be the page arguing with itself.
     // ⚠️ THE HELD NODE HERE TOO (v460) — a lookup would answer `null` after a rebuild had torn the line out,
     // and this is the code that is supposed to CLEAR it, so it would have cleared nothing.
+    // ⚠️⚠️ AND IT ASKS ABOUT THE STEP THE LINE IS ACTUALLY SPEAKING ABOUT (v493). Until this version the
+    // test was `dayPicked` — **which is only step 1's question.** ⭐ That was correct while step 1 was the
+    // only step that could refuse; the moment the line can speak about step 2 or step 3, **a customer who
+    // had already picked his day would have the answer to a step-2 refusal wiped by the next repaint.**
+    // ⭐ v455's rule is kept exactly, and scoped to what it was always about: a form error does not outlive
+    // ITS cause — which is the step it names, not whichever step happens to be checked first.
     const note = stepNoteEl || document.getElementById("step-note");
-    if (note && dayPicked && !note.hidden) { note.hidden = true; note.classList.remove("on"); note.replaceChildren(); }
+    const speakingAbout = stepNoteStep == null ? -1 : Number(String(stepNoteStep).replace("step", "")) - 1;
+    if (note && !note.hidden && speakingAbout >= 0 && done[speakingAbout]) {
+      note.hidden = true;
+      note.classList.remove("on");
+      note.replaceChildren();
+      stepNoteStep = null;
+    }
 
     // ★★★ AND STEP 3 DOES NOT OPEN UNTIL STEP 2 HAS SOMETHING IN IT (v456). Her words: __"i skip step 2 and
     // filled up step 3, it should not allow me to do step 3 at all?"__ ⚠️⚠️ **and she is right — the first
@@ -3024,6 +3122,7 @@ function clearFieldMarks() {
     // letting him fill a form for an order that has nothing in it. ⚠️ **They are DISABLED, which is the
     // honest state — they genuinely cannot be used yet — and the reason is on the page beside them, so this
     // is not the "disabled with no explanation" fault the skill warns about.**
+    const fulfilled = document.getElementById("fulfillment");
     const open3 = cart.size > 0;
     for (const id of ["name-input", "whatsapp-input"]) {
       const box = document.getElementById(id);
@@ -3055,7 +3154,11 @@ function clearFieldMarks() {
       fulfilled._mayChooseWay = () => cart.size > 0;
       // ⚠️ AND IT TAKES THE CARD THAT REFUSED (v459), so the line lands directly above the card he pressed
       // rather than under a heading a screen or two away — her report, and the whole of this version.
-      fulfilled._refuseWay = (near) => sayStepFirst("needItemTitle", "needItemBody", "step2", near);
+      // ⚠️⚠️ AND IT NAMES THE FIRST STEP THAT IS MISSING, WHICH IS NOT ALWAYS THE CARD'S OWN STEP (v493).
+      // Her words: __"when step 1 is skip, it should always go back to step1"__. ⭐ A customer who has not
+      // chosen a bake day and presses a delivery card was being sent to step 2 — **told about the basket
+      // while the bake day was the thing he had not done.**
+      fulfilled._refuseWay = () => refuseAtFirstMissing();
     }
   }
   // ⚠️ AND THE THIRD STEP IS TYPED, NOT TAPPED, so it needs listeners of its own — nothing else on this
@@ -3070,10 +3173,18 @@ function clearFieldMarks() {
     // directly above the row he touched (v459's rule).
     // ⚠️ BOTH `focus` AND `click`, because on a phone the tap that raises the focus and the click are not
     // the same event everywhere — and `sayStepFirst` is idempotent, so arriving twice costs nothing.
+    // ⚠️⚠️ AND IT NAMES THE FIRST STEP THAT IS MISSING (v493), NOT "step 2 because this is a step-3 field".
+    // ⭐ Tapping his name with no bake day chosen sends him to STEP 1 now — her words: __"when step 1 is
+    // skip, it should always go back to step1"__.
+    // ⚠️ AND IT STILL ONLY SPEAKS WHILE THE BOX IS SHUT. The box is held shut on an empty basket (v456),
+    // and that is the only state in which it has anything to explain. ⭐ **With an order in the basket the
+    // box is open and usable, and tapping it must say nothing** — its own emptiness is `markField`'s
+    // business at the moment he tries to place the order, which is where the page already asks for it by
+    // name. (Measured: without this guard a customer with one item in the basket and his name already
+    // typed was sent to step 3 for tapping a box that was perfectly open.)
     const sayWhyNotYet = () => {
       if (cart.size > 0) return;   // ⚠️ step 2 is done — there is nothing to explain and nothing to block
-      const row = field.closest ? field.closest(".field") : null;
-      sayStepFirst("needItemTitle", "needItemBody", "step2", row || field.parentNode || field);
+      refuseAtFirstMissing();
     };
     // ⚠️⚠️ ONE LISTENER EACH, NOT ONE PER RENDER (v461). ⭐ **`render()` runs these lines every time it is
     // called, and the element is the SAME ELEMENT** — so they accumulated. ⭐⭐ Measured in this suite's own
@@ -3218,7 +3329,10 @@ function clearFieldMarks() {
       if (doc && doc.visibilityState && doc.visibilityState !== "visible") return;
       busy = true;
       try { await refresh(); } finally { busy = false; }
-      checkBuild();   // ★ and the other half: is this page itself the newest one?
+      // ★★ AND THE OTHER HALF OF "IS THIS PAGE HONEST?" (v492) — not only "is the bread still
+      // today's", but "is this the newest page". The same 30-second beat, the same coming-back-
+      // to-the-tab moment, because the answer can change while a customer sits on the shop.
+      checkBuild();
     };
     if (hasVisibility) {
       const listen = (t, type, fn) => { if (t && typeof t.addEventListener === "function") t.addEventListener(type, fn); };
@@ -3226,8 +3340,9 @@ function clearFieldMarks() {
       listen(win, "focus", poll);
       listen(win, "online", poll);
       setInterval(poll, 30000);
-      // ⚠️ ONCE ON ARRIVAL TOO, and not waited on: the page is usable while it asks, and a customer
-      // must never be held up by a question about which build they are on.
+      // ⚠️ ONCE ON ARRIVAL TOO, AND NOT WAITED ON: an order must never be held up by a question
+      // about which build the phone is on. This is also the moment that matters most — a customer
+      // who has just opened the shop is the one most likely to be holding a ten-minute-old page.
       checkBuild();
     }
   }
@@ -3368,16 +3483,15 @@ function clearFieldMarks() {
     // about step 3 shown to somebody who has not done step 2 sends him backwards down the page to fix
     // something the page was not yet asking him for.
     if (!lines.length) {
-      // ⚠️ STEP 2'S OWN HEADING, not an element I invented — the same circle the page is already showing
-      // him as not-done. ⭐ **The one I first wrote here did not exist**, which would have thrown the moment
-      // this guard fired: the same undeclared-name fault as `closeManual` an hour earlier, caught this time
-      // by looking for the id before trusting it.
-      const step2 = document.getElementById("step2");
-      if (step2 && step2.scrollIntoView) step2.scrollIntoView({ block: "start" });
-      showConfirm([
-        el("p", { class: "confirm-title" }, t("needItemTitle")),
-        el("p", { class: "confirm-body" }, t("needItemBody")),
-      ], "warn");
+      // ★★★ THE SAME LINE AS EVERY OTHER REFUSAL, AT STEP 2 (v493) — and the banner at the foot of the page
+      // is RETIRED with its own competing scroll. ⚠️ **Those two fought, exactly as the closed-day banner
+      // did in v463: the page was carried to step 2's heading and then `showConfirm` carried it again, to a
+      // banner that sits BELOW everything — including the Track-your-order card.** ⭐⭐ **So the customer
+      // was told "pick something from the menu ABOVE" while the page flew past the menu, downwards.**
+      // ⚠️ AND IT NAMES THE FIRST STEP THAT IS MISSING, WHICH MAY NOT BE STEP 2 (v493) — her words:
+      // __"when step 1 is skip, it should always go back to step1"__. ⭐ Pressing Place order without ever
+      // tapping a bake day goes to STEP 1; with the day chosen it goes to step 2, which is the basket.
+      refuseAtFirstMissing();
       return;
     }
     // ⚠️ UNREACHABLE IN PRACTICE — a bake day is chosen FOR him on load (v434) — and kept anyway so that a
@@ -3395,14 +3509,18 @@ function clearFieldMarks() {
     clearFieldMarks();
     // The baker confirms every order (and sends the payment QR) over WhatsApp,
     // so the customer's number is required to place the order at all.
+    // ★★★ AND HIS NUMBER IS THE SAME KIND OF THING AS HIS NAME, SO IT ANSWERS THE SAME WAY (v493). ⚠️⚠️
+    // Her rule 3 is the whole reason: __"step 3 not fill up … screen will scroll to the field below it and
+    // flash the warning"__. ⭐ **The name box has done exactly that since v455/v462 — red edge, its reason
+    // underneath, a blink, and the page carried to it. The number box used a BANNER at the very foot of the
+    // page instead**, so one step had two different ways of saying the same sentence. ⚠️ **That banner is
+    // retired here, and the box now behaves exactly as the box above it does.** ⭐ Both sentences come with
+    // it (`extraKey`) so the customer is told what is missing AND why the bakery needs it.
     const waInput = document.getElementById("whatsapp-input");
     const whatsapp = waNumber(waInput && waInput.value);
     if (!whatsapp) {
-      if (waInput && waInput.focus) waInput.focus();
-      showConfirm([
-        el("p", { class: "confirm-title" }, t("confirmAddWaTitle")),
-        el("p", { class: "confirm-body" }, t("confirmAddWaBody")),
-      ], "warn");
+      clearFieldMarks();
+      markField(waInput, "confirmAddWaTitle", "confirmAddWaBody");
       return;
     }
     // Posting is the default way to receive an order, so a full postal address
@@ -3421,11 +3539,15 @@ function clearFieldMarks() {
     }
     // Cutoff guard: a customer may have the page open across the deadline, so
     // re-check the selected day at the moment they tap Place order.
+    // ★★★ AND THE DAY THAT CLOSED IS A STEP-1 PROBLEM, SO IT SPEAKS AT STEP 1 (v493). ⚠️ **This was the
+    // third banner, and the one v463 already caught fighting the page:** it carries him to step 1, says
+    // __"That day's orders are closed … please pick a new bake day"__ — ⭐ **which is step 1's instruction,
+    // word for word — and the words name the cut-off, so the explanation is not lost by the move.**
+    // ⚠️ Its sentence is BUILT (the cut-off time is substituted in), which is why `sayStepFirst` takes the
+    // words as well as the keys.
     if (!isOpen(CONFIG, new Date(`${selected}T00:00:00`))) {
-      showConfirm([
-        el("p", { class: "confirm-title" }, t("confirmClosedTitle")),
-        el("p", { class: "confirm-body" }, sub(t("confirmClosedBody"), clockWords(CONFIG.cutoff))),
-      ], "warn");
+      sayStepFirst("confirmClosedTitle", "confirmClosedBody", "step1",
+        sub(t("confirmClosedBody"), clockWords(CONFIG.cutoff)));
       return;
     }
     // Last check at the moment of placing: a refresh between taps can sell an
@@ -3577,11 +3699,18 @@ function clearFieldMarks() {
       // the pages this code runs on can take. ⭐ The circles follow from `paintSteps`.
       buildCalendar();
       paintSteps();
-      // ⚠️ AND THE PAGE COMES BACK TO THE TOP. The next customer was arriving part-way down the page, at
-      // whatever step the last one had scrolled to — **the first thing a shop should show him is step 1.**
-      if (typeof window !== "undefined" && window.scrollTo) {
-        try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch { /* a page that refuses is not a reason to fail */ }
-      }
+      // ⚠️⚠️ AND THERE IS NO SCROLL TO THE TOP HERE ANY MORE (v489).
+      //
+      // Her words, asked twice: __"after the press of place order button, the screen scrolls, what is this
+      // for?"__ ⭐ **THE HONEST ANSWER WAS THAT THERE WERE TWO SCROLLS AND THEY FOUGHT:** this one took the
+      // page to the TOP, and ~1 second later `showConfirm` scrolled the notice into the middle of the
+      // view — ⚠️ **and the notice is the LAST element on the page, so a customer watched the whole shop
+      // fly past him upward and then all the way back down.** ⭐ **The wobble was mine.**
+      //
+      // ⭐⭐ SO THE NOTICE'S OWN SCROLL IS THE ONLY ONE. It is the thing he must read, and it is where the
+      // page comes to rest. ⚠️ **The shop is already reset behind it** — the next customer scrolls up into
+      // a fresh shop with step ① at the top, which is exactly what the top-scroll was for, without the
+      // round trip. ⭐ ONE `scrollIntoView`, in `showConfirm`, and nothing to fight it.
       renderBar();
       // ⚠️ `renderBar` empties the bar for the next customer, so the green is set AGAIN here — and then
       // HELD for her one second **before the received notice covers it**. ⭐ The order is already in the
@@ -3649,15 +3778,6 @@ function clearFieldMarks() {
   // ★★★ AND THE BUILD NOTICE'S PRESS, bound here for the same reason: `render()` runs once per
   // page load, while `renderStatic()` runs again on every render and every language switch —
   // **a listener bound there is a listener repeated, and a repeated toggle cancels itself out.**
-  // ⚠️ It REMEMBERS FIRST, then reloads: a browser still holding the old script serves it straight
-  // back, and the remembered flag is what turns the second sight of this notice into the honest
-  // "close the page and open it again" rather than the same button doing nothing a second time.
-  const buildBtn = document.getElementById("build-reload");
-  if (buildBtn) buildBtn.addEventListener("click", () => {
-    rememberBuildTried();
-    paintBuildNotice();
-    if (typeof location !== "undefined" && typeof location.reload === "function") location.reload();
-  });
   if (promoClear) promoClear.addEventListener("click", () => {
     promoApplied = ""; promoRefusal = null;
     if (promoInput) promoInput.value = "";
@@ -4548,16 +4668,10 @@ function wireFulfillment() {
     // `ReferenceError` on the press and nowhere else — which is exactly how the first draft of this
     // guard failed, and why the three v436 tests caught it rather than the shop did.
     if (wrap._mayChooseWay && !wrap._mayChooseWay()) {
-      if (wrap._refuseWay) {
-        // ⚠️⚠️ AND IT HANDS OVER THE CONTROL HE PRESSED (v459) — **`Array.from`, because a browser's
-        // `querySelectorAll` is a NodeList and a NodeList has no `.find`.** ⭐ The line then lands directly
-        // above THAT card, which is on the screen he is already looking at.
-        let pressed = null;
-        for (const x of Array.from(buttons)) {
-          if (x && x.dataset && x.dataset.fulfillment === want) { pressed = x; break; }
-        }
-        wrap._refuseWay(pressed && pressed.closest ? (pressed.closest(".seg-opt") || pressed) : null);
-      }
+      // ⚠️ AND IT NO LONGER HANDS OVER THE CARD HE PRESSED (v493). It used to walk the buttons to find the
+      // one that matched `want` and put the line directly above it; ⭐ **the sentence belongs to STEP 3 and
+      // the page is carried to it, so which card was pressed stopped being part of the answer.**
+      if (wrap._refuseWay) wrap._refuseWay();
       return;
     }
     // ⚠️ EACH LINE IS BOTH THE CHOICE AND ITS OWN FOLD'S HANDLE. Tapping the line of the way already
@@ -5063,6 +5177,20 @@ if (typeof document !== "undefined" && document.documentElement) {
   applyTo(document, STORE, loadLang());
   paintPillsHook(loadLang());
   pills.forEach((b) => b.addEventListener("click", () => setLang(b.dataset.lang)));
+
+  // ★★ THE NOTICE'S OWN PRESS (v492) — bound here, ONCE, for the same reason the privacy notice
+  // below is: the markup is static HTML that is never replaced, so one binding lasts the life of
+  // the page.
+  // ⚠️ IT REMEMBERS FIRST, THEN RELOADS. A browser still holding the old script serves it straight
+  // back — so if this press did nothing, the remembered flag is what turns the second sight of this
+  // notice into the honest "close the page completely and open it again" instead of **the same
+  // button quietly doing nothing a second time.**
+  const buildBtn = document.getElementById("build-reload");
+  if (buildBtn) buildBtn.addEventListener("click", () => {
+    rememberBuildTried();
+    paintBuildNotice();
+    if (typeof location !== "undefined" && typeof location.reload === "function") location.reload();
+  });
 
   // ---------------------------------------------------------------------------------
   // THE PRIVACY NOTICE UNDER PLACE ORDER — bound ONCE, here, and nowhere else.

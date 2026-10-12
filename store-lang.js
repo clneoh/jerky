@@ -23,6 +23,17 @@ const en = {
   referral: "🎁 You were referred — you have a welcome discount on your first order",
   deliveryDays: "Posting days",
 
+  // ★★ THE SHOP'S OWN BUILD NOTICE (v492). It is the only line on this page about the PAGE
+  // rather than about bread, and it is only ever read by a customer who left the shop open
+  // across an update — so it is quiet, it is not an alarm, and it never blames them.
+  // ⚠️ THE SECOND ONE EXISTS BECAUSE THE FIRST CANNOT ALWAYS WORK: pressing Reload asks the
+  // browser for the page again, and a browser still holding the old script serves it straight
+  // back. After one try this page stops offering a press that has already been shown not to
+  // work and says what actually does.
+  buildStale: "A newer version of this page is ready.",
+  buildStuck: "A newer version is ready. Close this page completely, then open it again.",
+  buildReload: "Reload",
+
   // Promo codes (v269). The offer is composed in store/app.js out of the engine's
   // PARTS — kind and value — so a percentage, an amount and free delivery each
   // read naturally here rather than being an English sentence handed over whole.
@@ -452,6 +463,15 @@ const zh = {
   referral: "🎁 朋友介绍的 — 首次下单有优惠！",
   deliveryDays: "发货日",
 
+  // ★★ 商店的版本提示（v492）。这是整页唯一一句关于"页面本身"而不是面包的话，只有把商店
+  // 一直开着、期间我们更新了的人才会看到。所以它安静、不吓人，也绝不怪他。
+  // ⚠️ 第二句存在，是因为第一句不一定管用：按"重新载入"是请浏览器再抓一次这个页面，而浏览器
+  // 如果还留着旧的程序，就会原封不动地送回来。试过一次之后，这一页就不再提供那个已经证明没用的
+  // 按钮，而是直接说真正有效的办法。
+  buildStale: "这个页面有新版本了。",
+  buildStuck: "有新版本了。请把这个页面完全关掉，再重新打开。",
+  buildReload: "重新载入",
+
   promoLabel: "有优惠码吗？",
   promoPh: "例如 FRESH10",
   promoApply: "使用",
@@ -676,6 +696,18 @@ const ms = {
   homeLink: "🏠 Laman utama kami",
   referral: "🎁 Anda dirujuk — anda ada diskaun sambutan untuk tempahan pertama",
   deliveryDays: "Hari pos",
+
+  // ★★ NOTIS VERSI KEDAI (v492). Inilah satu-satunya baris di halaman ini tentang HALAMAN itu
+  // sendiri, bukan tentang roti — dan hanya pelanggan yang membiarkan kedai terbuka semasa kami
+  // mengemas kini yang akan membacanya. Jadi ia senyap, ia bukan amaran, dan ia tidak pernah
+  // menyalahkan mereka.
+  // ⚠️ YANG KEDUA ADA KERANA YANG PERTAMA TIDAK SELALU BERKESAN: menekan Muat semula meminta
+  // pelayar mengambil halaman itu sekali lagi, dan pelayar yang masih memegang skrip lama akan
+  // memberikannya semula. Selepas satu percubaan, halaman ini berhenti menawarkan butang yang
+  // sudah terbukti tidak berkesan dan memberitahu apa yang benar-benar berkesan.
+  buildStale: "Versi baharu halaman ini sudah sedia.",
+  buildStuck: "Versi baharu sudah sedia. Tutup halaman ini sepenuhnya, kemudian buka semula.",
+  buildReload: "Muat semula",
 
   promoLabel: "Ada kod?",
   promoPh: "cth. FRESH10",

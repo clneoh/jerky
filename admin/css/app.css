@@ -576,16 +576,17 @@ body { min-height: 100vh; }
 .ing-card-row .card-row > div { flex: 1 1 auto; }
 .ing-card-row .li-right { justify-content: flex-end; }
 
-/* The grip a row is dragged by — the Categories, Products, Ingredients and collection-Point lists.
-   One rule for all of them, because it is one gesture: the lists reorder with the same helper in
-   ui.js and must feel identical under the thumb. ⚠️ `.ing-handle` joined it in v399 and `.point-handle`
-   in v410, and each was added HERE rather than as a second copy, because a handle that behaved or
-   measured differently on one screen than another is the kind of difference she would only find by
-   trying it twice. */
+/* The grip a row is dragged by — the Categories, Products, Ingredients, collection-Point and money
+   lists. One rule for all of them, because it is one gesture: the lists reorder with the same helper
+   in ui.js and must feel identical under the thumb. ⚠️ `.ing-handle` joined it in v399, `.point-handle`
+   in v410 and `.money-handle` in v477, and each was added HERE rather than as a second copy, because a
+   handle that behaved or measured differently on one screen than another is the kind of difference she
+   would only find by trying it twice. */
 .cat-handle,
 .prod-handle,
 .ing-handle,
-.point-handle {
+.point-handle,
+.money-handle {
   flex: 0 0 auto;
   /* A 36px target, because this one is dragged with a thumb. */
   width: 36px;
@@ -611,7 +612,8 @@ body { min-height: 100vh; }
 .cat-handle:active,
 .prod-handle:active,
 .ing-handle:active,
-.point-handle:active { cursor: grabbing; background: var(--strip); }
+.point-handle:active,
+.money-handle:active { cursor: grabbing; background: var(--strip); }
 
 /* The heading over a group of collection Points (v410), indented by its depth in the area tree so
    "Sg Ara" reads as sitting inside "Penang Island" rather than beside it. ⚠️ The unfiled block wears
@@ -1247,7 +1249,7 @@ option.tone-off { color: var(--muted); }
 /* A step the order went straight past — a regular who pays when she collects skips Paid.
    It keeps its place in the line so every order's route reads alike, but it wears an X on a
    pale amber node and NEVER green, because the money has not been taken yet. Press
-   Paid · Cash / Paid · TNG and this becomes the ordinary green tick (17 Sep 2026). */
+   Pay on the row and this becomes the ordinary green tick (17 Sep 2026). */
 .oj-step.skipped .oj-node { background: #fbe7d8; box-shadow: inset 0 0 0 1.5px #c9641f; }
 .oj-cross { color: var(--amber); font-size: 8px; font-weight: 800; line-height: 1; }
 .oj-step.skipped .oj-label { color: var(--muted); }
@@ -2264,7 +2266,10 @@ option.tone-off { color: var(--muted); }
   padding: 2px 8px;
   border-radius: 999px;
 }
-.paid-tag.tng { color: var(--brown-dark); background: var(--brown-soft); }
+/* ⚠️ `.paid-tag.tng` IS GONE (v478). The tag names the METHOD — `.paid-tag.tng` was one of its two
+   looks, and a method the two-look rule never knew ("Bank", "Cash to LK") took the CASH look while
+   printing the wrong word. ⚠️ It is now ONE tag reading "Paid" (her words: __"the tag just need one.
+   Paid"__), so there is no second look to get wrong. */
 /* ★ "Not paid" — the order has reached the paying stage and the money is still out (v430).
    ⚠️ AMBER, NOT RED: red on this card would read as an error, and this is a "still to do", the
    same register the app already gives money that has not come in (`.paid-tag.courier.mine`).
@@ -2325,6 +2330,53 @@ option.tone-off { color: var(--muted); }
    which is easy to miss and easy to land beside — and a tap that does nothing reads as a
    broken screen rather than a small target (17 Sep 2026). */
 .info-row.tappable { min-height: 36px; align-items: center; }
+
+/* ★★ THE MONEY LISTS' OWN DRAGGED LINE (v477). Her words: __"make me a handle, and the handle rule
+   is a universal one."__
+   ⚠️ IT IS WRITTEN HERE, AFTER THE `.info-row` RULES ABOVE, AND NOT BESIDE THE GRIP UP THE PAGE.
+   `.money-list-row` and `.info-row` weigh the same, so at equal weight the LAST one wins — a copy
+   placed up there would have been overridden by `space-between`, and the grip would have floated
+   away from the name it belongs to. It is spelled `.info-row.money-list-row` for the same reason:
+   that is the weight of `.info-row.tappable`, which is what it has to beat.
+   ⚠️ AND THE NAME CARRIES THE `min-width: 0` THAT `.info-row > span:first-child` GIVES A PLAIN LINE.
+   With the grip now the first child, that rule lands on the GRIP instead — and a long account name
+   would then push the line wider than the pop-up rather than wrapping inside it. */
+.info-row.money-list-row { justify-content: flex-start; gap: 4px; flex-wrap: wrap; }
+.info-row.money-list-row .money-list-name { flex: 1 1 auto; min-width: 0; }
+/* ⚠️⚠️ AND THE BUTTONS DROP TO THEIR OWN LINE, RIGHT-ALIGNED — the same shape the ingredient card took
+   at v399, and for the same MEASURED reason. ⭐ Read at 375px: the grip's 36px plus Edit and Delete left
+   the name and its note so little room that "Delivery & fuel · running cost" folded into three ragged
+   lines with the buttons wedged between them. ⭐ Giving the buttons the whole second line is what makes
+   the name and the note readable again, and it is already the app's own answer on a card this narrow. */
+.info-row.money-list-row .li-right { flex: 1 1 100%; display: flex; justify-content: flex-end; gap: 6px; }
+
+/* ★★★ THE ACCOUNTS AS COLUMNS, IN ONE GRID (v488).
+   Her words: __"can it be columnise"__ — and then, looking at the result, __"the free space is so much, why
+   clamping it together"__, with "RM 480.00" BROKEN ACROSS TWO LINES in the TNG row.
+   ⚠️⚠️ AND I HAD GOT IT WRONG TWICE, BOTH TIMES BY GUESSING INSTEAD OF MEASURING:
+   - **Each row was its OWN grid**, so an `auto` column sized to that row alone and the columns never
+     lined up across rows — In sat at 188, 203 and 212 down the page.
+   - Fixed tracks were the wrong answer to that: **I wrote "70px clears RM 1,234.56 with room to spare"
+     and never measured it.** ⭐ MEASURED NOW: `RM 480.00` needs **71px**, `RM 2,032.00` needs **83**,
+     `RM 12,345.67` needs **88** — ⚠️ **so the commonest figure of all wrapped by ONE PIXEL**, and the
+     row was clamped tight while free space sat beside the name.
+   ⭐⭐ SO: **THE WHOLE TABLE IS ONE GRID.** The header and every account row are `display: contents`, so
+   their cells are all tracks of the SAME grid — ⭐ **each column is then as wide as the widest figure in
+   the whole table, every row lines up underneath it, and the name takes whatever is left.** Nothing is
+   clamped and nothing wraps. */
+.acc-table { display: grid; grid-template-columns: minmax(0, 1fr) max-content max-content max-content; gap: 0 10px; }
+.acc-row, .acc-head-row { display: contents; }
+.info-row.acc-head-row > span { font-size: 12px; color: var(--muted); padding: 6px 0 2px; }
+.acc-head-row > span:not(:first-child), .acc-row .acc-num { text-align: right; font-variant-numeric: tabular-nums; }
+/* ⚠️ A FIGURE NEVER BREAKS MID-NUMBER — the trap that produced "RM" on one line and "480.00" on the next. */
+.acc-row .acc-num, .acc-head-row > span { white-space: nowrap; }
+.info-row.acc-row .acc-cell { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; gap: 2px; }
+.info-row.acc-row .acc-cell .acc-name { min-width: 0; }
+.info-row.acc-row .acc-holds { font-weight: 700; }
+/* ⚠️ `display: contents` TAKES THE ROW'S OWN BOX AWAY, so its press feedback and its journal link have
+   to live on the CELLS. The row element still carries the click — the cells are inside it. */
+.acc-row > span { padding: 6px 0; }
+.account-row-tap { cursor: pointer; }
 
 /* The Books list: the line she tapped stays marked, and its book opens UNDER it behind a
    rule, so it is obvious which line the rows belong to (the app has one shared pop-up

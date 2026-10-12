@@ -756,6 +756,79 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## Engine v476 → v493 — every place money sits is an account, and one warning at the field (12 Oct 2026)
+
+Seventeen versions from the bakery. **22 files changed (`+2,806 / −864`) plus one new file
+(`store/build.js`, 85 lines); no SQL and nothing to deploy** — the same push carries it. Suite
+**3445 → 3469 pass / 0 fail**.
+
+### The money screen is one list of accounts (v477–v491)
+
+**`admin/js/accounts.js` is the whole of it.** Every place money sits — the tin, the phone, the bank,
+LK's hand, a loan — is one account with a name, and the two vocabularies the app had been carrying
+(the "purse and phone" against the "pockets") are gone. `admin/js/views/money.js` renders one block per
+account — in / out / holds — for **every** account that exists, so a just-added account is visible at
+RM 0.00 instead of nowhere (v479), and each block is a door into that account's journal. One **Pay**
+press opens her own list with `+ New way to pay` at its foot (v478), and the order tag is one word,
+**Paid** — it used to print the method, so an order paid into a bank account wore a TNG tag.
+
+**★ The fault the rename question found (v486).** Renaming a way to pay rewrote the expenses and the
+deposits and **never the orders** — so every order paid the old way stayed under a retired name, and
+the Money screen showed a block (the "Cash" RM 64) that was not on her list. Rename and the new **Move
+these** now call the **same** function, so neither can move two of three places again. Its test fails
+by its own name (`'Loan'` against `'Bank OD'`) with the orders left out.
+
+**★ Nothing a transaction uses can be deleted (v487).** The refusal **names the count** and the way
+through (`Move its records…`, v486), and `isCash`/`isTng` are locked outright with their Delete not
+drawn rather than drawn-and-refusing. ⚠️ The rule's test took two tries: **the first version passed
+with the rule OFF**, because it read a list nothing had touched.
+
+**Net counts every account now (v480)** — her choice, shown the trade-off in full (it no longer matches
+what she can count by hand). **One grid for the whole table (v489)**: heading and rows are `display:
+contents`, so `RM 480.00` stops wrapping by one pixel and every column shares one right edge.
+
+**A paid order made cheaper says so (v490), and asks to refund (v491)** — the amount is named and the
+refund opens on that order, because a figure she has to retype is a figure retyped wrong.
+
+### The shop (v489, v492, v493)
+
+**⚠️ `store/build.js` is adopted from the bakery (v492) and replaces jerky's own notice code.** The
+behaviour is hers already (v476) — what arrives is the bakery's **better split**: `VERSION_URL`,
+`buildIn(servedText)` (exported separately because `newerBuild` answers `false` for both "they agree"
+and "cannot read", so a test asking only `newerBuild` could never tell them apart), and
+`newerBuild(servedText, running = ENGINE_VERSION)`. **`BUILD_TRIED_KEY` is `"munchies.shop.build"`** —
+origin-scoped, never the bakery's.
+
+**⚠️ Three collisions the merge produced, all de-duplicated:** a second `build.js` import, a second
+notice block in `store/app.js`, and a second reload wiring. ⭐ **`test/no-duplicate-imports.test.js`
+caught the import** — the guard written after the bakery's three earlier burnings. The bakery's
+`test/store-build-notice.test.js` (10 tests, broader than jerky's 8) replaces jerky's file of the same
+name, and the bakery's `test/store-lang-switch.test.js` replaces the narrowed guard.
+
+**★ The step refusals ask which step is first missing (v493).** `stepsDone()` is the one place the
+three circles' done-ness is computed; `firstMissingStep()` reads it; `STEP_SAY` gives each step its own
+sentence and `STEP_FIELD` puts the line under **the field** (step 3 → the two cards, not the tall
+card's foot). Three footer banners that fought that scroll are retired. v489 also removed the
+top-scroll that made the shop jump after **Place order**.
+
+**⚠️ THE ONE DELIBERATE NON-PORT, RE-CONFIRMED.** jerky's shop still **opens with Post (nationwide)
+chosen** — `apply("courier")` at start-up and in `_resetFulfillment` — where the bakery's v416 opens
+with neither. ⚠️ **Checked rather than assumed:** `refuseAtFirstMissing()` **cannot** reach step 3 on
+jerky's shop, because the Place-order guard (`if (!lines.length)`) only runs on an **empty basket**,
+where step 2 is missing first; the bakery's direct `sayStepFirst("fulfilAskTitle", …, "step3")` sits
+behind `!fulfilEl._value`, which is never true here. **So no order is blocked by the pre-chosen Post.**
+`STEP_SAY.step3` is kept, so the gate is ready if she ever wants it. ⚠️ Pre-existing from Pass B and
+unchanged by this sync: the third circle stays grey until the customer **taps** a card, because the
+rule asks whether **he** chose, not what the stored value happens to be.
+
+### ⚠️ The jerky-only-line audit: four files, all deliberate
+
+A diff of jerky's HEAD against the bakery base found jerky-only lines gone in
+**`admin/js/views/orders.js`** (3 reworded comments), **`store/app.js`** (51 — her notice block,
+superseded by `store/build.js`), **`test/store-build-notice.test.js`** (148) and
+**`test/store-lang-switch.test.js`** (29) — the two test files replaced by the bakery's broader
+versions of the same rules. **Checked one by one: no genuine loss.**
+
 ## The shop now says when it is out of date (12 Oct 2026)
 
 **Her report:** *"why the store behave differently from the bakers store?"* — and it did not. **Her

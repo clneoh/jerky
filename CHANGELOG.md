@@ -1,8 +1,95 @@
-# Munchies Furkidz — change history (v54 → v476)
+# Munchies Furkidz — change history (v54 → v493)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**12 Oct 2026 — engine v493: EVERY PLACE YOUR MONEY SITS IS AN ACCOUNT, AND THE WHOLE MONEY SCREEN IS
+ONE TABLE (nothing to run, nothing to upload — pushing this is the whole of it).**
+
+**This is a seventeen-version catch-up from the bakery (v477 to v493), and most of it is one idea.**
+The app kept two sets of names for the same thing — the "purse and phone" against the "pockets" — and
+that is why you asked twice what the difference was. **It is one word now, and it is the word you
+chose: an account.** Your tin, your phone, the bank, LK's hand, a loan — every place your money sits.
+
+**1. The Money screen is one shape: one block per account.** What came in, what went out, what it
+holds, and the total under them. **Every account you have gets its own block**, in your own order, even
+a brand-new one sitting at RM 0.00 — and a block is a door: tap it and that account's own journal
+opens, saying honestly that nothing has moved that way yet rather than looking broken. Before this, an
+account you had just added **showed nowhere at all on that screen**, so adding one looked as though it
+had done nothing.
+
+**2. One Pay press, and the list it opens is yours.** How a customer paid you was two fixed buttons,
+Paid Cash and Paid TNG, and nothing else — **a bank transfer had nowhere to go at all**, and adding an
+account meant changing the code. There is now one **Pay** press that opens your own list, in your own
+order, with **+ New way to pay** at its foot: add an account while you are recording the payment and it
+comes back already picked. **And the tag on a paid order now says one word — Paid.** It used to print
+the method, and it read "if it is not cash, say TNG" — so an order paid into a bank account wore a TNG
+tag. A word that looks right and is wrong; one word cannot be wrong about which account it was, and the
+account is not lost, because it is on the order's own card and has a block of its own.
+
+**3. Your Net counts every account now.** It used to be the tin and the phone only, so a customer's
+bank transfer sat on its own line and was kept out of it. You were shown the trade-off in full and
+chose **one figure for everything**: everything that came in this stretch, less everything that went
+out, through every account you have. **The honest consequence, which you took with your eyes open, is
+that Net no longer matches what you can count by hand** — so for the tin and the phone, read that
+account's own block. Every account also keeps its own line and its own **running balance** on its
+journey, and there is one **Reconcile** sheet with every account on it: what came in, what went out,
+what it holds, and the total. That is the sheet you take to the tin, the phone and the bank.
+
+**4. A rename moves everything now — including the orders. This was a real fault.** Renaming a way to
+pay rewrote your spending and your deposits and **never the orders** — so every order paid the old way
+stayed filed under a name you had retired, and your figures split in silence. That is what the "Cash"
+block holding money you could not find on your own list was. A rename and the new **Move these** button
+now call the same code, so neither can move two places of three again. **And a retired account is no
+longer a dead end:** **Move these** moves every record filed under the old name onto the account you
+choose — orders, spending and money you put in alike.
+
+**5. Something a transaction uses cannot be deleted.** A category an expense was filed under, a source
+a money-in row came from, or an account anything moved through: **if any record uses it, it cannot be
+removed** — and the refusal says how many, and names the way through. **Cash and TNG are locked
+outright**, with their Delete not drawn at all, because the tin and the phone figures are built on
+those two. Your worry about a future exception is exactly why the refusal is never just "no": the
+account's own Edit form carries **Move its records…**, so no case — privacy, a mistake, something we
+have not thought of — can ever be stuck behind this rule.
+
+**6. Making a paid order cheaper is no longer silent.** You asked whether reducing an order's quantity
+takes paid money back out of the accounts. **It does** — the paid money is counted off the order's own
+lines, live, so a smaller order is a smaller payment the moment it saves. But your hand does not
+change, and nothing said so. **The Edit card now says it while you are editing**, with the figure, and
+saving asks first. **And it asks you to refund:** the second question names the amount and opens the
+refund on that order, rather than telling you to go and find it — a figure you have to remember and
+retype is a figure that gets retyped wrong. Deleting a paid order takes the money out at once, puts the
+order in the **Removed** list so it can be put back, keeps the ingredients consumed and keeps the
+receipt number claimed.
+
+**7. The accounts are one table, and the shop stopped jumping.** The figures on the Money screen used
+to break mid-number ("RM 480.00" wrapped over two lines by one pixel) and wander left and right between
+rows. The heading and every row are now tracks of **one** grid, so every column is as wide as the
+widest figure in the whole table and nothing can break mid-number. And in the shop, after **Place
+order**, there were **two scrolls fighting** — one to the top and one to the notice, which is the last
+thing on the page — so a customer watched the whole shop fly past him upward and then all the way back
+down. The top one is gone.
+
+**8. The shop now tells a customer when they are looking at an old page.** You already had this — you
+had it built at v476 — and this is the bakery's version of the same thing arriving, so **nothing about
+your shop changes.** What changes is underneath: one shared rule instead of two, and a wider set of
+tests over it.
+
+**9. And the shop now names the first step that is missing, not the step that was pressed.** This was a
+real fault on the bakery's shop: a customer who had not chosen a posting day and pressed a delivery
+card was told about the basket, while the three circles beside it said step one — **the page
+disagreeing with itself about one order.** Every refusal now asks one question — which step is first
+not done — and the circles ask the same question, so they cannot drift apart. The warning sits under
+the field it is about, the page is carried to it only when it is not already on screen, and three
+banners at the foot of the page that said the same things (and fought that scroll) are gone.
+
+**10. And no sentence in the app names an account of yours any more.** A caption that pointed at "the
+Cash and TNG blocks" was wrong the moment you renamed Cash — an account's name is yours, so nothing can
+name one. The little grey notes ("your tin", "your phone") are gone from the money lines too: **an
+account's name is the whole of what its line says.**
+
+**Nothing to run, no SQL, no upload, no setting to change on either phone.**
 
 **12 Oct 2026 — the shop now says when it is out of date (same engine v476 — pushing this is the
 whole of it).**
