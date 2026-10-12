@@ -369,7 +369,7 @@ const en = {
   trackingNo: "Tracking number: %1",
   // The same slot when a booked courier trip handed back a share link rather than a
   // number. The value is the link itself and is rendered tappable, so there is no %1.
-  trackDelivery: "Track your delivery:",
+  trackDelivery: "Track your order:",
   // The charge a courier made for this order, when one was recorded — drawn instead of
   // the flat postage, never beside it (v124, 20 Sep 2026). The card names no subtotal:
   // the shop's flat nationwide postage is never published, so a subtotal worked out
@@ -624,7 +624,7 @@ const zh = {
   trkReady: "已打包",
   trkFinal: "已取货 / 已寄出",
   trackingNo: "快递单号：%1",
-  trackDelivery: "查看配送进度：",
+  trackDelivery: "查询您的订单：",
   courierCharge: "快递费：%1",
   courierCod: "快递费：%1 - 货到付款，收货时付给送货员",
   postageQuoted: "邮费：另行报价 — 我们会把准确金额发给你",
@@ -838,7 +838,7 @@ const ms = {
   trkReady: "Dibungkus",
   trkFinal: "Sudah diambil / Sudah dipos",
   trackingNo: "Nombor penjejakan: %1",
-  trackDelivery: "Jejak penghantaran anda:",
+  trackDelivery: "Jejak order anda:",
   courierCharge: "Caj kurier: %1",
   courierCod: "Caj kurier: %1 - COD, bayar kepada kurier semasa penghantaran",
   postageQuoted: "Pos: disebut berasingan — kami akan beritahu jumlah tepat kepada anda",

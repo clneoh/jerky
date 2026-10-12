@@ -1529,7 +1529,11 @@ test("a courier's share link in the tracking slot is a link a customer can tap",
     await trackOrder("A3F9C2");
     const no = byExactClass(box, "track-no");
     assert.ok(no, "the card carries the tracking slot on its own line");
-    assert.equal(no.children[0].text, "Track your delivery: ",
+    // ⚠️ ALIGNED WITH THE CARD'S OWN HEADING (2026-10-12, her ask). This read "Track your
+    // delivery:" while the card the customer is looking at says "Track your order" — one thing
+    // named two ways on one card, which is the drift she asked to have closed. The label still
+    // does its original job: it marks this as a LINK to follow rather than a tracking NUMBER.
+    assert.equal(no.children[0].text, "Track your order: ",
       "a link is labelled for what it is, rather than called a tracking NUMBER");
     const a = no.children[1];
     assert.equal(a.tagName, "A", "and it is tappable rather than words to read out");
