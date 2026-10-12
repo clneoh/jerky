@@ -756,6 +756,60 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## The shop now says when it is out of date (12 Oct 2026)
+
+**Her report:** *"why the store behave differently from the bakers store?"* — and it did not. **Her
+phone was running an old build of the shop** and there was no way to tell. The app on that same phone
+has had an amber "Update now" strip since v255; **the shop had nothing.** She answered it herself:
+*"sorry old cache, v400"*.
+
+**⚠️ WHY THE SHOP NEEDS IT MORE THAN THE APP.** The shop re-fetches its **data** every 30 seconds and
+**never its own code** — so a stale page shows **fresh numbers on stale behaviour**, every figure
+agreeing with her, which is the worst way round for a fault to be. And a shop is a page a customer can
+leave open across a deploy: an order placed against old code is a real order placed wrongly.
+
+**What was built.** `store/app.js` gains `checkBuild()`: it fetches `../admin/js/version.js` — **the
+same file it already imports its own number from**, so the two can never be different builds — with
+**`cache: "no-store"`** (the one thing that must not be cached is the answer to "is this cached?"),
+and compares. It rides the page's **own 30-second `poll`**, which already means "the customer is here
+and looking" (it skips a backgrounded tab and fires on visibility, focus, online), plus once on
+arrival, un-awaited.
+
+**The decision is pure and exported** — `newerBuild(servedText, running)` — the same shape as
+`clockWords`/`postsOn`, so the part worth pinning needs no page. ⚠️ **It answers `false` when it cannot
+tell**: empty text, whitespace, a captive-portal login page, a file with no engine number, a
+non-numeric build. **A page that cried "out of date" on a bad connection would be worse than one that
+never spoke.**
+
+**The notice** (`store/index.html` + `store/app.css` + `store-lang.js`, all three languages) is a
+**quiet bar above the banner**, authored `hidden`, `position: relative` so it **pushes the page down
+rather than covering it**, wrapping rather than clipping. It wears the shop's own `--brown-dark` text
+token — **not a warning's amber or red**: nothing is broken and the customer has done nothing wrong.
+
+**⚠️ THE TWO-STEP, WHICH IS THE PART WORTH KEEPING.** Pressing Reload can serve the **same old script
+straight back** (the browser is still holding it) — the fault the app's strip learned at v256. So the
+press **remembers first, in `sessionStorage`** (a reload wipes memory, which is the whole problem), and
+the second sight of the notice swaps the sentence for *"Close this page completely, then open it
+again"* and **removes the press** rather than leaving a button that does nothing.
+
+**⚠️ ONE EXISTING GUARD HAD TO BE NARROWED, HONESTLY.** `test/store-lang-switch.test.js` banned
+`location.reload(` **anywhere in the file**, as a proxy for the v71 rule *"the language switch must
+stay in place"*. That ban could not tell a language switch from a build notice — it would have
+forbidden both. It now pins the rule **where it belongs** (the switch's own body and the pill's press
+contain no reload) **and keeps the ban's real value** with a third assertion: the shop carries
+**exactly one** reload, and it is inside the build notice's press. **A guard narrowed without that
+replacement is a guard gone quiet.**
+
+**Tests: `test/store-build-notice.test.js` (8, new)** — a newer build found; the running build not
+called newer than itself; **seven "cannot tell" shapes all silent**; the `no-store` ask and the shared
+import verified against the source; the press remembering before it reloads; the markup authored
+hidden; and the three keys present, translated and matching the page's English. Suite **3437 → 3445
+pass / 0 fail**. **Browser-verified at 375 px:** hidden by default, and both states laid out correctly —
+44 px and 59 px tall, no horizontal overflow, the press in the shop's own text colour.
+
+**⚠️ THE SAME GAP IS ALMOST CERTAINLY IN THE BAKERY'S SHOP** — it has the identical
+`store/` design and the same admin-only strip. A note has been left in its bridge.
+
 ## The big catch-up, PASS B — the shop page (12 Oct 2026)
 
 The eighteen files Pass A deliberately left alone: `store/app.js` (1,338 lines), `store/index.html`,

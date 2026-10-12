@@ -16,6 +16,25 @@
   <link rel="icon" type="image/svg+xml" href="../images/favicon-cat.svg">
 </head>
 <body>
+  <!-- ★★★ WHEN THE SITE IS SERVING A NEWER BUILD THAN THE PAGE THAT IS RUNNING (12 Oct 2026).
+       ⚠️⚠️ WHY IT EXISTS: the app on her phone has had an "Update now" strip since v255 — and the SHOP
+       had nothing. The shop re-fetches its DATA every 30 seconds but NEVER its own code, so a phone
+       holding an old copy shows FRESH numbers on STALE behaviour. She hit exactly that on 2026-10-12
+       and spent an afternoon looking at a shop two months old. **A shop is a page a customer can leave
+       open across an update, and an order placed against old code is a real order placed wrongly.**
+       ⚠️ IT IS AUTHORED WITH `data-i18n` SO ALL THREE LANGUAGES COME FROM THE DICTIONARY and the
+       dictionary's English must match the text here (test/store-i18n.test.js enforces that).
+       ⚠️ TWO SENTENCES, ONE SHOWN AT A TIME, and the press goes on the second — the same two-step the
+       app's strip takes: reloading a page whose script the browser is still holding can serve the old
+       one straight back, so the second state stops offering a button that would do nothing.
+       ⚠️ AND IT IS NOT A STEP LINE OR A WARNING: it is a quiet bar above everything, because the
+       customer has done nothing wrong and the page still works — it is simply not the newest one. -->
+  <div class="build-notice" id="build-notice" hidden>
+    <p class="build-say" id="build-say" data-i18n="buildStale">A newer version of this page is ready.</p>
+    <p class="build-say" id="build-stuck" data-i18n="buildStuck" hidden>A newer version is ready. Close this page completely, then open it again.</p>
+    <button type="button" class="build-btn" id="build-reload" data-i18n="buildReload">Reload</button>
+  </div>
+
   <div class="store-banner">
     <!-- OWNER: banner at the top of the store. Swap store/banner.jpg to change it. -->
     <img src="banner.jpg" alt="Munchies Furkidz relaunch banner">

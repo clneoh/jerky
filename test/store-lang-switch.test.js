@@ -222,8 +222,34 @@ test("the language pills are wired to the in-place switch", () => {
   assert.equal(barTotal(), ONE_FOCACCIA, "the basket is still intact after a pill tap");
 });
 
-test("store/app.js never reloads the page for a language change", () => {
-  // A regression guard for the v71 fix: the switch must stay in place.
-  assert.equal(/location\s*\.\s*reload\s*\(/.test(SRC), false);
-  assert.equal(/window\s*\.\s*location\s*\.\s*reload\s*\(/.test(SRC), false);
+test("the language switch never reloads the page — it repaints in place", () => {
+  // ⚠️⚠️ NARROWED 2026-10-12, AND THE NARROWING IS THE POINT. This was a WHOLE-FILE ban on
+  // `location.reload(`, written as a proxy for the v71 rule — *"the switch must stay in place"*.
+  // ⭐ **The shop now reloads for exactly one reason** (the build notice's press, when the site is
+  // serving a newer build), and a whole-file ban cannot tell a language switch from a build
+  // notice: it would have forbidden both. **So the rule is pinned where it belongs — the thing
+  // that changes the language must not reload** — and a third assertion keeps the ban's real
+  // value, that no SECOND reload can appear unreviewed.
+  const bodyOf = (from, to) => {
+    const at = SRC.indexOf(from);
+    assert.notEqual(at, -1, `${JSON.stringify(from)} has gone — this guard would prove nothing`);
+    return SRC.slice(at, SRC.indexOf(to, at));
+  };
+  // 1 · the switch itself
+  assert.equal(/reload\s*\(/.test(bodyOf("export function setLang", "\n}")), false,
+    "the language switch reloads the page");
+  // 2 · the press that calls it
+  assert.equal(/reload\s*\(/.test(bodyOf('document.querySelectorAll("#lang-switch .lang-pill")', "});")), false,
+    "a language pill reloads the page");
+  // 3 · ⭐ AND THE OTHER HALF — the shop carries ONE reload, and it is the build notice's. Removing
+  // the ban without this would let a second one in unseen, which is how a guard goes quiet.
+  const reloads = SRC.match(/reload\s*\(/g) || [];
+  assert.equal(reloads.length, 1, `the shop carries ${reloads.length} reloads, not the one the build notice owns`);
+  // ⚠️ THE PRESS'S WIRING, not the first mention of its id — `paintBuildNotice` looks it up too, so
+  // anchoring on the id alone would measure from the wrong place and pass or fail for no reason.
+  const pressAt = SRC.indexOf('if (buildBtn) buildBtn.addEventListener("click"');
+  assert.notEqual(pressAt, -1, "the build notice's press is not wired in the shop");
+  const reloadAt = SRC.search(/reload\s*\(/);
+  assert.ok(reloadAt > pressAt && reloadAt < SRC.indexOf("\n  });", pressAt),
+    "the shop's one reload is not inside the build notice's press");
 });

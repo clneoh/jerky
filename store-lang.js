@@ -9,6 +9,16 @@
 
 const en = {
   titleWord: "Order",
+  // ★★ IS THIS PAGE OLDER THAN THE SITE? (12 Oct 2026). The shop re-fetches its DATA every
+  // 30 seconds but never its own code, so a phone holding an old copy shows fresh numbers on stale
+  // behaviour — which is exactly how she spent an afternoon looking at a two-month-old shop. The app
+  // has had an "Update now" strip since v255; the shop had nothing.
+  // ⚠️ A CUSTOMER READS THIS, so it is calm and blames nobody: the page works, it is simply not the
+  // newest one. And it must not promise a fix it cannot make — the second line is what to do when
+  // reloading brings the old script straight back.
+  buildStale: "A newer version of this page is ready.",
+  buildStuck: "A newer version is ready. Close this page completely, then open it again.",
+  buildReload: "Reload",
   homeLink: "🏠 Our homepage",
   referral: "🎁 You were referred — you have a welcome discount on your first order",
   deliveryDays: "Posting days",
@@ -435,6 +445,9 @@ const en = {
 
 const zh = {
   titleWord: "订购",
+  buildStale: "这个页面有新版本了。",
+  buildStuck: "有新版本了。请把这个页面完全关掉，再重新打开。",
+  buildReload: "重新载入",
   homeLink: "🏠 我们的主页",
   referral: "🎁 朋友介绍的 — 首次下单有优惠！",
   deliveryDays: "发货日",
@@ -657,6 +670,9 @@ const zh = {
 
 const ms = {
   titleWord: "Order",
+  buildStale: "Versi baharu halaman ini sudah sedia.",
+  buildStuck: "Versi baharu sudah sedia. Tutup halaman ini sepenuhnya, kemudian buka semula.",
+  buildReload: "Muat semula",
   homeLink: "🏠 Laman utama kami",
   referral: "🎁 Anda dirujuk — anda ada diskaun sambutan untuk tempahan pertama",
   deliveryDays: "Hari pos",

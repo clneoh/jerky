@@ -1143,6 +1143,91 @@ function renderDevFoot(cfg) {
   holder.appendChild(el("div", { class: "dev-engine" }, `Engine v${ENGINE_VERSION}`));
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// ★★★ IS THIS PAGE OLDER THAN THE SITE? (12 Oct 2026, her ask)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// ⚠️⚠️ WHY THIS EXISTS, IN HER OWN AFTERNOON. She reported the shop "behaving differently from the
+// bakery's" — and it was not: **her phone was running a two-month-old build** and she had no way to
+// tell. The app on that same phone has had an amber "Update now" strip since v255; **the shop had
+// nothing.** ⭐ **The shop re-fetches its DATA every 30 seconds and NEVER its own code**, so a phone
+// holding an old copy shows FRESH numbers on STALE behaviour — the worst combination there is,
+// because every number on the page agrees with her.
+//
+// ⚠️ AND IT IS NOT ONLY HER. A customer can leave a shop open across an update, and an order placed
+// against old code is a real order placed wrongly. **This is the same class of fault v255 fixed for
+// the app; the shop was simply never given it.**
+//
+// ⭐ HOW IT KNOWS: the page is already carrying its own build number (the `Engine v<n>` at the foot,
+// imported from `admin/js/version.js`). So it asks the SITE for that same little file, with
+// `cache: "no-store"` so the browser cannot answer from its own copy, and compares the two numbers.
+// **One small file, and only a number is compared** — nothing about the customer, nothing sent
+// anywhere.
+//
+// ⚠️⚠️ IT SAYS NOTHING WHEN IT CANNOT TELL. Offline, a stub, a file it cannot read, a build it cannot
+// parse — all silent. **A page that cried "out of date" on a bad connection would be worse than one
+// that never spoke**, and the customer did nothing wrong.
+const BUILD_TRIED_KEY = "munchies.shop.build";
+
+// ⚠️ THE SECOND STATE EXISTS BECAUSE THE FIRST ONE CANNOT ALWAYS WORK. Pressing Reload asks the
+// browser to fetch the page again — and a browser still holding the old script will happily serve it,
+// so the customer lands back here with the same notice and a button that did nothing. **The app's
+// strip learned this at v256 and stops offering the press; this does the same, and it remembers
+// across the reload through `sessionStorage`** (a page reload wipes memory, which is the whole
+// problem). Every use is guarded: a browser that refuses storage just loses the memory, and the
+// worst case is that the Reload press is offered twice.
+function buildTried() {
+  try { return sessionStorage.getItem(BUILD_TRIED_KEY) === String(ENGINE_VERSION); }
+  catch { return false; }
+}
+function rememberBuildTried() {
+  try { sessionStorage.setItem(BUILD_TRIED_KEY, String(ENGINE_VERSION)); }
+  catch { /* no storage — the press is simply offered again next time */ }
+}
+
+function paintBuildNotice() {
+  const box = document.getElementById("build-notice");
+  if (!box) return;
+  box.hidden = false;
+  const tried = buildTried();
+  const say = document.getElementById("build-say");
+  const stuck = document.getElementById("build-stuck");
+  const btn = document.getElementById("build-reload");
+  // ⚠️ THE PRESS GOES ON THE SECOND STATE, and never before: a customer who has not yet tried has
+  // something useful to press, and one who has is told what actually works. **A dead button is worse
+  // than no button** — the shop's own rule, stated all over this file.
+  if (say) say.hidden = tried;
+  if (stuck) stuck.hidden = !tried;
+  if (btn) btn.hidden = tried;
+}
+
+// ⭐ THE DECISION ITSELF, PURE AND EXPORTED — the same shape as `clockWords`/`postsOn` here: the
+// part worth pinning is a comparison, and a comparison needs no page to be true. `servedText` is the
+// little version file as the SITE just handed it over; the running build is this page's own.
+//
+// ⚠️⚠️ IT ANSWERS **FALSE** WHEN IT CANNOT TELL, AND THAT IS THE WHOLE SAFETY OF IT. An empty
+// answer, a file that is not a version file, a build number that is not a number — all "no". **A
+// page that cried "out of date" on a bad connection would be worse than one that never spoke**, and
+// the customer has done nothing wrong.
+export function newerBuild(servedText, running = ENGINE_VERSION) {
+  const m = /ENGINE_VERSION\s*=\s*["'](\d+)["']/.exec(String(servedText == null ? "" : servedText));
+  if (!m) return false;
+  return m[1] !== String(running);
+}
+
+async function checkBuild() {
+  // ⚠️ Once the notice is up there is nothing more to learn, and the poll runs every 30 seconds —
+  // re-asking would be a request a minute for an answer already known. It clears itself by reloading.
+  const box = document.getElementById("build-notice");
+  if (box && !box.hidden) return;
+  try {
+    const res = await fetch("../admin/js/version.js", { cache: "no-store" });
+    if (!res || !res.ok) return;
+    const text = await res.text();
+    if (newerBuild(text)) paintBuildNotice();
+  } catch { /* offline, or a stub — say nothing rather than guess */ }
+}
+
 // The suggestion box's own state, held OUTSIDE the DOM for the same reason the
 // cart is: renderStatic() runs again on every language switch, and a textarea
 // rebuilt from nothing would take a half-written sentence with it — and would
@@ -3133,6 +3218,7 @@ function clearFieldMarks() {
       if (doc && doc.visibilityState && doc.visibilityState !== "visible") return;
       busy = true;
       try { await refresh(); } finally { busy = false; }
+      checkBuild();   // ★ and the other half: is this page itself the newest one?
     };
     if (hasVisibility) {
       const listen = (t, type, fn) => { if (t && typeof t.addEventListener === "function") t.addEventListener(type, fn); };
@@ -3140,6 +3226,9 @@ function clearFieldMarks() {
       listen(win, "focus", poll);
       listen(win, "online", poll);
       setInterval(poll, 30000);
+      // ⚠️ ONCE ON ARRIVAL TOO, and not waited on: the page is usable while it asks, and a customer
+      // must never be held up by a question about which build they are on.
+      checkBuild();
     }
   }
 
@@ -3557,6 +3646,18 @@ function clearFieldMarks() {
   }
   const promoBtn = document.getElementById("promo-apply");
   if (promoBtn) promoBtn.addEventListener("click", applyTyped);
+  // ★★★ AND THE BUILD NOTICE'S PRESS, bound here for the same reason: `render()` runs once per
+  // page load, while `renderStatic()` runs again on every render and every language switch —
+  // **a listener bound there is a listener repeated, and a repeated toggle cancels itself out.**
+  // ⚠️ It REMEMBERS FIRST, then reloads: a browser still holding the old script serves it straight
+  // back, and the remembered flag is what turns the second sight of this notice into the honest
+  // "close the page and open it again" rather than the same button doing nothing a second time.
+  const buildBtn = document.getElementById("build-reload");
+  if (buildBtn) buildBtn.addEventListener("click", () => {
+    rememberBuildTried();
+    paintBuildNotice();
+    if (typeof location !== "undefined" && typeof location.reload === "function") location.reload();
+  });
   if (promoClear) promoClear.addEventListener("click", () => {
     promoApplied = ""; promoRefusal = null;
     if (promoInput) promoInput.value = "";

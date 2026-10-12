@@ -2249,3 +2249,39 @@ button.prod-next.off::after { content: ""; }
   .step-note.flash { animation: none; background-color: var(--red); color: #fbf4ea; }
   .step-note.flash strong { animation: none; color: #fbf4ea; }
 }
+
+/* ── ★★★ IS THIS PAGE OLDER THAN THE SITE? (12 Oct 2026) ─────────────────────
+   ⚠️ A QUIET BAR ABOVE EVERYTHING, and deliberately NOT one of the shop's warning styles.
+   The customer has done nothing wrong and the page still works — it is simply not the newest
+   one, so this must not read as an error, a step they skipped, or a refusal. It borrows the
+   shop's own paper and ink rather than the amber/red a warning wears.
+
+   ⚠️ IT SITS ABOVE THE BANNER so it is the first thing seen, and it is `position: relative`
+   — NOT fixed — so it pushes the page down instead of covering the top of it. A fixed bar
+   here would hide the banner a customer came to look at, which is the fault the app's own
+   strip had to solve the other way round (its bar is at the foot, above the tab bar).
+
+   ⚠️ AND IT WRAPS RATHER THAN CLIPPING. The second sentence is long in all three languages,
+   and a nowrap line at 320px would lose its end — the rule this file's `.journal-cols` and
+   the shop's own notice rows already keep. */
+.build-notice {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+  gap: 8px; padding: 10px 14px; margin: 0;
+  background: var(--surface); color: var(--ink);
+  border-bottom: 1px solid var(--line);
+  font-size: 14px; line-height: 1.35; text-align: center;
+}
+.build-notice[hidden] { display: none; }
+.build-say { margin: 0; }
+.build-say[hidden] { display: none; }
+/* ⚠️ THE PRESS WEARS THE SHOP'S OWN TERRA COLOUR, not a warning's red — it is an offer, not an
+   alarm. Same treatment as `.pin-link`: a sentence with a press inside it, so it reads as part
+   of the line rather than as a call to action shouting over the products. */
+.build-btn {
+  border: 0; background: none; cursor: pointer; padding: 2px 4px;
+  /* ⚠️ `--brown-dark`, NOT `--terra` — this stylesheet never declares `--terra` (the v369 fault),
+     and the shop's TEXT token is the darker one: white on the fill measures under the floor. */
+  color: var(--brown-dark); font: inherit; font-weight: 700;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.build-btn[hidden] { display: none; }

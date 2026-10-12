@@ -4,6 +4,34 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**12 Oct 2026 — the shop now says when it is out of date (same engine v476 — pushing this is the
+whole of it).**
+
+**Why.** You told me the shop was behaving differently from the bakery's. It wasn't — **your phone
+was running an old copy of the shop page**, and there was no way to tell. Your *app* has warned you
+about that since v255 (the amber "Update now" strip); **the shop had nothing.** So you spent an
+afternoon looking at a shop from weeks earlier.
+
+**Why the shop needs it more than the app.** It re-fetches its *numbers* every 30 seconds but **never
+its own code** — so a stale page shows **fresh figures on old behaviour**, every number on the screen
+agreeing with you. That is the worst way round for something to be wrong.
+
+**What it does now.** A quiet line at the very top of the shop — *"A newer version of this page is
+ready."* — with a **Reload** press, shown **only when the site really is serving a newer build**. It is
+deliberately not a warning: nothing is broken and the customer has done nothing wrong, so it reads
+calmly and it moves the page down rather than covering anything.
+
+**And it is honest about the second try.** Pressing Reload can bring the same old page back — a
+browser holding the old script will serve it again. When that happens the line changes to say what
+actually works — *"Close this page completely, then open it again"* — and the press goes, rather than
+leaving a button that does nothing.
+
+**It says nothing when it cannot tell.** No connection, a WiFi login page, a half-loaded file — all
+silent. **A shop that cried "out of date" on a bad connection would be worse than one that never
+spoke.**
+
+**Nothing to run, no SQL, no upload, no setting to change on either phone.**
+
 **12 Oct 2026 — THE BIG CATCH-UP, PART TWO: YOUR SHOP PAGE (same engine v476, service side only —
 nothing to run, nothing to upload; pushing this one is the whole of it).**
 
