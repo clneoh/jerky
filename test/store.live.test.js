@@ -139,6 +139,23 @@ const title = () => head().children.find((c) => c.className === "cal-title").chi
 // unpaged window, index 2 in the first row of the window one week on.
 const todayIndex = () => cells().findIndex((c) => String(c.className).includes("today"));
 
+
+// ★★★ THE STEP LOCK IS REAL (v454): step 2 does not open until HE has tapped a posting day.
+function tapDay() {
+  let hit = null;
+  const walk = (n) => {
+    if (!n || hit || !n.children) return;
+    for (const c of n.children) {
+      if (c && c.tagName === "BUTTON" && String(c.className || "").includes("cal-cell")
+        && String(c.className || "").includes("tappable")) { hit = c; return; }
+      walk(c);
+    }
+  };
+  for (const k of Object.keys(registry)) walk(registry[k]);
+  if (hit && hit._listeners && hit._listeners.click) hit._listeners.click[0]();
+  return !!hit;
+}
+
 test("live refresh updates sold-out days but never clears what the customer typed", async () => {
   await settle(); await settle(); await settle(); // boot + first live refresh
 
@@ -199,7 +216,16 @@ test("the calendar draws every posting day and names the chosen one", () => {
   assert.equal(cell(2).children[0].children[0].text, "2");
   assert.equal(cell(4).children[0].children[0].text, "4");
   assert.equal(cell(7).children[0].children[0].text, "7");
-  assert.equal(chosenText(), `Your posting day: ${fmtDay(dates[2])}`);
+  // ★ "Your BAKE day", not "Your delivery day" (v407). ⚠️ The old wording named the day after
+  // what happens to it for SOME orders, and the customer it misled was the one COLLECTING his own
+  // bread — he did not recognise the day he was choosing.
+  // ⚠️ THE LINE HAS TWO FORMS SINCE v434. A day chosen FOR him is said to be chosen for him —
+  // the page picks the first open day so an order is never blocked by forgetting to tap, and a page
+  // that acts on his behalf must say so. **Nothing is tapped before this assertion, so it is that
+  // form.** The tapped form (`Your posting day: …`) is asserted in store.test.js, where a real cell is
+  // pressed.
+  assert.equal(chosenText(),
+    `${fmtDay(dates[2])} is suggested for you. Tap it to confirm your posting day.`);
 });
 
 test("a refresh that depletes an ordered item fixes the cart, bar and tells the customer", async () => {
@@ -219,9 +245,13 @@ test("a refresh that depletes an ordered item fixes the cart, bar and tells the 
   const cards = registry["menu"].children;
   // The shim renders text as a child node (el() sets .text, not .textContent);
   // a click updates .textContent. Read whichever source is populated.
-  const labelVal = (labelEl) => (labelEl.textContent !== ""
-    ? String(labelEl.textContent)
-    : (labelEl.children.find((c) => c && c.nodeType === 3) || {}).text ?? "");
+  // ★★★ AND THE QTY IS A BOX NOW (v458). The real DOM has one rule here and the shim should not invent a
+  // gentler one: **a value on the node wins, and only then is it a label read as text.**
+  const labelVal = (labelEl) => (labelEl.value !== undefined && labelEl.value !== ""
+    ? String(labelEl.value)
+    : labelEl.textContent !== ""
+      ? String(labelEl.textContent)
+      : (labelEl.children.find((c) => c && c.nodeType === 3) || {}).text ?? "");
   // The photo, when a card has one, is the card's own first column — so the
   // stepper lives in the body, one level in. Found by name rather than by index.
   const bodyOf = (card) => {

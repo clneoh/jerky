@@ -20,6 +20,22 @@ const en = {
   promoPh: "e.g. FRESH10",
   promoApply: "Use it",
   promoRemove: "Remove the code",
+  // ★★ SAID AGAIN AT THE BUTTON, NOT ONLY AT THE CODE BOX (v408). Her words: __"If there is promo
+  // coupon attached, say it on top of Place Order, word like: Your promo coupon will be attached
+  // together to the order for validation, actual payable will be confirm by Whatsapp."__
+  //
+  // ⭐ SHE IS RIGHT THAT THE PLACE MATTERS, and the page already half-said it: the line under the
+  // code box reads __"We'll take it off when we confirm your order"__, which is true and **up the
+  // page**. At the bottom, the customer is looking at ONE figure — the total on the bar — and that
+  // figure is the GOODS, before the code (see renderBar). This is the moment they are about to
+  // commit, and the moment the promise needs repeating.
+  //
+  // ⚠️ %1 IS THE CODE ITSELF, named back to them, because "your code" is abstract on a page they
+  // may have been reading for ten minutes.
+  // ⚠️ IT PROMISES NO FIGURE. The discount she can honour is hers to decide at the confirmation
+  // (a code can be one-per-customer, or first-order only — see promoAcceptedUsed/First), so the
+  // line says the amount is CONFIRMED, never that it is already correct.
+  promoBar: "Code %1 goes with your order. We'll check it and confirm the final amount on WhatsApp.",
   // The standing line at the top of the shop. It NAMES the code, because typing
   // it is what puts it on the order — the shop never takes the money off itself.
   promoToday: "Today: %1 — use code %2",
@@ -55,6 +71,35 @@ const en = {
   orderBy: "Order by",
   beforeVal: "%1 the day before posting",
   madeToOrder: "Made to order · closes %1 the day before",
+
+  // ★★ THE ANSWER, AND THE THREE STEPS (v405). ⚠️ ENGLISH ONLY SO FAR, AND THAT IS DELIBERATE: these
+  // are behind the `?trial=1` flag while she judges the wording, and `pick()` falls back to English
+  // rather than blanking, so a 中文 or BM visitor meets a real sentence rather than a hole. **They must
+  // be translated before the flag comes off** — a Chinese customer reading English is a downgrade, and
+  // the two below are the first thing anyone reads on the page.
+  ansClosed: "Today's order window has closed",
+  ansInTime: "You're in time",
+  ansNext: "The next day you can order is %1.",
+  ansBy: "Order before %2 on %1, and it's yours.",
+  stepsLede: "You'll do the 4 steps, ordering 1, 2, 3, 4 — and then we take over.",
+  // ★★ WHAT A BAKE DAY IS (v434). Her words: __"I think customer 1st confusion is that we never
+  // explain what is a bake day to them. The very reason was we promote the idea of freshness, so if
+  // user consume their bake from the bake day, that is the freshest they can get. They have to be
+  // told that the day being bake day, the earliest they should expect collection will be late
+  // afternoon or afternoon."__
+  //
+  // ⚠️⚠️ **IT IS USED FIVE TIMES ON THIS PAGE AND WAS EXPLAINED NONE.** Worse, the only hint about
+  // WHEN the bread is ready sat inside the Self collect option — **so a courier customer never
+  // learned it at all.** ⭐ Same fault v405 named: the page *stated the rules and never the answer.*
+  //
+  // ⚠️ IT SITS UNDER "1 Pick a bake day" — the customer is choosing a day, and that is the moment
+  // he wonders what one is.
+  //
+  // ⭐ "the afternoon", NOT "late afternoon": the late afternoon is the COLLECTION WINDOW at a
+  // Point, and the earliest the bread can be ready is earlier than that. Saying the window here
+  // would promise less than the bakery can keep.
+  bakeDayWhat: "A posting day is the day we make and post your treats. They are made that morning, so they are at their freshest — and the earliest they can be ready for you is the afternoon, not the morning.",
+
   sPickDay: "Pick a posting day",
   sWhat: "What would you like?",
   sYourDetails: "Your details",
@@ -93,32 +138,82 @@ const en = {
   privacyContact: "Ask us any time to see, correct or delete what we hold — WhatsApp",
   privacyDate: "Under Malaysia's Personal Data Protection Act 2010 (Act 709). Last reviewed: 7 October 2026.",
   howGet: "How will you get your order?",
-  courier: "Post (nationwide)",
+  // ★★ THE PROMPT UNDER THE QUESTION, AND THE STOP IF HE NEVER ANSWERS (v416). Her words:
+  // __"you need a 'click to choose' after the title, and self collect should not be default"__.
+  fulfilPick: "Tap to choose one.",
+  fulfilAskTitle: "Please say how you will get your order.",
+  fulfilAskBody: "Tap Collect (local) or Post (nationwide) above — that is how we know whether to have it ready for you or post it to your door.",
+  // ★★ THE QUESTION BEFORE A CUSTOMER CHANGES HOW HE GETS HIS ORDER (v436). Her words: __"a
+  // confirmation pop up, asking whether customer intend to change to delivery? the point selection
+  // will be cleared, vise versa"__ — ⭐ the same rule she gave me for bake days at v404: **taking
+  // something away always asks first.**
+  //
+  // ⚠️⚠️ THE BODY NAMES WHAT IS LOST, and that is the whole point rather than good manners: a
+  // customer who switched to delivery was left looking at a collection point still selected, with
+  // nothing saying whether it still applied to his order — the fault v416 named, of a page that has
+  // answered its own question. ⭐ A change that names what it takes away is the same shape as a
+  // refund that names the money it leaves.
+  //
+  // ⭐ AND IT IS ASKED ONLY WHEN SOMETHING WOULD ACTUALLY BE CLEARED — a question guarding nothing
+  // is noise on a page that already carries four notices a customer must read.
+  //
+  // ⚠️ `%1` is the point he picked, and it is only ever filled for the delivery question. The
+  // collecting question names no place, because there is nothing to name: he typed an address, and
+  // the menu of points is the thing he is going back to.
+  askToDeliveryTitle: "Change to post?",
+  askToDeliveryBody: "You chose to collect from %1. Changing to post clears that, and we post your order to your address instead.",
+  askToDeliveryYes: "Yes, change",
+  askToDeliveryNo: "Keep Collect (local)",
+  askToCollectTitle: "Change to Collect (local)?",
+  askToCollectBody: "You gave us a postal address. Changing to Collect (local) clears it, and you collect from one of our collection points instead.",
+  askToCollectYes: "Yes, change",
+  askToCollectNo: "Keep post",
   selfCollect: "Collect (local)",
-  // v299 — where a Collect order is collected FROM. Written once for the kitchen and once
-  // for a Point; the Point's own NAME is her data and is never translated.
-  collectFrom: "Collect from",
+  // ★★ EACH WAY SAYS WHAT IT IS (v407). Her customer chose a courier when he wanted to
+  // collect: the page named both ways and explained neither. ⚠️ BOTH LINES ARE TRUE BEFORE
+  // ANYTHING IS TAPPED, so he can compare without tapping.
+  // ⚠️ The courier line promises NO amount, because the shop has none — she quotes carriage
+  // by hand. What it can say honestly is that the total on this page is the bread's, which is
+  // the thing a customer would otherwise assume wrongly.
+  // ⚠️ AND IT SAYS WHEN, IN HER OWN TERMS (v407). Her words: __"order can be collected late on the
+  // bake day, a message will be send to you when your order is ready if you chose self collect"__.
+  // ⭐ A customer collecting had two questions, not one: what does it cost (nothing), and WHEN do
+  // I come. ⚠️ The answer is deliberately the MESSAGE rather than a clock — a pickup time is not a
+  // promise (v340), and the bread is only ready when it is ready.
+  // ⚠️ AND IT STILL NAMES THE PLACE, which is not decoration: **a customer collecting may have NO
+  // Point chosen at all** — the collect-from list is empty and hidden while she has none published,
+  // and `#point-field` is not shown. So this line is the only place the shop can say where to come,
+  // and it says it the only way that is always true: she messages it.
+  // ⚠️ HER WORDS, TIDIED (v417). __"You come to us - no delivery charges. We message you the exact
+  // collection point, and time window for collection., it is normally late afternoon on the bake day."__
+  // ⭐ "NORMALLY" IS DOING REAL WORK IN THAT LAST SENTENCE and must stay: **a pickup time is not a
+  // promise** (v340), and the time window the page names is hers to set per Point, so the app
+  // describes the usual shape of a bake day rather than committing to a clock.
+  selfCollectSub: "You come to us — nothing to pay for postage. We message you the exact collection point and the time window for collection. It is normally late afternoon on the posting day.",
+  courier: "Post (nationwide)",
+  courierSub: "We post it to you, nationwide. Your postage is told to you on WhatsApp — the total shown is for the treats only, and we add the postage when we confirm.",
+  // v299 — where a Self collect order is collected FROM. Written once for the kitchen and
+  // once for a Point; the Point's own NAME is her data and is never translated.
   ourKitchen: "Our kitchen",
   kitchenSub: "Where your treats are made — we'll message you the exact spot and time",
   pointSub: "Collection Point — we'll message you the exact spot and time once your order is confirmed",
   pointMin: "Needs a basket of RM%1 or more — yours is RM%2 so far",
+  // ★★ THE INSTRUCTION OVER THE PLACES (v415). Her words: __"the self collect have to have message
+  // follow, click to choose point, without click it should not highlight"__. ⚠️ Nothing is
+  // highlighted until the customer TAPS a place, so without this line the card would open on a
+  // list of names with no sign that any of them is a thing to press.
+  pointPick: "Tap to choose which collection point you want to collect your orders from.",
   addressLabel: "Postal address",
   addressPh: "Full address — street, area, town & postcode",
   addressSub: "We post nationwide — your treats are made on the day you pick and posted to this address.",
   // The door pin (v197). Optional in every sense: with no pin the order goes
-  // exactly as it always has, and you pin the door yourself.
+  // exactly as it always has, and the baker pins the door herself.
+  pinHintShort: "Door hard to find?",
   pinHint: "Skip this and the driver goes to the address you typed — that is fine for most houses. Pin it only if the address alone will not find your door: a condo block, a guard house. Either way, put the block and unit number in the address above.",
-  pinHere: "Use my location",
   pinOnMap: "Pin on the map",
   pinSet: "Pin set — the courier will drive to the spot you marked.",
-  pinVague: "That spot is only accurate to about %1 m. Move the pin on the map so the courier goes to the right place.",
-  pinNoGeo: "This browser can't share a location. Pin your door on the map instead.",
-  pinDenied: "Location sharing is off for this site. Pin your door on the map instead.",
-  pinUnavailable: "Your location couldn't be found just now. Pin your door on the map instead.",
-  pinTimeout: "Finding your location took too long. Pin your door on the map instead.",
   pinLoading: "Loading the map…",
-  pinTapFirst: "Tap the map where the courier should stop, or drag the pin.",
-  pinLocating: "Finding you…",
+  pinTapFirst: "Tap the map once to drop the pin — then drag it to the exact door.",
   pinKeep: "Keep this spot",
   pinCancel: "Cancel",
   pinMapFailed: "The map didn't load. Type your address above and we'll find you.",
@@ -139,8 +234,14 @@ const en = {
   addrPick: "Tap the one that matches your address.",
   addrNone: "We couldn't find that address. Tap the map and put the pin on your door instead.",
   addrFailed: "The address lookup isn't available right now. Tap the map and put the pin on your door instead.",
-  noteLabel: "Delivery note (optional)",
-  notePh: "Gate code, landmark, delivery time…",
+  // ★ IT IS A NOTE FOR EITHER WAY (v408). Her words: __"change the Delivery Notes(optional) to
+  // Notes for Collection/Delivery"__. ⚠️ Same fault as the bake day and the two bare words: the
+  // label named ONE of the two things the field is for, so a customer collecting his own bread
+  // read "Delivery note" and skipped a box that asks him for the thing that actually gets him
+  // his bread — the gate code, the landmark. ⚠️ The PLACEHOLDER moved with it for the same
+  // reason: "delivery time" is wrong for the person who is coming to fetch it.
+  noteLabel: "Notes for Collection/Delivery (optional)",
+  notePh: "e.g. collect 6pm / prefer deliver 6 to 8pm",
   // The note a customer can add to ONE item (v236). The link is what they tap
   // to open the box; the placeholder is the example that shows them what kind
   // of thing belongs in it.
@@ -158,17 +259,18 @@ const en = {
   sending: "Sending…",
   soldOut: "Sold out",
   onlyLeft: "Only %1 left",
+  qtyAria: "How many",
   noDates: "No upcoming posting days right now — check back soon.",
   noOpenDates: "All upcoming posting days are full right now — check back soon.",
   calChosen: "Your posting day: %1",
-  // The two answers to tapping a day this page cannot take an order for. %1 is
-  // that day in words, built by fmtDay in this language — so neither sentence may
-  // name a weekday of its own. "A green day" is a day she posts and can still
-  // take: its number carries the green ring.
+  // ★★ SAID OUT LOUD WHEN THE DAY WAS CHOSEN FOR HIM (v434). Her words: __"say, moonday was
+  // selectted for you, just click on the prefered date if you have one"__ — ⚠️ **and it is the
+  // better answer than simply not lighting the step:** the page picked his day for him so an order
+  // is never blocked by forgetting to tap, and a page that does something on his behalf must SAY
+  // so. It is the same rule this shop has followed since v405 — it ANSWERS the question rather
+  // than stating the rules.
+  calChosenFor: "%1 is suggested for you. Tap it to confirm your posting day.",
   calMiss: "%1 is not a posting day — please pick a green day.",
-  // The other one: a day she DOES post, tapped after its window shut. Saying "not
-  // a posting day" here would be untrue and would contradict the posting-days
-  // line on the card above the grid, so it says what really happened instead.
   calClose: "Orders for %1 have closed — please pick a green day.",
   calPrev: "Earlier weeks",
   calNext: "Later weeks",
@@ -197,9 +299,9 @@ const en = {
   nextAvailableLeft: "Next available: %1 · %2 left",
   sentenceEnd: ".",
   // Shown where the menu would be when every product is marked off today's
-  // posting day — an empty space reads like a broken page.
+  // delivery date — an empty space reads like a broken page.
   noMenuToday: "Nothing is on the menu for this day. Please pick another posting day.",
-  // The last heading on the menu, over the products you have not filed
+  // The last heading on the menu, over the products the baker has not filed
   // under any category. Nothing is ever hidden for want of filing, so the
   // heading is plainly a place rather than a warning.
   moreItems: "More items",
@@ -219,6 +321,20 @@ const en = {
 
   confirmAddWaTitle: "Please add your WhatsApp number.",
   confirmAddWaBody: "We use it to confirm your order and send your payment QR.",
+  // ★★ THE FIRST THING STILL OUTSTANDING, IN HIS OWN ORDER (v452). Her words: __"if the previous step not
+  // completed user should be inform accordingly"__ ⚠️ **A dead button says nothing at all on a phone** — it
+  // does not even acknowledge the tap — so the button stays live and ANSWERS instead.
+  needItemTitle: "Nothing in your order yet.",
+  needItemBody: "Pick something from the menu above first — then you can place your order.",
+  // ★★ STEP 1 FIRST (v453). Her words: __"complet step1 before step2 is allow, and so forth"__ — and
+  // __"dont allow and a message inform about why"__.
+  needDayTitle: "Choose your posting day first.",
+  // ⚠️ v459: it said "then the menu opens" — AND THE MENU IS ALREADY OPEN. The cards are on screen; it
+  // is ORDERING that is held back. A message that describes the screen wrongly is worse than a vague one,
+  // because the customer looks for a menu that is already in front of him.
+  needDayBody: "Step 1, at the top. Pick the day you want your treats made — then you can add them.",
+  confirmAddNameTitle: "Please add your name.",
+  confirmAddNameBody: "It is how we know who the order is for when we confirm it with you.",
   confirmAddrTitle: "Please add your postal address.",
   confirmAddrBody: "We post nationwide — your treats can't be sent without your full address (street, area, town & postcode).",
   confirmClosedTitle: "That day's orders are closed.",
@@ -327,6 +443,13 @@ const zh = {
   promoPh: "例如 FRESH10",
   promoApply: "使用",
   promoRemove: "移除优惠码",
+  // ⚠️⚠️ IT READ "优惠码 %1 会一起送到" UNTIL v421 — *"Code %1 will be delivered together"* — and
+  // **A CODE IS NOT DELIVERED ANYWHERE.** ⭐ Found by reading every string I had written in 中文 and
+  // BM rather than trusting them: the English says the code GOES WITH the order, and 「送到」 says it
+  // is SHIPPED, which is a different fact and a confusing one on an order page. 「附在订单上」 is
+  // *attached to the order*, which is what the English means.
+  // ⚠️ The `%1` and the WhatsApp sentence are untouched — only the verb was wrong.
+  promoBar: "优惠码 %1 会附在你的订单上。我们会核对，并在 WhatsApp 上确认最终金额。",
   promoToday: "今日优惠：%1 — 输入优惠码 %2",
   promoAccepted: "%1 — 已套用优惠码 %2，我们确认订单时会为你扣减。",
   promoAcceptedUsed: "%1 — 已套用优惠码 %2。此码每人限用一次，我们确认订单时会为你核实。",
@@ -347,6 +470,15 @@ const zh = {
   promoUntil: "%1，%2 截止",
   orderBy: "下单截止",
   beforeVal: "发货日前一天%1前",
+  // ⚠️⚠️ MY OWN TRANSLATION, NOT A NATIVE ONE — the first thing anyone reads on the page, so it wants
+  // a Chinese-speaking pair of eyes before the trial flag comes off. (Her internal circle testing the
+  // trial link is exactly who should check it.)
+  ansClosed: "今天的发货已经截单",
+  ansInTime: "还来得及",
+  ansNext: "下一次可以下单的日子是 %1。",
+  ansBy: "在 %1 %2 之前下单，就是你的了。",
+  stepsLede: "你会做 4 个步骤，按 1、2、3、4 的顺序 — 剩下的交给我们。",
+  bakeDayWhat: "发货日就是我们把你的零食做好并寄出的那一天。当天早上做好，当天最新鲜 — 最快也要下午才能准备好，不是早上。",
   madeToOrder: "按订单制作 · 发货日前一天%1截单",
   sPickDay: "选择发货日",
   sWhat: "您想要什么？",
@@ -366,29 +498,35 @@ const zh = {
   privacyContact: "随时可以要求查阅、更正或删除我们持有的资料 —— WhatsApp",
   privacyDate: "依据《2010 年个人资料保护法令》（Act 709）。最后更新：2026 年 10 月 7 日。",
   howGet: "您希望怎样收货？",
+  fulfilPick: "请点选一个。",
+  fulfilAskTitle: "请选择取货方式。",
+  fulfilAskBody: "请在上面点选「自取（本地）」或「邮寄（全马）」— 我们才知道要为你准备好，还是邮寄到你家。",
+  askToDeliveryTitle: "改为邮寄？",
+  askToDeliveryBody: "你选了在 %1 自取。改为邮寄会取消这个选择，我们改为寄到你的地址。",
+  askToDeliveryYes: "好的，改吧",
+  askToDeliveryNo: "保留自取",
+  askToCollectTitle: "改为自取？",
+  askToCollectBody: "你已填写邮寄地址。改为自取会取消它，你改为到我们的自取点取货。",
+  askToCollectYes: "好的，改吧",
+  askToCollectNo: "保留邮寄",
+  selfCollectSub: "你自己来拿 — 不收邮费。我们会通知你确切的取货点和取货时段，通常是发货日的傍晚。",
   courier: "邮寄（全马）",
-  collectFrom: "去哪里取",
+  courierSub: "我们邮寄给你，全马送达。邮费会在 WhatsApp 上告诉你 — 页面上显示的总额只是零食的钱，确认时才加上邮费。",
   ourKitchen: "我们的厨房",
   kitchenSub: "制作零食的地方 — 我们会通知你确切地点和时间",
   pointSub: "自取点 — 订单确认后，我们会通知你确切地点和时间",
   pointMin: "需消费 RM%1 或以上 — 你目前 RM%2",
-  selfCollect: "自取（本地）",
+  pointPick: "请点选你要取货的自取点。",
   addressLabel: "邮寄地址",
   addressPh: "完整地址 — 街道、地区、市镇与邮编",
+  pinHintShort: "找不到门？",
+  selfCollect: "自取（本地）",
   addressSub: "我们提供全马邮寄——您的零食会在所选发货日制作，并寄往这个地址。",
-
   pinHint: "不标记也可以 — 司机会去上面填写的地址，大多数房子这样就可以了。只有当地址本身找不到你家门时才需要标记：公寓楼、保安亭。无论是否标记，都请把座号和门牌号码写在上面。",
-  pinHere: "使用我的位置",
   pinOnMap: "在地图上标记",
   pinSet: "已标记位置 — 司机会前往你标记的地点。",
-  pinVague: "这个位置只准确到约 %1 米。请在地图上移动标记，让司机去对地方。",
-  pinNoGeo: "这个浏览器无法获取位置。请在地图上标记你家门口。",
-  pinDenied: "这个网站未获准获取位置。请在地图上标记你家门口。",
-  pinUnavailable: "暂时无法找到你的位置。请在地图上标记你家门口。",
-  pinTimeout: "定位花的时间太长。请在地图上标记你家门口。",
   pinLoading: "地图载入中…",
-  pinTapFirst: "在地图上点一下司机应该停下的地方，或拖动标记。",
-  pinLocating: "正在定位…",
+  pinTapFirst: "在地图上点一下放置标记 — 然后把它拖到准确的位置。",
   pinKeep: "确定这个位置",
   pinCancel: "取消",
   pinMapFailed: "地图无法载入。请在上面填写地址，我们会找到你。",
@@ -398,8 +536,8 @@ const zh = {
   addrPick: "点选最接近你地址的一项。",
   addrNone: "找不到这个地址。请直接在地图上把标记放到你家门口。",
   addrFailed: "地址查询暂时无法使用。请直接在地图上把标记放到你家门口。",
-  noteLabel: "送货备注（可选）",
-  notePh: "门禁密码、地标、送货时间…",
+  noteLabel: "取货／送货备注（可选）",
+  notePh: "例如：6pm 来取 / 希望 6 到 8pm 送到",
   addNoteLink: "＋ 添加备注",
   lineNotePh: "例如：不要坚果、写上「生日快乐」",
   sTrack: "查询订单",
@@ -414,12 +552,13 @@ const zh = {
   sending: "正在发送…",
   soldOut: "已售完",
   onlyLeft: "仅剩 %1 份",
+  qtyAria: "数量",
   noDates: "目前没有可预订的发货日 — 请稍后再来。",
   noOpenDates: "近期发货日均已满 — 请稍后再来。",
   calChosen: "你的发货日：%1",
+  calChosenFor: "我们建议 %1。点一下它来确认你的发货日。",
   calMiss: "%1不是发货日 — 请选择绿色圈起的日期。",
   calClose: "%1的订单已截止 — 请选择绿色圈起的日期。",
-  // The arrows page the grid by whole weeks now, not months (v231).
   calPrev: "前一周",
   calNext: "下一周",
 
@@ -447,6 +586,12 @@ const zh = {
 
   confirmAddWaTitle: "请填写您的 WhatsApp 号码。",
   confirmAddWaBody: "我们会用它确认订单并发送付款二维码。",
+  needItemTitle: "订单还是空的。",
+  needItemBody: "请先从上面的菜单选一样，然后就可以下单了。",
+  needDayTitle: "请先选择发货日。",
+  needDayBody: "在最上面的第 1 步。选好你要零食在哪一天做好 — 然后就可以加入订单。",
+  confirmAddNameTitle: "请填写你的名字。",
+  confirmAddNameBody: "这样我们在跟你确认订单时，才知道这份订单是谁的。",
   confirmAddrTitle: "请填写您的邮寄地址。",
   confirmAddrBody: "我们提供全马邮寄——没有完整的邮寄地址（街道、地区、市镇及邮编）就无法寄出您的零食。",
   confirmClosedTitle: "该日的订单已截止。",
@@ -498,7 +643,7 @@ const zh = {
   carrierLine: "快递公司：%1",
   nextBlockedBasket: "你的购物篮是 %1 的。想订另一天，请在上面的日历选择。",
 
-  devBy: "网站制作：",
+  devBy: "网站制作",
   devWa: "用 WhatsApp 找开发者",
 
   // The same one-line rule as the English: no more than about 23 characters here.
@@ -511,7 +656,7 @@ const zh = {
 };
 
 const ms = {
-  titleWord: "Tempahan",
+  titleWord: "Order",
   homeLink: "🏠 Laman utama kami",
   referral: "🎁 Anda dirujuk — anda ada diskaun sambutan untuk tempahan pertama",
   deliveryDays: "Hari pos",
@@ -520,15 +665,16 @@ const ms = {
   promoPh: "cth. FRESH10",
   promoApply: "Guna",
   promoRemove: "Buang kod",
+  promoBar: "Kod %1 disertakan dengan order anda. Kami akan semak dan sahkan jumlah akhir di WhatsApp.",
   promoToday: "Hari ini: %1 — guna kod %2",
-  promoAccepted: "%1 — kod %2 telah digunakan. Kami akan tolakkan apabila kami sahkan tempahan anda.",
-  promoAcceptedUsed: "%1 — kod %2 telah digunakan. Satu sahaja setiap pelanggan, jadi kami akan sahkan apabila kami ambil tempahan anda.",
-  promoAcceptedFirst: "%1 — kod %2 telah digunakan. Kod ini untuk tempahan pertama, jadi kami akan sahkan apabila kami ambil tempahan anda.",
+  promoAccepted: "%1 — kod %2 telah disertakan. Kami akan tolakkan apabila kami sahkan order anda.",
+  promoAcceptedUsed: "%1 — kod %2 telah disertakan. Satu sahaja setiap pelanggan, jadi kami akan sahkan apabila kami ambil order anda.",
+  promoAcceptedFirst: "%1 — kod %2 telah disertakan. Kod ini untuk order pertama, jadi kami akan sahkan apabila kami ambil order anda.",
   promoUnknown: "Kami tidak kenal kod itu — semak hurufnya dan cuba lagi.",
-  promoPaused: "Kod itu sedang ditahan — ia tidak tersedia buat masa ini.",
+  promoPaused: "Kod itu dihentikan sementara — ia tidak tersedia buat masa ini.",
   promoEnded: "Kod itu tamat pada %1 — ia tidak lagi tersedia.",
   promoNotYet: "Kod itu belum bermula — ia bermula pada %1.",
-  promoClaimed: "Kod itu telah habis diambil — semuanya telah digunakan.",
+  promoClaimed: "Kod itu telah habis diambil — semuanya telah disertakan.",
   promoClash: "Kod itu tidak boleh digunakan bersama diskaun sambutan yang anda sudah ada — hubungi kami dan kami akan uruskannya.",
   promoSmall: "Belum cukup lagi — tambah %1 lagi untuk menggunakannya.",
   promoNo: "Kod itu tidak boleh digunakan buat masa ini — hubungi kami dan kami akan uruskannya.",
@@ -540,6 +686,13 @@ const ms = {
   promoUntil: "%1, sehingga %2",
   orderBy: "Tempahan ditutup",
   beforeVal: "%1 sehari sebelum hari pos",
+  // ⚠️ Same note as the Chinese above: mine, not a native speaker's, and worth checking before launch.
+  ansClosed: "Tempahan hari ini sudah ditutup",
+  ansInTime: "Anda masih sempat",
+  ansNext: "Hari seterusnya anda boleh menempah ialah %1.",
+  ansBy: "Pesan sebelum %2 pada %1, dan ia milik anda.",
+  stepsLede: "Anda akan buat 4 langkah, mengikut susunan 1, 2, 3, 4 — selebihnya kami uruskan.",
+  bakeDayWhat: "Hari pos ialah hari kami membuat dan mempos snek anda. Ia dibuat pada pagi itu, jadi ia paling segar — dan paling awal ia boleh siap untuk anda ialah pada sebelah petang, bukan pagi.",
   madeToOrder: "Dibuat mengikut tempahan · tutup %1 sehari sebelum",
   sPickDay: "Pilih hari pos",
   sWhat: "Apa yang anda mahukan?",
@@ -548,7 +701,7 @@ const ms = {
   namePh: "cth. Aisyah",
   whatsappNo: "Nombor WhatsApp",
   whatsPh: "cth. 012-345 6789",
-  waSub: "Kami guna nombor ini untuk sahkan tempahan dan hantar QR pembayaran — kami tidak akan spam anda.",
+  waSub: "Kami guna nombor ini untuk sahkan order dan hantar QR pembayaran — kami tidak akan menghantar mesej sampah kepada anda.",
 
   privacyLine: "Dengan menempah, anda bersetuju dengan",
   privacyLink: "notis privasi.",
@@ -559,29 +712,35 @@ const ms = {
   privacyContact: "Beritahu kami bila-bila masa untuk melihat, membetulkan atau memadam apa yang kami simpan — WhatsApp",
   privacyDate: "Di bawah Akta Perlindungan Data Peribadi 2010 (Akta 709). Kemas kini terakhir: 7 Oktober 2026.",
   howGet: "Macam mana anda mahu terima tempahan?",
+  fulfilPick: "Tekan untuk pilih satu.",
+  fulfilAskTitle: "Sila beritahu bagaimana anda mahu ambil order.",
+  fulfilAskBody: "Tekan Ambil sendiri (setempat) atau Pos (seluruh negara) di atas — itu caranya kami tahu sama ada perlu disediakan untuk anda atau dipos ke pintu anda.",
+  askToDeliveryTitle: "Tukar kepada pos?",
+  askToDeliveryBody: "Anda memilih untuk ambil di %1. Menukar kepada pos membatalkan pilihan itu, dan kami pos ke alamat anda.",
+  askToDeliveryYes: "Ya, tukar",
+  askToDeliveryNo: "Kekal ambil sendiri",
+  askToCollectTitle: "Tukar kepada ambil sendiri?",
+  askToCollectBody: "Anda telah beri alamat pos. Menukar kepada ambil sendiri membatalkannya, dan anda ambil di salah satu titik ambilan kami.",
+  askToCollectYes: "Ya, tukar",
+  askToCollectNo: "Kekal pos",
+  selfCollectSub: "Anda datang ambil sendiri — tiada caj pos. Kami maklumkan titik ambilan dan waktu ambilan yang tepat; biasanya lewat petang pada hari pos.",
   courier: "Pos (seluruh negara)",
-  collectFrom: "Ambil dari mana",
+  courierSub: "Kami pos kepada anda, ke seluruh negara. Caj pos dimaklumkan di WhatsApp — jumlah yang dipaparkan ialah untuk snek sahaja, dan kami tambah caj pos semasa mengesahkan.",
   ourKitchen: "Dapur kami",
   kitchenSub: "Tempat snek anda dibuat — kami akan maklumkan lokasi dan masa yang tepat",
   pointSub: "Titik ambilan — kami akan maklumkan lokasi dan masa yang tepat selepas tempahan disahkan",
   pointMin: "Perlu bakul RM%1 atau lebih — anda kini RM%2",
-  selfCollect: "Ambil sendiri (setempat)",
+  pointPick: "Tekan untuk pilih titik ambilan yang anda mahu ambil order anda.",
   addressLabel: "Alamat pos",
   addressPh: "Alamat lengkap — jalan, kawasan, bandar & poskod",
+  pinHintShort: "Pintu susah dicari?",
+  selfCollect: "Ambil sendiri (setempat)",
   addressSub: "Kami hantar ke seluruh negara — snek anda dibuat pada hari yang anda pilih dan dihantar ke alamat ini.",
-
   pinHint: "Tak tandakan pun boleh — kurier akan pergi ke alamat yang anda taip, dan itu memadai untuk kebanyakan rumah. Tanda hanya jika alamat itu sahaja tidak cukup untuk mencari pintu anda: blok kondominium, pondok pengawal. Sama ada anda tandakan atau tidak, tulis nombor blok dan unit di ruang alamat di atas.",
-  pinHere: "Guna lokasi saya",
   pinOnMap: "Tanda pada peta",
   pinSet: "Lokasi ditanda — kurier akan pergi ke tempat yang anda tandakan.",
-  pinVague: "Lokasi itu hanya tepat dalam lebih kurang %1 m. Gerakkan tanda pada peta supaya kurier pergi ke tempat yang betul.",
-  pinNoGeo: "Pelayar ini tidak boleh berkongsi lokasi. Sila tandakan pintu anda pada peta.",
-  pinDenied: "Perkongsian lokasi dimatikan untuk laman ini. Sila tandakan pintu anda pada peta.",
-  pinUnavailable: "Lokasi anda tidak dapat dikesan buat masa ini. Sila tandakan pintu anda pada peta.",
-  pinTimeout: "Mengambil masa terlalu lama untuk mengesan lokasi. Sila tandakan pintu anda pada peta.",
   pinLoading: "Peta sedang dimuatkan…",
-  pinTapFirst: "Ketik peta di tempat kurier patut berhenti, atau gerakkan tanda itu.",
-  pinLocating: "Sedang mengesan anda…",
+  pinTapFirst: "Ketik peta sekali untuk letak pin — kemudian seret ke pintu yang tepat.",
   pinKeep: "Simpan tempat ini",
   pinCancel: "Batal",
   pinMapFailed: "Peta tidak dapat dimuatkan. Taip alamat anda di atas, kami akan cari.",
@@ -591,28 +750,29 @@ const ms = {
   addrPick: "Ketik yang paling hampir dengan alamat anda.",
   addrNone: "Alamat itu tidak ditemui. Ketik peta dan letakkan tanda pada pintu anda.",
   addrFailed: "Pencarian alamat tidak tersedia buat masa ini. Ketik peta dan letakkan tanda pada pintu anda.",
-  noteLabel: "Nota penghantaran (pilihan)",
-  notePh: "Kod pintu, mercu tanda, masa penghantaran…",
+  noteLabel: "Nota untuk ambilan/penghantaran (pilihan)",
+  notePh: "cth. ambil 6pm / mahu dihantar 6 hingga 8pm",
   addNoteLink: "＋ Tambah nota",
   lineNotePh: "cth. tanpa kacang, tulis “Selamat Hari Jadi”",
-  sTrack: "Semak tempahan anda",
-  trackHint: "Sudah menempah? Masukkan nombor tempahan dari mesej pengesahan (bermula dengan <strong>#</strong>, cth. #A3F9C2).",
+  sTrack: "Semak order anda",
+  trackHint: "Sudah menempah? Masukkan nombor order dari mesej pengesahan (bermula dengan <strong>#</strong>, cth. #A3F9C2).",
   trackPh: "cth. A3F9C2",
   trackBtn: "Semak",
   sPolicies: "Polisi",
 
   items: "%1 item",
   oneItem: "1 item",
-  placeOrder: "Hantar tempahan",
+  placeOrder: "Hantar order",
   sending: "Sedang dihantar…",
   soldOut: "Habis",
   onlyLeft: "Tinggal %1 sahaja",
+  qtyAria: "Berapa banyak",
   noDates: "Tiada tarikh pos buat masa ini — sila datang lagi nanti.",
   noOpenDates: "Semua hari pos akan datang penuh buat masa ini — sila datang lagi nanti.",
   calChosen: "Hari pos anda: %1",
+  calChosenFor: "%1 dicadangkan untuk anda. Ketik untuk mengesahkan hari pos anda.",
   calMiss: "%1 bukan hari pos — sila pilih tarikh bertanda hijau.",
   calClose: "Tempahan untuk %1 telah ditutup — sila pilih tarikh bertanda hijau.",
-  // The arrows page the grid by whole weeks now, not months (v231).
   calPrev: "Minggu sebelumnya",
   calNext: "Minggu seterusnya",
 
@@ -621,15 +781,15 @@ const ms = {
   closedClose: "Tempahan ditutup %1 hari sebelum hari pos",
   closedCloseAdvice: " — sila pilih tarikh yang lebih lewat",
   closedWeekday: "Hanya tersedia pada %1",
-  closedUnmarked: "Tidak dijual pada hari ini",
+  closedUnmarked: "Tidak dijual pada hari itu",
   unavailable: "Tidak tersedia",
   nextAvailable: "Seterusnya tersedia: %1",
   nextAvailableLeft: "Seterusnya tersedia: %1 · tinggal %2",
   sentenceEnd: ".",
   noMenuToday: "Tiada apa-apa pada menu untuk hari ini. Sila pilih hari pos yang lain.",
   moreItems: "Lebih banyak item",
-  fixSoldOut: "%1 baru habis — kami keluarkan dari tempahan anda.",
-  fixPoolClamp: "%1: hanya %2 boleh dimuatkan bersama baki tempahan anda — kami sudah tukar %3 anda kepada %2.",
+  fixSoldOut: "%1 baru habis — kami keluarkan dari order anda.",
+  fixPoolClamp: "%1: hanya %2 boleh dimuatkan bersama baki order anda — kami sudah tukar %3 anda kepada %2.",
   fixClamp: "%1: tinggal %2 sahaja sekarang — kami sudah tukar %3 anda kepada %2.",
   fixClosed: "%1: %2 — kami sudah keluarkan.",
 
@@ -640,8 +800,12 @@ const ms = {
 
   confirmAddWaTitle: "Sila masukkan nombor WhatsApp anda.",
   confirmAddWaBody: "Kami guna untuk sahkan tempahan dan hantar QR pembayaran anda.",
-  confirmAddrTitle: "Sila masukkan alamat pos anda.",
-  confirmAddrBody: "Kami hantar ke seluruh negara — snek anda tidak dapat dihantar tanpa alamat lengkap (jalan, kawasan, bandar & poskod).",
+  needItemTitle: "Order masih kosong.",
+  needItemBody: "Pilih sesuatu dari menu di atas dahulu — kemudian anda boleh buat order.",
+  needDayTitle: "Pilih hari pos anda dahulu.",
+  needDayBody: "Langkah 1, di atas. Pilih hari anda mahu snek anda dibuat — kemudian anda boleh menambahnya.",
+  confirmAddNameTitle: "Sila masukkan nama anda.",
+  confirmAddNameBody: "Kami guna untuk tahu order ini untuk siapa semasa mengesahkannya.",
   confirmClosedTitle: "Tempahan untuk hari itu sudah ditutup.",
   confirmClosedBody: "Tempahan untuk hari ini ditutup pada %1 sehari sebelum — sila pilih hari pos yang lain.",
   confirmChangedTitle: "Tempahan anda baru sahaja berubah.",
@@ -651,6 +815,8 @@ const ms = {
   orderRecvTitle: "🎉 Tempahan diterima!",
   orderRecvBody: "%1 sudah terima tempahan anda.",
   orderRecvThanksBody: "Terima kasih %1! %2 sudah terima tempahan anda.",
+  confirmAddrTitle: "Sila masukkan alamat pos anda.",
+  confirmAddrBody: "Kami hantar ke seluruh negara — snek anda tidak dapat dihantar tanpa alamat lengkap (jalan, kawasan, bandar & poskod).",
   orderRecvLine: "📅 %1 · %2 · RM%3",
   orderRecvSub: "Tempahan anda sudah diterima — kami akan WhatsApp anda sebaik sahaja disahkan.",
   failTitle: "Kami tidak dapat menghantar tempahan anda buat masa ini.",
@@ -659,11 +825,11 @@ const ms = {
   failLink: "📲 Hantar tempahan anda melalui WhatsApp",
   failRetry: "Sila cuba sebentar lagi.",
 
-  trackEnter: "Masukkan nombor tempahan anda untuk disemak.",
+  trackEnter: "Masukkan nombor order anda untuk disemak.",
   trackUnavailable: "Semakan tidak tersedia buat masa ini.",
-  trackLooking: "Sedang cari tempahan anda…",
-  trackNotFound: "Kami tidak dapat mencari tempahan #%1. Sila semak nombor dalam mesej pengesahan anda — iaitu 6 aksara selepas #.",
-  orderCode: "Tempahan #%1",
+  trackLooking: "Sedang cari order anda…",
+  trackNotFound: "Kami tidak dapat mencari order #%1. Sila semak nombor dalam mesej pengesahan anda — iaitu 6 aksara selepas #.",
+  orderCode: "Order #%1",
   forCustomer: "Untuk %1",
   trkNew: "Baharu",
   trkConfirmed: "Disahkan",
@@ -677,17 +843,17 @@ const ms = {
   courierCod: "Caj kurier: %1 - COD, bayar kepada kurier semasa penghantaran",
   postageQuoted: "Pos: disebut berasingan — kami akan beritahu jumlah tepat kepada anda",
   promoLine: "Kod %1: -%2",
-  promoFriend: "Bawa rakan yang menghantar anda: -%1",
+  promoFriend: "Diskaun bawa rakan yang dihantar kepada anda: -%1",
   tripStatus: "Penghantaran: %1",
-  tripFinding: "Sedang mencari pemandu",
+  tripFinding: "Sedang mencari driver",
   tripOnTheWay: "Pemandu dalam perjalanan",
   tripCollected: "Telah diambil",
   tripDelivered: "Telah dihantar",
   tripStopped: "Dibatalkan",
-  tripNoDriver: "Tiada pemandu yang mengambil",
-  driverLine: "Pemandu: %1",
+  tripNoDriver: "Belum ada driver",
+  driverLine: "Driver: %1",
   vehicleLine: "Kenderaan: %1",
-  callDriver: "Hubungi pemandu",
+  callDriver: "Hubungi driver",
   carrierLine: "Kurier: %1",
   nextBlockedBasket: "Bakul anda untuk %1. Untuk hari lain, pilih pada kalendar di atas.",
 

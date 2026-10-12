@@ -122,6 +122,7 @@ function cell(day) {
 const tapDay = (day) => cell(day)._listeners.click[0]();
 const menuNote = () => registry["menu-note"];
 
+
 test("a product not sold on the chosen day is not on the menu at all", async () => {
   await settle();
 
@@ -178,7 +179,7 @@ test("a product she keeps listed stays on a day it isn't sold, stamped Unavailab
   const notes = cardNotes("Focaccia");
   assert.equal(notes.length, 2, "the reason, then the date to come back for");
   assert.match(notes[0], /Only available on Mon/, "the sentence the marking card carries");
-  assert.equal(notes[1], "Next available: Mon, 7 Sep",
+  assert.equal(notes[1], "Next available: Monday, 7 Sep",
     "nothing is published for these dates, so the date comes with no count");
 });
 
@@ -206,7 +207,7 @@ test("a kept product that cannot be ordered today keeps its Sold out stamp and g
   assert.equal(notes.length, 2);
   assert.match(notes[0], /5 days before the posting day/, "the notice it already carried");
   assert.match(notes[0], /later/, "…and its advice");
-  assert.equal(notes[1], "Next available: Mon, 7 Sep",
+  assert.equal(notes[1], "Next available: Monday, 7 Sep",
     "the one line the switch buys: the next day the notice is met");
 });
 
@@ -220,7 +221,7 @@ test("tapping Next available orders for that day, and shows the customer where i
   const chip = walk(cardFor("Focaccia")).find((n) => (n.className || "").includes("prod-next"));
   assert.ok(chip, "the greyed card offers the next date it can be had");
   assert.equal(chip.tagName, "BUTTON", "and the line is a control, not a label");
-  assert.equal(chip.children[0].text, "Next available: Mon, 7 Sep");
+  assert.equal(chip.children[0].text, "Next available: Monday, 7 Sep");
 
   chip._listeners.click[0]();
   await settle();
@@ -239,6 +240,10 @@ test("with something in the basket the Next available line is a label, not a con
   render();
   await settle();
 
+  // ★★★ THE DAY IS TAPPED FIRST (v454). The step lock refuses step 2 until HE has tapped a posting day, and
+  // ⚠️ this test read the basket as already populated — **a state the lock no longer allows without that
+  // tap.** ⭐ It uses this file's OWN `tapDay(2)` — Wed 2 Sep, the day the comment below already means.
+  tapDay(2);
   // Something in the basket for the day already chosen (the Sandwich sells every
   // delivery day, so Wednesday takes it).
   const plus = walk(cardFor("Sandwich")).find((n) => n.tagName === "BUTTON" && n.children[0].text === "+");
@@ -254,10 +259,12 @@ test("with something in the basket the Next available line is a label, not a con
   await settle();
 
   assert.equal(registry["menu-note"].hidden, false, "the tap answers rather than staying quiet");
-  assert.match(registry["menu-note"].children[0].children[0].text, /Your basket is for Wed, 2 Sep/);
+  assert.match(registry["menu-note"].children[0].children[0].text, /Your basket is for Wednesday, 2 Sep/);
   assert.equal(registry["dates"].scrolled, undefined, "nothing was taken, so nothing moved");
   const chosen = registry["dates"].children[0].children.find((c) => c.className === "cal-chosen");
-  assert.match(chosen.children[0].text, /Wed, 2 Sep/, "the day in hand is still the day");
+  // ⚠️ The full day name since v434 — and this is the "selected for you" form, because nothing has
+  // been tapped in this test. The day is what is being asserted, not the sentence around it.
+  assert.match(chosen.children[0].text, /Wednesday, 2 Sep/, "the day in hand is still the day");
   assert.deepEqual(cardNotes("Focaccia").length, 2, "and the card still offers the date, plainly");
 });
 

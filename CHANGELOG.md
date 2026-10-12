@@ -4,6 +4,37 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**12 Oct 2026 — THE BIG CATCH-UP, PART TWO: YOUR SHOP PAGE (same engine v476, service side only —
+nothing to run, nothing to upload; pushing this one is the whole of it).**
+
+**This is the second half of the catch-up.** Part one changed the back office; **this one changes the
+page your customers order from**, and it is the bigger of the two.
+
+**A four-step order, said out loud.** The page now explains itself: **pick your posting day, choose
+what you want, tell us about you, place the order** — four numbered steps, with the circles turning
+green as each is finished. **And it answers the question it used to leave you to work out:** what a
+posting day actually is, and the next day you can order. A customer no longer reads the rules and has
+to guess the answer.
+
+**Your calendar answers a tap.** Tapping a day you do not post on, or one whose window has closed, now
+says so in a line under the calendar instead of doing nothing at all.
+
+**The two ways to get an order now say what they are.** "Post (nationwide)" and "Collect (local)" each
+carry a sentence explaining what they mean and what they cost — because a customer once ordered a post
+when he wanted to collect. **And changing your mind asks first**, naming what it is about to clear.
+
+**Prices and quantities.** You can now **type** a quantity rather than tapping `+` thirty times. And a
+saved shopping list's items show what they will cost.
+
+**Everything your customers read was rewritten in all three languages** — English, Chinese and Malay —
+in the words a Malaysian customer actually uses, not a translation of the bakery's.
+
+**Two things are deliberately the way they were.** Your shop still opens with **Post (nationwide)
+already chosen** — the bakery's new version makes the customer pick, and you chose to keep yours. And
+it still asks for an address on a posted order, your own rule.
+
+**Nothing to run, no SQL, no upload, no setting to change on either phone.**
+
 **12 Oct 2026 — engine v401 → v476, THE BIG CATCH-UP, PART ONE: your back office
 (⚠️ ONE DATABASE SCRIPT TO RE-RUN — see the end of this entry. Your SHOP PAGE is deliberately NOT
 changed by this update — see "What is not in this one" at the foot).**

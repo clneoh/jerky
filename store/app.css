@@ -13,6 +13,34 @@
   --line: #f0e2d2;
   --brown: #c4552f;
   --brown-dark: #a84322;
+  /* ★★ THE SHOP'S ONE RED (v426). Her words: __"can you flash the only available on friday in red
+     color?"__
+     ⚠️⚠️ THE SHOP HAD NO RED AT ALL BEFORE THIS, and that is why it needs its own token rather than a
+     borrowed colour: **the whole page is terracotta** (`--brown` #c4552f, `--brown-dark` #a84322), so a
+     "red" that is really a warmer terracotta would flash and read as the brand colour arriving — the
+     opposite of standing out. ⭐ This is a genuinely redder red at the same weight as the rest.
+     ⚠️ AND IT CLEARS THE APP'S OWN BAR: **5.35:1** on the card, over the 4.5 every accent here is held
+     to (v369) — a flash nobody can read is not a warning. */
+  --red: #c0392b;
+  /* ★★ HOW THE RED WARNING FLASHES, IN ONE PLACE (v427). Her words: __"can you flash the red twice or
+     trice"__.
+     ⚠️⚠️ THESE TWO AND THE TIMER IN `flashRow` ARE ONE FACT, SPLIT ACROSS TWO FILES. The mark comes
+     off on a TIMER — not on the animation's end event, because `animation: none` (which is what a
+     reduced-motion reader gets) never fires one — so **a flash longer than the timer would be cut off
+     mid-blink.** ⭐ `flashRow` READS THESE TWO rather than carrying a number of its own, so the
+     flashing and the moment it stops cannot drift apart. ⚠️ Three blinks used to be impossible to ask
+     for: the timer said 1200 and a three-blink flash is 1500. */
+  /* ⚠️⚠️ AND THESE TWO ARE THE ONLY THINGS TO CHANGE WHEN THE FLASH FEELS WRONG. Her words, twice:
+     __"the red is too short time"__ and then, after the first longer setting, __"still too short"__.
+     ⭐ At 500ms the red was on for only **215ms** of each blink; at 900ms it was ~590ms — **and she
+     said still too short, so the eye wants more than half a second to take a line in and use it.**
+     ⚠️ It is **1125ms of red per blink now, five times the original.**
+     ⭐ **The timer follows, because `flashRow` reads these** — a one-line change, nothing to drift. */
+  /* ⚠️⚠️ AND THIS IS HER OWN CYCLE, WRITTEN OUT: **1500ms = 1000ms of red + 500ms of pale**, which is
+     __"on 1sec, off 0.5sec"__ to the millisecond. Her words, three times over: __"the red is too short
+     time"__, __"still too short"__, and then the number itself. */
+  --flash-blink: 1500ms;  /* how long ONE red blink lasts: 1s on + 0.5s off */
+  --flash-blinks: 3;      /* how many of them there are */
   --brown-soft: #fbe7dc;
   /* ⚠️⚠️ BOTH OF THESE WERE READ BY THIS FILE WITHOUT EVER BEING DECLARED IN IT — found by the
      v369 sync, which is the first time anyone measured the SHOP's colours rather than the
@@ -187,10 +215,15 @@ html, body {
   box-shadow: var(--shadow);
 }
 .info { padding: 12px 15px; }
+/* ★★ ONE LINE, ONE SENTENCE (v433). Her words: __"customer might confused that it is 2 group of
+   word, one left one right"__ — ⚠️ AND SHE WAS RIGHT: this was `display: flex;
+   justify-content: space-between`, which pinned the word to the left edge and its answer to the
+   right edge with **nothing joining them**. A customer reading down the left and then down the
+   right gets the pairing wrong, and the card is the one place on the shop that states the two
+   rules an order depends on.
+   ⭐ The colon lives in the MARKUP, not in the translated string, so all three languages keep their
+   own wording and none of them has to carry punctuation it never had (see store-lang.js). */
 .info-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
   margin: 4px 0;
   font-size: 14px;
 }
@@ -830,12 +863,48 @@ button.prod-next.off::after { content: ""; }
   -webkit-tap-highlight-color: transparent;
 }
 .step-btn:active { background: #f5d6c4; }
+/* ★★★ AND IT IS A FIELD NOW, NOT A LABEL (v458). Her words: __"for qty field i should be allow to key in
+   qty also instead of just press the + & -"__. ⚠️ So it is stripped back to exactly the look the number
+   already had — no border, no background, the shop's own ink — because a boxed number between two round
+   buttons would read as a third, different control. ⭐ And a number box brings its own little up/down
+   spinners on a desktop browser: those are removed, because **the + and − either side ARE that control**
+   and two ways to do one thing on one row is the fault this project has a rule about. */
 .stepper-val {
+  width: 52px;
   min-width: 44px;
   text-align: center;
   font-size: 16px;
   font-weight: 700;
+  font-family: inherit;
+  color: var(--ink);
+  border: none;
+  background: transparent;
+  padding: 0;
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
+.stepper-val::-webkit-outer-spin-button,
+.stepper-val::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+/* ⚠️ AND A DISABLED ONE IS DRAWN AS INERT, as the two buttons beside it are — otherwise a sold-out card
+   would show a live-looking number that cannot be changed. */
+.stepper-val:disabled { opacity: .45; }
+/* ★★★ AND A BOX THAT IS NOT OPEN YET WEARS IT (v461). Her report: __"i do step 3 skipping step 2, it just
+   dont allow, but no warning"__. ⚠️⚠️ **The box was switched off, and it looked entirely normal** — the
+   worst of both, because he taps a box that looks ready and is told nothing at all.
+   ⭐ It is NOT switched off any more: it can be tapped, and the tap is answered with the sentence. But it
+   must still LOOK shut, or the customer taps expecting to type and the answer reads as a refusal he did
+   not earn. ⭐ Colours are the shop's own tokens — the page's background, and the muted ink it already
+   uses for a quiet second line — so this cannot drift from the rest of the page. */
+.input.locked {
+  background: var(--bg);
+  color: var(--muted);
+  border-color: var(--line);
+}
+/* ⚠️ NO OPACITY ON THIS ONE, AND THAT IS MEASURED RATHER THAN PREFERRED (v461). With a `.75` fade over
+   the locked background the hint bottomed out at about **3.1:1**; at full strength `--muted` on `--bg` is
+   **5.03:1**, clear of the 4.5 the shop holds its words to. ⭐ A locked box is exactly where a customer is
+   straining to read what he is being told he cannot do yet. */
+.input.locked::placeholder { color: var(--muted); }
 
 /* ---------- Forms ---------- */
 .field { margin-bottom: 12px; }
@@ -863,40 +932,141 @@ button.prod-next.off::after { content: ""; }
    and differs between Safari, Chrome and Firefox. `opacity: 1` for Firefox. */
 .note-input::placeholder { color: var(--muted); opacity: 1; }
 
-/* Self collect / courier picker */
-.seg {
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-  background: #f5ecdf;
+/* Self collect / courier picker.
+   ★ ONE ROW PER WAY, EACH SAYING WHAT IT IS (v407). It was two bare words side by side in a
+   segmented control, and her customer chose a courier when he wanted to collect — the page
+   named both ways and never said what either meant or what it cost. So it is one full-width
+   row per way, a bold name over a plain line, which is the same shape as the collect-from
+   list right below it: same kind of question, same answer to "which one am I picking".
+   ⚠️ STACKED, NOT SIDE BY SIDE, and that is the point rather than a style choice — two
+   columns leave a phone about 160px per line, where a sentence wraps to five ragged lines and
+   nobody reads it. Full width is what lets both lines be read before anything is tapped. */
+.seg { display: grid; gap: 8px; }
+/* ★★ THE CARD IS THE CHOICE **AND EVERYTHING IT CONTAINS** (v410). Her words: __"there is 2 main
+   selection, select self collect and a drop down appear, should not be in present interface"__.
+   ⚠️ The edge therefore went on the WRAPPER rather than on the press: the places a customer can
+   collect from are part of choosing to collect, and a border around only the words would draw a
+   line between one decision and the thing it decides. */
+/* ⚠️⚠️ NOT `--surface` (v412). Her words: __"even after i expend it, there should not be hole"__ —
+   and the hole was this. **The picker sits INSIDE the white "Your details" card**, so a
+   `--surface` card here is white on white: its own edge is the only thing visible, its place rows
+   are white too, and an expanded card is a **white void with thin outlines floating in it.** ⭐ The
+   page's own background colour instead, so an unopened card reads as a soft well on the card, and
+   the white place rows sit ON something rather than in nothing. */
+.seg-opt {
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 12px;
+  background: var(--bg);
+  overflow: hidden;
+}
+/* The chosen one takes the brand's orange edge — the same "this one is on" the promo box and the
+   chosen day already use, so nothing here has to be learned. */
+.seg-opt.active {
+  border-color: var(--brown);
+  border-width: 2px;
+  background: var(--brown-soft);
 }
 .seg-btn {
-  flex: 1;
+  display: block;
+  width: 100%;
   appearance: none;
+  text-align: left;
+  padding: 10px 12px;
   border: none;
   background: transparent;
-  color: var(--muted);
   font: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  padding: 10px 6px;
-  border-radius: 10px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.seg-btn.active {
-  background: var(--surface);
-  color: var(--brown-dark);
-  box-shadow: 0 1px 4px rgba(80, 50, 30, .15);
+.seg-opt.active .seg-name { color: var(--brown-dark); }
+/* ★★ THE SELF-COLLECT CARD FOLDS, AND THE CARET IS THE WHOLE HINT (v412). Her words: __"i want the
+   self collect card at store to be folded as default"__, and __"when it expend the unselected with a
+   white background is like a hole, and like confusing"__ — ⚠️ which is exactly what an open card full
+   of white place rows does while it is NOT the chosen way: it reads as a white hole in the page at
+   the moment the customer has already decided against it. */
+.seg-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
+.seg-caret { flex: 0 0 auto; color: var(--muted); font-size: 13px; }
+/* ★★ THE LINE UNDER THE QUESTION (v416). Her words: __"you need a 'click to choose' after the
+   title"__. ⚠️ With NEITHER card edged, the two of them read as two descriptions rather than as two
+   things to pick — so this says what they are. Same voice as the instruction over the places, because
+   it is the same kind of help. */
+.seg-prompt {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brown-dark);
+}
+.seg-prompt[hidden] { display: none; }
+/* ⚠️ THE FOLDED LIST TAKES NO ROOM. `hidden` on the element itself, so a shop with no places draws
+   exactly the card it drew before — the rule is keyed on the attribute rather than on `:empty`
+   because an EMPTY list and a FOLDED one are different things and only one of them is hidden. */
+#point-list[hidden] { display: none; }
+/* ⚠️ 12px is the FLOOR for the explanation, not a starting point — the whole fault being
+   repaired is a line the customer did not read. */
+/* ★★ AND IT IS A TITLE (v434). Her words: __"Self collect should be in bigger font being a title"__.
+   ⚠️ It was 14px sans — the size of body text — while every other card heading on this shop is
+   `.card-title`: 16px, 700, in the serif. ⭐ **So it does not get a new size invented for it; it wears
+   the shop's own title**, which is why 'Self collect' and 'Courier delivery' now read exactly like
+   'Focaccia' on the menu above them. ⚠️ The serif is the whole of the change in voice: a heading on
+   this page is set in it, and nothing else is. The active colour below is untouched. */
+.seg-name { display: block; font-weight: 700; font-size: 16px; font-family: var(--serif); color: var(--ink); }
+.seg-sub { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.45; }
+.seg-btn.active .seg-name { color: var(--brown-dark); }
+/* ⚠️ THE PLACES INSIDE THE SELF-COLLECT CARD (v410). Inset and quiet, so the card still reads as
+   one choice: the name and its line first, and the places under a hairline. An empty list draws
+   nothing at all (store/app.js leaves it empty when she has no Points), which is why the hairline
+   lives on the rows rather than on the container. */
+.point-list {
+  padding: 0 10px 10px;
+  border-top: 1px solid var(--line);
+  margin-top: 2px;
+  padding-top: 8px;
+}
+.seg-opt.active .point-list { border-top-color: var(--brown-soft); }
+/* ★★ AND THE COURIER'S ADDRESS SITS IN ITS CARD THE SAME WAY (v412). Her words: __"courier delivery
+   and address should be one piece"__ — ⭐ the exact mirror of the places inside the collect card, and
+   **the same reasoning: the thing a choice needs is PART of the choice, not a field that appears
+   under it.** ⚠️ The rules are deliberately the same shape as `.point-list`, because two panels doing
+   the same job differently is how the next one gets built wrong. */
+.addr-body { padding: 8px 10px 10px; border-top: 1px solid var(--line); margin-top: 2px; }
+.seg-opt.active .addr-body { border-top-color: var(--brown-soft); }
+.addr-body[hidden] { display: none; }
 
 /* ---------- The door pin (optional) ---------- */
 /* Two controls side by side, because the two customers are different people: one is
    standing at the door the bread is going to, the other is ordering from somewhere
    else entirely and needs to point at it. */
-.pin-hint { margin: 6px 0 0; }
+/* ★★ THE PIN IS AN OFFER, NOT A STEP (v437). Her words: __"Pin a map can be confusion that is not
+   mandatory to be faced by customer, especially when we have auto complete… maybe we just fade that
+   function"__.
+   ⚠️⚠️ IT WAS A WHOLE PARAGRAPH AND A FULL-WIDTH BORDERED BUTTON at the same weight as the address
+   field above them, so it read as the next thing to do. **Closed, it is now one quiet line** — and
+   the long explanation, which is the part that says skipping is FINE, moved into the map.
+   ⚠️ IT DISAPPEARS WHILE THE MAP IS OPEN — see `openPinBox`. The link does not close the box, so a
+   line still offering the thing already on screen would be a control that does nothing. */
+.pin-ask { margin: 6px 0 0; }
+/* ⚠️ A LINK, NOT A BUTTON. ⭐ A press inside a sentence says "you can"; a bordered button the width
+   of the card says "now do this", and one of those was the whole complaint. */
+.pin-link {
+  appearance: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: inherit;
+  color: var(--brown-dark);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 0 2px;
+  cursor: pointer;
+}
+.pin-link:hover { text-decoration-thickness: 2px; }
+.pin-link:focus-visible { outline: 2px solid var(--brown); outline-offset: 2px; }
 /* What the address lookup found (v202). A box of doors under the address box, each one
    a row you can tap. It is not a floating dropdown: the shop's own page scrolls, and a
    list positioned over the keyboard fights it on a phone. */
@@ -938,11 +1108,8 @@ button.prod-next.off::after { content: ""; }
   -webkit-tap-highlight-color: transparent;
 }
 .addr-hit:active { background: #f5ecdf; }
-.pin-row {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
+/* ⚠️ `.pin-row` IS GONE (v437) — it was the flex line holding the full-width button, and the press
+   is a link inside a sentence now. ⭐ Dead CSS is the layer of this the screen never shows. */
 .pin-btn {
   flex: 1;
   appearance: none;
@@ -1331,6 +1498,19 @@ button.prod-next.off::after { content: ""; }
    (see .privacy-sheet), so opening the notice does not change this height at all. */
 .bar-spacer { height: 126px; }
 
+/* ★ THE CODE, SAID AGAIN ABOVE THE BUTTON (v408). It only exists on an order that actually
+   carries a code, so an ordinary bar is unchanged. Small print, the same weight and colour as
+   the notice under the button — it is the same kind of thing: a fact the customer needs, never
+   a control. ⚠️ 12px is the floor, not a starting point: the line's whole job is to be read
+   before the button is pressed, and it is the second thing on this page to be set that small. */
+.promo-bar {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--brown-dark);
+}
+.promo-bar b { font-weight: 700; }
+
 .confirm-msg {
   margin: 0 0 14px;
   padding: 12px 14px;
@@ -1349,6 +1529,64 @@ button.prod-next.off::after { content: ""; }
   color: #8a5a12;
 }
 .confirm-title { margin: 0 0 4px; font-size: 15px; font-weight: 700; }
+/* ★★ THE SHOP'S ONE QUESTION (v436). Her words: __"a confirmation pop up, asking whether customer
+   intend to change to delivery? the point selection will be cleared, vise versa"__.
+   ⚠️⚠️ IT IS THE FIRST TIME THIS PAGE ASKS ANYTHING. `#confirm-msg` is a NOTICE — a banner with no
+   buttons — and the privacy sheet is read-only, so nothing here has ever needed an answer before.
+   ⭐ It covers the whole screen on purpose: a question that can be answered by a press on the page
+   behind it is not a question. */
+.ask-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(59, 42, 31, .45);
+}
+/* ⚠️⚠️ THIS LINE IS LOAD-BEARING: `display: flex` above BEATS the `hidden` attribute, so without
+   it the question would sit over the shop from the moment the page loads. */
+.ask-scrim[hidden] { display: none; }
+.ask-card {
+  width: 100%;
+  max-width: 340px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px 16px 14px;
+}
+.ask-card .confirm-title { font-size: 16px; }
+.ask-card .confirm-body { margin: 4px 0 0; line-height: 1.45; }
+/* ⚠️ THEY WRAP RATHER THAN SQUEEZE (v436). Measured on a 317px viewport: two labels side by side at
+   `flex: 1` came out 109px wide and 59px tall — **the primary over two lines**. ⭐ The minimum is
+   what makes them stack on a narrow phone and sit side by side when there is room, which is the fix
+   the admin's own `.btn-row` needed for the same reason. */
+.ask-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+/* ⚠️⚠️ THE SHOP'S `.btn` IS SCOPED TO THE ORDER BAR — it is written `.order-bar .btn`, so a button
+   carrying `btn` in this card would be COMPLETELY UNSTYLED, and every test would still pass. These
+   two carry their own look; the primary is the bar's own terracotta pill, so the question and the
+   button it leads to read as one page. ⭐ The quiet one comes FIRST and the primary LAST — the
+   order this shop already puts two choices in.
+   ⚠️ 44px, above the 36px floor the app holds itself to, because this one is answered on a phone
+   with a thumb. */
+.ask-actions button {
+  flex: 1 1 140px;
+  appearance: none;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 12px 14px;
+  min-height: 44px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.ask-quiet { background: var(--surface); color: var(--brown-dark); border: 1px solid var(--line); }
+.ask-go { border: none; background: linear-gradient(180deg, #d0632f, #b34a28); color: #fff; }
+.ask-actions button:active { transform: translateY(1px) scale(.99); }
+.ask-actions button:focus-visible { outline: 2px solid var(--brown); outline-offset: 2px; }
 .confirm-body { margin: 2px 0; font-size: 13px; font-weight: 500; }
 .confirm-sub { margin: 6px 0 0; font-size: 12px; font-weight: 600; opacity: .85; }
 .confirm-link {
@@ -1593,14 +1831,30 @@ button.prod-next.off::after { content: ""; }
    a thumb's target, because on a phone this is the last thing a customer taps before
    paying. */
 .point-list { display: grid; gap: 8px; }
+/* ★★ THE CHOSEN PLACE IS THE ONE THAT STANDS OUT (v413), NOT THE OTHERS.
+   ⚠️⚠️ IT WAS THE OTHER WAY ROUND, AND THAT WAS THE "HOLE" AND THE CONFUSION TOGETHER. Every row was
+   `--surface` (white) and the chosen one was `--brown-soft` — so inside a card that is ITSELF
+   `--brown-soft`, **the chosen place dissolved into the card while every place the customer had NOT
+   chosen stood out as a bright white slab.** Her words: __"you see the white, that is a hole when
+   the self collect card unfold. It confuse user of actually which is the selected"__ — ⭐ **a customer
+   reads the loudest row as the selected one, and it was pointing at the wrong place.**
+   ⭐ So the flat row is the resting state and the filled one is the choice: **the selected place is
+   the only thing wearing a panel.** */
+/* ⚠️⚠️ AND THE UNCHOSEN ONES KEEP A FRAME YOU CAN ACTUALLY SEE (v413). Her words: __"can the
+   unselected be frame as well with a very thin frame, so it is clear that custoerr is selecting from
+   only 2 available choices"__ — and the frame was already there, which is the point: **`--line` is
+   `#f0e2d2`, a cream chosen to sit on WHITE, and on the card's `#fbe7dc` it is invisible.** ⭐ So an
+   unchosen place read as a bare line of text rather than as the other thing you may pick. A
+   translucent brand brown instead, so every row is visibly ONE OF the choices — ⚠️ hairline-thin and
+   still quieter than the chosen one, which keeps the 2px edge and the panel. */
 .point-opt {
   display: block;
   width: 100%;
   text-align: left;
   padding: 10px 12px;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(196, 85, 47, .38);
   border-radius: 12px;
-  background: var(--surface);
+  background: transparent;
   font: inherit;
   cursor: pointer;
 }
@@ -1608,18 +1862,170 @@ button.prod-next.off::after { content: ""; }
   border-color: var(--brown);
   border-width: 2px;
   padding: 9px 11px;
-  background: var(--brown-soft);
+  background: var(--surface);
 }
 /* A Point whose smallest basket this basket has not reached (v306). PARKED, NOT HIDDEN: it
    stays on the page with the reason in its own line, because a choice that vanished below RM30
    would read as a broken page rather than as the baker's own rule — and a customer can act on a
    shortfall they can see. It is drawn quiet rather than dimmed to nothing, so it still reads. */
-.point-opt.short { background: var(--bg); border-style: dashed; }
-.point-opt.short .point-name { color: var(--muted); }
-.point-opt.short .point-sub { color: var(--brown-dark); }
+.point-opt.short {
+  /* ⚠️⚠️ NO BACKGROUND FILL — THE GREY-OUT IS THE WORDING, NOT A SLAB (v425). Her words: __"the
+     unavailable point grey out is not the background grey out but wording grey out"__.
+     ⚠️ It filled with `--bg`, the PAGE cream, so a row inside the card's tint became a flat
+     page-coloured patch — **the same "hole" she caught at v413**, in a different place.
+     ⭐ The row keeps the card's own surface and is set apart by its words and its dashed frame —
+     the dashes are the SHAPE and the pale text is the TONE, and either alone is a colour-only cue. */
+  border-style: dashed;
+}
+/* The SAME PARKED LOOK for a place that is not served on the bake day he has chosen (v420).
+   ⚠️ Deliberately identical to `.short` above, and written out rather than shared, so the
+   stylesheet names BOTH reasons a place can be listed-but-not-open. They are one look on purpose:
+   to a customer, "this place will not take your basket" and "this place is not open that day" are
+   the same fact — you cannot collect here — and two different looks would invent a difference. */
+/* ⚠️ AND THE SAME FOR A PLACE NOT SERVED THAT DAY — one look, two reasons, because two rows that look
+   alike must behave alike ([[feedback-affordances]]). See the note above for why the fill went. */
+.point-opt.off { border-style: dashed; }
+
+/* ★★ HOW PALE, AND WHY IT IS NOT ONE VALUE (v425). ⚠️ Her second telling: __"the grey not obvious"__.
+   ⭐ She was right, and the first attempt proved it — `--muted` is a WARM BROWN at 5.40:1, which at
+   13px reads as ordinary text beside the body copy, so the row did not look unavailable at all.
+   ⚠️ THE FADE HAS TO BE HARD TO BE SEEN, so it is `opacity` on the text rather than a colour swap, and
+   the numbers were measured against the card before choosing them:
+     · 42% — **2.40:1**, unmistakably pale. This is the NAME and the ordinary description, which are
+       not the thing the customer has to read.
+     · 70% — **5.21:1**, clearly paler than normal text (13.45:1) and still comfortably readable. This
+       is the line that carries the REASON, because **a reason nobody can read is not a reason.**
+   ⚠️⚠️ AND THE REASON IS NOT THE SAME LINE IN BOTH CASES, which is why these rules are named by
+   reason and not by row: a place not served today says it on `.point-days`, while a place his basket
+   has not reached says it ON `.point-sub` — because that sentence replaced the description.
+   ⚠️ `:not(.point-days)` IS LOAD-BEARING: the days line wears `.point-sub point-days` too, so a plain
+   `.point-sub` rule would fade the very line this is keeping readable. The `:not()` also outranks the
+   plain rule on its own, so the outcome does not depend on the order these appear in. */
+/* ⚠️⚠️ THE REASON LINE CARRIES NO FADE AT ALL, AND THAT IS A CORRECTION, NOT AN OMISSION (v426).
+   Her words: __"it is abit too fade"__.
+   ⚠️ v425 FADED THIS LINE BY 70% ON TOP OF ITS COLOUR — **AND ITS COLOUR IS ALREADY THE FADED ONE.**
+   It inherits `--muted` from `.point-sub`, so the row's warning was **2.94:1**, not the 5.21 I wrote
+   down: **I measured the colour and then applied a second fade over it, and the two compound.**
+   ⭐ **`--muted` at full strength IS 5.40:1** — over the 4.5 this app holds its accents to, and the
+   right answer was simply to stop folding it twice. **She found it by reading the page.**
+   ⚠️ `opacity: 1` is written out rather than left to inheritance so the intent is on the page: an
+   element that must NOT be faded says so. */
+.point-opt.off .point-days,
+.point-opt.short .point-days,
+.point-opt.short .point-sub { opacity: 1; }
+
+/* ⚠️ AND THE NAME AND THE ORDINARY DESCRIPTION still fade hard — that IS her "obviously pale", and
+   they are not the thing the customer has to read. ⚠️ The name is `--ink` at 42% = **2.40:1**; the
+   description is `--muted` at 42%, which is very faint indeed — deliberately, because it is the
+   sentence that says what the place IS rather than why he cannot pick it. */
+.point-opt.off .point-name,
+.point-opt.short .point-name,
+.point-opt.off .point-sub:not(.point-days) { opacity: .42; }
+
+/* ★★ THE FLASH ON A PARKED PLACE (v423; REFINED AT v424). Her words — the second, sharper telling:
+   __"i mean just flash the word Only available on Wed, Friday"__.
+   ⚠️⚠️ SO IT IS THE WORDS THAT FLASH, NOT THE ROW. Her "just" IS the instruction: the row is already
+   greyed and dashed to say *not this one*, and what he actually needs told is WHEN it IS open — so the
+   LINE CARRYING THAT goes dark and back, and nothing else on the page changes at all.
+   ⚠️ ONLY THE LINE THAT CARRIES THE REASON, and the two parked reasons carry it in different places:
+   a place not served today says it on its own `.point-days` line, while a place his basket has not
+   reached says it ON the `.point-sub` line, because that sentence REPLACED the description.
+   ⚠️⚠️ Flashing `.point-sub` for BOTH would blink a place's ordinary description — a sentence that
+   says nothing about why he cannot pick it — which is the opposite of pointing at the warning.
+   ⚠️ A BLINK, NOT A JUMP: opacity only. No movement, no size, no position, so the words stay exactly
+   where they are on the line he is reading. ⭐ Measured: the page's scroll position and the row's
+   height are both identical before and after the tap. */
+/* ★★ THE FLASH IS RED (v426). Her words: __"can you flash the only available on friday in red
+   color?"__ — so the line no longer dims and returns: **it turns red and comes back.**
+   ⚠️⚠️ `0%, 100%` IS `var(--muted)`, AND THAT IS THE WHOLE CRAFT OF IT. The line it animates INHERITS
+   its colour from `.point-sub`, which is `--muted` — so a keyframe that ended on any other value
+   would flash red and then **snap** the moment the animation let go. ⭐ **The end value has to be the
+   resting value**, and the resting value here is a colour, not `1`.
+   ⚠️ AND THE FADE FROM v425 IS UNTOUCHED: this animates `color` only, so the line keeps its 70%
+   opacity throughout — the row stays as pale as she chose, and the red is what moves. */
+/* ⚠️⚠️ THE TWO COLOURS ARE WRITTEN OUT, AND THAT IS NOT LAZINESS (v426). They began as
+   `var(--muted)` and `var(--red)` — and the red **never arrived**: the animation ran, its name was on
+   the element, and the computed colour did not move. An unregistered custom property is substituted
+   as tokens, and a `var()`-to-`var()` pair is not something every engine will interpolate. ⭐ **A
+   literal always interpolates**, and these two are pinned against the tokens by a test so the words
+   and the numbers cannot drift apart. */
+@keyframes point-flash-word {
+  /* ★★ THE CYCLE, IN HER OWN NUMBERS (v428). Her words: __"on 1sec, off 0.5sec cycle"__ — ⭐ so the
+     blink length is 1500ms and the two stretches are cut from it:
+       · `0%, 67%`   — the RED, held for **1005ms**, which is her one second
+       · `70%, 100%` — the pale, **450ms**, which is her half second
+     ⚠️ AND THE 3% BETWEEN THEM IS A CROSSFADE, NOT SLACK: a truly square edge at this size reads as a
+     rendering glitch rather than a light going on and off. **45ms is fast enough to feel like a switch
+     and slow enough not to strobe.**
+     ⚠️⚠️ THE RED IS NOT FADED IN — the cycle OPENS on it. "On for a second" means it is already on
+     when it starts, and a fade-up would spend part of her second arriving.
+     ⚠️ The pale stretch is not decoration: **a line that simply STAYS red is a colour change; a line
+     that BLINKS is something happening.** */
+  0%, 67% { color: #c0392b; }     /* --red, held for a full second */
+  70%, 100% { color: #7b6552; }   /* --muted, the half-second off */
+}
+.point-opt.off.flash .point-days,
+.point-opt.short.flash .point-sub {
+  /* ⚠️ BOTH NUMBERS COME FROM THE TOKENS ABOVE, so the count and the length of the whole flash are
+     read in one place — by this rule and by `flashRow`'s timer. */
+  animation: point-flash-word var(--flash-blink) ease-out var(--flash-blinks);
+}
+/* ⚠️ AND FOR A READER WHO HAS ASKED FOR LESS MOVEMENT, the same line is simply made to STAND OUT while
+   the class is on — a blink is precisely what that setting is about, and the warning is on the row
+   either way. ⚠️⚠️ AND NOTE WHAT THIS RULE DOES *NOT* RELY ON: the class now comes off on a TIMER
+   (see `flashRow`), not on `animationend` — because **`animation: none` means no animation runs, and
+   an animation that never runs never ends.** v423 relied on the event and a reduced-motion reader was
+   left with the mark stuck on that row for good. */
+@media (prefers-reduced-motion: reduce) {
+  .point-opt.off.flash .point-days,
+  .point-opt.short.flash .point-sub { animation: none; color: var(--red); font-weight: 700; }
+}
 
 .point-name { display: block; font-weight: 700; font-size: 14px; color: var(--ink); }
 .point-sub { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+/* ★★ THE AREA HEADING OVER A GROUP OF PLACES (v410). Her words: __"top level is Penang Island &
+   Prai. Under Penang Island will be Area like Sg Ara, Balik Pulau, Farlim, Georgetown"__.
+   ⚠️ IT IS DRAWN AS HER OWN WORDS AND IS NOT A CHOICE — no press, no hover, no border. It is a
+   signpost on a list, and anything that looked tappable would have a customer trying to collect
+   from "Penang Island". Small caps and quiet, so the places under it stay the loudest thing here. */
+.point-area {
+  margin: 10px 0 0;
+  padding-left: calc(var(--depth, 0) * 12px);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  /* ★★ BLACK, NOT THE BRAND RED (v434). Her words: __"area should not be in red, put as black"__.
+     ⚠️ **A heading is not a warning and not a link.** The terracotta is this shop's voice for things
+     the customer must NOTICE — an instruction to tap, a day that is closed. An area name is a
+     signpost on a list: it says where the places below it are, and it is not asking for anything.
+     ⭐ In `--ink` it still leads its group without competing with the places, which stay the loudest
+     thing here. */
+  color: var(--ink);
+  /* ★★ AND IT IS WRITTEN AS SHE WRITES IT (v434). Her words: __"why capitalised the AREA?"__ — ⚠️
+     **The capitals were never in the data: the name is stored as 'Penang Island' and this line drew
+     it as 'PENANG ISLAND'.** ⭐ `text-transform` is a display style, and it was shouting a word that
+     is only a signpost. Removed — **the small size, the weight and the wide spacing are what keep it
+     a quiet heading**, and none of them needed the capitals to work. */
+  text-transform: none;
+}
+.point-area + .point-opt { margin-top: 6px; }
+/* ★★ THE INSTRUCTION OVER THE PLACES (v415). It stands exactly where the highlight used to sit the
+   moment the card opened, so the card still SAYS something — it simply stops claiming a choice
+   nobody made. Quiet and small, the same voice as a Point's own description, because it is help
+   rather than a warning. */
+.point-pick {
+  margin: 0 0 2px;
+  font-size: 12px;
+  color: var(--brown-dark);
+}
+.point-pick[hidden] { display: none; }
+/* ⚠️ THE ADDRESS IS SHOWN ONLY ON THE POINTS SHE TICKED, and it keeps the description's size and
+   colour rather than being set apart — it is one more fact about the place, not a warning. */
+.point-addr { margin-top: 1px; }
+/* The days a Place is served (v419) — "Only available on Fri". A line of its own under the
+   description, for the same reason the address got one: it is a fact about WHEN, and folding it
+   into her own sentence would make her words look as if they said it. */
+.point-days { margin-top: 1px; }
 
 .promo-box { margin: 0 0 16px; }
 .promo-box .field { margin-bottom: 0; }
@@ -1670,3 +2076,176 @@ button.prod-next.off::after { content: ""; }
    own rule for [hidden], so without this the Remove link is drawn on a page where
    no code has been used — a control offering to remove nothing. */
 .promo-clear[hidden] { display: none; }
+
+/* ★★ THE ANSWER, AND THE THREE STEPS (v405) ──────────────────────────────────────────────────────
+   Her report, after her first customer ordered alone: __"End up they enter a wrong baking day and the
+   select courier instead of self collect… Checking with the customer confirm that he actually want the
+   bread today, not knowing order close 6pm one day before."__
+
+   ⚠️⚠️ THE PAGE STATED THE RULES AND NEVER THE ANSWER. "Delivery days Mon, Wed, Fri" and "Order by
+   18:00 the day before" are both true and neither tells a stranger whether HE can have bread, or when
+   the earliest he can get it is. He had to combine today's date, three weekdays, the clock and "the day
+   before" — in his head, on a phone, while not being confident online. So he picked a day that looked
+   fine and it was wrong.
+
+   ⚠️ EVERYTHING HERE IS UNDER `body.trial` UNTIL SHE HAS TRIED IT ON HER OWN PHONE. The markup ships
+   but the box stays `hidden`, so a customer cannot see a half-judged wording. */
+
+/* The answer box — a card with a coloured edge, so it reads as the page speaking to him rather than as
+   one more panel of small print. */
+.answer { background: var(--surface); border: 1px solid var(--brown); border-left: 4px solid var(--brown);
+  border-radius: var(--radius); padding: 13px 15px; margin-bottom: 12px; }
+.answer-kicker { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; font-weight: 700;
+  color: var(--brown-dark); margin: 0 0 4px; }
+.answer-big { font-family: var(--serif); font-size: 17px; margin: 0 0 4px; line-height: 1.32; }
+.answer-sub { font-size: 13px; color: var(--muted); margin: 0; line-height: 1.45; }
+/* ⚠️ GREEN WHEN THERE IS STILL TIME, the same green the backoffice uses for a settled thing. The two
+   states are the SAME words with a different first line, so a customer never has to work out which one
+   they are looking at. */
+.answer.ok { border-color: #3b7449; border-left-color: #3b7449; }
+.answer.ok .answer-kicker { color: #3b7449; }
+
+/* The three steps. ⚠️ BIG AND FILLED ON PURPOSE — a step number is read at a glance or not at all, and
+   a small grey numeral beside a heading is decoration rather than a signpost. */
+.steps-lede { font-size: 13.5px; color: var(--muted); margin: 0 0 4px; line-height: 1.45; }
+.step-head { display: flex; align-items: center; gap: 10px; margin: 18px 0 8px; }
+.step-head .section { margin: 0; }
+/* ★★ WHAT A BAKE DAY IS (v434). Her words: __"I think customer 1st confusion is that we never
+   explain what is a bake day to them."__ ⚠️⚠️ **The words were used FIVE TIMES on this page and
+   explained none of them, and the only hint about WHEN the bread is ready lived inside the Self
+   collect option — so a courier customer never met it at all.**
+   ⭐ It is indented PAST the circle so it sits under the heading's own words and reads as part of
+   step 1: the step-head is a 30px circle plus a 10px gap.
+   ⚠️ Small and quiet, in `--muted` — it ANSWERS a question, and an answer set loud reads as a
+   warning. ⭐ `--muted` on this card measures well clear of the 4.5 floor for body text. */
+.bake-day-what {
+  margin: 0 0 8px 40px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+/* ★★ THE FOURTH BALL, BESIDE THE BUTTON (v438). Her words: __"the number 4 should not be inside
+   the the Place order button, it should sit beside, same size with other number to be consistant,
+   make the place order button smaller to make roon for the 4 ball"__.
+   ⚠️⚠️ v435 DREW IT INSIDE THE BUTTON — `#order-btn::before`, a 20px white disc — so the fourth
+   number **did not match the three he had just followed.** ⭐ It is now the same ball as the other
+   three, at the same 30px, in the same place in the sequence: after the details, before the press.
+   ⚠️ AND IT IS DELIBERATELY NOT `:before` ON THE BUTTON ANY MORE. The button's label is written by
+   `renderBar` on every repaint, so anything inside it is wiped or has to be rebuilt in script; a
+   ball standing BESIDE it is markup that nothing rewrites. */
+.bar-step {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--brown);
+  color: #fff;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* ★★ AND IT TURNS GREEN WHEN THE STEP IS DONE (v451) — THE SAME GREEN AS ①②③.
+   ⚠️⚠️ v439 SAID "THE BALL IS A LABEL, NOT A STATE", AND THAT WAS TOO BROAD. What v438/v439 were right
+   about is that the ball must not follow the BASKET: an empty basket must not dim it, because the basket
+   is not a step. **But ④ IS a step — the fourth one — so when the customer places the order, the step is
+   DONE, and ①②③ all say so by turning green.** The ball was left as the one step number that could never
+   report itself, which is the fault her own words name: __"the number 4 never have the chance to turn
+   green"__. ⭐ Same colour, same meaning, one more class. */
+.bar-step.done { background: #3b7449; }
+/* ⚠️⚠️ THE BALL NEVER DIMS (v439). v438 gave it `.bar-step.off { opacity: .55 }` for an empty
+   basket, so the bar would not show a full-strength ball beside a greyed press. **Her phone
+   showed what that actually does: ④ turns pale pink while ② and ③ stay solid terracotta** — her
+   question, off a picture of the bar: __"is the color 1234 consistant?"__ ⭐ **It was not, and the
+   ball is a STEP MARKER: ①②③ mark a step and never change with the basket, so ④ must not
+   either.** ⚠️ The button carries its own disabled state; a label is not a state. */
+.step-num { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%;
+  background: var(--brown); color: #fff; font-weight: 700; font-size: 16px;
+  display: flex; align-items: center; justify-content: center; line-height: 1; }
+/* A step she has finished: the circle turns green, so "where am I" is answered without reading a word. */
+.step-head.done .step-num { background: #3b7449; }
+/* ⚠️ THE TRIAL GUARD THAT USED TO SIT HERE WENT WHEN THE FLAG DID (v406) — it read
+   `body:not(.trial) … { display: none }` for the answer box, the lede and the step circles. */
+
+/* ★★★ THE STEP'S OWN LINE (v455). ⚠️ Her words: __"the message show in the wrong place... it should shown
+   up at the appropriate place, or the missing field turn red embossed"__ ⭐ **A form marks what is missing
+   where it sits** — so this is a line in the flow of the page, beside the step it is about, and never a
+   pop-up over the whole shop. It reads as a correction: a quiet edge and the shop's own attention colour,
+   not a shout, because nothing is broken — one step is simply not done yet. */
+.step-note {
+  margin: 10px 0 4px;
+  padding: 9px 12px;
+  border-left: 3px solid var(--brown-dark);
+  background: var(--brown-soft);
+  border-radius: 0 10px 10px 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.step-note strong { color: var(--brown-dark); }
+
+/* ★★★ AND IT BLINKS, EXACTLY AS EVERY OTHER WARNING ON THIS PAGE DOES (v461). Her question, and it is the
+   right one: __"did you blink the warning?"__ ⚠️ **It did not — the line simply appeared.** Her words a
+   moment earlier were __"i do step 3 skipping step 2, it just dont allow, but no warning"__, and a sentence
+   that arrives silently part-way down a long page is a sentence that can still be missed.
+   ⭐⭐ IT IS THE SAME FLASH AS THE PARKED PLACE, DOWN TO THE NUMBERS: `--flash-blink` and `--flash-blinks`
+   above are read by this rule AND by `flashRow`'s timer, **so there is one blink in this shop and not two.**
+   ⚠️ AND ITS OWN KEYFRAME, because of the trap the CSS above already records: **the last keyframe has to be
+   the colour the element RESTS at, or the words flash and then snap.** The parked place rests on `--muted`;
+   this line's title rests on `--brown-dark`, so a shared keyframe would have snapped it. ⚠️ Both ends are
+   written as LITERALS for the same reason the ones above are — a `var()`-to-`var()` pair does not
+   interpolate in every engine, and the red silently never arrived. */
+@keyframes step-note-flash {
+  /* ⚠️ THE LINE FILLS WITH RED AND EMPTIES AGAIN — a whole-line pulse, not a tint on a word. */
+  0%, 67% { background-color: #c0392b; color: #fbf4ea; }     /* --red, and the page's own light ground */
+  70%, 100% { background-color: #fbe7dc; color: #3b2a1f; }   /* --brown-soft and --ink, where it rests */
+}
+@keyframes step-note-flash-word {
+  0%, 67% { color: #fbf4ea; }     /* the words go to the light ground while the red is behind them */
+  70%, 100% { color: #a84322; }   /* --brown-dark, where this line's title rests */
+}
+/* ⚠️⚠️ A FLASH HAS TO MOVE SOMETHING A EYE CAN SEE, AND THAT IS THE WHOLE OF v462. Her words:
+   __"all warning so far not flashing"__ — ⭐ **and she was right, though the animation WAS running.**
+   ⚠️⚠️ MEASURED: the first version blinked `#c0392b` against `#a84322`, **and those two are 1.10:1 apart —
+   both are reds.** The animation ran perfectly and did nothing anybody could see. ⭐⭐ **This is the SAME
+   shape as v426's fault, in the same file: a colour that was checked and a colour that arrived are not the
+   same thing.** ⭐ The parked place gets away with a hue-only blink because it goes **grey-brown -> red**;
+   this line's title is ALREADY red, so a red-to-red blink was invisible.
+   ⭐ So the pulse is now a whole-line one: **the pale line fills with red, the words go light, and it comes
+   back** — and every end value is the colour that element actually rests at, or it would snap. */
+/* ★★★ AND THE REASON UNDER A MISSING BOX WEARS THE SAME LINE, AND BLINKS WITH IT (v462). Her report:
+   __"i skip step 3, go for step4, not warning"__ — ⚠️ **the warning WAS there: the box turned red with its
+   reason underneath it.** ⭐ **But it was a still red edge, a screen up from the button she had just
+   pressed, and nothing about it moved.** ⭐⭐ **So her two reports are one report: the warnings exist and do
+   not catch the eye.** ⚠️ It had no styling of its own at all before this — a bare paragraph — so there was
+   nothing for a flash to return TO; it wears the step line's own clothes now, **which also means it can use
+   the very same keyframes and there is still only ONE blink in this shop.** */
+.field-note {
+  background: var(--brown-soft);
+  color: var(--ink);
+  border-left: 3px solid var(--red);
+  border-radius: 0 8px 8px 0;
+  padding: 7px 10px;
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.field-note.flash { animation: step-note-flash var(--flash-blink) ease-out var(--flash-blinks); }
+@media (prefers-reduced-motion: reduce) {
+  .field-note.flash { animation: none; background-color: var(--red); color: #fbf4ea; }
+}
+.step-note.flash {
+  animation: step-note-flash var(--flash-blink) ease-out var(--flash-blinks);
+}
+.step-note.flash strong {
+  animation: step-note-flash-word var(--flash-blink) ease-out var(--flash-blinks);
+}
+/* ⚠️ AND FOR A READER WHO ASKED FOR LESS MOVEMENT, the line simply STAYS filled while the class is on — the
+   same bargain the parked place makes, and still unmissable. ⚠️ The class comes off on `flashRow`'s TIMER
+   and never on `animationend`, because `animation: none` fires no such event (v423's fault). */
+@media (prefers-reduced-motion: reduce) {
+  .step-note.flash { animation: none; background-color: var(--red); color: #fbf4ea; }
+  .step-note.flash strong { animation: none; color: #fbf4ea; }
+}

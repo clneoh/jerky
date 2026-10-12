@@ -150,11 +150,25 @@ export function showPinMap(host, { start = null, onMove = () => {} } = {}) {
       map.setView([p.lat, p.lng], 17);
       put(p);
     };
-    // Tapping the map is how a thumb puts a pin on a doorstep. Dragging a 24-pixel
-    // marker with one finger is fiddly on a phone, and it would be the only way if
-    // this were missing — a map that can only be aimed at by a precise drag is the
-    // "dead control" complaint waiting to happen.
-    map.on("click", (e) => put(e.latlng));
+    // ★★ A TAP CANNOT MOVE A PIN — HER OWN RULE, AND IT WAS ONLY EVER APPLIED ONE PLACE (v438).
+    //
+    // ⚠️⚠️ **SHE SAID THIS AT v264 ABOUT THE ADMIN'S OWN MAP, AND THIS ONE WAS NEVER GIVEN IT.**
+    // Her words then: __"click on the map should not move the pin, only dragging the pin will."__
+    // Her words now, on THIS map: __"customer might just want to drag the map, or zoom. But the
+    // original pin had been moved unintentionally."__ ⭐ **The same person, the same fault, the
+    // same fix — and `admin/js/place_map.js` has carried it since v264.** ⭐ **When a rule is
+    // learned on one screen, sweep for the others that share the gesture.**
+    //
+    // ⚠️ AND v264's OWN REASONING IS THE WHOLE OF IT: *"every touch on this box put the pin
+    // wherever the finger landed AND pulled the view onto it — **two answers to one accidental
+    // contact**"* — on a phone, where a pan begins with a finger going down.
+    //
+    // ⚠️ WHAT IS LEFT IS THE ONE CASE IT IS THE ONLY ANSWER TO: **a map with nothing on it yet.**
+    // A tap there does not MOVE a pin, because there is none — it places the first one, which is
+    // how a thumb puts a pin on a doorstep without having to drag a 24-pixel dot. Every other
+    // route leaves a marker behind, and from that moment a tap does nothing at all; the pin moves
+    // only by DRAGGING it, which is a thing nobody does by accident.
+    map.on("click", (e) => { if (!marker) put(e.latlng); });
     // `aim`, not `at`: if the customer aimed the map at an address while it was still
     // loading, that aim is the point to stand on, and `onMove` must hear about it so the
     // caller's stored pin is the one they chose rather than the one they replaced.

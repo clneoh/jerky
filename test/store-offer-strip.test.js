@@ -216,7 +216,16 @@ test("REDUCE MOTION keeps an effect — the arriving message fades, and nothing 
   // The house skill is explicit: under `reduce`, drop the transforms and parallax and allow
   // **at most a ≤200ms opacity crossfade**. So the panels keep their places and only opacity
   // moves.
-  const block = css.slice(css.lastIndexOf("@media (prefers-reduced-motion: reduce)"));
+  // ⚠️⚠️ THE BLOCK IS FOUND BY CONTENT, NOT BY POSITION (v423), and the slice still runs to the END
+  // of the sheet on purpose. This read `css.lastIndexOf("@media (prefers-reduced-motion: reduce)")` —
+  // which **silently assumed it was the LAST such block in the file**, and it was until v423 added one
+  // for the places list. ⭐ **A test that finds its subject by POSITION breaks when an unrelated rule
+  // is appended — which is exactly what happened, on a rule that had not moved an inch.**
+  // ⚠️ And the slice MUST run past the block: `.promo-dot` is an ordinary rule declared AFTER it, so
+  // ending the slice at the media block's closing brace would cut at -1 and test nothing.
+  const promoMq = css.indexOf("@media (prefers-reduced-motion: reduce)", css.indexOf(".promo-slide"));
+  assert.ok(promoMq > -1, "the strip's reduce-motion block was not found at all");
+  const block = css.slice(promoMq);
   const strip = block.slice(block.indexOf(".promo-slide"), block.indexOf(".promo-dot"));
   assert.match(strip, /\.promo-slide\s*\{[^}]*opacity\s*:\s*0/, "the waiting panel is not hidden");
   assert.match(strip, /\.promo-slide\.is-on\s*\{[^}]*opacity\s*:\s*1/,

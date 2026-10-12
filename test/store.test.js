@@ -2,6 +2,20 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+// ★★ THE RECEIVED NOTICE NOW FOLLOWS HER ONE SECOND (v451). The fourth ball is greened and HELD on a timer
+// before it, so a test that reads the notice must let that second pass — and one that does not leaves a
+// pending timer that cancels the test outright (`cancelledByParent`).
+//
+// ⚠️⚠️ AND THE NUMBER IS READ, NOT COPIED (v427/v428's lesson). A fixed 1000 here would be a SECOND copy of
+// the one number the shop keeps, and the two can only ever disagree one way. **The test asks the shop how
+// long it holds**, so her number can change without this file silently testing yesterday's timing.
+const afterOrderNotice = () => {
+  const src = readFileSync(new URL("../store/app.js", import.meta.url), "utf8");
+  const m = /const GREEN_HOLD_MS = (\d+);/.exec(src);
+  const held = m ? Number(m[1]) : 1000;
+  return new Promise((r) => setTimeout(r, held + 150));
+};
+
 // Minimal DOM shim so store/app.js can render at import time.
 //
 // replaceChildren IS THE BROWSER'S, NOT A KINDER VERSION OF IT. Most shims in this suite
@@ -13,20 +27,125 @@ import { readFileSync } from "node:fs";
 // handed over as a null. The assertion at the foot of the order test below is what holds
 // it; a forgiving shim here could not see it at all.
 function createEl(tag) {
-  return {
+  // ⚠️⚠️ `classList` IS REAL NOW (v415). It was inert for a long time and that had a cost: the
+  // STEP CIRCLES turn green by `classList.toggle("done", …)` and nothing else, so **the shop's own
+  // three steps had never been tested at all** — and a rule the customer watches change was being
+  // held up only by the changelog. ⭐ A shim that cannot express what the view does cannot test it.
+  // ⚠️ Backed by `className`, so an assertion can read either and they cannot disagree.
+  let node = null;
+  const classes = () => String((node && node.className) || "").split(/\s+/).filter(Boolean);
+  const setClasses = (a) => { if (node) node.className = a.join(" "); };
+  node = {
     tagName: String(tag || "").toUpperCase(), nodeType: 1, children: [], attrs: {}, dataset: {},
     className: "", style: {}, textContent: "", value: "", checked: false, disabled: false,
+    // ⚠️ A REAL DOM NODE'S `hidden` DEFAULTS TO `false`, and this shim had none at all (v436) — so a
+    // freshly made element answered `undefined`, and "is the question up?" was neither true nor
+    // false. ⭐ Anything asserted before the view has touched it has to start from the real default.
+    hidden: false,
     scrollTop: 0, _listeners: {},
-    classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
-    appendChild(c) { if (c != null) this.children.push(c); return c; },
-    append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
-    replaceChildren(...cs) { this.children = cs.map((c) => (c && c.nodeType ? c : { nodeType: 3, text: String(c) })); },
+    classList: {
+      add(c) { const a = classes(); if (!a.includes(c)) { a.push(c); setClasses(a); } },
+      remove(c) { setClasses(classes().filter((x) => x !== c)); },
+      toggle(c, on) {
+        const want = on === undefined ? !classes().includes(c) : !!on;
+        if (want) node.classList.add(c); else node.classList.remove(c);
+      },
+      contains(c) { return classes().includes(c); },
+    },
+    parentElement: null,
+    // ⚠️⚠️ `parentNode` IS THE REAL DOM'S OWN NAME FOR WHAT THIS SHIM CALLS `parentElement` (v459). The
+    // shop moves the refusal line with `insertBefore(note, near)` and reads `near.parentNode` — **a
+    // standard browser property this shim simply did not have.** ⭐ So the move quietly fell back to the
+    // other placement, and my assertion about WHERE the line lands was, without the shim saying a word,
+    // asserting nothing. ⚠️ **A shim missing a property the view actually uses is not a smaller DOM, it is
+    // a different one** — the rule this file has already paid for with `classList`, `removeEventListener`
+    // and `hidden`.
+    get parentNode() { return this.parentElement; },
+    // ⚠️ AND NEITHER DID THIS ONE (v459) — and this time it was the VIEW reading it, not only the test:
+    // `sayStepFirst` asks `note.nextSibling !== before` before moving the line. ⭐ With the property
+    // missing that guard was always true, so the shop re-inserted on every keystroke and **the test
+    // asking "is the line directly above the card he touched?" got `undefined` and could not say.**
+    get nextSibling() {
+      const p = this.parentElement;
+      if (!p || !Array.isArray(p.children)) return null;
+      const i = p.children.indexOf(this);
+      return i >= 0 && i + 1 < p.children.length ? p.children[i + 1] : null;
+    },
+    appendChild(c) { if (c != null) { c.parentElement = this; this.children.push(c); } return c; },
+    append(...cs) { for (const c of cs.flat()) if (c != null) this.appendChild(c); },
+    // ⚠️⚠️ THIS SHIM HAD NO `insertBefore` AT ALL UNTIL v459, and that mattered the moment the shop began
+    // MOVING the refusal line instead of leaving it where the markup put it: **the view quietly fell back
+    // to the other placement, and a test asserting WHERE the line lands was asserting nothing.** ⭐ It was
+    // found by the assertion failing, not by reading — and the answer was to fix the shim, not the claim.
+    // ⭐ Like the real one, it takes the node OUT of wherever it was first: that is what makes
+    // `nextSibling` — and therefore "is it directly above the card he touched?" — an honest question.
+    insertBefore(n, ref) {
+      const prev = n && n.parentElement;
+      if (prev && prev !== this && Array.isArray(prev.children)) {
+        const i = prev.children.indexOf(n);
+        if (i >= 0) prev.children.splice(i, 1);
+      }
+      n.parentElement = this;
+      const at = ref ? this.children.indexOf(ref) : -1;
+      if (at >= 0) this.children.splice(at, 0, n); else this.children.push(n);
+      return n;
+    },
+    replaceChildren(...cs) {
+      // ⚠️⚠️ THE REAL ONE DETACHES WHAT IT THROWS AWAY, AND THIS SHIM DID NOT (v460). ⭐ So an element the
+      // menu had just emptied out still answered `parentElement` as the menu — **a false PASS for "is it
+      // still in the menu?", which is exactly the question her vanishing warning turned on.** ⭐ Without
+      // this, the test below would have gone green over the very fault it exists to catch.
+      for (const old of this.children) if (old && old.parentElement === this) old.parentElement = null;
+      this.children = cs.map((c) => (c && c.nodeType ? c : { nodeType: 3, text: String(c) }));
+      // ⚠️ The real one re-parents what it is given, which is what makes `closest` — and therefore
+      // the card this view puts its edge on — reachable from a row. Without it every freshly drawn
+      // row read as parentless and `closest` answered null.
+      for (const c of this.children) c.parentElement = this;
+    },
+    closest(sel) {
+      const want = String(sel || "").replace(/^\./, "");
+      let n = this;
+      while (n) {
+        if (String(n.className || "").split(/\s+/).includes(want)) return n;
+        n = n.parentElement;
+      }
+      return null;
+    },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
-    removeEventListener() {},
-    setAttribute(k, v) { this.attrs[k] = String(v); },
+    // ⚠️⚠️ A REAL `removeEventListener` — it was a NO-OP until v436, and a no-op cannot express what
+    // the shop now does. **The confirmation adds its own handlers on every open and takes them off
+    // again on close**; with the removal missing, the SECOND question would still carry the FIRST
+    // one's answer, and pressing "change" would run two handlers for one press. ⭐ **A shim that
+    // cannot express what the view does cannot test it** — the same lesson this file already records
+    // twice above, and the gap was in the shim rather than in the view.
+    // ⚠️ By REFERENCE, as the real DOM does: `askSwitch` builds fresh closures each time, so only
+    // the identical one it handed back is removed.
+    removeEventListener(t, f) {
+      const a = this._listeners[t];
+      if (!a) return;
+      const i = a.indexOf(f);
+      if (i >= 0) a.splice(i, 1);
+    },
+    // ⚠️ THE REAL DOM KEEPS `dataset` AND `data-*` ATTRIBUTES IN STEP, and this shim did not
+    // (v407): `el()` writes `data-point-id` with setAttribute, so `b.dataset.pointId` — which is
+    // how the shop marks the chosen collect-from row — read `undefined` here and would never have
+    // matched in a test. **A shim that cannot express what the view does cannot test it**, and the
+    // gap was in the shim rather than in the view. Anything that is not a `data-` attribute is
+    // left exactly as it was.
+    setAttribute(k, v) {
+      this.attrs[k] = String(v);
+      const m = /^data-([a-z0-9-]+)$/.exec(k);
+      if (m) this.dataset[m[1].replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = String(v);
+    },
     getAttribute(k) { return this.attrs[k]; },
     focus() {}, click() {},
+    // ⚠️⚠️ THE SHIM HAD NO `scrollIntoView` AT ALL (v462), so **every "did the page go there?" question was
+    // silently answered by the guard in the view** — and a test could not ask it. ⭐ The real one records
+    // what it was asked, which is what makes "the page is carried to the missing box" an assertion rather
+    // than a hope. Same rule as `insertBefore` and `parentNode` before it.
+    scrollIntoView(opts) { this.scrolled = opts; },
   };
+  return node;
 }
 
 // Every text node under `node` that would print as the word null or undefined — the whole
@@ -42,7 +161,16 @@ const registry = {};
 globalThis.document = {
   createElement: createEl,
   createTextNode: (s) => ({ nodeType: 3, text: String(s) }),
-  getElementById: (id) => (registry[id] ||= createEl("div")),
+  // ★★★ A NODE FOUND BY ID CARRIES THAT ID (v455) — the shim did not, and it cost a real assertion.
+  // ⚠️⚠️ **A shim that cannot express what the view does cannot test it** — the standing rule for this
+  // suite. The shop builds the field-note's id from the INPUT's own id (`${input.id}-note`) and ties the
+  // two with `aria-describedby`; with `id` undefined the shim produced `"undefined-note"` and the
+  // accessibility assertion could never pass, however correct the page was.
+  getElementById: (id) => {
+    const node = (registry[id] ||= createEl("div"));
+    node.id = id;
+    return node;
+  },
   querySelector: () => null,
   querySelectorAll: () => [],
   body: createEl("body"),
@@ -234,16 +362,42 @@ test("store render() fills the page without crashing", () => {
   assert.ok(!grid.children.some((c) => c.className.includes("cal-cell avail") && c.className.includes("full")),
     "nothing is sold out with availability off");
   const chosen = cal.children.find((c) => c.className === "cal-chosen");
-  assert.ok(chosen.children[0].text.startsWith("Your posting day: "));
+  // ★ IT IS THE POSTING DAY, NOT THE DELIVERY DAY (v407). ⚠️ This line pinned the old word for two
+  // versions, so it is asserted against the dictionary rather than a second copy of the English:
+  // the page and this test cannot drift apart again.
+  //
+  // ⚠️⚠️ AND SINCE v434 THE LINE HAS TWO FORMS, which is why this is no longer a `startsWith`.
+  // A day chosen FOR him says so; a day he chose himself reads plainly. **This test taps nothing,
+  // so it draws the first of the two** — and the check is written so it holds for either, by
+  // splitting the dictionary's own wording on its `%1` and demanding the day sits in that gap.
+  // ⭐ A prefix check would have been silently vacuous for the new line, whose `%1` comes FIRST.
+  const said = chosen.children[0].text;
+  const fits = [STORE.en.calChosen, STORE.en.calChosenFor].some((f) => {
+    const [before, after] = f.split("%1");
+    return said.startsWith(before) && said.endsWith(after);
+  });
+  assert.ok(fits, `the calendar names the chosen day in the shop's own words (it reads: ${JSON.stringify(said)})`);
+  assert.ok(!/delivery day/i.test(said),
+    "and never calls it a delivery day — a customer collecting his own bread did not recognise the day");
   // "First OPEN", not simply "first": a posting day whose cutoff has gone by is
   // dropped from the customer's calendar entirely, so the day named is the first
   // one still orderable. Asking isOpen the same question the shop asks keeps this
   // true whatever hour the suite happens to run at — at 21:17 on the day before a
   // 18:00 cutoff, tomorrow is already shut.
   const firstOpen = upcomingDates(CONFIG).find((d) => isOpen(CONFIG, d));
-  assert.ok(chosen.children[0].text.endsWith(fmtDay(firstOpen)), "the first open day is the one named");
+  // ⚠️ "The one NAMED", not "the one it ends with" (v434): the two forms of the line put the day in
+  // different places — `Your posting day: <day>` puts it last, and `<day> is suggested for you…` puts
+  // it first, because that is how she wrote the sentence. **What has to hold for both is that the
+  // first open day is the day it names.**
+  assert.ok(chosen.children[0].text.includes(fmtDay(firstOpen)), "the first open day is the one named");
 
-  assert.equal(registry["order-btn"].disabled, true); // empty cart
+  // ★★ AND IT IS NEVER DISABLED — THE BUTTON ANSWERS INSTEAD (v452). Her standing rule, written in the
+  // press's own comment and contradicted by the line that used to be here: *"THE BUTTON IS NEVER DISABLED —
+  // a site rule must not hide or block a sale."* ⚠️ A disabled button on a phone does not even acknowledge
+  // the tap, so a customer who reached the bottom was told nothing at all. ⭐ **This now pins the LIVE button
+  // rather than its absence** — an assertion of absence would pass for a page that had simply lost its button.
+  assert.equal(registry["order-btn"].disabled, false,
+    "★ an empty cart left the Place order button dead — it must answer with the first step outstanding");
 });
 
 test("tapping a day she does not post is answered, not swallowed", async () => {
@@ -405,10 +559,109 @@ test("daySpecs leaves days plain when availability is off or unknown", () => {
   assert.equal(unknown[0].soldOut, false);
 });
 
+test("★★★ the FIRST step outstanding is said, in his order — never a dead button (v452)", async () => {
+  // ⚠️⚠️ HER WORDS: __"when we proceed order step by step, one after another, if the previous step not
+  // completed user should be inform accordingly"__
+  //
+  // ⭐ AND TWO THINGS WERE WRONG. The button was DISABLED on an empty basket — and **a disabled button on a
+  // phone does not even acknowledge the tap**, so a customer who reached the bottom was told nothing at all,
+  // while the press's own comment twenty lines away already said *"THE BUTTON IS NEVER DISABLED"*. And the
+  // press **returned silently** when there was nothing to order.
+  //
+  // ⚠️ THE ORDER OF THE MESSAGES IS THE POINT OF THIS TEST, not just their presence: a message about step 3
+  // shown to somebody who has not done step 2 sends him BACKWARDS down the page to fix something it was not
+  // yet asking him for. **So the guard stops at the first thing missing, and the assertions read top down.**
+  const press = async () => { await registry["order-btn"].onclick(); };
+  const said = () => confirmLines().join(" ");
+
+  // ── nothing at all: the button is LIVE and says where to start
+  assert.equal(registry["order-btn"].disabled, false,
+    "★ the button is dead on an empty basket again — it must answer instead");
+  await press();
+  assert.match(said(), /Pick something from the menu above/,
+    "★ an empty basket was refused without telling him what to do");
+
+  // ── an item, and nothing else: HIS NAME FIRST, because the page asks it first
+  const stepper = registry["menu"].children[0].children.find((c) => c.className === "card-body")
+    .children.find((c) => c.className === "stepper");
+  tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+  stepper.children[2]._listeners.click[0](); // "+"
+  await press();
+  // ★★★ THE NAME IS ASKED FOR ON THE BOX ITSELF, NOT IN A POP-UP (v455). Her words: __"the message show in
+  // the wrong place and the screen jump, it should shown up at the appropriate place, or the missing field
+  // turn red embossed, or how a form filling would behave"__ ⭐ **So this asserts the FIELD, not a notice** —
+  // an assertion that only looked for a sentence would pass over a page with no red box at all.
+  const nameBox = registry["name-input"];
+  assert.ok(String(nameBox.className || "").includes("bad"),
+    `★ the empty name box did not mark itself (it is "${nameBox.className}")`);
+  // ⚠️ AND IT IS TIED TO THE BOX, not merely near it (v455). The skill's 1.6 names *"a label not tied"* as
+  // one of the costliest hand-written-site faults — so the assertion is the TIE, not the proximity.
+  assert.match(String(nameBox.attrs?.["aria-describedby"] || ""), /name-input-note/,
+    "★ the reason is not tied to the box for a screen reader — only sighted customers would get it");
+  assert.equal(nameBox.attrs?.["aria-invalid"], "true", "★ the box is not marked invalid");
+  // ⚠️⚠️ AND THE REASON UNDER IT BLINKS (v462). Her report: __"i skip step 3, go for step4, not warning"__ —
+  // ⭐ **the warning WAS there: the box turned red with its reason underneath it.** ⚠️ **But it was a STILL
+  // red edge, a screen up from the button she had just pressed, and nothing about it moved — so it read as
+  // no warning at all.** ⭐ A warning that does not move is a warning she has to be looking for.
+  const reason = registry["name-input-note"];
+  assert.ok(reason, "the reason under the box was never drawn, so nothing below proves anything");
+  assert.ok(String(reason.className).includes("flash"),
+    "★ the reason appeared WITHOUT BLINKING — a still red edge is exactly what she reported as no warning");
+  // ⚠️⚠️ AND THE PAGE IS CARRIED TO THE BOX (v462). **MEASURED ON THE REAL SHOP: the reason sat 825 PIXELS
+  // ABOVE the button she had pressed** — and a flashing line she cannot see is still a line she cannot see.
+  // ⚠️ v455 said *"the page does not move"*, and that was right for a message appearing ON ITS OWN. ⭐ **This
+  // is not that: she pressed a button and the form is answering her, which is how a form behaves.**
+  const carried = nameBox.scrolled;
+  assert.ok(carried, "★ the page was NOT carried to the box that is missing, so he is told off out of sight");
+  assert.equal(carried.block, "center",
+    "★ the box was put somewhere other than the middle of the screen — under the bar fixed to the foot is no use");
+  assert.doesNotMatch(said(), /WhatsApp number/i,
+    "★ he was sent to his NUMBER while a still-earlier step was the one outstanding");
+
+  // ── a name, still no number
+  document.getElementById("name-input").value = "Aunty Bee";
+  await press();
+  assert.match(said(), /WhatsApp number/i, "★ the number is not asked for after the name");
+
+  // ── a number, still no way of getting it
+  document.getElementById("whatsapp-input").value = "60123456789";
+  await press();
+  // ⚠️⚠️ MUNCHIES' OWN MODEL, CONFIRMED BY HER 2026-10-12: it posts nationwide as its primary way,
+  // so the way is NEVER empty and the bakery's v416 "say how you will get it" stop does not exist here.
+  // **The step that IS outstanding next is the address the order is posted to**, and its refusal is
+  // the shop's own confirm rather than a step line.
+  assert.equal(registry["confirm-msg"].children[0].children[0].text, STORE.en.confirmAddrTitle,
+    "★ the postal address was not asked for, though a posted order cannot leave without one");
+});
+
+
+// ★★★ THE STEP LOCK IS REAL NOW (v454), so a test that adds to the basket must FIRST do what a customer
+// must: tap a posting day. ⚠️⚠️ **I wrote this lock once before and REVERTED it when exactly these tests failed
+// — which is why the feature stayed unbuilt and she had to ask twice.** ⭐ **The tests move with the
+// behaviour; the behaviour does not move back for the tests.**
+function tapDay() {
+  let hit = null;
+  (function walk(n) {
+    for (const c of (n.children || [])) {
+      // ⚠️⚠️ AN **OPEN** DAY — the shop can only take an order for a day it really posts. A bare
+      // `tappable` also matches a CLOSED or askable day: the tap lands, `dayPicked` stays false,
+      // and the step lock refuses every `+`, so the basket reads empty and the test fails for a
+      // reason that has nothing to do with what it is testing.
+      if (c.tagName === "BUTTON" && String(c.className || "").includes("cal-cell")
+        && String(c.className || "").includes("tappable")
+        && String(c.className || "").includes("avail")) { hit = hit || c; return; }
+      walk(c);
+    }
+  })(registry["dates"]);
+  if (hit && hit._listeners && hit._listeners.click) hit._listeners.click[0]();
+  return !!hit;
+}
+
 test("order click sends one order and shows the success card (regression: no throw on the date label)", async () => {
   // Add one item via the first menu card's "+" button (drives the real cart).
   const card = registry["menu"].children[0];
   const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
+  tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
   stepper.children[2]._listeners.click[0](); // "+" — cart now has 1 item
   assert.equal(registry["order-btn"].disabled, false, "cart non-empty enables the button");
 
@@ -420,10 +673,14 @@ test("order click sends one order and shows the success card (regression: no thr
   };
   try {
     // Customer picks Courier + gives a phone + address; the order must carry them.
+    // ⚠️ A NAME IS NOW REQUIRED TO PLACE AN ORDER (v452) — her decision, so that every order she
+    // receives carries the name she confirms it against. Without this line the press refuses.
+    document.getElementById("name-input").value = "Aunty Bee";
     document.getElementById("whatsapp-input").value = "60123456789";
     document.getElementById("fulfillment")._value = "courier";
     document.getElementById("address-input").value = "12 Jalan Bunga";
     await registry["order-btn"].onclick();
+    await afterOrderNotice(); // ★ the notice follows her one second (v451)
     assert.ok(posted, "order was POSTed to the backoffice");
     assert.ok(String(posted.url).includes("/rest/v1/incoming_orders"), "POSTs to incoming_orders");
     const payload = JSON.parse(posted.body[0].data);
@@ -468,106 +725,10 @@ function refill() {
     .children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
 }
 
-test("the pin the customer marks rides on a courier order, and never on a self-collect one", async () => {
-  refill();
-  const realFetch = globalThis.fetch;
-  const realGeo = navigator.geolocation;
-  let posted = null;
-  globalThis.fetch = async (url, opts) => {
-    if (opts && opts.method === "POST") { posted = JSON.parse(JSON.parse(opts.body)[0].data); return { ok: true }; }
-    return { ok: true, json: async () => [] };
-  };
-  try {
-    document.getElementById("whatsapp-input").value = "60123456789";
-    document.getElementById("address-input").value = "Block C, Sri Bunga Condo";
-    // "Use my location" — the customer standing at the guard house, which is the one
-    // path the preview pane cannot test (a permission sheet only a real phone has).
-    navigator.geolocation = {
-      getCurrentPosition: (ok) => ok({ coords: { latitude: 5.41991234, longitude: 100.33116789, accuracy: 12 } }),
-    };
-    registry["pin-here"]._listeners.click[0]();
-    await flush();
-    assert.match(registry["pin-status"].textContent, /Pin set/, "the customer is told the pin is on");
-    assert.equal(registry["pin-status"].hidden, false);
-
-    // COURIER: the pin travels with the order, tidied to six decimals, named with the
-    // customer's OWN typed address (v205 — never the geocoder's name for that spot,
-    // which is a fragment), and nothing else the phone reported travels with it.
-    document.getElementById("fulfillment")._value = "courier";
-    await registry["order-btn"].onclick();
-    assert.ok(posted, "the order went through");
-    assert.deepEqual(posted.place, {
-      lat: 5.419912, lng: 100.331168, label: "Block C, Sri Bunga Condo",
-    });
-    assert.equal(posted.place.label, posted.address,
-      "the pin's words are the customer's own address, so her screen cannot name one place twice");
-    assert.deepEqual(Object.keys(posted.place).sort(), ["label", "lat", "lng"],
-      "no accuracy, no timestamp — the bakery is told where, named the customer's way, and nothing more");
-
-    // SELF COLLECT: the same customer pins again and then chooses to come and get it.
-    // Nothing is being delivered, so no door is posted. (A placed order empties the
-    // cart, the number and the method, so the next one starts them over — which is
-    // exactly what the next customer does too.)
-    document.getElementById("whatsapp-input").value = "60123456789";
-    registry["pin-here"]._listeners.click[0]();
-    await flush();
-    document.getElementById("fulfillment")._value = "collect";
-    refill();
-    posted = null;
-    await registry["order-btn"].onclick();
-    assert.ok(posted, "the self-collect order went through");
-    assert.equal("place" in posted, false, "a self-collect order carries no door");
-  } finally {
-    globalThis.fetch = realFetch;
-    if (realGeo === undefined) delete navigator.geolocation; else navigator.geolocation = realGeo;
-  }
-});
-
-test("the next customer does not inherit the last one's front door", async () => {
-  refill();
-  const realFetch = globalThis.fetch;
-  const realGeo = navigator.geolocation;
-  let posted = null;
-  globalThis.fetch = async (url, opts) => {
-    if (opts && opts.method === "POST") { posted = JSON.parse(JSON.parse(opts.body)[0].data); return { ok: true }; }
-    return { ok: true, json: async () => [] };
-  };
-  try {
-    document.getElementById("whatsapp-input").value = "60123456789";
-    navigator.geolocation = {
-      getCurrentPosition: (ok) => ok({ coords: { latitude: 5.42, longitude: 100.33 } }),
-    };
-    document.getElementById("fulfillment")._value = "courier";
-    // This shop refuses a courier order with no postal address (the bakery does not),
-    // so the door a customer posts to has to be here or the order never leaves.
-    document.getElementById("address-input").value = "12 Jalan Mawar, 10450 Penang";
-    registry["pin-here"]._listeners.click[0]();
-    await flush();
-    assert.equal(registry["pin-status"].hidden, false);
-    await registry["order-btn"].onclick();
-    // The pin carries the customer's OWN typed address as its name (v205), so the order
-    // cannot name one place twice — and nothing else the phone reported travels with it.
-    assert.deepEqual(posted.place, {
-      lat: 5.42, lng: 100.33, label: "12 Jalan Mawar, 10450 Penang",
-    });
-    // An order empties the cart, the number and the delivery method for whoever comes
-    // next. The pin has to go with them, or the phone handed across the counter sends
-    // the NEXT order to the last customer's door.
-    assert.equal(registry["pin-status"].hidden, true, "the pin line is cleared with the order");
-    document.getElementById("whatsapp-input").value = "60123456789";
-    document.getElementById("fulfillment")._value = "courier";
-    document.getElementById("address-input").value = "12 Jalan Mawar, 10450 Penang";
-    refill();
-    posted = null;
-    await registry["order-btn"].onclick();
-    assert.ok(posted, "the second order went through");
-    assert.equal("place" in posted, false, "a courier order nobody pinned carries no door");
-  } finally {
-    globalThis.fetch = realFetch;
-    if (realGeo === undefined) delete navigator.geolocation; else navigator.geolocation = realGeo;
-  }
-});
-
+// ⚠️ TWO PIN TESTS WERE HERE AND MOVED TO test/store-address.test.js (v414). They placed a pin by
+// pressing "Use my location", which no longer exists — and every one of their assertions was about
+// what the ORDER carries, not about that button. They are driven through the MAP there now, which
+// is the path a customer still has, and that file owns the Leaflet stub the map needs.
 test("the receipt carries the strictest change/cancel window of the whole basket", async () => {
   // The two products and their two windows are the TEST's own fixture (v347) —
   // the fallback menu can no longer supply them, and never promised to.
@@ -580,25 +741,34 @@ test("the receipt carries the strictest change/cancel window of the whole basket
       const card = registry["menu"].children[0];
       const plus = () => card.children.find((c) => c.className === "card-body")
         .children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+      tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
       plus();
 
       globalThis.fetch = async (url, opts) => (opts && opts.method === "POST" ? { ok: true } : { ok: true, json: async () => [] });
 
       // Two products in the basket, two different windows: the customer reads the
       // strictest (3), not the loosest.
-      document.getElementById("whatsapp-input").value = "60123456789";
-      document.getElementById("fulfillment")._value = "collect"; // avoid the postal-address requirement
+      // ⚠️ A NAME IS NOW REQUIRED TO PLACE AN ORDER (v452) — her decision, so that every order she
+    // receives carries the name she confirms it against. Without this line the press refuses.
+    document.getElementById("name-input").value = "Aunty Bee";
+    document.getElementById("whatsapp-input").value = "60123456789";
+    // ⚠️ AND A POSTAL ADDRESS — this shop posts by default, its own rule kept on purpose.
+    document.getElementById("address-input").value = "12 Jalan Bunga";
       await registry["order-btn"].onclick();
+      await afterOrderNotice(); // ★ the notice follows her one second (v451)
       const line = confirmLines().find((t) => /change or cancel/i.test(t));
       assert.ok(line, "the receipt states a change/cancel window");
+      // ⚠️ MUNCHIES' WORDING: its dictionary says "…before the posting day".
       assert.match(line, /up to 3 days before the posting day/, "the strictest window wins");
       assert.match(line, /not refundable/i, "and the no-refund rule that goes with it");
 
       // Nothing stated anywhere → no window line at all.
       CONFIG.products.forEach((p) => { delete p.cancelDays; });
       plus(); // basket refilled
-      document.getElementById("fulfillment")._value = "collect"; // the success path reset it to Post
+      // ⚠️ A NAME IS REQUIRED (v452) — her decision. Without it the press refuses.
+      document.getElementById("name-input").value = "Aunty Bee";
       await registry["order-btn"].onclick();
+      await afterOrderNotice(); // ★ the notice follows her one second (v451)
       assert.ok(!confirmLines().some((t) => /change or cancel/i.test(t)),
         "no product states a window → the receipt says nothing");
     });
@@ -617,6 +787,7 @@ test("parseVia normalises the ?via= digits on a referral link", () => {
 test("an order placed from a ?via= link is stamped with the referrer", async () => {
   const card = registry["menu"].children[0];
   const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
+  tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
   stepper.children[2]._listeners.click[0](); // "+" — cart now has 1 item
 
   let posted = null;
@@ -628,6 +799,9 @@ test("an order placed from a ?via= link is stamped with the referrer", async () 
   const realLocation = globalThis.location;
   globalThis.location = { search: "?via=60139876543" };
   try {
+    // ⚠️ A NAME IS NOW REQUIRED TO PLACE AN ORDER (v452) — her decision, so that every order she
+    // receives carries the name she confirms it against. Without this line the press refuses.
+    document.getElementById("name-input").value = "Aunty Bee";
     document.getElementById("whatsapp-input").value = "60123456789";
     document.getElementById("fulfillment")._value = "self";
     await registry["order-btn"].onclick();
@@ -644,6 +818,7 @@ test("an order placed from a ?via= link is stamped with the referrer", async () 
 test("an order without a ?via= link carries no referral stamp", async () => {
   const card = registry["menu"].children[0];
   const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
+  tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
   stepper.children[2]._listeners.click[0]();
 
   let posted = null;
@@ -653,6 +828,9 @@ test("an order without a ?via= link carries no referral stamp", async () => {
     return { ok: true, json: async () => [] };
   };
   try {
+    // ⚠️ A NAME IS NOW REQUIRED TO PLACE AN ORDER (v452) — her decision, so that every order she
+    // receives carries the name she confirms it against. Without this line the press refuses.
+    document.getElementById("name-input").value = "Aunty Bee";
     document.getElementById("whatsapp-input").value = "60123456789";
     document.getElementById("fulfillment")._value = "collect"; // avoid the postal-address requirement
     await registry["order-btn"].onclick();
@@ -667,6 +845,7 @@ test("order click without a WhatsApp number blocks the order (no POST)", async (
   // The number is compulsory — confirmations + the payment QR go over WhatsApp.
   const card = registry["menu"].children[0];
   const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
+  tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
   stepper.children[2]._listeners.click[0]();
   assert.equal(registry["order-btn"].disabled, false);
 
@@ -678,6 +857,8 @@ test("order click without a WhatsApp number blocks the order (no POST)", async (
   };
   try {
     document.getElementById("whatsapp-input").value = "";
+    // ⚠️ A NAME IS REQUIRED (v452) — her decision. Without it the press refuses.
+    document.getElementById("name-input").value = "Aunty Bee";
     await registry["order-btn"].onclick();
     assert.equal(posted, null, "no order POSTed when the phone is blank");
     assert.equal(registry["order-btn"].disabled, false, "button stays usable so they can retry");
@@ -720,6 +901,7 @@ test("the default Post (nationwide) order is blocked until a postal address is g
 test("order click sanitizes a +60-style phone to wa.me digits", async () => {
   const card = registry["menu"].children[0];
   const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
+  tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
   stepper.children[2]._listeners.click[0]();
 
   let posted = null;
@@ -730,7 +912,11 @@ test("order click sanitizes a +60-style phone to wa.me digits", async () => {
   };
   try {
     document.getElementById("whatsapp-input").value = "+60 12-345 6789";
-    document.getElementById("fulfillment")._value = "collect"; // avoid the postal-address requirement
+    // ⚠️ A NAME IS REQUIRED (v452) — her decision. Without it the press refuses.
+    document.getElementById("name-input").value = "Aunty Bee";
+    // ⚠️ AND A POSTAL ADDRESS, BECAUSE THIS SHOP POSTS BY DEFAULT — jerky's own rule, kept on
+    // purpose (see store/app.js). Without it the press refuses before the POST this reads.
+    document.getElementById("address-input").value = "12 Jalan Bunga";
     await registry["order-btn"].onclick();
     assert.ok(posted, "order was POSTed");
     const payload = JSON.parse(posted.body[0].data);
@@ -856,6 +1042,24 @@ test("the shop keeps the Points it can read, and only the fields it needs", () =
     { id: "pt_1", name: "Farlim, Air Itam", minOrderRM: 30 },
     { id: "pt_2", name: "Chai Leng Park, Prai", minOrderRM: 0 },
   ], "the receiver, the address and the fee never reach the shop");
+});
+
+test("the shop keeps the kitchen flag, and adds it to nothing else (v407)", () => {
+  // ★★ A FIELD A SENDER PUBLISHES AND A RECEIVER DOES NOT KEEP IS A FIELD THAT WAS NEVER SENT.
+  // ⚠️ `publishPoints` sends `isKitchen` and this whitelist would have thrown it away one step
+  // later — the shop would go on inventing its own "Our kitchen" row and a customer would see the
+  // kitchen twice, which is the exact fault the pair of edits repairs. Every new key needs naming
+  // in BOTH places, and this is the second one.
+  const out = mergeStorefront({}, { points: [
+    { id: "pt_1", name: "Farlim, Air Itam", isKitchen: true },
+    { id: "pt_2", name: "Chai Leng Park, Prai" },
+  ] });
+  assert.equal(out.points[0].isKitchen, true, "the marked kitchen arrives marked");
+  // ⚠️ WRITTEN ONLY WHEN TRUE, the house's "absent means nothing" spelling: an ordinary Point's
+  // payload stays byte-for-byte what it has always been, so this cannot change a page by itself.
+  assert.equal("isKitchen" in out.points[1], false, "an ordinary Point gains no key at all");
+  assert.equal(out.points[1].isKitchen, undefined,
+    "and an absent key reads as 'not the kitchen', which is also what an older payload means");
 });
 
 test("a smallest basket the shop cannot read is NO minimum, never a guess (v306)", () => {
@@ -1177,6 +1381,7 @@ test("an order at the last stage shows the whole journey green — nothing flash
 test("order that reaches the app shows received WITHOUT opening WhatsApp (no popup)", async () => {
   const card = registry["menu"].children[0];
   const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
+  tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
   stepper.children[2]._listeners.click[0](); // "+" — cart has 1 item
   assert.equal(registry["order-btn"].disabled, false);
 
@@ -1190,9 +1395,13 @@ test("order that reaches the app shows received WITHOUT opening WhatsApp (no pop
   const realOpen = window.open;
   window.open = (u) => { opened.push(u); return {}; };
   try {
+    // ⚠️ A NAME IS NOW REQUIRED TO PLACE AN ORDER (v452) — her decision, so that every order she
+    // receives carries the name she confirms it against. Without this line the press refuses.
+    document.getElementById("name-input").value = "Aunty Bee";
     document.getElementById("whatsapp-input").value = "60123456789";
     document.getElementById("fulfillment")._value = "collect"; // avoid the postal-address requirement
     await registry["order-btn"].onclick();
+    await afterOrderNotice(); // ★ the notice follows her one second (v451)
     assert.ok(posted, "order was POSTed to the backoffice");
     assert.deepEqual(opened, [], "a successful order must NOT open WhatsApp");
     const title = registry["confirm-msg"].children[0].children[0];
@@ -1212,6 +1421,7 @@ test("order that reaches the app shows received WITHOUT opening WhatsApp (no pop
 test("WhatsApp only opens as a fallback when the order could NOT reach the app", async () => {
   const card = registry["menu"].children[0];
   const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
+  tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
   stepper.children[2]._listeners.click[0]();
   assert.equal(registry["order-btn"].disabled, false);
 
@@ -1224,6 +1434,9 @@ test("WhatsApp only opens as a fallback when the order could NOT reach the app",
   const realOpen = window.open;
   window.open = (u) => { opened.push(u); return {}; };
   try {
+    // ⚠️ A NAME IS NOW REQUIRED TO PLACE AN ORDER (v452) — her decision, so that every order she
+    // receives carries the name she confirms it against. Without this line the press refuses.
+    document.getElementById("name-input").value = "Aunty Bee";
     document.getElementById("whatsapp-input").value = "60123456789";
     document.getElementById("fulfillment")._value = "collect"; // avoid the postal-address requirement
     await registry["order-btn"].onclick();
@@ -1674,12 +1887,14 @@ async function withProducts(list, fn) {
   const realFetch = globalThis.fetch;
   CONFIG.products = list;
   render();
+  tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
   try {
     return await fn(list);
   } finally {
     CONFIG.products = real;
     globalThis.fetch = realFetch;
     render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
   }
 }
 
@@ -1744,6 +1959,9 @@ test("the note rides that item's line, and a repaint mid-sentence keeps the word
       if (opts && opts.method === "POST") { posted = JSON.parse(JSON.parse(opts.body)[0].data); return { ok: true }; }
       return { ok: true, json: async () => [] };
     };
+    // ⚠️ A NAME IS NOW REQUIRED TO PLACE AN ORDER (v452) — her decision, so that every order she
+    // receives carries the name she confirms it against. Without this line the press refuses.
+    document.getElementById("name-input").value = "Aunty Bee";
     document.getElementById("whatsapp-input").value = "60123456789";
     document.getElementById("fulfillment")._value = "collect";
     await registry["order-btn"].onclick();
@@ -1765,6 +1983,9 @@ test("an order with no note posts no note key at all — the payload is the one 
       if (opts && opts.method === "POST") { posted = JSON.parse(JSON.parse(opts.body)[0].data); return { ok: true }; }
       return { ok: true, json: async () => [] };
     };
+    // ⚠️ A NAME IS NOW REQUIRED TO PLACE AN ORDER (v452) — her decision, so that every order she
+    // receives carries the name she confirms it against. Without this line the press refuses.
+    document.getElementById("name-input").value = "Aunty Bee";
     document.getElementById("whatsapp-input").value = "60123456789";
     document.getElementById("fulfillment")._value = "collect";
     await registry["order-btn"].onclick();
@@ -1785,11 +2006,18 @@ test("the next customer does not inherit the last one's note", async () => {
       if (opts && opts.method === "POST") return { ok: true };
       return { ok: true, json: async () => [] };
     };
+    // ⚠️ A NAME IS NOW REQUIRED TO PLACE AN ORDER (v452) — her decision, so that every order she
+    // receives carries the name she confirms it against. Without this line the press refuses.
+    document.getElementById("name-input").value = "Aunty Bee";
     document.getElementById("whatsapp-input").value = "60123456789";
     document.getElementById("fulfillment")._value = "collect";
     await registry["order-btn"].onclick();
 
     // The person behind them adds the same item; the box must open on nothing.
+    // ⚠️ AND THE DAY IS TAPPED FIRST (v465) — **which is also this test's subject.** The after-order reset
+    // now clears the posting day's claim, so the person behind him starts at step 1 exactly as a new visitor
+    // does. ⭐ Without this the `+` is correctly refused, because step 1 is genuinely his to choose again.
+    tapDay();
     pressPlus(cardNamed(p.name));
     const link = noteAdd(cardNamed(p.name));
     assert.ok(link, "the item is back in the basket and offers its note again");
@@ -1994,4 +2222,1492 @@ test("every promo line the shop can print is written in all three languages", ()
       assert.notEqual(STORE[lang][k], STORE.en[k], `${k} was left untranslated in ${lang}`);
     }
   }
+});
+
+// ── v407: her kitchen is offered once, not once per name ────────────────────
+
+test("the shop offers her kitchen ONCE — as itself, or as the fallback, never both", () => {
+  // ★★ v406 made the kitchen a Point she marks ("I want all self collection thru collection
+  // point, not from the kitchen"). ⚠️⚠️ THE SHOP WAS NOT TOLD, so it went on printing its own
+  // invented "Our kitchen" row above the list — and **the moment she marked a kitchen, a customer
+  // saw the same place twice**: once invented, once under the name she gave it, as two choices
+  // that looked like two different places. The flag now travels (see publishPoints and
+  // mergeStorefront), and the invented row is the FALLBACK it was always meant to be.
+  //
+  // ⚠️ It is not tidiness: `render()` is the real page render, and this reads the real rows the
+  // shop draws. The row's own name is what a customer taps, so it is what is asserted.
+  const real = CONFIG.points;
+  // ⚠️ Read through the text NODES rather than `.textContent`: this shim's text nodes are plain
+  // `{nodeType:3, text}` records with no `textContent` of their own, so a `.textContent` read here
+  // would return "" for every row and the whole test would pass against nothing at all.
+  const textOf = (n) => (n.nodeType === 3 ? n.text : (n.children || []).map(textOf).join(""));
+  const rows = () => registry["point-list"].children.map((r) => r.children[0].children[0].text);
+  try {
+    CONFIG.points = [{ id: "pt_1", name: "Farlim, Air Itam", minOrderRM: 0 }];
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    assert.deepEqual(rows(), ["Our kitchen", "Farlim, Air Itam"],
+      "with no kitchen marked, the invented row is kept — it is how the bakery has always been collectable");
+    // ⚠️ WHAT IS ASSERTED IS WHAT THE ORDER CARRIES, not the highlight. The chosen place rides on
+    // the wrapper as `_pointId`/`_pointName` and `order()` reads it straight back, so that pair is
+    // the outcome; the `active` class is decoration, and this shim's `classList` is a no-op.
+    // ⚠️⚠️ AND NOTHING IS CHOSEN ON ARRIVAL (v415), which is a change of behaviour and hers: this
+    // used to assert that the invented kitchen arrived already chosen. Her words: __"click to choose
+    // point, without click it should not highlight"__ — ⭐ **a place wearing the panel reads as a
+    // place the customer PICKED, and he has picked nothing.** ⚠️ The EMPTY id is still what the
+    // ORDER means by "the bakery", so an order placed without a tap goes exactly where it always did.
+    assert.equal(registry["fulfillment"]._pointId, "", "nothing is chosen until he taps one");
+    assert.equal(registry["fulfillment"]._pointName, "", "and no name is claimed for him either");
+
+    CONFIG.points = [{ id: "pt_1", name: "Farlim, Air Itam", minOrderRM: 0, isKitchen: true }];
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    assert.deepEqual(rows(), ["Farlim, Air Itam"],
+      "marking a kitchen lists it once, under her own name, and drops the invented row");
+    // ★★ AND IT WEARS THE KITCHEN'S OWN LINE (v408). ⚠️ v407 dropped the invented row without
+    // giving the real one its words, so her own kitchen read "Self collection Point — we message
+    // the exact spot…" — true, and useless: a customer collecting AT THE BAKERY was told exactly
+    // what he would be told about a friend's shop. ⭐ Found by LOOKING at her live shop.
+    const kitchenSub = registry["point-list"].children[0].children[1].children[0].text;
+    // ⚠️ MUNCHIES' OWN WORDING for the kitchen line — the bakery says "where we bake".
+    assert.match(kitchenSub, /where your treats are made/i,
+      `the kitchen says it is the kitchen — it read: ${JSON.stringify(kitchenSub)}`);
+    assert.ok(!/Self collection Point/i.test(kitchenSub),
+      "and not the line every other place wears");
+
+    CONFIG.points = [{ id: "pt_1", name: "Farlim, Air Itam", minOrderRM: 0, isKitchen: true },
+      { id: "pt_2", name: "Chai Leng Park, Prai", minOrderRM: 0 }];
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    assert.deepEqual(rows(), ["Farlim, Air Itam", "Chai Leng Park, Prai"],
+      "and the other Points are still offered beside it");
+
+    // ⚠️⚠️ AND NOTHING IS CHOSEN ON ARRIVAL (v415) — THIS ASSERTION USED TO SAY THE OPPOSITE.
+    // Her words: __"click to choose point, without click it should not highlight"__, and the reason
+    // is the one her v413 picture showed: **a place wearing the panel reads as a place the customer
+    // PICKED, and he has picked nothing.** ⭐ So the marked kitchen is offered like any other place
+    // and lit only when he taps it.
+    assert.equal(registry["fulfillment"]._pointId, "", "nothing is chosen until he taps one");
+    assert.equal(registry["fulfillment"]._pointName, "", "and no name is claimed for him either");
+    const lit = registry["point-list"].children.filter((b) => String(b.className).includes("active"));
+    assert.equal(lit.length, 0, "no row is wearing the highlight");
+
+    // ⭐ AND AN ORDER PLACED WITHOUT CHOOSING STILL WORKS, exactly as it always has: the EMPTY id is
+    // how every order has said "collect from the bakery" since long before there were Points. This
+    // is a page that stops pretending, not one that asks a new question.
+    assert.equal(registry["point-list"].children.length, 2, "both places are still offered");
+    // ⚠️ And the card says what to do instead of pretending — the line that stands where the
+    // highlight used to. It is inside the folded body, so it shows with the card.
+    // ⚠️ THE WAY IS CHOSEN FIRST — munchies opens on Post (nationwide), its own default, so the
+    // collect card is shut until he picks it. The bakery starts with neither chosen and does not
+    // need this line. Same deliberate difference as `apply("courier")` in store/app.js.
+    document.getElementById("fulfillment")._value = "collect";
+    document.getElementById("fulfillment")._open = "collect";
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    assert.equal(registry["point-pick"].hidden, false,
+      "the card tells him the list is a thing to press");
+    registry["point-list"].children[0]._listeners.click[0]();
+    assert.equal(registry["point-pick"].hidden, true,
+      "and stops saying it the moment he does — a page must not nag about what he just did");
+    assert.equal(registry["fulfillment"]._pointId, "pt_1", "the tap is what chooses it");
+  } finally {
+    CONFIG.points = real;
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+  }
+});
+
+// ── v408: the code is said again above Place order ──────────────────────────
+
+test("a code on the order is said again above Place order", () => {
+  // ★★ Her words: __"If there is promo coupon attached, say it on top of Place Order, word like:
+  // Your promo coupon will be attached together to the order for validation, actual payable will be
+  // confirm by Whatsapp."__ ⭐ The page already said it ONCE, up at the code box ("We'll take it off
+  // when we confirm your order") — and by the time a customer reaches the button, that is off the
+  // screen. Here they are looking at ONE figure, the goods total on the bar, and this is the moment
+  // they commit.
+  //
+  // ⚠️ Driven through the REAL controls — the box, "Use it", "Remove the code" — because the point
+  // is that a customer who types a code sees this line, and one who never does never sees it.
+  const realCodes = CONFIG.promoCodes;
+  const bar = () => registry["promo-bar"];
+  const plus = () => registry["menu"].children[0]
+    .children.find((c) => c.className === "card-body")
+    .children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+  try {
+    // ⚠️ AN ORDINARY BAR IS UNTOUCHED — hidden, and empty rather than holding a stale sentence.
+    assert.equal(bar().hidden, true, "no code on the order means no line on the bar");
+    assert.equal(bar().textContent, "", "and nothing left in it to appear on the next repaint");
+
+    CONFIG.promoCodes = mergeStorefront({}, {
+      promoCodes: [{ code: "FRESH10", gives: { type: "rm", value: 10 } }],
+    }).promoCodes;
+    plus(); // something in the basket, so the code has a total to judge against
+    registry["promo-input"].value = "FRESH10";
+    registry["promo-apply"]._listeners.click[0]();
+
+    assert.equal(bar().hidden, false, "a code on the order puts the line up where the money is");
+    assert.match(bar().textContent, /FRESH10/, "and the code is named back to them, not just 'your code'");
+    assert.match(bar().textContent, /confirm the final amount on WhatsApp/i,
+      "the amount is CONFIRMED with them — never stated as already correct");
+    // ⚠️ It promises no FIGURE. Whether the discount holds is hers to decide at the confirmation
+    // (a code can be one-per-customer, or first-order only), so a number here would be a promise
+    // the page cannot keep.
+    assert.ok(!/RM\s*[\d.]/.test(bar().textContent), "no ringgit figure is promised on the bar");
+
+    registry["promo-clear"]._listeners.click[0]();
+    assert.equal(bar().hidden, true, "removing the code takes the line away again");
+  } finally {
+    CONFIG.promoCodes = realCodes;
+    registry["promo-input"].value = "";
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+  }
+});
+
+// ── v410: the collection Areas, and the address she chooses to publish ──────
+
+test("the shop keeps the AREA headings it can read, and only the fields it needs", () => {
+  // Her words: __"top level is Penang Island & Prai. Under Penang Island will be Area like Sg Ara,
+  // Balik Pulau, Farlim, Georgetown"__. Read exactly like the product categories beside it:
+  // replaced wholesale, and re-validated on the shop's own terms so a malformed row cannot draw.
+  const out = mergeStorefront({}, { pointAreas: [
+    { name: "Penang Island", depth: 0, points: ["pt_1", "pt_2"], junk: "dropped" },
+    { name: "Sg Ara", depth: 1, points: ["pt_2"] },
+    { name: "   " },            // no name: dropped rather than drawn as a blank heading
+    { points: ["pt_3"] },
+    "nonsense",
+  ] });
+  assert.deepEqual(out.pointAreas, [
+    { name: "Penang Island", depth: 0, points: ["pt_1", "pt_2"] },
+    { name: "Sg Ara", depth: 1, points: ["pt_2"] },
+  ], "her names, her depths, and the ids of what each carries — nothing else");
+  assert.deepEqual(Object.keys(out.pointAreas[0]).sort(), ["depth", "name", "points"]);
+  // ⚠️ An empty list is a real instruction, not silence: deleting her last area has to take the
+  // headings off a page that is already open.
+  assert.deepEqual(mergeStorefront({ pointAreas: [{ name: "Gone", depth: 0, points: [] }] },
+    { pointAreas: [] }).pointAreas, []);
+  assert.equal(mergeStorefront({ pointAreas: [{ name: "Kept", depth: 0, points: [] }] }, { name: "X" })
+    .pointAreas[0].name, "Kept", "and a payload that says nothing about areas leaves them alone");
+  assert.equal(mergeStorefront({}, { pointAreas: [{ name: "X", depth: "rubbish" }] })
+    .pointAreas[0].depth, 0, "a depth the page cannot read is top level, never a guess");
+});
+
+test("★★ the address reaches the shop ONLY when she ticked it, and only when there is one", () => {
+  // ⚠️⚠️ THE FIRST TIME A STREET ADDRESS HAS EVER BEEN PUBLISHED FROM THIS APP. The whitelist is
+  // what decides it here, one step after publishPoints sent it — **a field a sender publishes and
+  // a receiver does not keep was never sent**, the fault that shipped at v406 and again at v407.
+  const out = mergeStorefront({}, { points: [
+    { id: "pt_1", name: "Sg Ara", showAddress: true, address: "12 Jalan Bunga, 11500 Air Itam" },
+    { id: "pt_2", name: "Prai", showAddress: false, address: "9 Jalan Ria" },
+    { id: "pt_3", name: "Blank tick", showAddress: true, address: "   " },
+    { id: "pt_4", name: "No switch", address: "1 Jalan Lain" },
+  ] });
+  const by = (id) => out.points.find((p) => p.id === id);
+  assert.equal(by("pt_1").address, "12 Jalan Bunga, 11500 Air Itam", "ticked: the address arrives");
+  assert.equal("address" in by("pt_2"), false, "not ticked: no address key at all");
+  assert.equal("address" in by("pt_3"), false, "ticked but blank: nothing to print");
+  assert.equal("address" in by("pt_4"), false,
+    "⚠️ an address with NO switch reads as not shown — the safe way round, and what every payload sent before today means");
+  // ⚠️ And the private things still never reach here, whatever the switch says.
+  const blob = JSON.stringify(out.points);
+  assert.equal(blob.includes("Aunty Lim"), false, "the receiver is never published");
+  assert.equal(blob.includes("60123456789"), false, "nor their phone");
+});
+
+test("★ the shop draws her area headings, and the places under them", () => {
+  const realP = CONFIG.points;
+  const realA = CONFIG.pointAreas;
+  // ⚠️ Read through the TEXT NODES — this shim's text nodes carry no `textContent`, so a
+  // `.textContent` read would return "" for every row and the test would pass against nothing.
+  const kids = () => registry["point-list"].children.map((n) => (String(n.className).includes("point-area")
+    ? `# ${n.children[0].text}` : n.children[0].children[0].text));
+  try {
+    CONFIG.points = [
+      { id: "pt_loose", name: "Somewhere unfiled", minOrderRM: 0 },
+      { id: "pt_island", name: "Penang Island", minOrderRM: 0 },
+      { id: "pt_sgara", name: "Sg Ara", minOrderRM: 0, isKitchen: true },
+      { id: "pt_prai", name: "Chai Leng Park, Prai", minOrderRM: 0 },
+    ];
+    // ⚠️ The list arrives in the SHOP'S order — the loose block first, then each area — because the
+    // app publishes it that way (`shopPointOrder`). This page only reads it out.
+    CONFIG.pointAreas = [
+      { name: "Penang Island", depth: 0, points: ["pt_island", "pt_sgara"] },
+      { name: "Prai", depth: 0, points: ["pt_prai"] },
+    ];
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    assert.deepEqual(kids(), [
+      "Somewhere unfiled",       // no heading — a real place, drawn first, never hidden
+      "# Penang Island",         // the heading, drawn once
+      "Penang Island",           // ⚠️ her own Point, named after the area it is filed in
+      "Sg Ara",
+      "# Prai",
+      "Chai Leng Park, Prai",
+    ], "her headings, each drawn ONCE in front of the first Point under it");
+
+    // ⚠️ NO AREAS AT ALL IS THE PAGE IT HAS ALWAYS BEEN — no headings, and the invented kitchen row
+    // back, because nothing is marked as the kitchen in this fixture's second life.
+    CONFIG.pointAreas = [];
+    CONFIG.points = [{ id: "pt_1", name: "Farlim, Air Itam", minOrderRM: 0 }];
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    assert.deepEqual(kids(), ["Our kitchen", "Farlim, Air Itam"],
+      "with no areas the page is byte-for-byte the page it was before this version");
+
+    // ★ AND THE ADDRESS, ON THE ROW SHE TICKED AND NO OTHER.
+    CONFIG.points = [
+      { id: "pt_1", name: "Shown", minOrderRM: 0, address: "12 Jalan Bunga" },
+      { id: "pt_2", name: "Hidden", minOrderRM: 0 },
+    ];
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    // ⚠️ Found by NAME, not by position: with no kitchen marked the invented "Our kitchen" row is
+    // drawn first, so `children[0]` is that row and an index would have asserted about the wrong
+    // Point entirely.
+    const rowFor = (nm) => registry["point-list"].children.find((r) =>
+      r.children[0] && r.children[0].children[0] && r.children[0].children[0].text === nm);
+    // ⚠️ `.includes`, not `===` — the span wears `point-sub point-addr`, because it keeps the
+    // description's typography rather than being a class of its own.
+    const addrOf = (nm) =>
+      (rowFor(nm).children.find((c) => String(c.className).includes("point-addr")) || null);
+    assert.ok(addrOf("Shown"), "the ticked Point carries an address line");
+    assert.equal(addrOf("Hidden"), null,
+      "and a Point she has not ticked carries none — the line cannot leak from the row above");
+    assert.equal(addrOf("Shown").children[0].text, "12 Jalan Bunga");
+  } finally {
+    CONFIG.points = realP;
+    CONFIG.pointAreas = realA;
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+  }
+});
+
+// ── v410: the place list IS the self-collect choice ──────────────────────────
+
+test("★★ tapping a place chooses SELF COLLECT too — the two are one piece", () => {
+  // Her words: __"there is 2 main selection, select self collect and a drop drown appear, should
+  // not be in present interface"__. There are two ways to get an order, not three questions: the
+  // places a customer can collect from are PART of choosing to collect, so a tap on one settles
+  // both — ⚠️ **there is no longer a world where somebody has picked a place but has not said they
+  // are collecting, or has said collecting and not said where.**
+  const realP = CONFIG.points;
+  try {
+    CONFIG.points = [
+      { id: "pt_kitchen", name: "Our place", minOrderRM: 0, isKitchen: true },
+      { id: "pt_farlim", name: "Farlim, Air Itam", minOrderRM: 0 },
+    ];
+    // ⚠️ COURIER FIRST, and the order matters: it is the state in which the OLD page took the
+    // places away, so asserting it before the tap is what makes the assertion the one that fires.
+    // (Written the other way round, a fault that re-hid the list failed the tap assertion instead
+    // and this one was never reached — a test whose guard is not the line it is named for.)
+    // ⚠️ CHOOSING THE COURIER FOLDS THE CARD (v412) — the places are still BUILT, they are simply
+    // not shown. ⭐ That is what her "hole" was: white place rows sitting open in a card the
+    // customer had already decided against. This assertion used to read the opposite way, and the
+    // change is deliberate and hers.
+    document.getElementById("fulfillment")._value = "courier";
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    assert.ok(document.getElementById("point-list").children.length >= 2,
+      "the places are still built, so opening the card again costs nothing");
+    assert.equal(document.getElementById("point-list").hidden, true,
+      "but choosing the courier folds the card shut");
+    document.getElementById("fulfillment")._value = "collect";
+    document.getElementById("fulfillment")._pointId = "";
+    document.getElementById("fulfillment")._open = "collect";
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    const places = document.getElementById("point-list").children;
+    assert.ok(places.length >= 2, "the places are drawn inside the collect card");
+    // ⚠️ WHERE THEY LIVE — inside the self-collect card rather than in a box of their own — is
+    // asserted against the MARKUP in store-i18n.test.js, because this shim carries no static HTML
+    // and so cannot see the card at all. What it CAN drive is the behaviour the tap causes.
+    assert.equal(places[0].parentElement, document.getElementById("point-list"),
+      "the rows are in the list the script fills");
+
+    places[1]._listeners.click[0](); // the second place, i.e. Farlim
+    const wrap = document.getElementById("fulfillment");
+    assert.equal(wrap._value, "collect", "⚠️ the tap chose self collect as well as the place");
+    assert.equal(wrap._pointId, "pt_farlim", "and the place it was on");
+
+    // ⚠️ AND STILL DRAWN AFTER A REPAINT WHILE COURIER IS THE CHOICE — the hiding used to happen on
+    // exactly this path (refreshPointList), not at the moment of a tap, so it is checked here too.
+    document.getElementById("fulfillment")._value = "courier";
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    assert.equal(document.getElementById("point-list").children.length, places.length,
+      "and it is still true after a repaint");
+  } finally {
+    CONFIG.points = realP;
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+  }
+});
+
+// ── v436: a change that takes something away asks first ──────────────────────
+
+// The three things every test below needs: two places, one of them NAMED THE WAY A REAL ONE IS —
+// with a full stop at the end, because the shop prints the name as a sentence under each place and
+// that is where the doubled stop came from.
+function withAsks(fn) {
+  const realP = CONFIG.points;
+  try {
+    CONFIG.points = [
+      { id: "pt_kitchen", name: "Our place", minOrderRM: 0, isKitchen: true },
+      { id: "pt_farlim", name: "Farlim, Air Itam.", minOrderRM: 0 },
+    ];
+    // ⚠️ THE PAGE ARRIVES WITH THE QUESTION SHUT — `hidden` is on the element in store/index.html —
+    // and this shim carries no markup, so it cannot read that. **The one line that stands in for it
+    // is here rather than in each test**, and the opening state itself is pinned against the HTML in
+    // shop-info-card.test.js, where there IS a page to read.
+    document.getElementById("ask-scrim").hidden = true;
+    fn();
+  } finally {
+    CONFIG.points = realP;
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+  }
+}
+const askScrim = () => document.getElementById("ask-scrim");
+const askBody = () => document.getElementById("ask-body").textContent;
+const pressAsk = (which) => document.getElementById(which)._listeners.click[0]();
+// ★★★ AND ONE ITEM IN THE BASKET, BECAUSE STEP 3 IS SHUT WITHOUT ONE (v456). Her words: __"lock the 2
+// delivery cards too"__. ⚠️ **The three tests below are about ASKING before he changes how he gets his
+// order — and that is an act INSIDE step 3.** ⭐ Their subject has not changed at all; what changed is
+// that **the shop no longer lets a customer walk into step 3 with step 2 unfinished.** So they now
+// arrive the way a customer does. ⚠️ A test that reached step 3 any other way would be testing a route
+// the shop no longer has, and would pass whether the lock worked or not.
+function addOneItem() {
+  const stepper = registry["menu"].children[0].children.find((c) => c.className === "card-body")
+    .children.find((c) => c.className === "stepper");
+  stepper.children[2]._listeners.click[0](); // "+"
+  assert.equal(registry["bar-count"].textContent, "1 item",
+    "★ nothing went into the basket, so step 3 is still shut and this fixture proves nothing");
+}
+// Choose the second place. ⚠️ Set up AFTER `render()`, because wiring runs once at startup and a
+// repaint does not re-choose anything for the customer.
+function chooseFarlim() {
+  const wrap = document.getElementById("fulfillment");
+  wrap._value = "collect"; wrap._open = "collect"; wrap._pointId = ""; wrap._pointName = "";
+  render();
+  tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+  addOneItem(); // ★ v456: step 3 does not open on an empty basket
+  const places = document.getElementById("point-list").children;
+  assert.ok(places.length >= 2, "the places were not drawn, so this proves nothing");
+  places[1]._listeners.click[0]();
+  assert.equal(wrap._pointId, "pt_farlim", "the place was not chosen, so this proves nothing");
+}
+
+test("★★ changing how he gets his order asks FIRST, and nothing moves until he answers", () => {
+  // Her words: __"a confirmation pop up, asking whether customer intend to change to delivery? the
+  // point selection will be cleared, vise versa"__ — ⭐ the rule she gave me for posting days at v404,
+  // *taking something away always asks first*.
+  // ⚠️⚠️ AND WHAT IT IS FOR: a customer who picked a point and then switched to delivery was left
+  // looking at **a point still selected**, with nothing saying whether it still applied to his
+  // order — the fault v416 named, of a page that has answered its own question.
+  withAsks(() => {
+    chooseFarlim();
+    const wrap = document.getElementById("fulfillment");
+    assert.equal(askScrim().hidden, true, "no question is up to begin with");
+
+    wrap._pressWay("courier");
+
+    assert.equal(askScrim().hidden, false, "★ the change went through without asking — it took his place away silently");
+    assert.equal(wrap._value, "collect", "⚠️ and the way moved while the question was still open");
+    assert.equal(wrap._pointId, "pt_farlim", "nor should his place have moved yet");
+    // ⭐ THE QUESTION NAMES WHAT IS LOST — and the point's own full stop is not doubled into the
+    // sentence around it. The real names end with one.
+    assert.match(askBody(), /Farlim, Air Itam/, "the question does not name the place he is losing");
+    assert.doesNotMatch(askBody(), /Itam\.\s*\./, "★ the point's own full stop was doubled in the sentence");
+
+    pressAsk("ask-change");
+    assert.equal(askScrim().hidden, true, "the question did not close");
+    assert.equal(wrap._value, "courier", "his answer did not take effect");
+    assert.equal(wrap._pointId, "", "★★ and the place he picked was NOT cleared");
+    assert.equal(wrap._pointName, "", "its name went with it");
+  });
+});
+
+test("★★ and KEEP leaves everything exactly as it was", () => {
+  // The other half, and the one that must not be forgotten: a question is only a question if the
+  // quiet answer is a real one. ⚠️ The press that opened it must not half-apply.
+  withAsks(() => {
+    chooseFarlim();
+    const wrap = document.getElementById("fulfillment");
+    const before = { v: wrap._value, p: wrap._pointId, n: wrap._pointName };
+    wrap._pressWay("courier");
+    pressAsk("ask-keep");
+
+    assert.equal(askScrim().hidden, true, "the question did not close");
+    assert.equal(wrap._value, before.v, "★ answering keep still changed the way");
+    assert.equal(wrap._pointId, before.p, "and it took his place");
+    assert.equal(wrap._pointName, before.n, "or its name");
+  });
+});
+
+test("★ a change that costs him NOTHING is not interrupted", () => {
+  // ⚠️ A question guarding nothing is noise on a page that already carries four notices a customer
+  // must read. Nothing chosen here, so nothing can be lost.
+  withAsks(() => {
+    const wrap = document.getElementById("fulfillment");
+    wrap._value = "collect"; wrap._open = "collect"; wrap._pointId = ""; wrap._pointName = "";
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    addOneItem(); // ★ v456: and the way cannot be chosen on an empty basket
+
+    wrap._pressWay("courier");
+    assert.equal(askScrim().hidden, true, "★ he was asked to confirm a change that took nothing from him");
+    assert.equal(wrap._value, "courier", "and the change did not go through");
+  });
+});
+
+test("★★★ the two delivery cards choose NO way for an empty basket — and they say why (v456)", () => {
+  // Her words: __"i skip step 2 and filled up step 3, it should not allow me to do step 3 at all?"__
+  // and then, after I had locked only the two boxes she named: __"lock the 2 delivery cards too"__.
+  // ⚠️ **The customer could still choose how to receive an order he had not placed.**
+  const wrap = document.getElementById("fulfillment");
+  // ⚠️⚠️ THE ARRIVAL STATE IS SET BY HAND, AND THE REASON MATTERS: **`render()` does NOT reset the
+  // choice.** `apply("")` runs once, when `wireFulfillment()` is wired at start-up — so a test that
+  // calls `render()` inherits the way the PREVIOUS test left behind. ⭐ That is not a fault in the shop
+  // (a real customer's page is wired once and the after-order reset puts the way back through
+  // `_resetFulfillment`), but it silently made this fixture start on "courier", which is why the guard
+  // looked as though it had not fired at all.
+  wrap._value = ""; wrap._open = null; wrap._picked = false;
+  wrap._pointId = ""; wrap._pointName = "";
+  render();
+  tapDay(); // ★ step 1 is his; the basket is deliberately left EMPTY, which is the whole subject
+  assert.equal(registry["bar-count"].textContent, "0 items", "precondition: nothing is in the basket");
+
+  wrap._pressWay("courier");
+
+  assert.equal(wrap._value, "", "★ a way was chosen for an order with nothing in it");
+  assert.equal(wrap._open, null, "★ and its card was unfolded over an empty basket");
+  assert.notEqual(wrap._picked, true,
+    "★ he was credited with a choice he was never allowed to make, so step 3 could green on it");
+  // ⭐⭐ AND IT ANSWERS. ⚠️ v452's rule, which this very file states out loud: **a disabled control on a
+  // phone does not even acknowledge the tap**, so switching the card off would tell him nothing at all.
+  const note = registry["step-note"];
+  assert.equal(note.hidden, false, "★ the press was refused in silence");
+  assert.equal(note.children[0].children[0].text, "Nothing in your order yet.",
+    "★ the refusal does not say what is missing");
+  // ⚠️ WHERE THE LINE LANDS IS A RULE OF ITS OWN — see test/step-lock.test.js, which pins that a refusal
+  // is addressed to its own step, because a step-2 sentence printed under step 1 is her v455 fault back.
+  assert.doesNotMatch(note.children[2].text, /Courier|delivery/i,
+    "★ the refusal is talking about the card he pressed rather than about the basket that is empty");
+
+  // ⭐ AND NOTHING ELSE ANSWERS EITHER — the other card, and a card already the current way.
+  wrap._pressWay("collect");
+  assert.equal(wrap._value, "", "★ the other card chooses a way for an empty basket");
+  assert.equal(wrap._open, null, "★ …and unfolds itself over one");
+});
+
+test("★★ a PLACE tap is the same change, so it asks too — and the place travels with the answer", () => {
+  // ⚠️ v410 made the places PART of choosing to collect, and this file's own test says it: *"there
+  // is no longer a world where somebody has picked a place but has not said they are collecting."*
+  // ⭐ **So this is the same change from the other side, and leaving it silent would keep a second
+  // door into the very state she asked me to prevent.** ⚠️ And the place must be chosen only ONCE
+  // HE ANSWERS — choosing it first would leave a refused tap holding a place on a courier order.
+  withAsks(() => {
+    const wrap = document.getElementById("fulfillment");
+    const addr = document.getElementById("address-input");
+    wrap._value = "courier"; wrap._open = "courier"; wrap._pointId = ""; wrap._pointName = "";
+    addr.value = "12 Jalan Bunga, 10450 Penang";
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+
+    const places = document.getElementById("point-list").children;
+    assert.ok(places.length >= 2, "the places were not drawn, so this proves nothing");
+    places[1]._listeners.click[0]();
+
+    assert.equal(askScrim().hidden, false, "★ tapping a place switched him to collecting without a word about his address");
+    assert.equal(wrap._value, "courier", "⚠️ and it moved him while the question was open");
+    assert.equal(wrap._pointId, "", "★ and it took the place before he had answered");
+
+    pressAsk("ask-change");
+    assert.equal(wrap._value, "collect", "his answer did not take effect");
+    assert.equal(wrap._pointId, "pt_farlim", "★ and the place he tapped was not taken with it");
+    assert.equal(addr.value, "", "★★ and his delivery address was NOT cleared");
+  });
+});
+
+// ── v412: the Self collect card arrives folded ───────────────────────────────
+
+test("★★ the Self collect card arrives FOLDED, and its own line is the handle", () => {
+  // Her words: __"i want the self collect card at store to be folded as default"__, and __"when it
+  // expend the unselected with a white background is like a hole, and like confusing"__ — ⚠️ which is
+  // exactly what an open card full of white place rows does while the customer has already chosen
+  // the courier. It reads as a white hole punched in the page at the moment they went the other way.
+  const realP = CONFIG.points;
+  try {
+    CONFIG.points = [
+      { id: "pt_k", name: "Our place", minOrderRM: 0, isKitchen: true },
+      { id: "pt_f", name: "Farlim, Air Itam", minOrderRM: 0 },
+    ];
+    // ⚠️ RESET WHAT THE LAST TEST LEFT. The shim's `#fulfillment` is one element for the whole file
+    // and `wireFulfillment` ran once, at import — so the method and the fold are carried over unless
+    // this test says otherwise. Setting them here is the test being explicit, not the code being wrong.
+    document.getElementById("fulfillment")._value = "collect";
+    document.getElementById("fulfillment")._open = null;
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    const wrap = document.getElementById("fulfillment");
+    const list = document.getElementById("point-list");
+    const caret = () => document.getElementById("collect-caret").textContent;
+
+    assert.equal(list.hidden, true, "⚠️ it ARRIVES SHUT — that is the whole request");
+    assert.equal(caret(), "▸", "and the caret points at what is behind it");
+    assert.equal(wrap._value, "collect", "while still being the way it is set to — a customer need do nothing");
+
+    // ⚠️ ONEPENING IT IS WHAT THE CUSTOMER'S TAP DOES — driven here through the same state that tap
+    // sets, because ⚠️ **this shim carries no static markup, so it cannot reach the line a customer
+    // presses.** The WIRING is therefore verified by looking at the page (and the markup rules that
+    // it starts shut and wears a caret live in store-i18n.test.js); what is proved HERE is what the
+    // screen does with the state the tap produces.
+    wrap._open = "collect";
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    assert.equal(list.hidden, false, "an open card shows its places");
+    assert.equal(caret(), "▾", "and the caret turns over");
+
+    wrap._open = null;
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    assert.equal(list.hidden, true, "and a shut one shows none");
+
+    // ⭐⭐ AND THE COURIER SHUTS IT WHATEVER THE FLAG SAYS. This is the "hole" itself — an open card
+    // full of white rows in the way the customer did NOT take — and it is kept out of the DRAWING
+    // rather than out of the one tap that sets it, so no repaint can bring it back.
+    wrap._open = "collect";
+    wrap._value = "courier";
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    assert.equal(list.hidden, true,
+      "choosing the courier means nothing white is left standing open, however the fold was left");
+  } finally {
+    CONFIG.points = realP;
+    document.getElementById("fulfillment")._open = null;
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+  }
+});
+
+test("★★ a Point's own description replaces the shop's standard line", () => {
+  // Her words: __"make the point description custmable in point card"__. ⭐ **The standard sentence
+  // is the FALLBACK, not the default** — so a Point she has said nothing about reads exactly as it
+  // does today and adding this cannot change a page by itself.
+  const realP = CONFIG.points;
+  try {
+    CONFIG.points = [
+      { id: "pt_a", name: "With words", minOrderRM: 0, description: "Aunty Lim's shop, beside the coffee shop" },
+      { id: "pt_b", name: "Without words", minOrderRM: 0 },
+      { id: "pt_c", name: "The kitchen", minOrderRM: 0, isKitchen: true },
+      { id: "pt_d", name: "Kitchen with words", minOrderRM: 0, isKitchen: false, description: "Where we bake, behind the school" },
+    ];
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    const list = document.getElementById("point-list");
+    // ⚠️ Read off `children`, because this shim has no element-level `querySelectorAll`.
+    const subs = list.children
+      .filter((b) => String(b.className).includes("point-opt"))
+      .map((b) => ({ name: b.children[0].children[0].text, sub: b.children[1].children[0].text }));
+    const subFor = (nm) => (subs.find((s) => s.name === nm) || {}).sub;
+    assert.equal(subFor("With words"), "Aunty Lim's shop, beside the coffee shop",
+      "her words are what a customer reads");
+    assert.match(subFor("Without words"), /Collection Point/,
+      "and the standard sentence stands in where she has written none");
+    assert.match(subFor("The kitchen"), /where your treats are made/i, 
+      "the marked kitchen keeps its own line too, until she writes one");
+    assert.match(subFor("Kitchen with words"), /behind the school/,
+      "⚠️ and her words outrank even the kitchen's — she wrote them about her own front door");
+  } finally {
+    CONFIG.points = realP;
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+  }
+});
+
+test("the shop keeps a Point's description, and adds it to nothing else (v412)", () => {
+  // ⚠️ THE PUBLISH/MERGE PAIR AGAIN. A field a sender publishes and a receiver drops was never sent —
+  // the fault that shipped at v406 and again at v407, and this is the third key through the same door.
+  const out = mergeStorefront({}, { points: [
+    { id: "pt_1", name: "Written", description: "  Aunty Lim's shop  " },
+    { id: "pt_2", name: "Blank", description: "   " },
+    { id: "pt_3", name: "None" },
+  ] });
+  assert.equal(out.points[0].description, "Aunty Lim's shop", "trimmed, and kept");
+  assert.equal("description" in out.points[1], false, "a blank one arrives as nothing");
+  assert.equal("description" in out.points[2], false, "and an absent one gains no key");
+});
+
+test("the shop keeps a Point's days, and keeps ONLY a real restriction (v419)", () => {
+  // ⚠️ THE PUBLISH/MERGE PAIR AGAIN — the fourth key through the same door, and the fault it guards
+  // is always the same one: **a field a sender publishes and a receiver drops was never sent.**
+  const out = mergeStorefront({}, { points: [
+    { id: "pt_1", name: "Fridays only", days: [5] },
+    { id: "pt_2", name: "Open always" },
+    { id: "pt_3", name: "Nothing ticked", days: [] },
+    { id: "pt_4", name: "All seven", days: [0, 1, 2, 3, 4, 5, 6] },
+    { id: "pt_5", name: "Junk", days: [5, 5, 9, -1, "x", null] },
+    { id: "pt_6", name: "Not a list", days: "Friday" },
+  ] });
+  const by = (id) => out.points.find((p) => p.id === id);
+  assert.deepEqual(by("pt_1").days, [5], "a real restriction arrives");
+  assert.equal("days" in by("pt_2"), false, "no days at all: no key — byte-for-byte yesterday's row");
+  assert.equal("days" in by("pt_3"), false, "⚠️ nothing ticked is EVERY day, so it is not a restriction");
+  assert.equal("days" in by("pt_4"), false,
+    "⚠️ and all seven is the SAME answer as none — a line saying 'every day' would say nothing");
+  assert.deepEqual(by("pt_5").days, [5],
+    "⚠️ re-validated on the shop's OWN terms: deduped, sorted, and 9, -1, 'x' AND null dropped — "
+    + "⚠️⚠️ null is NOT zero, or a hole in a half-synced array would promise Sunday");
+  assert.equal("days" in by("pt_6"), false, "a string is not a list of days");
+});
+
+test("★★ a Place served on only some days SAYS SO — and every Place still draws (v419)", () => {
+  // Her words: __"every point listed in store, just that if that point only for friday, then
+  // mention it"__. ⚠️⚠️ SO NOTHING IS HIDDEN, GREYED OR FILTERED — the list is the same length, every
+  // Place is exactly where it was, and the restricted one simply carries ONE MORE LINE.
+  const realP = CONFIG.points;
+  try {
+    CONFIG.points = [
+      { id: "pt_k", name: "Sg Ara", minOrderRM: 0, isKitchen: true },
+      { id: "pt_a", name: "Fridays only", minOrderRM: 0, days: [5] },
+      { id: "pt_b", name: "Open always", minOrderRM: 0 },
+      { id: "pt_c", name: "Two days", minOrderRM: 0, days: [1, 3] },
+    ];
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    const list = document.getElementById("point-list");
+    // ⚠️ Read off `children`, because this shim has no element-level `querySelectorAll`.
+    const rows = list.children.filter((b) => String(b.className).includes("point-opt"));
+    const daysOf = (nm) => {
+      const b = rows.find((r) => r.children[0] && r.children[0].children[0]
+        && r.children[0].children[0].text === nm);
+      if (!b) return "(no such row)";
+      const span = (b.children || []).find((c) => String(c.className || "").includes("point-days"));
+      return span ? String(span.children[0].text) : "";
+    };
+    assert.equal(rows.length, 4, "⚠️⚠️ every Place is still listed — nothing was filtered away");
+    assert.equal(daysOf("Fridays only"), "Only available on Fri", "the single day is named");
+    assert.equal(daysOf("Two days"), "Only available on Mon and Wed",
+      "and a pair is joined the way a person says it, not as a raw list of numbers");
+    assert.equal(daysOf("Open always"), "",
+      "⚠️ and NO line at all for a Place she has not restricted, so the page she never touched is unchanged");
+    assert.equal(daysOf("Sg Ara"), "", "the kitchen's own row is untouched by this too");
+  } finally {
+    CONFIG.points = realP;
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+  }
+});
+
+// ⚠️ THE POSTING DAY IS DRIVEN THROUGH `deliveryDays`, and the page always opens on the FIRST open day
+// from tomorrow — so one weekday means the page is ALWAYS showing that weekday, whatever today is.
+function withBakeDay(day, points) {
+  const realP = CONFIG.points, realDays = CONFIG.deliveryDays;
+  CONFIG.deliveryDays = [day];
+  CONFIG.points = points;
+  render();
+  tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+  return () => { CONFIG.points = realP; CONFIG.deliveryDays = realDays; render(); };
+}
+
+const POINT_ROWS = (list) => list.children.filter((b) => String(b.className).includes("point-opt"));
+const ROW_NAMED = (rows, nm) => rows.find((r) => r.children[0] && r.children[0].children[0]
+  && r.children[0].children[0].text === nm);
+
+test("★★ a Place not served on the chosen posting day is PARKED — and still listed (v420)", () => {
+  // Her words: __"selecting a posting day the point is not active will grey out that point"__. ⚠️⚠️ IT
+  // GREYS, IT DOES NOT DISAPPEAR — the same park-don't-hide rule her smallest basket already keeps,
+  // and the same look, because to a customer both say one thing: you cannot collect here.
+  const restore = withBakeDay(5, [ // 5 = Friday, so the day this page is showing is a Friday
+    { id: "pt_k", name: "Sg Ara", minOrderRM: 0, isKitchen: true },
+    { id: "pt_fri", name: "Friday place", minOrderRM: 0, days: [5] },
+    { id: "pt_mon", name: "Monday place", minOrderRM: 0, days: [1] },
+    { id: "pt_any", name: "Any day place", minOrderRM: 0 },
+  ]);
+  try {
+    const rows = POINT_ROWS(document.getElementById("point-list"));
+    assert.equal(rows.length, 4, "⚠️⚠️ EVERY place is still on the page — nothing was removed");
+    const off = (nm) => String(ROW_NAMED(rows, nm).className).includes("off");
+    assert.equal(off("Friday place"), false, "the place served on the day he picked is open");
+    assert.equal(off("Monday place"), true, "⚠️ and the one that is not is parked");
+    assert.equal(off("Any day place"), false,
+      "⚠️⚠️ A PLACE WITH NO DAYS AT ALL IS SERVED EVERY DAY — a missing key is NOT 'never', and "
+      + "getting that backwards would take every unrestricted Place off the page");
+    assert.equal(off("Sg Ara"), false, "nor is the marked kitchen ever parked");
+  } finally { restore(); }
+});
+
+test("★ the day flips which place is parked, and ONLY that (v420)", () => {
+  const restore = withBakeDay(1, [ // 1 = Monday this time
+    { id: "pt_fri", name: "Friday place", minOrderRM: 0, days: [5] },
+    { id: "pt_mon", name: "Monday place", minOrderRM: 0, days: [1] },
+  ]);
+  try {
+    const rows = POINT_ROWS(document.getElementById("point-list"));
+    const off = (nm) => String(ROW_NAMED(rows, nm).className).includes("off");
+    assert.equal(off("Monday place"), false, "on a Monday the Monday place is the open one");
+    assert.equal(off("Friday place"), true, "and the Friday place is the parked one");
+  } finally { restore(); }
+});
+
+test("★★ tapping a parked place FLASHES its own warning, and the page does not move (v423)", () => {
+  // Her words: __"when customer click on unavailable point, just flash the warning Only available on,
+  // xxx. The screen jump is not desired"__.
+  // ⚠️⚠️ THE JUMP WAS `showConfirm`'s OWN `scrollIntoView` — right for the ORDER guards, where he has
+  // pressed Place order and must be told why not, and **wrong for a place he merely touched**: the
+  // page leapt away from the list he was reading.
+  const restore = withBakeDay(5, [
+    { id: "pt_mon", name: "Monday place", minOrderRM: 0, days: [1] },
+  ]);
+  try {
+    const list = document.getElementById("point-list");
+    const wrap = document.getElementById("fulfillment");
+    const row = ROW_NAMED(POINT_ROWS(list), "Monday place");
+    row._listeners.click[0]();
+    assert.equal(wrap._pointId, "", "⚠️ the tap did not choose a place he cannot collect from");
+    assert.ok(String(row.className).includes("flash"), "⚠️ the row flashed instead");
+
+    // ⭐ AND THE WARNING HE NEEDS IS ALREADY ON THE ROW — nothing new is said, and nothing is said
+    // twice: the same line he can read before he taps is the line the tap points him at.
+    const days = [...(row.children || [])].find((c) => String(c.className || "").includes("point-days"));
+    assert.ok(days, "the row carries its own reason");
+    assert.equal(String(days.children[0].text), "Only available on Mon", "and it says so");
+
+    // ⚠️ AND THE BOX THAT SCROLLED THE PAGE IS NOT USED AT ALL. The visible effect is "the page did
+    // not move", and a unit test cannot see a scroll — so what IS pinned is the door it would have
+    // gone through, in the source. (The same reasoning `screen-names.test.js` gives for its pins.)
+    const src = readFileSync(new URL("../store/app.js", import.meta.url), "utf8");
+    assert.match(src, /if \(closed\) \{ flashRow\(b\); return; \}/,
+      "⚠️⚠️ a parked place goes to the FLASH — it never reaches the confirm box");
+    assert.ok(!/if \(closed\) \{ showConfirm/.test(src),
+      "⚠️ and the old page-moving path is gone, not merely unused");
+  } finally { restore(); }
+});
+
+test("★★ a parked place greys its WORDING, not its background (v425)", () => {
+  // Her words: __"the unavailable point grey out is not the background grey out but wording grey
+  // out"__. ⚠️ It filled with `--bg`, the PAGE cream, so a row inside the card's tint became a flat
+  // page-coloured patch — **the same "hole" she caught at v413**, in a place she had not looked at
+  // yet. ⭐ The row keeps the card's own surface now and is set apart the way reading works: **the
+  // words go grey and the frame goes dashed**, and the two cues are kept together on purpose —
+  // either alone is a colour-only signal.
+  const css = readFileSync(new URL("../store/app.css", import.meta.url), "utf8");
+  for (const cls of [".point-opt.short", ".point-opt.off"]) {
+    const at = css.indexOf(`${cls} {`);
+    assert.ok(at > -1, `${cls} has a rule of its own`);
+    const rule = css.slice(at, css.indexOf("}", at));
+    assert.ok(!/background\s*:/.test(rule),
+      `⚠️⚠️ ${cls} must not FILL its background — that is the hole she is complaining about, and it is `
+      + `not the grey-out`);
+    assert.match(rule, /border-style:\s*dashed/, `⚠️ and ${cls} keeps the dashes`);
+  }
+
+  // ⚠️⚠️ THE FADE IS `opacity`, AND IT IS TWO VALUES — her second telling was __"the grey not
+  // obvious"__, and the first attempt proved her right: `--muted` is a WARM BROWN at 5.40:1, which
+  // reads as ordinary text beside the body copy at 13px, so the row did not look unavailable at all.
+  // ⭐ The numbers were measured against the card before choosing them, and the ASSERTION carries them
+  // so a later tidy cannot quietly soften the fade again.
+  assert.match(css, /\.point-opt\.off \.point-name,[\s\S]{0,140}opacity:\s*\.42/,
+    "⚠️ the NAME fades hard — 42% is 2.40:1, unmistakably pale");
+  assert.match(css, /\.point-opt\.off \.point-sub:not\(\.point-days\)[\s\S]{0,80}opacity:\s*\.42/,
+    "⚠️ and so does the ordinary description");
+  // ⚠️⚠️ AND THE LINE CARRYING THE REASON MUST **NOT** BE FADED — a correction to this very test
+  // (v426). It used to assert 70% here, and 70% was WRONG: that line's colour is ALREADY `--muted`,
+  // inherited from `.point-sub`, so folding a 70% opacity over it gave **2.94:1** — not the 5.21 the
+  // comment claimed. ⭐ **I measured the colour and then applied a second fade over it, and the two
+  // compound.** `--muted` at FULL strength is **5.40:1**, over the bar this app holds its accents to,
+  // and her words were __"it is abit too fade"__. **She found it by reading the page.**
+  assert.match(css, /\.point-opt\.off \.point-days,[\s\S]{0,160}opacity:\s*1;/,
+    "⚠️⚠️ the reason line must NOT be faded a second time — its own colour is already the faded tone");
+
+  // ⚠️⚠️ `:not(.point-days)` IS LOAD-BEARING, not tidiness: the days line wears `.point-sub
+  // point-days` too, so a plain `.point-sub` rule at 42% would fade the very line being kept readable.
+  assert.match(css, /\.point-opt\.off \.point-sub:not\(\.point-days\)/,
+    "⚠️ the description rule must EXCLUDE the days line, which is also a .point-sub");
+
+  // ⚠️⚠️ AND THE FLASH ENDS ON THE LINE'S RESTING COLOUR, WHICH IS THE WHOLE CRAFT OF IT (v426). Her
+  // ask was __"can you flash the only available on friday in red color?"__ ⚠️ The line INHERITS its
+  // colour from `.point-sub`, which is `--muted` — so a keyframe ending on anything else would flash
+  // red and then SNAP the moment the animation let go.
+  assert.match(css, /--red:\s*#c0392b/i,
+    "⚠️ the shop's own red — the whole page is terracotta, so a borrowed 'red' would arrive looking "
+    + "like the brand colour rather than standing out");
+  // ⚠️⚠️ AND THE FLASH TOUCHES THE COLOUR ONLY. If it animated `opacity` too it would compound with
+  // the fade again — which is exactly the mistake corrected just above, and the one that put a
+  // warning at 2.94:1 in the first place.
+  assert.ok(!/@keyframes point-flash-word \{[\s\S]{0,160}opacity/.test(css),
+    "⚠️ the flash animates the COLOUR and nothing else — an opacity in here would fold a second fade "
+    + "onto a line whose colour is already the faded tone");
+
+  // ⚠️⚠️ AND THE KEYFRAME'S TWO COLOURS ARE WRITTEN OUT, SO THEY HAVE TO BE TIED BACK TO THE TOKENS.
+  // They are literals because a `var()`-to-`var()` pair **did not interpolate** — the animation ran,
+  // its name was on the element, and the colour never moved. ⭐ That freedom is exactly what lets the
+  // numbers drift away from the words, so this is the check that stops it.
+  const token = (n) => (css.match(new RegExp(`--${n}:\\s*(#[0-9a-fA-F]{6})`)) || [])[1];
+  // ⚠️ THE CYCLE **ENDS** ON `--muted`'s OWN VALUE — that is what keeps the line from snapping back
+  // when the animation lets go. ⚠️ It does not START on it: her cycle OPENS on the red, because "on
+  // for a second" means it is already on when it begins.
+  assert.equal((css.match(/\d+%, 100% \{ color: (#[0-9a-fA-F]{6}); \}/) || [])[1],
+    token("muted"), "⚠️ the flash ends on the colour the line actually rests at, or it snaps");
+  assert.equal((css.match(/@keyframes point-flash-word \{[\s\S]{0,900}?0%, \d+% \{ color: (#[0-9a-fA-F]{6}); \}/) || [])[1],
+    token("red"), "⚠️ and it OPENS on the red — 'on for a second' means already on");
+  assert.equal((css.match(/\d+%, \d+% \{ color: (#[0-9a-fA-F]{6}); \}\s*\/\* --red/) || [])[1],
+    token("red"), "⚠️ and flashes --red's own value");
+
+  // ⚠️⚠️ AND THE ASSERTION THAT MATTERS IS HOW MANY MILLISECONDS OF RED THERE ARE — not the duration,
+  // not the window, but the product of the two. Her words, TWICE: __"the red is too short time"__, and
+  // then __"still too short"__ after the first increase. ⭐ **Measured as the customer gets it:**
+  // 215ms first, then ~590ms, and both were too short. ⚠️ **The eye wants more than half a second to
+  // take a line in AND use it** — so this asserts a full second per blink, and a later tidy that
+  // softens either number fails here rather than on her phone.
+  // ⭐ The pale gap between blinks is deliberate and must stay: **a line that simply stays red is a
+  // colour change; a line that BLINKS is something happening.**
+  // ⭐⭐ AND THE TWO STRETCHES ARE HER NUMBERS, NOT MINE: __"on 1sec, off 0.5sec cycle"__. ⚠️ She has
+  // now told me this three times — *"the red is too short time"*, *"still too short"*, and then the
+  // timing itself — so the TEST carries her figures rather than a floor of my choosing.
+  const blinkMs = Number((css.match(/--flash-blink:\s*(\d+)ms/) || [])[1]);
+  const win = (css.match(/(\d+)%,\s*(\d+)% \{ color: #[0-9a-fA-F]{6}; \}\s*\/\* --red/) || []);
+  const pale = (css.match(/(\d+)%, 100% \{ color: #[0-9a-fA-F]{6}; \}\s*\/\* --muted/) || []);
+  const onAt = Number(win[1]), offAt = Number(win[2]);
+  const redMs = Math.round(blinkMs * (offAt - onAt) / 100);
+  const paleMs = pale.length ? Math.round(blinkMs * (100 - Number(pale[1])) / 100) : 0;
+
+  assert.ok(redMs >= 1000,
+    `⚠️⚠️ ${redMs}ms of red per blink — she asked for a full second, and you cannot read a word in less`);
+  assert.ok(paleMs >= 400 && paleMs <= 600,
+    `⚠️ the OFF stretch is ${paleMs}ms — she asked for half a second, and the gap is what makes it a `
+    + `BLINK rather than a colour change`);
+  assert.equal(offAt < Number(pale[1]), true,
+    "⚠️ the red really does end before the pale starts — the crossfade between them is deliberate, but "
+    + "the two stretches must not overlap");
+});
+
+test("★★ the number of blinks and the timer come from ONE place (v427)", () => {
+  // Her words: __"can you flash the red twice or trice"__ — ⚠️ **and asking for MORE blinks is exactly
+  // what exposed the coupling.** How long the flashing runs lives in the stylesheet; the moment the
+  // mark comes OFF lives in `flashRow`'s timer. ⚠️⚠️ **If they disagree the flash is cut off
+  // mid-blink** — and it could only ever have been wrong in that direction, because the timer is the
+  // thing that fires while `animation: none` fires nothing at all.
+  const css = readFileSync(new URL("../store/app.css", import.meta.url), "utf8");
+  const js = readFileSync(new URL("../store/app.js", import.meta.url), "utf8");
+
+  assert.match(css, /--flash-blink:\s*\d+ms;/, "how long ONE red blink lasts");
+  assert.match(css, /--flash-blinks:\s*\d+;/, "and how many of them there are");
+  assert.match(css, /animation: point-flash-word var\(--flash-blink\) ease-out var\(--flash-blinks\)/,
+    "⚠️ the animation takes BOTH numbers from those tokens");
+
+  // ⚠️ AND THE TIMER ASKS RATHER THAN GUESSING. A hard-coded 1200 cut a three-blink flash off in the
+  // middle of its second — which is the fault this pins shut.
+  assert.match(js, /getPropertyValue\("--flash-blink"\)/, "⚠️ the timer reads the blink length");
+  assert.match(js, /getPropertyValue\("--flash-blinks"\)/, "⚠️ and the count");
+  assert.match(js, /return each \* many \+ 200;/,
+    "⚠️ the total is the blinks times their length, plus a margin so the LAST one finishes");
+  assert.ok(!/\}, 1200\);/.test(js),
+    "⚠️⚠️ the timer carries no number of its own — that number IS the drift");
+});
+
+test("★★ the flash is on the WORDS, not on the row (v424)", () => {
+  // Her words, the second and sharper telling: __"i mean just flash the word Only available on Wed,
+  // Friday"__. ⚠️ **HER "JUST" IS THE INSTRUCTION.** The row is already greyed and dashed to say *not
+  // this one*; what the customer actually needs told is **WHEN it is open**, so the line carrying that
+  // is what blinks. ⚠️ v423 pulsed the whole row, and this is her correction of it.
+  const css = readFileSync(new URL("../store/app.css", import.meta.url), "utf8");
+  assert.match(css, /\.point-opt\.off\.flash \.point-days/,
+    "a place not served today flashes the line that carries the days");
+  assert.match(css, /\.point-opt\.short\.flash \.point-sub/,
+    "⚠️ and a place his basket has not reached flashes the line that carries ITS reason — which is the "
+    + "description line, because that sentence REPLACED the description");
+  assert.ok(!/^\.point-opt\.flash \{/m.test(css),
+    "⚠️ and the row itself no longer pulses as a whole — that was the first reading, corrected");
+  assert.match(css, /@keyframes point-flash-word/,
+    "⚠️ and it is OPACITY only: no movement, no size, no position, so the words stay exactly where "
+    + "they are on the line he is reading");
+});
+
+test("★★ the mark comes off on a TIMER — `animation: none` never fires `animationend` (v424)", () => {
+  // ⚠️⚠️ A FAULT FIXED, FOUND BY READING THE RULE BACK. v423 set `animation: none` under
+  // `prefers-reduced-motion: reduce` and removed the class on `animationend` — **and an animation that
+  // never runs never ends.** The mark stayed on that row for good, and a second place tapped left the
+  // first one lit as well. ⭐ The reader it would have hit is the one who asked for less movement, and
+  // nobody would have thought to look there.
+  const src = readFileSync(new URL("../store/app.js", import.meta.url), "utf8");
+  const at = src.indexOf("const flashRow =");
+  const fn = src.slice(at, at + 1800);
+  assert.match(fn, /setTimeout\(/, "⚠️ the class is removed on a timer, which always fires");
+  assert.ok(!/addEventListener\("animationend"/.test(fn),
+    "⚠️⚠️ and NOT on `animationend` — it never fires when the stylesheet sets animation: none");
+  // ⚠️ `assert.match` FIRST, and it is not belt-and-braces: `indexOf(x) < indexOf(y)` is TRUE when x is
+  // ABSENT (-1 is less than any position), so the order check alone would pass with the clear deleted.
+  assert.match(fn, /clearTimeout\(/, "the previous timer is cleared");
+  assert.ok(fn.indexOf("clearTimeout") < fn.indexOf("setTimeout"),
+    "⚠️ and cleared BEFORE the new one is set, so a quick second tap is not un-flashed by the first");
+});
+
+test("★ the flash can fire AGAIN — removing and re-adding a class is not enough on its own (v423)", () => {
+  // ⚠️⚠️ A BROWSER COALESCES "remove the class, add it back" IN ONE BREATH INTO NO CHANGE AT ALL, so
+  // without a forced reflow between them the **SECOND tap on the same place would flash nothing** —
+  // and a courtesy that works once and then silently stops is worse than none.
+  //
+  // ⚠️ THE REFLOW IS NOT OBSERVABLE FROM A TEST — it is the browser's own timing, and this shim has no
+  // layout at all — so the fact is pinned where it lives, in the source, with the reason beside it.
+  // ⭐ And the shim would let a reader believe the flash works twice: it fires no `animationend`, so
+  // the class never comes off and a behavioural test would pass with the reflow deleted.
+  const src = readFileSync(new URL("../store/app.js", import.meta.url), "utf8");
+  assert.match(src, /void b\.offsetWidth;/,
+    "⚠️⚠️ the forced reflow is what makes a second tap flash — reading a layout property is the only "
+    + "way to make the browser apply the removed class before the new one goes on");
+  const flash = src.slice(src.indexOf("const flashRow ="), src.indexOf("const flashRow =") + 700);
+  assert.ok(flash.indexOf("classList.remove") < flash.indexOf("offsetWidth")
+    && flash.indexOf("offsetWidth") < flash.indexOf("classList.add"),
+    "⚠️ and it sits BETWEEN the remove and the add, which is the only place it works");
+});
+
+test("★★ a place chosen for one day, on a day it is not served, falls back to the kitchen (v420)", () => {
+  // ⚠️ THE DAY CAN MOVE UNDERNEATH A CHOICE ALREADY MADE — he picks a place on the Friday the page
+  // opened on, then moves to a Wednesday. ⭐ It is the THIRD reason a place can stop being open —
+  // paused, basket too small, and now not served today — and all three fall back the same way,
+  // because the shop cannot post an order to a place the customer cannot go to.
+  const restore = withBakeDay(5, [
+    { id: "pt_mon", name: "Monday place", minOrderRM: 0, days: [1] },
+  ]);
+  try {
+    const wrap = document.getElementById("fulfillment");
+    wrap._pointId = "pt_mon";     // as if he had chosen it before the day moved
+    wrap._pointName = "Monday place";
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    assert.equal(wrap._pointId, "",
+      "⚠️ the choice is dropped rather than kept — the kitchen is always there");
+  } finally { restore(); }
+});
+
+test("★★ the courier's address arrives with the courier, not as a box under it (v412)", () => {
+  // Her words: __"courier delivery and address should be one piece"__ — the mirror of the places in
+  // the collect card. ⚠️ And the two are ONE state: only one card may be open, so the field of the
+  // way the customer did NOT take is never standing open under it.
+  const realP = CONFIG.points;
+  try {
+    CONFIG.points = [{ id: "pt_k", name: "Our place", minOrderRM: 0, isKitchen: true }];
+    const wrap = document.getElementById("fulfillment");
+    const addr = document.getElementById("address-field");
+    const list = document.getElementById("point-list");
+    const caret = (which) => document.getElementById(which + "-caret").textContent;
+
+    wrap._value = "collect";
+    wrap._open = null;
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    assert.equal(addr.hidden, true, "⚠️ on arrival the address is shut in the courier card");
+    assert.equal(caret("courier"), "▸", "and the courier says so");
+
+    wrap._open = "courier";
+    wrap._value = "courier";
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    assert.equal(addr.hidden, false, "opening the courier card shows its address");
+    assert.equal(caret("courier"), "▾", "the caret turns over");
+    assert.equal(list.hidden, true, "⭐ and the collect card's places are shut behind it");
+
+    // ⚠️ AND THE REVERSE — the two can never both be open, which is what "one piece" means here.
+    wrap._open = "collect";
+    wrap._value = "collect";
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    assert.equal(list.hidden, false, "the collect card opens");
+    assert.equal(addr.hidden, true, "and the courier's address shuts with it");
+    assert.equal(caret("courier"), "▸");
+  } finally {
+    CONFIG.points = realP;
+    document.getElementById("fulfillment")._open = null;
+    document.getElementById("fulfillment")._value = "collect";
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+  }
+});
+
+// ── v415: nothing is chosen until he chooses ────────────────────────────────
+
+test("★★ step 3 turns green only after he says HOW he is getting it", () => {
+  // Her words: __"only by clicking either self collect or delivery, the number 3 change color"__.
+  // ⚠️⚠️ IT CANNOT BE READ OFF THE METHOD ITSELF — `_value` is set to Self collect the moment the
+  // page loads, so a rule asking "is a method chosen" is TRUE before a customer has touched
+  // anything. ⭐ **What it asks is whether HE chose**, and the only honest record of that is a press.
+  //
+  // ⚠️ `_picked` is driven here rather than a real tap, because this shim carries no static markup
+  // and so cannot reach the button — ⭐ **that half is verified by looking at the page and by the
+  // markup rules in store-i18n.test.js.** What is proved here is what the rule does with it.
+  const realP = CONFIG.points;
+  try {
+    CONFIG.points = [{ id: "pt_k", name: "Our place", minOrderRM: 0, isKitchen: true }];
+    const wrap = document.getElementById("fulfillment");
+    const type = (id, v) => {
+      const el = registry[id];
+      el.value = v;
+      for (const f of (el._listeners.input || [])) f();
+    };
+    const done3 = () => String(registry["step3"].className).split(/\s+/).includes("done");
+
+    wrap._picked = false;
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    type("name-input", "Aunty Bee");
+    type("whatsapp-input", "60123456789");
+    assert.equal(wrap._value, "collect",
+      "⚠️ the method is already set — which is exactly why it cannot be the thing that is asked");
+    assert.equal(done3(), false,
+      "a name and a number are NOT enough: he has not said how he is getting his bread");
+
+    wrap._picked = true;
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    assert.equal(done3(), true, "⭑ the choice, and only the choice, turns the third circle green");
+
+    // ⚠️ AND IT IS STILL HIS NAME AND NUMBER THAT CARRY THE REST — the new condition sits BESIDE
+    // them, not instead of them, so a page with neither is not green for having picked a way.
+    wrap._picked = true;
+    document.getElementById("name-input").value = "";
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    assert.equal(done3(), false, "picking a way with no name is still not done");
+  } finally {
+    CONFIG.points = realP;
+    document.getElementById("fulfillment")._picked = false;
+    document.getElementById("name-input").value = "";
+    document.getElementById("whatsapp-input").value = "";
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+  }
+});
+
+test("★★ step 1 turns green only after HE picks the day — never for the day the page picks for him", () => {
+  // Her words: __"the 1,2,3 in the same round ball"__. ⚠️⚠️ **The three circles were not the same,
+  // and this is why.** The first open posting day is chosen FOR him on load — deliberately, so an
+  // order can never be blocked by forgetting to tap — and step 1 read *"is a day selected"* as
+  // *"he has chosen"*. ⭐ **That is the exact fault step 3 above was built to avoid**, in its own
+  // words: *"the page does not credit him with a choice he did not make."*
+  //
+  // ⭐ So all three circles now ask one question each, and every one of them is about HIM. On load
+  // they carry a single colour, and each turns green as he does it — which is both what she asked
+  // for and what this shop has always meant by the colour.
+  const done1 = () => String(registry["step1"].className).split(/\s+/).includes("done");
+  const find = (want) => {
+    let hit = null;
+    (function walk(n) {
+      for (const c of n.children || []) {
+        const cls = String(c.className || "");
+        if (c.tagName === "BUTTON" && cls.includes("cal-cell") && cls.includes(want)) hit = hit || c;
+        walk(c);
+      }
+    })(registry["dates"]);
+    return hit;
+  };
+
+  // ⭐ AND THE PAGE SAYS SO. Her words: __"say, moonday was selectted for you, just click on the
+  // prefered date if you have one"__ — ⚠️ **a page that does something on his behalf has to say so,
+  // which is better than only stopping the circle claiming it.**
+  const chosenLine = () => {
+    let hit = null;
+    (function walk(n) {
+      for (const c of n.children || []) {
+        if (String(c.className || "").includes("cal-chosen")) hit = hit || c;
+        walk(c);
+      }
+    })(registry["dates"]);
+    // ⚠️ THE TEXT LIVES IN THE CHILDREN on this shim — `sub()` builds a text node rather than
+    // setting `textContent` — which is how the neighbouring test reads it too.
+    return hit ? (hit.children || []).map((c) => String((c && (c.text || c.textContent)) || "")).join("") : "";
+  };
+
+  render();
+  // ⚠️ THE VACUITY GUARD, and it is load-bearing here: with no open day drawn there is nothing the
+  // rule could be about, and every assertion below would pass over an empty calendar.
+  const picked = find("sel");
+  assert.ok(picked, "the calendar drew no chosen day, so this proves nothing");
+  assert.ok(String(picked.className).includes("tappable"), "the chosen day is not one he can tap");
+  assert.equal(done1(), false,
+    "★ the first circle was green before he had touched anything — the day was picked for him");
+  assert.match(chosenLine(), /is suggested for you/,
+    `★ the day was picked for him and the page never said so (it reads: ${JSON.stringify(chosenLine())})`);
+  // ⚠️ AND IT NOW ASKS HIM TO TAP (v453). Her words: __"ask user to tap on the posting day to confirm it"__ —
+  // ⭐ so this line does not merely SAY he is free to change it, it **asks him to confirm the day**, which is
+  // what makes circle ①'s grey tell the truth and what the lock on step 2 is waiting for.
+  assert.match(chosenLine(), /Tap it to confirm/,
+    `the line does not ask him to confirm the day (it reads: ${JSON.stringify(chosenLine())})`);
+
+  picked._listeners.click[0]();
+  assert.equal(done1(), true, "⭑ his own tap on a day, and only that, turns the first circle green");
+  // ⚠️ AND THE LINE STOPS OFFERING WHAT HE HAS NOW DONE — it is his own day, said plainly.
+  // ⚠️ MUNCHIES' OWN WORDING: the tapped form here is "Your posting day: %1". The bakery says
+  // "Your chosen bake day" — taking that verbatim would name a day this shop does not have.
+  assert.match(chosenLine(), /Your posting day/,
+    `★ the line still says the day was chosen for him after he chose one himself (it reads: ${JSON.stringify(chosenLine())})`);
+  assert.doesNotMatch(chosenLine(), /is suggested for you/,
+    "the page still tells him a day was picked for him after he picked his own");
+});
+
+test("★ nothing is lit on the places until a tap, and the card says what to do", () => {
+  // Her words: __"click to choose point, without click it should not highlight"__ — ⭐ and this is
+  // the rule her v413 picture was really about: **a place wearing the panel reads as a place the
+  // customer picked, and he has picked nothing.**
+  const realP = CONFIG.points;
+  const realA = CONFIG.pointAreas;
+  try {
+    CONFIG.points = [{ id: "pt_k", name: "Our place", minOrderRM: 0, isKitchen: true },
+      { id: "pt_f", name: "Farlim, Air Itam", minOrderRM: 0 }];
+    // ⚠️ AN AREA IS IN THE FIXTURE ON PURPOSE. ⭐ The headings are children of this list too and
+    // carry no `data-point-id`, so `choose("")` used to match them and hand them the "active" class
+    // — ⚠️ **a wrong class with no styling, which drew nothing and lived from v410 unnoticed.** A
+    // fixture with no areas has no headings, so it could not have caught it.
+    CONFIG.pointAreas = [{ name: "Penang Island", depth: 0, points: ["pt_f"] }];
+    const wrap = document.getElementById("fulfillment");
+    wrap._value = "collect";
+    wrap._pointId = "";
+    wrap._open = "collect";
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+
+    const rows = registry["point-list"].children;
+    assert.ok(rows.some((b) => String(b.className).includes("point-area")), "a heading is on the list");
+    assert.equal(rows.filter((b) => String(b.className).includes("active")).length, 0,
+      "⚠️ and NOTHING is lit — not a place, and not a heading either");
+    // ⚠️ THE HEADING IS NAMED ON ITS OWN LINE, and that is not redundant: the count above passed
+    // against a heading that had been given the highlight, because the class it was handed is one
+    // nothing styles. ⭐ **A wrong class with no styling is a wrong class nobody sees** — it lived
+    // from v410 until the browser was read directly (litHeadings: 2), so it gets its own assertion.
+    const heading = rows.find((b) => String(b.className).includes("point-area"));
+    assert.equal(String(heading.className).includes("active"), false,
+      "the heading is a signpost, not a place — it can never carry the highlight");
+    assert.equal(registry["point-pick"].hidden, false,
+      "the card says the list is a thing to press instead");
+
+    // ⚠️ Found by CLASS, not by position — the list holds headings as well as places, so an index
+    // is a guess about how many of each there are. (The same mistake has cost this file twice.)
+    const places = rows.filter((b) => String(b.className).includes("point-opt"));
+    assert.ok(places.length >= 2, "both places are offered");
+    const farlim = places.find((b) => String(b.className).includes("active") === false
+      && b.children[0].children[0].text.includes("Farlim"));
+    farlim._listeners.click[0]();
+    assert.equal(wrap._pointId, "pt_f", "the tap chooses it");
+    assert.equal(registry["point-pick"].hidden, true,
+      "and the instruction goes — a page must not nag about what he just did");
+  } finally {
+    CONFIG.points = realP;
+    CONFIG.pointAreas = realA;
+    document.getElementById("fulfillment")._pointId = "";
+    document.getElementById("fulfillment")._open = null;
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+  }
+});
+
+// ── v416: neither way is chosen for him ─────────────────────────────────────
+
+test("★★ neither way is chosen on arrival, and the question says it is one to answer", () => {
+  // Her words: __"you need a 'click to choose' after the title, and self collect should not be
+  // default"__, and then __"for delivery as well"__. ⚠️ **A page that opens with one of them edged
+  // has answered its own question** — the same fault the places had at v415.
+  const wrap = document.getElementById("fulfillment");
+  const prompt = registry["fulfil-pick"];
+  try {
+    wrap._value = "";
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    assert.equal(wrap._value, "", "nothing is chosen");
+    assert.equal(prompt.hidden, false, "so the question carries a line saying it is one to answer");
+
+    wrap._value = "collect";
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    assert.equal(prompt.hidden, true, "and the line goes the moment he picks one");
+
+    wrap._value = "courier";
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+    assert.equal(prompt.hidden, true, "whichever one he picks");
+  } finally {
+    wrap._value = "";
+    render();
+    tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+  }
+});
+
+test("★★ a posted order is stopped until it has an address — this shop's own stop, not v416's", async () => {
+  // ⚠️⚠️ THERE IS NO HONEST DEFAULT FOR THIS ONE: an order has to carry whether a rider is coming or
+  // the bread is being kept back, which is exactly why she asked for neither to be picked for him.
+  // ⭐ AND IT FOLLOWS THE PAGE'S OWN PRECEDENT — the same stop a missing WhatsApp number already
+  // gets — **and the button is never disabled**, because no site rule may hide or block a sale.
+  refill();
+  document.getElementById("whatsapp-input").value = "60123456789";
+  const wrap = document.getElementById("fulfillment");
+  try {
+    // ⚠️⚠️ AN EMPTY WAY — AND THIS IS WHERE MUNCHIES DIFFERS FROM THE BAKERY ON PURPOSE (her choice,
+    // 2026-10-12). The bakery treats "no way chosen" as the one thing an order must carry and refuses.
+    // **This shop posts nationwide by default, so an empty way falls back to Post (nationwide)** — and
+    // the order is then stopped by ITS OWN rule, the postal address.
+    wrap._value = "";
+    // ⚠️ A NAME IS REQUIRED (v452) — her decision. Without it the press refuses.
+    document.getElementById("name-input").value = "Aunty Bee";
+    await registry["order-btn"].onclick();
+    // ★★★ AND IT IS *AT* THE TWO CARDS, NOT AT THE FOOT OF THE PAGE (v463). Her report, with a picture:
+    // __"this warning not behaving"__ ⚠️⚠️ **The old version scrolled to the two cards and then
+    // `showConfirm` scrolled AGAIN — to its own banner, which sits at the very bottom of the page, below
+    // the Track-your-order card.** ⭐⭐ **So the message said "Tap Self collect or Courier delivery ABOVE"
+    // while the page carried her away from them. The last scroll wins, and it was the wrong one.**
+    const note = registry["step-note"];
+    // ⚠️ READ THE LINE'S OWN CHILDREN, NOT `textContent` (v463). ⭐ **The test page's `textContent` is a
+    // plain field that `replaceChildren` never recomputes** — so reading it answers the value from BEFORE
+    // the line was filled, and an assertion built on it is asserting nothing. This file's other tests read
+    // the children for exactly this reason.
+    assert.equal(registry["confirm-msg"].children[0].children[0].text, STORE.en.confirmAddrTitle,
+      "★ an order with no way chosen falls back to Post (nationwide) — and is then stopped by the\n      postal-address rule, which is this shop's own");
+    assert.equal(registry["order-btn"].disabled, false,
+      "⭐ the button is LIVE — this is a question, not a control that has been switched off");
+    // ⚠️ WHERE THE LINE LANDS IS NOT ASSERTABLE HERE, AND THAT IS THE SHIM'S LIMIT RATHER THAN THE VIEW'S:
+    // this page carries no markup, so `#fulfillment` has no parent and the line's own placement falls back.
+    // ⭐ **It is a LIVE-MEASURED fact** — the line sits directly above the two cards, checked on the real
+    // shop — and pretending otherwise here would be the "a test that proves nothing" fault this file keeps
+    // recording.
+    // ⚠️ AND WITH AN ADDRESS IT GOES STRAIGHT THROUGH — the stop is about the answer, not a wall.
+    document.getElementById("address-input").value = "12 Jalan Bunga";
+    const realFetch = globalThis.fetch;
+    let posted = null;
+    globalThis.fetch = async (url, opts) => {
+      if (opts && opts.method === "POST") { posted = JSON.parse(JSON.parse(opts.body)[0].data); return { ok: true }; }
+      return { ok: true, json: async () => [] };
+    };
+    try {
+      // ⚠️ A NAME IS REQUIRED (v452) — her decision. Without it the press refuses.
+      document.getElementById("name-input").value = "Aunty Bee";
+      await registry["order-btn"].onclick();
+      assert.ok(posted, "the order went through once he had given an address");
+      assert.equal(posted.fulfillment, "courier",
+        "carrying Post (nationwide) — the shop's own fallback for a way he never picked");
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  } finally {
+    wrap._value = "";
+  }
+});
+
+// ── v458: the shop's quantity can be TYPED ───────────────────────────────────
+test("★★★ the shop's quantity can be TYPED — 30 loaves is not 30 taps", () => {
+  // ⚠️⚠️ HER WORDS: __"for qty field i should be allow to key in qty also instead of just press the + & -"__
+  // and __"when i want to enter 30 loaves, imagine pressing 30times"__.
+  // ⭐ AND THE BOX ITSELF WAS A PLAIN `<span>` — measured on the live shop, so a customer had **no way to
+  // type at all**, only taps. This is the shop's half of the same change.
+  render();
+  tapDay();   // ★ the step lock: step 1 must be HIS before step 2 opens
+  const stepperOf = () => registry["menu"].children[0]
+    .children.find((c) => c.className === "card-body")
+    .children.find((c) => c.className === "stepper");
+  const box = stepperOf().children[1];
+  assert.equal(box.tagName, "INPUT",
+    "★ the quantity is still a label with no way to type into it, so 30 loaves is 30 taps");
+
+  const type = (v) => { box.value = v; (box._listeners.input || []).forEach((f) => f.call(box)); };
+  type("3");
+  type("30");
+
+  // ⭐⭐ THE BOX SURVIVES — the menu is NOT rebuilt on a keystroke, so the second digit has somewhere to go.
+  assert.equal(stepperOf().children[1], box,
+    "★ the menu was rebuilt under the customer's thumb mid-keystroke — that is what eats the second digit");
+  assert.equal(registry["bar-count"].textContent, "30 items", "★ the basket did not take the typed number");
+
+  // ⚠️ AND WHEN HE IS DONE, THE CARD IS REBUILT FROM THE BASKET — so a box that comes back reading 30 is
+  // proof the number reached the ORDER and not merely the screen.
+  (box._listeners.change || []).forEach((f) => f.call(box));
+  assert.equal(stepperOf().children[1].value, "30", "★ only the first digit reached the basket");
+});
+
+test("★★ a TYPED quantity obeys the bake-day lock, exactly as the + press does (v458)", () => {
+  // ⚠️⚠️ **A TYPED NUMBER IS THE SAME ACT AS A TAP.** v454 made the + refuse until a posting day has been
+  // tapped, and v456 made the whole of step 3 wait on step 2 — so a box that accepted a number anyway
+  // would be **a door in the lock that nobody had noticed**, and the one step this whole thread is about
+  // would have been walked straight past.
+  render();   // ⚠️ deliberately NO tapDay()
+  const stepper = () => registry["menu"].children[0]
+    .children.find((c) => c.className === "card-body")
+    .children.find((c) => c.className === "stepper");
+  const box = stepper().children[1];
+  assert.equal(registry["bar-count"].textContent, "0 items", "precondition: nothing is in the basket");
+
+  box.value = "4";
+  (box._listeners.input || []).forEach((f) => f.call(box));
+  assert.equal(registry["bar-count"].textContent, "0 items",
+    "★ a typed number put bread in the basket with no posting day chosen");
+  const note = registry["step-note"];
+  assert.equal(note.hidden, false, "★ and he was told nothing about why");
+
+  // ⚠️⚠️ AND THE LINE IS ON THE SCREEN HE IS ALREADY LOOKING AT (v459). **This is her report, and it is
+  // the whole of this version:** __"when i skip step one try enter qty, it refuse to allow, but i dont
+  // know why, because the message appear somewhere not within my screen, i have to scrol up to find it"__.
+  // ⭐ MEASURED ON THE REAL SHOP before the change: with the customer at the menu, the line sat
+  // **262 pixels ABOVE the top of the screen** — the refusal worked and he was told nothing.
+  // ⚠️⚠️ **AND THAT WAS MY JUDGEMENT, NOT A BUG** — at v456 I wrote that a customer at the bottom of the
+  // page *"has to look back up to read it… I chose the missing step over the customer's thumb."*
+  // **A message nobody sees is not a message**, so the thumb wins now.
+  const menu = registry["menu"];
+  const card = menu.children.find((c) => c.dataset && c.dataset.product);
+  assert.equal(note.parentElement, menu,
+    "★ the line is not in the menu where he is — it is still up at a step heading, off his screen");
+  assert.equal(note.nextSibling, card,
+    "★ the line is not directly above the card he touched, so he cannot tell what it is about");
+
+  // ⚠️ AND WITH THE DAY TAPPED, THE SAME TYPE GOES THROUGH — so this is a lock and not a wall.
+  tapDay();
+  box.value = "4";
+  (box._listeners.input || []).forEach((f) => f.call(box));
+  assert.equal(registry["bar-count"].textContent, "4 items", "the lock did not release on a tapped day");
+});
+
+// ── v460: the warning is not erased by a repaint ────────────────────────────
+test("★★★ pressing − does not erase the warning — and it still works the second time", () => {
+  // ⚠️⚠️ HER WORDS: __"why on step 2, i try to press + the warning come out, but if i press -, the warning
+  // disappear and never come back again??"__ ⭐ **She was right, and it was worse than "disappears".**
+  // ⭐ v459 put that line directly above the product card — **which put it INSIDE the menu** — and the menu
+  // is rebuilt from scratch on every quantity change. ⚠️ Measured on the real shop before the fix: after +
+  // the line was in the page; after − `getElementById` returned NOTHING; after + again, still nothing.
+  render();
+  const card = () => registry["menu"].children.find((c) => c.dataset && c.dataset.product);
+  const parts = () => card().children.find((c) => c.className === "card-body")
+    .children.find((c) => c.className === "stepper").children;
+  const note = registry["step-note"];
+
+  parts()[2]._listeners.click[0]();   // +
+  assert.equal(note.hidden, false, "the + press raised no warning, so nothing below proves anything");
+  assert.ok(registry["menu"].children.includes(note), "the warning is not in the menu where he is");
+
+  parts()[0]._listeners.click[0]();   // −
+  // ⚠️⚠️ THE ASSERTION THAT IS HER REPORT. Membership of `children`, not `parentElement` — **a rebuild that
+  // threw it out would leave a stale parent behind, which is a false pass.**
+  assert.ok(registry["menu"].children.includes(note),
+    "★ pressing − threw the warning out of the page — and once out, nothing could find it again");
+  assert.equal(note.hidden, false, "★ pressing − made the warning vanish");
+  assert.equal(note.nextSibling, card(), "★ the warning is no longer above the card it is about");
+
+  // ⭐⭐ AND THE "NEVER COMES BACK" HALF, which is the part that made it useless rather than untidy.
+  parts()[0]._listeners.click[0]();   // − again, another rebuild
+  parts()[2]._listeners.click[0]();   // + again
+  assert.equal(note.hidden, false, "★ the warning never came back after a rebuild");
+  assert.ok(registry["menu"].children.includes(note), "★ and the line is gone from the page for good");
+  assert.equal(note.nextSibling, card(), "★ it came back, but not above the card he touched");
+});
+
+// ── v461: step 3 answers when it is touched too early ───────────────────────
+test("★★★ step 3 is not switched off — it answers when he touches it", () => {
+  // ⚠️⚠️ HER WORDS: __"i do step 3 skipping step 2, it just dont allow, but no warning"__
+  // ⭐⭐ **AND THE REASON THERE WAS NO WARNING IS THAT THE BOX WAS `disabled` — A DISABLED CONTROL NEVER
+  // RECEIVES THE TAP, so it has no way to say anything.** Measured on the live shop first: tapping the name
+  // box did not even move the focus, and the line stayed hidden.
+  // ⚠️ **THAT IS v452'S OWN RULE, quoted twenty lines away in the shop to justify the two delivery cards
+  // REFUSING rather than being switched off — and then applied to these two fields the wrong way round.**
+  render();
+  const name = registry["name-input"];
+  const wa = registry["whatsapp-input"];
+  const note = registry["step-note"];
+  assert.equal(registry["bar-count"].textContent, "0 items", "precondition: the basket is empty");
+
+  // ⭐ IT IS HELD SHUT, NOT SWITCHED OFF. `readonly` still cannot be typed into and still looks closed,
+  // **and a phone does not raise its keyboard for it — but it CAN be tapped, so it can answer.**
+  assert.equal(name.disabled, false, "★ the name box is switched off, so no tap can ever reach it");
+  assert.equal(name.readOnly, true, "★ the name box is not held shut — he can type an order with nothing in it");
+  assert.ok(String(name.className || "").includes("locked"),
+    "★ the box does not look shut, so he taps a box that looks ready and is told nothing");
+  assert.equal(wa.readOnly, true, "the number box is open too");
+
+  // ⭐⭐ AND THE TAP IS ANSWERED.
+  (name._listeners.focus || []).forEach((f) => f.call(name));
+  assert.equal(note.hidden, false, "★ touching the name box told him nothing at all");
+
+  // ⚠️ AND WITH STEP 2 DONE, THE SAME BOX IS OPEN AND ASKS NOTHING — so this is a lock, not a wall.
+  tapDay();
+  const stepper = registry["menu"].children[0].children.find((c) => c.className === "card-body")
+    .children.find((c) => c.className === "stepper");
+  stepper.children[2]._listeners.click[0]();      // + — one item in the basket
+  assert.equal(registry["bar-count"].textContent, "1 item", "the fixture did not reach step 3");
+  assert.equal(registry["name-input"].readOnly, false, "★ the box is still held shut with an order in the basket");
+  assert.equal(registry["name-input"].className.includes("locked"), false, "★ and still looks closed");
+  // ⚠️ AND ONE LISTENER, NOT SEVENTY-THREE (v461) — see the note in `store/app.js`. Each duplicate
+  // closed over the basket of its own render, and the older ones answered with a basket long gone.
+  assert.equal((registry["name-input"]._listeners.focus || []).length, 1,
+    "★ the box is collecting a fresh listener on every render, so old renders answer for the current one");
+  (registry["name-input"]._listeners.focus || []).forEach((f) => f.call(registry["name-input"]));
+  assert.equal(registry["step-note"].hidden, true, "★ he was told off for a step he had already done");
+});
+
+// ── v461: the warning BLINKS ────────────────────────────────────────────────
+test("★★★ the step warning blinks, and its flash ends where the words rest", () => {
+  // ⚠️⚠️ HER QUESTION, and it is the right one: __"did you blink the warning?"__ ⭐ **It did not — the line
+  // simply appeared**, and her report a moment earlier was __"it just dont allow, but no warning"__. **A
+  // sentence that arrives silently part-way down a long page can still be missed**, and every other warning
+  // in this shop already blinks.
+  render();
+  const note = registry["step-note"];
+  // ⚠️ CLEARED FIRST, because this node is SHARED across every render in this file and an earlier test's
+  // flash is still on it. ⭐ So the assertion is the TRANSITION — the refusal puts the blink on.
+  note.classList.remove("flash");
+  note.classList.remove("on");
+  assert.equal(String(note.className).includes("flash"), false, "the flash could not be cleared");
+
+  // ⚠️ The posting day is not tapped, so a quantity is refused — the same refusal her report is about.
+  const stepper = registry["menu"].children[0].children.find((c) => c.className === "card-body")
+    .children.find((c) => c.className === "stepper");
+  const box = stepper.children[1];
+  box.value = "4";
+  (box._listeners.input || []).forEach((f) => f.call(box));
+
+  assert.equal(note.hidden, false, "no warning appeared, so nothing below proves anything");
+  assert.ok(String(note.className).includes("flash"),
+    "★ the warning appeared WITHOUT BLINKING — it is the only warning in this shop that does not");
+
+  // ⚠️⚠️ AND IT IS THE SHOP'S ONE FLASH, NOT A SECOND ONE: the same two tokens drive the count and the
+  // length of every blink on the page, so a second set of numbers cannot drift into existence (v427).
+  const css = readFileSync(new URL("../store/app.css", import.meta.url), "utf8");
+  for (const sel of [".step-note.flash {", ".step-note.flash strong {"]) {
+    const rule = new RegExp(sel.replace(".", "\\.") + "[^}]*\\}").exec(css);
+    assert.ok(rule, `★ the step warning has no rule for ${sel}`);
+    assert.match(rule[0], /var\(--flash-blink\)/, `★ ${sel} carries its own blink length`);
+    assert.match(rule[0], /var\(--flash-blinks\)/, `★ …and its own blink count`);
+  }
+
+  // ⚠️⚠️ AND THE LAST KEYFRAME IS THE COLOUR THE ELEMENT RESTS AT, or it flashes and then SNAPS — the trap
+  // this stylesheet already records for the parked place.
+  const token = (n) => (css.match(new RegExp(`--${n}:\\s*(#[0-9a-fA-F]{6})`)) || [])[1];
+  const block = (name) => {
+    const m = new RegExp(`@keyframes ${name} \\{[\\s\\S]*?\\n\\}`).exec(css);
+    assert.ok(m, `★ the step warning has no @keyframes ${name}`);
+    return m[0];
+  };
+  const line = block("step-note-flash");
+  const word = block("step-note-flash-word");
+  assert.equal((line.match(/\d+%, 100% \{ background-color: (#[0-9a-fA-F]{6});/) || [])[1],
+    token("brown-soft"), "⚠️ the line's flash ends somewhere other than where the line rests, so it snaps");
+  assert.equal((word.match(/\d+%, 100% \{ color: (#[0-9a-fA-F]{6}); \}/) || [])[1],
+    token("brown-dark"), "⚠️ the words' flash ends somewhere other than where they rest, so they snap");
+  assert.equal((line.match(/0%, \d+% \{ background-color: (#[0-9a-fA-F]{6});/) || [])[1],
+    token("red"), "⚠️ and the line OPENS on her red — 'on for a second' means already on");
+
+  // ⚠️⚠️⚠️ AND THIS IS THE ASSERTION THAT WAS MISSING, AND IT IS THE WHOLE OF v462. **A FLASH MUST MOVE
+  // SOMETHING AN EYE CAN SEE.** The first version blinked `#c0392b` against `#a84322` — **the animation ran
+  // perfectly, and the two colours are 1.10:1 apart, because both are reds.** Her words: __"all warning so
+  // far not flashing"__. ⭐ **She was right and the animation was running.** ⭐ A contrast floor is the only
+  // thing that can tell "it flashes" from "it is a colour".
+  const lum = (hex) => {
+    const [r, g, b] = hex.match(/[0-9a-fA-F]{2}/g).map((h) => parseInt(h, 16) / 255);
+    const f = (v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+  };
+  const apart = (a, b) => {
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  const flashColour = (line.match(/0%, \d+% \{ background-color: (#[0-9a-fA-F]{6});/) || [])[1];
+  const restColour = token("brown-soft");
+  const seen = apart(flashColour, restColour);
+  assert.ok(seen >= 3,
+    `⚠️⚠️ the flash moves the background from ${flashColour} to ${restColour} — only ${seen.toFixed(2)}:1 `
+    + `apart, so on a phone it reads as one colour and the warning does not blink at all`);
 });

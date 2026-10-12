@@ -756,6 +756,71 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## The big catch-up, PASS B — the shop page (12 Oct 2026)
+
+The eighteen files Pass A deliberately left alone: `store/app.js` (1,338 lines), `store/index.html`,
+`store-lang.js`, `store/app.css`, `store/pin_map.js`, the eleven shop tests and two new ones. Suite
+**3373 → 3437 pass / 0 fail**. Engine unchanged at **v476** — nothing to deploy.
+
+**Conflicts:** `store/app.js` 8, `store/index.html` 3, `store-lang.js` 36, plus 19 across the shop
+tests. **The merge recipe that worked, and is worth reusing:** for `store-lang.js`, take the bakery's
+block and override each key's value with jerky's where jerky had its own (**112 values kept**) — then
+localize the genuinely new keys in all three languages. For the shop tests, take the bakery's
+structure and localize the day word.
+
+### ★ THE DEFECT THE PORT FOUND — two fallbacks, one fact
+
+`store/app.js` had **two different defaults for the same thing**:
+
+```js
+// the press's gate:            _value || "courier"
+// the order it then wrote:     _value || "collect"     ← the bakery's default
+```
+
+**Two places holding one rule and disagreeing.** An order placed with no way chosen was *checked* as
+Post (and so asked for a postal address) and *written* as a collection — the customer told to post it,
+the backoffice told to keep it back. **Caught by the test that places an order with no way chosen**,
+which is exactly the kind of test that only exists because the behaviour was pinned. Both now say Post.
+
+### ⚠️ THE TWO DELIBERATE NON-PORTS — her choice, confirmed 2026-10-12
+
+1. **The shop opens with Post (nationwide) chosen.** The bakery's v415/v416 opens with neither chosen —
+   *"a page that opens with one of them edged has answered its own question"*. **She kept her own
+   model**, so the courier card wears `active` from the first paint and `apply("courier")` runs at
+   start-up. Markup, `order()`'s gate and the payload's fallback **all say Post** — the pair above is
+   what happens when they do not.
+2. **The v416 "say how you will get it" gate is not ported.** Jerky's own postal-address rule stands.
+   Two shop tests were **reversed** for this, each with the reason written beside it.
+
+### ⚠️ THE STEP LOCK — the thing that blocked the first attempt
+
+Bakery v454 makes `+` refuse until the customer taps a day. **The ported helpers took the FIRST
+`tappable` cell**, which also matches a closed or askable day — so the tap landed, set nothing, and
+every `+` was refused: the shop rendered correctly and the tests read an empty basket.
+
+⚠️ **A blanket fix made it worse** (requiring `avail` everywhere fixed the empty-basket tests and broke
+tests that tap a closed day on purpose) — **which is what told me to revert rather than push on.** The
+final fix is **per test**: `avail` on the helpers that exist to open step 2, and a chosen way or a
+postal address added where a test drives the flow jerky keeps. **When a port adds a GATE, every test
+that drove the old flow through it has to be looked at individually.**
+
+### Also localized
+
+`health.js`-style sweeps across the shop's new copy in **all three languages**: `ansClosed` (*"Today's
+order window has closed"* / 今天的发货已经截单 / Tempahan hari ini sudah ditutup), the four
+`askToDelivery*`/`askToCollect*` confirmation lines, `bakeDayWhat`, `selfCollectSub`, `courierSub`,
+`pointPick`, `calChosenFor`, `needDay*` — with jerky's `零食`/`snek`, `发货日`/`Hari pos`,
+`邮寄`/`Pos`, `自取`/`Ambil sendiri`. **A dead `collectFrom` key removed** (nothing called it since the
+place list moved inside the collect card). **Three duplicate keys** removed from the by-rule merge.
+
+**⚠️ NOT changed, and worth her eye:** a few *older* shop strings still use the bakery's words —
+`trackDelivery: "Track your delivery:"` beside "Track your order" elsewhere, and
+`noteLabel: "Notes for Collection/Delivery (optional)"`. They predate this sync, so they are a copy
+decision rather than a port, and they are listed for her rather than changed silently.
+
+**Browser-verified at 375 px in all three languages:** no bakery wording renders, no horizontal
+overflow, nothing prints `null`.
+
 ## Engine v401 → v476 — the big catch-up, PASS A: the back office (12 Oct 2026)
 
 Base `cc83293` (bakery v401) → `ad70390` (v476). **72 commits, 87 files in the bakery's range; 68

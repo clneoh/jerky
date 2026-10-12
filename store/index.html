@@ -81,19 +81,40 @@
       </div>
     </div>
 
+    <!-- ★★ THE ANSWER, NOT THE RULE (v405). Her customer's order went wrong because the page stated
+         the RULES ("delivery days Mon/Wed/Fri", "order by 18:00 the day before") and left him to work
+         out what they meant for him. It now says the answer out loud, and the rules stay underneath
+         for anyone who wants them. Filled by app.js; hidden entirely unless the trial flag is on. -->
+    <div id="day-answer" class="answer">
+      <p class="answer-kicker" id="answer-kicker"></p>
+      <p class="answer-big" id="answer-big"></p>
+      <p class="answer-sub" id="answer-sub"></p>
+    </div>
+
     <section class="card info">
-      <p class="info-row"><strong data-i18n="deliveryDays">Posting days</strong><span id="delivery-days" class="info-val"></span></p>
-      <p class="info-row"><strong data-i18n="orderBy">Order by</strong><span id="cutoff" class="info-val"></span></p>
+      <p class="info-row"><strong data-i18n="deliveryDays">Posting days</strong>: <span id="delivery-days" class="info-val"></span></p>
+      <p class="info-row"><strong data-i18n="orderBy">Order by</strong>: <span id="cutoff" class="info-val"></span></p>
     </section>
 
-    <h2 class="section" data-i18n="sPickDay">Pick a posting day</h2>
+    <!-- ★★ THE THREE STEPS (v405). Her words: __"first you might mention that it is a 3 step ordering
+         process, name the 1st by 1 in a circle, big one"__. ⚠️ The lede promises it ENDS, which is the
+         part a nervous customer wants; the circles say which one they are on. -->
+    <p class="steps-lede" id="steps-lede"></p>
+
+    <div class="step-head" id="step1"><span class="step-num">1</span>
+      <h2 class="section" data-i18n="sPickDay">Pick a posting day</h2></div>
+    <p class="bake-day-what" data-i18n="bakeDayWhat">A posting day is the day we make and post your treats. They are made that morning, so they are at their freshest — and the earliest they can be ready for you is the afternoon, not the morning.</p>
     <div id="dates"></div>
 
-    <h2 class="section" data-i18n="sWhat">What would you like?</h2>
+    <!-- ★★★ WHERE A STEP SAYS WHY IT IS NOT OPEN YET (v455). Her words: __"the message show in the wrong place and the screen jump, it should shown up at the appropriate place, or the missing field turn red embossed, or how a form filling would behave"__ ⚠️ **A form marks the thing that is missing, where it sits** — not a pop-up at the top. -->
+    <p class="step-note" id="step-note" role="status" hidden></p>
+    <div class="step-head" id="step2"><span class="step-num">2</span>
+      <h2 class="section" data-i18n="sWhat">What would you like?</h2></div>
     <div id="menu-note" class="menu-note" hidden></div>
     <div id="menu" class="menu"></div>
 
-    <h2 class="section" data-i18n="sYourDetails">Your details</h2>
+    <div class="step-head" id="step3"><span class="step-num">3</span>
+      <h2 class="section" data-i18n="sYourDetails">Your details</h2></div>
     <div class="card">
       <div class="field">
         <label for="name-input" data-i18n="yourName">Your name</label>
@@ -104,51 +125,118 @@
         <input id="whatsapp-input" class="input" type="tel" inputmode="tel" data-i18n-ph="whatsPh" placeholder="e.g. 012-345 6789" autocomplete="tel" required>
         <p class="card-sub" style="margin:4px 0 0" data-i18n="waSub">We use this to confirm your order and send your payment QR — we'll never spam you.</p>
       </div>
+      <!-- ★★ EACH WAY SAYS WHAT IT IS (v407). Her customer ordered a courier when he wanted to
+           collect, and nothing on the page told him the difference — two bare words, "Self
+           collect" and "Courier delivery", left him to guess what he was choosing and what it
+           would cost him. Her words: "imagine that you are totally new, and you want to order
+           from this baker, and you are not so good at online ordering".
+
+           ⚠️ SO THEY ARE ROWS, NOT A TWO-WORD TOGGLE: one full-width row per way, a bold name
+           over a plain line — the same shape as the collect-from list directly below, because it
+           is the same kind of question and this is a shop a nervous person has to read.
+           ⚠️ BOTH LINES ARE TRUE BEFORE ANYTHING IS TAPPED, which is the whole point: he can
+           compare without tapping, and cannot tap his way into a choice he did not understand.
+           ⚠️ THE COURIER LINE PROMISES NO AMOUNT, because the shop genuinely has none — she
+           quotes carriage by hand afterwards (`judgeCtx` says the same, in its own words). What
+           it can say honestly is that the total under this page is the bread's.
+           ⚠️ NEITHER ROW IS EVER DISABLED. This is a description, never a gate. -->
       <div class="field">
         <label data-i18n="howGet">How will you get your order?</label>
+        <!-- ★★ AND THE LINE THAT SAYS IT IS A QUESTION TO ANSWER (v416). Her words: __"you need a
+             'click to choose' after the title, and self collect should not be default"__. ⚠️ With
+             NEITHER card wearing the edge, the two of them read as two descriptions rather than as
+             two things to pick — **so this stands under the question until he picks one.** -->
+        <p class="seg-prompt" id="fulfil-pick" data-i18n="fulfilPick">Tap to choose one.</p>
         <div class="seg" id="fulfillment">
-          <button type="button" class="seg-btn active" data-fulfillment="courier" data-i18n="courier">Post (nationwide)</button>
-          <button type="button" class="seg-btn" data-fulfillment="collect" data-i18n="selfCollect">Collect (local)</button>
-        </div>
-      </div>
-      <!-- Where a Self collect order is collected FROM (v299). Hidden entirely while she has
-           no Points open, so the shop looks exactly as it did before this version. The rows
-           are built by store/app.js: every word inside is written by JS, so it carries no
-           data-i18n tags and the dictionary's English-must-match-the-markup rule in
-           test/store-i18n.test.js is untouched. -->
-      <div class="field" id="point-field" hidden>
-        <label data-i18n="collectFrom">Collect from</label>
-        <div class="point-list" id="point-list"></div>
-      </div>
-      <div class="field" id="address-field">
-        <label for="address-input"><span data-i18n="addressLabel">Postal address</span> <em class="req">*</em></label>
-        <input id="address-input" class="input" type="text" data-i18n-ph="addressPh" placeholder="Full address — street, area, town &amp; postcode" autocomplete="street-address">
-        <p class="card-sub" style="margin:4px 0 0" data-i18n="addressSub">We post nationwide — your treats are made on the day you pick and posted to this address.</p>
-
-        <!-- Where the addresses the lookup found appear (v202). Emptied and hidden by
-             store/app.js; every word inside it is written by JS, so it carries no
-             data-i18n tags and the dictionary's English-must-match-the-markup rule in
-             test/store-i18n.test.js is untouched. -->
-        <div class="addr-list" id="addr-list" hidden></div>
-        <p class="card-sub pin-hint" data-i18n="pinHint">Skip this and the driver goes to the address you typed — that is fine for most houses. Pin it only if the address alone will not find your door: a condo block, a guard house. Either way, put the block and unit number in the address above.</p>
-        <div class="pin-row">
-          <button type="button" id="pin-here" class="pin-btn" data-i18n="pinHere">Use my location</button>
-          <button type="button" id="pin-map" class="pin-btn" data-i18n="pinOnMap">Pin on the map</button>
-        </div>
-        <p class="card-sub pin-status" id="pin-status" hidden></p>
-        <div class="pin-box" id="pin-box" hidden>
-          <p class="card-sub pin-note" id="pin-loading" data-i18n="pinLoading">Loading the map…</p>
-          <p class="card-sub pin-note" id="pin-tap" data-i18n="pinTapFirst" hidden>Tap the map where the courier should stop, or drag the pin.</p>
-          <div class="pin-hold" id="pin-hold"></div>
-          <div class="pin-actions">
-            <button type="button" id="pin-keep" class="track-btn" data-i18n="pinKeep">Keep this spot</button>
-            <button type="button" id="pin-cancel" class="pin-btn" data-i18n="pinCancel">Cancel</button>
+          <div class="seg-opt" data-opt="collect">
+            <button type="button" class="seg-btn" data-fulfillment="collect">
+              <span class="seg-head-row">
+                <span class="seg-name" data-i18n="selfCollect">Collect (local)</span>
+                <!-- ★★ AND THE CARD SAYS IT OPENS (v412). Her words: __"i want the self collect card at
+                     store to be folded as default"__. The caret is the whole of the hint that there is
+                     anything behind it, so it is drawn from the first paint and store/app.js turns it
+                     over when the card opens. -->
+                <span class="seg-caret" id="collect-caret">▸</span>
+              </span>
+              <span class="seg-sub" data-i18n="selfCollectSub">You come to us — nothing to pay for postage. We message you the exact collection point and the time window for collection. It is normally late afternoon on the posting day.</span>
+            </button>
+            <!-- ★★ THE PLACES ARE PART OF THE CHOICE, NOT A BOX THAT APPEARS UNDER IT (v410). Her
+                 words: __"there is 2 main selection, select self collect and a drop down appear,
+                 should not be in present interface"__ — the list of places and the choice to collect
+                 were TWO steps, and a control that appears once you have chosen something reads as
+                 a second question rather than as part of the first.
+                 ⚠️ SO THE PLACES LIVE INSIDE THE SELF-COLLECT CARD, and the card wears the edge —
+                 one piece, one decision. Tapping a place CHOOSES SELF COLLECT as well as the place,
+                 which is what that tap means.
+                 ⚠️ AND IT IS BUILT BY THE SCRIPT, so it carries no data-i18n tags and the
+                 dictionary's English-must-match-the-markup rule in test/store-i18n.test.js is
+                 untouched. Empty until store/app.js fills it, so a shop with no places is byte for
+                 byte the shop it was. -->
+            <!-- ★★ AND THE LINE THAT SAYS THE LIST IS A THING TO PRESS (v415). Her words: __"the
+                 self collect have to have message follow, click to choose point, without click it
+                 should not highlight"__. ⚠️ It sits BESIDE the list rather than inside it, so the
+                 list stays nothing but places — the same care the address list takes with its own
+                 instruction row. ⚠️ Authored with its own `data-i18n`, so the three languages come
+                 from the dictionary and nothing here has to be written by the script. -->
+            <p class="point-pick" id="point-pick" data-i18n="pointPick" hidden>Tap to choose which collection point you want to collect your orders from.</p>
+            <div class="point-list" id="point-list" hidden></div>
+          </div>
+          <div class="seg-opt active" data-opt="courier">
+            <button type="button" class="seg-btn" data-fulfillment="courier">
+              <span class="seg-head-row">
+                <span class="seg-name" data-i18n="courier">Post (nationwide)</span>
+                <span class="seg-caret" id="courier-caret">▸</span>
+              </span>
+              <span class="seg-sub" data-i18n="courierSub">We post it to you, nationwide. Your postage is told to you on WhatsApp — the total shown is for the treats only, and we add the postage when we confirm.</span>
+            </button>
+            <div class="field addr-body" id="address-field" hidden>
+              <label for="address-input" data-i18n="addressLabel">Postal address</label>
+              <input id="address-input" class="input" type="text" data-i18n-ph="addressPh" placeholder="Full address — street, area, town &amp; postcode" autocomplete="street-address">
+              <!-- Where the addresses the lookup found appear (v202). Emptied and hidden by
+                   store/app.js; every word inside it is written by JS, so it carries no
+                   data-i18n tags and the dictionary's English-must-match-the-markup rule in
+                   test/store-i18n.test.js is untouched. -->
+              <div class="addr-list" id="addr-list" hidden></div>
+              <!-- ★★ THE PIN IS AN OFFER, NOT A STEP — AND ITS REASONING LIVES INSIDE THE MAP (v437).
+                   Her words: __"Pin a map can be confusion that is not mandatory to be faced by
+                   customer, especially when we have auto complete. Pin helps on certain scenarios
+                   that we understand, maybe we just fade that function"__.
+                   ⚠️⚠️ It used to be a whole paragraph and a full-width button at the same weight as
+                   the address field above, so it read as the next thing to do. ⭐ **Closed, it is now
+                   ONE quiet line with the press as a link inside it** — and the long explanation,
+                   which is the part that says skipping is fine, moved INTO the map where he is
+                   actually moving the pin and can read it properly.
+                   ⚠️ "USE MY LOCATION" WAS REMOVED (v414) for the same reason, and its note was
+                   here: **a customer can SEE the door he is choosing and move it, where a phone's
+                   own guess at where he is standing cannot be checked at all.** -->
+              <p class="card-sub pin-ask" id="pin-ask">
+                <span data-i18n="pinHintShort">Door hard to find?</span>
+                <button type="button" id="pin-map" class="pin-link" data-i18n="pinOnMap">Pin on the map</button>
+              </p>
+              <p class="card-sub pin-status" id="pin-status" hidden></p>
+              <div class="pin-box" id="pin-box" hidden>
+                <p class="card-sub pin-note" id="pin-loading" data-i18n="pinLoading">Loading the map…</p>
+                <p class="card-sub pin-note" id="pin-tap" data-i18n="pinTapFirst" hidden>Tap the map once to drop the pin — then drag it to the exact door.</p>
+                <div class="pin-hold" id="pin-hold"></div>
+                <!-- ⭐ THE REASONING, INSIDE THE MAP. It is read while the pin is being moved, which
+                     is the only moment it has anything to say. -->
+                <p class="card-sub pin-note pin-why" data-i18n="pinHint">Skip this and the driver goes to the address you typed — that is fine for most houses. Pin it only if the address alone will not find your door: a condo block, a guard house. Either way, put the block and unit number in the address above.</p>
+                <div class="pin-actions">
+                  <button type="button" id="pin-keep" class="track-btn" data-i18n="pinKeep">Keep this spot</button>
+                  <button type="button" id="pin-cancel" class="pin-btn" data-i18n="pinCancel">Cancel</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
+      <!-- ⚠️ THE SEPARATE "Collect from" FIELD THAT USED TO SIT HERE IS GONE (v410). It was a
+           labelled box that appeared the moment Self collect was chosen — a second question under
+           the first, which is exactly what she said should not be in the interface. The places it
+           held now live inside the Self collect card itself, above. -->
       <div class="field" style="margin-bottom:0">
-        <label for="note-input" data-i18n="noteLabel">Delivery note (optional)</label>
-        <input id="note-input" class="input note-input" type="text" data-i18n-ph="notePh" placeholder="Gate code, landmark, delivery time…" autocomplete="off">
+        <label for="note-input" data-i18n="noteLabel">Notes for Collection/Delivery (optional)</label>
+        <input id="note-input" class="input note-input" type="text" data-i18n-ph="notePh" placeholder="e.g. collect 6pm / prefer deliver 6 to 8pm" autocomplete="off">
       </div>
 
       <!-- HOW HER CUSTOMERS' DETAILS ARE USED now lives in the ORDER BAR, one quiet
@@ -186,13 +274,33 @@
     <div id="fb-foot" class="fb-foot" hidden></div>
   </main>
 
-  <div class="bar-spacer"></div>
+  <div class="bar-spacer" id="bar-spacer"></div>
   <div class="order-bar">
+    <!-- ★★ THE CODE IS SAID AGAIN HERE, WHERE THE MONEY IS (v408). Her words: __"If there is promo
+         coupon attached, say it on top of Place Order"__. The line under the code box already says
+         the code will be taken off at the confirmation — and it is UP THE PAGE, out of sight by the
+         time a customer reaches the button. This is the moment they commit, and the moment the
+         figure they are looking at (the goods total on the bar, which is BEFORE the code) needs
+         explaining. Filled by store/app.js and hidden unless a code is actually on the order, so
+         an ordinary order's bar is byte-for-byte the bar it has always been.
+         ⚠️ IT IS A STATEMENT, NEVER A GATE: it never blocks the button and never changes a total. -->
+    <p class="promo-bar" id="promo-bar" hidden></p>
     <div class="order-bar-row">
       <div class="order-summary">
         <span id="bar-count" class="bar-count">0 items</span>
         <span id="bar-total" class="bar-total">RM0.00</span>
       </div>
+      <!-- ★★ THE FOURTH STEP SITS BESIDE THE BUTTON, NOT INSIDE IT (v438). Her words: __"the
+           number 4 should not be inside the the Place order button, it should sit beside, same size
+           with other number to be consistant, make the place order button smaller to make roon for
+           the 4 ball"__.
+           ⚠️⚠️ v435 drew it INSIDE the button, with `#order-btn::before` — a 20px disc against the
+           other three's 30px ones, so **it was a fourth number that did not match the three he
+           had just followed.** ⭐ It is the same `.step-num` shape now, at the same 30px, standing
+           in the same place in the sequence: after the details, before the press.
+           ⚠️ AND THE BUTTON IS NARROWER FOR IT — the circle and its gap come out of a row that was
+           `flex: 1` on the button, which is the room she asked to be made. -->
+      <span class="bar-step" id="bar-step" aria-hidden="true">4</span>
       <button id="order-btn" class="btn primary" disabled>Place order</button>
     </div>
 
@@ -244,6 +352,26 @@
         <li><span data-i18n="privacyContact">Ask us any time to see, correct or delete what we hold — WhatsApp</span> <a id="privacy-wa" class="privacy-wa" href="" hidden></a></li>
       </ul>
       <p class="privacy-sheet-fine" data-i18n="privacyDate">Under Malaysia's Personal Data Protection Act 2010 (Act 709). Last reviewed: 7 October 2026.</p>
+    </div>
+  </div>
+
+  <!-- ★★ THE QUESTION BEFORE A CUSTOMER CHANGES HOW HE GETS HIS ORDER (v436). Her words: __"a
+       confirmation pop up, asking whether customer intend to change to delivery? the point selection
+       will be cleared, vise versa"__.
+       ⚠️⚠️ IT IS THE SHOP'S FIRST QUESTION. `#confirm-msg` is a NOTICE — a banner with no buttons —
+       and the privacy sheet is read-only, so nothing on this page has ever asked the customer
+       anything. ⭐ It sits at the TOP LEVEL, outside the order bar, because it must cover the whole
+       screen: a question answered by a press on the page behind it is not a question.
+       ⚠️ Its title, body and two buttons are written by JS, not tagged — the words differ by which
+       way he is going, so there is no one translation to put here. -->
+  <div class="ask-scrim" id="ask-scrim" hidden>
+    <div class="ask-card" role="dialog" aria-modal="true" aria-labelledby="ask-title">
+      <p class="confirm-title" id="ask-title"></p>
+      <p class="confirm-body" id="ask-body"></p>
+      <div class="ask-actions">
+        <button type="button" class="ask-quiet" id="ask-keep"></button>
+        <button type="button" class="ask-go" id="ask-change"></button>
+      </div>
     </div>
   </div>
 

@@ -99,6 +99,27 @@ globalThis.fetch = async (url) => ({
 
 const { daySpecs, fmtDay, resolveDates, dateKey: appDateKey } = await import("../store/app.js");
 
+
+// ★★★ THE STEP LOCK IS REAL (v454): step 2 does not open until HE has tapped a posting day.
+function tapDay() {
+  let hit = null;
+  const walk = (n) => {
+    if (!n || hit || !n.children) return;
+    for (const c of n.children) {
+      // ⚠️⚠️ AN **OPEN** DAY. The step lock (v454) refuses `+` until HE taps a day the shop can
+      // really take an order for; a bare `tappable` also matches a closed or askable day, so the
+      // tap lands, sets nothing, and every press is refused — the basket reads empty.
+      if (c && c.tagName === "BUTTON" && String(c.className || "").includes("cal-cell")
+        && String(c.className || "").includes("tappable")
+        && String(c.className || "").includes("avail")) { hit = c; return; }
+      walk(c);
+    }
+  };
+  for (const k of Object.keys(registry)) walk(registry[k]);
+  if (hit && hit._listeners && hit._listeners.click) hit._listeners.click[0]();
+  return !!hit;
+}
+
 test("resolveDates uses the published dates, including one outside the weekday pattern", () => {
   const today = new Date();
   const thu = new Date(today.getFullYear(), today.getMonth(), today.getDate() + (((4 - today.getDay()) + 7) % 7 || 7));
@@ -202,7 +223,10 @@ test("live availability renders: full day struck out, first open day chosen, per
 
   // One line under the grid names the day they are getting, and one names the
   // full day in this month rather than leaving them to spot the strikethrough.
-  assert.equal(c.chosen.children[0].text, `Your posting day: ${fmtDay(dates[1])}`);
+  // ⚠️ v434: nothing has been tapped yet, so the day here was chosen FOR him and the page says so.
+  // The tapped form is asserted further down, after a real cell is pressed.
+  assert.equal(c.chosen.children[0].text,
+    `${fmtDay(dates[1])} is suggested for you. Tap it to confirm your posting day.`);
   assert.equal(c.notes.length, 1);
   assert.equal(c.notes[0].children[0].text, "Sold out: 2 Sep");
 
@@ -221,7 +245,12 @@ test("live availability renders: full day struck out, first open day chosen, per
   assert.equal(sStamp.children[0].text, "Sold out");
   assert.equal(bodyOf(s).children[1].children[2].disabled, true, "sold-out product's + button is disabled");
 
-  // Stepper caps at the remaining count: Chicken Jerky has 2 left.
+  // ★★★ THE DAY IS TAPPED FIRST (v454). The step lock refuses step 2 until HE has tapped a posting day, so
+  // the four presses below were being refused outright and the count read `''` instead of `2`.
+  // ⭐ `tapDay()` taps **the day the page chose for him** — this test's own subject, "the first open day
+  // chosen" — which is exactly the tap a customer would make.
+  tapDay();
+  // Stepper caps at the remaining count: Focaccia has 2 left.
   const fStep = bodyOf(f).children[1];
   const fQty = fStep.children[1];
   const fDec = fStep.children[0];
@@ -230,9 +259,9 @@ test("live availability renders: full day struck out, first open day chosen, per
   fInc._listeners.click[0]();
   fInc._listeners.click[0]();
   fInc._listeners.click[0]();
-  assert.equal(fQty.textContent, "2", "+ stops at the 2 left");
+  assert.equal(fQty.value, "2", "+ stops at the 2 left");
   fDec._listeners.click[0]();
-  assert.equal(fQty.textContent, "1", "− still works");
+  assert.equal(fQty.value, "1", "− still works");
 });
 
 test("tapping another open day moves the marker and swaps the product stamps", () => {
@@ -241,6 +270,9 @@ test("tapping another open day moves the marker and swaps the product stamps", (
   const c = calendar();
   assert.ok(cell(7).className.includes("sel"), "the tapped day is now the chosen one");
   assert.ok(cell(4).className.includes("avail") && !cell(4).className.includes("sel"), "the previous day is released");
+  // ⚠️ MUNCHIES' OWN WORDING FOR THIS LINE. The tapped form is `calChosen` ("Your posting day: %1");
+  // the form a day the page chose FOR him takes is `calChosenFor` and is asserted in store.test.js.
+  // The bakery says "Your chosen bake day" — taking that verbatim would name a day this shop does not have.
   assert.equal(c.chosen.children[0].text, `Your posting day: ${fmtDay(dates[2])}`);
 
   const cards = registry["menu"].children;

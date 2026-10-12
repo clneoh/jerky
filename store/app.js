@@ -10,7 +10,7 @@ import { normRules } from "../availability.js";
 import { isThumb, lineNoteOf, LINE_NOTE_MAX } from "../storefront-fields.js";
 import { isLang, loadLang, pick, rememberLang, nameFor, descFor, unitFor, policyFor, applyTo } from "../i18n.js";
 import { STORE } from "../store-lang.js";
-import { addressFromRow, askGeo, fixVerdict, lookupQuery, placeForOrder, validPin } from "./geo.js";
+import { addressFromRow, lookupQuery, placeForOrder, validPin } from "./geo.js";
 import { showPinMap } from "./pin_map.js";
 import { createLookup } from "./lookup.js";
 import { sendFeedback, loadDraft, saveDraft } from "./feedback.js";
@@ -28,6 +28,15 @@ import { codeNameOk, evaluate, findCode, minimumOf, normCode, normalizeCode, off
 // fmtDay and the "Posting days" info card read by the visitor's language so a
 // calendar cell or that row shows in 中文/BM too.
 const DAYS_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+// ★★ THE SAME DAYS, SPELLED OUT — FOR A DATE, NOT FOR A LIST (v434). Her words: __"Your bake day:
+// Mon, 12 Oct — change to 'your choosen bake day: Monday. 12 Oct'"__. ⚠️⚠️ **THE TWO ARE NOT THE SAME
+// JOB, WHICH IS WHY THERE ARE NOW TWO ARRAYS AND NOT ONE.** `fmtDay` names **one date in a sentence**
+// ("Monday, 12 Oct"), where the day is the whole point and 'Mon' reads as a shorthand. `dayName`
+// builds **a standing list of the days she bakes** ("Bake days: Mon, Wed, Fri" — the card she picked
+// off a sheet the same day), where 'Monday, Wednesday, Friday' is a mouthful on a phone and the
+// abbreviation is exactly right. **One array would have silently undone that card.**
+// ⚠️ THE OTHER TWO LANGUAGES NEED NOTHING: 周一 and Isnin are already the full forms.
+const DAYS_EN_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DAYS_ZH = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 const MONTHS_ZH = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"];
@@ -66,6 +75,11 @@ let repaintForLang = null;
 // storefront row is fetched once at boot, and a customer looking at the top of
 // the page would otherwise never see the offer. Null until render() has run.
 let repaintPromo = null;
+// ★★ AND THE STEP CIRCLES, the same seam and for the same reason (v415). `paintSteps` lives inside
+// render(), where everything that changes a step funnels — the day tapped, the menu rebuilt, the 30s
+// refresh — and **a fulfilment choice is the one thing that changes a step from OUTSIDE it.** The
+// picker is wired at module scope, so it cannot reach the function; this is the handle it uses.
+let paintStepsForFulfillment = null;
 
 /* ── Counting a label being opened (v288) ──────────────────────────────────────
    A label's QR — and the link she copies into WhatsApp — land here carrying `?promo=CODE`.
@@ -561,9 +575,8 @@ function el(tag, attrs = {}, ...children) {
   return node;
 }
 
-export function upcomingDates(cfg) {
+export function upcomingDates(cfg, now = new Date()) {
   const out = [];
-  const now = new Date();
   for (let i = 1; out.length < cfg.upcomingCount && i < 365; i++) {
     const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
     if (cfg.deliveryDays.includes(d.getDay())) out.push(d);
@@ -583,11 +596,77 @@ export function isOpen(cfg, d, now = new Date()) {
   return now.getTime() < deadline.getTime();
 }
 
+// ★★ "6PM", NOT "18:00" (v405). ⚠️ A stranger reads a clock the way they speak. 18:00 is the form the
+// baker's admin stores and it is right THERE; on the customer's page it is a small puzzle, and the
+// whole finding of this version is that small puzzles are where a nervous customer goes wrong.
+// ⚠️ ONLY THE DISPLAY CHANGES — `cfg.cutoff` stays "18:00" everywhere it is compared.
+export function cutoffText(cutoff) {
+  const parts = String(cutoff || "").split(":");
+  const hh = Number(parts[0]);
+  const mm = Number(parts[1]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return String(cutoff || "");
+  const h12 = hh % 12 === 0 ? 12 : hh % 12;
+  const ampm = hh < 12 ? "am" : "pm";
+  // ⚠️ ON THE HOUR LOSES THE ":00" — "6pm" is how a person says it, and "6:00pm" is how a form does.
+  return mm === 0 ? `${h12}${ampm}` : `${h12}:${String(mm).padStart(2, "0")}${ampm}`;
+}
+
+// ★★ THE NEXT DAY SHE CAN ACTUALLY HAVE BREAD (v405). ⚠️ `upcomingDates` already starts at TOMORROW and
+// lists only delivery days, and `isOpen` already knows the cut-off — so this is the two of them, in
+// order, and nothing new is decided here. ⭐ It is the ANSWER to the question the page used to leave the
+// customer to work out for himself.
+export function nextOpenDay(cfg, now = new Date()) {
+  // ⚠️⚠️ `now` GOES IN HERE TOO. `upcomingDates` built its own list from the REAL today, so this function
+  // took a time, **used it for the cut-off and ignored it for the days** — and a caller that passed a
+  // different time got an answer made of two different moments. In the app the two agree (both are now),
+  // which is why nothing showed; a test that passes a fixed day is the case that exposes it, and one did.
+  return upcomingDates(cfg, now).find((d) => isOpen(cfg, d, now)) || null;
+}
+
+// The day before `d`, which is the day the order has to be in by.
+function dayBefore(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1);
+}
+
+// ★★ THE TWO SENTENCES THE PAGE NEVER SAID (v405). ⚠️⚠️ THIS IS THE WHOLE FIX. A customer wanted bread
+// TODAY, the page let him pick a day that looked fine, and nothing anywhere told him today was
+// impossible — he found out when the baker checked with him.
+//
+// ⚠️ TWO STATES, THE SAME WORDS, ONE DIFFERENT FIRST LINE. A customer must never have to work out which
+// one he is looking at; the heading tells him, and the green edge says it before he reads.
+//   • nothing open for today  → "Today's bake has closed" / the next day he can have it / the deadline
+//   • still time to order     → "You're in time"        / the same two lines
+function paintDayAnswer(cfg, cutoffSay) {
+  const box = document.getElementById("day-answer");
+  if (!box) return;
+
+  const next = nextOpenDay(cfg);
+  const lede = document.getElementById("steps-lede");
+  if (lede) {
+    lede.hidden = false;
+    lede.textContent = t("stepsLede");
+  }
+  if (!next) { box.hidden = true; return; } // no day open at all — say nothing rather than guess
+
+  const by = dayBefore(next);
+  // ⚠️ "TODAY'S BAKE HAS CLOSED" IS ONLY TRUE WHEN TODAY IS NOT ONE OF HER DAYS, and it is the case he
+  // hit — but a page that says it on a Tuesday when the bakery bakes Tuesday would be wrong. So the
+  // heading follows the fact, not the clock.
+  const todayOpen = isOpen(cfg, new Date(new Date().setHours(0, 0, 0, 0)));
+  box.hidden = false;
+  box.classList.toggle("ok", todayOpen);
+  document.getElementById("answer-kicker").textContent = t(todayOpen ? "ansInTime" : "ansClosed");
+  document.getElementById("answer-big").textContent = sub(t("ansNext"), fmtDay(next));
+  document.getElementById("answer-sub").textContent = sub(t("ansBy"), fmtDay(by), cutoffSay);
+}
+
 export function fmtDay(d) {
   const lang = loadLang();
   if (lang === "zh") return `${MONTHS_ZH[d.getMonth()]}${d.getDate()}日 ${DAYS_ZH[d.getDay()]}`;
   if (lang === "ms") return `${DAYS_MS[d.getDay()]}, ${d.getDate()} ${MONTHS_MS[d.getMonth()]}`;
-  return `${DAYS_EN[d.getDay()]}, ${d.getDate()} ${MONTHS_EN[d.getMonth()]}`;
+  // ⚠️ THE FULL DAY NAME (v434) — this names ONE DATE in a sentence, which is a different job from
+  // the short list of days she bakes. See DAYS_EN_FULL for why the two are kept apart.
+  return `${DAYS_EN_FULL[d.getDay()]}, ${d.getDate()} ${MONTHS_EN[d.getMonth()]}`;
 }
 
 // Whether she posts on this day at all, the cutoff aside: one of her configured
@@ -747,8 +826,79 @@ export function mergeStorefront(base, remote) {
         && String(p.id || "").trim() && String(p.name || "").trim())
       .map((p) => {
         const min = Number(p.minOrderRM);
-        return { id: String(p.id).trim(), name: String(p.name).trim(),
+        const row = { id: String(p.id).trim(), name: String(p.name).trim(),
           minOrderRM: Number.isFinite(min) && min > 0 ? min : 0 };
+        // ★★ IS THIS THE BAKERY'S OWN KITCHEN? (v407). ⚠️⚠️ WITHOUT THIS LINE THE FLAG DIES HERE,
+        // one step after `publishPoints` sends it — the shop would go on inventing its own
+        // "Our kitchen" row and a customer would see her kitchen twice, which is the whole fault
+        // this pair of edits repairs. **A field a sender publishes and a receiver does not keep is
+        // a field that was never sent**, and this list is rebuilt from a whitelist, so every new
+        // key needs naming in BOTH places.
+        // ⚠️ WRITTEN ONLY WHEN TRUE, the house's "absent means nothing" spelling (see the referral
+        // stamp and the promo code above): an ordinary Point's payload stays byte-for-byte what it
+        // has always been, and `p.isKitchen === true` reads an absent key as "not the kitchen" —
+        // which is exactly right, and is also what an older published payload means.
+        if (p.isKitchen === true) row.isKitchen = true;
+        // ★★ AND THE ADDRESS, BUT ONLY WHEN SHE SWITCHED IT ON (v410). ⚠️⚠️ THE FIRST TIME A STREET
+        // ADDRESS HAS EVER BEEN PUBLISHED FROM THIS APP, so the guard is written the same way
+        // `isKitchen` is: **only when it is really there**, so a Point she has not ticked publishes
+        // byte-for-byte what it published yesterday and the switch alone cannot change a page.
+        // ⚠️ A non-string, or whitespace, is NO address rather than a broken one.
+        if (p.showAddress === true) {
+          const street = String(p.address == null ? "" : p.address).trim().slice(0, 200);
+          if (street) row.address = street;
+        }
+        // ★★ AND HER OWN WORDS ABOUT THE PLACE (v412). ⚠️ It is public by its own nature — that is
+        // what it is for — so there is no switch beside it, unlike the address. ⚠️ **AND IT IS
+        // WRITTEN ONLY WHEN THERE IS ONE**, the same spelling as the two above: a Point she has not
+        // written a description for publishes byte-for-byte what it published yesterday.
+        const words = String(p.description == null ? "" : p.description).trim().slice(0, 120);
+        if (words) row.description = words;
+        // ★★ AND THE DAYS THIS PLACE IS SERVED (v419). ⚠️⚠️ WITHOUT THIS THE DAYS DIE HERE, one step
+        // after `publishPoints` sends them: **a field a sender publishes and a receiver does not keep
+        // is a field that was never sent**, and this list is rebuilt from a whitelist, so every new
+        // key needs naming in BOTH places.
+        // ⚠️ RE-VALIDATED ON THE SHOP'S OWN TERMS, not trusted: a weekday is a whole number 0–6 and
+        // nothing else, deduped and sorted, so a hand-edited or half-synced payload cannot make this
+        // page say a day that does not exist. ⚠️ AND ONLY A REAL RESTRICTION IS KEPT — an empty list,
+        // or all seven days, publishes byte-for-byte the row it published yesterday.
+        if (Array.isArray(p.days)) {
+          const days = [];
+          for (const raw of p.days) {
+            // ⚠️⚠️ `null`, `undefined` AND `""` ARE NOT ZERO, and this test comes BEFORE `Number()`
+            // for that reason — `Number(null)` is 0, so a hole in a half-synced array would become
+            // **SUNDAY**: a promise to a customer about a day she never chose. The same trap
+            // `normalizeDays` documents on the admin side, and it was in BOTH copies.
+            if (raw === null || raw === undefined || raw === "") continue;
+            const n = Number(raw);
+            if (Number.isInteger(n) && n >= 0 && n <= 6 && !days.includes(n)) days.push(n);
+          }
+          days.sort((a, b) => a - b);
+          if (days.length && days.length < 7) row.days = days;
+        }
+        return row;
+      });
+  }
+  // The AREAS those Points are grouped under (v410), read exactly like the product categories
+  // above: replaced wholesale, re-validated on the shop's own terms, and shaped so the page can
+  // draw a heading without knowing anything about her tree.
+  //
+  // ⚠️ IDS, NOT NAMES. The page marks which Points sit under a heading by id, so a Point renamed
+  // after it was filed cannot go missing from its own heading. (The product categories publish the
+  // other way round — names — only because that page keys everything else by name; a Point already
+  // has an id on the wire, so the id is the honest thing to use.)
+  if (Array.isArray(remote.pointAreas)) {
+    out.pointAreas = remote.pointAreas
+      .filter((a) => a && typeof a === "object" && String(a.name || "").trim())
+      .slice(0, 200)
+      .map((a) => {
+        const depth = Number(a.depth);
+        return {
+          name: String(a.name).trim(),
+          depth: Number.isInteger(depth) && depth >= 0 ? Math.min(depth, 31) : 0,
+          points: (Array.isArray(a.points) ? a.points : [])
+            .map((n) => String(n || "").trim()).filter(Boolean).slice(0, 500),
+        };
       });
   }
   if (Array.isArray(remote.products)) {
@@ -1233,11 +1383,19 @@ export function renderStatic(cfg) {
   document.title = `${t("titleWord")} · ${cfg.name}`;
   document.getElementById("name").textContent = cfg.name;
   document.getElementById("tagline").textContent = cfg.tagline;
-  document.getElementById("eyebrow").textContent = sub(t("madeToOrder"), clockWords(cfg.cutoff));
+  // ★★ IT IS OFFICIAL (v406). Her words: __"Make the trial an official one now"__ — so the `?trial=1`
+  // flag is GONE rather than left on. ⚠️ **A flag that is permanently true is not a flag, it is a branch
+  // nobody will ever test the other half of** — and it would have gone on saying "this is provisional"
+  // about a page that is not.
+  // ⚠️ BOTH PLACES THE CUT-OFF APPEARS take the same readable form, so the strip at the top and the
+  // "Order by" row can never say it two ways.
+  const cutoffSay = clockWords(cfg.cutoff);
+  document.getElementById("eyebrow").textContent = sub(t("madeToOrder"), cutoffSay);
 
   const days = cfg.deliveryDays.map((n) => dayName(n)).join(", ");
   document.getElementById("delivery-days").textContent = days;
-  document.getElementById("cutoff").textContent = sub(t("beforeVal"), clockWords(cfg.cutoff));
+  document.getElementById("cutoff").textContent = sub(t("beforeVal"), cutoffSay);
+  paintDayAnswer(cfg, cutoffSay);
 
   const social = document.getElementById("social");
   const links = [];
@@ -1288,11 +1446,70 @@ function renderReferralBanner() {
   box.hidden = !currentVia();
 }
 
+// ⚠️⚠️ THE REFUSAL LINE IS HELD BY REFERENCE, AND THIS IS THE WHOLE OF v460. Her report: __"why on step 2,
+// i try to press + the warning come out, but if i press -, the warning disappear and never come back
+// again??"__
+// ⭐⭐ **SHE WAS RIGHT, AND IT WAS WORSE THAN "DISAPPEARS".** v459 moved that line to sit directly above the
+// product card — **which put it INSIDE the menu** — and the menu is rebuilt from scratch by `renderMenu()`
+// on every quantity change. ⭐ **So pressing − deleted the line from the page, and from then on
+// `document.getElementById("step-note")` answered `null` for the rest of the visit: `sayStepFirst` bailed
+// on its first line, and no press could ever bring it back.** ⚠️ **Measured on the real shop before
+// touching anything: after + the line was in the document; after − `getElementById` returned NOTHING; after
+// + again, still nothing.**
+// ⭐ The node is therefore captured ONCE and kept for the life of the page, so a rebuild can never destroy
+// it — it is moved, never lost.
+let stepNoteEl = null;
+// ⚠️ AND WHERE IT IS SPEAKING — the product NAME, not the card, **because the card is rebuilt on every
+// repaint and the name is what the rebuild keys on.** Null when it is speaking at a step heading instead.
+let stepNoteAt = null;
+
+  // ⚠️⚠️ IF THEY DISAGREE THE FLASH IS CUT OFF MID-BLINK — and it could only ever have been wrong in
+  // that direction, because the timer is the thing that fires while `animation: none` fires nothing.
+  // ⭐ So the arithmetic is read from the page rather than repeated here, and a test pins that this
+  // function still asks. ⚠️ The 200 is a margin so the last blink finishes rather than being clipped.
+  const flashMs = () => {
+    try {
+      if (typeof getComputedStyle !== "function" || typeof document === "undefined") return 1200;
+      const cs = getComputedStyle(document.documentElement);
+      const each = parseFloat(cs.getPropertyValue("--flash-blink"));
+      const many = parseFloat(cs.getPropertyValue("--flash-blinks"));
+      if (!(each > 0) || !(many > 0)) return 1200;
+      return each * many + 200;
+    } catch {
+      return 1200;
+    }
+  };
+
+  const flashRow = (b) => {
+    if (!b || !b.classList) return;
+    b.classList.remove("flash");
+    // ⚠️ READING `offsetWidth` FORCES A REFLOW, and it is the whole trick: without it the browser
+    // coalesces "remove then add" into no change at all and a SECOND tap flashes nothing.
+    void b.offsetWidth;
+    b.classList.add("flash");
+    // ⚠️⚠️ THE CLASS COMES OFF ON A TIMER, NOT ON `animationend` — and that is a FAULT FIXED, not a
+    // preference (v424). ⚠️ Under `prefers-reduced-motion: reduce` the stylesheet sets
+    // `animation: none`, and **an animation that never runs never fires `animationend`** — so the mark
+    // stayed on that row FOR GOOD, and tapping a second place left the first one lit as well. It was
+    // shipped that way in v423 and found by reading the rule back rather than by anyone hitting it:
+    // **the reader it would have hit is the one who asked for less movement.** ⭐ A timer always fires.
+    // ⚠️ And the previous timer is cleared first, so a quick second tap cannot have the FIRST tap's
+    // timer pull the class off the flash it has only just started.
+    if (typeof b._flashTimer !== "undefined") clearTimeout(b._flashTimer);
+    b._flashTimer = setTimeout(() => {
+      b.classList.remove("flash");
+      b._flashTimer = undefined;
+    }, flashMs());
+  };
+
 export function render() {
   renderStatic(CONFIG);
   const dateWrap = document.getElementById("dates");
   const menu = document.getElementById("menu");
   const cart = new Map();
+  // ⚠️ A second `render()` must not lose it: the first capture wins, and if the line has been torn out of
+  // the page since, the node we already hold is the one that goes back.
+  stepNoteEl = stepNoteEl || document.getElementById("step-note");
   // What the customer typed as a note on each item (v236), and which items' note
   // boxes they have opened. Both are keyed by product NAME, exactly like the cart
   // itself, and both live HERE rather than in the card's DOM — because a card is
@@ -1306,6 +1523,131 @@ export function render() {
   const lineNotes = new Map();
   const noteOpen = new Set();
   let selected = null;
+  // ★★ HAS THE CUSTOMER ACTUALLY CHOSEN A DAY? (v434) ⚠️⚠️ NOT THE SAME QUESTION AS "is a day
+  // selected" — the first open day is chosen FOR him on load, deliberately, so that ordering can
+  // never be blocked by forgetting to tap. But the step circle means **"you have done this"**, and
+  // crediting him with a choice the page made is the same fault step 3 was already built to avoid
+  // (`fulfilled._picked` — *"the page does not credit him with a choice he did not make"*).
+  // ⭐ Her words: __"the 1,2,3 in the same round ball"__ — and on load they now all are, because
+  // none of them claims anything he has not done.
+  let dayPicked = false;
+  // ★★ THE ONE VOICE FOR "NOT YET — DO THIS FIRST" (v453). Every locked step says it the same way, and
+  // scrolls to the step it is naming, so he is never told to finish something he cannot see.
+
+// ★★★ A MISSING FIELD MARKS ITSELF (v455). Her words: __"or the missing field turn red embossed, or how a
+// form filling would behave"__ ⭐ **This is ordinary form behaviour: the input that is wrong takes the red
+// edge, and its reason sits directly under it.** ⚠️ **Not a pop-up over the shop and no scroll** — the
+// message belongs where the thing that is missing lives.
+function markField(input, key) {
+  if (!input) return;
+  input.classList.add("bad");
+  // ⚠️⚠️ AND IT IS TIED TO THE BOX, NOT ONLY SITTING UNDER IT (v455). The skill, 1.6: *"status shown by
+  // colour alone"* and *"a label not tied with `for`"* are the two most-missed hand-written-site faults.
+  // ⭐ **`aria-describedby` is what makes a screen reader announce the reason WITH the box** — the visible
+  // line and the announced line are the same line, or only sighted people get it.
+  input.setAttribute("aria-describedby", `${input.id}-note`);
+  input.setAttribute("aria-invalid", "true");
+  const id = `${input.id}-note`;
+  let said = document.getElementById(id);
+  if (!said) {
+    said = el("p", { class: "field-note", id, role: "status" });
+    if (input.parentNode && input.parentNode.appendChild) input.parentNode.appendChild(said);
+  }
+  said.textContent = t(key);
+  said.hidden = false;
+  // ★★★ AND THE REASON BLINKS (v462). Her report: __"i skip step 3, go for step4, not warning"__ — ⚠️ **the
+  // warning WAS there: the box turned red with its reason underneath it.** ⭐ **But it was a still red edge,
+  // a screen up from the button she had just pressed, and nothing about it moved.** ⭐⭐ **So it read as no
+  // warning at all.** ⭐ It goes through the shop's one flash, so a missing box and a locked step blink the
+  // same way and there is still only one set of numbers.
+  flashRow(said);
+  // ★★★ AND THE PAGE GOES TO THE THING THAT IS MISSING (v462) — ⚠️⚠️ **AND THIS DELIBERATELY REVERSES PART
+  // OF v455'S JUDGEMENT, AT HER INSTRUCTION.**
+  // Her report: __"i skip step 3, go for step4, not warning"__. ⭐ **Measured: pressing Place order put the
+  // reason 825 PIXELS ABOVE the button she had pressed** — and a flashing line she cannot see is still a
+  // line she cannot see.
+  // ⚠️ v455's rule was *"the page does not move"*, and it was right for a message appearing **on its own**
+  // (the v423 parked place, the step line). ⭐⭐ **THIS IS NOT THAT: she PRESSED a button and the form is
+  // answering her.** ⭐ **A press may carry the page — v99's "Next available" line already scrolls the
+  // calendar.** ⚠️ What must never happen is the page moving while she is doing something else.
+  // ⭐ `block: "center"` so the box lands in the middle rather than under the bar fixed to the foot.
+  if (input.focus) input.focus({ preventScroll: true });
+  if (input.scrollIntoView) {
+    try { input.scrollIntoView({ block: "center", behavior: "smooth" }); }
+    catch { try { input.scrollIntoView(); } catch { /* a page that refuses is not a reason to fail */ } }
+  }
+}
+function clearFieldMarks() {
+  for (const input of document.querySelectorAll(".input.bad")) {
+    input.classList.remove("bad");
+    input.removeAttribute("aria-describedby");
+    input.removeAttribute("aria-invalid");
+    const said = input.id ? document.getElementById(`${input.id}-note`) : null;
+    if (said) { said.hidden = true; said.textContent = ""; }
+  }
+}
+
+  function sayStepFirst(titleKey, bodyKey, stepId, near = null) {
+    // ⚠️⚠️ IT DOES NOT MOVE THE PAGE (v455). Her words: __"the message show in the wrong place and the
+    // screen jump"__ — ⭐ **and the jump was mine: this called `scrollIntoView`, which drags the page to
+    // the step.** ⚠️ **v423 already settled this rule for the parked place — *the page does not move* —
+    // and a customer part-way down the menu being thrown back to the top is exactly that fault.**
+    // ⭐ The message will be redrawn where the step IS; until then it must simply not move him.
+    // ★★★ AND "WHERE THE STEP IS" IS WHAT `stepId` IS FOR (v456). Until this version there was **one**
+    // place a refusal could appear — the line she asked for at v455, which sits under step 1 — and only
+    // a step-1 refusal was ever raised. ⭐ The moment step 3 can refuse a press, a step-3 sentence
+    // rendered under step 1 **is the very fault v455 was fixing**: her words then were __"the message
+    // show in the wrong place"__. ⚠️ **So the line is MOVED to sit under the head of the step that is
+    // speaking** — the element itself, never a second copy, so there is one note and one rule.
+    // ⚠️ A page without the head (or a test shim whose nodes have no parent) simply leaves it where it
+    // is and still says the words — the message is the point, its address is the polish.
+    // ★★★ AND IT SPEAKS WHERE THE CUSTOMER ACTUALLY IS (v459). ⚠️⚠️ HER REPORT, and she is right:
+    // __"when i skip step one try enter qty, it refuse to allow, but i dont know why, because the message
+    // appear somewhere not within my screen, i have to scrol up to find it"__.
+    // ⭐ **MEASURED ON THE REAL SHOP BEFORE CHANGING ANYTHING: with the customer at the menu, the line sat
+    // 262 pixels ABOVE the top of the screen — invisible.** ⚠️ The refusal worked and he was told nothing.
+    // ⚠️⚠️ AND THE FAULT WAS MY OWN JUDGEMENT, NOT A BUG: at v456 I wrote *"a customer at the bottom of the
+    // page pressing a delivery card therefore has to look back up to read it… I chose the missing step over
+    // the customer's thumb."* **That was the wrong way round.** A message nobody sees is not a message.
+    // ⭐ So `near` — the thing that refused, the card whose + was pressed — wins, and the line is put
+    // **directly above it**, on the screen he is already looking at. The rule it belongs to is unchanged:
+    // **the page still does not move** (v423, v455). It is the LINE that comes to him.
+    // ⚠️ With no `near` it falls back to the step's own heading, exactly as it did from v456.
+    // ⚠️⚠️ THE HELD NODE, NOT A LOOKUP (v460). **Once the line has been torn out of the page by a menu
+    // rebuild, `getElementById` can never find it again** — that is why her warning "never came back".
+    const note = stepNoteEl || document.getElementById("step-note");
+    if (!note) return;
+    stepNoteEl = note;
+    let parent = null;
+    let before = null;
+    if (near && near.parentNode && typeof near.parentNode.insertBefore === "function") {
+      parent = near.parentNode;
+      before = near;
+      // ⭐ AND IT REMEMBERS WHICH PRODUCT IT IS SPEAKING ABOUT, by the name the menu keys its cards on —
+      // **because the card ELEMENT is rebuilt on every repaint and the name is not.**
+      stepNoteAt = near.dataset && near.dataset.product ? near.dataset.product : null;
+    } else {
+      stepNoteAt = null;
+      const head = document.getElementById(stepId);
+      if (head && head.parentNode && typeof head.parentNode.insertBefore === "function") {
+        parent = head.parentNode;
+        before = head.nextSibling;
+      }
+    }
+    if (parent && note.nextSibling !== before) parent.insertBefore(note, before);
+    note.replaceChildren(
+      el("strong", {}, t(titleKey)), " ", t(bodyKey));
+    note.hidden = false;
+    note.classList.add("on");
+    // ★★★ AND IT BLINKS (v461). Her question, and it is the right one: __"did you blink the warning?"__
+    // ⚠️ **It did not — the line simply appeared**, and her report a moment earlier was __"it just dont
+    // allow, but no warning"__. ⭐ **A sentence that arrives silently part-way down a long page can still be
+    // missed**, which is the whole fault this thread has been about.
+    // ⭐ It goes through the shop's OWN flash, so the blink length, the number of blinks and the moment the
+    // mark comes off are **one fact in one place** (v427) — and a reduced-motion reader gets the same rule
+    // the parked place gets. ⚠️ Through a SEAM, because `flashRow` is not in this scope.
+    flashRow(note);
+  }
   let avail = null;      // { 'YYYY-MM-DD': slots_left } — day-level, for the calendar
   let prodAvail = null;  // { 'YYYY-MM-DD': { product: slots_left } } — for the item stamps
   let dayRows = null;    // published delivery-date rows — the real dates win
@@ -1335,6 +1677,9 @@ export function render() {
   const promoRotor = document.getElementById("promo-rotor");
   const promoDots = document.getElementById("promo-dots");
   const promoClear = document.getElementById("promo-clear");
+  // ★ The same fact, said again where the money is (v408) — and the spacer that has to grow
+  // with it. See paintPromo.
+  const promoBar = document.getElementById("promo-bar");
 
   // ── The standing offers, and how they turn (v292; the jump fixed in v295) ──
   //
@@ -1774,6 +2119,25 @@ export function render() {
     else if (got && got.offer) say(got.key, "good", offerWords(got.offer), got.code);
     else if (promoRefusal) say(promoRefusal.key, "bad", ...refusalArgs(promoRefusal));
     if (promoClear) promoClear.hidden = !promoApplied;
+    // ★★ AND THE SAME FACT IS SAID AGAIN AT THE BUTTON (v408). Her words: __"If there is promo
+    // coupon attached, say it on top of Place Order"__.
+    //
+    // ⭐ The line under the code box already says the code will come off at the confirmation, and
+    // it is UP THE PAGE. Here the customer is looking at ONE figure — the total on the bar, which
+    // is the GOODS and is never discounted (see renderBar) — and this is the moment they commit.
+    // ⚠️ THE CODE IS NAMED BACK TO THEM, because "your code" is abstract ten minutes into a page.
+    // ⚠️ IT IS HIDDEN UNLESS A CODE IS ACTUALLY ON THE ORDER, so an ordinary order's bar is the
+    // bar it has always been, and nothing is added to its height.
+    if (promoBar) {
+      promoBar.hidden = !promoApplied;
+      promoBar.textContent = promoApplied ? sub(t("promoBar"), promoApplied) : "";
+    }
+    // ⚠️⚠️ AND THE SPACER THAT STOPS THE FIXED BAR EATING THE PAGE MUST GROW WITH IT. `.bar-spacer`
+    // is a measured 126px — right for the bar's TWO rows, and wrong the moment a third appears.
+    // ⭐ Measured HERE rather than guessed again, because the third row's height is not one number:
+    // it depends on the language and on the width, which is exactly how the 126px reading was
+    // arrived at (see app.css) and exactly the sort of reading that goes stale in silence.
+    syncBarSpacer();
   }
 
   function applyTyped() {
@@ -1796,7 +2160,7 @@ export function render() {
     paintPromo(total);
   }
 
-  const renderMenu = () => {
+  const renderMenuCards = () => {
     const byProduct = prodAvail && selected ? prodAvail[selected] || {} : {};
     const groups = poolGroups(CONFIG.products);
     const lang = loadLang();
@@ -1844,7 +2208,53 @@ export function render() {
       const left = reason ? 0 : (caps ? caps.get(p.name) : ownLeft);
       const qty = cart.get(p.name) || 0;
       const soldOut = left != null && left <= 0;
-      const qtyLabel = el("span", { class: "stepper-val" }, String(qty));
+      // ⚠️ THE UPPER BOUND IS DECLARED UP HERE NOW (v458) — above the typed box as well as the "+". It used
+      // to sit between the two buttons, which was fine while "+" was the only thing that wanted it.
+      const cap = left != null && left > 0 ? left : 99;
+      // ★★★ AND THE QUANTITY CAN BE TYPED, NOT ONLY PRESSED (v458). Her words: __"for qty field i should be
+      // allow to key in qty also instead of just press the + & -"__ — ⭐ **a customer ordering twenty is
+      // twenty presses, and on this phone, with the loaf in his other hand, that is the whole sale.**
+      // ⚠️⚠️ AND TYPING MUST NOT REBUILD THE CARD. `redraw()` below ends in `renderMenu()`, which rebuilds
+      // this row — so repainting on every keystroke would delete the box out from under his thumb and eat
+      // the second digit. ⭐ **That is the fault she reported on the PO card and on the Refund box**, and it
+      // is the one this file's own note-box code was already written to avoid (see `redraw`, below).
+      // ⭐ THE BASKET IS UPDATED ON EVERY KEYSTROKE, so the count and the total at the bottom keep up; only
+      // the REBUILD waits until he has finished with the box.
+      const qtyBox = el("input", {
+        class: "stepper-val", type: "number", inputmode: "numeric", min: "1", max: String(cap),
+        step: "1", value: String(qty), "aria-label": t("qtyAria"),
+        oninput: function () {
+          // ⚠️⚠️ AND THE BAKE DAY COMES FIRST HERE TOO (v458) — **this is the line that touches the basket,
+          // and the guard was only on `onchange` below.** ⭐ My own test caught it: a customer could TYPE
+          // bread into the basket with no day chosen, because `change` does not fire until he leaves the
+          // box — by which time the item was already in and the lock had been walked straight past.
+          // ⭐ **A typed number is the same act as a tap, and v454 refused the tap.**
+          if (!dayPicked) { sayStepFirst("needDayTitle", "needDayBody", "step1", here()); return; }
+          const n = parseInt(this.value, 10);
+          if (!Number.isFinite(n) || n < 1) return;   // ⚠️ an empty box mid-edit is not an order for zero
+          cart.set(p.name, Math.min(cap, n));
+          renderBar();
+          paintSteps();
+        },
+        // ⚠️ AND WHEN HE IS DONE, IT SETTLES — and the BAKE DAY COMES FIRST, exactly as the two presses
+        // have it since v454. **A typed number is the same act as a tap, and a step that refuses one must
+        // refuse the other**, or the lock would have a door in it that nobody had noticed.
+        onchange: function () {
+          if (!dayPicked) {
+            sayStepFirst("needDayTitle", "needDayBody", "step1", here());
+            this.value = String(cart.get(p.name) || 0);
+            return;
+          }
+          const n = Math.max(1, Math.min(cap, Math.round(Number(this.value) || 1)));
+          cart.set(p.name, n);
+          this.value = String(n);
+          redraw();
+        },
+      });
+      // ⭐ WHERE A MISSING BAKE DAY IS SPOKEN ABOUT (v459): **directly above the card he just touched.**
+      // ⚠️ It is a thunk, not the element itself, because the card does not exist yet while these handlers
+      // are being built — and the answer is only needed at the moment of the press, when it does.
+      const here = () => (inc && inc.closest ? inc.closest(".card") : null);
       // A stepper move repaints the whole menu: a pool card needs it (every
       // sibling's cap/stamp depends on this quantity) and so does every
       // Next-available line, which is a control only while the basket is empty.
@@ -1860,6 +2270,9 @@ export function render() {
           ? { name: active.dataset.lineNote, at: active.selectionStart } : null;
         renderMenu();
         renderBar();
+        // ⚠️ AND AFTER A QUANTITY CHANGE TOO — step 2 turns green the moment the basket stops being
+        // empty, which happens here and not in `rerender`.
+        paintSteps();
         if (!typing) return;
         const again = Array.from(menu.querySelectorAll("input.line-note"))
           .find((n) => n.dataset.lineNote === typing.name);
@@ -1873,17 +2286,33 @@ export function render() {
       const dec = el("button", { class: "step-btn", onclick: () => {
         const q = Math.max(0, (cart.get(p.name) || 0) - 1);
         if (q === 0) cart.delete(p.name); else cart.set(p.name, q);
-        qtyLabel.textContent = String(q);
+        qtyBox.value = String(q);
         redraw();
       } }, "−");
-      const cap = left != null && left > 0 ? left : 99;
       const inc = el("button", { class: "step-btn", onclick: () => {
+        // ★★★ STEP 1 BEFORE STEP 2 IS ALLOWED (v453) — HER OWN MODEL, WHICH I BUILT THE WRONG SHAPE OF
+        // FIRST TIME. Her words: __"complet step1 before step2 is allow, and so forth"__ — then, asked how
+        // a locked step should read: __"dont allow and a message inform about why"__.
+        //
+        // ⚠️⚠️ SO IT IS NOT A MESSAGE ON PLACE ORDER — it is the STEP refusing, and saying why. My earlier
+        // version let him load the basket in any order and only told him at the end, which **reports a
+        // problem instead of preventing it** — and that is not what she asked for.
+        // ⭐ AND A LOCKED CONTROL THAT EXPLAINS ITSELF is the whole of her instruction: "dont allow" is the
+        // lock, "a message" is why it is not a dead end.
+        // ★★★ STEP 1 BEFORE STEP 2 IS ALLOWED (v454) — THE LINE THAT MAKES IT A GATE, NOT A MESSAGE.
+        // ⚠️⚠️ HER WORDS, AND SHE ASKED TWICE: __"complet step1 before step2 is allow, and so forth"__ ·
+        // __"dont allow and a message inform about why"__ · __"ask user to tap on the bake day to confirm
+        // it"__. ⭐ **`sayStepFirst` was defined and NEVER CALLED** — the helper, the three message pairs and
+        // the comment above all sat here as DEAD CODE, which is why the shop behaved as if none of it existed.
+        if (!dayPicked) { sayStepFirst("needDayTitle", "needDayBody", "step1", here()); return; }
         const q = Math.min(cap, (cart.get(p.name) || 0) + 1);
         cart.set(p.name, q);
-        qtyLabel.textContent = String(q);
+        qtyBox.value = String(q);
         redraw();
       } }, "+");
-      if (soldOut) { dec.disabled = true; inc.disabled = true; }
+      // ⚠️ AND THE TYPED BOX IS DISABLED WITH THEM (v458) — **a sold-out card whose number could still be
+      // typed into would be a door beside a locked gate**, and the two presses already refuse.
+      if (soldOut) { dec.disabled = true; inc.disabled = true; qtyBox.disabled = true; }
       const stamp = left != null
         ? el("span", { class: (unavailable || soldOut) ? "prod-stamp soldout" : "prod-stamp" },
             unavailable ? t("unavailable") : soldOut ? t("soldOut") : sub(t("onlyLeft"), left))
@@ -1947,6 +2376,7 @@ export function render() {
                   fmtDay(new Date(`${selected}T00:00:00`))));
               }
               selected = next.key;   // the day they were just offered
+              dayPicked = true;      // and they asked for it, so step 1 is theirs (v434)
               rerender();            // the card in front of them becomes orderable
               revealCalendar();      // and the calendar above names the chosen day
             },
@@ -1990,7 +2420,7 @@ export function render() {
               el("p", { class: "card-sub" }, `RM${p.price.toFixed(2)} / ${unitFor(p, lang)}`),
               desc ? el("p", { class: "prod-desc" }, desc) : null),
             stamp),
-          el("div", { class: "stepper" }, dec, qtyLabel, inc),
+          el("div", { class: "stepper" }, dec, qtyBox, inc),
           lineNoteArea,
           note,
           nextNote,
@@ -2077,6 +2507,25 @@ export function render() {
     }
     menu.replaceChildren(...children);
   };
+
+  // ★★★ AND EVERY REBUILD PUTS THE REFUSAL LINE BACK (v460). ⚠️⚠️ **This is the fix for her report:**
+  // __"if i press -, the warning disappear and never come back again??"__ ⭐ The line lives directly above a
+  // product card since v459, **so it lives inside the menu — and `renderMenu` empties the menu and rebuilds
+  // it, which took the line with it.** ⭐⭐ **A warning is not a decoration that a repaint may erase: it is
+  // the answer to something the customer just did, and it stands until the thing it is about is fixed.**
+  // ⚠️ It is re-hung here rather than at each caller, **because EVERY path funnels through `renderMenu`** —
+  // the ± press, a typed quantity, the day tap, the 30-second refresh — and a rule written at seven call
+  // sites is a rule that will be missing from the eighth.
+  const placeStepNote = () => {
+    if (!stepNoteEl || stepNoteEl.hidden || !stepNoteAt) return;
+    const card = Array.from(menu.children)
+      .find((c) => c.dataset && c.dataset.product === stepNoteAt);
+    if (card && stepNoteEl.nextSibling !== card) menu.insertBefore(stepNoteEl, card);
+  };
+  // ⚠️⚠️ THE NAME IS WRAPPED RATHER THAN EDITED INTO THE BODY, because `renderMenuCards` returns EARLY on
+  // two paths (an empty menu, and a shop with no categories) — **so a line added at the foot of it would
+  // have been skipped by exactly the shops that need it most.**
+  const renderMenu = () => { renderMenuCards(); placeStepNote(); };
 
   // Live slots left for `name` on the day currently shown. undefined (no live
   // counts published for this day/product) means "unknown" — never treated as
@@ -2264,7 +2713,10 @@ export function render() {
     // first open day is chosen for them, as it always has been — ordering can
     // never be blocked by forgetting to tap, and the line below says which day
     // that is instead of leaving it to a highlight alone.
-    if (selected && !specs.some((s) => dateKey(s.date) === selected && !s.soldOut)) selected = null;
+    // ⚠️ AND THE DAY THEY PICKED GOING IS THE DAY THEY HAVE NOT PICKED (v434): the choice they made
+    // is no longer on offer, so the next open day stands in FOR them — and step 1 does not claim
+    // they chose it. Everything else about this fallback is untouched.
+    if (selected && !specs.some((s) => dateKey(s.date) === selected && !s.soldOut)) { selected = null; dayPicked = false; }
     if (!selected) selected = open.length ? dateKey(open[0].date) : null;
 
     if (!specs.length) {
@@ -2360,7 +2812,7 @@ export function render() {
           class: cls + (open || askable || closed ? " tappable" : "") + (named ? " tippable" : ""),
           onclick: () => {
             if (named) tipIso = iso;
-            if (open) selected = iso;
+            if (open) { selected = iso; dayPicked = true; } // their own tap (v434)
             // Choosing a real day takes the answer away with it; asking about
             // another day it cannot take replaces it. The one tap can never be
             // both, because a day she posts is not askable.
@@ -2389,9 +2841,16 @@ export function render() {
           ...cells,
           // The bands go in last and sit behind the cells (see .occ-paper).
           ...occBands(weeks, todayK)),
-        // The day they picked, in words — the one line under the grid.
+        // The day, in words — the one line under the grid. ⚠️ AND IT SAYS WHICH OF THE TWO
+        // HAPPENED (v434). A day is always chosen here, but only sometimes BY HIM: the first open
+        // day is picked for him so an order is never blocked by forgetting to tap, and **a page
+        // that does something on his behalf has to say so** rather than let a highlight imply he
+        // did it. Her words: __"say, moonday was selectted for you, just click on the prefered
+        // date if you have one"__.
         el("p", { class: "cal-chosen" },
-          sub(t("calChosen"), fmtDay(new Date(`${selected}T00:00:00`)))),
+          dayPicked
+            ? sub(t("calChosen"), fmtDay(new Date(`${selected}T00:00:00`)))
+            : sub(t("calChosenFor"), fmtDay(new Date(`${selected}T00:00:00`)))),
         // Any day in this window with no room left, named rather than guessed at.
         soldOutLine(specs, new Set(weeks.flat())),
         // The answer to a tap the grid could not act on, last because it is the
@@ -2428,6 +2887,128 @@ export function render() {
   // Recompute the dates + rebuild the calendar and menu. Called on first paint
   // and again when the availability data or the published storefront config
   // arrives — arrival order doesn't matter because both funnel through here.
+  // ★★ THE CIRCLES TURN GREEN AS THE CUSTOMER FINISHES (v406).
+  //
+  // ⚠️⚠️ HER WORDS, AFTER THE TRIAL WENT OUT: __"the 1,2,3 turn green after customer done with it"__.
+  // **I had drawn the green state and never wired it** — the rule was in `app.css` from the first day and
+  // nothing ever set the class, so the circles stayed terracotta through the whole order. ⭐ A step marker
+  // that never moves is decoration, and decoration is what this was supposed to replace.
+  //
+  // ⚠️ EACH STEP IS DONE BY SOMETHING THE CUSTOMER DID, not by a screen being reached: a day is chosen, a
+  // basket has something in it, and their name and number are filled in. ⚠️ The third turns green as they
+  // finish typing it — which is the moment before they press Place order, which is exactly when a nervous
+  // customer wants to be told they have done everything.
+  function paintSteps() {
+    const nameEl = document.getElementById("name-input");
+    const waEl = document.getElementById("whatsapp-input");
+    // ★★ AND THE THIRD STEP IS NOT DONE UNTIL HE HAS SAID HOW HE IS GETTING IT (v415). Her words:
+    // __"only by clicking either self collect or delivery, the number 3 change color"__.
+    // ⚠️⚠️ IT CANNOT BE READ OFF THE METHOD ITSELF — that is set to Self collect the moment the page
+    // loads, so a rule that asked "is a method chosen" would be true before a customer had touched
+    // anything. ⭐ **What it asks is whether HE chose**, which is the same distinction the places
+    // above now keep: **the page does not credit him with a choice he did not make.**
+    const fulfilled = document.getElementById("fulfillment");
+    const done = [
+      // ⚠️⚠️ `dayPicked`, NOT `!!selected` (v434). A day is ALWAYS selected — the first open one is
+      // chosen for him on load — so asking "is a day selected" turned this circle green before he
+      // had touched anything, and it was the only one of the three that did. **All three now read
+      // the same question: has HE done this?** That is the rule step 3 below already kept, and the
+      // reason the three circles carry one colour until he starts.
+      dayPicked,
+      cart.size > 0,
+      !!(fulfilled && fulfilled._picked === true)
+        && !!(nameEl && String(nameEl.value || "").trim())
+        && !!(waEl && String(waEl.value || "").trim()),
+    ];
+    for (let i = 0; i < done.length; i++) {
+      const head = document.getElementById(`step${i + 1}`);
+      if (head && head.classList) head.classList.toggle("done", done[i]);
+    }
+    // ★★★ AND THE STEP'S OWN LINE GOES THE MOMENT HE FIXES IT (v455). ⚠️ **A form error does not outlive
+    // its cause** — her words were *"or how a form filling would behave"*, and a line still telling him to
+    // pick a day, after he has picked one, would be the page arguing with itself.
+    // ⚠️ THE HELD NODE HERE TOO (v460) — a lookup would answer `null` after a rebuild had torn the line out,
+    // and this is the code that is supposed to CLEAR it, so it would have cleared nothing.
+    const note = stepNoteEl || document.getElementById("step-note");
+    if (note && dayPicked && !note.hidden) { note.hidden = true; note.classList.remove("on"); note.replaceChildren(); }
+
+    // ★★★ AND STEP 3 DOES NOT OPEN UNTIL STEP 2 HAS SOMETHING IN IT (v456). Her words: __"i skip step 2 and
+    // filled up step 3, it should not allow me to do step 3 at all?"__ ⚠️⚠️ **and she is right — the first
+    // lock was built for one step and stopped, when her instruction was "and so forth".**
+    // ⭐ **So his name and number are inert while the basket is empty**, and the page says why rather than
+    // letting him fill a form for an order that has nothing in it. ⚠️ **They are DISABLED, which is the
+    // honest state — they genuinely cannot be used yet — and the reason is on the page beside them, so this
+    // is not the "disabled with no explanation" fault the skill warns about.**
+    const open3 = cart.size > 0;
+    for (const id of ["name-input", "whatsapp-input"]) {
+      const box = document.getElementById(id);
+      if (!box) continue;
+      // ★★★ IT LOOKS SHUT, AND IT IS NOT SWITCHED OFF (v461). Her report: __"i do step 3 skipping step 2,
+      // it just dont allow, but no warning"__ — ⚠️⚠️ **and there was no warning because the box was
+      // `disabled`, and a disabled control never receives the tap at all.** Measured on the live shop
+      // before this: tapping the name box did not even move the focus, and the line stayed hid.
+      // ⭐⭐ **AND THAT IS v452'S RULE. I QUOTED IT MYSELF TWENTY LINES BELOW, TO JUSTIFY THE TWO DELIVERY
+      // CARDS REFUSING INSTEAD OF BEING SWITCHED OFF — AND THEN SWITCHED THESE TWO FIELDS OFF ANYWAY.**
+      // ⚠️ **The worst of both, and worse than either: the boxes looked entirely normal in the screenshot
+      // AND were dead, so he tapped a box that looked ready and was told nothing.**
+      // ⭐ `readonly` is the honest middle — **it still cannot be typed into and it LOOKS shut, and it can
+      // be tapped, so it can answer.** A phone does not even raise the keyboard for it.
+      box.readOnly = !open3;
+      if (box.classList) box.classList.toggle("locked", !open3);
+    }
+    // ★★★ AND THE TWO DELIVERY CARDS ARE THE SAME STEP, SO THEY OBEY THE SAME LOCK (v456). Her words:
+    // __"lock the 2 delivery cards too"__ — ⚠️ **after I had locked only the two boxes she named and not
+    // the two cards beside them, which is the "and so forth" of her instruction read too narrowly.**
+    // ⚠️⚠️ **IT REFUSES IN WORDS RATHER THAN DISABLING THEM, AND THAT IS v452'S OWN RULE.** This file
+    // already settled it, and its test says so out loud — *"the button is dead on an empty basket again —
+    // it must answer instead"* — because **a disabled control on a phone does not even acknowledge the
+    // tap**, so a customer is told nothing at all. The two cards therefore stay live and say why.
+    // ⚠️ AND IT IS A SEAM, NOT A DIRECT CALL: `wireFulfillment` builds the press, and **it cannot see
+    // `cart` or `sayStepFirst` — both live in here.** ⭐ The same direction as `_resetFulfillment`,
+    // which this file already sends the other way for the same reason.
+    if (fulfilled) {
+      fulfilled._mayChooseWay = () => cart.size > 0;
+      // ⚠️ AND IT TAKES THE CARD THAT REFUSED (v459), so the line lands directly above the card he pressed
+      // rather than under a heading a screen or two away — her report, and the whole of this version.
+      fulfilled._refuseWay = (near) => sayStepFirst("needItemTitle", "needItemBody", "step2", near);
+    }
+  }
+  // ⚠️ AND THE THIRD STEP IS TYPED, NOT TAPPED, so it needs listeners of its own — nothing else on this
+  // page fires while a customer fills their name in. ⚠️ They live here, beside the rule they serve,
+  // rather than down in the form's own wiring: a listener added in one place for a rule that lives in
+  // another is how the two drift.
+  for (const id of ["name-input", "whatsapp-input"]) {
+    const field = document.getElementById(id);
+    if (!field || !field.addEventListener) continue;
+    // ★★★ AND IT ANSWERS THE TAP (v461) — **the whole of her report.** ⚠️ A `disabled` box received no tap
+    // at all, so it could not say anything; this one is `readonly`, so it can, and the sentence lands
+    // directly above the row he touched (v459's rule).
+    // ⚠️ BOTH `focus` AND `click`, because on a phone the tap that raises the focus and the click are not
+    // the same event everywhere — and `sayStepFirst` is idempotent, so arriving twice costs nothing.
+    const sayWhyNotYet = () => {
+      if (cart.size > 0) return;   // ⚠️ step 2 is done — there is nothing to explain and nothing to block
+      const row = field.closest ? field.closest(".field") : null;
+      sayStepFirst("needItemTitle", "needItemBody", "step2", row || field.parentNode || field);
+    };
+    // ⚠️⚠️ ONE LISTENER EACH, NOT ONE PER RENDER (v461). ⭐ **`render()` runs these lines every time it is
+    // called, and the element is the SAME ELEMENT** — so they accumulated. ⭐⭐ Measured in this suite's own
+    // page: **73 focus handlers on one box.** ⚠️ **And every one of them closes over the `cart` of ITS OWN
+    // render — so the earlier ones answer with a basket that no longer exists**, which is exactly how a
+    // step that is already done started telling him off again.
+    // ⭐ The verdicts are re-pointed on the element instead, and the ONE listener reads the current one.
+    field._sayWhyNotYet = sayWhyNotYet;
+    field._paintSteps = paintSteps;
+    if (!field._stepWired) {
+      field._stepWired = true;
+      const onTouch = () => { if (field._sayWhyNotYet) field._sayWhyNotYet(); };
+      field.addEventListener("input", () => { if (field._paintSteps) field._paintSteps(); });
+      field.addEventListener("focus", onTouch);
+      field.addEventListener("click", onTouch);
+    }
+  }
+  // ⭐ The handle the fulfilment picker uses — see `paintStepsForFulfillment` beside `repaintPromo`.
+  paintStepsForFulfillment = paintSteps;
+
   const rerender = () => {
     dates = resolveDates(upcomingDates(CONFIG), dayRows, dateKey(new Date()))
       .filter((d) => isOpen(CONFIG, d));
@@ -2437,6 +3018,22 @@ export function render() {
     reconcileCart();
     buildCalendar();
     renderMenu();
+    // ⚠️ LAST, and here rather than anywhere else, because EVERYTHING funnels through `rerender`: the day
+    // tapped, the menu rebuilt, the 30-second refresh, the availability arriving. One call site covers
+    // them all, and the one that is missed is the one that leaves a circle green on a day that has gone.
+    paintSteps();
+    // ★★ AND THE COLLECT-FROM LIST IS READ ON THE DAY JUST SETTLED (v420). Her words: __"selecting a
+    // bake day the point is not active will grey out that point"__.
+    //
+    // ⚠️⚠️ IT GOES HERE, AT THE END, AND NOT BESIDE THE OTHER `refreshPointList` CALLS. `selected` is
+    // not final until `buildCalendar` has run — it can be cleared when the day the customer had is
+    // sold out or has closed — so a list drawn earlier would be judged against YESTERDAY'S day and
+    // grey the wrong places. ⭐ **`renderBar` is called rather than `refreshPointList` because the
+    // basket total the list is also judged against lives there**, and calling the list directly with
+    // no total would quietly read every place with a smallest basket as too small.
+    const fulfil = document.getElementById("fulfillment");
+    if (fulfil) fulfil._day = selected;
+    renderBar();
   };
 
   rerender();
@@ -2572,19 +3169,86 @@ export function render() {
     const total = basketTotal();
     document.getElementById("bar-count").textContent = count === 1 ? t("oneItem") : sub(t("items"), count);
     document.getElementById("bar-total").textContent = `RM${total.toFixed(2)}`;
+    // ⚠️⚠️ THE FOURTH STEP WEARS ITS NUMBER (v434) — and it is drawn by the STYLESHEET, not written
+    // into the button. Her words: __"it is actually a 4 steps ordering process. not 3. the 4th is
+    // place order."__ ⭐ **The line above the steps says four, and this button IS the fourth thing he
+    // does** — so the number sits on it rather than the page promising a step it never shows.
+    // ⚠️ WHY `::before` AND NOT A SPAN: **this line overwrites the button on every render**, so a
+    // span typed into store/index.html would be wiped; and building one here would put the label in
+    // a child, which the test shims read differently from their own. **The number is a decoration —
+    // it needs no translating and no screen reader — so it belongs to the stylesheet, and this line
+    // goes on setting exactly the label it always did.**
     document.getElementById("order-btn").textContent = t("placeOrder");
-    document.getElementById("order-btn").disabled = count === 0;
-    // Every basket change lands here — the stepper, a cart fix, a language
-    // switch, an order placed, the boot paint, and the moment the published
-    // config (which is what carries the codes) arrives. The promo lines ride on
-    // this repaint, because the basket is part of their judgement: a percentage's
-    // money moves with the total, and so does whether a code's minimum is met.
+    // ★★★ AND IT IS NEVER DISABLED FOR AN EMPTY BASKET (v452).
+    // ⚠️⚠️ THE RULE WAS ALREADY WRITTEN DOWN TWENTY LINES FURTHER ON, IN THE PRESS'S OWN COMMENT:
+    // *"THE BUTTON IS NEVER DISABLED (her standing rule — a site rule must not hide or block a sale)"* —
+    // **and this line contradicted it.** Two places holding one rule, disagreeing, which is the fault this
+    // whole day has been made of.
+    // ⭐ Her words: __"if the previous step not completed user should be inform accordingly"__ — and a
+    // DISABLED button cannot inform anybody: on a phone it does not even acknowledge the tap. **So it stays
+    // live and the press ANSWERS**, naming the first thing outstanding. The four circles already say where
+    // he is; the button now says what to do about it.
+    // ⚠️ The one disable that remains is the one in the press itself, WHILE the order is being sent — that
+    // is what stops a slow network making him tap twice and posting two orders.
+    document.getElementById("order-btn").disabled = false;
+    // ⚠️⚠️ AND THE BALL IS NOT TOUCHED HERE (v439). v438 dimmed it with an empty basket; her phone
+    // showed the result — ④ pale, ② and ③ solid. **A step marker is not a state**, so nothing on
+    // this repaint changes it: it keeps ①②③'s colour whether the basket is empty or full.
+    // The promo lines ride on the same repaint, because the basket is part of
+    // their judgement: a percentage's money moves with the total, and so does
+    // whether a code's minimum is met.
     paintPromo(total);
     // ★ AND THE COLLECT-FROM LIST, for the same reason and on the same repaint (v306): whether a
     // Point will take this basket is part of the basket's judgement, so a customer who adds an
     // item watches Farlim become choosable — and one who removes one watches it say why not.
     refreshPointList(total);
     return total;
+  }
+
+  // Keep `.bar-spacer` at the closed bar's REAL height (v408). Hoisted for the same reason
+  // renderBar is: the first repaint happens before this line is reached textually.
+  //
+  // ⚠️ THE FIXED BAR IS A COST PAID ON EVERY SCREEN, and the spacer is the only thing stopping it
+  // swallowing the last row of the shop. app.css carries a MEASURED 126px for the two-row bar and
+  // a note on how it was taken; the promo line makes a third row, on one order in however many,
+  // and its height is not a number — it is a sentence that wraps differently in English, Chinese
+  // and Bahasa Malaysia, and differently again at 320px. ⭐ So it is read off the element rather
+  // than measured by hand a second time.
+  //
+  // ⚠️ THE CLOSED HEIGHT IS THE WHOLE HEIGHT: the privacy panel is `position: absolute` (see
+  // app.css), so opening it does not change `offsetHeight` and cannot make the spacer jump.
+  // ⚠️ It only ever WRITES a height; a browser that gives no reading leaves the CSS floor as it
+  // is, so nothing can end up with a zero-height spacer.
+  function syncBarSpacer() {
+    const bar = document.querySelector && document.querySelector(".order-bar");
+    const spacer = document.getElementById("bar-spacer");
+    if (!bar || !spacer || !bar.offsetHeight) return;
+    spacer.style.height = `${bar.offsetHeight}px`;
+  }
+
+  // ★★ THE FOURTH BALL TURNS GREEN WHEN THE ORDER IS PLACED (v451).
+  //
+  // ⚠️⚠️ HER WORDS: __"on the store front, when customer press place an order, the number 4 never have the
+  // chance to turn green, why not allow it to turn green for 1 sec"__
+  //
+  // ⭐ AND SHE IS RIGHT ABOUT WHY IT NEVER DID, AND IT IS MY OWN DOING. v438 moved that number OUT of the
+  // button and into its own ball, and v439 then removed its dimmed state — with a test forbidding any script
+  // from touching it at all, on the reasoning that **a label is not a state**. ⚠️ **But ④ IS a step, the
+  // fourth one, and ①②③ all turn green when the customer finishes their step** (her own v434 rule: a circle
+  // greens only when HE has done that part). The ball was left as **the one step number that could never
+  // report itself** — while the three beside it do. **The v439 rule was right about the BASKET and wrong
+  // about the STEP**, and this narrows it to what it actually meant.
+  //
+  // ⚠️⚠️ AND THE SALE IS NEVER WAITED ON. The ball greens the instant he presses — **before `placeOrder` is
+  // even called** — so it paints while the order is being sent, and NOTHING here defers the order by a
+  // millisecond. The hold below happens only once the bakery's app has the order: **the sale is already
+  // made, so holding a colour costs nothing.**
+  // ⚠️ HER NUMBER, IN ONE PLACE (the v427/v428 lesson — a duration in CSS and a moment in JS are two
+  // numbers for one fact, and they can only disagree one way).
+  const GREEN_HOLD_MS = 1000;
+  function greenBarStep(on) {
+    const ball = document.getElementById("bar-step");
+    if (ball && ball.classList) ball.classList.toggle("done", !!on);
   }
 
   const orderBtn = document.getElementById("order-btn");
@@ -2603,7 +3267,43 @@ export function render() {
       if (noteText) line.note = noteText;
       lines.push(line);
     }
-    if (!lines.length || !selected) return;
+    // ★★★ THE FIRST THING STILL OUTSTANDING, SAID IN HIS OWN ORDER (v452).
+    //
+    // ⚠️⚠️ THIS LINE USED TO BE A SILENT `return`. Her words: __"when we proceed order step by step, one
+    // after another, if the previous step not completed user should be inform accordingly"__ — and she is
+    // describing a customer who taps Place order and is told NOTHING, because the button was disabled and a
+    // disabled button does not answer a tap.
+    //
+    // ⭐ SO ONE GUARD, WALKING THE STEPS IN THE ORDER THE PAGE PUTS THEM — the basket, his name, his number,
+    // then how he gets it — **and it stops at the FIRST one missing.** ⚠️ That order is the point: a message
+    // about step 3 shown to somebody who has not done step 2 sends him backwards down the page to fix
+    // something the page was not yet asking him for.
+    if (!lines.length) {
+      // ⚠️ STEP 2'S OWN HEADING, not an element I invented — the same circle the page is already showing
+      // him as not-done. ⭐ **The one I first wrote here did not exist**, which would have thrown the moment
+      // this guard fired: the same undeclared-name fault as `closeManual` an hour earlier, caught this time
+      // by looking for the id before trusting it.
+      const step2 = document.getElementById("step2");
+      if (step2 && step2.scrollIntoView) step2.scrollIntoView({ block: "start" });
+      showConfirm([
+        el("p", { class: "confirm-title" }, t("needItemTitle")),
+        el("p", { class: "confirm-body" }, t("needItemBody")),
+      ], "warn");
+      return;
+    }
+    // ⚠️ UNREACHABLE IN PRACTICE — a bake day is chosen FOR him on load (v434) — and kept anyway so that a
+    // day ever going missing cannot turn into a crash on `new Date("T00:00:00")` further down.
+    if (!selected) return;
+    // ★ AND HIS NAME IS ASKED FOR BEFORE HIS NUMBER, because the page asks them in that order (v452). It is
+    // REQUIRED — she decided it: without it an order has no name on it, and she confirms every order by hand.
+    const nameInput = document.getElementById("name-input");
+    if (!nameInput || !String(nameInput.value || "").trim()) {
+      // ★ THE BOX TURNS RED AND SAYS WHY, UNDER ITSELF (v455) — see `markField`. No pop-up, no scroll.
+      clearFieldMarks();
+      markField(nameInput, "confirmAddNameTitle");
+      return;
+    }
+    clearFieldMarks();
     // The baker confirms every order (and sends the payment QR) over WhatsApp,
     // so the customer's number is required to place the order at all.
     const waInput = document.getElementById("whatsapp-input");
@@ -2661,7 +3361,13 @@ export function render() {
       date: selected,
       lines,
       total,
-      fulfillment: (document.getElementById("fulfillment") || {})._value || "collect",
+      // ⚠️⚠️ THE FALLBACK IS POST (nationwide), AND IT MUST MATCH THE GATE ABOVE. This line said
+      // `|| "collect"` — the bakery's default — while the press refuses on `_value || "courier"`.
+      // **Two places holding one rule and disagreeing**, so an order placed with an empty `_value`
+      // was checked as Post and WRITTEN as collect: the customer would have been told to post it
+      // and the backoffice would have read it as a collection. Caught by the test that places an
+      // order with no way chosen. Munchies' default is Post — she confirmed it on 2026-10-12.
+      fulfillment: (document.getElementById("fulfillment") || {})._value || "courier",
       // WHERE a collection order is collected from (v299). The kitchen is the EMPTY id — it is
       // not a Point and has no record — and the NAME rides beside the id so that deleting the
       // Point later never rewrites where this order went. A courier order carries neither.
@@ -2713,6 +3419,8 @@ export function render() {
     // can't make a customer tap repeatedly and send duplicates.
     orderBtn.disabled = true;
     orderBtn.textContent = t("sending");
+    // ★ The step is DONE the moment he places it — painted here, so it shows during the send.
+    greenBarStep(true);
     showConfirm(t("sendingToBakery"));
 
     const r = await placeOrder(order);
@@ -2749,18 +3457,48 @@ export function render() {
       // and about to be stamped on an order it was never meant for.
       promoApplied = ""; promoRefusal = null;
       if (promoInput) promoInput.value = "";
-      // Reset to Post (nationwide) — the default — for the next customer.
-      const fulfillEl = document.getElementById("fulfillment");
-      if (fulfillEl) {
-        fulfillEl._value = "courier";
-        for (const b of (fulfillEl.querySelectorAll ? fulfillEl.querySelectorAll(".seg-btn") : [])) {
-          b.classList.toggle("active", b.dataset.fulfillment === "courier");
-        }
-      }
+      // Reset the delivery method to self collect for the next customer.
+      // ⚠️⚠️ THROUGH THE SAME SEAM EVERYTHING ELSE USES (v412). This used to write `_value` and the
+      // `active` class BY HAND — and it had been wrong since v410 put the edge on the CARD rather
+      // than the press, so a second order from the same phone would light the wrong element and leave
+      // the fold wherever the last customer left it. ⭐ **A second way to set one thing is a second
+      // thing to keep right**, so it calls the one the picker already owns.
+      const fulEl = document.getElementById("fulfillment");
+      if (fulEl && typeof fulEl._resetFulfillment === "function") fulEl._resetFulfillment();
       const addrField = document.getElementById("address-field");
       if (addrField) addrField.hidden = false;
       resetPin(); // the next customer does not inherit this one's front door
+      // ★★★ AND THE NEXT CUSTOMER DOES NOT INHERIT HIS BAKE DAY (v465). Her question: __"and user after
+      // placing an order, how should their storefront go back to default?"__
+      // ⚠️⚠️ **MEASURED IN THE CODE FIRST, AND IT DID NOT GO BACK: `dayPicked` is cleared in exactly ONE
+      // place in this whole file — when the day that was chosen stops being on offer — and NEVER here.**
+      // ⭐ So the next customer arrived at a shop where **step ① was ALREADY GREEN and the menu was ALREADY
+      // OPEN, for a day HE never chose.** ⚠️ **That is precisely the fault v434 fixed** (*"step 1 was GREEN
+      // before he touched anything ⟹ one colour till he acts"*), coming back through a door it never closed.
+      // ⭐ `selected = null` first, so the calendar re-offers the first open day **for** him exactly as it
+      // does on arrival — and `rerender()` is what rebuilds the circles and the line under the calendar, so
+      // there is no second way to set any of this. **`dayPicked` stays false because only a TAP sets it**,
+      // which is the rule v434 turns on.
+      selected = null;
+      dayPicked = false;
+      // ⚠️ `buildCalendar` AND NOT `rerender()` — the calendar is the piece that OWNS `selected` and the
+      // line under it, so it is the piece that puts the next customer's day on offer again. ⚠️ **The full
+      // `rerender()` was the first thing I reached for and it broke two of this shop's own tests outright**
+      // — it rebuilds the menu and the bar too, which is more than this reset needs and more than some of
+      // the pages this code runs on can take. ⭐ The circles follow from `paintSteps`.
+      buildCalendar();
+      paintSteps();
+      // ⚠️ AND THE PAGE COMES BACK TO THE TOP. The next customer was arriving part-way down the page, at
+      // whatever step the last one had scrolled to — **the first thing a shop should show him is step 1.**
+      if (typeof window !== "undefined" && window.scrollTo) {
+        try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch { /* a page that refuses is not a reason to fail */ }
+      }
       renderBar();
+      // ⚠️ `renderBar` empties the bar for the next customer, so the green is set AGAIN here — and then
+      // HELD for her one second **before the received notice covers it**. ⭐ The order is already in the
+      // bakery's app, so this waits on nothing: it is time to SEE the step finish, not time the sale spends
+      // in the post. They are the same `done` class ①②③ wear, so it is the same green and the same meaning.
+      greenBarStep(true);
       // order-btn label was reset by renderBar — the cart is now empty.
       // The strictest change/cancel window across what was just ordered — the
       // receipt is the moment the customer most needs the no-refund rule, so the
@@ -2772,15 +3510,23 @@ export function render() {
         ? el("p", { class: "confirm-body" },
             sub(t(winDays === 1 ? "orderCancelNoteOne" : "orderCancelNote"), winDays))
         : null;
-      showConfirm([
+      // ⚠️⚠️ AND THE NOTICE FOLLOWS ON A TIMER, NOT ON AN AWAIT. Holding the press handler open for her one
+      // second hung the promise the whole way — the store's own tests caught it (`cancelledByParent`), and
+      // the same shape would hold any caller that awaits the press. ⭐ **The order has already landed, so
+      // there is nothing to wait FOR: the green is simply held while the handler returns.** The figures
+      // above are computed now, at the moment of the sale, and only the SHOWING is late.
+      setTimeout(() => showConfirm([
         el("p", { class: "confirm-title" }, t("orderRecvTitle")),
         el("p", { class: "confirm-body" },
           order.customer ? sub(t("orderRecvThanksBody"), order.customer, CONFIG.name) : sub(t("orderRecvBody"), CONFIG.name)),
         el("p", { class: "confirm-body" }, sub(t("orderRecvLine"), dayLabel, items, total.toFixed(2))),
         cancelLine,
         el("p", { class: "confirm-sub" }, t("orderRecvSub")),
-      ], "ok");
+      ], "ok"), GREEN_HOLD_MS);
     } else {
+      // ⚠️ IT DID NOT LAND, SO THE STEP IS NOT DONE. The page falls back to WhatsApp, and a green ball
+      // sitting over an order the bakery never received would be the worst thing this ball could say.
+      greenBarStep(false);
       // The order could not reach the bakery's app — hand it over on WhatsApp
       // instead so it isn't lost (this is the only time WhatsApp opens, and the
       // baker sees the customer's own number on the message). Best-effort: the
@@ -3167,26 +3913,115 @@ function publishedPoints() {
 
 // Where a Self collect order is collected FROM, as rows a customer picks between.
 //
-// ★ THE KITCHEN IS ALWAYS FIRST AND IS NOT A POINT. It has no record, no fee and no life, and
-// the EMPTY id is exactly how an order says "collect from the bakery" — which is also what
-// every order placed before this version means, so nothing needs migrating.
+// ★★ THE KITCHEN IS FIRST — AND IS NOW ONLY INVENTED WHEN SHE HAS NOT MARKED ONE (v407).
+// ⚠️⚠️ THIS ROW USED TO BE UNCONDITIONAL, and since v406 that printed her kitchen TWICE: the
+// kitchen is a Point she marks, `publishPoints` sends it like any other, and this line then
+// added a second row for the same place above it — two choices, one place, under two different
+// names. Her words at v406: __"I want all self collection thru collection point, not from the
+// kitchen"__ — **every collection is a Point, including the one that is her kitchen.**
+//
+// ⭐ SO THE INVENTED ROW IS A FALLBACK, which is the job it was always meant to do: it stands in
+// for the kitchen only while no Point is marked as one. Two reasons it must not simply be
+// deleted, and both are orders rather than tidiness: an app with no kitchen marked and no Points
+// must still let a customer collect at all, and **every order taken before v406 carries no
+// `pointId` — the EMPTY id IS the kitchen**, so the row that posts that empty id has to survive.
 //
 // The whole field is hidden while she has no Point open, so a shop that never uses them is
 // byte-for-byte the shop it was.
+// ★★ THE DAYS A PLACE IS SERVED, SAID IN THE CUSTOMER'S OWN LANGUAGE (v419).
+//
+// Her words: __"every point listed in store, just that if that point only for friday, then mention
+// it"__. ⚠️⚠️ **NOTHING IS FILTERED, GREYED OR HIDDEN** — every Place draws exactly where it drew
+// before, and this only ADDS a line to the ones she has restricted. ⚠️ And it adds a line to exactly
+// the Places that published a `days`, so a page nobody has touched is byte-for-byte what it was.
+//
+// ⚠️ NO NEW STRING IN ANY LANGUAGE, AND THAT IS DELIBERATE. It reuses **`closedWeekday` ("Only
+// available on %1")**, which is already translated in all three languages and already joined by
+// `listJoin` in the page's own — so the dictionary, its key-parity test and its placeholder test are
+// all untouched by this version.
+// ⭐ THE COUPLING IS REAL AND INTENDED: that string is also the product card's own "only available
+// on" line. Both mean the same one thing — *this is not on offer every day* — so a change to one
+// MUST be a change to both, and a second copy of the sentence is exactly how the two would come to
+// say different things.
+function pointDaysLine(p) {
+  const days = Array.isArray(p && p.days) ? p.days : [];
+  if (!days.length) return "";
+  const names = days.map((n) => dayName(Number(n))).filter(Boolean);
+  return names.length ? sub(t("closedWeekday"), listJoin(names)) : "";
+}
+
+// The weekday of a "YYYY-MM-DD" key, or null when the page has not settled on a day yet.
+function weekdayOf(iso) {
+  const s = String(iso || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d.getDay();
+}
+
+// ★★ IS THIS PLACE SERVED ON THAT DAY? (v420). Her words: __"selecting a bake day the point is not
+// active will grey out that point"__.
+//
+// ⚠️⚠️ A MISSING `days` MEANS EVERY DAY, NOT NO DAY — the admin only publishes the key when she has
+// actually restricted the place, so a Place she has never touched, an older published payload and a
+// page that has not settled on a day yet ALL answer "yes". Getting this the wrong way round would
+// take every unrestricted Place off the page, which is the opposite of what she asked for.
+function servedOn(p, dayNum) {
+  const days = Array.isArray(p && p.days) ? p.days.map(Number) : [];
+  if (!days.length || dayNum === null) return true;
+  return days.includes(dayNum);
+}
+
 function renderPointList(wrap, total = 0) {
-  const field = document.getElementById("point-field");
   const list = document.getElementById("point-list");
-  if (!field || !list || !wrap) return;
+  if (!list || !wrap) return;
   const points = publishedPoints();
-  field.hidden = points.length === 0;
+  // ⚠️ NO FIELD TO HIDE ANY MORE (v410): the list lives INSIDE the Self collect card, so an empty
+  // one draws nothing rather than hiding a labelled box — and a card holding no places simply
+  // reads as its two lines, which is the shop she had before she opened any Points.
+  // ⚠️ AND THE CARD'S OWN FOLD IS NOT DECIDED HERE (v412) — `refreshPointList` owns it, because it
+  // is about the METHOD and this function is about the places. Two places deciding one thing is how
+  // they come to disagree.
   if (!points.length) { list.replaceChildren(); return; }
+  // The Point she marked as the kitchen, if she has one. ⚠️ Read from the published list rather
+  // than assumed: an older storefront payload predates the flag and simply has no marked kitchen,
+  // which is exactly the fallback case below.
+  const kit = points.find((p) => p && p.isKitchen === true) || null;
 
   const choose = (id, name) => {
     wrap._pointId = id;
     wrap._pointName = name;
     for (const b of list.children) {
-      if (b && b.classList) b.classList.toggle("active", (b.dataset.pointId || "") === id);
+      // ⚠️⚠️ ONLY THE PLACES. ⭐ **The area HEADINGS are children of this list too, and they carry no
+      // `data-point-id`** — so `(b.dataset.pointId || "") === ""` matched THEM every time nothing was
+      // chosen, and the headings were handed the "active" class on a card with no place picked. ⚠️
+      // It drew nothing wrong (`.point-area` has no active style), which is exactly why it lived
+      // from v410 unnoticed — **a wrong class with no styling is a wrong class nobody sees.** A row
+      // is a row because it HAS an id.
+      if (!b || !b.classList || !b.dataset || b.dataset.pointId === undefined) continue;
+      b.classList.toggle("active", b.dataset.pointId === id);
     }
+    // ★★ AND THE INSTRUCTION GOES THE MOMENT HE PICKS ONE — HERE, not only in the repaint (v415).
+    // ⚠️⚠️ THIS IS THE ONLY PLACE THAT KNOWS A PLACE WAS JUST CHOSEN, and `refreshPointList` does NOT
+    // run when the method is already correct — **which is exactly the tap this line is for**: a page
+    // that opened on Self collect, where tapping a place changes nothing about the method and so
+    // repaints nothing. Without this the line stayed under his thumb telling him to do what he had
+    // just done. ⭐ Found by asserting it, which is the only way this one was ever going to show.
+    const note = document.getElementById("point-pick");
+    if (note) note.hidden = !!id;
+  };
+  // ★★ TAPPING A PLACE **IS** CHOOSING TO COLLECT (v410), which is what her "one piece" means:
+  // there is no longer a world where the customer has picked self collect but no place, or has a
+  // place but has not said they are collecting. Choosing from this list settles both at once.
+  // ⚠️ IT ONLY SWITCHES THE METHOD, never re-chooses the place — otherwise this page would fight
+  // the customer's own tap on the place rows.
+  // ⚠️ AND IT DOES NOT RUN WHILE ALREADY COLLECTING, which is not just tidiness: this function is
+  // called from the repaint that the method switch triggers, so an unguarded call would ask for a
+  // repaint that asks for a repaint, for ever.
+  const pickCollect = (then) => {
+    if (typeof wrap._pickCollect === "function" && wrap._value !== "collect") wrap._pickCollect(then);
+    // ⚠️ ALREADY COLLECTING: there is no way to change, so the place is simply taken — and it is
+    // taken HERE rather than by the caller, so the two paths cannot drift.
+    else if (then) then();
   };
   // ★ A SHORT BASKET IS SHOWN AND REFUSED, not hidden (v306). `short` is a POINT that asks for a
   // smallest basket this basket has not reached: it stays on the page with the reason in its own
@@ -3196,67 +4031,478 @@ function renderPointList(wrap, total = 0) {
   // The rule is HERS, typed on her own Point, so the shop honours it rather than merely stating
   // it: this is not the app's own rule being turned into a gate, which is the thing her standing
   // instruction forbids.
-  const row = (id, name, sub, { short = false } = {}) => {
+  // ★★ AND A TAP ON A PARKED PLACE MAKES ITS OWN WARNING FLASH — IT DOES NOT MOVE THE PAGE (v423).
+  //
+  // Her words: __"when customer click on unavailable point, just flash the warning Only available on,
+  // xxx. The screen jump is not desired"__.
+  //
+  // ⚠️⚠️ THE JUMP WAS `showConfirm`'s OWN `scrollIntoView`, and it was never this screen's decision:
+  // `showConfirm` scrolls the box into the middle of the view every time it is called, which is right
+  // for the ORDER guards (he pressed Place order and has to be told why not) and **wrong for a place
+  // he merely touched** — the page leapt away from the list he was reading. ⭐ So a parked place no
+  // longer opens the box at all.
+  //
+  // ⭐ AND NOTHING NEW IS SAID, OR NEEDED: **the warning is already on the row** — "Only available on
+  // Fri" for a place not served that day, and the smallest-basket sentence for one his basket has not
+  // reached. The tap draws his eye to the line he already has, which is the whole of what he needs.
+  // ⚠️ **BOTH PARKED REASONS FLASH**, because two rows that look alike must behave alike
+  // ([[feedback-affordances]]) — only one of them moving the page would be the fault she calls a bug.
+  // ★★ HOW LONG THE FLASH LASTS IS ASKED OF THE STYLESHEET, NOT WRITTEN HERE (v427).
+  //
+  // Her words: __"can you flash the red twice or trice"__ — ⚠️ and asking for MORE blinks is exactly
+  // what exposed the coupling: how long the flashing runs lives in `--flash-blink` and
+  // `--flash-blinks` (store/app.css), while the moment the mark comes OFF lives in this timer.
+
+  const row = (id, name, sub, { short = false, off = false, address = "", days = "" } = {}) => {
+    // ⚠️ `short` AND `off` MEAN THE SAME THING TO A TAP — this place is on the page, and it is not
+    // open to you right now — so both wear the same PARKED look and both explain themselves rather
+    // than doing nothing. ⚠️ They are two classes with one set of rules rather than one class doing
+    // two jobs, so the stylesheet can say which is which.
+    const closed = short || off;
     const b = el("button", {
-      class: `point-opt${short ? " short" : ""}`, type: "button", "data-point-id": id,
+      class: `point-opt${closed ? (off ? " off" : " short") : ""}`, type: "button", "data-point-id": id,
       onclick: () => {
-        if (short) { showConfirm([el("p", { class: "confirm-title" }, name),
-          el("p", { class: "confirm-body" }, sub)], "warn"); return; }
-        choose(id, name);
+        if (closed) { flashRow(b); return; }
+        // ★★ THE PLACE TRAVELS WITH THE CHANGE (v436). ⚠️ It used to be chosen FIRST and the way
+        // switched after — which, once a change can be REFUSED, would leave a customer who pressed
+        // "keep delivery" holding a chosen place with a courier order: exactly the state v410
+        // abolished. ⭐ **Both commit together, or neither does.**
+        pickCollect(() => choose(id, name));
       },
-    }, el("span", { class: "point-name" }, name), el("span", { class: "point-sub" }, sub));
+    }, el("span", { class: "point-name" }, name), el("span", { class: "point-sub" }, sub),
+    // ★★ AND WHERE IT IS, WHEN SHE HAS SAID A CUSTOMER MAY SEE IT (v410). A line of its own under
+    // the description, not folded into it: the description says what the place IS ("where we bake",
+    // "we message the exact spot"), and the address is a fact she has chosen to publish, so the two
+    // reading as one sentence would make the switch look like it had changed her words too.
+    // ⚠️ Absent for every Point she has not ticked, so nothing on this page changes for them.
+    address ? el("span", { class: "point-sub point-addr" }, address) : null,
+    // ★★ AND WHICH DAYS IT IS SERVED (v419). Her words: __"every point listed in store, just that if
+    // that point only for friday, then mention it"__. ⚠️⚠️ **A LINE OF ITS OWN, NOT FOLDED INTO THE
+    // ONE ABOVE** — the same reason the address got its own line at v410: the description says what
+    // the place IS ("where we bake"), and "only available on Fri" is a fact about WHEN, so reading
+    // as one sentence would make her own words look as if they said it.
+    // ⚠️ Absent for every Place she has not restricted, so nothing on this page moves for them.
+    days ? el("span", { class: "point-sub point-days" }, days) : null);
     return b;
   };
 
+  // ★★ THE BAKE DAY THIS LIST IS BEING READ ON (v420). ⚠️⚠️ NOTHING IS TAKEN OFF THE PAGE — the
+  // place is still listed, still named, still in its own area; it simply cannot be PICKED on a day
+  // it is not served, and it says why in the same sentence it already carries underneath.
+  const dayNum = weekdayOf(wrap && wrap._day);
   const basket = Number(total) || 0;
   const judged = points.map((p) => {
     const need = pointShortfall(p, basket);
-    return { p, short: need > 0, need };
+    return { p, short: need > 0, need, off: !servedOn(p, dayNum) };
   });
 
-  list.replaceChildren(
-    row("", t("ourKitchen"), t("kitchenSub")),
-    ...judged.map(({ p, short, need }) => row(p.id, p.name,
-      short ? sub(t("pointMin"), pointMinOrder(p).toFixed(2), basket.toFixed(2)) : t("pointSub"), { short })));
+  // ⚠️ THE INVENTED KITCHEN ROW IS OMITTED WHEN SHE HAS MARKED ONE (v407) — the marked Point is
+  // already in `judged`, under the name she gave it, so adding this one would offer the same
+  // place twice. One row per place, always.
+  //
+  // ⚠️⚠️ AND THE MARKED KITCHEN WEARS THE KITCHEN'S OWN LINE, NOT A POINT'S (v408). v407 dropped
+  // the invented row without giving the real one its words, so her own kitchen went on reading
+  // __"Self collection Point — we message the exact spot…"__ — **true, and useless**: it told a
+  // customer collecting AT THE BAKERY exactly what it would tell him about a friend's shop.
+  // ⭐ Found by LOOKING at her live shop, where the kitchen is a Point called Sg Ara.
+  // ⚠️ The KITCHEN'S line and the POINT's line are different facts and this is the one place the
+  // two are chosen between; a Point's smallest basket is the only other thing that ever replaces
+  // a sub, and the kitchen has none (see kitchenExempt), so the two can never both apply.
+  // ★★ AND THE AREA HEADINGS (v410). Her words: __"top level is Penang Island & Prai. Under Penang
+  // Island will be Area like Sg Ara, Balik Pulau, Farlim, Georgetown"__ — so a customer finds his
+  // own neighbourhood instead of reading three places that name streets he has never heard of.
+  //
+  // ⚠️ THE HEADING IS THE AREA'S OWN NAME, drawn as her data. **No new string, in any language** —
+  // which is not a shortcut but the same rule the Point names already follow (a customer reads
+  // "Sg Ara" in English on a page set to Mandarin today), and it leaves the three-language
+  // dictionary and its key-parity test entirely alone.
+  //
+  // ⚠️⚠️ IT IS DRAWN FROM THE ORDER THE LIST ARRIVES IN — the page walks the published Points and
+  // puts a heading in front of the FIRST one belonging to each area. That is why the app publishes
+  // the Points in the shop's own order (`shopPointOrder`): **the order and the headings are one
+  // decision, taken on the other side, and this page only has to read them out.**
+  // ⚠️ A Point no area carries simply draws with no heading above it, in its place at the top. It
+  // is a real place a customer can collect from, so it is never hidden for want of filing.
+  const areaRows = Array.isArray(CONFIG.pointAreas) ? CONFIG.pointAreas : [];
+  // The first Point each area row will draw, or -1 when it draws none.
+  const firstAt = new Array(areaRows.length).fill(-1);
+  judged.forEach((j, i) => areaRows.forEach((a, k) => {
+    if (firstAt[k] < 0 && (a.points || []).indexOf(j.p.id) >= 0) firstAt[k] = i;
+  }));
+  // ⚠️⚠️ AND A HEADING THAT CARRIES NOTHING OF ITS OWN STILL DRAWS (v410), which is the whole
+  // reason the app sends it. **"Penang Island" holds no Point; "Sg Ara" inside it does** — and the
+  // first version of this drew a heading only in front of a Point that belonged to it, so the
+  // island vanished and **Sg Ara came out indented one step with nothing to be indented from**.
+  // ⭐ Found by LOOKING at the page, not by a test — the fixture I had written gave every heading a
+  // Point of its own, so every test passed. The app's own `groupPointsByArea` had this right from
+  // the start and this page did not, which is exactly what two readers of one rule will do.
+  // ⚠️ The payload already carries the depth, so a child's position folds up into its nearest
+  // shallower ancestor without needing the tree here: rows are in tree order, and a row of depth
+  // <= this one ends the subtree.
+  for (let k = areaRows.length - 1; k >= 0; k--) {
+    if (firstAt[k] >= 0) continue;
+    for (let j = k + 1; j < areaRows.length; j++) {
+      if (areaRows[j].depth <= areaRows[k].depth) break;
+      if (firstAt[j] >= 0) { firstAt[k] = firstAt[j]; break; }
+    }
+  }
+  const headAt = new Map();
+  areaRows.forEach((a, k) => {
+    if (firstAt[k] < 0) return;
+    const list = headAt.get(firstAt[k]) || [];
+    list.push(a);
+    headAt.set(firstAt[k], list);
+  });
+
+  const out = [];
+  if (!kit) out.push(row("", t("ourKitchen"), t("kitchenSub")));
+  judged.forEach(({ p, short, need, off }, i) => {
+    // ⚠️ Ancestors first: the rows are in tree order, so an outer heading is pushed before the
+    // inner one it contains.
+    for (const a of headAt.get(i) || []) {
+      out.push(el("div", {
+        class: "point-area",
+        ...(a.depth ? { style: `--depth:${a.depth}` } : {}),
+      }, a.name));
+    }
+    // ★★ HER OWN WORDS COME FIRST (v412). Her words: __"make the point description custmable in
+    // point card"__ — so the line under a Point is hers when she has written one, and the shop's own
+    // sentence when she has not. ⭐ **The standard line is the FALLBACK, not the default**: a Point
+    // she has said nothing about reads exactly as it does today, so this cannot change a page by
+    // being added. ⚠️ And her words replace the KITCHEN's line too — she outranks the app's own
+    // wording about her own front door.
+    // ⚠️ A SHORT BASKET still speaks for itself: a Point the basket has not reached says WHY on its
+    // own line, because that is the one thing she can act on and her description cannot know it.
+    const own = String(p.description || "").trim();
+    const daysLine = pointDaysLine(p);
+    out.push(row(p.id, p.name,
+      short ? sub(t("pointMin"), pointMinOrder(p).toFixed(2), basket.toFixed(2))
+        : (own || (p.isKitchen === true ? t("kitchenSub") : t("pointSub"))),
+      // ⚠️ NO `why` ANY MORE (v423): the tap used to read the reason OUT in a box of its own, and it
+      // now flashes the line the row already carries instead — so there is one place a reason is
+      // said, and the page can never say one thing on the row and another on the tap.
+      { short, off, address: String(p.address || ""), days: daysLine }));
+  });
+  list.replaceChildren(...out);
 
   // ⚠️ A POINT SHE PAUSED OR DELETED MUST NOT STAY CHOSEN. A customer may have picked it
   // before she took it off, and the shop cannot then post an order to a place she is no
   // longer offering — so a choice that is no longer open falls back to the kitchen, which is
   // always there. Re-applied on every repaint, so the picker and the order cannot disagree.
   const want = String(wrap._pointId || "");
-  // ⚠️ AND A CHOICE THAT IS NO LONGER OPEN FALLS BACK — now including one whose SMALLEST BASKET
-  // the basket has dropped below. A customer who chose Farlim at RM40 and then removed an item is
-  // not left holding a Point they can no longer use: the picker goes back to the kitchen and the
-  // Point says why. Re-applied on every repaint, so the picker and the order cannot disagree.
-  const open = judged.find((j) => j.p.id === want && !j.short);
-  choose(open ? want : "", open ? open.p.name : t("ourKitchen"));
+  // ⚠️ AND A CHOICE THAT IS NO LONGER OPEN FALLS AWAY — including one whose SMALLEST BASKET the
+  // basket has dropped below, ⚠️ AND ONE HE IS NO LONGER ABLE TO PICK BECAUSE HE MOVED THE BAKE DAY
+  // (v420). A customer who chose Farlim and then switched to a Wednesday when Farlim is a Friday
+  // place is not left holding somewhere he cannot collect — the same rule, on the third reason a
+  // place can stop being open. ⭐ And it is the reason the day is re-read on every repaint rather
+  // than only when the list is tapped: **the day can change underneath a choice already made.**
+  const open = judged.find((j) => j.p.id === want && !j.short && !j.off);
+  // ★★ AND NOTHING IS CHOSEN UNTIL HE TAPS ONE (v415). Her words: __"the self collect have to have
+  // message follow, click to choose point, without click it should not highlight"__.
+  //
+  // ⚠️⚠️ IT USED TO ARRIVE WITH A PLACE ALREADY LIT — the kitchen, or the Point she marked as one —
+  // and that is what her v413 picture was about: **a place wearing the panel reads as a place the
+  // customer has PICKED**, and he has picked nothing. ⭐ So the picker opens on a plain list with an
+  // instruction over it, **and the highlight only ever means a real tap.**
+  //
+  // ⚠️ AN ORDER PLACED WITHOUT CHOOSING IS UNCHANGED AND STILL WORKS: `_pointId` stays the EMPTY id,
+  // which is exactly how every order has said "collect from the bakery" since long before there were
+  // Points — and the card already tells him the place is messaged to him. ⭐ Nothing is refused and
+  // nothing is blocked: **this is a page that stops pretending, not a page that asks a new
+  // question** (her standing rule — never a gate).
+  // ⚠️ A CHOICE THAT IS STILL OPEN IS RE-APPLIED, so a repaint cannot lose the one he did make.
+  choose(open ? want : "", open ? open.p.name : "");
 }
 
 function refreshPointList(total = 0) {
   const wrap = document.getElementById("fulfillment");
-  const field = document.getElementById("point-field");
+  const list = document.getElementById("point-list");
   renderPointList(wrap, total);
-  // Only a COLLECTION order chooses where, and only when she has a Point open. The empty
-  // field hides itself, so this never leaves a labelled box with nothing in it.
-  if (field) field.hidden = !wrap || wrap._value === "courier" || !publishedPoints().length;
+  // ★★ AND THE CARD SHOWS ITS PLACES ONLY WHILE IT IS OPEN (v412). Her words: __"i want the self
+  // collect card at store to be folded as default"__, and __"when it expend the unselected with a
+  // white background is like a hole, and like confusing"__ — ⚠️ **which is exactly what an open
+  // card full of white place rows does while the customer has already chosen the courier.**
+  // ⚠️ `_open` is on the wrapper so a repaint cannot lose it, and it starts as NOTHING, so the shop
+  // a customer opens shows two lines and nothing else until they act.
+  // ⚠️⚠️ AND "THIS CARD IS THE CHOSEN ONE" IS PART OF THE SAME FACT, not a rule the tap has to
+  // remember. Her hole was an open card of white rows in the way the customer did NOT take — and a
+  // fold only the tap enforced would come back the first time anything else repainted the page.
+  // **A state that must never occur is kept out of the DRAWING rather than out of the one way in.**
+  // ⭐ AND SINCE v412 BOTH CARDS WORK THIS WAY — the places inside the collect card and the address
+  // inside the courier's are one rule, because they are one thing: what a choice needs is part of
+  // the choice. Her words: __"courier delivery and address should be one piece"__.
+  const open = wrap ? wrap._open : null;
+  const chosen = wrap ? wrap._value : "collect";
+  if (list) list.hidden = open !== "collect" || chosen !== "collect" || !publishedPoints().length;
+  // ★★ AND THE INSTRUCTION STANDS EXACTLY WHERE THE HIGHLIGHT USED TO (v415) — over the places,
+  // while the card is open and NOTHING is picked. ⚠️ It goes the moment he taps one, which is the
+  // rule the address list already keeps: **a page must not go on telling him to do something he has
+  // just done.** ⚠️ It is authored in the markup with its own `data-i18n`, so its three languages
+  // come from the dictionary and nothing here writes a word of it.
+  const pickNote = document.getElementById("point-pick");
+  if (pickNote) pickNote.hidden = !list || list.hidden || !!wrap._pointId;
+  // ★★ AND THE PROMPT UNDER THE QUESTION STANDS WHILE NEITHER WAY IS CHOSEN (v416). ⚠️ With no card
+  // edged, the two of them read as two DESCRIPTIONS rather than as two things to pick — so the
+  // prompt covers the question, not one of the answers, which is why it is up there and not inside
+  // a card. ⚠️ It goes the moment he picks one, the same rule the places follow.
+  const prompt = document.getElementById("fulfil-pick");
+  if (prompt) prompt.hidden = !!chosen;
+  const addr = document.getElementById("address-field");
+  if (addr) addr.hidden = open !== "courier" || chosen !== "courier";
+  paintCarets();
+}
+
+// A caret is the ONLY hint that there is anything behind a line, so the one place that decides the
+// folds turns both of them over — beside the thing each describes.
+function paintCarets() {
+  const wrap = document.getElementById("fulfillment");
+  const open = wrap ? wrap._open : null;
+  const set = (id, way) => {
+    const caret = document.getElementById(id);
+    if (caret) caret.textContent = open === way ? "▾" : "▸";
+  };
+  set("collect-caret", "collect");
+  set("courier-caret", "courier");
+}
+
+// ★★ THE SHOP ASKS BEFORE IT TAKES SOMETHING AWAY (v436). Her words: __"a confirmation pop up,
+// asking whether customer intend to change to delivery? the point selection will be cleared, vise
+// versa"__ — ⭐ **the same rule she gave me for taking a bake day off at v404: taking something away
+// always asks first.**
+//
+// ⚠️⚠️ AND THE REASON IT EXISTS IS WHAT THE CUSTOMER IS LEFT LOOKING AT. A customer who picked a
+// collection point and then switched to delivery was left with **the point still selected and
+// nothing saying whether it still applied to his order** — the fault v416 named, of a page that has
+// answered its own question. ⭐ **The question NAMES what is lost**, the same shape as a refund that
+// names the money it leaves.
+//
+// ⚠️ IT IS ASKED ONLY WHEN SOMETHING WOULD ACTUALLY BE CLEARED. A question guarding nothing is
+// noise on a page that already carries four notices a customer must read — so `wireFulfillment`
+// decides that, and this only ever draws the question.
+//
+// ⚠️ CANCEL IS THE SAFE ANSWER AND IT IS EVERYWHERE: the quiet button, a press on the dark area, and
+// Escape all leave the page exactly as it was. ⭐ The press that OPENED the question must not
+// half-apply — see `commit` in wireFulfillment, which is the only thing that changes anything.
+function askSwitch({ title, body, yes, no }, onGo) {
+  const scrim = document.getElementById("ask-scrim");
+  const tEl = document.getElementById("ask-title");
+  const bEl = document.getElementById("ask-body");
+  const keep = document.getElementById("ask-keep");
+  const go = document.getElementById("ask-change");
+  if (!scrim || !tEl || !bEl || !keep || !go) return;   // a page without the markup says nothing
+
+  tEl.textContent = title;
+  bEl.textContent = body;
+  keep.textContent = no;
+  go.textContent = yes;
+  scrim.hidden = false;
+
+  const close = () => {
+    scrim.hidden = true;
+    scrim.removeEventListener("click", onScrim);
+    document.removeEventListener("keydown", onKey);
+    keep.removeEventListener("click", onKeep);
+    go.removeEventListener("click", onGoPress);
+  };
+  // ⚠️ "AWAY" IS THE DARK AREA ITSELF — a press on the CARD must not close it, or a customer
+  // aiming at a button would dismiss the question with a near miss.
+  function onScrim(e) { if (e.target === scrim) close(); }
+  function onKey(e) { if (e.key === "Escape") close(); }
+  function onKeep() { close(); }
+  function onGoPress() { close(); onGo(); }
+
+  scrim.addEventListener("click", onScrim);
+  document.addEventListener("keydown", onKey);
+  keep.addEventListener("click", onKeep);
+  go.addEventListener("click", onGoPress);
+  if (go.focus) go.focus();
 }
 
 // Wire the Self collect / Courier picker. The choice is stored on the wrapper node so the
-// order handler reads it back; courier reveals the address field, collecting reveals the
-// list of places to collect from.
+// order handler reads it back; courier reveals the address field, and collecting carries its
+// own list of places inside the card.
 function wireFulfillment() {
   const wrap = document.getElementById("fulfillment");
   if (!wrap) return;
   const buttons = (wrap.querySelectorAll && wrap.querySelectorAll(".seg-btn")) || [];
+  // ★★ BOTH CARDS FOLD, AND `_open` IS WHICH ONE IS UNFOLDED — "collect", "courier" or null for
+  // neither (v412). Her words: __"i want the self collect card at store to be folded as default"__,
+  // and then __"courier delivery and address should be one piece"__ — ⭐ **one state, because only one
+  // card may be open at a time**: choosing a way is what opens it, and the other closes behind it, so
+  // the fields of the way the customer did NOT take are never standing open.
+  if (wrap._open !== null && wrap._open !== "collect" && wrap._open !== "courier") wrap._open = null;
   const apply = (value) => {
+    // ⚠️⚠️ NOTHING IS REFUSED HERE, AND THAT IS DELIBERATE (v456). `apply` is not only the press: it is
+    // **also the shop's own start-up** (`apply("")` at the foot of this function) and **the after-order
+    // reset** (`_resetFulfillment`). ⭐ The reset runs with an EMPTY basket — the order has just been
+    // placed — so a guard in here would put "add something first" on a customer's screen at the moment
+    // their order succeeded. **The refusal belongs on the PRESS; setting the state belongs here.**
     wrap._value = value;
-    for (const b of buttons) b.classList.toggle("active", b.dataset.fulfillment === value);
-    const addr = document.getElementById("address-field");
-    if (addr) addr.hidden = value !== "courier";
+    // ⚠️ THE OTHER CARD SHUTS. ⭐ This is the "hole" she described: an open card full of white rows —
+    // or an address box — in the way the customer has already turned down.
+    if (wrap._open && wrap._open !== value) wrap._open = null;
+    // ⚠️ THE EDGE GOES ON THE CARD, NOT THE PRESS (v410) — the card is the choice AND what it needs
+    // (the places, or the address), and a border around only the words would draw a line between one
+    // decision and the thing it decides. See .seg-opt in app.css.
+    for (const b of buttons) {
+      const card = b.closest ? b.closest(".seg-opt") : null;
+      if (card) card.classList.toggle("active", b.dataset.fulfillment === value);
+      else b.classList.toggle("active", b.dataset.fulfillment === value);
+    }
     refreshPointList();
   };
-  for (const b of buttons) b.addEventListener("click", () => apply(b.dataset.fulfillment));
-  apply("courier"); // reflect the static HTML's default active button
+  // What a tap on a PLACE calls — see renderPointList. Kept here because this is where the method
+  // actually lives, and the list must not grow a second copy of that rule.
+  // ★★ AND A PLACE TAP IS THE SAME CHANGE FROM THE OTHER SIDE (v436). v410 made the places PART of
+  // choosing to collect, and this file's own test says it: __"there is no longer a world where
+  // somebody has picked a place but has not said they are collecting."__ ⚠️ **So it goes through the
+  // same question** — otherwise the page would keep a SECOND, silent door into the very state she
+  // asked me to prevent: an address typed, a place picked, and the order carrying both.
+  // ⚠️ IT IS REACHED ONLY BY A CUSTOMER'S TAP ON A PLACE ROW — `pickCollect` guards
+  // `_value !== "collect"`, so the shop's own fallback to the kitchen never asks him anything.
+  wrap._pickCollect = (then) => {
+    const go = () => { if (then) then(); apply("collect"); };
+    const loss = leavingFor("collect");
+    if (!loss) { go(); return; }
+    askSwitch({ title: loss.title, body: loss.body, yes: loss.yes, no: loss.no },
+      () => { clearFor(loss.what); go(); });
+  };
+  // And what the AFTER-ORDER RESET calls, so putting the shop back to self collect goes through the
+  // same seam as every other change — see the order handler.
+  wrap._applyFulfillment = apply;
+  // ⚠️ AND THE AFTER-ORDER RESET CLEARS THE PICK TOO, which is a different thing from setting the
+  // method back: `_picked` is set in the TAP handler, and the reset does not go through a tap — so
+  // without this a second order from the same phone would open with step 3 already green, crediting
+  // the next customer with the last one's choice.
+  // ⚠️ JERKY RESETS TO POST (nationwide) — its own default — not the bakery's collect.
+  wrap._resetFulfillment = () => { wrap._picked = false; apply("courier"); };
+  // ⚠️ WHAT IS ABOUT TO BE LOST, IN WORDS THAT NAME IT — or null when the change costs him nothing,
+  // which is the case that must NOT be interrupted. ⭐ The name is the point he picked: "you chose to
+  // collect from Bayan Lepas, Sg Ara… " is a sentence he can check against what he meant, and a
+  // question that named no place would be asking him to remember.
+  const leavingFor = (to) => {
+    if (to === "courier" && wrap._pointId) {
+      return {
+        what: "point",
+        title: t("askToDeliveryTitle"),
+        // ⚠️⚠️ THE POINT'S OWN NAME ENDS WITH A FULL STOP — it is her record, and the shop prints it
+        // as a sentence under each place. Quoting one inside another sentence produced
+        // **"…Lengkok Kenari.. Changing to delivery"** on screen, seen in the driver. ⭐ So the stop
+        // is trimmed HERE, where it is quoted, and **never in her record** — the same rule that
+        // stops a fix in one place rewriting the thing it quotes.
+        // ⚠️ ALL THREE STOPS, because a name may be written in any of the shop's languages: a plain
+        // `.`, the Chinese `。` and the halfwidth `｡`.
+        body: sub(t("askToDeliveryBody"), String(wrap._pointName || "").trim().replace(/[.。｡]+$/, "")),
+        yes: t("askToDeliveryYes"),
+        no: t("askToDeliveryNo"),
+      };
+    }
+    if (to === "collect") {
+      const box = document.getElementById("address-input");
+      if ((box && String(box.value || "").trim()) || doorPin) {
+        return {
+          what: "address",
+          title: t("askToCollectTitle"),
+          body: t("askToCollectBody"),
+          yes: t("askToCollectYes"),
+          no: t("askToCollectNo"),
+        };
+      }
+    }
+    return null;
+  };
+  // ⚠️ AND THE CLEARING. Leaving collect takes the point with it; leaving courier takes the address
+  // **AND the door pin he dropped FOR that address** — a pin is the door of a delivery, so an
+  // address cleared without it would leave the map still answering a question he has taken back.
+  const clearFor = (what) => {
+    if (what === "point") {
+      wrap._pointId = "";
+      wrap._pointName = "";
+      refreshPointList();   // ⚠️ re-applies the marker, so the place stops wearing it
+      return;
+    }
+    const box = document.getElementById("address-input");
+    if (box) box.value = "";
+    doorPin = null;
+    paintPin();             // ⚠️ repaints FROM `doorPin`, so the card stops showing a pin
+  };
+
+  // ★★ WHAT A PRESS ON ONE OF THE TWO WAYS DOES — the whole of it, in one function, so the DECISION
+  // can be driven without the markup. ⚠️ **This shim carries no static HTML, so the two `.seg-btn`
+  // rows do not exist to press** — and a test that drove a COPY of this rule would prove nothing
+  // about the press. ⭐ Same seam, and the same reason, as `_pickCollect` below.
+  const pressWay = (want) => {
+    // ★★★ AND A WAY IS NOT CHOSEN FOR AN ORDER WITH NOTHING IN IT (v456). Her words: __"i skip step 2
+    // and filled up step 3, it should not allow me to do step 3 at all?"__ — and then, when I had
+    // locked only the typed boxes: __"lock the 2 delivery cards too"__.
+    // ⚠️ **THAT WAS THE SAME SHAPE OF MISTAKE TWICE: I locked the thing she named and not the things
+    // that sit beside it.** ⭐ Step 3 is ONE step — the name, the number AND how they get the order —
+    // so locking two thirds of it is not locking it. The two cards were still pressable, and the
+    // customer could still choose how to receive an order he had not placed.
+    // ⭐ **AND IT IS ON THE PRESS, NOT IN `apply`, BECAUSE `apply` ALSO SETS STATE THE SHOP ITSELF
+    // NEEDS** — the start-up default and the after-order reset both run with an empty basket, and
+    // refusing there would tell a customer who just placed an order to add something first.
+    // ⚠️⚠️ AND IT READS THE BASKET THROUGH THE PICKER'S OWN SEAM, because **this function was built
+    // outside `render` and can see neither `cart` nor `sayStepFirst`.** ⭐ A direct call here is a
+    // `ReferenceError` on the press and nowhere else — which is exactly how the first draft of this
+    // guard failed, and why the three v436 tests caught it rather than the shop did.
+    if (wrap._mayChooseWay && !wrap._mayChooseWay()) {
+      if (wrap._refuseWay) {
+        // ⚠️⚠️ AND IT HANDS OVER THE CONTROL HE PRESSED (v459) — **`Array.from`, because a browser's
+        // `querySelectorAll` is a NodeList and a NodeList has no `.find`.** ⭐ The line then lands directly
+        // above THAT card, which is on the screen he is already looking at.
+        let pressed = null;
+        for (const x of Array.from(buttons)) {
+          if (x && x.dataset && x.dataset.fulfillment === want) { pressed = x; break; }
+        }
+        wrap._refuseWay(pressed && pressed.closest ? (pressed.closest(".seg-opt") || pressed) : null);
+      }
+      return;
+    }
+    // ⚠️ EACH LINE IS BOTH THE CHOICE AND ITS OWN FOLD'S HANDLE. Tapping the line of the way already
+    // chosen therefore opens and shuts what it holds rather than doing nothing — **the second tap is
+    // how a customer puts it away again**, which is the state she asked to arrive in.
+    // ⚠️ AND IT ASKS NOTHING: nothing is being taken away, so there is nothing to confirm.
+    if (wrap._value === want) {
+      wrap._open = wrap._open === want ? null : want;
+      refreshPointList();
+      return;
+    }
+    // ★★ AND THIS IS THE TAP THAT SETTLES IT (v415) — both for the places above and for the third
+    // step circle. ⚠️ `_value` already says "collect" before anyone has touched the page, so **the
+    // only honest record of a customer's choice is a press.**
+    // ⚠️⚠️ SO IT IS WRITTEN HERE AND NOT ON THE PRESS. A press that only OPENS A QUESTION must not
+    // credit him with a choice he has not made yet — and if he answers "keep", a step circle left
+    // green behind him would be exactly that fault arriving through a new door.
+    const commit = () => {
+      wrap._picked = true;
+      if (paintStepsForFulfillment) paintStepsForFulfillment();
+      // ⚠️ AND ANY OTHER TAP CHOOSES THAT WAY **AND OPENS IT** — picking one is exactly when the
+      // customer needs what it asks for, so opening it is not a second favour.
+      wrap._open = want;
+      apply(want);
+    };
+    const loss = leavingFor(want);
+    if (!loss) { commit(); return; }               // nothing to lose: no question at all
+    askSwitch({ title: loss.title, body: loss.body, yes: loss.yes, no: loss.no },
+      () => { clearFor(loss.what); commit(); });
+  };
+  wrap._pressWay = pressWay;
+
+  for (const b of buttons) {
+    b.addEventListener("click", () => pressWay(b.dataset.fulfillment));
+  }
+  // ★★ AND NEITHER WAY IS CHOSEN (v416). Her words: __"self collect should not be default"__, and
+  // then __"for delivery as well"__ — ⚠️ **a page that opens with one of them edged is a page that
+  // has answered its own question**, which is the same fault the places had at v415.
+  // ⚠️ JERKY STARTS WITH POST (nationwide) CHOSEN — its own model, and what its shop does today.
+  // The bakery's v416 starts with NEITHER chosen ("a page that opens with one of them edged is a
+  // page that has answered its own question"). Taking that would change how an order is placed on
+  // this shop, so it is left as her shop has it. The markup carries `active` on the courier card so
+  // the first paint already agrees with this line.
+  apply("courier");
+  wrap._open = null; // ⭐ and arrive with BOTH cards folded, whatever the default way is
+  refreshPointList();
 }
 
 // ── The customer's own door pin (v197) ─────────────────────────────────────
@@ -3327,6 +4573,9 @@ function closePinBox(keep) {
   if (pinMap) { pinMap.stop(); pinMap = null; }
   const box = document.getElementById("pin-box");
   if (box) box.hidden = true;
+  // ⭐ AND THE OFFER COMES BACK WITH IT (v437) — the map is shut, so the way to open it is not.
+  const ask = document.getElementById("pin-ask");
+  if (ask) ask.hidden = false;
   if (!keep) { doorPin = pinWasAt; pinOrigin = pinWasOrigin; }
   const note = pinNote;
   paintPin(note && note.key, note && note.m);
@@ -3339,6 +4588,12 @@ function openPinBox() {
   pinWasAt = doorPin;
   pinWasOrigin = pinOrigin;
   box.hidden = false;
+  // ★★ AND THE LINE THAT OFFERED IT GOES (v437). ⚠️ **The press does not close the box** — pressing
+  // it again rebuilds the same map — so a line still saying "Door hard to find? Pin on the map"
+  // while the map is open would be **a control that visibly does nothing.** ⭐ The door disappears
+  // while you are through it, and comes back when the box shuts.
+  const ask = document.getElementById("pin-ask");
+  if (ask) ask.hidden = true;
   const loadingNote = document.getElementById("pin-loading");
   const tapNote = document.getElementById("pin-tap");
   if (loadingNote) loadingNote.hidden = false;
@@ -3375,40 +4630,10 @@ function openPinBox() {
   });
 }
 
-// "Use my location" — the customer standing at their own door. Every way this can
-// end has its own sentence, because "nothing happened" is the one answer a customer
-// cannot act on. The vague-fix case is NOT a refusal: it keeps the pin (she confirms
-// every pin anyway) and says how far off it might be, so the customer can fix it.
-async function useMyLocation() {
-  const btn = document.getElementById("pin-here");
-  if (btn) btn.disabled = true;
-  paintPin("pinLocating");
-  const geo = (typeof navigator !== "undefined" && navigator.geolocation) || null;
-  const out = await askGeo(geo);
-  if (btn) btn.disabled = false;
-  if (!out.ok) {
-    paintPin(out.why === "denied" ? "pinDenied"
-      : out.why === "timeout" ? "pinTimeout"
-        : out.why === "unsupported" ? "pinNoGeo"
-          : "pinUnavailable");
-    return;
-  }
-  doorPin = { lat: out.lat, lng: out.lng };
-  // A fix from the phone is a door the customer is standing at, not an answer to
-  // anything typed, so it is theirs and no edit to the address box can call it into
-  // question (dropListPin only ever acts on a pin a suggestion row put there).
-  pinOrigin = null;
-  const vague = fixVerdict(out.accuracyM);
-  paintPin(vague ? "pinVague" : null, vague ? vague.accuracyM : null);
-  if (pinMap) pinMap.goTo(doorPin); // the map is open — bring it to where they are
-}
-
 function wirePin() {
-  const here = document.getElementById("pin-here");
   const mapBtn = document.getElementById("pin-map");
   const keep = document.getElementById("pin-keep");
   const cancel = document.getElementById("pin-cancel");
-  if (here) here.addEventListener("click", useMyLocation);
   if (mapBtn) mapBtn.addEventListener("click", openPinBox);
   if (keep) keep.addEventListener("click", () => closePinBox(true));
   if (cancel) cancel.addEventListener("click", () => closePinBox(false));
@@ -3522,8 +4747,14 @@ function takeHit(hit) {
   // and an edit to the words drops the pin (dropListPin).
   pinOrigin = { q };
   pinWasOrigin = pinOrigin;
+  // ★★ AND IT DOES NOT OPEN THE MAP FOR HIM (v437). Her words: __"We should not let the map drop
+  // down automatically, it should upon clicking only"__ — ⚠️ **the row tap used to unfold the whole
+  // map under the button**, which is a lot of screen to hand someone who has just told us his
+  // address: it pushed the rest of the page down and covered Place order with it.
+  // ⭐ **THE PIN IS STILL SET — that is the line below — and `paintPin` says so in words.** The map
+  // opens when he presses "Pin on the map" and not before, which also means **the map's own code and
+  // tiles are not fetched at all** for the customer who never adjusts the pin. That is most of them.
   if (pinMap) pinMap.goTo(p);
-  else openPinBox();
   paintPin();
   // The rows are redrawn without the instruction they have just obeyed, and with their own
   // claim on the box corrected to the words the box now holds. Nothing is asked again and

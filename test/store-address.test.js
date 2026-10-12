@@ -148,7 +148,28 @@ const HIT = { lat: 5.4166, lng: 100.3311, label: "12, Jalan Bunga, Penang" };
 
 // ── the flow ───────────────────────────────────────────────────────────────
 
-test("typing an address brings up the doors, and tapping one opens the map ON it", async (t) => {
+
+// ★★★ THE STEP LOCK IS REAL (v454): step 2 does not open until HE has tapped a bake day.
+function tapDay() {
+  let hit = null;
+  const walk = (n) => {
+    if (!n || hit || !n.children) return;
+    for (const c of n.children) {
+      // ⚠️⚠️ THE STEP LOCK NEEDS AN **OPEN** DAY (v454): `+` refuses until `dayPicked`, and only a
+      // tap on a day the shop can really take an order for sets it. A bare `tappable` also matches
+      // a CLOSED or askable day — the tap lands, sets nothing, and every `+` is refused.
+      if (c && c.tagName === "BUTTON" && String(c.className || "").includes("cal-cell")
+        && String(c.className || "").includes("tappable")
+        && String(c.className || "").includes("avail")) { hit = c; return; }
+      walk(c);
+    }
+  };
+  for (const k of Object.keys(registry)) walk(registry[k]);
+  if (hit && hit._listeners && hit._listeners.click) hit._listeners.click[0]();
+  return !!hit;
+}
+
+test("typing an address brings up the doors — and tapping one does NOT open the map", async (t) => {
   begin(t);
   reply = { ok: true, places: [{ ...HIT }] };
 
@@ -164,17 +185,29 @@ test("typing an address brings up the doors, and tapping one opens the map ON it
   assert.equal(list.children[0].textContent, STORE.en.addrPick);
   assert.equal(list.children[1].textContent, HIT.label, "the row says which door it is");
 
-  // The tap. Everything from here is the feature she asked for.
+  // The tap.
   fire(list.children[1], "click");
   await flush();
 
-  assert.equal(rec.maps.length, 1, "the map was built — this is the 'bring them there' half");
+  // ★★ AND IT DOES NOT OPEN THE MAP (v437). Her words: __"We should not let the map drop down
+  // automatically, it should upon clicking only"__ — ⚠️ **the row tap used to unfold the whole map
+  // under the button: it pushed the rest of the page down and covered Place order with it**, and it
+  // handed a map to someone who had just told us his address and asked for nothing more.
+  assert.equal(rec.maps.length, 0, "★ the map was built without anyone asking for it");
+  assert.equal(el("pin-box").hidden, true, "★ and its box is still shut");
+  // ⭐ BUT THE PIN IS STILL SET, and the line under the button says so — he keeps what he chose.
+  assert.equal(el("pin-status").textContent, STORE.en.pinSet,
+    "the pin should still be recorded, and said in words");
+
+  // ⭐ THE PRESS IS THE DOOR, and everything the feature does is still here, one tap later.
+  fire(el("pin-map"), "click");
+  await flush();
+  assert.equal(rec.maps.length, 1, "the map was not built when it WAS asked for");
   assert.deepEqual(rec.views[0].center, [HIT.lat, HIT.lng],
-    "and it opened on the address they chose, not on the whole island");
+    "and it opens on the address they chose, not on the whole island");
   assert.equal(rec.views[0].zoom, 17, "close enough to see their own door");
   assert.equal(rec.markers.length, 1, "with the pin already on it");
   assert.equal(el("pin-box").hidden, false, "the box it lives in is open");
-  assert.equal(el("pin-status").textContent, STORE.en.pinSet);
   assert.equal(el("pin-keep").disabled, false, "and 'Keep this spot' is live");
 });
 
@@ -275,6 +308,25 @@ test("switching language says the SAME sentence again in the language just chose
   setLang("en");
 });
 
+test("★ the pin's offer goes while the map is open, and comes back when it shuts", async (t) => {
+  // ★★ HER INSTRUCTION (v437): __"maybe we just fade that function"__. ⚠️ **The press does not
+  // close the box** — pressing it again rebuilds the same map — so a line still offering the map
+  // while the map is open would be **a control that visibly does nothing**, which this shop has a
+  // rule against. ⭐ The door disappears while you are through it.
+  begin(t);
+  assert.equal(el("pin-ask").hidden, false, "the offer is on screen to begin with");
+
+  fire(el("pin-map"), "click");
+  await flush();
+  assert.equal(el("pin-box").hidden, false, "the map opened");
+  assert.equal(el("pin-ask").hidden, true, "★ the offer is still up while the map it offers is open");
+
+  fire(el("pin-cancel"), "click");
+  await flush();
+  assert.equal(el("pin-box").hidden, true, "the map shut");
+  assert.equal(el("pin-ask").hidden, false, "★ and the offer did not come back with it");
+});
+
 test("a door the lookup found but could not name is still a row, shown as its numbers", async (t) => {
   // A geocoder that found the point but sent no words still found the point. Dropping the
   // row would throw away a real door, and a blank row would be a tap that says nothing
@@ -293,8 +345,13 @@ test("a door the lookup found but could not name is still a row, shown as its nu
 
   fire(list.children[1], "click");
   await flush();
+  assert.equal(el("pin-status").textContent, STORE.en.pinSet, "the pin is set for a nameless door too");
+  // ⚠️ AND THE MAP IS ASKED FOR BY HAND (v437) — and must still come to the right door. ⭐ Pressing
+  // it AFTER the row is the stronger check: the pin is already set, so this proves the box opens ON
+  // it rather than merely somewhere.
+  fire(el("pin-map"), "click");
+  await flush();
   assert.deepEqual(rec.views[0].center, [5.4141, 100.3288], "and it still takes them there");
-  assert.equal(el("pin-status").textContent, STORE.en.pinSet);
 });
 
 test("choosing a door retires the instruction it obeyed, and a new answer brings it back", async (t) => {
@@ -517,9 +574,17 @@ test("the pin and the address the order carries agree — or the pin does not tr
     return { ok: true, status: 200, json: async () => [] };
   };
   try {
+    // ★★★ THE DAY IS TAPPED HERE, NOT AFTER `render()` (v454). ⚠️⚠️ MEASURED, NOT GUESSED: at the point a
+    // test renders, the shop's calendar holds its heads and **no day cells at all** — they arrive with the
+    // dates — so a tap placed earlier lands on nothing and the whole test fails for the wrong reason.
+    // ⭐ **The step lock refuses step 2 until HE has tapped a bake day, so this must sit immediately before
+    // the basket is touched.**
+    tapDay();
     // The shop's own menu, driven the way test/store.test.js drives it.
+    tapDay();   // ⚠️ v465: see the note in `refillBasket` — the day is HIS before step 2 opens
     registry["menu"].children[0]
       .children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+    document.getElementById("name-input").value = "Aunty Bee"; // v452: a name is required
     document.getElementById("whatsapp-input").value = "60123456789";
     document.getElementById("fulfillment")._value = "courier";
 
@@ -535,6 +600,8 @@ test("the pin and the address the order carries agree — or the pin does not tr
     type("Bayan Lepas, Penang");
     await flush();
 
+    // ⚠️ A NAME IS REQUIRED (v452) — her decision. Without it the press refuses.
+    document.getElementById("name-input").value = "Aunty Bee";
     await registry["order-btn"].onclick();
     assert.ok(posted, "the order reached the backoffice");
     assert.equal(posted.address, "Bayan Lepas, Penang", "carrying the address the customer typed last");
@@ -569,8 +636,10 @@ test("a pin taken from the list travels named with the customer's own words, not
     return { ok: true, status: 200, json: async () => [] };
   };
   try {
+    tapDay();   // ⚠️ v465: see the note in `refillBasket` — the day is HIS before step 2 opens
     registry["menu"].children[0]
       .children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+    document.getElementById("name-input").value = "Aunty Bee"; // v452: a name is required
     document.getElementById("whatsapp-input").value = "60123456789";
     document.getElementById("fulfillment")._value = "courier";
 
@@ -584,6 +653,8 @@ test("a pin taken from the list travels named with the customer's own words, not
       "the tap moved the pin and did NOT write the row's fragment into their address box — no house "
       + "number was typed for the row to have found, so v214 leaves their words exactly as they are");
 
+    // ⚠️ A NAME IS REQUIRED (v452) — her decision. Without it the press refuses.
+    document.getElementById("name-input").value = "Aunty Bee";
     await registry["order-btn"].onclick();
     assert.ok(posted, "the order reached the backoffice");
     assert.equal(posted.address, "Taman Sri Nibong, Penang");
@@ -659,6 +730,9 @@ test("a row that only reached the road moves the pin and leaves their words alon
     "their own words are untouched — the row never found the 23 they typed, so it has no business "
     + "rewriting an address it could not match");
   assert.equal(el("pin-status").textContent, STORE.en.pinSet, "but the pin still moves");
+  // ⚠️ THE MAP IS ASKED FOR BY HAND (v437), and must still come to the door the row found.
+  fire(el("pin-map"), "click");
+  await flush();
   assert.deepEqual(rec.views[0].center, [5.4141, 100.3288], "and the map still comes to them");
   assert.equal(rec.views[0].zoom, 17, "as close as before — a road answer is still the best the lookup has");
 });
@@ -678,8 +752,10 @@ test("the order carries the address the row wrote, with the pin named by that sa
     return { ok: true, status: 200, json: async () => [] };
   };
   try {
+    tapDay();   // ⚠️ v465: see the note in `refillBasket` — the day is HIS before step 2 opens
     registry["menu"].children[0]
       .children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+    document.getElementById("name-input").value = "Aunty Bee"; // v452: a name is required
     document.getElementById("whatsapp-input").value = "60123456789";
     document.getElementById("fulfillment")._value = "courier";
 
@@ -689,11 +765,147 @@ test("the order carries the address the row wrote, with the pin named by that sa
     fire(el("addr-list").children[1], "click");
     await flush();
 
+    // ⚠️ A NAME IS REQUIRED (v452) — her decision. Without it the press refuses.
+    document.getElementById("name-input").value = "Aunty Bee";
     await registry["order-btn"].onclick();
     assert.ok(posted, "the order reached the backoffice");
     assert.equal(posted.address, ROW, "carrying the complete address the row found");
     assert.deepEqual(posted.place, { lat: ROW_AT.lat, lng: ROW_AT.lng, label: ROW },
       "and the pin travels named by that same string — one address, one point, nothing else named");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+// ── v414: the pin, now that "Use my location" is gone ───────────────────────
+//
+// ⚠️ THESE TWO TESTS MOVED HERE FROM store.test.js (v414). They placed a pin by pressing "Use my
+// location" — the one way to do it that no longer exists — and **none of their assertions was about
+// that button: they are about what the ORDER carries.** ⭐ So they are driven through the MAP, which
+// is the path that survives and the one a customer actually has, and this file is where they belong
+// because it owns the Leaflet stub. ⚠️ The assertions below are word for word what they were.
+
+function refillBasket() {
+  // ⚠️⚠️ THE DAY IS TAPPED FIRST (v465) — **AND IT ALWAYS SHOULD HAVE BEEN.** `+` has been refused without
+  // a bake day of his own since v454, and these tests never tapped one: **they worked only because
+  // `dayPicked` was left TRUE by an earlier test in this file.** ⭐ The moment the after-order reset
+  // started clearing it — which is what the reset is FOR — the inherited state was gone and the presses
+  // were correctly refused. ⭐ **They were passing on state they never set.**
+  tapDay();
+  registry["menu"].children[0]
+    .children.find((c) => c.className === "card-body")
+    .children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+}
+
+test("★ the pin the customer marks rides on a courier order, and never on a self-collect one", async (t) => {
+  begin(t);
+  refillBasket();
+  const realFetch = globalThis.fetch;
+  let posted = null;
+  globalThis.fetch = async (url, opts) => {
+    if (opts && opts.method === "POST") { posted = JSON.parse(JSON.parse(opts.body)[0].data); return { ok: true }; }
+    return { ok: true, json: async () => [] };
+  };
+  try {
+    el("whatsapp-input").value = "60123456789";
+    el("address-input").value = "Block C, Sri Bunga Condo";
+    // ⭐ The customer puts the pin ON THE MAP at the guard house — the way that remains.
+    fire(el("pin-map"), "click");
+    await flush();
+    rec.maps[0].handlers.click({ latlng: { lat: 5.41991234, lng: 100.33116789 } });
+    await flush();
+    assert.equal(el("pin-status").textContent, STORE.en.pinSet, "the customer is told the pin is on");
+    assert.equal(el("pin-status").hidden, false);
+
+    // COURIER: the pin travels with the order, tidied to six decimals, named with the customer's
+    // OWN typed address (v205 — never the geocoder's name for that spot, which is a fragment), and
+    // nothing else the phone reported travels with it.
+    el("fulfillment")._value = "courier";
+    // ⚠️ A NAME IS REQUIRED (v452) — her decision. Without it the press refuses.
+    document.getElementById("name-input").value = "Aunty Bee";
+    await el("order-btn").onclick();
+    assert.ok(posted, "the order went through");
+    assert.deepEqual(posted.place, { lat: 5.419912, lng: 100.331168, label: "Block C, Sri Bunga Condo" });
+    assert.equal(posted.place.label, posted.address,
+      "the pin's words are the customer's own address, so her screen cannot name one place twice");
+    assert.deepEqual(Object.keys(posted.place).sort(), ["label", "lat", "lng"],
+      "no accuracy, no timestamp — the bakery is told where, named the customer's way, and nothing more");
+
+    // SELF COLLECT: the same customer then chooses to come and get it. Nothing is being delivered,
+    // so no door is posted.
+    el("whatsapp-input").value = "60123456789";
+    el("fulfillment")._value = "collect";
+    refillBasket();
+    posted = null;
+    // ⚠️ A NAME IS REQUIRED (v452) — her decision. Without it the press refuses.
+    document.getElementById("name-input").value = "Aunty Bee";
+    await el("order-btn").onclick();
+    assert.ok(posted, "the self-collect order went through");
+    assert.equal("place" in posted, false, "a self-collect order carries no door");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("the next customer does not inherit the last one's front door", async (t) => {
+  begin(t);
+  refillBasket();
+  const realFetch = globalThis.fetch;
+  let posted = null;
+  globalThis.fetch = async (url, opts) => {
+    if (opts && opts.method === "POST") { posted = JSON.parse(JSON.parse(opts.body)[0].data); return { ok: true }; }
+    return { ok: true, json: async () => [] };
+  };
+  try {
+    el("whatsapp-input").value = "60123456789";
+    el("fulfillment")._value = "courier";
+    // ⚠️⚠️ MUNCHIES REQUIRES A POSTAL ADDRESS ON A POSTED ORDER — its own rule, kept on purpose
+    // (see the note in store/app.js). The bakery's model does not ask here, so a test ported from
+    // there must supply one or the order is refused before it reaches the POST this test reads.
+    el("address-input").value = "12 Jalan Bunga, 10450 Penang";
+    fire(el("pin-map"), "click");
+    await flush();
+    rec.maps[0].handlers.click({ latlng: { lat: 5.42, lng: 100.33 } });
+    await flush();
+    assert.equal(el("pin-status").hidden, false);
+    // ⚠️ A NAME IS REQUIRED (v452) — her decision. Without it the press refuses.
+    document.getElementById("name-input").value = "Aunty Bee";
+    await el("order-btn").onclick();
+    // ⚠️ AND THE PIN IS NAMED BY THE ADDRESS THE CUSTOMER TYPED — jerky's own v205 rule, asserted
+    // by this file's sibling tests. The bakery's version of this test types no address, so it has
+    // no label to expect.
+    assert.deepEqual(posted.place, { lat: 5.42, lng: 100.33, label: "12 Jalan Bunga, 10450 Penang" });
+    // An order empties the cart, the number and the delivery method for whoever comes next. The pin
+    // has to go with them, or the phone handed across the counter sends the NEXT order to the last
+    // customer's door.
+    assert.equal(el("pin-status").hidden, true, "the pin line is cleared with the order");
+    // ★★★ AND HE DOES NOT INHERIT THE LAST ONE'S BAKE DAY EITHER (v465). Her question: __"and user after
+    // placing an order, how should their storefront go back to default?"__
+    // ⚠️⚠️ MEASURED IN THE CODE FIRST: `dayPicked` is cleared in exactly ONE place in the whole shop — when
+    // the day that was chosen stops being on offer — and NEVER after an order. ⭐ **So the next customer
+    // arrived at a shop where step ① was ALREADY GREEN for a day HE never chose**, which is the fault v434
+    // fixed, coming back through a door it had never closed.
+    assert.equal(String(registry["step1"].className || "").includes("done"), false,
+      "★ step ① is still green for a choice the next customer never made");
+    // ⭐ AND THE PROOF THAT THE CLAIM IS REALLY GONE, rather than just the colour: **pressing + is refused
+    // until he taps a day of his own.**
+    const barBefore = registry["bar-count"].textContent;
+    registry["menu"].children[0]
+      .children.find((c) => c.className === "card-body")
+      .children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+    assert.equal(registry["bar-count"].textContent, barBefore,
+      "★ the next customer could fill a basket for a bake day he had never chosen");
+    el("whatsapp-input").value = "60123456789";
+    el("fulfillment")._value = "courier";
+    // ⚠️ AND A POSTAL ADDRESS FOR THE SECOND ORDER TOO — munchies' own rule, as above.
+    el("address-input").value = "12 Jalan Bunga, 10450 Penang";
+    refillBasket();
+    posted = null;
+    // ⚠️ A NAME IS REQUIRED (v452) — her decision. Without it the press refuses.
+    document.getElementById("name-input").value = "Aunty Bee";
+    await el("order-btn").onclick();
+    assert.ok(posted, "the second order went through");
+    assert.equal("place" in posted, false, "a courier order nobody pinned carries no door");
   } finally {
     globalThis.fetch = realFetch;
   }

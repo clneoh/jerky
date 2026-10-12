@@ -100,8 +100,29 @@ const ONE_FOCACCIA = `RM${CONFIG.products[0].price}.00`;
 const btn = () => registry["order-btn"];
 const barTotal = () => registry["bar-total"].textContent;
 const litPill = () => pills.find((p) => p.classList.contains("is-on"));
-const firstCardStepper = () =>
-  registry["menu"].children[0].children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
+// ★★★ THE DAY IS TAPPED FIRST (v454). The step lock refuses step 2 until HE has tapped a posting day — and
+// ⚠️⚠️ MEASURED, NOT GUESSED: the shop's calendar holds its heads and NO day cells at the point a test
+// renders; the days arrive with the dates. **So the tap belongs here, immediately before the basket is
+// touched, and not after `render()`** — a tap placed earlier lands on nothing and every test below fails
+// for the wrong reason. Same fix as test/store-address.test.js.
+const firstCardStepper = () => {
+  let day = null;
+  const walk = (n) => {
+    if (!n || day || !n.children) return;
+    for (const c of n.children) {
+      // ⚠️ AN **OPEN** DAY — the step lock (v454) only opens the basket for a day the shop can
+      // really take an order for; a bare `tappable` also matches a closed day, and then every `+`
+      // is refused and the basket reads empty.
+      if (c && c.tagName === "BUTTON" && String(c.className || "").includes("cal-cell")
+        && String(c.className || "").includes("tappable")
+        && String(c.className || "").includes("avail")) { day = c; return; }
+      walk(c);
+    }
+  };
+  for (const k of Object.keys(registry)) walk(registry[k]);
+  if (day && day._listeners && day._listeners.click) day._listeners.click[0]();
+  return registry["menu"].children[0].children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
+};
 // The line under the delivery calendar naming the chosen day — the one piece of
 // date text outside the grid, and so the one to read for a language switch.
 const chosenDayText = () =>
@@ -112,7 +133,9 @@ test("the shop starts in English and the EN pill is lit", () => {
   assert.equal(document.documentElement.lang, "en");
   assert.equal(litPill(), pills[0], "EN is the lit pill on a fresh visit");
   assert.equal(btn().textContent, STORE.en.placeOrder);
-  assert.equal(btn().disabled, true, "empty basket leaves the button disabled");
+  // ★ (v452) The button is never disabled — she asked for the customer to be TOLD which step is
+  // outstanding instead, and a disabled button says nothing. See store/app.js renderBar.
+  assert.equal(registry["order-btn"].disabled, false, "★ an empty basket must leave the button live");
 });
 
 test("switching to 中文 repaints in place and keeps the basket", () => {
@@ -130,9 +153,19 @@ test("switching to 中文 repaints in place and keeps the basket", () => {
   assert.equal(litPill(), pills[1], "the 中文 pill is now lit");
   assert.equal(document.documentElement.lang, "zh", "the page declares its language");
   assert.equal(localStorage.getItem("siteLang"), "zh", "the choice is remembered on the device");
-  assert.match(chosenDayText(), /月/, "the chosen posting day reads in Chinese (month name)");
+  assert.match(chosenDayText(), /月/, "the chosen day reads in Chinese (month name)");
   assert.match(chosenDayText(), /日/, "…and the day");
-  assert.ok(chosenDayText().startsWith("你的发货日："), "…under a Chinese label");
+  // ⚠️ TWO FORMS SINCE v434, and this is asserted against the DICTIONARY so the page and the test
+  // cannot drift: a day chosen FOR him says so, and a day he chose himself reads plainly. Nothing is
+  // tapped here, so it is the first. ⭐ A `startsWith` on one wording would now be silently wrong —
+  // the new line begins with the day, not with the label.
+  const zhSaid = chosenDayText();
+  const fitsZh = [STORE.zh.calChosen, STORE.zh.calChosenFor].some((f) => {
+    const [before, after] = f.split("%1");
+    return zhSaid.startsWith(before) && zhSaid.endsWith(after);
+  });
+  assert.ok(fitsZh,
+    `…under a Chinese label, and it is the BAKE day — 派送日 named it after what happens to it for some customers, which is not what it is (v407). It reads: ${JSON.stringify(zhSaid)}`);
   assert.equal(fetchCount, before, "the switch re-reads nothing over the network");
 });
 
@@ -140,7 +173,8 @@ test("the rebuilt menu card still shows the chosen quantity", () => {
   // The switch rebuilds every card; the cart lives in a closure the rebuild
   // reads, so the stepper must come back counting the same item. (The shim
   // keeps textContent separate from the appended text nodes — read the node.)
-  assert.equal(firstCardStepper().children[1].children[0].text, "1");
+  // ⚠️ v458: the number is a box now, so it is read as a value rather than as a text node.
+  assert.equal(firstCardStepper().children[1].value, "1");
 });
 
 test("a repeat tap on the language already showing does nothing", () => {
@@ -160,7 +194,7 @@ test("an unknown language is ignored", () => {
 
 test("switching 中文 → BM relabels the page and the order button", () => {
   assert.equal(setLang("ms"), true);
-  assert.equal(btn().textContent, "Hantar tempahan");
+  assert.equal(btn().textContent, "Hantar order"); // ⚠️ v453: she chose the borrowed word (tempahan → order)
   assert.equal(litPill(), pills[2], "the BM pill is lit");
   assert.equal(barTotal(), ONE_FOCACCIA, "the basket is still there");
 });

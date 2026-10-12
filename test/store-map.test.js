@@ -330,7 +330,7 @@ test("a map that answers too late does not draw over the failure it already repo
 
 // ── the map itself ─────────────────────────────────────────────────────────
 
-test("tapping the map puts the pin there — the only way a thumb can aim it (P12)", async () => {
+test("tapping an EMPTY map drops the first pin — and after that a tap does nothing", async () => {
   const { host, rec } = setup({ leaflet: makeLeaflet() });
   const { showPinMap } = await freshPinMap();
 
@@ -340,15 +340,28 @@ test("tapping the map puts the pin there — the only way a thumb can aim it (P1
 
   const map = rec.maps[0];
   assert.equal(typeof map.handlers.click, "function", "the map is listening for a tap");
-  map.handlers.click({ latlng: { lat: 5.4166, lng: 100.3311 } });
 
+  // ⭐ THE ONE CASE A TAP IS STILL THE ONLY ANSWER TO: a map with nothing on it. A tap there does
+  // not MOVE a pin — there is none — it places the first one, which is how a thumb puts a pin on a
+  // doorstep without dragging a 24-pixel dot.
+  map.handlers.click({ latlng: { lat: 5.4166, lng: 100.3311 } });
   assert.deepEqual(moved, [{ lat: 5.4166, lng: 100.3311 }], "the tap became the point");
   assert.equal(rec.markers.length, 1, "and a pin was dropped for it");
+  const placed = { ...rec.markers[0].latlng };
 
-  // A second tap MOVES the one pin rather than stacking a second one on the map.
+  // ★★ AND FROM THAT MOMENT A TAP DOES NOTHING AT ALL (v438). ⚠️⚠️ THIS ASSERTION USED TO READ THE
+  // OTHER WAY — *"a second tap MOVES the one pin"* — and that was the fault. Her rule, given at
+  // v264 about the ADMIN's map and only ever applied there: __"click on the map should not move the
+  // pin, only dragging the pin will."__ Her words now, on THIS map: __"customer might just want to
+  // drag the map, or zoom. But the original pin had been moved unintentionally."__
+  // ⚠️ **A PHONE IS WHERE IT BITES: a pan begins with a finger going down, and a sloppy one lands
+  // as a tap — two answers to one accidental contact, which is v264's own phrasing.**
   map.handlers.click({ latlng: { lat: 5.4177, lng: 100.3322 } });
   assert.equal(rec.markers.length, 1, "one door, one pin");
-  assert.deepEqual(moved[1], { lat: 5.4177, lng: 100.3322 });
+  assert.deepEqual(moved, [{ lat: 5.4166, lng: 100.3311 }],
+    "★ a second tap MOVED the pin — that is the fault she reported");
+  assert.deepEqual(rec.markers[0].latlng, placed,
+    "★ and the pin itself was moved off the door he chose");
 });
 
 test("dragging the pin reports the door it was dragged to", async () => {

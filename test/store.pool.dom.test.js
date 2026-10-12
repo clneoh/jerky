@@ -148,8 +148,12 @@ function stampOf(card) {
   return s && s.children[0] ? s.children[0].text : "";
 }
 function stepperOf(card) { return bodyOf(card).children[1]; }
+// ★★★ THE QUANTITY IS A BOX THAT CAN BE TYPED INTO NOW, NOT A LABEL (v458). ⚠️ **The view changed, so the
+// way it is read changes with it** — a helper still looking for a text node answers "" for a box that is
+// plainly showing a number, and every assertion below would fail for a reason that is not its own.
 function qtyOf(card) {
   const label = stepperOf(card).children[1];
+  if (label.value !== undefined && label.value !== "") return String(label.value);
   return label.children[0] ? label.children[0].text : label.textContent;
 }
 function tap(card, which) {
@@ -175,6 +179,23 @@ const cell = (day) => {
 const markedDays = () => cells()
   .filter((c) => c.className.includes("avail"))
   .map((c) => c.children[0].children[0].text);
+
+
+// ★★★ THE STEP LOCK IS REAL (v454): step 2 does not open until HE has tapped a posting day.
+function tapDay() {
+  let hit = null;
+  const walk = (n) => {
+    if (!n || hit || !n.children) return;
+    for (const c of n.children) {
+      if (c && c.tagName === "BUTTON" && String(c.className || "").includes("cal-cell")
+        && String(c.className || "").includes("tappable")) { hit = c; return; }
+      walk(c);
+    }
+  };
+  for (const k of Object.keys(registry)) walk(registry[k]);
+  if (hit && hit._listeners && hit._listeners.click) hit._listeners.click[0]();
+  return !!hit;
+}
 
 test("value pack is gated on a near delivery date and freed on a far one", async () => {
   // Only the two published dates are offered; the near one is chosen for them.
@@ -254,7 +275,10 @@ test("placing a pack order sends the pool pieces separately from its line", asyn
   const nameInput = (registry["name-input"] ||= createEl("input"));
   waInput.value = "60123456789";
   nameInput.value = "Ain";
-  (registry["fulfillment"] ||= createEl("div"))._value = "collect"; // pickup — no postal address needed
+  // ⚠️ AND HOW HE GETS IT, because since v416 **the page no longer answers that for him** — pressing
+  // Place order without a way chosen stops and points at the two cards. This test is about the POOL,
+  // so it picks one and gets on with it.
+  registry["fulfillment"]._value = "collect";
   registry["order-btn"].onclick();
   await flush();
   await flush();
