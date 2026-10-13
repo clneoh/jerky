@@ -147,6 +147,21 @@ export function senderOf(state) {
 // be the test — she may call it anything, and she has already renamed a Point once.**
 export function needsVan(state, order) {
   if (!order) return false;
+  // ★★★ AND AN ORDER THAT HAS ALREADY GONE NEEDS NO VAN (v507).
+  //
+  // ⚠️⚠️ HER REPORT: __"why certain delievery done, but still appear on delivery run"__ — ⭐ **and the answer
+  // is that this function asked "does it go by courier?" and NEVER ASKED "has it already gone?"** ⚠️ **So an
+  // order the courier had already delivered still answered yes and came back onto the run** — the same fault
+  // the kitchen had at v494, and the same shape: *a question that was right until the world moved on.*
+  //
+  // ⭐ AND THE SHOP ALREADY KNEW, IN ITS OWN FUNCTION: `tripCollected` is the file's one reading of "the
+  // courier has this parcel or has delivered it" — ⚠️ **a SECOND reading written here is exactly how the two
+  // would come to disagree**, which this file has paid for before (see the note above about the run screen and
+  // the "Run (N)" badge asking the same rule two ways).
+  // ⚠️ **COLLECTED AS WELL AS DELIVERED, and that is `tripCollected`'s own doing:** a parcel already on the
+  // vehicle needs no van sent for it either. A CANCELLED trip is deliberately NOT excluded — the van never
+  // took it, so the bread may still need carrying.
+  if (tripCollected(jobOf(order))) return false;
   if (order.fulfillment === "courier") return true;
   const point = pointById(state, order.pointId);
   // ⚠️ A collection at the kitchen is handed over by her, so there is nothing for a van to do —

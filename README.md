@@ -756,6 +756,85 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## Engine v498 → v509 — the receipt clears itself, and nothing reloads on a timer (13 Oct 2026)
+
+Eleven versions from the bakery. **9 files changed (`+634 / −526`) plus one new file
+(`test/guide-builds.test.js`, 57 lines); no SQL and nothing to deploy** — the same push carries it.
+Suite **3477 → 3479 pass / 0 fail**. ⚠️ **This range partly REVERSES what the last one added:** the
+clear-the-page card is deleted outright.
+
+### v499–v500, v509 — the shop never reloads itself
+
+**Her question was the finding:** *"is automatic reloading of store a good idea? What i try is adding
+customer details in it, the offer still shows."* ⚠️ **A page that reloads under someone's hands
+destroys what they have typed**, and there is no honest way to tell "nobody is using this" from
+"someone is mid-order" — **the guard it had was "has the page been scrolled?", a proxy, and the wrong
+tool for a question whose wrong answer loses a customer's details.** So `autoReset` and
+`scrollPageToTop` are **deleted**, not disabled. The last order's receipt now goes the moment a new
+order begins — read off the shop's own state, in the one function every step change already passes
+through, so there is no eighth call site to forget.
+
+**Then she settled the whole feature herself** (*"remove the order to reload… make the green Order
+Received! message vanish… 20sec instead of 1min"*): **the card, its "Not now", its Reload, its styles and
+its three-language copy are gone, with every test of it.** `RECEIPT_LIFE_MS = 20000`, one number in one
+place; the receipt is hidden **and emptied**, and the clock is asked again when someone looks at the page
+(v497's lesson). ⚠️ **The cost is named rather than hidden: the order number and the tracking code leave
+the screen with it.**
+
+### v501–v504 — the out-of-date line becomes a strip
+
+Her words: *"it is rather small. it should be a strip like what is having in the backoffice"*, then *"i
+want it to be consistant with the app"*. It now wears **the app's own amber pair** (copied into the
+shop's stylesheet at the admin's values, with the reason noted beside them), **16px words and a real 44px
+press in terracotta** — the pale 14px bar with an underlined link is gone.
+
+⚠️ **v502 pins it above the Order bar, and v503/v504 carry the lesson: `--bar-h` was used with a 92px
+fallback and NOTHING EVER SET IT** — measured, the real bar is 100px, so the page's own foot padding had
+been 8px short. `renderBar` now measures the real element; `--strip-h` is measured the same way.
+⚠️ **And a fixed bar must reserve its own height** — the strip covered the offer by 97px until it did.
+⚠️ **The bakery recorded its own trap here, worth keeping: its first measurement said 97px still covered
+*after* the fix, because it had forced the card to the bottom with `scrollIntoView` — a position no
+customer ends up in. An admitted-bad measurement is still being used if you act on it.**
+
+### ★ v505–v508 — three faults, all out of her screenshots
+
+- ★ **The next customer was inheriting the last one's collection centre.** The after-order reset cleared
+  the *way* (`_picked`) and **never cleared `_pointId`** — and because the order carries that id, **an
+  order could be stamped with a centre the customer never picked.** It now calls the shop's own
+  `clearFor("point")` rather than a second clearing written beside it.
+- ★ **The whole of step 3 comes back** (her rule: *"a rule about one control is a rule about the whole
+  step"*): the card folds, the address clears, and **the ④ beside Place order goes out** — it was left
+  lit, so the next customer arrived at a shop claiming a step was done. ⚠️ Its fix is an *ordering*
+  fault: the green is set **twice** in the order path, so **a reset is only a reset if it is the last
+  word.** ⚠️ And the bakery names its own limit: the two-customer comparison **cannot** catch this one,
+  because the green is lit after *every* order so both customers agree either way — that piece is pinned
+  by hand.
+- ★ **An order the courier has already delivered no longer appears on the run** — `needsVan` asked *"does
+  it go by courier?"* and never *"has it already gone?"*. **The same shape as v494's kitchen fault: a
+  question that was right until the world moved on.** **Bitten here:** delete the line and
+  `test/courier-job.test.js` fails by name.
+
+**And the machine she asked for** (*"i think you alway forgot. How to make sure not to forget"*):
+`test/store.test.js` puts **two different customers** through the shop and asserts it comes back in the
+**same state** — deliberately not a list of things to reset, because a list is a thing somebody has to
+remember to add to. **Bitten here:** delete `clearFor("point")` and both that test and the centre test
+fail by name.
+
+### v503 — a new guard on the manuals
+
+`test/guide-builds.test.js` (**new in jerky**) runs Python's own parser over the three builders. The
+manual is a Python file whose copy sits inside double-quoted strings, so **every inner quote must be
+escaped, and a stray one stops it parsing — quietly**, leaving the previous PDF in place looking fine,
+with `marketing/` gitignored so there is no version to restore. **It happened three times in one day at
+the bakery.** ⚠️ **Checked here: jerky's `build_guide.py` does NOT have that defect** — both `{ENGINE}`
+and `{VERSION}` already sit inside f-strings.
+
+**⚠️ THE DELIBERATE NON-PORT, RE-CONFIRMED AND RE-APPLIED.** The bakery's range reworks the after-order
+reset so that **arriving and resetting are the same call** — its two call sites now say `apply("")`
+(arrive) and `apply("collect")` (reset). **Jerky keeps Post (nationwide) at both**, and the merge's two
+conflicts in `store/app.js` were resolved by taking the bakery's expanded reset and putting
+`apply("courier")` back into each, with the reason written beside them.
+
 ## Engine v493 → v498 — no van to your own kitchen, and a receipt that offers to clear the page (13 Oct 2026)
 
 Five versions from the bakery. **10 files changed (`+867 / −32`); no SQL and nothing to deploy** — the

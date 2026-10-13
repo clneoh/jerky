@@ -660,6 +660,34 @@ test("★★★ a Self collection Point that IS the kitchen never needs a van (v
     "★ a courier order stopped needing a vehicle because of a Point it is not being collected from");
 });
 
+test("★★★ an order that has ALREADY GONE never needs a van again (v507)", () => {
+  // ⚠️⚠️ HER REPORT: __"why certain delievery done, but still appear on delivery run"__ — ⭐ **and the answer
+  // was one line: `needsVan` asked "does it go by courier?" and NEVER asked "has it already gone?"**, so an
+  // order the courier had delivered came back onto the run. ⚠️ The same shape as the kitchen at v494 — *a
+  // question that was right until the world moved on.*
+  //
+  // ⭐ AND THE SHOP ALREADY KNEW: `tripCollected` is this file's ONE reading of "the courier has this parcel or
+  // has delivered it", so the fix asks IT rather than writing a second reading beside it.
+  // ⚠️ **AND THIS IS ASKED IN BOTH PLACES THAT MATTER** — the run screen and the Delivery dates screen's own
+  // "Run (N)" badge both call `needsVan`, which is why the rule lives there.
+  const st = withPoints([POINT]);
+  const gone = (phase) => ({ id: "o1", fulfillment: "courier", courierJob: { jobId: "job1", phase } });
+
+  assert.equal(needsVan(st, gone("delivered")), false,
+    "★ an order the courier has already DELIVERED is still on the run — the van would be sent for bread that "
+    + "arrived days ago");
+  // ⚠️ AND COLLECTED TOO, which is `tripCollected`'s own doing: a parcel already ON the vehicle needs no van
+  // sent for it either. ⭐ Her word was "delivery done"; the shop's own rule is wider, and it is right.
+  assert.equal(needsVan(st, gone("collected")), false,
+    "★ an order already ON the van is still on the run");
+
+  // ---- ⚠️ AND THE TWO THINGS THAT MUST NOT CHANGE
+  assert.equal(needsVan(st, { id: "o2", fulfillment: "courier" }), true,
+    "an ordinary courier order has stopped needing a van, so nothing would ever be on a run at all");
+  assert.equal(needsVan(st, { id: "o3", fulfillment: "courier", courierJob: { jobId: "j", phase: "cancelled" } }), true,
+    "★ a CANCELLED trip means the van never took it, so the bread may still need carrying — it stays on the run");
+});
+
 test("a PAUSED Point still sends the van, and a DELETED one does not", () => {
   // Pausing decides what is OFFERED, never what an order already promised — the customer was
   // already told to go to Farlim and their bread still has to get there. A deleted Point has

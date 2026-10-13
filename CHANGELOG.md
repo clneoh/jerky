@@ -1,11 +1,70 @@
-# Munchies Furkidz — change history (v54 → v498)
+# Munchies Furkidz — change history (v54 → v509)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**13 Oct 2026 — engine v509: THE RECEIPT CLEARS ITSELF, AND NOTHING ON THE SHOP RELOADS ON A TIMER
+(nothing to run, nothing to upload — pushing this is the whole of it).**
+
+**Eleven versions from the bakery (v499 to v509), and your own question is the whole of the first one.**
+
+**1. NOTHING ON THE SHOP RELOADS ON A TIMER ANY MORE. Your words:** __"is automatic reloading of
+store a good idea? What i try is adding customer details in it, the offer still shows"__ — you were
+entering the next customer's details with the previous order's offer still on the screen, and that
+offer carried a **Reload** button. **A page that reloads under someone's hands destroys what they
+have typed**, and there is no honest way to tell "nobody is using this" from "someone is mid-order".
+**The guard it had asked only whether the page had been scrolled** — a proxy, and the wrong tool for a
+question whose wrong answer loses a customer's details. So the automatic reload is gone — **not
+disabled, not guarded.** **And it was never needed:** the form has cleared itself since v465, and the
+last order's receipt now goes the moment a new order begins — the first posting day tapped, or the
+first thing in the basket.
+
+**2. And then you settled it yourself: the card is deleted.** Your words: __"it is good to see the
+page cleared. So i think we should remove the order to reload. Just need to make the green Order
+Received! message vanish after 1min, can?"__ — and then __"make it 20sec instead of 1min"__. **The
+whole card — "Clear the page", "Not now", and the Reload button — is gone**, from the page, the styles
+and all three languages, along with every test of it. **The receipt now simply goes by itself, 20
+seconds after the order**, and it still goes if the phone was put down, because the page asks the clock
+again when someone looks at it. **The one cost, named plainly: the order number and the tracking code
+are on that receipt, so 20 seconds after the order they are off the screen.** That is your call, and
+the bakery confirms every order by hand on WhatsApp, where the customer keeps it in writing.
+
+**3. The out-of-date line is a proper strip now, and pinned where you can always see it.** Your words:
+__"now see the warning, it is rather small. it should be a strip like what is having in the
+backoffice"__ — and then __"i want it to be consistant with the app"__. It wears **your app's own
+amber pair**, the words are 16px (they were 14 — a caption) and the press is a real 44-pixel button in
+your shop's terracotta. **And it is pinned directly above the Order bar, exactly where your app pins
+its own — with its own space reserved**, so it never covers the thing you are being told to press.
+
+**4. And three real faults came out of your screenshots.** ⚠️ **The next customer was inheriting the
+last one's collection centre:** the after-order reset cleared the *way* and never cleared *which
+centre he chose* — so the next customer opened step 3 with the previous one's centre still engaged,
+and an order could even be stamped with a centre the customer never picked. ⚠️ **And the whole of step
+3 now comes back:** the card folds, the address clears, and the fourth circle beside Place order goes
+out — it was left lit, so the shop arrived claiming a step was done before anyone had done anything.
+⚠️ **And an order the courier has already delivered no longer appears on the delivery run** — the same
+shape as the kitchen fault: *a question that was right until the world moved on.*
+
+**5. And there is a machine now, because you asked for one.** Your words: __"i think you alway forgot.
+How to make sure not to forget"__. **A test now puts two different customers through the shop and
+asserts the shop comes back in the same state** — deliberately not a list of things to reset, because
+a list is a thing somebody has to remember to add to. If anything survives, one customer's value meets
+the other's and they disagree.
+
+**6. And a new guard on this manual itself.** The manual is built by a script whose own copy sits inside
+quoted text, where a stray quote stops it parsing — and it fails **quietly**, leaving the previous PDF
+in place looking perfectly fine. It happened three times in one day at the bakery. **A test now runs
+the script's own parser over the builders, so a broken manual can no longer sit there looking right.**
+
+**Nothing to run, no SQL, no upload, no setting to change on either phone.**
+
 **13 Oct 2026 — engine v498: NO VAN TO YOUR OWN KITCHEN, AND A RECEIPT THAT OFFERS TO CLEAR THE PAGE
 (nothing to run, nothing to upload — pushing this is the whole of it).**
+
+**⚠️ AMENDED 13 October 2026, later the same day: the clear-the-page press described in this entry has
+since been REMOVED — see the entry above. The receipt now clears itself, 20 seconds after the order.
+Everything else here (the kitchen fix, the build-number fix, the frozen-timer fix) stands.**
 
 **Five versions from the bakery (v494 to v498).** Two of them come straight from things you reported,
 and one of those is the delivery-run item you spotted on 12 October.
@@ -226,13 +285,13 @@ changed by this update — see "What is not in this one" at the foot).**
 in two parts on purpose. **This part is everything behind the scenes — the back office and your
 records. Your shop page is untouched**, so nothing your customers see changes today.
 
-**☝ The one that matters most: your syncing is now protected.** The bakery hit a fault in this batch
+** The one that matters most: your syncing is now protected.** The bakery hit a fault in this batch
 where **one unsendable record made the server refuse the whole queue** — so every phone stopped
 syncing, and it lost real work. Munchies had the same unguarded code. **A record that cannot be sent
 is now left out of the batch instead of poisoning it**, so the rest still goes, and the app tells you
 what is stuck rather than sitting there quietly.
 
-**🩺 Check my system** — a new screen under More. Press it and it reads your records, your shared data
+** Check my system** — a new screen under More. Press it and it reads your records, your shared data
 and your oldest recent backup, and tells you in plain words what is wrong: an order that appears
 twice, an order on the list *and* on the Removed list, an order sitting on a day you no longer have,
 a coupon counted twice. **A check that could not look says so rather than counting as a pass.**
@@ -251,7 +310,7 @@ longer limited to today / this week / this month.
 they had paid when they had not. The stage and the money are two different facts, and the screen now
 says which is which.
 
-**☝ And an order can be fixed after the fact.** You can move an order to a **past** day, and changing
+** And an order can be fixed after the fact.** You can move an order to a **past** day, and changing
 its status now moves the **whole** order rather than only the lines still on it.
 
 **Smaller repairs from the same batch.** An order's number is now fixed when it is created and never
@@ -308,18 +367,18 @@ does now. A shop you have not bought from reads **Buy**; press it, answer what y
 is replaced by the record — **"Bought 9 Oct, 11:42"** — with **Undo** beside it:
 
 ```
-Mydin        RM 96.00   [Buy] [Not buying]
-Yen Grocer   RM 34.00   Bought 9 Oct, 11:42  [Undo]
+Mydin RM 96.00 [Buy] [Not buying]
+Yen Grocer RM 34.00 Bought 9 Oct, 11:42 [Undo]
 ```
 
-**The tick means something now.** *"Bought ✓"* was doing two jobs and only one of them well: on the
+**The tick means something now.** *"Bought "* was doing two jobs and only one of them well: on the
 press, the past tense plus a tick read as *already done* — but since the day you could undo it,
 pressing it only opens *"What did you pay?"*, and nothing moves until you answer. The tick belongs to
 the record, where it is true: **"Bought 11:42" can only appear once the packs really are on your
 shelf.**
 
 **And the two presses are a pair now.** **Buy** and **Not buying** are the two answers to one
-question — did you buy at this shop? Before, the row mixed a verdict with a decision (*"Bought ✓ / Not
+question — did you buy at this shop? Before, the row mixed a verdict with a decision (*"Bought / Not
 buying"*), which read as though one had already been settled.
 
 **Nothing else moved.** The record still says Bought, the stock card still says *"Bought — Mydin"*, and
@@ -446,7 +505,7 @@ review photo cannot be uploaded at all.** Safe to run as many times as you like.
 figure you are refunding part of. The amount is recorded with the receipt — and once recorded, a later
 press that carries no amount cannot wipe it.
 
-**One invoice over a period — More → 📑 Consolidated invoice.** Pick a scope — **a day, a week, a
+**One invoice over a period — More → Consolidated invoice.** Pick a scope — **a day, a week, a
 month, or a single customer** — and get ONE invoice covering every order in it, with its own
 reference. It lays out as a filing list, says what was ordered, and **says plainly why a number is
 missing** when one is, rather than leaving a gap you have to guess at. It is built for a desktop
@@ -505,7 +564,7 @@ declares and it does not — which is what would have caught this before it ship
 **8 Oct 2026 — engine v364 → v368, four more versions
 (⚠️ ONE LINE OF SQL TO RUN AGAIN — see the end of this entry).**
 
-**A register for your receipt numbers.** More → Money now holds a **🧾 Receipt register**: every
+**A register for your receipt numbers.** More → Money now holds a ** Receipt register**: every
 receipt number the app has issued, in order, and — the point of it — **any number missing from the
 run**. That is the page a business over RM150,000 has to be able to show, and it answers the question
 from outside rather than from inside the app.
@@ -547,9 +606,9 @@ update, run that too** — until it is in, the customer's tracking page does not
 **Why so many at once.** This is the biggest single jump this app has taken. Twenty versions were
 built on the bakery first, and they all arrive here together. Three of them are different: they
 started with **your** report on this shop, were fixed here, and then went the other way to the
-bakery. Those three are marked ★ below.
+bakery. Those three are marked below.
 
-★★★ **The one that matters: a customer's order had been thrown away.** Your app would only accept a
+ **The one that matters: a customer's order had been thrown away.** Your app would only accept a
 shop order if **every single item** on it was something you currently sell. You had paused one
 product, so an entire customer's order was refused — silently, with nothing telling you, and it
 would have been refused for ever. Meanwhile your shop had already counted it. **That is why the shop
@@ -558,14 +617,14 @@ order itself with their quantity and price, and **says so on your Orders screen*
 above the New-orders box, naming what the order is for and why it could not come in. It clears
 itself the moment the order can be read.
 
-★ **The day's count.** Your shop, your Orders calendar and your Delivery Dates card each worked the
+ **The day's count.** Your shop, your Orders calendar and your Delivery Dates card each worked the
 same number out for themselves, and **your app's copy skipped any order whose product you had
 deleted, or whose recipe you had not filled in yet** — so a day with a real order on it could read
 **0/12** while the shop correctly showed it booked. One routine answers it now and all three read it.
 An over-booked day still shows **negative** on your app and **nothing left** on the shop: you need to
 know, a customer should never see a minus.
 
-★ **The product stamps.** "Only N left" is worked out the same way, and now follows the same rule.
+ **The product stamps.** "Only N left" is worked out the same way, and now follows the same rule.
 
 **Your customers can no longer be read by anyone who asks.** The order-tracking page asked the
 database for one order — but the permission it was allowed to read under said *every row is public*,
@@ -623,12 +682,12 @@ longer fail to be told.
 **What was wrong.**
 
 - The app's chip counted a day's orders with the routine written for **costing**, and that routine
-  **skips an order whose product has been deleted, or whose product has no recipe filled in yet**. So a
-  day with a real order on it could read **0/12** on your calendar while the shop correctly showed it
-  booked. It also carried a note to itself saying the skipped order "was skipped", which is exactly the
-  sort of quiet line that never reaches you.
+ **skips an order whose product has been deleted, or whose product has no recipe filled in yet**. So a
+ day with a real order on it could read **0/12** on your calendar while the shop correctly showed it
+ booked. It also carried a note to itself saying the skipped order "was skipped", which is exactly the
+ sort of quiet line that never reaches you.
 - Where **two calendar records shared one day**, the chip counted only the record you tapped while the
-  shop counted every record carrying that date.
+ shop counted every record carrying that date.
 
 **What it does now.** One routine answers "how many are booked on this day", and the shop, the Orders
 chip and the Delivery Dates card all read it. **An order is work you have to do that day: it counts,
@@ -713,9 +772,9 @@ my own caution:** the trip's card lives inside the price section, under a flag I
 so pressing the section's own button drew no trip at all. Two fixes:
 
 - **See this order** is now **See the trip**, and what it unfolds is **the courier's own record of that
-  booking**, saying the courier is on this order, with **Get a delivery price** right there. Open that and
-  the trip's card is waiting — the vehicle, when it was booked, where it has got to, the customer's share
-  link, **Check the trip** and **Cancel trip**.
+ booking**, saying the courier is on this order, with **Get a delivery price** right there. Open that and
+ the trip's card is waiting — the vehicle, when it was booked, where it has got to, the customer's share
+ link, **Check the trip** and **Cancel trip**.
 - **The order summary is gone**, because it was the wrong thing.
 
 **Nothing on that panel can be edited**, and nothing is asked of the courier until you press — a repaint of
@@ -777,11 +836,11 @@ is the **pickup time**: when the van collects from you.
 **So the courier half of the card now asks both, and they are kept apart:**
 
 - **Pickup time** — new. The time the van collects from **you**. It fills in the **Delivery run's** own
-  "the day and time the driver collects", so that screen no longer opens on a time the app thought of.
+ "the day and time the driver collects", so that screen no longer opens on a time the app thought of.
 - **Delivery window (opens / closes)** — kept, and now plainly the **customer's** promise. It is set for
-  one of two reasons: a **run with several stops** needs one, or **the customer themselves has told you
-  the hours they are available** — __"from 2 to 5"__, say. Left blank, the message promises to confirm the
-  time.
+ one of two reasons: a **run with several stops** needs one, or **the customer themselves has told you
+ the hours they are available** — __"from 2 to 5"__, say. Left blank, the message promises to confirm the
+ time.
 
 **The pickup time never reaches a customer.** A van collected from your kitchen at nine is at the
 customer's door later than nine, so nine is not theirs to be told. It is stored on the order, remembered,
@@ -810,7 +869,7 @@ fixed for in v338.
 **Packed now offers:**
 
 - **self collect** — **Send pickup reminder**, unchanged. The treats really are ready, and this is what
-  says so and where to fetch it.
+ says so and where to fetch it.
 - **courier** — **nothing at all.** There is nothing true to tell them yet.
 
 **Collected / Shipped is where the shipped message lives now** — the one place it is offered, for a van
@@ -828,7 +887,7 @@ this one is the whole of it).**
 
 **You are right, and the reason is worth writing down.** **Logistic** is the list of ways an order LEAVES
 your kitchen. A delivery date is not a journey — it is **the day the shop is open**: the day the storefront's
-own calendar offers a customer, and the only days it will take an order for. So **📅 Delivery dates** now sits
+own calendar offers a customer, and the only days it will take an order for. So ** Delivery dates** now sits
 under **The shop**, at the top of the group, because which days you are open comes before what you are
 advertising.
 
@@ -870,7 +929,7 @@ records changed.
 **4 · The Lalamove link and "Finding a driver" are not sent at that stage any more.** ⚠️ **Your words,
 and you were right** — a link the driver may never take up only creates confusion. While a booked van is
 still **finding a driver**, the customer's card now says nothing about the trip at all: no link, no
-status. From the moment a driver is on the way, both appear as before. ⛔ **Nothing is thrown away:** the
+status. From the moment a driver is on the way, both appear as before. **Nothing is thrown away:** the
 order keeps its link and its status, your own screens are unchanged, and only the sending stops. A parcel
 is untouched — its consignment number is exactly what a customer needs.
 
@@ -902,12 +961,12 @@ as __Delivery: Wed, 7 Oct__ — and that is why a customer had to ask you whethe
 or the Thursday. **The message now says the two apart:**
 
 - a **posted** order reads __Posting day: Wed, 7 Oct - Post (nationwide)__, and on its own line __Your
-  courier delivery time will be confirmed separately__ — because at that moment the app does not know
-  the van's window yet, and it was stating one anyway;
+ courier delivery time will be confirmed separately__ — because at that moment the app does not know
+ the van's window yet, and it was stating one anyway;
 - once you **have** booked the van, its window goes on **its own line** — never glued to the day it
-  was posted;
+ was posted;
 - a **collection** order is unchanged (__Delivery: Wed, 7 Oct__), because your kitchen or a Point is
-  genuinely where and when it changes hands.
+ genuinely where and when it changes hands.
 
 **2 · The app's own day keeps its own name.** The bakery renamed its day to "bake day" in this version.
 **This app did not follow that** — your admin still calls it a **delivery date**, which is the word
@@ -1172,16 +1231,16 @@ in that one day's own records, which I cannot look at.
 **The day is now built BEFORE the red mark moves.** If it cannot be built:
 
 - **the red mark does not move** — because a red day sitting over a different day's panel is exactly
-  the fault you have been looking at, and it should never have been possible; and
+ the fault you have been looking at, and it should never have been possible; and
 - **the reason takes the day's place**, in the app's own words, with a line to read out to me.
 
 **What you will see.** Tap 7 October on the new version and you will get one of two things:
 
 1. **The day opens normally** — a plain square with its heading, its count and its orders. Nothing to
-   do; it is fixed.
+ do; it is fixed.
 2. **A card headed "This day could not be opened"**, naming the day and ending with
-   **"Tell whoever is at the shop this message: …"**. **Read that sentence out to me and I will have the
-   answer in one step** instead of another round of guessing.
+ **"Tell whoever is at the shop this message: …"**. **Read that sentence out to me and I will have the
+ answer in one step** instead of another round of guessing.
 
 **Whichever it is, nothing is changed and nothing is lost** — the card says so itself. 7 October stays
 in your list either way, and no order, product, price or posting day is touched.
@@ -1327,7 +1386,7 @@ referral stamp, and a customer can arrive **by** a referral link and **then** tr
 stripping the whole address would have quietly broken bring-a-friend for exactly that person. Only
 `track` is removed, and that is a test.
 
-**2 · 🗑 FORGET — for the strays.** Your words: __"i need a button to delete a customer as well, i
+**2 · FORGET — for the strays.** Your words: __"i need a button to delete a customer as well, i
 found there is few stray customer."__
 
 **⚠️ READ THIS BIT, because it is why the button is where it is and not everywhere.** Your customer
@@ -1364,7 +1423,7 @@ customer's own language:
 中文 it reads 朋友推荐优惠：-RM3.00, and in Bahasa Malaysia __Bawa rakan yang menghantar anda: -RM3.00__.
 It is the same sentence your WhatsApp confirmation uses, so the two agree word for word.
 
-**★ And it needed no database step, which is worth explaining because it nearly did.** The obvious
+** And it needed no database step, which is worth explaining because it nearly did.** The obvious
 way was a new column on the tracking table — and the app's own code warns against exactly that:
 __"a missing column kills publishing for EVERY order silently."__ **So it reuses the discount column
 that is already there**, which is honest because **a code and the friend's coupon can never both
@@ -1383,7 +1442,7 @@ nothing to upload — pushing this one is the whole of it).**
 **Why.** Your two reports: __"the bring a friend discount used but not really create a discount for
 that new customer"__, and then __"there store front copy still hold the discount in cache."__
 
-**★ You were right on both, and the first one was worse than a wording slip.**
+** You were right on both, and the first one was worse than a wording slip.**
 
 **What was happening.** When you pressed **Give coupon**, the app wrote the friend a coupon —
 __"First order — via Jienny's link"__ — and then **nothing ever read it**. The order's Total, the
@@ -1396,16 +1455,16 @@ of fault, and I wrote that sentence.
 **What you see now.**
 
 - **The RM3 comes off the order's total by itself.** The customer pays the lower figure, so your
-  money and your message agree.
+ money and your message agree.
 - **The message says so, in its own line** — __"Bring-a-friend you were sent: -RM3.00"__ — sitting with
-  the items and Courier charge so the lines add up to the Total beneath them. A discount the customer
-  cannot find in the message is one they will ask you about.
-- **The order says it too** — __"🎁 Bring-a-friend — RM3.00 already off this order's total"__ — so the
-  lower figure is never unexplained on your own screen either.
+ the items and Courier charge so the lines add up to the Total beneath them. A discount the customer
+ cannot find in the message is one they will ask you about.
+- **The order says it too** — __" Bring-a-friend — RM3.00 already off this order's total"__ — so the
+ lower figure is never unexplained on your own screen either.
 - **It cannot be used twice.** The coupon is tied to the one order it was born on, so their next
-  order is priced normally no matter what any cached copy of a page happens to hold.
+ order is priced normally no matter what any cached copy of a page happens to hold.
 
-**★ And your second report was a real gap of its own.** Everywhere else in the app, anything that
+** And your second report was a real gap of its own.** Everywhere else in the app, anything that
 changes what a customer sees republishes their tracking page. **The Give coupon press did not** — so
 the customer's own card went on showing the price they were quoted __before__ the discount. That is
 fixed: giving a coupon now republishes their card, exactly like changing the items or the address
@@ -1430,7 +1489,7 @@ the total"**.
 **05 Oct 2026 — engine v321, THE OFFERS WERE NEVER BROKEN — YOUR MAC ASKED FOR NO ANIMATION (no
 database step, nothing to upload — pushing this one is the whole of it).**
 
-**★ THE ANSWER, AND IT CAME FROM YOUR RECORDING.** Six seconds of your screen, one turn pulled out
+** THE ANSWER, AND IT CAME FROM YOUR RECORDING.** Six seconds of your screen, one turn pulled out
 frame by frame at a tenth of a second: the message changed **between two frames**, with no
 half-way picture in between. The offers were changing the whole time. **What was missing was the
 animation — and the reason is a setting on your Mac.**
@@ -1440,7 +1499,7 @@ Accessibility → Display*. When it is on, the app is not allowed to animate, so
 each new message **instantly, with nothing to see** — which is exactly what "no effect" looks like.
 The message __was__ changing every 2 seconds; it just arrived with no movement at all.
 
-**★ AND THAT IS WHY I KEPT GETTING IT WRONG — I HAVE TO TELL YOU THIS PROPERLY.** **The very same
+** AND THAT IS WHY I KEPT GETTING IT WRONG — I HAVE TO TELL YOU THIS PROPERLY.** **The very same
 setting is switched on in the browser I test in.** So every check I made was made under your exact
 condition, and every one of them said "correct" — because the app __was__ correct. I was reading where
 things ended up and calling it verified, and the one thing your setting removes is precisely the
@@ -1452,7 +1511,7 @@ for less movement, take away the **movement**, and allow **a short fade — up t
 seconds** rather than appearing in a single frame. No travel, no spinning, nothing to make anyone
 dizzy — but you can see it change.
 
-**★ IF YOU WOULD RATHER HAVE THE FULL SLIDE**, where one message scrolls up and the next follows from
+** IF YOU WOULD RATHER HAVE THE FULL SLIDE**, where one message scrolls up and the next follows from
 below:
 
 1. Open **System Settings**
@@ -1479,7 +1538,7 @@ itself as **hidden**, and **a hidden tab runs no animation at all** — so all I
 where things __ended up__. That is how two versions went to you broken. It will not happen again in
 this particular way, because there is now a way to ask the strip itself (below).
 
-**★ AND I HAVE FOUND THE ONE THING IN THE CODE THAT CAN STOP THE OFFERS FOR GOOD.**
+** AND I HAVE FOUND THE ONE THING IN THE CODE THAT CAN STOP THE OFFERS FOR GOOD.**
 
 The strip holds still while your pointer rests on it — that was your own ask, so you can finish
 reading a message. The app remembers __"the pointer is on it"__ as a little flag, and it clears that
@@ -1493,7 +1552,7 @@ mechanism in the code that can stop the turning dead, which matches what you are
 mouse. **On a phone the strip simply carries on**, because on a touch screen there is nothing to rest
 and so nothing to hold. On your Mac, resting the mouse on it still holds it, exactly as before.
 
-**★ AND A WAY FOR YOU TO ASK IT DIRECTLY.** If the offers are ever not turning again, add
+** AND A WAY FOR YOU TO ASK IT DIRECTLY.** If the offers are ever not turning again, add
 **`?debug=offers`** to the end of your shop's address, like this:
 
 ```
@@ -1515,7 +1574,7 @@ nothing to upload — pushing this one is the whole of it).**
 **Why.** Your report, three words: __"there is no effect."__ **You were right and I had broken it** —
 and the way it was broken is worth reading, because your shop is exactly the case it broke on.
 
-**★ WHAT WAS WRONG.** When a message is replaced, the app has to know WHICH one is leaving so it can
+** WHAT WAS WRONG.** When a message is replaced, the app has to know WHICH one is leaving so it can
 send it up through the top. It worked that out by counting backwards from the one showing: __the
 previous one__. That was inherited from the old 3D flip, where two panels leaving by opposite doors
 made sense, and it is fine when **three or more** offers are running.
@@ -1531,7 +1590,7 @@ the page I checked and the harness I built both showed the effect working. **And
 green while it was broken on your phone.** Nothing was watching the two-offer case, which is the case
 that matters most. **That is now the one the test exists for.**
 
-**★ MEASURED, ON THE REAL SHOP, AT 375, TWO OFFERS:**
+** MEASURED, ON THE REAL SHOP, AT 375, TWO OFFERS:**
 
 | | at rest | after a step |
 |---|---|---|
@@ -1562,11 +1621,11 @@ one where **every message is its own box**, and that is what is built.
 **What you see now.**
 
 - **Each message is its own amber box.** The box used to belong to the strip — one box that never
-  moved. It has moved onto the messages: the strip is now just the **window** you look through, with
-  no box of its own, so nothing is drawn twice.
+ moved. It has moved onto the messages: the strip is now just the **window** you look through, with
+ no box of its own, so nothing is drawn twice.
 - **They scroll UP.** The message being replaced leaves through the top and the next follows from
-  below, with a **small gap passing between them** as they go — that gap is what makes it read as one
-  message following another rather than one block of text sliding.
+ below, with a **small gap passing between them** as they go — that gap is what makes it read as one
+ message following another rather than one block of text sliding.
 - **Two messages are visible during the move**, which is exactly what you described.
 - **Then it stops for your 2 seconds**, and **rests while your pointer is on it** — unchanged.
 
@@ -1590,16 +1649,16 @@ pushing this one is the whole of it).**
 **Why.** Your words, right after the scroll went in: __"maybe the scrolling is too fast and hardly
 see the results."__
 
-**★ YOU WERE RIGHT, AND IT WAS NOT MARGINAL — I measured your own shop before changing anything:**
+** YOU WERE RIGHT, AND IT WAS NOT MARGINAL — I measured your own shop before changing anything:**
 
 - your long offer runs to **38 words** (the code's line **plus your own sentence in the chalk hand**)
-  — about **11 seconds** to read at a comfortable pace
+ — about **11 seconds** to read at a comfortable pace
 - the short one (__AZQKJ__) is **14 words** — about **4 seconds**
 - each of them was getting **1.5 seconds**, of which **0.4 is the move itself**
 
 So the long one had about **a tenth** of the time it needed, and the short one about a quarter.
 
-**★ BUT THE SCROLL WAS NOT WHAT WAS TOO FAST.** The move is 0.4 of a second, which is already the
+** BUT THE SCROLL WAS NOT WHAT WAS TOO FAST.** The move is 0.4 of a second, which is already the
 **top of what the house rules allow** (250–400ms for a change like this) — slowing the animation would
 have made it draggy and bought you **not one extra second of reading**. What was too short was the
 **stillness**: 1.1 seconds before, **1.6 seconds now**.
@@ -1628,17 +1687,17 @@ it in from the right**, at the same 1.5 seconds an offer. The strip is clipped, 
 outside it. Everything else about it is untouched: the dots, the pointer resting on it to hold it,
 the tab going quiet when you leave it, and **nothing turns at all when only one code is running**.
 
-**★ AND THE FLIP WAS MY CHOICE, NOT YOURS — that is worth saying plainly.** Back in v292 I picked a
+** AND THE FLIP WAS MY CHOICE, NOT YOURS — that is worth saying plainly.** Back in v292 I picked a
 fade, then turned it into a 3D flip, and I wrote the reason into the code: that sliding one line of
 message sideways "reads as a glitch". You are the one who looks at this every day, and you asked for
 the scroll. The argument loses.
 
-**★ ONE HONEST TRADE, so it is not a surprise.** During a scroll **two offers are briefly on screen at
+** ONE HONEST TRADE, so it is not a surprise.** During a scroll **two offers are briefly on screen at
 once** — the tail of the one leaving and the head of the one arriving. That is exactly what makes it
 read as a scroll rather than a swap. The flip never showed two, so if a long offer like __"Free
 delivery within Malaysia on RM200.00 and above — use code FREEDEL"__ looks busy mid-move, that is why.
 
-**★ AND THE ONE THING THAT MUST NEVER REGRESS WAS RE-MEASURED.** v295's whole point was that the
+** AND THE ONE THING THAT MUST NEVER REGRESS WAS RE-MEASURED.** v295's whole point was that the
 strip is exactly as tall as your tallest message and never changes height, because the page under it
 used to jump up and down every 1.5 seconds. **Measured on the live shop across three turns: 210.6
 pixels, 16 samples, never once different.** A sideways slide is a transform, just as the turn was, so
@@ -1664,17 +1723,17 @@ belongs where its work is, not under "defaults, backup, transfer".
 **What moved.**
 
 - **Send a van** is now its own screen under **Logistic** — your own door for the driver, and which
-  Lalamove account this phone is talking to. Same card, same pickup pin, moved whole.
+ Lalamove account this phone is talking to. Same card, same pickup pin, moved whole.
 - **Message style** is now under **The shop**, beside Bring a friend, Promo codes and Reviews. How
-  your words reach a customer is the same subject as the offers and the reviews.
+ your words reach a customer is the same subject as the offers and the reviews.
 
 **Two words I did NOT use, and you should know why.** The first choice was to call the new Logistic
-row **"Courier"** — and it would have sat directly above **📦 Parcel couriers**, which means something
+row **"Courier"** — and it would have sat directly above ** Parcel couriers**, which means something
 else entirely. A parcel is something you **post**; a van is a trip you **book**. v309 already gave
 those two their own words on the order cards, so the screen is called **Send a van** and the card
 inside still names **Lalamove**, asked from the registry rather than typed here.
 
-**★ AND THE THIRD CARD I DID NOT MOVE — because the name was the real problem, not the address.**
+** AND THE THIRD CARD I DID NOT MOVE — because the name was the real problem, not the address.**
 "Mailing labels (courier)" holds **one address**, and I went and checked what actually reads it.
 **Four things do:**
 
@@ -1685,7 +1744,7 @@ inside still names **Lalamove**, asked from the registry rather than typed here.
 
 So it is not a courier setting at all — it is one address typed once that four screens read. Filed
 under **Logistic**, an invoice with the wrong heading would have sent you looking under deliveries.
-You chose **"Rename it, keep it in Settings"**, and that is what it is now: **🏠 Your address**,
+You chose **"Rename it, keep it in Settings"**, and that is what it is now: ** Your address**,
 with the four jobs named in the card itself, and a way to it from the **Send a van** screen so the
 trip is still one tap when it is a delivery you are fixing.
 
@@ -1705,7 +1764,7 @@ Settings."__ Second: __"can we make to more seamless with other promo?"__ — an
 seamless meant, you chose **"One place, read as a family."**
 
 **What you see now.** **More → The shop** carries three rows instead of two: **Promo codes**,
-**🔗 Bring a friend**, **Reviews**. The scheme itself has not changed at all — same switch, same
+** Bring a friend**, **Reviews**. The scheme itself has not changed at all — same switch, same
 three numbers, same links on a customer's card, same Give-coupon press on an order. It simply lives
 where you would look for a customer offer, instead of beside "defaults, backup, transfer".
 
@@ -1714,17 +1773,17 @@ a code"**, which says the difference in the terms you gave me: a link **costs no
 travels** — forward it and it still works; a code and a label is for a partner who prints brochures.
 Promo codes says the same thing from its side and points back.
 
-**★ BUT THE IMPORTANT PART OF THIS VERSION IS YOUR SECOND SENTENCE.** You said: __"if we state only
+** BUT THE IMPORTANT PART OF THIS VERSION IS YOUR SECOND SENTENCE.** You said: __"if we state only
 credit of ringgit, there might be confusion of how much credit to apply, but we can state, only one
 coupon apply for each purchase."__ **You were right, and it was worse than you described — it was two
 places, and both of them argued with themselves:**
 
 - On a customer's card holding **two** RM3 coupons, the chip above read **"2 ready"** while the line
-  beneath it read **"unused = you still owe RM 3.00 off an order"** — because that figure was taken
-  from the **first** coupon only. Two numbers, disagreeing, on one line.
+ beneath it read **"unused = you still owe RM 3.00 off an order"** — because that figure was taken
+ from the **first** coupon only. Two numbers, disagreeing, on one line.
 - On an order with two ready, the line read **"RM 3.00 credit available on this order"** beside a
-  button reading **"Apply credit (2)"** — and the press spent exactly **one**. So the screen showed
-  one coupon's money next to a count of two, and did something else again.
+ button reading **"Apply credit (2)"** — and the press spent exactly **one**. So the screen showed
+ one coupon's money next to a count of two, and did something else again.
 
 **The fix is not arithmetic. It is your rule, written down.** No screen shows a running balance any
 more. The customer's card now reads **"2 ready — one per order"**; the order reads **"RM 3.00 coupon
@@ -1732,7 +1791,7 @@ ready for this order — one per order, 2 more after it"**; and the message a cu
 friend now promises __"a RM 3.00 coupon for a future order — one coupon per order"__ so nobody has to
 guess. The rule is stated in all four places you would meet it.
 
-**★ AND WE NOW CALL IT A COUPON, IN YOUR WORDS.** Eighteen strings changed — Give **coupon**, Apply
+** AND WE NOW CALL IT A COUPON, IN YOUR WORDS.** Eighteen strings changed — Give **coupon**, Apply
 **coupon**, **Coupons**, Add **coupon**, the customer's card, and all three WhatsApp messages
 (English, 中文, Bahasa Malaysia). **Your decision on the two schemes is unchanged and I have kept to
 it: both stay, and the difference between them is what you hand over.** **⚠️ AND ONE THING DELIBERATELY
@@ -1755,7 +1814,7 @@ upload — pushing this one is the whole of it).**
 an order row, the hint under a box, a collection Point's address in the shop. You looked at it
 against the darker candidate and said do it.
 
-**★ IT WAS UNDER THE FLOOR, AND YOUR OWN APP HAD ALREADY ADMITTED IT ONCE.** Measured against the
+** IT WAS UNDER THE FLOOR, AND YOUR OWN APP HAD ALREADY ADMITTED IT ONCE.** Measured against the
 card behind it the old grey came to **3.50:1**. The standard asks **4.50:1** of text. And in v309,
 when I drew the **Post a parcel / Send a van** headings, I deliberately dodged this exact grey for
 the line beside them and wrote the reason into the code: __"at 12px it is only about 3.5:1 — under
@@ -1856,7 +1915,7 @@ the app side is a push, the reason needs a redeploy).**
 and the map dont show?"__ — and then, precisely: __"the suggestion list never appear"__. **It was
 true, and the app never said why. It knew, and stayed quiet.**
 
-**★ WHAT WAS HAPPENING.** The suggestions are a Google feature that has to be switched on, and the
+** WHAT WAS HAPPENING.** The suggestions are a Google feature that has to be switched on, and the
 server deliberately answered a switched-off one with **a plain "no" and no error** — its own words:
 __"this reaches her as a box that simply does not suggest, which is exactly what it did before this
 version existed."__ That reads well until the feature __does__ exist and **never works**: a box that
@@ -1865,10 +1924,10 @@ never suggests and never explains itself is indistinguishable from a broken box.
 **What you see now.** When the suggestions cannot work, the box says so, in the place the list would
 have been:
 
-  **Address suggestions are switched off — Google refused the request. The Google key needs Places
-  API (New) enabled and allowed.**
+ **Address suggestions are switched off — Google refused the request. The Google key needs Places
+ API (New) enabled and allowed.**
 
-**★ AND IT SAYS IT ONCE, THEN STOPS ASKING.** A line under a field she is typing in must not flicker,
+** AND IT SAYS IT ONCE, THEN STOPS ASKING.** A line under a field she is typing in must not flicker,
 and a phone must not spend a request per keystroke to be told the same thing. And the box now
 **marks the difference between the two kinds of failure**: something you must fix (not signed in;
 the Google key not allowed to use Places) is **said out loud**; a signal dropping out is **not**,
@@ -1899,7 +1958,7 @@ pushing this one is the whole of it).**
 consistent over the app"__. You were only half-served — v309 put the two headings on the **Edit**
 card and nowhere else.
 
-**★ THREE CARDS CARRY BOTH KINDS, SO ALL THREE NOW SAY THE SAME TWO THINGS.** The **Edit** card, the
+** THREE CARDS CARRY BOTH KINDS, SO ALL THREE NOW SAY THE SAME TWO THINGS.** The **Edit** card, the
 **Note / tracking** card, and the **＋ New order** card each draw **Post a parcel** over the parcel
 fields and **Send a van** over the van fields — **from one definition**, so the words cannot drift
 apart. **Two headings on each is not the check; the same two is**, and that is exactly what the new
@@ -1930,11 +1989,11 @@ what.
 
 **What changed.** The card now draws a **rule with a name on it**, twice:
 
-  **Post a parcel**  __Nationwide, a few days__
-  — the consignment number, the parcel carrier, and EasyParcel
+ **Post a parcel** __Nationwide, a few days__
+ — the consignment number, the parcel carrier, and EasyParcel
 
-  **Send a van**  __Today, locally__
-  — the courier charge, who paid it, and **Get a delivery price**
+ **Send a van** __Today, locally__
+ — the courier charge, who paid it, and **Get a delivery price**
 
 **⚠️ AND THE NAME SAYS WHAT IT DOES, NEVER "KIND 1" OR "KIND 2".** Those are this app's own words
 for the two kinds of courier and they mean nothing on your screen. What you need to know is that one
@@ -1966,9 +2025,9 @@ consequence: the EasyParcel block now says so plainly instead of sitting there l
 **What changed.** The block asks the server once, when it opens, whether EasyParcel is set up. If it
 is not, you now get one short paragraph rather than a set of controls that can only ever fail:
 
-  **EasyParcel** — Not set up yet — and nothing here is needed to post a parcel by hand. Record the
-  carrier above and type the consignment number, exactly as before.
-  EasyParcel is not set up yet — its key has not been saved on the server.
+ **EasyParcel** — Not set up yet — and nothing here is needed to post a parcel by hand. Record the
+ carrier above and type the consignment number, exactly as before.
+ EasyParcel is not set up yet — its key has not been saved on the server.
 
 **⚠️ AND IT OFFERS NO PRESS AT ALL IN THAT STATE.** No weight box, no "Check the price", no
 "Book it". A button whose only possible answer is the same sentence every time is the shape of a
@@ -2003,27 +2062,27 @@ J&T, Pos Laju and DHL — and its API **is** self-serve, with a free demo enviro
 same choice you made back on 28 September: __"record first, the booking API after / EasyParcel
 behind that API"__.
 
-**★ WHAT YOU GET: ONE PRESS, EVERY CARRIER, PRICED FOR THIS PARCEL.** On an order's **Edit** card
+** WHAT YOU GET: ONE PRESS, EVERY CARRIER, PRICED FOR THIS PARCEL.** On an order's **Edit** card
 there is now an **EasyParcel** block. Type the parcel's weight, press **Check the price**, and
 every carrier they use comes back with a price for **that parcel, to that postcode, at that
 weight** — cheapest first, with the delivery time and whether they collect or you drop off:
 
-  **J&T Express — RM6.20** · J&T Standard · 3-5 working day(s) · drop off · they collect · cheapest
-  **SPX — RM7.10** · SPX Express · 3-4 working day(s) · drop off · they collect
-  **Ninjavan — RM9.40** · Ninja Van Standard · 2-3 working day(s) · they collect
+ **J&T Express — RM6.20** · J&T Standard · 3-5 working day(s) · drop off · they collect · cheapest
+ **SPX — RM7.10** · SPX Express · 3-4 working day(s) · drop off · they collect
+ **Ninjavan — RM9.40** · Ninja Van Standard · 2-3 working day(s) · they collect
 
 **That is the comparison you asked for, done per parcel instead of guessed at from a blog post.**
 The cheapest is marked but **never chosen for you** — which carrier to use is your call, and the
 reason to show several is that the cheapest is not always the one you want.
 
-**★ AND YOUR WALLET IS WARNED BEFORE, NOT AFTER.** EasyParcel is **prepaid**: a booking with too
+** AND YOUR WALLET IS WARNED BEFORE, NOT AFTER.** EasyParcel is **prepaid**: a booking with too
 little credit fails **with the parcel already packed**. So the balance is shown beside the price,
 and when it is short it says so plainly — __"Your EasyParcel balance is RM4.20 and this parcel
 costs RM6.20 — top it up before booking, or the booking will fail with the parcel already
 packed."__ When a booking does come back refused, **their own words are shown** — "Insufficient
 Credit" — rather than a generic failure.
 
-**★ BOOKING SAYS THE PRICE AND THEN PAYS IT.** Pressing Book asks first, naming the courier and the
+** BOOKING SAYS THE PRICE AND THEN PAYS IT.** Pressing Book asks first, naming the courier and the
 amount — __"Book this parcel with SPX for RM7.10?"__ — and only then books and pays in one call.
 **The consignment number is SAVED AT ONCE**, not left waiting for a Save that may never come: the
 same rule your booked trips already follow, because a parcel that has been paid for must not be
@@ -2032,12 +2091,12 @@ discardable by closing a card. It lands in the tracking box, where every screen 
 **WHAT THIS DOES NOT DO, said plainly rather than discovered.**
 
 - **It does not write the consignment number onto the customer's card by itself** — it goes in the
-  tracking box, exactly as a parcel you booked by hand does.
+ tracking box, exactly as a parcel you booked by hand does.
 - **It does not pick your carrier record for you.** EasyParcel's name for a service is not your
-  own list's entry, so booking fills in the number and leaves the carrier box alone — one press
-  above if you want it named.
+ own list's entry, so booking fills in the number and leaves the carrier box alone — one press
+ above if you want it named.
 - **It is not required.** Posting a parcel by hand still works exactly as it did — record the
-  carrier, type the number. This is offered beside that, never instead of it.
+ carrier, type the number. This is offered beside that, never instead of it.
 - **Dry and sealed only, unchanged.** Fresh focaccia and anything frozen are still not parcels.
 
 **⚠️ ONE THING ONLY YOU CAN DO, and it is a signup, not a key in chat.** Sign up at
@@ -2058,7 +2117,7 @@ upload — pushing this one is the whole of it).**
 **Why.** Your ask: __"the per-point minimum order, this should be switchable"__. It is exactly
 that — **per Point, and switchable**, on the Point's own card.
 
-**★ THE SWITCH, AND WHERE IT COMES FROM.** On a Point you now get **Minimum order** with two
+** THE SWITCH, AND WHERE IT COMES FROM.** On a Point you now get **Minimum order** with two
 choices — **No minimum** and **Only on a basket of at least** — and the second one opens a
 **Smallest basket (RM)** box. That is the SAME switch the Promo codes screen has used since v269,
 because a minimum is a minimum and learning a second shape for one idea is how two screens come to
@@ -2074,8 +2133,8 @@ self collect order"__. The card says so plainly: **No minimum order — one loaf
 **In your shop.** A Point whose smallest basket the customer has not reached is **PARKED, NOT
 HIDDEN** — it stays on the page with the reason in its own line:
 
-  **Farlim, Air Itam**
-  Needs a basket of RM30.00 or more — yours is RM15.00 so far
+ **Farlim, Air Itam**
+ Needs a basket of RM30.00 or more — yours is RM15.00 so far
 
 Tapping it says the same sentence rather than silently doing nothing, and **the moment their basket
 reaches RM30 the Point opens up — on the same repaint, with no reload.** Add a loaf and watch it;
@@ -2109,8 +2168,8 @@ discovered a day later.
 
 **What you see.** A Point's row on the run now reads:
 
-  **Farlim, Air Itam** — 2 orders collecting here · Lebuhraya Thean Teik · **collect 2-6 pm** ·
-  Focaccia x2 · Focaccia x1 · Focaccia x3
+ **Farlim, Air Itam** — 2 orders collecting here · Lebuhraya Thean Teik · **collect 2-6 pm** ·
+ Focaccia x2 · Focaccia x1 · Focaccia x3
 
 **Where, then when, then what** — the address, then the hours, then the treats.
 
@@ -2138,7 +2197,7 @@ there is promised it. Not the van's arrival window, which is a different thing e
 **What you see, on More → Self collection Points.** Every Point's card gains **"Customers can
 collect from"** and **"and until"** — two time boxes, the same pair the Delivery run fills in for
 the van, so a window means one thing in this app and is read by one piece of code. And the row
-itself now says which of the two it is: **🕑 Collect 2-6 pm**, or **🕑 No collection window —
+itself now says which of the two it is: ** Collect 2-6 pm**, or ** No collection window —
 customers are told the day only.**
 
 **What your customer is told.** The confirmation, the payment reminder and the pickup reminder all
@@ -2191,14 +2250,14 @@ you keyed in yourself **could not be a Point order at all.** It could not go on 
 the Point's fee was never counted for it, and the customer was never told where to collect.
 
 - **A "Collect from" picker**, under **Fulfillment** — **My kitchen** first, which is the default
-  and is what every order you have ever taken already means, then your open Points in your order.
+ and is what every order you have ever taken already means, then your open Points in your order.
 - **It appears only when there is something to choose.** With no Point open, or on a Courier
-  order, it is absent rather than sitting there doing nothing.
+ order, it is absent rather than sitting there doing nothing.
 - **The Point's name is frozen onto the order** the moment you take it, so renaming or ending a
-  Point later leaves every order that already went there still saying where it went. The same rule
-  that keeps a sold price on an order.
+ Point later leaves every order that already went there still saying where it went. The same rule
+ that keeps a sold price on an order.
 - **Choosing your kitchen clears it.** An order collecting from your kitchen carries no Point at
-  all, which is exactly what it has always meant.
+ all, which is exactly what it has always meant.
 
 **2. A Point's address box now asks Google as you type.**
 
@@ -2209,9 +2268,9 @@ so the address a **driver** is sent to — and the address the pin is looked up 
 address you had to peck out in full on a phone.
 
 - **The same behaviour as the order's address box, because it is now literally the same code**,
-  moved into one place so the two boxes cannot drift apart.
+ moved into one place so the two boxes cannot drift apart.
 - **Nothing is ever blocked by it:** a lookup that fails shows nothing at all, and whatever you
-  typed is what gets saved.
+ typed is what gets saved.
 
 **Your data is untouched, and there is nothing to run.** No database step, no upload, no key. An
 order taken before today carries no Point, which is what "collect from my kitchen" has always
@@ -2227,7 +2286,7 @@ nothing to upload — pushing this one is the whole of it).**
 not carrying Points at all. Not rarely — **never**, and it said so quietly: a day where customers
 were collecting at Farlim read **"Nothing to run yet"**.
 
-**★ WHAT WAS WRONG.** Choosing a Self collection Point in your shop **never changes the Self collect
+** WHAT WAS WRONG.** Choosing a Self collection Point in your shop **never changes the Self collect
 / Courier choice** — that is by design, a Point IS a collection. So the order is stored as a
 __collection__, and the run screen used that word to decide what needs a vehicle and **skipped every
 collection**. Every Point order was thrown away **before** the row work v301 added could ever see
@@ -2263,7 +2322,7 @@ upload — pushing this one is the whole of it).**
 
 **Why.** This is the piece you asked for: the Delivery run carrying Self collection Points.
 
-**★ A POINT IS ONE STOP, AND THAT IS THE WHOLE VERSION.** A courier charges **a base fare plus a
+** A POINT IS ONE STOP, AND THAT IS THE WHOLE VERSION.** A courier charges **a base fare plus a
 fee for every extra stop**, so the run screen's oldest rule is __one stop per customer__ — a customer
 who bought three things is one doorstep, not three. A **Self collection Point is the next version
 of the same idea**: four customers collecting at Farlim are **one place the van goes**. A run built
@@ -2273,34 +2332,34 @@ each time**.
 **What you see on the run now.**
 
 - **A Point gets a row of its own**, listing **how many orders are collecting there** — __"2 orders
-  collecting here"__ — and its own address. The customer's name is deliberately **not** on it: the
-  treats is going to Farlim and the customer is meeting it there.
+ collecting here"__ — and its own address. The customer's name is deliberately **not** on it: the
+ treats is going to Farlim and the customer is meeting it there.
 - **The load line counts STOPS**, so two customers at one Point read **"1 stop · 6 items"**, not
-  two stops. Every line of treats is still counted.
+ two stops. Every line of treats is still counted.
 - **A Point you have not pinned offers "Pin the Point"** right there, because the run cannot price a
-  trip to a place with no coordinates.
+ trip to a place with no coordinates.
 - **A Point and a doorstep on the same run are two stops** — the mixed run you described.
 
 **Three things it is careful about, and each one is money.**
 
 - **⚠️ THE VAN GOES TO THE POINT, NEVER TO THE CUSTOMER'S HOUSE.** A customer who chose to collect
-  at Farlim is **not at Farlim** — and she may still have a doorstep of her own pinned from an
-  earlier delivery. That door is **ignored** for a collection order. Sending a driver to her house
-  with four other people's treats would be the most expensive way to be wrong on this screen.
+ at Farlim is **not at Farlim** — and she may still have a doorstep of her own pinned from an
+ earlier delivery. That door is **ignored** for a collection order. Sending a driver to her house
+ with four other people's treats would be the most expensive way to be wrong on this screen.
 - **⚠️ ONE DROP ON THE WIRE, and this is the one that shows up on your bill.** The price request is
-  read back in the test on the **bytes that would leave your phone** — because a trip built
-  one-drop-per-customer is priced for a journey you are not taking. Two customers at one Point:
-  **one drop.**
+ read back in the test on the **bytes that would leave your phone** — because a trip built
+ one-drop-per-customer is priced for a journey you are not taking. Two customers at one Point:
+ **one drop.**
 - **⚠️ A POINT YOU PAUSE STILL SENDS THE VAN.** Pausing decides what is **offered**, never what an
-  order already promised — the customer was already told to go to Farlim, and their treats still has
-  to get there. And a Point you have **deleted** has no pin to give, so that order falls back to the
-  customer's own door rather than a van sent to coordinates nobody has any more.
+ order already promised — the customer was already told to go to Farlim, and their treats still has
+ to get there. And a Point you have **deleted** has no pin to give, so that order falls back to the
+ customer's own door rather than a van sent to coordinates nobody has any more.
 
 **And the double-booking guard still sees everyone.** A Point is treated as already on a trip if
 **any** of its customers is — so a Point can never be quietly swept onto a second van, which is the
 fault you reported in v242, at a place instead of a door.
 
-**★ AND A POINT YOU ADD NOW ACTUALLY REACHES YOUR SHOP.** You reported this while the run was being
+** AND A POINT YOU ADD NOW ACTUALLY REACHES YOUR SHOP.** You reported this while the run was being
 built — __"the point added still not able to appear on store?"__ — and **you were right, and the
 fault was mine.** Your Points travel to the shop inside the **storefront row** the shop reads, and
 **the Points card was not republishing that row.** Every other screen that changes something the
@@ -2335,24 +2394,24 @@ cannot be sent to**, and the run cannot price a trip until every end is a real p
 
 **What a Point has now, on More → Self collection Points.**
 
-- **A line saying where it is** — **📍 Farlim, Air Itam · 5.41405, 100.31408**. **Both the name and
-  the two numbers**, because a name alone cannot be checked and a pin in the wrong place is only ever
-  noticed by looking at the numbers.
+- **A line saying where it is** — ** Farlim, Air Itam · 5.41405, 100.31408**. **Both the name and
+ the two numbers**, because a name alone cannot be checked and a pin in the wrong place is only ever
+ noticed by looking at the numbers.
 - **"Put the pin on the map"** under every Point, opening **the same map a customer's doorstep is
-  placed with**. It is the same act, so there is nothing new to learn — and your Point's own address
-  is handed to the lookup, so if you have already typed where it is you may not have to drag anything.
+ placed with**. It is the same act, so there is nothing new to learn — and your Point's own address
+ is handed to the lookup, so if you have already typed where it is you may not have to drag anything.
 - **An unpinned Point says so plainly**: __"Not pinned yet — a van cannot be sent to a name
-  alone."__ It never pretends to have a door.
+ alone."__ It never pretends to have a door.
 - Once it is pinned, the press becomes **"Move the pin"**.
 
 **Two things this version is careful about.**
 
 - **⚠️ Correcting a Point never un-pins it.** The pin is not a field of the form — it is placed on a
-  map — so an edit had to be made to carry it across deliberately. Without that, fixing a spelling
-  would have silently taken the door away, and you would have found out when a driver was sent
-  nowhere. There is a test that edits a pinned Point and checks the pin is exactly where it was.
+ map — so an edit had to be made to carry it across deliberately. Without that, fixing a spelling
+ would have silently taken the door away, and you would have found out when a driver was sent
+ nowhere. There is a test that edits a pinned Point and checks the pin is exactly where it was.
 - **⚠️ The pin never leaves your app.** The shop is still told only the Point's **name** — a
-  customer chooses a Point by name, and the driver is the only one who needs the door.
+ customer chooses a Point by name, and the driver is the only one who needs the door.
 
 **And a half-typed pin is not a pin.** Anything malformed — one number and no other, a latitude of
 91 — reads as **unpinned** rather than as a point in the sea. A row half-synced between your phones
@@ -2379,13 +2438,13 @@ where to go**.
 **What your customers see, in the shop.**
 
 - **"Collect from"**, under the Self collect / Courier choice. **Your kitchen is first** — it is not
-  a Point and needs no record — and **your open Points follow, in your order.**
+ a Point and needs no record — and **your open Points follow, in your order.**
 - **The whole thing only appears once you have a Point open.** With none, the shop is
-  **byte-for-byte the shop it was**, which is how you said you would do it: one at a time.
+ **byte-for-byte the shop it was**, which is how you said you would do it: one at a time.
 - **The chosen row takes the brand's orange edge**, the same "this one is on" the buttons already
-  use.
+ use.
 - **A Point paused or deleted while a customer has it chosen falls back to your kitchen.** The shop
-  cannot post an order to a place you have stopped offering — and the kitchen is always there.
+ cannot post an order to a place you have stopped offering — and the kitchen is always there.
 
 **What your customers are told.** The confirmation, and all four later messages, say
 **"Self collect at Farlim, Air Itam"** and give the **address of the place**. That wording is
@@ -2395,16 +2454,16 @@ confirmation and another in the reminder.
 **Three things this version is careful about.**
 
 - **⚠️ Only the Point's NAME ever leaves your app.** The receiver's name, their phone, the fee and
-  even the address **stay in your app**. The shop is a public page with no login, and publishing the
-  receiver's number would put a private person's phone on a page anyone can read. The address is
-  withheld for a plainer reason: the message that tells a customer where to go is built from **your**
-  copy.
+ even the address **stay in your app**. The shop is a public page with no login, and publishing the
+ receiver's number would put a private person's phone on a page anyone can read. The address is
+ withheld for a plainer reason: the message that tells a customer where to go is built from **your**
+ copy.
 - **⚠️ The name on an order comes from YOUR record, never from the page.** The shop is public, so a
-  name it sent could be anything at all; the order is matched against **your own Points** and an id
-  you do not have falls back to the kitchen. This is the same rule the promo codes follow.
+ name it sent could be anything at all; the order is matched against **your own Points** and an id
+ you do not have falls back to the kitchen. This is the same rule the promo codes follow.
 - **⚠️ A Point you PAUSE is still honoured for orders already placed.** Pausing decides what is
-  **offered**, never what an order already promised — the customer was already told where to go.
-  Exactly the rule that keeps an ended promo code coming off the order it was placed on.
+ **offered**, never what an order already promised — the customer was already told where to go.
+ Exactly the rule that keeps an ended promo code coming off the order it was placed on.
 
 **And your own screens say it too.** The order row and the packing label read
 **"Self collect · Farlim, Air Itam"**, so whoever is packing a bag can see where it is going. A
@@ -2436,27 +2495,27 @@ the first piece of it: **the card**, which is the piece you scoped yourself.
 
 Her words: __"we just need to have a card for points"__
 
-**What you see now, on More → 📍 Self collection Points.**
+**What you see now, on More → Self collection Points.**
 
 - **A "New Self collection Point" card**, and your Points listed under it.
 - **Five things per Point:** its name, the address, **who receives**, **their phone**, and **the
-  fee per order** — what __you__ pay whoever receives there.
+ fee per order** — what __you__ pay whoever receives there.
 - **Pause · Edit · Delete** on every row. A paused Point sinks to the bottom and goes pale, and
-  **Resume** brings it back.
+ **Resume** brings it back.
 - **Every Point is its own record**, so opening one changes nothing about the others — which is
-  how you said you'd do it: __"open collection point one by one… and not likely will open all
-  point one go."__
+ how you said you'd do it: __"open collection point one by one… and not likely will open all
+ point one go."__
 
 **Three things the card is careful about, and each is one of your rules.**
 
 - **Your kitchen is NOT a Point.** Collecting from Sg Ara is what your shop already offers — free,
-  no minimum, always there. It gets no record, no fee and no provider, because it has none of
-  those. A Point is a __third__ thing beside it.
+ no minimum, always there. It gets no record, no fee and no provider, because it has none of
+ those. A Point is a __third__ thing beside it.
 - **Delete never rewrites where an order went.** An order keeps the Point's **name frozen onto
-  it**, so an order that went to Farlim still says Farlim after the Point is deleted — the same
-  way an order keeps the name and price a product was sold at.
+ it**, so an order that went to Farlim still says Farlim after the Point is deleted — the same
+ way an order keeps the name and price a product was sold at.
 - **Pause is a normal ending, not a failure.** You said most Points you open will end this way, so
-  pausing is one press and completely reversible.
+ pausing is one press and completely reversible.
 
 **⚠️ WHAT THIS VERSION DOES NOT DO YET, said plainly rather than discovered.** This is the **card
 only**. Your shop does **not** offer Points to customers yet, an **order does not carry which
@@ -2503,15 +2562,15 @@ it again.
 four things I had wrong:**
 
 - **The dots were 22 pixels across. WCAG 2.5.8's floor is 24.** They are 28 now — the dot you see
-  is still the same size as the ones on your homepage, and it is the button around it that carries
-  the size.
+ is still the same size as the ones on your homepage, and it is the button around it that carries
+ the size.
 - **They had no focus ring**, so anyone tabbing to them could not see where they were. They have
-  one.
+ one.
 - **The turn used the same easing both ways.** Your skill says __ease-out coming in, ease-in going
-  out__ — that is what it does now, and it is the difference between a turn that settles and one
-  that just stops.
+ out__ — that is what it does now, and it is the difference between a turn that settles and one
+ that just stops.
 - **The turn was 420 milliseconds**, just outside the 250–400 band your skill names for a change
-  like this. It is **380** now.
+ like this. It is **380** now.
 
 **One thing I did NOT change, and it is yours to call.** Your skill asks for body text to be pushed
 toward **7:1 contrast** because your customers read it on a phone in Malaysian daylight. The offer
@@ -2590,14 +2649,14 @@ page.
 **What it does now.**
 
 - **The strip is exactly as tall as your TALLEST message, and never changes.** Every
-  running offer is drawn at once and stacked under each other; only the current one is
-  lit. The box is sized by the longest, so a short offer simply sits inside it. Measured
-  again with the fix: the strip holds **135.4 pixels** and the page below it stays put at
-  **346.1**, through turn after turn.
+ running offer is drawn at once and stacked under each other; only the current one is
+ lit. The box is sized by the longest, so a short offer simply sits inside it. Measured
+ again with the fix: the strip holds **135.4 pixels** and the page below it stays put at
+ **346.1**, through turn after turn.
 - **It turns every 1.5 seconds**, your number.
 - **Pointing at it still stops it**, and a press on a phone still holds it — both unchanged.
 - **The slight dimming is gentler** now that the offers come round twice as fast, so the
-  words are readable for most of the time they are up.
+ words are readable for most of the time they are up.
 
 **One thing worth knowing about the 1.5 seconds.** A two-line message — the offer plus a
 sentence of yours — gives a customer about a second and a half to read it before it goes.
@@ -2633,14 +2692,14 @@ reference, everywhere.**
 not just a preference.**
 
 - **No two phones can ever take the same number.** The order code is unique by
-  construction. The running number v293 used had one case where that was not guaranteed,
-  and it had to be explained and accepted.
+ construction. The running number v293 used had one case where that was not guaranteed,
+ and it had to be explained and accepted.
 - **Pressing Invoice now writes nothing at all.** v293 stamped a number onto the order the
-  first time you opened its invoice. There is no number to stamp now, so the press only
-  reads — nothing on the order moves, and there is nothing to keep in step between your
-  two phones.
+ first time you opened its invoice. There is no number to stamp now, so the press only
+ reads — nothing on the order moves, and there is nothing to keep in step between your
+ two phones.
 - **There is no number for you to look up.** A reprint is the same invoice because the
-  number was never stored in the first place.
+ number was never stored in the first place.
 
 **The trade-off, said plainly rather than discovered later.** The code is **not
 sequential**: nothing on an invoice says how many you have issued, or which of two
@@ -2671,23 +2730,23 @@ you chose __"One order, one invoice"__ and __"Yes — name, address, a number"__
 **What you see now, on Orders → any order → Invoice** (beside Edit and Note / tracking).
 
 - **A card opens with the invoice on it**, and **Print** and **Share** underneath —
-  the same two presses every other book in the app has. Share hands it over as a
-  **PDF file**, so it goes into WhatsApp as a document the customer can keep.
+ the same two presses every other book in the app has. Share hands it over as a
+ **PDF file**, so it goes into WhatsApp as a document the customer can keep.
 - **It carries your real address at the top.** That address already exists — it is
-  the one you typed for the Mailing labels in Settings, the same block that prints
-  as FROM on a parcel. So an invoice and a parcel can never show two different
-  addresses for one shop, and **there is nothing new to type**.
+ the one you typed for the Mailing labels in Settings, the same block that prints
+ as FROM on a parcel. So an invoice and a parcel can never show two different
+ addresses for one shop, and **there is nothing new to type**.
 - **One order, one invoice.** The number is given the first time you open it and is
-  never given again: open the same order next year and it is the same invoice, with
-  the same number and the same date.
-  **__(Superseded by v294, 04 Oct 2026: the number is now the order's own code —
-  Invoice #A3F9C2 — so there is no number to give, nothing is written onto the order,
-  and the two-phone caveat below no longer applies at all. Read the v294 entry at the
-  top of this page.)__**
+ never given again: open the same order next year and it is the same invoice, with
+ the same number and the same date.
+ **__(Superseded by v294, 04 Oct 2026: the number is now the order's own code —
+ Invoice #A3F9C2 — so there is no number to give, nothing is written onto the order,
+ and the two-phone caveat below no longer applies at all. Read the v294 entry at the
+ top of this page.)__**
 - **The order's own code prints beside the number** — __Invoice 0007 · Order
-  #A3F9C2__ — which is what a real invoice does, and it means two invoices could
-  never be confused for one another.
-  **__(v294: the code is no longer beside the number — it IS the number.)__**
+ #A3F9C2__ — which is what a real invoice does, and it means two invoices could
+ never be confused for one another.
+ **__(v294: the code is no longer beside the number — it IS the number.)__**
 
 **What the paper says.** Your name and address, then **Invoice 0007 · Order #A3F9C2 ·
 the date the order was placed**, then one row per item as **4 × Focaccia** with the
@@ -2739,21 +2798,21 @@ behind it.
 **What your customers see now, at the top of the shop.**
 
 - **Every code you have running takes its turn.** About six seconds each, then the
-  next one — the same pace as the reviews carousel on your homepage.
+ next one — the same pace as the reviews carousel on your homepage.
 - **The words fade; the strip does not.** The amber box stays exactly where it is
-  and only the line inside it changes. The whole box blinking off and on would read
-  as a broken page rather than as a second offer.
+ and only the line inside it changes. The whole box blinking off and on would read
+ as a broken page rather than as a second offer.
 - **Point at it and it stops.** It waits while the pointer is over it and starts
-  again when you move away.
+ again when you move away.
 - **On a phone, a tap holds it still for about twenty seconds** — long enough to
-  read a long offer — and then it carries on by itself. A tap can never leave the
-  strip stuck on one offer.
+ read a long offer — and then it carries on by itself. A tap can never leave the
+ strip stuck on one offer.
 - **A background tab stops it**, and it starts again when the tab comes back.
 - **With only one code running, nothing turns at all** — no movement, and literally
-  no timer running. One offer is a statement, not a one-slide carousel.
+ no timer running. One offer is a statement, not a one-slide carousel.
 - **And if a customer has asked their phone for less movement**, the words still
-  change so they see every offer — they simply change without fading. The setting is
-  about movement, not about hiding things from them.
+ change so they see every offer — they simply change without fading. The setting is
+ about movement, not about hiding things from them.
 
 **Which code shows first, and what counts as running.** The first one you published.
 A code is advertised only if it is public, switched on, inside its dates and not
@@ -2784,12 +2843,12 @@ nor remembered what you had given. Nothing said **when** a reward had come round
 **What you see now, on More → Customers → open a customer.**
 
 - **The reward is a card of its own on their record**, in amber so it does not
-  read as the green bring-a-friend ledger below it.
+ read as the green bring-a-friend ledger below it.
 - **It says what they brought in, and what is due.** __"9 brought in · every 5 · 1
-  due"__ — the count is from your own orders, recounted every time, so nothing can
-  double-count.
+ due"__ — the count is from your own orders, recounted every time, so nothing can
+ double-count.
 - **A Given button records the hand-over.** Their card then says __"1 given"__ with
-  the date, so the next time you open them you can see what you have already settled.
+ the date, so the next time you open them you can see what you have already settled.
 - **Undo last takes a press back**, if you tapped it twice or they returned it.
 
 **Their reward, and its number, are two separate boxes.** Your sentence stays exactly
@@ -2836,14 +2895,14 @@ them**.
 **What you see now, on More → Customers.**
 
 - **A "New customer" card.** Add someone by hand — a partner, or a friend who sends
-  people your way. **A name or a number is enough**; everything else (their reward,
-  their note, a photo) is written exactly where it always was.
+ people your way. **A name or a number is enough**; everything else (their reward,
+ their note, a photo) is written exactly where it always was.
 - **They appear under their own heading: "Added by hand — no orders yet"**, at the
-  bottom of the list, with a count. Their card opens like anyone else's, and
-  fine-tuning their reward works there too.
+ bottom of the list, with a count. Their card opens like anyone else's, and
+ fine-tuning their reward works there too.
 - **Your remark now shows on the row itself**, so you can read it without opening
-  anyone — in your own words, on one line, whichever is longest clipped with the
-  full note still one tap away.
+ anyone — in your own words, on one line, whichever is longest clipped with the
+ full note still one tap away.
 
 **The important part, and why they are in the same list rather than a separate one.**
 Your customer list stays what it was — **people who have ordered**, with their spend
@@ -2881,15 +2940,15 @@ prints brochures and runs their own marketing.
 **What you see now, in two places.**
 
 - **On a customer's card** — a line you write yourself: **Reward**, e.g. __"a free
-  loaf for every five friends"__. Not a number, because a partner may be owed a loaf,
-  a favour, or an arrangement of their own. It sits in the profile block, above the
-  bring-a-friend block, so it shows **whether or not that person has a WhatsApp
-  number** — the casual friend-to-friend advocate is exactly the one who may not.
-  The RM3 and 90-day settings are untouched and still the defaults.
+ loaf for every five friends"__. Not a number, because a partner may be owed a loaf,
+ a favour, or an arrangement of their own. It sits in the profile block, above the
+ bring-a-friend block, so it shows **whether or not that person has a WhatsApp
+ number** — the casual friend-to-friend advocate is exactly the one who may not.
+ The RM3 and 90-day settings are untouched and still the defaults.
 - **On a promo code** — a new choice: **Whose code is this**. Pick a customer and
-  their name appears on the code's row as __Aunty Bee's code__, beside "public —
-  shown in the shop". Their label now tells itself apart from anyone else's, and the
-  code's own count and opens are their tally.
+ their name appears on the code's row as __Aunty Bee's code__, beside "public —
+ shown in the shop". Their label now tells itself apart from anyone else's, and the
+ code's own count and opens are their tally.
 
 **THE THING TO KNOW: their name is never published.** The data your shop is given is
 readable by anyone holding its public key. A code's person is kept in your own app —
@@ -2924,18 +2983,18 @@ real and worth knowing.
 **What the number is, and what it is not — please read this part.**
 
 - It counts **opens, not people**. You chose that: a reload counts again, and a
-  phone that leaves the page open counts once. It is a **pulse for alive-versus-
-  cold**, not a headcount.
+ phone that leaves the page open counts once. It is a **pulse for alive-versus-
+ cold**, not a headcount.
 - **Sharing the link in WhatsApp or Facebook adds an open with nobody behind it** —
-  those apps fetch a link to draw the preview. And your own testing counts.
+ those apps fetch a link to draw the preview. And your own testing counts.
 - **A customer who types the code at the shop, with no link, is not counted.** This
-  measures the CARDS, not the code in general.
+ measures the CARDS, not the code in general.
 - The app will not show a figure it does not have. If Supabase cannot be reached,
-  the row is left **exactly as it was** rather than showing a zero — because a zero
-  here is a claim ("nobody opened your label") and it must not be made on the
-  strength of a request that never came back.
+ the row is left **exactly as it was** rather than showing a zero — because a zero
+ here is a claim ("nobody opened your label") and it must not be made on the
+ strength of a request that never came back.
 
-**⚙️ The one step, and it is yours: run `supabase/promo_visits.sql` once.** Open
+**️ The one step, and it is yours: run `supabase/promo_visits.sql` once.** Open
 **Supabase → your project → SQL Editor → New query**, paste the whole file, press
 **Run**. It is safe to run more than once. **You can run it before or after you
 push** — if you push first, nothing breaks: the shop's page simply fails to record
@@ -3158,11 +3217,11 @@ take rather than assuming:
 
 - The phone can share a file — you get the **PDF**, which is what happens on yours.
 - The phone says it can share, but not a file — you get the journal as **text**,
-  so it still leaves the app rather than nothing happening.
+ so it still leaves the app rather than nothing happening.
 - The phone has no share sheet at all — the **PDF is saved to the phone** and a
-  short message says so. You send it from WhatsApp yourself.
+ short message says so. You send it from WhatsApp yourself.
 - Even saving is impossible — the journal is **copied** instead, with a message
-  saying so.
+ saying so.
 
 **If you open the share sheet and change your mind**, closing it does nothing
 else. Nothing is copied and nothing is saved behind your back, at any of those
@@ -3195,30 +3254,30 @@ it, and there was no way to hand it to anyone or keep it.
 same order, under its last line:
 
 - **Print** — the phone's own print sheet opens with the journal on it. That is
-  also where **Save as PDF** lives, so a journal can leave as a file.
+ also where **Save as PDF** lives, so a journal can leave as a file.
 - **Share** — the phone's own share sheet opens with the journal as plain text,
-  ready to go straight into WhatsApp, Mail or Notes.
-  - A phone with no share sheet — or a share that fails for any other reason —
-    **copies the journal instead** and says so in a short message. You paste it
-    wherever you want it. The fallback carries exactly the same text the share
-    sheet would have been handed.
-  - **If you open the share sheet and change your mind**, closing it does nothing
-    else. The journal is not copied behind your back. A cancel is your decision,
-    not a fault.
-  - __Superseded the next day by v283: the phone is handed a PDF file now, not
-    plain text, because WhatsApp was not appearing in the share sheet.__
+ ready to go straight into WhatsApp, Mail or Notes.
+ - A phone with no share sheet — or a share that fails for any other reason —
+ **copies the journal instead** and says so in a short message. You paste it
+ wherever you want it. The fallback carries exactly the same text the share
+ sheet would have been handed.
+ - **If you open the share sheet and change your mind**, closing it does nothing
+ else. The journal is not copied behind your back. A cancel is your decision,
+ not a fault.
+ - __Superseded the next day by v283: the phone is handed a PDF file now, not
+ plain text, because WhatsApp was not appearing in the share sheet.__
 
 **Where the two buttons are.** Every book in the app:
 
 - **More → Profit** — the Sales journal, the Cost of sales journal, and every
-  spending category's journal, including Total expenses.
+ spending category's journal, including Total expenses.
 - **More → Profit** — the **Profit and loss** statement itself. You chose that
-  the whole statement gets the pair and not only the journals: Sales down to Net
-  profit, with its two notes underneath. A journal on its own is half a document,
-  and this is the other half.
+ the whole statement gets the pair and not only the journals: Sales down to Net
+ profit, with its two notes underneath. A journal on its own is half a document,
+ and this is the other half.
 - **More → Money** — one method's book, opened either from its row on the screen
-  or from **Books**. In Books, only the book you have opened can print; the list
-  underneath never does.
+ or from **Books**. In Books, only the book you have opened can print; the list
+ underneath never does.
 
 **What the printed sheet says.** Your shop name as a letterhead, then what the
 journal is and the stretch it covers; every row and every total, in the same words
@@ -3277,18 +3336,18 @@ today__.
 statement, in the same quiet grey as the other notes:
 
 - **"Cost of sales is built from the recipe and the ingredient prices you have recorded, read as they
-  stand today — so editing a recipe or a price moves past months too. It is not what you actually
-  spent. Gross profit is therefore a guide to your pricing, not your bank balance — the Money screen
-  is where the cash is."**
+ stand today — so editing a recipe or a price moves past months too. It is not what you actually
+ spent. Gross profit is therefore a guide to your pricing, not your bank balance — the Money screen
+ is where the cash is."**
 
 Two things that follow from it, now said on the screen rather than left for you to work out:
 
 - **A month that has already closed can still move.** If you fix a recipe, or update what an
-  ingredient costs, the Cost of sales of a past month changes with it, and so does that month's gross
-  profit. The sold price never moves — that is frozen on the order — but the cost side is read fresh
-  every time you look.
+ ingredient costs, the Cost of sales of a past month changes with it, and so does that month's gross
+ profit. The sold price never moves — that is frozen on the order — but the cost side is read fresh
+ every time you look.
 - **Gross profit and Net profit are a plan, not a bank balance.** What you really spent is cash, and
-  the Money screen is where you check it. A gap between the two is normal and not a fault.
+ the Money screen is where you check it. A gap between the two is normal and not a fault.
 
 **The small print at the bottom changed too**, so the two do not repeat each other. It now leads with
 the cash half — a pack bought today is cash on the Money screen and stock on the shelf, and only
@@ -3742,9 +3801,9 @@ the fault kept coming back after a fix had been published.
 **Two halves fix it.**
 
 - **The app re-checks its own files with the site before using its saved copy.** An unchanged file
-  costs almost nothing to check; a changed one is fetched whole. Pictures are left alone.
+ costs almost nothing to check; a changed one is fetched whole. Pictures are left alone.
 - **An amber strip above the tab bar when the two differ.** It says which build is on the phone and
-  which the site is serving, in plain words, with a single "Update now" press.
+ which the site is serving, in plain words, with a single "Update now" press.
 
 **It is never a dead control.** If the strip is still there after you press Update now, it stops
 offering the button and tells you to close the app completely and open it again.
@@ -3807,15 +3866,15 @@ inside of a pop-up — are handled.
 **Three faults from your own report, all in the + New order card.**
 
 - **The card grew under your finger on a pin reset.** A reset can change the card's height in
-  eleven ways at once, and nothing held the screen still. The row of buttons under your thumb is
-  now what the card is pinned to, so the row keeps its place and the words below it extend
-  downwards.
+ eleven ways at once, and nothing held the screen still. The row of buttons under your thumb is
+ now what the card is pinned to, so the row keeps its place and the words below it extend
+ downwards.
 - **Maps left running after their card had gone.** Each rebuild of the price block left a live map
-  behind on a background listener, and one of them could paint over the confirmation box. They are
-  now swept away once their card has left the page.
+ behind on a background listener, and one of them could paint over the confirmation box. They are
+ now swept away once their card has left the page.
 - **The button that finishes a new order now reads "+ Place Order".** The card's own title is still
-  "+ New order", the "+ New order" button on Home is untouched, and an order's Edit card still ends
-  on "Save changes".
+ "+ New order", the "+ New order" button on Home is untouched, and an order's Edit card still ends
+ on "Save changes".
 
 **Measured, not guessed.** At a 375-pixel phone the button row held to the pixel while the page
 scrolled; a press that made a map appear used to move everything below it by 210 pixels. And the
@@ -3830,15 +3889,15 @@ reference, and the wish-list mail does the opposite: it opens with what the mail
 is about and when, and puts the content underneath. So the feedback mail now does exactly that,
 with no rule in between and no closing line:
 
-    New feedback for the shop page (Engine v253).
+ New feedback for the shop page (Engine v253).
 
-    Project: munchies.com.my/store/
+ Project: munchies.com.my/store/
 
-    Sent: 2026-09-30 17:31
+ Sent: 2026-09-30 17:31
 
-    Written in English.
+ Written in English.
 
-    the words the customer typed
+ the words the customer typed
 
 **The language is written out as a word.** v252 printed the short code it was handed, so the
 line read "Written in en." The shop asks its questions in three languages, so the line is worth
@@ -3855,7 +3914,7 @@ wording of the language line moved.
 project, not on GitHub, so pushing is not enough on its own. After pushing this version,
 redeploy it once:
 
-    supabase functions deploy shop-feedback --project-ref ircwozniiyywsowamixy
+ supabase functions deploy shop-feedback --project-ref ircwozniiyywsowamixy
 
 **30 Sep 2026 — engine v252, THE FEEDBACK MAIL SAYS WHICH SHOP AND WHICH BUILD, AND THE SHOP PAGE
 NOW SAYS WHICH BUILD IT IS RUNNING (no database step, but the shop-feedback function must be
@@ -3867,20 +3926,20 @@ Before this version the email was the customer's words and nothing else, so a me
 page. Every one of these emails now carries:
 
 - **Project** — the address the customer was actually reading, for example
-  munchies.com.my/store. It is read off the live page rather than typed in anywhere, so your two
-  shops can never be confused for one another, and the second half names which page of that shop
-  the words were written on.
+ munchies.com.my/store. It is read off the live page rather than typed in anywhere, so your two
+ shops can never be confused for one another, and the second half names which page of that shop
+ the words were written on.
 - **Sent** — the date and time on **your** clock, Penang time, so "16:52" means the same thing on
-  the email, on your phone and in the backoffice.
+ the email, on your phone and in the backoffice.
 - **Engine** — the build the customer was looking at, both in the subject line and in the line
-  above the project, so you can tell whether a comment about the shop came from a phone that is
-  still running yesterday's copy.
+ above the project, so you can tell whether a comment about the shop came from a phone that is
+ still running yesterday's copy.
 - **Written in** — the language, when the customer was reading the shop in Malay or Chinese.
 
 **And the shop itself now says which build it is running.** At the very foot of the shop page,
 under "Website by" and the developer's WhatsApp and email links, there is a new small line:
 
-    Engine v252
+ Engine v252
 
 **It is the same number your app shows on More**, and the two are read from one file rather than
 kept as two copies that could drift apart. That is the point of it: when a customer tells you
@@ -3892,7 +3951,7 @@ developer's own corner, out of the way of everything a customer came for.
 **One step on your machine.** The part of this that builds the email lives on Supabase, so it
 must be redeployed once, exactly as before:
 
-    supabase functions deploy shop-feedback --project-ref ircwozniiyywsowamixy
+ supabase functions deploy shop-feedback --project-ref ircwozniiyywsowamixy
 
 Nothing else to set up — no new secret, no new database table, no new key. The email reuses the
 same Resend account your wish list already sends with, and the same published settings row the
@@ -5356,7 +5415,7 @@ through Paid. But that step keeps its place in the line, and it wears an **X** �
 amber, deliberate — instead of a tick, and it never turns green while the money
 is outstanding:
 
-> New: done  ·  Confirmed: done  ·  **Paid: x**  ·  Preparing: done  ·  Packed: done  ·  Collected / Posted: current
+> New: done · Confirmed: done · **Paid: x** · Preparing: done · Packed: done · Collected / Posted: current
 
 Press **Paid · Cash** or **Paid · TNG** when the money is handed over — at
 whatever stage the order has reached — and **the X becomes the tick**: the
@@ -5385,22 +5444,22 @@ counter.
 
 **What happens now.**
 - **A bypassed order has no Paid step.** That route reads New → Confirmed →
-  Preparing → Packed → Collected / Posted: **five dots instead of six**, and no
-  tick for a payment that never happened.
+ Preparing → Packed → Collected / Posted: **five dots instead of six**, and no
+ tick for a payment that never happened.
 - **The Paid · Cash / Paid · TNG buttons stay on** at every stage from Paid
-  onwards — Paid, Preparing, Packed, and Collected / Posted — until the money is
-  recorded. So the moment the cash is handed over at the counter, wherever the
-  order has got to, you press the button right there: **the order stays where it
-  is** (marking an order paid never drags it backwards) and the money is stamped
-  with the day it landed, which is the day the Money screen counts it.
+ onwards — Paid, Preparing, Packed, and Collected / Posted — until the money is
+ recorded. So the moment the cash is handed over at the counter, wherever the
+ order has got to, you press the button right there: **the order stays where it
+ is** (marking an order paid never drags it backwards) and the money is stamped
+ with the day it landed, which is the day the Money screen counts it.
 - **And the Paid step comes back once it is paid** — a green tick, in its proper
-  place in the line, with the **Cash** or **TNG** tag beside the row. So the map
-  ends up telling the truth about that order either way.
+ place in the line, with the **Cash** or **TNG** tag beside the row. So the map
+ ends up telling the truth about that order either way.
 - The buttons disappear the moment the payment is recorded, and they never appear
-  before the order reaches the Paid stage.
+ before the order reaches the Paid stage.
 - **The customer's own track page follows the same rule** — same five dots, no
-  Paid tick for a payment that has not happened, and the step appears there too
-  once it is recorded.
+ Paid tick for a payment that has not happened, and the step appears there too
+ once it is recorded.
 
 One rule behind it, worth knowing: moving an order into Paid **or any later
 stage** without having pressed a Paid button is taken as *this order owes money*.
@@ -5421,14 +5480,14 @@ places and one ingredient at a time, which is a poor way to start.
 It asks for:
 
 - **Cash in your tin** and **Money on your phone (TNG)** — two boxes, and the day
-  your books begin, which takes any date but should be the day you are starting
-  from.
+ your books begin, which takes any date but should be the day you are starting
+ from.
 - **What is on your shelf** — your ingredients, one box each, already in the unit
-  you use for that ingredient (kg for the meat, g for the oil — no converting).
-  Ingredients you have marked as *not something I buy*, like labour, are left
-  out: they have no shelf to count.
+ you use for that ingredient (kg for the meat, g for the oil — no converting).
+ Ingredients you have marked as *not something I buy*, like labour, are left
+ out: they have no shelf to count.
 - **Who still owes you** needs no box — those orders stay unpaid and show under
-  **Still to collect**.
+ **Still to collect**.
 
 **Nothing is half-saved.** Every box is checked before anything is written: if
 one has something that is not a number, nothing saves at all until you fix it.
@@ -5491,13 +5550,13 @@ for those.
 **Two more things found while fixing it.**
 
 - **The lines were only 17 pixels tall** — a small target for a finger, and easy to land
-  in the gap between two lines and hit nothing. Tappable rows everywhere (the Profit
-  statement, the Money screen's cash rows, the Books list) are now **36 pixels**,
-  comfortably thumb-sized.
+ in the gap between two lines and hit nothing. Tappable rows everywhere (the Profit
+ statement, the Money screen's cash rows, the Books list) are now **36 pixels**,
+ comfortably thumb-sized.
 - **The Total expenses journal did not say which category a row belonged to.** It read
-  *"2 Sep · boxes · Cash"* with no way to tell what "boxes" was for. It now names it —
-  *"2 Sep · Packaging — boxes · Cash"* — while a single category's journal still reads
-  short, since its title already says which category it is.
+ *"2 Sep · boxes · Cash"* with no way to tell what "boxes" was for. It now names it —
+ *"2 Sep · Packaging — boxes · Cash"* — while a single category's journal still reads
+ short, since its title already says which category it is.
 
 **17 Sep 2026 — engine v113 (no database setup needed). Every way you pay now has
 a book you can always open — including a pocket that has been quiet — behind a new
@@ -5604,16 +5663,16 @@ Gas, your own time.
 
 **Where you see it.**
 - The ingredient's **card** stops showing an On hand and a Keep-at-least line, and says
-  instead: *Not bought — a cost in your recipes, never on a shopping list*. Nothing else
-  about the card changes, and the cost you typed is untouched.
+ instead: *Not bought — a cost in your recipes, never on a shopping list*. Nothing else
+ about the card changes, and the cost you typed is untouched.
 - Every **shopping list** (the preview, the list you save, and an "orders changed"
-  follow-up) leaves that ingredient out — and says so at the foot of the list: *Not on
-  this list: Labour, Electricity — marked as not something you buy. Their cost still
-  counts in the products that use them.* So it reads as deliberate, not as something the
-  app forgot.
+ follow-up) leaves that ingredient out — and says so at the foot of the list: *Not on
+ this list: Labour, Electricity — marked as not something you buy. Their cost still
+ counts in the products that use them.* So it reads as deliberate, not as something the
+ app forgot.
 - The **recipe cost** is unchanged: a recipe using Labour at RM 8 an hour for 15 minutes
-  still adds RM 2.00 to that product's cost, and that runs on into the Profit screen's
-  cost of sales.
+ still adds RM 2.00 to that product's cost, and that runs on into the Profit screen's
+ cost of sales.
 
 **Switching it OFF restores the ingredient exactly as it was** — the app removes the
 mark rather than storing a "No", so nothing that exists today changes unless you turn

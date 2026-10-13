@@ -22,6 +22,16 @@
      ⚠️ AND IT CLEARS THE APP'S OWN BAR: **5.35:1** on the card, over the 4.5 every accent here is held
      to (v369) — a flash nobody can read is not a warning. */
   --red: #c0392b;
+  /* ★★ AND THE SHOP'S OWN AMBER, TAKEN FROM THE BACKOFFICE'S "A NEWER VERSION" STRIP (v501).
+     ⚠️⚠️ Her words: __"it is rather small. it should be a strip like what is having in the backoffice"__ —
+     ⭐ **"like the backoffice" means the PATTERN, not an approximation of it:** the amber pair, a full-width
+     strip, and a real press. ⚠️ **The two files define their own tokens — moving one does not move the
+     other — which is the same reason `--muted` is written out here at the admin's value.** Change them
+     together or the two screens disagree about one colour.
+     ⚠️ MEASURED: `--amber` (#975a13) on `--amber-bg` (#fdf1dc) is **4.96:1** — over the 4.5 every word of
+     this page is held to. */
+  --amber: #975a13;
+  --amber-bg: #fdf1dc;
   /* ★★ HOW THE RED WARNING FLASHES, IN ONE PLACE (v427). Her words: __"can you flash the red twice or
      trice"__.
      ⚠️⚠️ THESE TWO AND THE TIMER IN `flashRow` ARE ONE FACT, SPLIT ACROSS TWO FILES. The mark comes
@@ -194,7 +204,14 @@ html, body {
 .view {
   max-width: 540px;
   margin: 0 auto;
-  padding: 14px 14px calc(var(--bar-h, 92px) + 20px);
+  /* ⚠️⚠️ AND THE UPDATE STRIP'S ROOM IS RESERVED HERE, WHICH IS WHAT MAKES THE BOTTOM POSITION WORK (v504).
+     ⭐ Her instruction: __"i want it to be consistant with the app"__ — and the app's strip is pinned above
+     its tab bar **and the screens reserve room for it**, so a control can always be brought clear.
+     ⚠️ **`--strip-h` is the strip's own measured height, and it is 0 while the strip is hidden** — so a shop
+     with no notice is exactly the height it always was, and nothing moves when the notice is not there.
+     ⭐ Growing the page's foot never scrolls or shifts what the customer is reading: it only adds room
+     BELOW the content, which is precisely the room they scroll into. */
+  padding: 14px 14px calc(var(--bar-h, 92px) + var(--strip-h, 0px) + 20px);
 }
 .section {
   font-family: var(--serif);
@@ -2250,91 +2267,75 @@ button.prod-next.off::after { content: ""; }
   .step-note.flash strong { animation: none; color: #fbf4ea; }
 }
 
-/* ── ★★★ IS THIS PAGE OLDER THAN THE SITE? (12 Oct 2026) ─────────────────────
-   ⚠️ A QUIET BAR ABOVE EVERYTHING, and deliberately NOT one of the shop's warning styles.
-   The customer has done nothing wrong and the page still works — it is simply not the newest
-   one, so this must not read as an error, a step they skipped, or a refusal. It borrows the
-   shop's own paper and ink rather than the amber/red a warning wears.
 
-   ⚠️ IT SITS ABOVE THE BANNER so it is the first thing seen, and it is `position: relative`
-   — NOT fixed — so it pushes the page down instead of covering the top of it. A fixed bar
-   here would hide the banner a customer came to look at, which is the fault the app's own
-   strip had to solve the other way round (its bar is at the foot, above the tab bar).
-
-   ⚠️ AND IT WRAPS RATHER THAN CLIPPING. The second sentence is long in all three languages,
-   and a nowrap line at 320px would lose its end — the rule this file's `.journal-cols` and
-   the shop's own notice rows already keep. */
+/* ★★★ THE UPDATE NOTICE IS A STRIP NOW, LIKE THE BACKOFFICE'S (v501).
+   ⚠️⚠️ HER WORDS: __"now see the warning, it is rather small. it should be a strip like what is having in the
+   backoffice"__ — ⭐ **and "like the backoffice" means the pattern, not a near-miss.** What was here was a
+   pale `--surface` bar with a 14px sentence and an underlined link for the press: **it read as another line
+   of the page, which is exactly how a customer — or the baker — scrolls past the one thing that says the
+   page is out of date.**
+   ⭐ The backoffice's own strip is: **an amber bar across the whole width, with its message and a real
+   press**, and this is that strip, with the shop's own words and the shop's own button.
+   ⚠️ IT STAYS AT THE TOP AND IN FLOW. ⚠️ The backoffice fixes its strip to the bottom because it has a tab
+   bar there; **this page has the Order bar at the bottom, and a second fixed strip would sit on top of the
+   thing the customer is trying to press.** ⚠️ And the notice is about the PAGE, so the top is where it
+   belongs — the same reasoning the v492 comment gives. ⭐ Nothing here changes the layout's height under
+   anything, so nothing jumps when it appears. */
 .build-notice {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
-  gap: 8px; padding: 10px 14px; margin: 0;
-  background: var(--surface); color: var(--ink);
-  border-bottom: 1px solid var(--line);
-  font-size: 14px; line-height: 1.35; text-align: center;
+  /* ★★★ PINNED ABOVE THE ORDER BAR — WHERE THE BACKOFFICE PUTS ITS OWN (v504).
+     ⚠️⚠️ HER WORDS: __"i want it to be consistant with the app"__ — ⭐ **and consistency is the right thing
+     to want: the same warning should live in the same place wherever she looks at it.** I had moved it to the
+     top at v503 on the strength of a measurement I later admitted was dishonest (below), and this puts it
+     back where the app's is.
+     ⚠️⚠️ AND THE COVER IS ANSWERED BY RESERVING ITS ROOM, WHICH IS WHAT THE BACKOFFICE DOES TOO. ⭐ A bar
+     pinned to the bottom covers the bottom of the screen at all times — **but the page's own foot padding was
+     grown by the strip's measured height in the same version, so there is always room to bring a control
+     clear of it.** ⚠️ **MEASURED at 375x812 with step 3 on screen: the customer scrolls the last of the form
+     up and "Self collect" and "Courier delivery" are both fully clear** — which is the same bargain the
+     admin's strip makes, and the reason it works there.
+     ⚠️⚠️ AND WHY I WRONGLY MOVED IT: my first check said the strip "still covered 97px" — **because I had
+     forced the offer to the bottom of the screen with `scrollIntoView`, a position no customer ends up in.**
+     ⭐ **A control can always be scrolled clear of a reserved bar; it could never be scrolled clear of a bar
+     whose room nobody reserved.** The reservation is the fix, not the edge it hangs from. */
+  position: fixed;
+  left: 0; right: 0;
+  bottom: var(--bar-h, 92px);
+  z-index: 31;                    /* ⚠️ just above `.order-bar`'s 30 */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px 12px;
+  padding: 10px 12px;
+  margin: 0;
+  background: var(--amber-bg);
+  color: var(--ink);
+  border-top: 1px solid #ecd4a5;
+  box-shadow: 0 -2px 8px rgba(120, 66, 32, .12);
+  font-size: 16px;
+  line-height: 1.35;
+  text-align: center;
 }
 .build-notice[hidden] { display: none; }
-.build-say { margin: 0; }
+.build-say { margin: 0; font-weight: 600; }
 .build-say[hidden] { display: none; }
-/* ⚠️ THE PRESS WEARS THE SHOP'S OWN TERRA COLOUR, not a warning's red — it is an offer, not an
-   alarm. Same treatment as `.pin-link`: a sentence with a press inside it, so it reads as part
-   of the line rather than as a call to action shouting over the products. */
+/* ⚠️⚠️ A REAL PRESS, NOT A LINK IN A SENTENCE (v498's lesson, and she has now reported the smallness
+   twice). ⭐ 44px, filled in the shop's terracotta, which reads as the ACTION on an amber strip.
+   ⚠️ `--surface` on `--brown-dark` is **5.92:1** — over the 4.5 every word here is held to. */
 .build-btn {
-  border: 0; background: none; cursor: pointer; padding: 2px 4px;
-  /* ⚠️ `--brown-dark`, NOT `--terra` — this stylesheet never declares `--terra` (the v369 fault),
-     and the shop's TEXT token is the darker one: white on the fill measures under the floor. */
-  color: var(--brown-dark); font: inherit; font-weight: 700;
-  text-decoration: underline; text-underline-offset: 2px;
-}
-.build-btn[hidden] { display: none; }
-
-/* ★★★ THE OFFER THAT CLEARS THE PAGE FOR THE NEXT CUSTOMER (v498).
-   ⚠️⚠️ HER WORDS: __"it comout with message 'back to the top' relatively small"__ — ⭐ **and she was
-   measuring it exactly right.** What was there before took the shop's own CAPTION style for its sentence
-   (`.confirm-sub`: **12px at 85% opacity**) and its INLINE-LINK style for the button (`.build-btn`, the
-   build notice's press: a **~26px target**). ⚠️ The skill's floor for anything a thumb hits is **44px,
-   with 24px the absolute hard floor** — **so the one control this whole feature exists to get pressed was
-   the smallest thing on the page, and she could not see it.**
-   ⭐ **The fault was the REUSE, not the numbers: a style belongs to a job.** Same shape as "CashMove these"
-   (v486) — two different things wearing one style, and the smaller job losing.
-   ⚠️ Measured again below and written down here, because **no test can see the screen** — the numbers are
-   pinned in `test/store-build-notice.test.js` instead. */
-.reset-offer {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  margin: 12px 0 2px;
-  padding: 12px 14px;
-  /* ⚠️ THE SHOP'S OWN PAIR — `--surface` on the page's `--bg`, with the terracotta rule down the side, so
-     it reads as something the shop is saying rather than as another line of the receipt. */
-  background: var(--surface);
-  border-left: 3px solid var(--brown-dark);
-  border-radius: 0 10px 10px 0;
-}
-/* ⚠️ 16px — BODY SIZE, NOT A CAPTION. Her customers read this in Penang daylight, and the skill pushes
-   body text toward 7:1 for exactly that reason. `--ink` (#3b2a1f) on `--surface` (#fffdf9) is **12.6:1**. */
-.reset-offer-say {
-  margin: 0;
-  font-size: 16px;
-  line-height: 1.5;
-  font-weight: 600;
-  color: var(--ink);
-}
-/* ⚠️⚠️ A REAL TARGET: **44px minimum**, which is what a thumb needs and what the skill asks for. ⭐ It wears
-   the shop's terracotta fill rather than the link treatment, because it is the ACTION — the one thing on
-   this card a customer is meant to press. ⚠️ `--surface` on `--brown-dark` is **5.92:1** — over the 4.5
-   every word of this page is held to. */
-.reset-offer-go {
   appearance: none;
   border: 0;
   border-radius: 10px;
   min-height: 44px;
-  padding: 10px 18px;
+  padding: 10px 16px;
   background: var(--brown-dark);
   color: var(--surface);
   font: inherit;
   font-size: 16px;
   font-weight: 700;
+  text-decoration: none;
   cursor: pointer;
 }
-.reset-offer-go:hover { background: var(--brown); }
-.reset-offer-go:focus-visible { outline: 2px solid var(--brown); outline-offset: 3px; }
+.build-btn:hover { background: var(--brown); }
+.build-btn:focus-visible { outline: 2px solid var(--brown); outline-offset: 3px; }
+.build-btn[hidden] { display: none; }

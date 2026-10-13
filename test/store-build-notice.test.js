@@ -71,50 +71,7 @@ test("★★★ a page running OLD code says so — the exact case she reported 
     "★ a current page is being told it is stale — the shop would cry wolf on every visit");
 });
 
-test("★★★ the offer that clears the page is BIG ENOUGH TO SEE AND TO PRESS (v498)", () => {
-  // ⚠️⚠️ HER WORDS: __"it comout with message 'back to the top' relatively small"__ — ⭐ **and she was
-  // measuring it exactly right.** ⚠️ MEASURED IN THE STYLESHEET BEFORE THIS: the sentence wore
-  // `.confirm-sub` — **12px at 85% opacity, a caption** — and the button wore `.build-btn`, the shop's
-  // **inline link inside a sentence**, giving it a **~26px target**. ⭐ The skill's floor for anything a
-  // thumb hits is **44px, with 24px the absolute hard floor** — **so the one control this whole feature
-  // exists to get pressed was the smallest thing on the page.**
-  //
-  // ⚠️ NO TEST CAN SEE A SCREEN, so the numbers are pinned as NUMBERS — the same way this file pins the
-  // version pattern rather than trusting it. ⭐ A style that can quietly shrink back is a style that will.
-  const rule = (sel) => {
-    const at = css.indexOf(`${sel} {`);
-    assert.ok(at >= 0, `${sel} has no rule at all — the offer is unstyled and reads as another receipt line`);
-    return css.slice(at, css.indexOf("}", at));
-  };
-  const px = (body, prop) => {
-    const m = new RegExp(`${prop}:\\s*([\\d.]+)px`).exec(body);
-    return m ? Number(m[1]) : null;
-  };
 
-  const say = rule(".reset-offer-say");
-  assert.ok(px(say, "font-size") >= 16,
-    `★ the offer's sentence is ${px(say, "font-size")}px — a caption, not a message. **Body is 16px minimum, `
-    + "and this is the one message on the page a customer has to act on.**");
-  assert.match(say, /color:\s*var\(--ink\)/,
-    "★ the sentence is not in the shop's own ink — `--ink` on `--surface` is 12.6:1, and a customer reads "
-    + "this in Penang daylight");
-
-  const go = rule(".reset-offer-go");
-  assert.ok(px(go, "min-height") >= 44,
-    `★ the offer's button is ${px(go, "min-height")}px tall — **44px is what a thumb needs**, and 24px is the `
-    + "absolute floor. This is the control the customer is meant to press.");
-  assert.match(go, /background:\s*var\(--brown-dark\)/,
-    "★ the button has left the shop's terracotta fill — it is an ACTION, not a link inside a sentence");
-  assert.doesNotMatch(go, /build-btn/,
-    "★ the button is wearing the build notice's inline-link style again — **a style belongs to its job, and "
-    + "that one belongs to a press inside a sentence, not to a call to action**");
-
-  // ⚠️ AND THE JS MUST USE THOSE CLASSES, not the caption and the link it borrowed before.
-  assert.match(app, /class: "reset-offer-say"/, "the offer's sentence is not using the size pin above");
-  assert.match(app, /class: "reset-offer-go"/, "the offer's button is not using the size pin above");
-  assert.doesNotMatch(app, /class: "build-btn", id: "reset-offer-btn"/,
-    "★ the button is back on `.build-btn` — the ~26px inline link the customer could not see");
-});
 
 test("★★ the pattern still matches the version file the site actually ships", () => {
   // ⚠️⚠️ THE ONE SILENT DEATH OF THIS FEATURE. The pattern is matched against a HAND-WRITTEN file.
@@ -267,16 +224,73 @@ test("★★ `display: flex` cannot beat `[hidden]` — the rule that stops the 
   assert.match(css, /\.build-btn\[hidden\]\s*\{\s*display:\s*none;?\s*\}/, "and so does the press");
 });
 
-test("the notice is a sentence with a press in it, not an alarm", () => {
-  // ⚠️ Nothing has gone wrong and the customer did nothing wrong, so it must not read as a failure.
-  // The shop's own worst background is `--surface`, and `--brown-dark` on it is 5.92:1 — over the
-  // 4.5 every word of this page is held to, and the same pair the shop's inline links already use.
-  const rule = css.slice(css.indexOf(".build-notice {"));
-  const btn = rule.slice(rule.indexOf(".build-btn {"), rule.indexOf(".build-btn:hover"));
-  assert.match(btn, /color:\s*var\(--brown-dark\)/,
-    "the press has left the shop's own inline-link colour");
-  assert.doesNotMatch(btn, /var\(--red\)/,
-    "a red press over a bakery's prices reads as a failure — nothing has failed");
-  assert.doesNotMatch(rule.slice(0, rule.indexOf(".build-btn {")), /var\(--red\)/,
-    "the bar itself must not be the shop's warning red");
+test("★★★ the notice is the BACKOFFICE'S STRIP, at the size she asked for (v501)", () => {
+  // ⚠️⚠️ HER WORDS: __"now see the warning, it is rather small. it should be a strip like what is having in
+  // the backoffice"__ — ⭐ **"like the backoffice" means the PATTERN, not a near-miss.** And then the two
+  // reports that followed, which are the whole of this test:
+  //
+  //   __"appp had the message pin together with the bottom menu, so it appaer regardless of the scroll, but
+  //   not store"__  — it has to be SEEN, whatever the customer is reading.
+  //   __"why the step 3, self collection choice not clear?"__ — ⭐ **MEASURED: with the strip pinned at the
+  //   bottom, "Self collect" sat 23px behind it and "Courier delivery" 87px.**
+  //   __"i want it to be consistant with the app"__ — ⭐ **which settles it, because the app's strip is pinned
+  //   above its tab bar WITH ROOM RESERVED FOR IT.**
+  //
+  // ⭐⭐ **THE RESERVED ROOM IS THE FIX, NOT THE EDGE IT HANGS FROM.** A pinned bar covers the bottom of the
+  // screen at all times — **but with the page's foot grown by the strip's own measured height, there is
+  // always somewhere to scroll a control into.** ⚠️ **Without that room the cover is for good**, which is
+  // exactly what she reported.
+  // ⚠️ NO TEST CAN SEE A SCREEN, so the strip is pinned as its RULE AND ITS NUMBERS.
+  const notice = css.slice(css.indexOf(".build-notice {"), css.indexOf(".build-notice[hidden]"));
+  const btn = css.slice(css.indexOf(".build-btn {"), css.indexOf(".build-btn:hover"));
+
+  // ⭐ THE ADMIN'S OWN AMBER PAIR, VERBATIM — the two files define their own tokens, so this copy is what keeps
+  // the two screens agreeing about one colour.
+  assert.match(notice, /background:\s*var\(--amber-bg\)/,
+    "★ the strip has left the backoffice's amber background");
+  assert.match(css, /--amber:\s*#975a13;/, "the shop no longer carries the admin's --amber");
+  assert.match(css, /--amber-bg:\s*#fdf1dc;/, "the shop no longer carries the admin's --amber-bg");
+
+  // ⚠️ BODY SIZE, NOT A CAPTION — this is a sentence on a strip meant to be read.
+  const size = /font-size:\s*(\d+)px/.exec(notice);
+  assert.ok(size && Number(size[1]) >= 16,
+    "★ the strip's words are smaller than body size again — a caption is how this got missed twice");
+
+  // ⚠️⚠️ AND A REAL PRESS: 44px, FILLED — not the inline link inside a sentence she reported as too small.
+  // ⭐ It still must not read as an ALARM: nothing went wrong and the customer did nothing wrong, so no red.
+  const tall = /min-height:\s*(\d+)px/.exec(btn);
+  assert.ok(tall && Number(tall[1]) >= 44,
+    "★ the press is below 44px — the floor for anything a thumb hits, and she has reported this smallness twice");
+  assert.match(btn, /background:\s*var\(--brown-dark\)/, "★ the press is not filled — it is the ACTION here");
+  assert.match(btn, /color:\s*var\(--surface\)/,
+    "★ `--surface` on `--brown-dark` is 5.92:1 — the pair every press in this shop uses");
+  assert.doesNotMatch(notice + btn, /var\(--red\)/,
+    "★ the strip has gone red — nothing has failed and the customer did nothing wrong");
+
+  // ⚠️⚠️ PINNED ABOVE THE ORDER BAR, WHERE THE APP PUTS ITS OWN — and that is her instruction.
+  assert.match(notice, /position:\s*fixed/,
+    "★ the strip is not pinned — it scrolls away with the page, which is the first thing she reported");
+  assert.match(notice, /bottom:\s*var\(--bar-h/,
+    "★ the strip is not pinned ABOVE the order bar — it would sit on top of the button the customer presses");
+  assert.match(notice, /z-index:\s*31/, "★ the strip must sit just above the order bar's 30");
+
+  // ⚠️⚠️ AND THE ROOM RESERVED FOR IT IS WHAT MAKES THAT LIVABLE. The page's foot grows by the strip's own
+  // MEASURED height, so a control can always be scrolled clear of it.
+  assert.match(app, /export function measureUpdateStrip\(\)/, "★ there is no measuring function at all");
+  assert.match(app, /setProperty\("--strip-h"/, "★ nothing measures the strip, so the page cannot reserve room");
+  const pad = css.slice(css.indexOf("  padding: 14px 14px calc(var(--bar-h"),
+    css.indexOf(";", css.indexOf("  padding: 14px 14px calc(var(--bar-h")));
+  assert.match(pad, /var\(--strip-h/,
+    "★ the page's foot does not reserve the strip's height — **the pinned strip would cover whatever is at "
+    + "the bottom of the page FOR GOOD, because there is no room to scroll it clear**, which is precisely "
+    + "what she reported about the Self collect choice");
+  // ⚠️ AND IT IS RE-MEASURED WHEN THE SENTENCE'S LENGTH CHANGES: on a resize, and after a language switch
+  // (中文 and Malay are different lengths, and the length is what decides one row or two).
+  assert.match(app, /window\.addEventListener\("resize", measureUpdateStrip\)/,
+    "★ the strip is not re-measured on a resize — a wrapped sentence would outgrow the reserved room");
+  assert.match(app, /setLang\(b\.dataset\.lang\);\s*\n\s*measureUpdateStrip\(\);/,
+    "★ the strip is not re-measured after a language switch");
+  assert.match(app, /document\.documentElement\.style\.setProperty\("--bar-h"/,
+    "★ nothing measures the order bar — the page's own foot padding is built on that number");
 });
+

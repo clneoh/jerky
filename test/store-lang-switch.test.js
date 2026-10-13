@@ -239,29 +239,20 @@ test("store/app.js never reloads the page for a language change", () => {
     "the language switch itself reloads — every tap would re-download the page and re-fetch the "
     + "menu, the slots-left numbers and the photos, which is the v71 pause on a phone");
 
-  // ⚠️⚠️ THERE ARE TWO RELOADS NOW, AND BOTH BELONG TO A PRESS THE CUSTOMER MADE (v498).
-  // ⭐ The count was 1, and the reason it is 2 is HER OWN WORDS: __"no reload"__ — the offer that clears the
-  // page for the next customer **is a reload**, and that is what she asked for from her first message.
-  // ⭐ The INTENT of this guard is unchanged and it still holds: **a LANGUAGE CHANGE must not reload.** What
-  // it now also does is refuse a THIRD reload appearing anywhere unexplained.
+  // ⚠️⚠️ AND SINCE v509 THERE IS **ONE** RELOAD ON THIS PAGE, NOT TWO. ⭐ The offer that cleared the page
+  // for the next customer is GONE — her words: __"it is good to see the page cleared. So i think we should
+  // remove the order to reload."__ ⭐ **The page clears itself now, so nothing needs to offer it** — and the
+  // only reload left is the build notice's own press, which is the customer asking for the page again.
+  // ⭐ The INTENT of this guard is unchanged: **a LANGUAGE CHANGE must not reload**, and a second, unexplained
+  // reload appearing anywhere is what it is here to refuse.
   const hits = SRC.match(/location\s*\.\s*reload\s*\(/g) || [];
-  assert.equal(hits.length, 2,
-    `store/app.js reloads the page in ${hits.length} places — the only two allowed are the presses the `
-    + "customer owns: the build notice's Reload, and the offer that clears the page");
-
-  // ⭐ THE FIRST: inside the notice's own button, which remembers BEFORE it reloads so a browser serving the
-  // old script back cannot land the customer on the same notice with the same button doing nothing twice.
-  // ⚠️ ASKED OF THE PRESS'S OWN BODY, not of the file's first reload — `clearThePage` is defined ABOVE this
-  // block, so "the first `location.reload(` in the file" is the offer's, not the notice's.
+  assert.equal(hits.length, 1,
+    `store/app.js reloads the page in ${hits.length} places — the only one allowed is the build notice's own `
+    + "press, which the customer makes himself");
   const bindAt = SRC.indexOf('buildBtn.addEventListener("click"');
   assert.ok(bindAt > 0, "the build notice's press is gone — this guard is no longer watching anything");
   const press = SRC.slice(bindAt, bindAt + 400);
   assert.match(press, /location\.reload\(/,
     "the reload has moved away from the build notice's press");
-
-  // ⭐ AND THE SECOND: `clearThePage`, which only ever the offer's own press and the offer's own minute call.
-  assert.match(SRC, /function clearThePage\(\) \{\s*\n\s*if \(typeof location[^\n]*location\.reload\(\)/,
-    "★ the offer's press no longer clears the page — and clearing the page is the whole of what she asked for");
-  assert.match(SRC, /go\.addEventListener\("click", \(\) => \{ endOffer\(\); clearThePage\(\); \}\)/,
-    "★ the offer's button no longer calls it, so the press would do nothing at all");
-});
+  // ⚠️ AND NOTHING OFFERS A RELOAD ANY MORE: the function that did it is deleted, not left lying about.
+  assert.doesNotMatch(SRC, /clearThePage/, "the page still has a way to clear itself that somebody has to press");});
