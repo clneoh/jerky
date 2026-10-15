@@ -681,11 +681,37 @@ test("★★★ an order that has ALREADY GONE never needs a van again (v507)", 
   assert.equal(needsVan(st, gone("collected")), false,
     "★ an order already ON the van is still on the run");
 
+  // ★★★ AND THE OTHER HALF OF THE SAME QUESTION (v511).
+  //
+  // ⚠️⚠️ HER REPORT: __"order that already mark shipped still appear in delivery run"__. ⭐ **"Has this
+  // order already gone?" has TWO answers — the COURIER telling her, and HER telling the app — and v507
+  // only ever asked the first.** ⚠️ So an order she had marked **Collected / Shipped with her own hand**
+  // still answered yes, and came back onto the van list. ⭐ **The same shape a third time**: v494 (the
+  // kitchen), v507 (the delivered parcel) and this — *a question that was right until the world moved on*,
+  // and here the world moves whenever she presses the stage on the row.
+  assert.equal(needsVan(st, { id: "o4", fulfillment: "courier", status: "delivered" }), false,
+    "★ an order SHE has marked Collected / Shipped is still on the run — **the run is asking the courier a "
+    + "question only the order can answer**, and a parcel she handed over herself has no trip at all");
+  assert.equal(needsVan(st, { id: "o5", fulfillment: "collect", pointId: "pt_farlim", status: "delivered" }), false,
+    "★ the same for a bread collected at a Point and already marked collected — there is nothing left to "
+    + "carry to Farlim");
+
   // ---- ⚠️ AND THE TWO THINGS THAT MUST NOT CHANGE
   assert.equal(needsVan(st, { id: "o2", fulfillment: "courier" }), true,
     "an ordinary courier order has stopped needing a van, so nothing would ever be on a run at all");
   assert.equal(needsVan(st, { id: "o3", fulfillment: "courier", courierJob: { jobId: "j", phase: "cancelled" } }), true,
     "★ a CANCELLED trip means the van never took it, so the bread may still need carrying — it stays on the run");
+
+  // ⚠️⚠️ AND THE STAGE JUST BEFORE THE LAST ONE STILL NEEDS THE VAN — the half a careless fix breaks.
+  // ⭐ **PACKED bread is exactly what the run is FOR**, so a fix that reads "the order has a stage past
+  // Baked" instead of "the order is at its LAST stage" would empty the run of its whole purpose.
+  assert.equal(needsVan(st, { id: "o6", fulfillment: "courier", status: "ready" }), true,
+    "an order at Packed has stopped needing a van — that is the bread the run exists to carry");
+  assert.equal(needsVan(st, { id: "o7", fulfillment: "courier", status: "paid" }), true,
+    "an order only as far as Paid has stopped needing a van");
+  assert.equal(needsVan(st, { id: "o8", fulfillment: "courier", status: "" }), true,
+    "an order with no stage at all has stopped needing a van — a missing status must read as the FIRST "
+    + "stage, never as the last one");
 });
 
 test("a PAUSED Point still sends the van, and a DELETED one does not", () => {

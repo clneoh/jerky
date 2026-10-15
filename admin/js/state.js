@@ -1051,6 +1051,27 @@ export function byId(list, id) {
   return list.find((x) => x.id === id);
 }
 
+// ★★★ WHETHER AN ORDER HAS REACHED ITS LAST STAGE — "Collected / Shipped" (v511).
+//
+// ⚠️⚠️ HER REPORT: __"order that already mark shipped still appear in delivery run"__. ⭐ **The run asked
+// "has the COURIER taken it?" and never "has SHE marked it gone?"** — and those are two ways the same
+// thing becomes true. v507 closed the first (a trip the courier has collected or delivered) and left the
+// second open, so **an order she marked Collected / Shipped with her own hand still came back onto the
+// van list.**
+//
+// ⭐ IT LIVES HERE, IN THE DATA MODEL, because the STAGE VOCABULARY has to have one home: the labels and
+// the order of the stages are the Orders screen's (`STATUSES` in views/orders.js), and money.js already
+// writes the same list out a second time for its own "past Paid?" question, with a comment saying why.
+// ⚠️ **A THIRD copy written at the run screen is exactly how the three would come to disagree** — which
+// is the fault `needsVan` carries a comment about, twice over.
+//
+// ⚠️ AND IT IS THE LAST STAGE, NOT "the courier said something": the stage covers BOTH endings on purpose
+// (v97 named it per order; she asked for the pair itself, 15 Sep 2026), so one id answers for a parcel
+// and a collection alike.
+export function orderDone(order) {
+  return String((order && order.status) || "new") === "delivered";
+}
+
 export function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",

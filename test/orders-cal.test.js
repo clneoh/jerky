@@ -500,3 +500,102 @@ test("a quiet day is solidly darker than the paper, and still lighter than a del
   assert.ok(deliverRatio - quietRatio >= 1,
     `a delivery day still reads as the darker of the two (quiet ${quietRatio.toFixed(2)}:1 vs delivery ${deliverRatio.toFixed(2)}:1)`);
 });
+
+// ── v510: a chosen day is a WIRE FRAME, in the app AND on the shop ────────────
+//
+// Her words, in order: __"the date change to terracotta solid. Change that to a terracotta wire frame so
+// that the wording inside can be seen clearly"__ (Orders) · __"i want it to be highlighted by terracotta
+// wire frame only, the green outlined ball dont have to turn solid"__ (the shop) · and then, on seeing a
+// first attempt that ringed the NUMBER instead of the DAY: __"the terracotta wireframe shape i want it to
+// be oversize like the one at app orders"__ · __"rounded recangular"__.
+//
+// ⚠️⚠️ THE TWO CALENDARS ARE ASSERTED TOGETHER ON PURPOSE. "Like the one at app orders" is the whole
+// requirement, and a rule written twice is a rule that can be right in one file and wrong in the other —
+// which is exactly what the delivery GREEN turned out to be (see the last block below).
+test("★★★ a chosen day is a terracotta wire frame — in the app AND on the shop (v510)", () => {
+  const admin = read("admin/css/app.css");
+  const shop = read("store/app.css");
+  const card = parseColor(tokenOf(admin, "surface"));
+  const brown = parseColor(tokenOf(admin, "brown"));
+  const brownDark = parseColor(tokenOf(admin, "brown-dark"));
+
+  // ⚠️⚠️ HER COMPLAINT, MEASURED, AND IT WAS RIGHT. White on the brand terracotta is under the body
+  // floor — so the date inside the chip was the least readable thing on the grid, and it was the one the
+  // baker most needs to read. This assertion is a GUARD ON THE REASON: if that pair ever stops being a
+  // fault, this test has lost its premise and every message below is stale.
+  const oldPair = contrast([255, 255, 255], brown);
+  assert.ok(oldPair < 4.5,
+    `white on --brown now measures ${oldPair.toFixed(2)}:1, which is NOT under the 4.5:1 body floor — `
+    + "**re-read this test before trusting it: the fault it was written about has moved**");
+
+  // ── the app's Orders calendar ──
+  const adminSel = ruleBody(admin, ".cal-cell.sel");
+  assert.match(adminSel, /background:\s*none/,
+    "the app's chosen day is FILLED again — **a fill has to carry its own text**, and that pair is "
+    + `${oldPair.toFixed(2)}:1`);
+  assert.match(adminSel, /box-shadow:\s*inset 0 0 0 2px var\(--brown\)/,
+    "the app's chosen day is not wearing the terracotta wire frame (and it must be an INSET shadow, or "
+    + "every cell on the grid shifts 2px the moment a day is chosen)");
+  assert.match(adminSel, /color:\s*var\(--brown-dark\)/,
+    "the day inside the frame is not in the brand's TEXT shade — `--brown` is a FILL and an EDGE colour "
+    + "and never text, which is the rule the Accounts journal is built on");
+
+  // ── the shop's calendar ──
+  const shopSel = ruleBody(shop, ".cal-cell.sel");
+  assert.match(shopSel, /background:\s*none/,
+    "the shop's chosen day is FILLED again");
+  assert.match(shopSel, /box-shadow:\s*inset 0 0 0 2px var\(--brown\)/,
+    "the shop's chosen day is not wearing the terracotta wire frame");
+  assert.match(shopSel, /border-radius:\s*10px/,
+    "the shop's frame is an OVAL — the cell's own `border-radius: 50%` turns a wire frame into an ellipse, "
+    + "and hers is a rounded rectangle");
+  // ⚠️⚠️ AND THE DAY BOX HAD TO GROW, MEASURED: at the old 38px the 32px ball left 3px above and below,
+  // so a 2px frame had ONE pixel of clearance from the green ring and read as a thicker ring rather than
+  // as a frame with air in it. ⭐ 44px is also the web skill's floor for anything a thumb hits.
+  assert.match(ruleBody(shop, ".cal-cell"), /min-height:\s*44px/,
+    "the shop's day box is back under 44px — the frame has no air around the ball, and the day is under "
+    + "the 44px a thumb is held to");
+
+  // ⭐⭐ AND THE GREEN BALL KEEPS ITS RING — in BOTH. ⭐ Choosing a day does not un-deliver it, and that
+  // ring is the only thing on either grid saying the bakery bakes that day.
+  assert.equal(/\.cal-cell\.deliv\.sel \.cal-num\s*\{/.test(admin), false,
+    "the app: a rule takes the green ring off a chosen delivery day again — it used to set "
+    + "`box-shadow: none` and turn the date white, **so the one mark saying \"we bake this day\" was "
+    + "deleted at the very moment she was deciding about that day**");
+  assert.equal(/\.cal-cell\.avail\.sel \.cal-num\s*\{/.test(shop), false,
+    "the shop: the rule that FILLED the green ball solid on the chosen day is back — that fill was the "
+    + "ONLY mark a chosen day had, and it ate the one saying the bakery bakes that day");
+  assert.match(ruleBody(admin, ".cal-cell.deliv .cal-num"), /box-shadow:\s*inset 0 0 0 2px var\(--green\)/,
+    "the app's delivery-day green ring has moved or changed");
+  assert.match(ruleBody(shop, ".cal-cell.avail .cal-num"), /box-shadow:\s*inset 0 0 0 2px var\(--green/,
+    "the shop's delivery-day green ring has moved or changed");
+
+  // ⭐ THE PAIRS THAT ACTUALLY MEET — measured against the card the calendar sits on, never against each
+  // other: the frame is a UI EDGE (3:1) and the day inside it is BODY TEXT (4.5:1).
+  const frame = contrast(brown, card);
+  assert.ok(frame >= 3,
+    `the frame is ${frame.toFixed(2)}:1 against the card — a UI edge needs 3:1`);
+  const inApp = contrast(brownDark, card);
+  assert.ok(inApp >= 4.5,
+    `the day inside the app's frame is ${inApp.toFixed(2)}:1 — the body floor is 4.5:1, and this is the `
+    + "number she could not read");
+
+  // ⚠️⚠️ AND THE GREEN, WHICH IS WHERE THIS TEST EARNED ITS KEEP. The shop's calendar asked for
+  // `var(--green, #6b8f4e)` — **a token the shop's own stylesheet never defined** — so it took the
+  // FALLBACK and the two calendars drew two different greens, while the comment under the shop's grid
+  // said they were the same one. ⭐ **A test that reads declarations saw `var(--green, …)` in both files
+  // and agreed with it.**
+  const shopGreenToken = tokenOf(shop, "green");
+  const adminGreen = parseColor(tokenOf(admin, "green"));
+  assert.ok(shopGreenToken,
+    "the shop no longer declares `--green` at all, so its calendar is back on a fallback — **and a "
+    + "fallback is not a declaration: nothing here can compare it**");
+  const shopGreen = parseColor(resolve(shop, "var(--green)"));
+  assert.deepEqual(shopGreen, adminGreen,
+    "the shop's delivery green is not the app's delivery green — the shop's own comment under the grid "
+    + "says they are the same one, and her ask is that the two calendars match");
+  const inShop = contrast(shopGreen, card);
+  assert.ok(inShop >= 4.5,
+    `the shop's delivery day number is ${inShop.toFixed(2)}:1 on the card — BELOW the 4.5:1 body floor, `
+    + "at 15px bold, on a phone in Penang daylight. The old fallback #6b8f4e measured 3.65:1");
+});

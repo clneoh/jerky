@@ -39,7 +39,7 @@
 import {
   pickupPlace, doorSpotOf, dropAddress, validPlace, strictNumber,
 } from "./courier_place.js";
-import { byId, waNumber, orderLineName } from "./state.js";
+import { byId, waNumber, orderLineName, orderDone } from "./state.js";
 import { collectionWindowText, pointById } from "./points.js";
 // The window's own reading - see time_window.js for why it is a leaf of its own (v304).
 import { fmtWindow, validWindow } from "./time_window.js";
@@ -162,6 +162,19 @@ export function needsVan(state, order) {
   // vehicle needs no van sent for it either. A CANCELLED trip is deliberately NOT excluded — the van never
   // took it, so the bread may still need carrying.
   if (tripCollected(jobOf(order))) return false;
+  // ★★★ AND NEITHER DOES ONE **SHE** HAS MARKED GONE (v511).
+  //
+  // ⚠️⚠️ HER REPORT: __"order that already mark shipped still appear in delivery run"__. ⭐ **v507 closed one
+  // half of this and left the other**: it asked what the COURIER said (collected / delivered) and never
+  // what the ORDER said — so an order she had marked **Collected / Shipped by hand** still answered yes
+  // and came back onto the van list.
+  // ⭐ **"Has it already gone?" has TWO answers, and they are the same question** — one is the courier
+  // telling her, the other is her telling the app. ⚠️ **Asking only one of them is exactly the shape of
+  // v494 (the kitchen) and v507 (the delivered parcel): a question that was right until the world moved
+  // on** — and here the world moves whenever she presses the stage on the row.
+  // ⚠️ It reads the ORDER's own stage rather than the trip, because a parcel she posted or handed over
+  // herself has no trip at all.
+  if (orderDone(order)) return false;
   if (order.fulfillment === "courier") return true;
   const point = pointById(state, order.pointId);
   // ⚠️ A collection at the kitchen is handed over by her, so there is nothing for a van to do —

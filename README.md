@@ -756,6 +756,55 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## Engine v509 → v511 — the chosen day is a terracotta frame, and a closed order leaves the run (15 Oct 2026)
+
+Two versions from the bakery. **8 files changed (`+254 / −12`); no SQL and nothing to deploy** — the same
+push carries it. Suite **3479 → 3480 pass / 0 fail**.
+
+### ★ v510 — the calendars, in both apps
+
+Her words: *"the date change to terracotta solid. Change that to a terracotta wire frame so that the
+wording inside can be seen clearly, the green ball dont have to go solid."* ⚠️ **She was measuring, not
+guessing: the chosen day was a filled terracotta chip with white writing on it, and white on the brand
+terracotta is 4.48:1 — under the 4.5 floor for body text, at 14px, in daylight.** It is now a **2px
+terracotta frame round the whole day**, the date in the brand's dark terracotta at 5.51:1, and it is
+drawn as an **inset shadow so nothing on the grid shifts 2px when a day is chosen.**
+
+**And the green ring survives — in both apps.** *"the green ball dont have to turn solid"*, then on the
+shop *"oversize like the one at app orders"* / *"rounded recangular"* (her correction after a first
+attempt ringed the number instead of the day). ⚠️ **The rules that were eating it are DELETED, not
+overridden.** That ring is the only mark saying a day is a posting day, **and choosing a day does not
+un-post it** — it was being taken away at the moment she was deciding about that day. The shop's day box
+grew **38px → 44px**: at 38 the 32px ball left 3px and the frame read as a band against it, and 38px was
+also under the 44px floor for anything a thumb hits.
+
+⚠️ **A REAL FAULT FOUND WHILE MEASURING — and jerky is already ahead on it.** The shop's calendar asked
+for `var(--green, #6b8f4e)`: **a fallback, not a declaration**, so it quietly drew a different green from
+the app while its own comment said they were the same, and `#6b8f4e` is **3.65:1 — under the floor — on
+the day number of every posting day a customer could choose.** **Jerky declared `--green: #3b7449` in the
+shop's `:root` back at v369, so nothing changes here**; the merge kept jerky's bare `var(--green)` and the
+jerky-only-line audit confirms no stale fallback came back. *(The bakery has now declared the token too,
+though it still writes the fallback beside it at two rules.)*
+**Also applies to the app's other two calendars** (the inline date picker, and Bake days → Add dates),
+because "this day is chosen" is one state, not three.
+
+### ★ v511 — a closed order leaves the run
+
+Her report: *"order that already mark shipped still appear in delivery run"*. ⚠️ **The run was asking the
+COURIER a question only the ORDER can answer.** "Has this order already gone?" has two answers — the
+courier telling the app, and **her pressing the stage on the row** — and v507 fixed only the first.
+It is now `orderDone(order)`, **exported from `admin/js/state.js`** so there is one home for the reading
+(`needsVan` in `admin/js/courier_job.js` asks it): a third copy is how three come to disagree.
+⚠️ **The boundary is the half a careless fix breaks: only the LAST stage takes an order off the run** —
+packed treats are exactly what the run exists to carry, and an order with no status reads as the FIRST
+stage. ⚠️ **Checked rather than assumed: jerky's last stage id is `delivered`** (its label reads
+"Collected / Posted") — so the fix is live here, not inert. **Bitten:** remove the guard and
+`test/courier-job.test.js` fails by name.
+
+**⚠️ This is the third time this same shape has appeared** — v494 (a van sent to her own kitchen), v507
+(a van for an order the courier had already delivered), v511 (a van for an order she had closed with her
+own hand). **Every one is a question that was right until the world moved on.**
+
 ## Engine v498 → v509 — the receipt clears itself, and nothing reloads on a timer (13 Oct 2026)
 
 Eleven versions from the bakery. **9 files changed (`+634 / −526`) plus one new file

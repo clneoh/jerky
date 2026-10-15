@@ -13,6 +13,21 @@
   --line: #f0e2d2;
   --brown: #c4552f;
   --brown-dark: #a84322;
+  /* ★★ THE SHOP'S DELIVERY GREEN (v510) — **the backoffice's own `--green`, written out here**, for the
+     same reason `--muted`, `--red` and `--amber` are: the two files define their own tokens, so moving
+     one does not move the other.
+     ⚠️⚠️ AND UNTIL v510 THIS TOKEN DID NOT EXIST AT ALL. The shop's calendar asked for
+     `var(--green, #6b8f4e)` — **a token this file never defined** — so it quietly took the FALLBACK,
+     and the two calendars drew **two different greens** while the comment under the grid said they were
+     the same one. ⚠️ **A fallback is not a declaration, and nothing compared them**: a test that reads
+     declarations sees `var(--green, …)` in both files and agrees.
+     ⚠️⚠️ AND THE FALLBACK WAS UNDER THE FLOOR: **#6b8f4e is 3.65:1** on `--surface` — ⭐ **so the day
+     number of every bake day the customer could choose was below the 4.5:1 body floor**, at 15px bold,
+     on a phone in Penang daylight. ⭐ `--green` is **5.47:1** there and **5.09:1** on `--bg`, and the
+     ring clears the 3:1 UI-edge floor either way.
+     ⭐ Her ask is what found it: __"i want it to be oversize like the one at app orders"__ — ⭐ **putting
+     the shop's calendar beside the app's is what made "the same green" worth measuring at all.** */
+  --green: #3b7449;
   /* ★★ THE SHOP'S ONE RED (v426). Her words: __"can you flash the only available on friday in red
      color?"__
      ⚠️⚠️ THE SHOP HAD NO RED AT ALL BEFORE THIS, and that is why it needs its own token rather than a
@@ -325,7 +340,14 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 38px;
+  /* ★★★ THE DAY BOX IS 44px, NOT 38 (v510). ⚠️ Measured: at 38px the 32px delivery ball left **3px**
+     above and below it, so the chooser's new terracotta wire frame — which is the DAY's box, like the
+     app's own Orders calendar — had **1px** of clearance from the green ring and read as a second ring
+     rather than as a frame with air in it. ⭐ **Her words, seeing that: __"i want it to be oversize like
+     the one at app orders"__.** ⭐ 44px gives the ball 6px of margin, so the frame is a box AROUND the
+     day rather than a band against it — and ⭐ **44px is also the web skill's floor for anything a thumb
+     hits**, which a 38px day was quietly under. */
+  min-height: 44px;
   border: 0;
   background: none;
   font: inherit;
@@ -363,11 +385,38 @@ html, body {
   color: var(--green);
 }
 .cal-cell.avail.tappable:active .cal-num { background: var(--brown-soft); }
-.cal-cell.avail.sel .cal-num {
-  background: var(--green);
-  color: #fff;
-  box-shadow: none;
+/* ★★★ THE CHOSEN DAY WEARS AN OVERSIZE TERRACOTTA WIRE FRAME ROUND THE WHOLE DAY, AND THE GREEN BALL
+   KEEPS ITS RING (v510).
+   Her words: __"i want it to be highlighted by terracotta wire frame only, the green outlined ball dont
+   have to turn solid"__ — and then, on seeing the first attempt: __"the terracotta wireframe shape i want
+   it to be oversize like the one at app orders"__ / __"rounded recangular"__.
+   ⚠️⚠️ BEFORE THIS the ONLY mark on a chosen day was the ball **filling in** solid green — ⭐ **so "the
+   bakery bakes this day" and "this is the day I chose" were the same disc, and the customer lost the one
+   that told her the day was a bake day at all.** ⭐ **Choosing a day does not un-deliver it.**
+   ⭐⭐ SO THE TWO FACTS ARE TWO SHAPES, AND THEY ARE DELIBERATELY DIFFERENT SHAPES: **the ball keeps the
+   green ring it wears on every delivery day (unchanged), and the whole day gets a terracotta rounded
+   rectangle** — the same wire frame the app's own Orders calendar draws (v510), so "the day I chose"
+   looks the same wherever she meets it.
+   ⚠️⚠️ AND THE FRAME IS THE DAY'S OWN BOX, NOT A RING ROUND THE NUMBER: my first attempt put the
+   terracotta on the ball, 2px out from the green — and **it read as one thicker ring rather than as one
+   day being chosen.** ⭐ **A selection has to be a different SHAPE from the thing it selects, or the eye
+   has nothing to compare.**
+   ⚠️ MEASURED: `--brown` is **4.10:1** on `--bg` and **4.41:1** on `--surface` — clear of the 3:1 WCAG
+   floor for UI edges — and the day's number keeps `--green` at **5.09:1** on `--bg`.
+   ⚠️ Drawn as an INSET shadow rather than a border, so **nothing on the grid moves by 2px the moment a
+   day is chosen**, and the cell's own `border-radius: 50%` is replaced by the app's rounded-rect so the
+   frame is a rectangle and not an ellipse. */
+.cal-cell.sel {
+  background: none;
+  color: var(--brown-dark);
+  font-weight: 700;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 2px var(--brown);
 }
+/* ⚠️ AND THE BALL IS LEFT EXACTLY AS IT WAS on a day with no choice made: green ring, green number, no
+   fill. There is deliberately no rule here — `.cal-cell.avail .cal-num` above already draws it, and a
+   chosen day now wears the same ball an unchosen one does. ⭐ **The note is the point: a future reader
+   asking "what happens to the ball when the day is chosen?" gets the answer in words.** */
 /* Today is not a box — today breathes. The halo lives on a pseudo-element so it
    can never overwrite the number's own shadow: a box-shadow animation would erase
    the green ring on a day that is both today and a day the bakery delivers. */

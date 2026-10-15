@@ -1,8 +1,54 @@
-# Munchies Furkidz — change history (v54 → v509)
+# Munchies Furkidz — change history (v54 → v511)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**15 Oct 2026 — engine v511: THE CHOSEN DAY IS A TERRACOTTA FRAME, AND AN ORDER YOU HAVE CLOSED LEAVES
+THE RUN (nothing to run, nothing to upload — pushing this is the whole of it).**
+
+**Two versions from the bakery (v510 and v511), and both came from things you spotted.**
+
+**1. The chosen day is a terracotta frame now, not a filled box — and the green ball keeps its ring.**
+Your words: __"the date change to terracotta solid. Change that to a terracotta wire frame so that the
+wording inside can be seen clearly, the green ball dont have to go solid."__ **You were measuring
+rather than guessing:** the chosen day was a filled terracotta chip with white writing on it, and
+**white on the brand terracotta measures 4.48:1 — just under the 4.5 floor** for body text, at 14px, in
+daylight. It is now a **2px terracotta frame around the whole day**, with the date in the brand's dark
+terracotta at 5.51:1, and it is drawn as an inset shadow so **nothing on the calendar shifts by two
+pixels the moment a day is chosen.**
+
+**And the green ball keeps its ring, in both the app and the shop** — the rules that were eating it are
+**deleted rather than overridden**, so they cannot come back. **That ring is the only mark saying a day
+is one you post on**, and choosing a day does not un-post it: it was being taken away at the very moment
+you were deciding about that day.
+
+**2. And the shop's calendar is the same frame**, in your words: __"i want it to be highlighted by
+terracotta wire frame only, the green outlined ball dont have to turn solid"__ — and then __"oversize
+like the one at app orders"__, __"rounded recangular"__, after a first attempt that ringed the number
+instead of the day. **The shop's day box also grew from 38 to 44 pixels**, because at 38 the ball left
+only 3px and the frame read as a band against it rather than a box around the day — and **38px was
+under the 44 the web guidance asks for anything a thumb has to hit.**
+
+**3. And a real fault came out of that measuring: the shop and the app were drawing two different
+greens.** The shop's calendar asked for a green **with a fallback attached** — a colour its own
+stylesheet never actually defined — so it quietly used the fallback, and **the day number of every
+posting day a customer could choose measured 3.65:1, under the readability floor.** A fallback is not a
+declaration, and nothing was comparing them. **Nothing changes on Munchies here: your app already
+declared its own green back in v369, so it has been right all along** — this is the bakery catching up.
+
+**4. An order you have marked Collected / Posted now leaves the delivery run.** Your words: __"order
+that already mark shipped still appear in delivery run"__. ⚠️ **This is the third time this same shape
+has come up, and it is worth seeing them together: the run was asking a question that was right until
+the world moved on.** First it was a van sent to your own kitchen; then a van sent for an order the
+courier had already delivered; and now a van sent for an order **you had already closed with your own
+hand.** There are two ways an order "has already gone" — the courier telling the app, and **you telling
+it by pressing the stage on the row** — and only the courier's word was being read. **Now one function
+answers it for everybody**, because a third copy of one rule is how three come to disagree. **And the
+boundary is deliberate: only the last stage takes an order off the run** — packed treats are exactly
+what a run exists to carry.
+
+**Nothing to run, no SQL, no upload, no setting to change on either phone.**
 
 **13 Oct 2026 — engine v509: THE RECEIPT CLEARS ITSELF, AND NOTHING ON THE SHOP RELOADS ON A TIMER
 (nothing to run, nothing to upload — pushing this is the whole of it).**

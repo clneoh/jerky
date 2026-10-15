@@ -2849,7 +2849,24 @@ option.tone-off { color: var(--muted); }
 }
 .cal-cell.tappable { cursor: pointer; }
 .cal-cell.tappable:active { background: var(--gray-bg); }
-.cal-cell.sel { background: var(--brown); color: #fff; font-weight: 700; }
+/* ★★★ THE CHOSEN DAY IS A TERRACOTTA WIRE FRAME, NOT A FILL (v510). Her words: __"the date change to
+   terracotta solid. Change that to a terracotta wire frame so that the wording inside can be seen
+   clearly"__.
+   ⚠️⚠️ MEASURED BEFORE THIS: white on `--brown` is **4.48:1** — just under the 4.5:1 body floor, at 14px,
+   and this is a phone in Penang daylight. ⭐ **The date inside the chip was the least legible thing on the
+   grid, and it was the one the baker most needs to read.**
+   ⭐⭐ **A FILL has to carry its own text; a FRAME does not** — the day keeps the page's own ink, and here
+   it takes `--brown-dark`, **the brand's TEXT shade** (`--brown` is a FILL and an EDGE colour and never
+   text — the same rule the journal columns are built on), at **5.51:1** on `--bg`.
+   ⭐ The frame itself is `--brown`: **4.10:1 on `--bg`, 4.41:1 on `--surface`** — clear of the 3:1 WCAG
+   floor for UI edges. ⚠️ Drawn as an INSET shadow rather than a border, so **nothing on the grid moves by
+   2px the moment a day is chosen.** */
+.cal-cell.sel {
+  background: none;
+  color: var(--brown-dark);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 2px var(--brown);
+}
 /* Today is not a box. A hard 1.5px outline read as a second, smaller square inside
    the cell, so today breathes instead — a soft halo in the brand colour. A day
    with its own fill (a delivery pill, a chosen day) keeps that fill instead; an
@@ -2952,7 +2969,12 @@ option.tone-off { color: var(--muted); }
    in this file and the two have EQUAL specificity — **so the past day's faint grey won over the selection
    fill, and a past day she had tapped looked exactly like one she had not.** ⚠️ That is the dead-control
    shape again: a tap with no visible answer. **Three classes beat two**, so this has to be said out loud. */
-.cal-cell.past.sel { background: var(--brown); color: #fff; font-weight: 700; }
+.cal-cell.past.sel {
+  background: none;
+  color: var(--brown-dark);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 2px var(--brown);
+}
 
 /* ★★★ THE PAST-DATE WARNING ON THE BAKE DAYS CARD (v464). Her words: __"i want to open a post date bake
    day, system should allow with a warning"__. ⭐ It wears the app's OWN warning colours - the amber the
@@ -3003,7 +3025,15 @@ option.tone-off { color: var(--muted); }
   color: var(--green);
   font-weight: 700;
 }
-.cal-cell.deliv.sel .cal-num { box-shadow: none; color: #fff; }
+/* ★★★ AND THE GREEN BALL KEEPS ITS RING (v510). Her words: __"the green ball dont have to go solid"__.
+   ⚠️ BEFORE THIS, a chosen delivery day took the ring AWAY (`box-shadow: none`) and turned the number
+   white — **so the one thing that said "the bakery delivers this day" was deleted at exactly the moment
+   she was deciding about that day.** ⭐ **Choosing a day does not un-deliver it.** The green ring and the
+   green number stay; what changed is the frame around them.
+   ⚠️ So there is deliberately no rule here at all: `.cal-cell.deliv .cal-num` above carries the ring, and
+   a chosen day wears the same one an unchosen day does. ⭐ **The presence of this note is the point — a
+   future reader looking for "what happens to the ball when the day is chosen" gets the answer in words
+   rather than by finding nothing.** */
 /* A day here is a row tall, so a halo around the cell itself would be a box again
    — and a bigger one than on the app's shorter calendars. Today's number glows
    instead, in the same round 26px the delivery days use, so today looks the same
@@ -3036,7 +3066,11 @@ option.tone-off { color: var(--muted); }
     box-shadow: 0 0 8px 3px rgba(196, 85, 47, .38);
   }
 }
-.cal-cell.sel .cal-count { color: rgba(255, 255, 255, .85); }
+/* ⚠️ AND THE BOOKING COUNT FOLLOWS THE FILL OUT (v510). It was `rgba(255,255,255,.85)` — white on the
+   terracotta chip. ⭐ **White on nothing is invisible**, so it takes the same `--brown-dark` the date
+   does; a count that vanished with the fill would be the v486 fault (a rename that moved two places of
+   three) arriving on a colour. */
+.cal-cell.sel .cal-count { color: var(--brown-dark); }
 .cal-cell.full .cal-count,
 .cal-cell.closed .cal-count { color: var(--red); }
 .cal-count { font-size: 10px; font-weight: 700; line-height: 1; color: var(--muted); }
