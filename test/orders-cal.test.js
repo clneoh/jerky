@@ -599,3 +599,53 @@ test("★★★ a chosen day is a terracotta wire frame — in the app AND on th
     `the shop's delivery day number is ${inShop.toFixed(2)}:1 on the card — BELOW the 4.5:1 body floor, `
     + "at 15px bold, on a phone in Penang daylight. The old fallback #6b8f4e measured 3.65:1");
 });
+
+// ── v512: the arrows sit beside the date range, and the green circle is explained ──
+test("★★★ the calendar's arrows sit BESIDE the date range, and the green circle is explained (v512)", () => {
+  // Her words: __"the 2 arrows are too far away from centre, they should appear just beside the date
+  // range"__ — and then __"simple note that date in green circle are bake dates"__.
+  const admin = read("admin/css/app.css");
+  const shop = read("store/app.css");
+
+  // ⚠️⚠️ BOTH CALENDARS USED A `36px 1fr 36px` GRID, which pinned one arrow to each EDGE of the card
+  // and stranded the date range between them — a full card's width apart from the month it moves.
+  // ⭐ It was built that way to keep the TITLE centred whether or not an arrow was drawn, and it did
+  // that perfectly; ⭐ **but nobody is looking at the middle track — they are looking at the month.**
+  // ⚠️ MEASURED AFTER: in the app, with both arrows drawn, `‹` ends 10px before the date range and `›`
+  // begins 10px after it.
+  for (const [who, css, sel] of [["the shop", shop, ".cal-head"], ["the app", admin, ".cal-head.weeks"]]) {
+    const body = ruleBody(css, sel);
+    assert.match(body, /display:\s*flex/,
+      `${who}: the calendar head is not a flex row — the arrows cannot sit beside the date range`);
+    assert.match(body, /justify-content:\s*center/,
+      `${who}: the head is not centred, so the arrows have gone back to the card's edges`);
+    assert.equal(/grid-template-columns/.test(body), false,
+      `${who}: the 36px-1fr-36px grid is back — it strands the date range between two arrows at the `
+      + "card's edges, which is exactly what she asked to have moved");
+    assert.match(body, /gap:\s*10px/,
+      `${who}: the arrows have no set distance from the date range`);
+  }
+
+  // ⭐⭐ AND THE GREEN CIRCLE IS EXPLAINED WHERE HE MEETS IT.
+  const app = read("store/app.js");
+  assert.match(app, /class: "cal-key"/,
+    "the shop's calendar no longer draws the legend line — a stranger meets a month of green rings and "
+    + "the only thing that said what they meant was the day he finally tapped");
+  assert.match(app, /t\("calKey"\)/, "the legend line is not reading its words from the language table");
+  assert.match(app, /class: "cal-key-dot"/,
+    "the legend no longer DRAWS the ring — ⭐ **a legend that names a colour has to show it**");
+
+  // ⚠️ AND THE RING IT DRAWS MUST BE THE SAME GREEN AND THE SAME WEIGHT AS A BAKE DAY'S OWN RING, or the
+  // legend is explaining a symbol that is not on the grid.
+  const dot = ruleBody(shop, ".cal-key-dot");
+  assert.match(dot, /box-shadow:\s*inset 0 0 0 2px var\(--green\)/,
+    "the legend's sample ring is not the green ring the calendar draws");
+  assert.match(ruleBody(shop, ".cal-cell.avail .cal-num"), /inset 0 0 0 2px var\(--green/,
+    "a bake day's own ring has moved — the legend is now describing something else");
+
+  // ⚠️ AND IT IS SAID IN ALL THREE LANGUAGES, or the two non-English shop fronts get a bare key name.
+  // (The three tables are also held to the same key SET in test/store-i18n.test.js.)
+  const lang = read("store-lang.js");
+  assert.equal((lang.match(/calKey:/g) || []).length, 3,
+    "the legend's words are missing from one of the three languages");
+});

@@ -1,8 +1,42 @@
-# Munchies Furkidz — change history (v54 → v511)
+# Munchies Furkidz — change history (v54 → v512)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**15 Oct 2026 — engine v512: THE CALENDAR'S ARROWS SIT BESIDE THE DATE, AND THE GREEN CIRCLE IS
+EXPLAINED (nothing to run, nothing to upload — pushing this is the whole of it).**
+
+**One version from the bakery, and both halves of it are yours.** Your words: __"on the calendar, the
+2 arrows are too far away from centre, they should appear just beside the date range, and simple note
+that date in green circle are bake dates."__
+
+**1. The two arrows now sit beside the date range, not at the edges of the card.** They were pinned
+as far apart as the card allows — one at each edge, with the date range stranded between them. **That
+was deliberate once:** the head was built as a three-column grid so the date stayed centred whether or
+not an arrow was drawn, and it did that perfectly. **But nobody looks at the middle of a card —
+they look at the month**, and the two controls that move it were the furthest things on the card from
+it. **It is one centred row now — the left arrow, then the date range, then the right arrow — in your
+app's calendar and in the shop's**, so the two read the same way.
+
+**2. And the green circle is explained where the customer meets it.** A first-time customer saw a
+month of dates where some wear a green ring and some do not — and **the only thing that said what the
+ring meant was the day they finally tapped, in a line underneath. A symbol a stranger has to tap to
+decode has not been explained.** There is a quiet line under the calendar now: **"Days in a green
+circle are posting days."**
+
+**And the note draws the symbol rather than describing it** — a real green ring, the same colour and
+the same 2px weight as the one on a posting day, because **a legend that names a colour has to show
+it.** That is not a theoretical worry here: this shop spent weeks drawing a green the app never used
+(found last version), and no test could see it. **The test now reads the legend's ring and the day's
+ring together**, so the two cannot drift apart.
+
+**It is written in all three languages.** The English is mine to stand behind; the Chinese and Malay
+are my words rather than yours, there to be corrected like every other translated line — and they
+follow your own shop's words (the same words your posting-day line already uses, in both languages).
+**Tell me if you would rather it read differently.**
+
+**Nothing to run, no SQL, no upload, no setting to change on either phone.**
 
 **15 Oct 2026 — engine v511: THE CHOSEN DAY IS A TERRACOTTA FRAME, AND AN ORDER YOU HAVE CLOSED LEAVES
 THE RUN (nothing to run, nothing to upload — pushing this is the whole of it).**
@@ -1466,7 +1500,7 @@ customer's own language:
 **Bring-a-friend you were sent: -RM 3.00**
 
 — sitting where the promo line sits, so the figures above it still add up to the Total below. In
-中文 it reads 朋友推荐优惠：-RM3.00, and in Bahasa Malaysia __Bawa rakan yang menghantar anda: -RM3.00__.
+In Mandarin it reads the friend-referral discount line and then -RM3.00, and in Bahasa Malaysia __Bawa rakan yang menghantar anda: -RM3.00__.
 It is the same sentence your WhatsApp confirmation uses, so the two agree word for word.
 
 ** And it needed no database step, which is worth explaining because it nearly did.** The obvious

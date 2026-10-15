@@ -276,14 +276,22 @@ html, body {
   padding: 12px 10px 10px;
   box-shadow: var(--shadow);
 }
-/* Three columns — the title in the middle, an arrow either side — so the title is
-   centred on the card whether or not an arrow is there. An empty slot is a plain
-   span, so the track always has a child and the title never falls into a 36px one. */
+/* ★★★ THE ARROWS SIT BESIDE THE DATE RANGE, NOT AT THE CARD'S EDGES (v512).
+   Her words: __"the 2 arrows are too far away from centre, they should appear just beside the date
+   range"__.
+   ⚠️ BOTH CALENDARS USED A THREE-COLUMN GRID — `36px 1fr 36px` — which pinned one arrow to the left
+   edge of the card and the other to the right, **with the date range stranded in the middle of a
+   300px gap.** ⭐ It was built that way to keep the TITLE centred whether or not an arrow was drawn,
+   and it does that perfectly — ⚠️ **but nobody is looking at the middle track; they are looking at the
+   month, and the two controls that move it were as far from it as the card allows.**
+   ⭐ A centred flex row puts the whole group together: `‹  4 Oct – 7 Nov  ›`, read as one thing.
+   ⚠️ An empty slot is still a plain span (`cal-slot`, no styles, 0 wide), so at the ends of what she
+   has published the group simply shifts by an arrow's width rather than leaving a hole. */
 .cal-head {
-  display: grid;
-  grid-template-columns: 36px 1fr 36px;
+  display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  gap: 10px;
   margin: 0 0 8px;
 }
 .cal-title {
@@ -532,6 +540,31 @@ html, body {
   font-size: 14px;
   font-weight: 700;
   color: var(--ink);
+}
+/* ★★★ WHAT THE GREEN CIRCLE MEANS (v512). Her words: __"simple note that date in green circle are bake
+   dates"__.
+   ⚠️⚠️ IT DRAWS THE SYMBOL RATHER THAN ONLY DESCRIBING IT — a real green ring, the same colour and the
+   same 2px weight as the one on a bake day — so the sentence and the thing it explains cannot drift
+   apart, which is the fault the v510 green turned out to be (a fallback nobody had compared). ⭐ **A
+   legend that names a colour has to show it.**
+   ⚠️ Quiet on purpose: 12px `--muted`, **MEASURED at 5.40:1 on the card** — over the 4.5 the shop is held
+   to, and still plainly quieter than the line below it — because it is reference material, not a second
+   answer. */
+.cal-key {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 8px 2px 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.cal-key-dot {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--green);
 }
 .cal-note {
   display: flex;

@@ -2779,12 +2779,19 @@ option.tone-off { color: var(--muted); }
 .cal-title { font-family: var(--serif); font-weight: 700; font-size: 16px; }
 .cal-nav { min-width: 36px; padding: 6px 0; }
 /* The delivery-day calendar draws the shop's ROLLING five weeks rather than a
-   month (v243). Its head is a grid and not a flex row so the title stays centred
-   in the middle track whether or not an arrow is drawn: at the ends of the days
-   she has set, one of them is a bare .cal-slot span in place of a button, and
-   space-between would slide the title off centre. Only this calendar wears
-   .weeks — the other five .cal-head calendars are untouched. */
-.cal-head.weeks { display: grid; grid-template-columns: 36px 1fr 36px; }
+   month (v243).
+   ★★★ AND SINCE v512 THE TWO ARROWS SIT BESIDE THE DATE RANGE, NOT AT THE EDGES (v512). Her words:
+   __"the 2 arrows are too far away from centre, they should appear just beside the date range"__.
+   ⚠️ This head was a `36px 1fr 36px` grid — built that way (v243) to keep the TITLE centred whether or
+   not an arrow was drawn, and it does that perfectly. ⭐ **But nobody is looking at the middle track;
+   they are looking at the month, and the two controls that move it were pinned as far from it as the
+   card allows.** ⭐ A centred flex row puts the whole group together — `‹  4 Oct – 7 Nov  ›` — and the
+   shop's own calendar is the same shape, so the two read alike.
+   ⚠️ An empty slot is still a bare `.cal-slot` span (no styles, 0 wide), so at the ends of the days she
+   has set the group shifts by an arrow's width rather than leaving a hole.
+   ⚠️ **Only this calendar wears `.weeks`** — the other five `.cal-head` calendars keep the flex
+   `space-between` row they have always had. */
+.cal-head.weeks { display: flex; justify-content: center; gap: 10px; }
 .cal-head.weeks .cal-title { text-align: center; }
 .cal-grid {
   display: grid;

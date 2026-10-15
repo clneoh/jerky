@@ -37,7 +37,7 @@ import { ENGINE_VERSION } from "../admin/js/version.js";
 // cache.** ⚠️ And it must be kept in step with `admin/js/version.js` by hand, which is a second place for
 // one fact: ⭐ **that is accepted here ONLY because a test fails the moment they disagree** (see
 // `store-build-notice.test.js`), so a forgotten bump is a red suite rather than a shop that lies.
-export const SHOP_BUILD = "511";
+export const SHOP_BUILD = "512";
 // "Is this page the newest one?" — the comparison and the probe's address, kept on their own so a
 // test can pin them (this file calls `render()` at the top level and cannot be imported at all).
 import { BUILD_TRIED_KEY, VERSION_URL, newerBuild } from "./build.js";
@@ -3134,6 +3134,18 @@ function clearFieldMarks() {
           ...cells,
           // The bands go in last and sit behind the cells (see .occ-paper).
           ...occBands(weeks, todayK)),
+        // ★★★ WHAT THE GREEN CIRCLE MEANS (v512). Her words: __"simple note that date in green circle are
+        // bake dates"__.
+        // ⚠️⚠️ THE SYMBOL WAS NEVER EXPLAINED ANYWHERE. A customer met a month of dates where some wear a
+        // green ring and some do not, and the only thing that said what the ring meant was the day he
+        // finally TAPPED, in the line below. ⭐ **A symbol a stranger has to tap to decode has not been
+        // explained** — and this is the one fact the whole grid turns on.
+        // ⚠️ The ring is DRAWN beside the words (`.cal-key-dot`) rather than only named, so the sentence
+        // and the thing it describes cannot drift apart, and it is `aria-hidden` so a screen reader reads
+        // the words alone rather than an empty span.
+        el("p", { class: "cal-key" },
+          el("span", { class: "cal-key-dot", "aria-hidden": "true" }),
+          t("calKey")),
         // The day, in words — the one line under the grid. ⚠️ AND IT SAYS WHICH OF THE TWO
         // HAPPENED (v434). A day is always chosen here, but only sometimes BY HIM: the first open
         // day is picked for him so an order is never blocked by forgetting to tap, and **a page

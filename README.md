@@ -756,6 +756,47 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## Engine v511 → v512 — the calendar's arrows sit beside the date, and the green circle is explained (15 Oct 2026)
+
+One version from the bakery. **6 files changed (`+132 / −14`); no SQL and nothing to deploy** — the same
+push carries it. Suite **3480 → 3481 pass / 0 fail**.
+
+**★ Her words, and both halves are hers:** *"on the calendar, the 2 arrows are too far away from centre,
+they should appear just beside the date range, and simple note that date in green circle are bake dates."*
+
+### The arrows
+
+Both calendars' heads were a **three-column grid, `36px 1fr 36px`** — one arrow pinned to each edge of the
+card with the date range stranded between them. ⚠️ **That was deliberate once:** it kept the TITLE centred
+whether or not an arrow was drawn, and it does that perfectly. **But nobody looks at the middle track —
+they look at the month**, and the two controls that move it were the furthest things on the card from it.
+It is **one centred flex row, gap 10px, in the shop's calendar and the app's**. ⚠️ In the app this is
+`.cal-head.weeks` **only** — the other five `.cal-head` calendars keep their `space-between` row on purpose
+(they always draw both arrows). An empty slot is still a bare `.cal-slot` span (0 wide), so at the ends of
+what she has published **the group shifts by an arrow's width rather than leaving a hole.**
+
+### The green circle, explained
+
+⚠️ **A first-time customer met a month of dates where some wear a green ring and some do not, and the only
+thing that said what the ring meant was the day they finally TAPPED** — in the line underneath. **A symbol
+a stranger has to tap to decode has not been explained**, and this is the one fact the whole grid turns on.
+There is now a quiet line under the grid: **"Days in a green circle are posting days."** (12px, 5.40:1 on
+the card, `.cal-key`.)
+
+**And it DRAWS the symbol rather than describing it** — `.cal-key-dot` carries `inset 0 0 0 2px var(--green)`,
+**byte-identical in form to the day's own ring** (`.cal-cell.avail .cal-num`), because **a legend that names
+a colour has to show it.** ⚠️ Not theoretical here: this shop spent weeks drawing a green the app never used
+(found at v510) and no test could see it. **The test now reads the legend's ring and the day's ring together.**
+
+**⚠️ LOCALIZED for jerky, in all three languages.** The bakery's line reads *"bake days"*; jerky's shop says
+**posting day**, so it is **"Days in a green circle are posting days."** / **"绿色圆圈里的日期是发货日。"** /
+**"Tarikh dalam bulatan hijau ialah hari pos."** — following jerky's own existing words (`calChosen` already
+uses 发货日 / *hari pos*). The Chinese and Malay are mine to be corrected, as with every other translated shop
+line, and the comment beside each says so. **No test pinned the old wording.**
+
+**Bitten:** turning the legend's ring into a plain dot, and putting the head back to the grid — both make
+`test/orders-cal.test.js` fail by name.
+
 ## Engine v509 → v511 — the chosen day is a terracotta frame, and a closed order leaves the run (15 Oct 2026)
 
 Two versions from the bakery. **8 files changed (`+254 / −12`); no SQL and nothing to deploy** — the same
