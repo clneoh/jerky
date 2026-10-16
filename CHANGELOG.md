@@ -1,8 +1,38 @@
-# Munchies Furkidz — change history (v54 → v512)
+# Munchies Furkidz — change history (v54 → v513)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**16 Oct 2026 — engine v513: THE DATE ON SCREEN FOLLOWS THE CLOCK, IN YOUR APP AND ON THE SHOP
+(nothing to run, nothing to upload — pushing this is the whole of it).**
+
+**One version from the bakery, and it is your report turned into a question that found a second one.**
+Your words: __"it is the 1st time that i saw the app date not updated until i reload? Why?"__ — and then
+__"will it happen on storefront?"__
+
+**1. Your app kept yesterday's date until you reloaded it.** It drew the date when the screen was drawn
+and **never looked at the clock again**: only moving to another screen, a reload, or a data change
+repaints it. **So an app left open overnight went on saying yesterday.** Measured: with the clock on
+Saturday 17 October, the Home screen still read Friday 16 — and switching away and back changed nothing.
+
+**2. And a second thing, which made it worse: the app's "look again" alarms only started after a cloud
+sign-in.** If you were **not** using cloud sync — which is the state your own phone was in — the app had
+registered no timer, no focus and no returning-to-the-page listener at all. **Nothing could have
+refreshed that date except moving to another screen.**
+
+**3. And then you asked the better question, and the answer was yes.** The shop **was** doing the same
+thing. It re-checks its numbers every 30 seconds and every time a customer comes back to the page, but
+**it only redraws when those numbers change — and the date changing is not a change.** So a shop left
+open overnight kept **yesterday's "today"**. Measured: with the clock on 17 October and the customer
+coming back to the tab, the green "today" ring was still sitting on the 16th, while the shop's requests
+were going out on every beat. **What it already caught was a day passing its 6pm cut-off — that removes
+a day, which is a change — so the cut-off was honest and the calendar was not.**
+
+**Both now watch the clock as well as the data**: your app whenever the page is returned to, and the
+shop on the same 30-second beat it already runs, so the day on screen is the day it really is.
+
+**Nothing to run, no SQL, no upload, no setting to change on either phone.**
 
 **15 Oct 2026 — engine v512: THE CALENDAR'S ARROWS SIT BESIDE THE DATE, AND THE GREEN CIRCLE IS
 EXPLAINED (nothing to run, nothing to upload — pushing this is the whole of it).**

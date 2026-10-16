@@ -756,6 +756,49 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## Engine v512 → v513 — the date on screen follows the clock, in both apps (16 Oct 2026)
+
+One version from the bakery. **4 files changed (`+160 / −3`); no SQL and nothing to deploy** — the same
+push carries it. Suite **3481 → 3482 pass / 0 fail**. **Zero merge conflicts** again.
+
+**★ Her report, and her own follow-up question found a second one:** *"it is the 1st time that i saw the
+app date not updated until i reload? Why?"* — then *"will it happen on storefront?"*
+
+### The app
+
+It drew its date **when the screen was drawn** and never looked at the clock again: only a navigation, a
+reload, or a data pull that **changed** something repaints. **Measured: clock on Sat 17 Oct, the Home date
+still Fri 16 Oct, and `visibilitychange` + `focus` changed nothing.**
+
+⚠️ **And a second half that made it worse:** the app's other look-again listeners live in the loop that
+only starts **after a cloud sign-in** — and "Use without cloud sync" starts neither. So with shared data
+**off** (the state her own screen was in) the app registered **no timer, no focus and no visibility
+listener at all.** The check now sits beside the router's own listener, which runs for every session.
+
+⚠️ **And the bakery recorded its own first attempt honestly, which is worth keeping:** it put the check in
+that same post-sign-in loop, reasoning the 30-second timer was already there — **and measured that it did
+nothing. A fix placed on a code path the reporter's own state never reaches is not a fix — and it read as
+correct.**
+
+### The shop — already happening
+
+⚠️ **The shop re-checks its DATA every 30 seconds and on the customer returning, and it redraws when that
+data changed — but the date moving is not a data change.** Measured: clock on 17 Oct, customer back on the
+tab, the green "today" ring still on 16, while the availability requests went out on every beat. ⭐ **The
+one thing it DID already catch was a day crossing its 6pm cut-off — that drops a day, a real change — so
+the cut-off was honest and the calendar was not.** Now `drawnDay` is written at the single repaint funnel
+and `movedDay` joins the reasons to redraw.
+
+### ⚠️ The test trap the bakery paid for, worth keeping
+
+⚠️ **A module-scope `setInterval` in Node holds the process open.** Adding the timer plainly made **two
+whole test FILES hang for the full 20-second timeout and report as failures**, with every test inside them
+passing — and **neither file names `app.js` in its own imports.** It is `unref`'d now, with the reason
+beside it. **Verified here: removing the `unref` hangs this repo's suite too.**
+⚠️ **And a bite lesson of my own: removing the shop's `movedDay` left `test/store.test.js` GREEN — the
+assertion lives in `test/app.test.js`, which reads `store/app.js` as TEXT.** Bite the file that actually
+holds the assertion.
+
 ## Engine v511 → v512 — the calendar's arrows sit beside the date, and the green circle is explained (15 Oct 2026)
 
 One version from the bakery. **6 files changed (`+132 / −14`); no SQL and nothing to deploy** — the same

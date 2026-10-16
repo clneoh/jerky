@@ -37,7 +37,7 @@ import { ENGINE_VERSION } from "../admin/js/version.js";
 // cache.** ⚠️ And it must be kept in step with `admin/js/version.js` by hand, which is a second place for
 // one fact: ⭐ **that is accepted here ONLY because a test fails the moment they disagree** (see
 // `store-build-notice.test.js`), so a forgotten bump is a red suite rather than a shop that lies.
-export const SHOP_BUILD = "512";
+export const SHOP_BUILD = "513";
 // "Is this page the newest one?" — the comparison and the probe's address, kept on their own so a
 // test can pin them (this file calls `render()` at the top level and cannot be imported at all).
 import { BUILD_TRIED_KEY, VERSION_URL, newerBuild } from "./build.js";
@@ -3390,6 +3390,19 @@ function clearFieldMarks() {
   // ⭐ The handle the fulfilment picker uses — see `paintStepsForFulfillment` beside `repaintPromo`.
   paintStepsForFulfillment = paintSteps;
 
+  // ★★★ THE DAY THE PAGE WAS LAST DRAWN FOR (v513).
+  //
+  // ⚠️⚠️ HER QUESTION, AFTER THE APP'S OWN DATE WENT STALE: __"will it happen on storefront?"__ — and the
+  // answer, MEASURED, is **YES, and it was already happening.** ⭐ The shop re-checks the DATA every 30
+  // seconds and on coming back to the tab, and it redraws when that data changed — ⚠️ **but the DATE
+  // moving is not a data change**, so a shop left open (or resumed from the background) overnight kept
+  // **yesterday's "today"** on the grid. ⭐ **Measured: with the clock moved to 17 Oct and the customer
+  // coming back to the tab, the green "today" halo was still on 16** — while the availability requests
+  // went out on every beat, so the polling was running.
+  // ⚠️ **The one thing it DID already catch was a day crossing its 6pm cut-off** — that drops a day from
+  // the list, which is a change — ⭐ **so the cut-off was honest and the calendar was not**, which is
+  // exactly the kind of half-covered thing that is hard to notice.
+  let drawnDay = "";
   const rerender = () => {
     dates = resolveDates(upcomingDates(CONFIG), dayRows, dateKey(new Date()))
       .filter((d) => isOpen(CONFIG, d));
@@ -3415,6 +3428,9 @@ function clearFieldMarks() {
     const fulfil = document.getElementById("fulfillment");
     if (fulfil) fulfil._day = selected;
     renderBar();
+    // ★★★ WHICH DAY THIS PAGE WAS DRAWN FOR (v513) — see `drawnDay` above. ⭐ Written HERE, at the one
+    // place every repaint funnels through, so it can never claim a repaint that did not happen.
+    drawnDay = dateKey(new Date());
   };
 
   rerender();
@@ -3492,7 +3508,12 @@ function clearFieldMarks() {
         .filter((d) => isOpen(CONFIG, d));
       const daysChanged = next.length !== dates.length
         || next.some((d, i) => dateKey(d) !== dateKey(dates[i]));
-      if (changed || daysChanged) rerender();
+      // ★★★ AND THE DATE IS A REASON TO REDRAW ON ITS OWN (v513) — see `drawnDay`. ⚠️ The line above
+      // catches a day crossing its cut-off; **it cannot catch midnight**, because the list of orderable
+      // days is identical on both sides of it. ⭐ So "today" is asked here too, and it costs one string
+      // comparison on a beat that is already running.
+      const movedDay = dateKey(new Date()) !== drawnDay;
+      if (changed || daysChanged || movedDay) rerender();
       // The card was aimed at before this data arrived, and the page is taller
       // now — aim once more with the layout final. Only for a page opened by the
       // track link, and only this first pass: the 30s poll must never pull a

@@ -7,6 +7,7 @@ import * as sync from "./sync.js";
 import { maybeAutoBackup } from "./backups.js";
 import { cachedToken, maybeSync, pullIncoming, refreshStorefront } from "./supabase.js";
 import { canonicaliseCustomers, reconcileContacts } from "./profiles.js";
+import { todayISO } from "./dates.js";
 
 import { renderDashboard } from "./views/dashboard.js";
 import { renderDeliveries } from "./views/deliveries.js";
@@ -240,6 +241,10 @@ function render() {
       button("Try again", render, "primary")));
   }
   viewEl.focus({ preventScroll: true });
+  // ★★★ WHICH DAY THIS SCREEN WAS DRAWN FOR (v513) — see `dayMoved` beside `onSyncChanged`. ⭐ Written
+  // HERE and nowhere else, so it can never claim a repaint that did not happen: ⚠️ the day check above
+  // leaves it alone when it could not repaint (mid-edit, locked), so the next look tries again.
+  drawnDay = todayISO();
   // Amber "Not sharing right now" strip — lives above the route, refreshed on
   // every render so it appears/disappears the moment the sharing state changes.
   refreshShareWarn(state);
@@ -252,6 +257,38 @@ function render() {
 // but the immediate refresh re-runs so fresh data shows up right away.
 function onSyncChanged() {
   if (!loggedOut && !lockedNow() && !isEditing()) render();
+}
+
+// ★★★ THE DAY THE SCREEN WAS LAST DRAWN FOR (v513).
+//
+// ⚠️⚠️ HER REPORT: __"it is the 1st time that i saw the app date not updated until i reload? Why?"__
+// ⭐ **The app drew its date when the SCREEN was drawn and never looked at the clock again.** The Home
+// hero reads `weekdayName(today), longDate(today)` off a `todayISO()` taken at render time — and **the
+// only things that render are a navigation, a reload, and `onSyncChanged` when pulled data actually
+// changed.** ⚠️ So an app left open (or resumed from the background) across midnight **kept yesterday's
+// date until she reloaded** — and with shared data OFF the 30-second timer does nothing at all
+// (`tick` returns at `if (!sync.pageActive()) return`), so nothing could ever repaint it.
+//
+// ⭐⭐ THE SHOP HAS SOLVED THIS SINCE v330-SOMETHING AND THE APP HAD NOT. The storefront's own 30-second
+// poll **recomputes today every beat** — `upcomingDates(CONFIG)` and `isOpen(…, dateKey(new Date()))` —
+// and redraws when the set of orderable days shifts, with a comment saying so in as many words: *"a day
+// can cross its cut-off with no data change — drop closed days from the row even when the payload is
+// otherwise identical."* ⚠️ **This is the same fault the run has had three times (v494, v507, v511): a
+// question answered in one place and not the other.**
+//
+// ⭐ AND IT ASKS THE CLOCK WHEN SOMEONE LOOKS AT THE PAGE, which is v497's lesson arriving here: **a
+// timer in a hidden page does not run, and the phone is put down overnight.** So the day is checked on
+// coming back to the page and on the ordinary 30-second beat, and the repaint only happens if the DAY
+// moved — once a day, not fifty times an hour.
+//
+// ⚠️ AND IT CANNOT MOVE HER: this app's `viewEl.scrollTop = 0` is a **no-op** (`#view` is
+// `overflow: visible`; the DOCUMENT scrolls), so a repaint leaves her exactly where she was reading.
+let drawnDay = "";
+function dayMoved() {
+  if (todayISO() === drawnDay) return false;
+  if (loggedOut || lockedNow() || isEditing()) return false; // the next check will try again
+  render();
+  return true;
 }
 
 function startSync() {
@@ -429,6 +466,40 @@ function bootApp() {
 }
 
 window.addEventListener("hashchange", render);
+
+// ★★★ AND THE DAY IS ASKED WHENEVER THE PAGE IS COME BACK TO (v513) — registered HERE, beside the
+// router's own listener, and **deliberately NOT inside `startSync()`**.
+//
+// ⚠️⚠️ THAT IS THE WHOLE BUG, AND IT IS WHY SHE SAW IT. The app's other visibility, focus and timer
+// listeners live in **`startIntake()`** — and that, like `startSync()`, is only reached from `bootApp()`
+// **after a sign-in**. ⚠️ **"Use without cloud sync" calls NEITHER**: its `onOffline` sets
+// `loggedOut = false`, shows the tab bar and renders, and nothing else. ⭐ **So with shared data OFF —
+// which is exactly the state she was in, her own screen read "Not sharing right now" — the app
+// registered NO visibility, focus or timer listener whatsoever**, and nothing could ever have
+// repainted the date but a navigation or a reload.
+// ⚠️⚠️ **MY FIRST ATTEMPT PUT THIS CHECK IN `startIntake()`'s OWN `go()`, on the reasoning that "the
+// timer is already there". MEASURED ON THE REAL APP, it did nothing: the clock said Sat 17 Oct, the
+// hero still said Fri 16 Oct, and firing both `visibilitychange` and `focus` changed neither.**
+// ⭐ **A fix placed on a code path the reporter's own state never reaches is not a fix** — and it read
+// as correct. ⚠️ **I also wrote `startSync()` in the first draft of this very comment, which is the
+// same mistake in miniature: the two functions are both "the loop that runs after sign-in", and the
+// one thing that matters is the thing they have in common — she never gets there.**
+//
+// ⭐ The router's listeners run for EVERY session, sharing or not — which is exactly what a question
+// about "which day is on screen" needs.
+const checkDay = () => { if (dayMoved()) return; };
+if (typeof window !== "undefined" && typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) checkDay(); });
+  window.addEventListener("focus", checkDay);
+  // ⚠️⚠️ AND THIS TIMER MUST NOT BE THE REASON A TEST FILE IS KEPT ALIVE. In a browser `setInterval`
+  // hands back a number with no `unref`; **in Node it hands back a Timeout that HOLDS THE PROCESS OPEN.**
+  // ⭐ MEASURED: registering this plainly made `test/customer-history-door.test.js` and
+  // `test/customer-payment-truth.test.js` **hang for the full 20-second test timeout and report as
+  // failures** — every test inside them passed, and the FILE was `not ok`. ⚠️ **That is exactly the
+  // fault the shop's own `shopTimer` was written for, and it is written here for the same reason.**
+  const dayTimer = setInterval(checkDay, 30000);
+  if (dayTimer && typeof dayTimer.unref === "function") dayTimer.unref();
+}
 
 // Expose save/state to views that import from app.js without a cycle.
 export { state, save };

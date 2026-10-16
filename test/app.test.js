@@ -5,6 +5,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 const realLocalStorage = globalThis.localStorage;
 const HASH_1234 = "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4";
@@ -478,4 +479,68 @@ test("v120 catch-up joins a customer who was split by a '+' on their number, onc
     assert.equal(saved.orders.every((o) => o.whatsapp === "60123456789"), true,
       "both orders now carry the one spelling, so she sees one row");
   } finally { restore(); }
+});
+
+// ── v513: the date on screen follows the calendar, not the page load ─────────
+test("★★★ the day is re-checked whenever the page is come back to — and never on a path that cannot run (v513)", () => {
+  // ⚠️⚠️ HER REPORT: __"it is the 1st time that i saw the app date not updated until i reload? Why?"__
+  // ⭐ The app drew its date when the SCREEN was drawn and never looked at the clock again, so an app
+  // left open overnight kept yesterday's date. ⭐ MEASURED on the real app: the clock said Sat 17 Oct,
+  // the hero still said Fri 16 Oct, and picking the phone up changed nothing.
+  const SRC = readFileSync(new URL("../admin/js/app.js", import.meta.url), "utf8");
+
+  assert.match(SRC, /function dayMoved\(\)/,
+    "the day-rollover check is gone — **the app's date goes stale again for anyone who leaves it open "
+    + "overnight**, which is the whole of her report");
+
+  // ⭐⭐ AND WHERE IT IS REGISTERED IS THE WHOLE BUG. This app has two ways in — the cloud sign-in, and
+  // **"Use without cloud sync", which sets `loggedOut = false` and renders and calls nothing else.**
+  // ⚠️⚠️ **"No listener at all" had to be guarded in BOTH loops, because the day check must be in
+  // NEITHER: `startSync` and `startIntake` are both only reached from `bootApp()` after a sign-in, and
+  // `onOffline` calls neither.** ⭐ **My first attempt put the check inside `startIntake()`'s own
+  // `go()` — and it read as correct.** ⚠️ **And my first draft of THIS test guarded `startSync`
+  // instead, which the bite proved was watching the wrong one: the fault went in and NOTHING fired.
+  // A guard on the wrong function looks exactly like a guard that works.**
+  for (const fn of ["startSync", "startIntake"]) {
+    const at = SRC.indexOf(`function ${fn}()`);
+    assert.ok(at > 0, `${fn} has been renamed — this guard is no longer watching the right code`);
+    const body = SRC.slice(at, SRC.indexOf("\nfunction ", at + 1));
+    assert.equal(/checkDay|dayMoved/.test(body), false,
+      `the day check is back inside \`${fn}()\` — ⚠️ **the "Use without cloud sync" path never calls `
+      + "it**, so the check would never run for exactly the state she reported from");
+  }
+
+  // ⭐ It belongs beside the router's own listener, which runs for EVERY session.
+  assert.ok(SRC.indexOf('window.addEventListener("hashchange", render)') > 0,
+    "the router's own listener has moved — this guard is watching the wrong seam");
+  assert.match(SRC, /document\.addEventListener\("visibilitychange", \(\) => \{ if \(!document\.hidden\) checkDay\(\); \}\)/,
+    "the day is no longer checked when the page becomes visible — on a phone this is THE ordinary case: "
+    + "the phone is put down overnight and picked up in the morning");
+  assert.match(SRC, /window\.addEventListener\("focus", checkDay\)/,
+    "the day is no longer checked on focus — **v497's lesson: a timer in a hidden page does not run**");
+
+  // ⚠️⚠️ AND THE TIMER MUST NOT HOLD THE SUITE OPEN. ⭐ MEASURED, and this one cost me: registered
+  // plainly, a module-scope `setInterval` in Node keeps the PROCESS alive, and
+  // `test/customer-history-door.test.js` and `test/customer-payment-truth.test.js` each **hung for the
+  // full 20-second timeout and reported as failures — every test inside them passed, and the FILE was
+  // `not ok`.** ⭐ **Neither of those files names `app.js` in its own imports**, which is why the guard
+  // belongs on the TIMER rather than on any one test file.
+  const timerAt = SRC.indexOf("setInterval(checkDay, 30000)");
+  assert.ok(timerAt > 0, "the 30-second day beat is gone — a phone left on the screen at midnight would never roll over");
+  assert.match(SRC.slice(timerAt, timerAt + 220), /unref\(\)/,
+    "the day timer is not `unref`'d — ⚠️ MEASURED: that alone makes two test FILES hang for the full "
+    + "20-second timeout and report as failures while every test inside them passes");
+
+  // ★★ AND THE SHOP HAD THE SAME HOLE. Her question: __"will it happen on storefront?"__ ⚠️ **It was
+  // already happening** — MEASURED: with the clock moved to 17 Oct and the customer returning to the
+  // tab, the green "today" halo was still on 16, while the availability requests went out on every
+  // beat. ⭐ **The storefront redrew only when the DATA changed, and the date moving is not a data
+  // change** — ⚠️ the one thing it DID already catch was a day crossing its 6pm cut-off, which does
+  // change the list, **so the cut-off was honest and the calendar was not.**
+  const shop = readFileSync(new URL("../store/app.js", import.meta.url), "utf8");
+  assert.match(shop, /const movedDay = dateKey\(new Date\(\)\) !== drawnDay;/,
+    "the shop no longer asks whether the day moved — a shop left open overnight keeps yesterday's "
+    + "\"today\" on the grid");
+  assert.match(shop, /if \(changed \|\| daysChanged \|\| movedDay\) rerender\(\);/,
+    "the shop asks the question and then does not act on it, which is worse than not asking");
 });
