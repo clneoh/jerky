@@ -2268,8 +2268,11 @@ option.tone-off { color: var(--muted); }
 }
 /* ⚠️ `.paid-tag.tng` IS GONE (v478). The tag names the METHOD — `.paid-tag.tng` was one of its two
    looks, and a method the two-look rule never knew ("Bank", "Cash to LK") took the CASH look while
-   printing the wrong word. ⚠️ It is now ONE tag reading "Paid" (her words: __"the tag just need one.
-   Paid"__), so there is no second look to get wrong. */
+   printing the wrong word. ⚠️ It is now ONE tag with ONE look, so there is no second look to get
+   wrong; since v526 its words are "Paid · <account>" (her words: __"the tag just need one. Paid"__
+   set the state, and __"now i can see that an order had been paid, but how do i find out whether it
+   is pay be TnG cash or orthers?"__ asked for the account) — **every account wears the same green,
+   which is why the look cannot disagree with the word.** */
 /* ★ "Not paid" — the order has reached the paying stage and the money is still out (v430).
    ⚠️ AMBER, NOT RED: red on this card would read as an error, and this is a "still to do", the
    same register the app already gives money that has not come in (`.paid-tag.courier.mine`).
@@ -2982,6 +2985,40 @@ option.tone-off { color: var(--muted); }
   font-weight: 700;
   box-shadow: inset 0 0 0 2px var(--brown);
 }
+
+/* ★★★ THE DAY THE PRODUCTION PANEL IS OPEN ON (v514). ⚠️ THE SAME TERRACOTTA WIRE FRAME `.cal-cell.sel`
+   wears above, and deliberately the same declarations rather than a lookalike: ⭐ **on this screen the
+   frame means the same thing in all three modes — "this is the day being talked about"** — and a second
+   spelling of one look is how two of them come to drift (the shop's own green was doing exactly that
+   until v510). ⚠️ Not `.sel` itself, because that one is the ADD grid's picked set and the drag layer
+   reads it; they can never both be showing, so they are two names for one look on purpose. */
+.cal-cell.bake-pick {
+  background: none;
+  color: var(--brown-dark);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 2px var(--brown);
+}
+
+/* ---------- Baked: the panel in this pop-up (v514, cleaned at v522) ----------
+   Her words: __"i need system to allow us to enter bake qty, system dont have to track the extra bake, but
+   just need to deduct ingredient."__
+   ⚠️⚠️ AND THIS BLOCK WORE A NAME THAT WAS ALREADY TAKEN. It used to declare `.bake-line` — **the SAME class
+   the Home screen's own bake lines use** (`views/dashboard.js`) — so this rule, declared later, won, and
+   **every bake line on her Home screen has been wearing a green box and a green left border since v514.**
+   ⭐ **No test saw it**, which is the same fault this project records from v394–v418: *a class collision
+   squashed every card while every test passed.* ⚠️ **A dead rule is not harmless — it can be the one that
+   wins.** Everything below is what the pop-up actually uses; the rest was deleted with it. */
+.bake-label { flex: 0 0 auto; font-size: 12px; color: var(--muted); }
+/* ⚠️⚠️ AND THE READOUT THAT STOOD HERE IS GONE (v523) — ALONG WITH ITS WRAPPER, TWICE OVER. Her words: __"the
+   word total baked, means total baked is say 10. aother additional word is just confusing"__ — ⭐ **the label
+   answers the question the sentence was written for.**
+   ⚠️ **AND THE WRAPPER `.bake-right` WAS LEFT DECLARED TWICE AND USED NOWHERE** — ⭐ **the SAME fault as the
+   `.bake-line` collision beside it, made again inside the hour.** ⚠️ **A dead rule is not harmless: it can be
+   the one that wins.** Both copies are gone. */
+
+/* ⚠️ 64px IS A PLAUSIBLE BAKING DAY, NOT A ROUND NUMBER: a 12-pan day is two digits, and a box narrower
+   than its own answer makes her swipe to read back what she typed. */
+.bake-box { flex: 0 0 auto; width: 64px; text-align: center; }
 
 /* ★★★ THE PAST-DATE WARNING ON THE BAKE DAYS CARD (v464). Her words: __"i want to open a post date bake
    day, system should allow with a warning"__. ⭐ It wears the app's OWN warning colours - the amber the

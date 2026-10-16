@@ -83,9 +83,11 @@ class MockDate extends RealDate {
 }
 globalThis.Date = MockDate;
 
-const { renderOrders } = await import("../admin/js/views/orders.js");
+const ordersMod = await import("../admin/js/views/orders.js");
+const { renderOrders } = ordersMod;
 const { effectiveCapacity } = await import("../admin/js/bom.js");
 const { orderCode, orderLinePrice } = await import("../admin/js/state.js");
+const { setBakedTotal } = await import("../admin/js/stock.js");
 const { forgetPublishedCards, pullIncoming, forgetStuckOrders } = await import("../admin/js/supabase.js");
 
 // Focaccia sells every day; the Saturday loaf is marked Saturdays only, and the
@@ -417,8 +419,9 @@ test("a method picked in the payment box records the payment itself", () => {
   // that was the only way in.
   const after = createEl("div");
   renderOrders(after, st, new URLSearchParams({ date: "d10" }));
-  assert.equal(loadTag(after).children[0].text, "Paid",
-    "⚠️ the tag says the one word now, not the account (v478) — her words: \"the tag just need one. Paid\"");
+  assert.equal(loadTag(after).children[0].text, "Paid · TNG",
+    "⚠️ the row does not name the account the money went into (v526) — **she asked exactly this: an order "
+    + "reads Paid, but which way did it come?**");
   assert.equal(moneyLine(after).textContent, "TNG RM 30.00",
     "and the day's till still splits it by account, with nothing left to collect");
   assert.equal(buttonByText(after, "Pay"), undefined, "the Pay press is gone — there is nothing left to record");
@@ -433,7 +436,9 @@ test("Not recorded is the way back, so a payment marked by mistake is not a one-
   st.orders[0].paidAt = "2026-09-09T04:00:00.000Z";
   const root = createEl("div");
   renderOrders(root, st, new URLSearchParams({ date: "d10" }));
-  assert.equal(loadTag(root).children[0].text, "Paid", "the row says the money is in");
+  assert.equal(loadTag(root).children[0].text, "Paid · Cash",
+    "the row says the money is in, and which account took it — **an old lowercase \"cash\" record has to "
+    + "print as her own account name, not as the raw value**");
   assert.equal(buttonByText(root, "Pay"), undefined, "and the quick way in is gone while it is recorded");
 
   buttonByText(root, "Note / tracking")._listeners.click[0]();
@@ -473,7 +478,8 @@ test("a payment she records before the paying stage is money she has, and counts
   assert.equal(st.orders[0].paidReceived, true, "the payment is on the order");
   const after = createEl("div");
   renderOrders(after, st, new URLSearchParams({ date: "d10" }));
-  assert.equal(loadTag(after).children[0].text, "Paid", "the row says the money is in");
+  assert.equal(loadTag(after).children[0].text, "Paid · Cash",
+    "the row says the money is in, and which account took it");
   assert.equal(moneyLine(after).textContent, "Cash RM 30.00", "and the day's till counts it as in");
   // The journey strip is about the STAGE, not the money: this order has not reached the
   // paying step, so that step stays where it is — the same thing the strip says for any
@@ -2509,8 +2515,14 @@ test("★★ the refund card: ticking fills the amount, typing over it wins, and
     "the ticks are not kept as the record of what came back");
 
   renderOrders(root, st, new URLSearchParams({ date: "d10" }));
-  assert.ok(all(root).some((n) => txtOf(n) === "Refunded"),
-    "★ and the row says so — it must not go on reading as Cash");
+  // ⚠️ IT OPENS WITH THE STATE, NOT WITH THE ACCOUNT (v526): the tag reads "Refunded · Cash", and the point
+  // of the assertion is that the FIRST word is Refunded — **the money went back, so the row must not go on
+  // reading as though it is still in.**
+  assert.match(loadTag(root).children[0].text, /^Refunded/,
+    "★ the row does not open with Refunded — **it must not go on reading as though the money is still in**");
+  assert.match(loadTag(root).children[0].text, / · /,
+    "★ the refunded row does not name the account the money went back through — **the same question as the "
+    + "paid row, and it has the same answer**");
   assert.ok(buttonNamed(root, "Undo refund"), "and the way back is offered");
 });
 
@@ -2619,4 +2631,248 @@ test("but an order that never got a receipt number can be undone freely — ther
   await new Promise((r) => setTimeout(r, 0));
 
   assert.equal(st.orders[0].refundedAt, undefined, "the local undo is the whole story here");
+});
+
+// ── v515: two doors, because they are two questions ──────────────────────────
+//
+// ⚠️⚠️ HER WORDS, AND THEY ARE THE WHOLE POINT: __"set availability and to mention how many to bake is
+// totally different functionality, why you take way set availability?"__ — ⭐ **v514 merged them under one
+// renamed button, which took away the control she actually uses.** ⭐ **One question per control:** what the
+// shop can still SELL that day, and what came out of the OVEN.
+test("★★★ the day card has TWO doors, and Set day's availability is exactly as it was (v515)", () => {
+  const st = state();
+  st.products = [
+    { id: "p1", name: "Focaccia", active: true, unit: "pc",
+      recipe: [{ ingredientId: "ing_f", qty: 250, unit: "g" }] },
+    { id: "p9", name: "Saturday loaf", limit: 8, active: true, unit: "pc" },
+  ];
+  st.ingredients = [{ id: "ing_f", name: "Strong flour", unit: "g", uomId: "g", onHand: 5000 }];
+  st.uoms = [{ id: "g", name: "g", family: "weight", toBase: 1 }];
+
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+
+  // ⭐ HER CONTROL IS STILL THERE, BY ITS OWN NAME.
+  const avail = buttonByText(root, "Set day's availability");
+  assert.ok(avail, "★ \"Set day's availability\" is gone — **that is the control she named, and merging it "
+    + "into a different feature took it away**");
+  const bake = buttonByText(root, "Baked — how many?");
+  assert.ok(bake, "★ there is no separate way to say how many she baked");
+
+  // ⚠️⚠️ AND THEY ARE TWO POP-UPS, NOT ONE. Opening availability must NOT show a baking box: the two answer
+  // different questions, and a box in the wrong one is a control in the wrong place.
+  avail._listeners.click[0]();
+  const availPop = layers["popup-layer"];
+  assert.match(availPop.textContent, /Availability for this day/,
+    "the availability pop-up has been renamed or reused");
+  assert.equal(all(availPop).find((n) => n.tagName === "INPUT" && String(n.className).includes("bake-box")),
+    undefined, "the availability pop-up is carrying a baking box — the two are meant to be separate");
+  assert.ok(all(availPop).find((n) => n.tagName === "INPUT" && String(n.className).includes("day-adj-input")),
+    "the availability boxes are gone");
+});
+
+test("★★★ Baked — how many? is the ONLY thing that moves the shelf, and opens on what was ordered (v516)", () => {
+  // ⚠️⚠️ HER WORDS, CHOOSING THE SCHEME: __"only take away ingredient when baked. And the order dont take
+  // away ingredient, then it can be clean cut"__. ⭐ **Flour leaves the shelf when she BAKES, not when she
+  // SELLS** — and the alternative double-counted her own case (bake 10, then sell 4 of them → flour for 14).
+  const st = state();
+  st.products = [{ id: "p1", name: "Focaccia", active: true, unit: "pc",
+    recipe: [{ ingredientId: "ing_f", qty: 250, unit: "g" }] }];
+  st.ingredients = [{ id: "ing_f", name: "Strong flour", unit: "g", uomId: "g", onHand: 5000 }];
+  st.uoms = [{ id: "g", name: "g", family: "weight", toBase: 1 }];
+  st.orders = [{ id: "o1", deliveryDateId: "d10", productId: "p1", qty: 6 }];
+
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+  buttonByText(root, "Baked — how many?")._listeners.click[0]();
+  const pop = layers["popup-layer"];
+
+  const box = all(pop).find((n) => n.tagName === "INPUT" && String(n.className).includes("bake-box"));
+  assert.ok(box, "the baking pop-up has no box");
+  assert.equal(st.products[0].limit, undefined, "precondition: this product has no daily limit");
+  // ★★★ AND THE BOX OPENS EMPTY — AN ORDER'S QUANTITY IS NOT PREFILLED INTO IT (v525).
+  // ⚠️⚠️ HER WORDS: __"enter a new order on a new bake date, the order qty should not be prefill into the
+  // total baked"__ — and then the meaning she wants the box to carry: __"if i open the total baked and it
+  // shows a number, that mean there is some bake already done that day"__ ⭐ **A number in the box is a
+  // STATEMENT THAT A BAKE IS RECORDED**, and an order she has not baked is not one. ⭐ **So the pre-fill is
+  // the invisible failure: she reads the 6 as already recorded, does not press Save, and NOTHING comes off
+  // the shelf at all.**
+  assert.equal(box.value, "", "★ the box opened on the day's ORDERED count — **a number in the box says a bake "
+    + "is recorded, and saying that about a bake that never happened is the one fault she cannot see**");
+  // ⭐ AND THE DAY'S ORDERS ARE STILL SHOWN BESIDE IT — that is information, which is not the same as being
+  // written into the box (v517's rule, and it survives: the row is where she reads what was ordered).
+  assert.match(pop.textContent, /6 ordered/,
+    "the day's ordered count is no longer shown beside the box — **it is the information she decides from, and "
+    + "taking it away trades one silence for another**");
+  assert.match(pop.textContent, /nothing is recorded until you press Save/i,
+    "the pop-up does not say that nothing is recorded until Save — **an empty box she does not fill in records "
+    + "NOTHING, and that has to be said**");
+  assert.doesNotMatch(pop.textContent, /starts at what was ordered/,
+    "the pop-up still says a box starts at what was ordered — **the box no longer does, so the sentence is "
+    + "now a lie about her own screen**");
+
+  // ⚠️⚠️ AND OPENING IT RECORDS NOTHING (v517). Her question, exactly: __"i notice that without i enter
+  // anything in the baked, if that day order is 4, the bake will be 4 too, so whether i save or not the bake
+  // will be 4?"__ — ⭐ **NO. The number in the box is a SUGGESTION drawn from the day's orders; nothing is
+  // recorded and nothing comes off the shelf until Save is pressed.** ⭐ **A pre-filled box looks like a fact
+  // already written down**, which is why this assertion exists: closing the pop-up must leave no trace.
+  // ⚠️ Nothing is pressed here on purpose: the question is what the pop-up does by merely BEING OPEN.
+  const flourBefore = st.ingredients[0].onHand;
+  assert.equal(st.ingredients[0].onHand, flourBefore,
+    "★ closing the baking pop-up moved the shelf — **nothing may come off until she presses Save**");
+  // ⚠️ `|| []` because this fixture's state carries no list at all — which is itself the answer: **a state
+  // with no record has no record**, and asserting `undefined === []` would fail for the fixture's shape
+  // rather than for the behaviour.
+  assert.equal((st.bakedDays || []).length, 0,
+    "★ closing the baking pop-up RECORDED a bake she never confirmed — the number in the box is a suggestion, "
+    + "not an answer");
+
+  box.value = "10";
+  (box._listeners.input || []).forEach((f) => f());
+  buttonByText(pop, "Save")._listeners.click[0]();
+
+  assert.equal(st.ingredients[0].onHand, 5000 - 250 * 10,
+    "★ the WHOLE ten did not come off — **nothing else takes flour off any more, so the total must be the "
+    + "whole of it** (this is the line that used to subtract the six ordered, and double-count a sale made "
+    + "after the bake)");
+  assert.deepEqual(st.deliveryDates.map((d) => d.id), ["d10"],
+    "★ saving a bake wrote a delivery date — **the shop would offer a day she never opened**");
+
+  // ★★★ AND SAVING AGAIN DOES NOT TAKE IT OFF TWICE (v522). ⚠️⚠️ HER QUESTION: __"after we filled the baked
+  // say 10 then press save, will the 10 zerolized?"__ — ⭐ **no, and that is checked HERE rather than by
+  // reading the code:** the number is a **FACT she owns**, not an action that fires once.
+  // ⚠️ **A double-tap on Save is easy on a phone**, and without this the second press would take another ten
+  // off the shelf — ⭐ **the same bread charged twice, which is the class of fault this whole feature has
+  // already been through twice.** `setBakedTotal` makes that impossible by storing what it has ALREADY
+  // applied; this is what holds that in place.
+  const flourAfterFirstSave = st.ingredients[0].onHand;
+  const root2 = createEl("div");
+  renderOrders(root2, st, new URLSearchParams({ date: "d10" }));
+  buttonByText(root2, "Baked — how many?")._listeners.click[0]();
+  const pop2 = layers["popup-layer"];
+  const box2 = all(pop2).find((n) => n.tagName === "INPUT" && String(n.className).includes("bake-box"));
+  // ★★★ AND IT SAYS WHAT SAVE WILL DO, BEFORE SHE PRESSES IT (v522). ⚠️⚠️ Her questions: __"the second time she
+  // enter 15 or 5, should be the total bake for that day, reduce?"__ and __"if reduce?"__ — ⭐ **the box IS the
+  // total, and her having to ask is the proof that a sentence was not enough.** ⚠️ **MEASURED: 10 recorded,
+  // she bakes 5 more and types `5` — the app reads "only 5 in all" and PUTS FIVE BACK on the shelf.** ⭐ So the
+  // arithmetic is a READOUT that changes as she types, and **she can see it going the wrong way in time.**
+  assert.equal((all(pop2).find((n) => String(n.className).includes("bake-label")) || {}).textContent, "total baked",
+    "★ the box is not labelled as the day's TOTAL — **she will type the extra, and her stock will move the "
+    + "wrong way by twice the difference**");
+  // ⚠️⚠️ AND NOTHING ELSE IS SAID (v523). Her words: __"the word total baked, means total baked is say 10.
+  // aother additional word is just confusing"__ — ⭐ **so the READOUT v522 put here is GONE, and this asserts
+  // it stays gone.** ⚠️ **It is not an absence of care: a total is a total, and a second sentence explaining
+  // one is what made it unclear** — she read the line and asked what it meant.
+  assert.equal(all(pop2).find((n) => String(n.className).includes("bake-does")), undefined,
+    "★ a line explaining the total is back under the box — **she asked what the last one meant, and the label "
+    + "already answers it**");
+  assert.equal(box2.value, "10",
+    "★ the box came back EMPTY after it was saved — **the number she recorded is gone, so she cannot check it "
+    + "or correct it**");
+  buttonByText(pop2, "Save")._listeners.click[0]();
+  assert.equal(st.ingredients[0].onHand, flourAfterFirstSave,
+    "★ pressing Save a second time took the same bread off the shelf AGAIN — **a double-tap on a phone would "
+    + "charge her twice**");
+});
+
+test("★★★ a day that is NOT a bake day can still say what it baked (v515)", () => {
+  // ⚠️ Her words: __"make it appear everyday, as sometimes she bake on non bake day upon request by
+  // customer. Even post dated"__. ⭐ **A day she baked on but never opened has no day card**, so the line the
+  // calendar already answers with is the way in.
+  const st = state();
+  st.products = [{ id: "p1", name: "Focaccia", active: true, unit: "pc",
+    recipe: [{ ingredientId: "ing_f", qty: 250, unit: "g" }] }];
+  st.ingredients = [{ id: "ing_f", name: "Strong flour", unit: "g", uomId: "g", onHand: 5000 }];
+  st.uoms = [{ id: "g", name: "g", family: "weight", toBase: 1 }];
+
+  ordersMod.openBakedPopup(st, "2026-09-15", () => {});   // a Tuesday, no record at all
+  const pop = layers["popup-layer"];
+  assert.match(pop.textContent, /not a delivery day, so nothing here changes what the shop offers/,
+    "the pop-up does not say that a non-bake day changes nothing in the shop");
+  const box = all(pop).find((n) => n.tagName === "INPUT" && String(n.className).includes("bake-box"));
+  assert.ok(box, "★ a day with no bake day behind it got no baking box");
+  // ⚠️ AND NO AVAILABILITY BOXES: a day nobody can order from has no capacity, and ⚠️⚠️ adjusting one would
+  // write a delivery date — **which is exactly what the shop publishes.**
+  assert.equal(all(pop).find((n) => n.tagName === "INPUT" && String(n.className).includes("day-adj-input")),
+    undefined, "the baking pop-up is offering availability boxes — a different feature that would open the day in her shop");
+
+  box.value = "3";
+  (box._listeners.input || []).forEach((f) => f());
+  buttonByText(pop, "Save")._listeners.click[0]();
+
+  assert.equal(st.ingredients[0].onHand, 5000 - 250 * 3, "recording 3 on a non-bake day did not move the shelf");
+  assert.deepEqual(st.deliveryDates.map((d) => d.id), ["d10"],
+    "★ recording production on a non-bake day added a delivery date — **the shop would start offering it**");
+});
+
+// ★★★ A DAY THAT HAS GONE IS READY; TODAY AND EVERY DAY AHEAD START EMPTY (v525).
+//
+// ⚠️⚠️ The history, because this one control has been round the houses: v517 EMPTIED the box, v516/v521 filled
+// it on a day that had gone, v524 filled it on EVERY day — and she has now put the line back where v521 drew
+// it, and given me the reason from BOTH sides:
+// ⭐ **Her words, a new day:** __"enter a new order on a new bake date, the order qty should not be prefill
+// into the total baked"__ — ⚠️ and the danger that makes it right: __"if i open the total baked and it shows a
+// number, that mean there is some bake already done that day"__ ⭐ **A number on a day she has NOT baked says
+// a bake is recorded when none is, so she does not press Save and nothing comes off the shelf.**
+// ⭐ **Her words, a day that has gone:** __"if the pass day is not prefill, enter a number will deduct stocks.
+// that is the reason it needs to be prefilled"__ ⚠️ **the bake is behind her, so the box opens ready and
+// clearing the backlog is one press, not a typed number.**
+test("★★★ a day that has gone is ready; today and every day ahead start empty (v525)", () => {
+  const st = state();
+  st.products = [{ id: "p1", name: "Focaccia", active: true, unit: "pc",
+    recipe: [{ ingredientId: "ing_f", qty: 250, unit: "g" }] }];
+  st.ingredients = [{ id: "ing_f", name: "Strong flour", unit: "g", uomId: "g", onHand: 5000 }];
+  st.uoms = [{ id: "g", name: "g", family: "weight", toBase: 1 }];
+  // ⚠️ The clock is Thu 10 Sep 2026 (MockDate), so d8 has GONE and d10 is TODAY.
+  st.deliveryDates = [{ id: "d8", date: "2026-09-08" }, { id: "d10", date: "2026-09-10" }];
+  st.orders = [
+    { id: "o1", deliveryDateId: "d8", productId: "p1", qty: 6 },
+    { id: "o2", deliveryDateId: "d10", productId: "p1", qty: 6 },
+  ];
+  const boxOn = (id) => {
+    const root = createEl("div");
+    renderOrders(root, st, new URLSearchParams({ date: id }));
+    buttonByText(root, "Baked — how many?")._listeners.click[0]();
+    const pop = layers["popup-layer"];
+    return { pop, box: all(pop).find((n) => n.tagName === "INPUT" && String(n.className).includes("bake-box")) };
+  };
+
+  const past = boxOn("d8");
+  assert.equal(past.box.value, "6",
+    "★ a day that has already gone did not open ready — **the bake is behind her, and an empty box now means "
+    + "typing a number she has to look up, one day at a time**");
+  assert.match(past.pop.textContent, /This day has already gone, so each box starts at what was ordered/,
+    "the pop-up does not say WHY the box is already filled in — **a number she did not type has to explain itself**");
+
+  // ⚠️⚠️ AND TODAY OPENS EMPTY — **this is the line she drew, and it is the one that matters most:** a number
+  // here would say a bake is recorded on a day she has not baked, so she would not press Save and NOTHING
+  // would come off the shelf. ⭐ **The failure this prevents is invisible, which is why it is asserted.**
+  const today = boxOn("d10");
+  assert.equal(today.box.value, "",
+    "★ TODAY opened on the ordered count — **a number in the box says a bake is recorded, and on a day she has "
+    + "not baked that is a lie she cannot see**");
+  assert.doesNotMatch(today.pop.textContent, /starts at what was ordered/,
+    "today's pop-up says a box starts at what was ordered — **today does not, so the sentence is a lie about "
+    + "her own screen**");
+
+  // ⚠️ AND A DAY AHEAD THAT SHE HAS NEVER OPENED — no delivery date, no orders, no record — opened through the
+  // same door the calendar's own line uses.
+  ordersMod.openBakedPopup(st, "2026-09-12", () => {});
+  const aheadPop = layers["popup-layer"];
+  const aheadBox = all(aheadPop).find((n) => n.tagName === "INPUT" && String(n.className).includes("bake-box"));
+  assert.equal(aheadBox.value, "",
+    "★ a day ahead opened with something in it — **there is nothing recorded for it and nothing ordered**");
+
+  // ⭐ AND ONCE SHE RECORDS ONE, IT COMES BACK — ON EVERY DAY, so the only thing she has to remember is
+  // whether she has saved it yet. ⚠️ This is her v524 reasoning, still standing: __"once the save, the total
+  // baked will be the number shown … no matter how many time save is pressed, if the total remain the same,
+  // then there will not be any inventory changed."__
+  setBakedTotal(st, st.products[0], "2026-09-08", 9);
+  assert.equal(boxOn("d8").box.value, "9",
+    "★ a recorded total did not come back on a past day — **she cannot check it or correct it, and re-opening "
+    + "a day she has recorded is exactly where a filled box is honest**");
+  setBakedTotal(st, st.products[0], "2026-09-10", 4);
+  assert.equal(boxOn("d10").box.value, "4",
+    "★ a recorded total did not come back TODAY — **the day she is living in is the one she most needs to "
+    + "check and correct**");
 });

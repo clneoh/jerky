@@ -103,6 +103,9 @@ const routes = {
 const viewEl = document.getElementById("view");
 const tabbar = document.getElementById("tabbar");
 let cleanup = null;
+// ★★ WHICH SCREEN WAS LAST DRAWN (v520) — so a repaint can tell "she is still on the same screen" from
+// "she has navigated", and only the first of those keeps her place. See the note in `render`.
+let lastRenderedPath = "";
 let loggedOut = false; // true while the sign-in gate owns the screen
 let unlocked = false; // true once the app password passes for this page load
 let syncStarted = false;
@@ -222,8 +225,31 @@ function render() {
     tab.classList.toggle("active", tab.dataset.tab === route.tab);
   }
 
+  // ★★★★ AND THE PAGE DOES NOT JUMP WHEN IT REPAINTS (v520).
+  //
+  // ⚠️⚠️ HER REPORT: __"when i look at screen, at after a while it rerender and the screen jump up"__ — ⭐
+  // and the cause is the very next line: **`viewEl.replaceChildren()` empties the whole view**, so for an
+  // instant the document has almost no height, ⚠️ **the browser clamps the window's scroll to what still
+  // fits, and the page lands at the top.** ⭐ **MEASURED on the real app: scrolled to 400, repainted, 0.**
+  // ⭐⭐ So it is not really a jump — **it is a LOSS**: the scroll went somewhere and was never put back.
+  //
+  // ⭐⭐ THIS APP'S OWN RULE, WRITTEN DOWN ON 23 SEPTEMBER 2026 AND NEVER APPLIED TO THE ONE SCROLLER IT HAS
+  // ALWAYS HAD: **a screen that redraws itself must leave everything she is looking at exactly where it
+  // was**, because *"a replaced node is a NEW node and starts its own scroll at 0 — this is the entire
+  // cause."* ⚠️ **`viewEl.scrollTop = 0` is a NO-OP** (`#view` is `overflow: visible`; the DOCUMENT
+  // scrolls), so the scroller that actually moves was never handled at all.
+  //
+  // ⚠️ AND IT ONLY REPAINTS WHILE SHE IS LOOKING: the 30-second sync tick calls `render()` the moment a
+  // pulled change lands. ⭐ **That is the whole of "after a while" — it is the sync, not her.**
+  //
+  // ⚠️⚠️ AND IT MUST NOT FIGHT A DELIBERATE MOVE. A NAVIGATION goes to the top; a view that scrolls itself
+  // on purpose (the receipt in `showConfirm`, the refusal line) must win. ⭐ So the place is put back
+  // **only when the page has actually been dropped** — if something moved it, that is the answer, and the
+  // `!scroller.scrollTop` test is what asks that without guessing who moved it.
+  const scroller = document.scrollingElement || document.documentElement || null;
+  const keepY = path === lastRenderedPath && scroller ? scroller.scrollTop : 0;
+
   viewEl.replaceChildren();
-  viewEl.scrollTop = 0;
   updateOrderBadge(state);
   try {
     const ret = route.render(viewEl, state, params);
@@ -241,6 +267,10 @@ function render() {
       button("Try again", render, "primary")));
   }
   viewEl.focus({ preventScroll: true });
+  // ⚠️ PUT BACK BEFORE THE BROWSER PAINTS — nothing runs in between, so she never sees the top, and the
+  // restore itself cannot move a box whose own scroll a view is still measuring.
+  if (keepY > 0 && scroller && !scroller.scrollTop) scroller.scrollTop = keepY;
+  lastRenderedPath = path;
   // ★★★ WHICH DAY THIS SCREEN WAS DRAWN FOR (v513) — see `dayMoved` beside `onSyncChanged`. ⭐ Written
   // HERE and nowhere else, so it can never claim a repaint that did not happen: ⚠️ the day check above
   // leaves it alone when it could not repaint (mid-edit, locked), so the next look tries again.

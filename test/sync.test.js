@@ -4,7 +4,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as sync from "../admin/js/sync.js";
-import { STOCK_PRODUCTION } from "../admin/js/state.js";
+import { STOCK_PRODUCTION, defaultState } from "../admin/js/state.js";
+import * as stateMod from "../admin/js/state.js";
 
 const realFetch = globalThis.fetch;
 const realLocalStorage = globalThis.localStorage;
@@ -2145,10 +2146,19 @@ test("★★★ flush: a queue holding only a record that can never be sent is s
     seedToken(store);
     sync.markDirty(st, "2026-01-01T00:00:00.000Z");
 
-    // ⚠️ AND ONLY THAT ONE IS LEFT QUEUED, so `sendable` is empty — **the exact state her phone was in.**
-    // Anything else queued (settings, on a fresh cloud) would make this pass for the wrong reason.
+    // ⭐⭐ AND THE FRONT DOOR NOW REPAIRS IT (v519) — ⚠️ **this is the class fix, and it is why the state below
+    // can no longer be reached the ordinary way.** An id-less record is given a stable id derived from its
+    // own content BEFORE it is ever queued.
+    assert.equal(typeof st.orders[0].id, "string", "markDirty queued a record with no id");
+    assert.ok(st.orders[0].id, "markDirty gave it an empty id");
+
+    // ⚠️ SO THE UN-KEYABLE RECORD IS PUT INTO THE QUEUE **DIRECTLY** — ⭐ **the sweep is still the LAST LINE
+    // of defence**: a queue written by an older build, or by anything that does not come through `markDirty`,
+    // must still empty itself and still report ok. ⚠️ Without this the fixture would leave nothing queued and
+    // this test would pass for the wrong reason.
     const b = JSON.parse(store.get("bakeadmin.sync"));
-    for (const key of Object.keys(b.pending)) if (key !== "orders:undefined") delete b.pending[key];
+    b.pending = { "orders:undefined": { kind: "orders", id: undefined,
+      updated_at: "2026-01-01T00:00:00.000Z", data: { productId: "p1", qty: 2 }, _deleted: false } };
     store.set("bakeadmin.sync", JSON.stringify(b));
     assert.equal(sync.pendingCount(), 1, "the fixture did not leave exactly one queued record");
 
@@ -2166,4 +2176,137 @@ test("★★★ flush: a queue holding only a record that can never be sent is s
         "★ a record that cannot be keyed was posted anyway, which poisons the whole batch");
     } finally { restoreFetch(); }
   } finally { restore(); }
+});
+
+// ★★★ THE BREAD SHE BAKED THAT NOBODY ORDERED (v514). ⚠️⚠️ **THIS IS THE TEST FOR A FAULT SHE FOUND, NOT
+// ONE I IMAGINED:** __"and my phone and my mac not sync"__ — and she was right. ⭐ **A list left out of
+// `LISTS` is silently device-local**, and ⚠️ **the first version of this feature was worse than that: it
+// kept the record inside `settings`, whose payload is a HAND-WRITTEN WHITELIST — so the key left the phone
+// and went nowhere at all, while a comment at the top of sync.js said a new field there "needs no
+// registration".** ⭐ **That comment is about `LISTS`. A comment is not the producer: read `recordPayload`.**
+test("computeRecords: production rows ride the sync, and are NOT buried in settings (v514)", () => {
+  const st = baseState();
+  st.bakedDays = [
+    { id: "bake_2026-10-20", date: "2026-10-20", items: { p_foc: { total: 4, applied: 4 } } },
+  ];
+
+  const rows = sync.computeRecords(st);
+  const production = rows.filter((r) => r.kind === "bakedDays");
+  assert.equal(production.length, 1,
+    "★ a day she recorded as baked never reaches her other phone — **she would key a total into one device "
+    + "and the shelf on the other would not move**");
+  assert.deepEqual(production[0].data,
+    { id: "bake_2026-10-20", date: "2026-10-20", items: { p_foc: { total: 4, applied: 4 } } },
+    "the row goes whole — no field whitelist to fall out of date");
+  // ⚠️ AND NOT INSIDE SETTINGS: ⭐ **settings is ONE row replaced whole on push**, so two phones both
+  // holding production records would overwrite each other's — the fault v444 already paid for once.
+  const settingsRow = rows.find((r) => r.kind === "settings");
+  assert.equal("baked" in settingsRow.data, false,
+    "production is back inside the settings payload — one row, replaced whole, so her phone and her Mac "
+    + "would overwrite each other's days");
+
+  // ⚠️⚠️ AND THE OTHER HALF, WHICH IS EASY TO MISS AND SILENT WHEN MISSED: the PULL restores a row only
+  // when `LISTS[row.kind]` names a field **and `Array.isArray(state[field])`**. ⭐ **A missing default means
+  // the row arrives from the cloud and is skipped without a word** — so the list must exist on a fresh
+  // install too, not only on a phone that has just recorded something.
+  assert.ok(Array.isArray(defaultState().bakedDays),
+    "★ a fresh install has no `bakedDays` array — **the cloud's rows would arrive and be dropped in "
+    + "silence**, which looks exactly like sync working");
+});
+
+// ★★★★ A RECORD WITH NO ID CAN NEVER REACH HER OTHER PHONE (v518).
+//
+// ⚠️⚠️ THIS IS THE FAULT BEHIND __"different device not sync"__, AND IT TOOK TWO SCREENS TO SEE WHOLE:
+//   · the System check tells her to **Mark as void** a receipt that has no order behind it, and it says the
+//     line will clear;
+//   · she did it on the Mac, and the record was written **with no `id`**;
+//   · ⭐ **a record that cannot be keyed cannot travel** — `flush` excludes it and the sweep drops it;
+//   · ⭐ **so the PHONE never learns the receipt was voided and keeps showing the same error, for ever**,
+//     telling her to press a button she has already pressed.
+// ⚠️ The app already knew this shape — the waiting check even names *"an order with no number"* — ⭐ **but it
+// knew it for `orders`, and this one was in `voidedReceipts`.**
+test("★★★ a record with no id cannot be sent — and a void record now always has one (v518)", () => {
+  const st = baseState();
+
+  // ⭐ THE INVARIANT: a record with a real id is put in the payload like any other.
+  st.voidedReceipts = [{ id: "void_15", no: 15, code: "4B00A9", at: "2026-10-12T10:00:00.000Z", reason: "removed myself" }];
+  const rows = sync.computeRecords(st).filter((r) => r.kind === "voidedReceipts");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id, "void_15",
+    "★ the void record has no usable id — **it can never be keyed, so it is dropped from the queue and her "
+    + "other phone never hears about it**");
+
+  // ⭐⭐ AND THE RECORD THE BUTTON ACTUALLY MAKES IS THE ONE THAT HAS TO CARRY IT — ⚠️ **tested through the
+  // function that builds it, not by reading the source**, because a source assertion would go on passing
+  // after the button stopped using it.
+  const made = stateMod.newVoidRecord(15, "4B00A9", "removed myself");
+  assert.equal(made.id, "void_15",
+    "★ the record the Mark-as-void button makes has no usable id — **it can never be keyed, so the queue "
+    + "drops it and her other phone never hears about the receipt**");
+  assert.equal(made.no, 15, "and it must still carry the receipt number the check reads");
+  assert.equal(made.reason, "removed myself", "and her own reason");
+});
+
+// ⭐ AND A RECORD ALREADY STRANDED ON A PHONE IS GIVEN ONE, so it can finally travel (v518).
+test("★★★ a void record already on a phone is repaired on load, by the same id the button writes (v518)", () => {
+  const { loadState } = stateMod;
+  installStorage();
+  // ⚠️ The shape an older build wrote — no id at all.
+  localStorage.setItem("bakeadmin.v1", JSON.stringify({
+    version: 1, settings: { defaultCapacity: 12, deliveryDays: [1, 3, 5], cutoff: "18:00", currency: "RM" },
+    orders: [], voidedReceipts: [{ no: 15, code: "4B00A9", at: "2026-10-12T10:00:00.000Z", reason: "removed myself" }],
+  }));
+  const st = loadState();
+  assert.equal(st.voidedReceipts[0].id, "void_15",
+    "★ a receipt she has ALREADY marked void is still stranded — **her other phone will keep reporting a "
+    + "receipt with no order behind it and keep telling her to press the button she has already pressed**");
+  assert.equal(st.voidedReceipts[0].no, 15, "…and the repair must not lose what the record said");
+  assert.equal(st.voidedReceipts[0].reason, "removed myself", "…nor her own reason for it");
+});
+
+// ★★★★ THE SWEEP OVER EVERY LIST (v519).
+//
+// ⚠️⚠️ WHY THIS EXISTS AND WHY IT IS A SWEEP: **the same fault has now bitten TWICE** — an ORDER with no
+// number, and a receipt marked VOID with no id — ⭐ **and both times the app knew the shape but checked ONE
+// list.** ⭐⭐ **A check keyed to one word checks one word, and a fix keyed to one list fixes one list.**
+// ⚠️ So this walks the app's OWN synced vocabulary (`computeRecords`, the same function the sync uses) and
+// proves that **a record with no id is repaired in EVERY list**, including lists that do not exist yet.
+test("★★★★ EVERY synced list repairs a record with no id — the class, not one list (v519)", () => {
+  const st = defaultState();
+  // ⚠️ READ FROM THE SYNC'S OWN LIST, never a copy typed here — see `syncedKinds`.
+  const kinds = sync.syncedKinds();
+  assert.ok(kinds.length > 15,
+    `expected the app's whole synced vocabulary, got ${kinds.length} — **a list that is not in this sweep is `
+    + "a list this test is not watching**");
+
+  // ⚠️ ONE UN-KEYABLE RECORD IN EVERY LIST — not one list chosen by hand.
+  const broken = kinds.filter((k) => Array.isArray(st[k]) && st[k].push({ something: "with no id at all" }));
+  assert.ok(broken.length > 10, `expected the app's lists to be reachable by name, got ${broken.length}`);
+
+  const fixed = sync.repairRecordIds(st);
+  assert.equal(fixed.length, broken.length,
+    `★ ${broken.length - fixed.length} list(s) still hold a record that cannot travel — **it would be dropped `
+    + "from the send queue and her other phone would never hear about it**");
+
+  for (const kind of broken) {
+    const rec = st[kind][st[kind].length - 1];
+    assert.equal(typeof rec.id === "string" && rec.id.length > 0, true,
+      `★ a record in \`${kind}\` has no usable id after the repair`);
+  }
+
+  // ⭐⭐ AND THE ID IS THE SAME ON BOTH PHONES, or the same record becomes two rows — the id is derived from
+  // the record's own content, with its keys sorted, so two devices holding it agree.
+  const a = defaultState(); a.orders.push({ qty: 2, note: "same" });
+  const b = defaultState(); b.orders.push({ note: "same", qty: 2 });   // ⚠️ keys in a different ORDER
+  sync.repairRecordIds(a);
+  sync.repairRecordIds(b);
+  assert.equal(a.orders[a.orders.length - 1].id, b.orders[b.orders.length - 1].id,
+    "★ the same record repaired on two phones came out with TWO different ids — **that is two rows in her "
+    + "shared data for one record, which is worse than the fault it repairs**");
+
+  // ⚠️ AND A RECORD THAT ALREADY HAS AN ID IS NEVER TOUCHED — a repair that renames good records would
+  // orphan every one of them.
+  const c = defaultState(); c.orders.push({ id: "keep_me", qty: 1 });
+  sync.repairRecordIds(c);
+  assert.equal(c.orders[c.orders.length - 1].id, "keep_me", "the repair renamed a record that already had an id");
 });

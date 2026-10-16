@@ -756,6 +756,108 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## Engine v513 → v526 — the baking box, and two sync faults (17 Oct 2026)
+
+Thirteen versions from the bakery. **17 files changed (`+1,208 / −175`); no SQL and nothing to deploy** —
+the same push carries it. Suite **3482 → 3493 pass / 0 fail**. **Six conflicts across three files**, every
+one the bakery's own word (*"bake day"* / *"Bake days"*) against jerky's (*"delivery day"* / *"Delivery
+Dates"*).
+
+### ★ v514–v515, v521–v525 — the baking box
+
+Her correction at v515 is that version's whole point: *"set availability and to mention how many to bake is
+totally different functionality, why you take way set availability?"* — **v514 merged the day's capacity
+and the day's baking under one renamed button, which took away the control she actually uses.** The two
+doors are back, each with its own name and its own pop-up: **Set day's availability** (restored verbatim
+from v513) and **Baked — how many?** (`openBakedPopup`, a self-contained function). It works on **any** day
+— including one that is not a posting day and one already gone — and **writes no delivery date at all**, so
+the shop never starts offering a day she opened for nobody.
+
+**The box opens by HER rule, and it took four passes (v517 → v521 → v524 → v525):** a recorded total wins;
+a day already gone opens ready at what was ordered; today and every day ahead open empty. ⚠️ **The reason
+is the v517 danger:** a number in the box reads as a fact already written down, **so she does not press
+Save — and then nothing comes off the shelf, silently.** Her words: *"if i open the total baked and it shows
+a number, that mean there is some bake already done that day."* **A number in the box is a statement that a
+bake happened, and it may only ever show a number that is true.**
+
+⚠️ **v522–v523: the box is labelled `TOTAL BAKED` because the words had failed.** She asked whether typing
+15 after 10 meant fifteen in all or five more — **and that is ten items out**, measured both ways: the app
+read "five in all" and **put five BACK on the shelf** (2,500 g → 3,750 g). ⚠️ **And the explanatory line the
+bakery added under the box, she deleted in one sentence** — she asked what the sentence meant, which is the
+answer to it. ⚠️ **The pattern the bakery names and it is worth keeping: it reaches for a sentence when the
+LABEL is the thing to get right.** (v517 was the same shape on the same control.)
+
+### ★★ v516 — ingredients come off when you bake, and nowhere else
+
+Her rule: *"only take away ingredient when baked. And the order dont take away ingredient, then it can be
+clean cut."* ⚠️ **Measured with her own numbers: two things took flour off — an order marked Baked AND the
+day's baked total — so a sale made after the bake was subtracted twice.** Bake 10 (5,000 g → 2,500 g), then
+a 4-item order marked Baked (→ 1,500 g): **she baked ten and the shelf gave up flour for fourteen.**
+**`consumeOrder`, `addBackOrder` and `adjustForStatus` are DELETED, not left lying about** — *"a function
+left lying about is a function the next person calls"* — and the tests assert they are gone. ⚠️ **The cost,
+named: a day she does not record takes nothing off**, which is exactly what makes the past-day pre-fill
+worth having. **Nothing of hers was rewritten:** the journal rows those old Baked marks wrote are still
+there, and this changes what happens *next*, never what happened before. `Baked` still moves the ORDER along
+its journey; only the stock movement is gone.
+
+### ★ v518–v520 — the sync repairs
+
+⚠️ **Her words: *"the sync is a big issue, and my user lost confident."*** Three faults, one shape:
+
+- **v518: a receipt marked void on the Mac was written with NO ID** — and a record that cannot be keyed
+  cannot travel (the queue is sent as ONE request and an un-keyable row is dropped from it). The phone never
+  learned, so it kept showing the same error and telling her to press a button she had already pressed.
+  ⚠️ **And it hid: pressing "Sync now" made the Mac's count go away, because the record was DROPPED, not
+  sent — and a count going down looks exactly like success.** Ids are derived from the receipt number
+  (`void_15`), and an already-void receipt is repaired when the app opens.
+- **v519: the repair moved to the DOOR** — `repairRecordIds(state)` runs at the top of `markDirty`, so
+  before anything is queued **every record in every list** gets an id if it has none, **derived from its own
+  content with the keys sorted** (so two phones holding the same record work out the SAME id and make one
+  row). A list that does not exist yet is repaired by the same line that repaired this one.
+  ⚠️ **Honest cost: editing a record that had no id gives it a DIFFERENT id, so the older row stays in the
+  shared data — the safe direction, because a stray row can be named and seen and a dropped record cannot.**
+- **v520: the screen jumped to the top on a sync repaint.** Her words: *"at after a while it rerender and
+  the screen jump up."* ⚠️ **It is not a jump, it is a LOSS** — `viewEl.replaceChildren()` empties the view
+  for an instant, **the browser clamps the window's scroll to what still fits, and nothing puts it back.
+  Measured: scrolled to 400, repainted, 0.** And it was the **sync**, every 30 seconds — not her.
+
+### ★ v514/v522 — the class collision
+
+⚠️ **The dead styling left when the two pop-ups were separated used a class name ALREADY TAKEN** — the Home
+screen's own `.bake-line` — and being declared later, it won. **Every Home-screen bake line wore a green box
+and a green left border from v514, and none of 3,400 tests saw it.** ⭐ **A dead rule is not harmless,
+because it can be the one that wins** — the same class of fault this app already records from v394–v418.
+Deleted, and the Home screen verified live back to `display:flex`, transparent, no border.
+
+### v526 — the order row names the account
+
+Her question: *"now i can see that an order had been paid, but how do i find out whether it is pay be TnG
+cash or orthers?"* The row reads **Paid — TNG**, **Paid — Cash**, or whatever her own account is called,
+read through the app's one reader (which knows the lowercase `cash`/`tng` every pre-v478 order holds) — the
+thing that stops the old fault coming back, **the tag used to print "TNG" for a bank transfer, which is why
+v478 took the account off the row in the first place.** An order paid with no account still reads just
+"Paid"; an unpaid row carries no tag.
+
+### ⚠️ Also in this batch, and worth keeping
+
+⚠️ **`test/guide-builds.test.js` now SNAPSHOTS each PDF and writes it back byte-for-byte**, because running
+the builders always changes the bytes (a date is stamped inside) — so **every test run was leaving
+`changelog.pdf` and the two marketing PDFs showing as modified in GitHub Desktop, and a file that is always
+ticked is a file she stops reading.** Shown, not asserted, the bakery's words for it. **Verified here: after
+a full test run, `git status` is clean.**
+
+**⚠️ LOCALIZATION.** Six conflicts, all the bakery's *"bake day"* / *"Bake days"* against jerky's
+*"delivery day"* / *"Delivery Dates"* — the DAY word localizes, the BAKING word stays. ⚠️ **One new
+user-visible string needed jerky's word:** the pop-up's *"not a bake day, so nothing here changes what the
+shop offers"* is now *"not a delivery day, …"*, **and the assertion in `test/orders-day-sum.test.js` moved
+with it** — ⚠️ **caught only because a bite run re-ran the suite; after a localization edit, re-run the
+suite.** ⚠️ **The baking words themselves are kept on purpose** (`TOTAL BAKED`, "say what you baked",
+`openBakedPopup`), consistent with the Production line's bread vocabulary she asked to be ported exactly.
+⚠️ **And the whole-vocabulary sweep found PRE-EXISTING debt, not fixed here:** user-visible *"bake day"*
+still sits in `admin/js/views/points.js` (×2), `admin/js/views/orders.js` (the Removed list's *"Bake \<date\>"*
+and *"no bake day on it"*), and in `test/label.test.js` / `test/more-menu.test.js` fixtures — none of it the
+Production line, none of it introduced by this sync. **Reported, not silently changed.**
+
 ## Engine v512 → v513 — the date on screen follows the clock, in both apps (16 Oct 2026)
 
 One version from the bakery. **4 files changed (`+160 / −3`); no SQL and nothing to deploy** — the same

@@ -1,7 +1,7 @@
 // views/orders.js — per-delivery-date order intake (manual, warn-not-block).
 
 import { addDays, deliveryStatus, fmtPlaced, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
-import { capacityStatus, costOf, dayCapacityParts, dayRuleRows, parseDayDelta, productRemaining, saveDayAdjustments } from "../bom.js";
+import { capacityStatus, costOf, dayCapacityParts, dayRuleRows, orderedOnDay, parseDayDelta, productRemaining, saveDayAdjustments } from "../bom.js";
 import { dayMoney, groupValue, isCollected, isRefunded, orderNet } from "../money.js";
 import { el, button, select, fillMeter, emptyState, confirmDialog, toast, showPopup } from "../ui.js";
 import { dateField } from "../datepicker.js";
@@ -29,7 +29,7 @@ import { isCash, isTng, methodLabel, methodRank, methodsOf } from "../accounts.j
 // same form the money lists use, rather than a second way to write `state.settings.payMethods`.
 import { entryForm, newEntryChip } from "./accountsEditor.js";
 import { schemeOf, referralFlag, giveCredits, validCredits, markOneUsed, referrerName, couponOn } from "../referrals.js";
-import { adjustForStatus } from "../stock.js";
+import { bakedOf, setBakedTotal } from "../stock.js";
 import { customerList, keyOf } from "../customers.js";
 import { strictNumber } from "../courier_place.js";
 import { courierDayOf, fmtStamp, jobOf } from "../courier_job.js";
@@ -621,8 +621,15 @@ export function deliveryCal({ state, days, getActiveId, view, onPick, noteMisses
   // is a whole line long and would run off the side of a phone.
   function missNote() {
     if (!missedIso) return null;
+    // ★★★ AND IT CARRIES ITS OWN WAY IN (v514). ⚠️⚠️ Her words: __"make it appear everyday, as sometimes she
+    // bake on non bake day upon request by customer. Even post dated"__ — ⭐ **a day she bakes on but never
+    // opened has no day card below, so this line is the only place she can reach it from.** ⭐ It opens the
+    // SAME popup, and on a day with no delivery date **it offers only the production half** — there is no
+    // capacity to adjust on a day nobody can order from.
     return el("p", { class: "cal-miss" },
-      `${shortDate(missedIso)} is not a delivery day. Add it in More → Delivery Dates.`);
+      `${shortDate(missedIso)} is not a delivery day — nothing can be ordered on it. Add it in More → Delivery Dates, or `,
+      button("say what you baked", () => openBakedPopup(state, missedIso, paint), "ghost small"),
+      ".");
   }
 
   function paint() {
@@ -1283,9 +1290,24 @@ function dateContent(state, date, root, selectDate) {
     moneyLine(state, date.id),
     cap.exceeded ? el("div", { class: "danger-banner" },
       `Over capacity by ${cap.total - cap.capacity}. Add more only if you can make extra.`) : null,
+    // ⚠️⚠️ TWO DOORS, NOT ONE (v515). Her words: __"set availability and to mention how many to bake is
+    // totally different functionality, why you take way set availability?"__ — ⭐ **and she is right.**
+    // v514 merged the day's capacity and the day's baking under one renamed button, **which took away the
+    // control she actually uses.** ⭐ They answer two different questions — *what can the shop still sell
+    // that day* and *what came out of the oven* — and each keeps its own name, its own pop-up and its own
+    // press. ⚠️ **The availability half is EXACTLY as it was before v514: same button, same label, same
+    // condition, same pop-up.**
     !st.past && rules.rows.length ? el("div", { class: "btn-row", style: "margin-top:10px" },
       button(adjusted ? `Set day's availability · ${adjusted} adjusted` : "Set day's availability", () =>
-        openDayAdjustPopup(state, date, () => renderAll(root, state, new URLSearchParams({ date: date.id }))), "soft")) : null);
+        openDayAdjustPopup(state, date, () => renderAll(root, state, new URLSearchParams({ date: date.id }))), "soft")) : null,
+    // ★★★ AND THE BAKING HAS ITS OWN DOOR (v515) — ⚠️ offered on ANY day the card is showing, past
+    // included, because __"Even post dated"__ is her own word: the bread was still baked and the flour
+    // still left the shelf, whether or not the shop ever sold that day.
+    (state.products || []).some((p) => (p.recipe || []).length)
+      ? el("div", { class: "btn-row", style: "margin-top:8px" },
+        button("Baked — how many?", () =>
+          openBakedPopup(state, date.date, () => renderAll(root, state, new URLSearchParams({ date: date.id }))), "ghost"))
+      : null);
 
   const form = orderForm(state, date.id, root, selectDate);
   const list = orderList(state, date.id, root);
@@ -1414,6 +1436,116 @@ export function openDayAdjustPopup(state, date, refresh) {
         }, "primary")));
   }, { wide: true });
 }
+
+// ★★★ BAKED — HOW MANY? (v515). Her words: __"when Jien Bake focaccia, she usually bake more, not according
+// to order, sometimes for self consumption, i need system to allow us to enter bake qty, system dont have to
+// track the extra bake, but just need to deduct ingredient."__
+//
+// ⚠️⚠️ IT IS ITS OWN CONTROL, AND v514 GOT THAT WRONG. Her words: __"set availability and to mention how
+// many to bake is totally different functionality, why you take way set availability?"__ — ⭐ **the merged
+// version renamed her button, which took away the control she actually uses.** ⭐ **One question per
+// control:** capacity is what the shop can still SELL that day; this is what came out of the OVEN.
+//
+// ⚠️ AND IT WORKS ON ANY DAY — one that is not a bake day, and one already gone. Her own words:
+// __"make it appear everyday, as sometimes she bake on non bake day upon request by customer. Even post
+// dated"__. ⭐ **And it writes NO delivery date**, because a delivery date is what the shop publishes:
+// **recording a bake must never put a day on sale.**
+export function openBakedPopup(state, dayIso, refresh) {
+  const iso = String(dayIso || "");
+  if (!iso) return;
+  // ⚠️ ONLY PRODUCTS WITH A RECIPE: one with none has nothing to take off the shelf, so a box for it would
+  // move nothing at all — and a control that does nothing is a bug in this app.
+  const products = (state.products || []).filter((p) => (p.recipe || []).length);
+  if (!products.length) {
+    return toast("No product has a recipe yet, so there is nothing to take off the shelf. Add one under More → Products.");
+  }
+  const ordered = orderedOnDay(state, iso);
+  const isBakeDay = (state.deliveryDates || []).some((d) => d && d.date === iso);
+  // ⚠️ A day that has already gone is the ONE day a box may be filled in from the day's orders — see the box
+  // below. ⭐ `todayISO()` is the same clock the calendar uses (`const today = todayISO()` in renderOrders),
+  // so the grid and this pop-up can never disagree about which day has gone.
+  const pastDay = iso < todayISO();
+  const boxes = new Map();
+
+  showPopup(el("div", { class: "popup-title-row" }, "Baked — how many?"), (refreshBody, close) => {
+    const rows = el("div", { class: "day-adj-rows" },
+      ...products.map((p) => {
+        const rec = bakedOf(state, iso, p.id);
+        const was = Number(ordered.get(p.id)) || 0;
+        // ★★★ WHAT SHE RECORDED; ELSE, ON A DAY THAT HAS ALREADY GONE, WHAT WAS ORDERED (v525).
+        //
+        // ⚠️⚠️ HER THREE MESSAGES, AND THEY DRAW THE LINE EXACTLY: __"enter a new order on a new bake date,
+        // the order qty should not be prefill into the total baked"__ — then the DANGER that rule protects
+        // against: __"if i open the total baked and it shows a number, that mean there is some bake already
+        // done that day"__ — and then the OTHER side, which is why a day that has gone keeps its pre-fill:
+        // __"if the pass day is not prefill, enter a number will deduct stocks. that is the reason it needs to
+        // be prefilled"__.
+        //
+        // ⭐ **A NEW BAKE DAY IS A DECISION, SO THE BOX STARTS EMPTY.** ⚠️ A box filled from an order she has
+        // not baked says "you baked this" about a bake that never happened — ⭐ **and the failure it invites is
+        // invisible: she reads the number as already recorded, does not press Save, and NOTHING comes off the
+        // shelf at all.**
+        // ⭐ **A DAY THAT HAS GONE IS BOOKKEEPING** (her own ask at v521) — the bake is behind her, so the box
+        // opens ready and clearing the backlog is one press per day instead of a typed number. ⚠️ **She has
+        // told me the typing itself is the thing she wants to avoid there.**
+        //
+        // ⭐ AND A RECORDED TOTAL WINS ON EVERY DAY — **her v524 reasoning, unchanged:** __"once the save, the
+        // total baked will be the number shown … no matter how many time save is pressed, if the total remain
+        // the same, then there will not be any inventory changed."__ ⭐ **So re-opening a day she has recorded
+        // shows her number, she can check it and correct it, and re-saving it is a no-op.**
+        // ⚠️ **AND WHAT IS STILL NOT RECORDED UNTIL SAVE IS SAID OUT LOUD**, not assumed — the sentence under
+        // the title says so, because that is the one thing a filled box does not tell her.
+        const box = el("input", {
+          class: "input bake-box", type: "number", inputmode: "numeric", min: "0", step: "1",
+          value: rec && rec.total ? String(rec.total) : (pastDay && was ? String(was) : ""),
+          "aria-label": `How many ${p.name} did you bake`,
+        });
+        boxes.set(p.id, { box });
+        // ★★★ AND NOTHING ELSE IS SAID (v523). ⚠️⚠️ HER WORDS: __"the word total baked, means total baked is say
+        // 10. aother additional word is just confusing"__ — ⭐ **the label already answers the question the line
+        // was written for.** ⚠️ v522 added a readout under the box ("Takes 5 more off the shelf") to make the
+        // arithmetic visible; **she read it and asked what it meant, which is the answer.** ⭐ **A TOTAL IS A
+        // TOTAL — a second sentence explaining a total is the thing that makes it unclear.** ⚠️ And it is the
+        // second time on this one control that words added to solve a problem became the problem (v517).
+        // ⭐ **The label says it; nothing else does.**
+        return el("div", { class: "day-adjust-row" },
+          el("div", { style: "min-width:0" },
+            el("p", { style: "margin:0" }, p.name),
+            el("p", { class: "card-sub", style: "margin:0" }, was ? `${was} ordered` : "nothing ordered")),
+          el("div", { class: "day-adj-right" },
+            el("span", { class: "bake-label" }, "total baked"),
+            box));
+      }));
+
+    return el("div", {},
+      el("p", { class: "card-sub", style: "margin:0 0 12px" },
+        `For ${weekdayName(iso)}, ${longDate(iso)}${isBakeDay ? "" : " — not a delivery day, so nothing here changes what the shop offers"}. `
+        + "Type the TOTAL you baked, and the ingredients for that many come off the shelf — nothing is "
+        + "recorded until you press Save. This is the ONLY place ingredients come off, so a day you leave "
+        + "blank takes nothing off at all. Changing or clearing the number puts the difference back."
+        // ⭐ AND WHY A BOX IS ALREADY FILLED IN, so a number she did not type is never a mystery — said ONLY
+        // when a box really was filled from the day's orders, or the sentence would be describing a box that
+        // is not on her screen.
+        + (pastDay && products.some((p) => !(bakedOf(state, iso, p.id) || {}).total
+            && (Number(ordered.get(p.id)) || 0))
+            ? " This day has already gone, so each box starts at what was ordered — check it, then press Save."
+            : "")),
+      rows,
+      el("div", { class: "popup-actions" },
+        button("Cancel", close, "ghost"),
+        button("Save", () => {
+          for (const [productId, { box }] of boxes) {
+            setBakedTotal(state, byId(state.products, productId), iso, Number(box.value) || 0);
+          }
+          save(state);
+          maybeSync(state);
+          toast("Baked total saved");
+          close();
+          refresh();
+        }, "primary")));
+  }, { wide: true });
+}
+
 
 // Where each kind of choice sits in the picker, and what its section is called —
 // see productOptions.
@@ -4424,9 +4556,10 @@ function setStage(state, group, nextStatus, opts = {}) {
   // ⚠️ THE DAY'S OWN ROWS STAY FIRST so `stageWritten`'s anchor is the row she actually pressed,
   // and the screen does not jump under her thumb.
   const family = familyOfOrder(state, rows);
-  // Baked takes the orders' ingredients off your stock; stepping back to before
-  // Baked (an undo) puts them back. Forward moves leave stock be.
-  adjustForStatus(state, family, nextStatus, STATUSES.map(([id]) => id));
+  // ★★★★ AND NO STAGE MOVES THE SHELF ANY MORE (v516). ⚠️⚠️ Her words: __"only take away ingredient when
+  // baked. And the order dont take away ingredient, then it can be clean cut"__. ⭐ **The ingredients come
+  // off when she says how many she BAKED, and nowhere else** — see `openBakedPopup` below and `applyBake`
+  // in stock.js. ⚠️ **"Baked" still moves the ORDER along its journey**; only the stock movement is gone.
   for (const o of family) {
     o.status = nextStatus;
     // Stepping into Confirmed / Paid means the stage is being worked, not
@@ -4507,13 +4640,10 @@ function undoAutoCollect(state, group, order, { root = null, dateId = "" } = {})
   delete o.courierJob.autoAt;
   delete o.courierJob.collectedAt;
   delete o.courierJob.autoFrom;
-  // The stage goes back to the one this row was already on, and the STOCK rule is
-  // deliberately not run on the way back. It is not an oversight: `adjustForStatus` reads
-  // the row's current stage, which is now the last one, so it cannot tell "put this back"
-  // from "step this out of Baked" — and stepping OUT of Baked puts the ingredients back
-  // on her shelf. Charging one order's ingredients twice because a courier's API spoke is
-  // exactly the kind of thing this release must not do. The auto-move itself changed no
-  // stock (only stepping into or out of Baked does), so nothing needs undoing.
+  // The stage goes back to the one this row was already on. ⚠️ **Since v516 there is no stock rule to run
+  // either way — no stage moves the shelf any more** (her words: __"only take away ingredient when baked.
+  // And the order dont take away ingredient, then it can be clean cut"__), so putting the stage back is
+  // simply putting the stage back.
   o.status = from.status || "new";
   // Put back as it was, key and all: an order that had no payment flag at all goes back to
   // having none, rather than to a `false` this Undo invented.
@@ -4758,6 +4888,15 @@ function orderGroupRow(state, group, root, dateId) {
   const rowAttrs = { class: "list-item", dataset: { order: first.id } };
   const groupId = orders.find((o) => o.groupId)?.groupId;
   if (groupId) rowAttrs.dataset.group = groupId;
+  // ★★★ THE ACCOUNT THE MONEY WENT INTO, FOR THE ROW'S PAID TAG (v526). ⚠️ It is computed HERE, as a
+  // statement, because everything below is one `return el(...)` — a `const` among its arguments is not a
+  // declaration, it is a syntax error, and that is exactly how this was written first.
+  // ⚠️⚠️ THE READER IS THE FIX, NOT THE WORDING: `methodLabel` (accounts.js) is the ONE reader of this
+  // value — it knows the lowercase "cash"/"tng" that records before v478 hold, and returns **every other
+  // account's own name unchanged**, which is what makes "Bank", "Cash to LK" or an account she adds later
+  // read right. ⭐ The old tag re-spelled that test (`paidMethod === "cash" ? "Cash" : "TNG"`) and printed
+  // TNG for everything else; reading through the shared label is what stops that coming back.
+  const paidBy = (isRefunded(group) || isCollected(group)) ? methodLabel(first.paidMethod) : "";
 
   return el("div", rowAttrs,
     el("div", { class: "li-main" },
@@ -4793,10 +4932,18 @@ function orderGroupRow(state, group, root, dateId) {
       // which is the fault this app keeps having to be taught (see the v441 order-number lesson).
       // **One word cannot be wrong about which account it was**, and the account is not lost: it is
       // on the order's own card, and the Money screen gives it a line and a book of its own.
+      //
+      // ★★★ AND THAT SENTENCE WAS NOT ENOUGH — SHE ASKED AGAIN (v526). Her words: __"now i can see that an
+      // order had been paid, but how do i find out whether it is pay be TnG cash or orthers?"__ ⭐ **The row
+      // answered "paid" and nothing else, and the account was two taps away inside Note / tracking** — so the
+      // row names it now, in the app's own joining mark (`Cash RM 18.00 · TNG RM 36.00`, the day's line).
+      // ⚠️ AND IT IS APPENDED, NEVER SUBSTITUTED: the tag still opens with the state, so a row whose account
+      // was never recorded — or one set back to Not recorded — reads exactly as it did before (`paidBy` is
+      // declared above the return; see the note there for why, and for the reader that makes it safe).
       isRefunded(group)
-        ? el("span", { class: "paid-tag refunded" }, "Refunded")
+        ? el("span", { class: "paid-tag refunded" }, paidBy ? `Refunded · ${paidBy}` : "Refunded")
         : first.paidMethod && isCollected(group)
-          ? el("span", { class: "paid-tag" }, "Paid")
+          ? el("span", { class: "paid-tag" }, paidBy ? `Paid · ${paidBy}` : "Paid")
           : null,
       // The courier's charge, in the paid-tag's family so it reads as one more thing
       // about this order: neutral when the customer bore it (it costs her nothing),

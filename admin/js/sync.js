@@ -43,6 +43,12 @@ const LISTS = {
   parcelCouriers: "parcelCouriers", // the carriers she posts parcels with — a carrier added on one phone has to exist on the other, or the order screen offers a list that is different on every phone
   uoms: "uoms", // units of measure — a unit added on one phone has to exist on the other
   deliveryDates: "deliveryDates",
+  // ⚠️⚠️ NAMED HERE OR IT DOES NOT TRAVEL (v514) — and this one DID NOT, which is how the baker found the
+  // fault: __"and my phone and my mac not sync"__. ⭐ **I had put production inside `settings` on the
+  // strength of a comment at the top of this file saying a new FIELD there "needs no registration" — and
+  // that comment is about `LISTS`; the settings payload is a HAND-WRITTEN WHITELIST, so the key left the
+  // phone and went nowhere.** ⚠️ **A comment is not the producer: read `recordPayload` before believing one.**
+  bakedDays: "bakedDays",
   purchaseOrders: "purchaseOrders",
   expenses: "expenses", // money out — what one phone spends, the other should see
   deposits: "deposits", // money in from your own pocket — same on every phone
@@ -61,6 +67,11 @@ const LISTS = {
   customers: "customers", // customer profiles (pet name/photo, likes, notes)
 };
 const SETTINGS_KEY = "settings:default";
+
+// ★★ THE WHOLE SYNCED VOCABULARY, BY NAME (v519). ⚠️ Exported because **a test that sweeps every list must
+// read the list from HERE** — ⭐ a sweep written against a copy of these names would go on passing while a
+// list added later was never watched, which is the fault it exists to catch.
+export function syncedKinds() { return Object.keys(LISTS); }
 
 // ── config ────────────────────────────────────────────────────────────────
 
@@ -642,7 +653,52 @@ export function pendingKeys() {
 
 // ── markDirty: queue what changed since the last baseline ────────────────
 
+// ★★★★ A RECORD THAT CANNOT BE KEYED IS REPAIRED AT THE DOOR (v519).
+//
+// ⚠️⚠️ THIS IS THE CLASS, NOT THE LIST, AND IT EXISTS BECAUSE THE SAME FAULT HAS NOW BITTEN TWICE: an ORDER
+// with no number, and a receipt marked VOID with no id. ⭐ **Both were dropped from the sending queue instead
+// of being handed over — and a queue that empties looks exactly like a queue that worked.** ⭐ The second one
+// cost her a week of __"different device not sync"__ and, in her words, __"my user lost confident"__.
+//
+// ⭐⭐ SO THE REPAIR MOVED TO THE DOOR: before anything is queued, **every record in every synced list is given
+// an id if it has none.** ⚠️ That is the difference between fixing `voidedReceipts` and fixing the CLASS —
+// **a list I have not thought of yet is repaired by the same line that repaired this one.**
+//
+// ⚠️ THE ID IS DERIVED FROM THE RECORD'S OWN CONTENT — `canonical` sorts keys, so **two phones holding the
+// same record compute the SAME id and make ONE row rather than two**, which a random id could not do.
+// ⚠️ The honest cost, named: **editing a record that had no id gives it a DIFFERENT id**, so the older row
+// stays in the shared data rather than being overwritten. ⭐ That is visible — the cloud-only check names it —
+// and it is the safe direction: **a stray row is a thing she can see, and a dropped record is a thing she
+// cannot.** ⚠️ A record with a real id is never touched here.
+const hashOf = (text) => {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+};
+
+export function repairRecordIds(state) {
+  const fixed = [];
+  for (const kind of Object.keys(LISTS)) {
+    const field = LISTS[kind];
+    const list = state && state[field];
+    if (!Array.isArray(list)) continue;
+    for (const rec of list) {
+      if (!rec || typeof rec !== "object") continue;
+      if (typeof rec.id === "string" && rec.id) continue;
+      rec.id = `fix_${hashOf(canonical(rec))}`;
+      fixed.push(`${kind}:${rec.id}`);
+    }
+  }
+  return fixed;
+}
+
 export function markDirty(state, nowIso = new Date().toISOString()) {
+  // ⭐ REPAIR FIRST, ALWAYS — so an un-keyable record is never queued, and the sweep that drops one has
+  // nothing left to drop. See `repairRecordIds` for why this is the class and not a list.
+  repairRecordIds(state);
   const b = readSync();
   let changed = false;
   const present = new Set();

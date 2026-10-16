@@ -1,8 +1,79 @@
-# Munchies Furkidz — change history (v54 → v513)
+# Munchies Furkidz — change history (v54 → v526)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**17 Oct 2026 — engine v526: HOW MANY YOU ACTUALLY BAKED, AND TWO SYNC FAULTS FIXED (nothing to run,
+nothing to upload — pushing this is the whole of it).**
+
+**Thirteen versions from the bakery, and most of them are one feature — plus two faults of mine that you
+found.**
+
+**1. A new button: Baked — how many?** Your words: __"when Jien Bake focaccia, she usually bake more, not
+according to order"__. The day's card now has **two doors**, each with its own name: **Set day's
+availability** (what the shop can still sell that day) and **Baked — how many?** (what actually came out).
+⚠️ **My first attempt merged the two into one renamed button, and you stopped it:** __"set availability and
+to mention how many to bake is totally different functionality, why you take way set availability?"__ —
+**merging two jobs under one name is not tidying; it is deleting one of them from your side of the
+screen.** Your button is back exactly as it was.
+
+**2. The number you type is the TOTAL you baked.** Type 10 with 6 ordered and only the extra 4 come off
+the shelf; type a smaller number and the difference goes back on. **And it works on any day** — one you do
+not normally post on, and one already gone. It writes no delivery date at all, so the shop never starts
+offering a day you opened for nobody.
+
+**3. The box is labelled TOTAL BAKED — because the words were not doing their job.** You asked whether
+typing 15 after 10 meant fifteen in all or five more, and **that was not a near miss: it is ten items
+out.** Measured both ways, the app would have read "five in all" and **put five back on the shelf**.
+⚠️ **And a line I added under the box to explain it, you deleted in one sentence** — you asked what my own
+sentence meant, and that was the answer to it. A total is a total.
+
+**4. The big one: ingredients come off when you BAKE, and nowhere else.** Your words: __"only take away
+ingredient when baked. And the order dont take away ingredient, then it can be clean cut"__.
+⚠️ **Measured with your own numbers: two things were taking flour off the shelf** — an order marked
+Baked, and the day's baked total — **so a sale made after the bake was subtracted twice.** Bake 10
+(5,000 g to 2,500 g), then a customer takes 4 of those ten and the order is marked Baked (to 1,500 g):
+**you baked ten and the shelf gave up flour for fourteen.** The old rules are **deleted, not switched
+off**. **The cost, named plainly: a day you do not record takes nothing off** — which is exactly why the
+box is filled in for days that have gone, so clearing old days is one press each.
+
+**5. What the box opens with is your rule, and it took three passes.** Your three messages: __"enter a new
+order on a new bake date, the order qty should not be prefill into the total baked"__, __"if i open the
+total baked and it shows a number, that mean there is some bake already done that day"__, and __"if the
+pass day is not prefill, enter a number will deduct stocks"__. **So a number in the box is a STATEMENT
+THAT A BAKE HAPPENED, and the box may only ever show a number that is true:** a day already gone opens
+ready at what was ordered, **today and every day ahead open empty**, and a day you have already saved
+shows your own number back so you can check it or correct it. Saving the same number again changes
+nothing.
+
+**6. And a fault of mine that no test could see.** A leftover style rule from the version I got wrong was
+**using a class name already taken by your Home screen's own lines** — and being declared later, it won.
+So **the lines on your Home screen have been wearing a green box and a green left border since v514**,
+while three thousand four hundred tests passed. **A dead rule is not harmless, because it can be the one
+that wins.** It is deleted, and the Home screen is checked back to normal.
+
+**7. Your screen no longer jumps to the top while you are reading it.** Your words: __"when i look at
+screen, at after a while it rerender and the screen jump up"__. It was not really a jump — **it was a
+loss:** the view is emptied for an instant while it is rebuilt, the browser clamps the scroll, and
+nothing puts it back. **Measured: scrolled to 400, repainted, landed at 0.** And it was the **sync** doing
+it, every 30 seconds — not you.
+
+**8. And the sync fault that cost you confidence.** Your words: __"the sync is a big issue, and my user
+lost confident"__. ⚠️ **A receipt you marked void on the Mac was written with no id — and a record that
+cannot be keyed cannot travel.** The phone never learned, so it went on showing the same error and telling
+you to press a button you had already pressed. **And pressing Sync made the count go away**, because the
+un-keyable record was **dropped, not sent** — and a count going down looks exactly like success. The
+repair moved from "those two lists" to **the door itself**: before anything is queued, every record in
+every list is given an id, worked out from its own contents so two phones make one row rather than two.
+**Nothing of yours is rewritten**, and the receipt already stranded is repaired when the app opens.
+
+**9. The order row now says which account took the money.** Your question: __"now i can see that an order
+had been paid, but how do i find out whether it is pay be TnG cash or orthers?"__ It reads **Paid — TNG**,
+**Paid — Cash**, or whatever you call your own account. An order paid with no account recorded still reads
+just "Paid", and an unpaid order carries nothing.
+
+**Nothing to run, no SQL, no upload, no setting to change on either phone.**
 
 **16 Oct 2026 — engine v513: THE DATE ON SCREEN FOLLOWS THE CLOCK, IN YOUR APP AND ON THE SHOP
 (nothing to run, nothing to upload — pushing this is the whole of it).**

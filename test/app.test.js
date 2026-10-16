@@ -16,9 +16,26 @@ function createEl(tag) {
     className: "", style: {}, textContent: "", value: "", checked: false, disabled: false,
     hidden: false, scrollTop: 0, _listeners: {},
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
-    appendChild(c) { if (c != null) this.children.push(c); return c; },
+    // ★★★ AND IT PARENTS WHAT IT IS GIVEN (v520). ⚠️⚠️ IT DID NOT, so `parentElement` was **always null**
+    // and **no node here had an ancestor at all** — ⭐ which meant the shim could not tell a node inside the
+    // scrolling page from one outside it, and **a test about the page's own scroll could not be written.**
+    // ⭐ The real DOM sets it, and the shop's own shim has set it since v459 for exactly this reason.
+    appendChild(c) { if (c != null) { c.parentElement = this; this.children.push(c); } return c; },
     append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
-    replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) this.children.push(c); },
+    replaceChildren(...cs) {
+      this.children = [];
+      for (const c of cs) if (c != null) this.children.push(c);
+      // ★★★ AND EMPTYING THE VIEW DROPS THE PAGE'S SCROLL, WHICH IS WHAT A BROWSER DOES (v520).
+      // ⚠️⚠️ WITHOUT THIS THE SHIM CANNOT SEE THE FAULT AT ALL: it has no layout, so the window's scroll
+      // simply stays where it was and **a test asserting "she kept her place" passes whether the app puts
+      // it back or not.** ⭐ MEASURED on the real app: scrolled to 400, `replaceChildren()` on the view,
+      // **0** — the document loses its height for an instant and the browser clamps the scroll.
+      // ⭐ **A shim that cannot express what the view does cannot test it** — the same rule this file has
+      // already paid for with `hidden`, `classList`, `parentNode` and `insertBefore`.
+      const sc = globalThis.document && globalThis.document.scrollingElement;
+      if (!sc) return;
+      for (let n = this; n; n = n.parentElement) if (n === sc) { sc.scrollTop = 0; return; }
+    },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener() {},
     setAttribute(k, v) { this.attrs[k] = String(v); },
@@ -50,8 +67,27 @@ function freshDOM() {
     removeEventListener() {},
     body: createEl("body"),
   };
+  // ★★★ AND THE SHIM CAN NOW EXPRESS A SCROLL AND A ROUTE CHANGE (v520).
+  // ⚠️⚠️ It captured NOTHING: `addEventListener` was a no-op and there was no scrolling element at all — ⭐
+  // **so the page's own scroll could not be observed, and a repaint's effect on it could not be asserted.**
+  // ⭐ **A shim that cannot express what the view does cannot test it** — the rule this file has already paid
+  // for with `hidden`, `classList`, `parentNode` and `insertBefore`.
+  const winListeners = {};
+  const docListeners = {};
+  documentShim.addEventListener = (t, f) => { (docListeners[t] ||= []).push(f); };
+  documentShim.removeEventListener = () => {};
+  documentShim._listeners = docListeners;
+  documentShim.scrollingElement = createEl("html");   // ⚠️ what actually scrolls: the DOCUMENT, not #view
+  // ⚠️ AND THE VIEW HANGS UNDER IT, so emptying the view can be seen to drop the page's scroll — the
+  // real page has #view inside <body> inside the scrolling element, and the model has to match.
+  documentShim.scrollingElement.appendChild(documentShim.body);
+  documentShim.body.appendChild(documentShim.getElementById("view"));
   globalThis.document = documentShim;
-  globalThis.window = { addEventListener() {}, location: { hash: "#/dashboard" } };
+  globalThis.window = {
+    addEventListener(t, f) { (winListeners[t] ||= []).push(f); },
+    _listeners: winListeners,
+    location: { hash: "#/dashboard" },
+  };
   globalThis.location = globalThis.window.location;
   globalThis.history = { replaceState() {} };
   // Keep the app's 30s sync / 60s countdown timers from keeping the test alive.
@@ -543,4 +579,43 @@ test("★★★ the day is re-checked whenever the page is come back to — and 
     + "\"today\" on the grid");
   assert.match(shop, /if \(changed \|\| daysChanged \|\| movedDay\) rerender\(\);/,
     "the shop asks the question and then does not act on it, which is worse than not asking");
+});
+
+// ── v520: a repaint must not move her ────────────────────────────────────────
+
+test("★★★ a repaint keeps her place — the page does not jump to the top (v520)", async () => {
+  // ⚠️⚠️ HER REPORT: __"when i look at screen, at after a while it rerender and the screen jump up"__.
+  // ⭐ MEASURED on the real app before this: scrolled to 400, repainted, **0**. ⚠️ The cause is
+  // `viewEl.replaceChildren()` — **the view is emptied, the document loses its height for an instant, and
+  // the browser clamps the window's scroll.** ⭐⭐ And it is not really a jump: **the scroll is LOST.**
+  // ⚠️ It only ever happens while she is looking, because the 30-second sync tick repaints the moment a
+  // pulled change lands — ⭐ **that is the whole of "after a while".**
+  freshDOM();
+  installStorage({ "bakeadmin.v1": stateJSON() });
+  try {
+    await import("../admin/js/app.js?case=repaint");
+
+    const scroller = document.scrollingElement;
+    // ⚠️ EVERY listener the app registered, not `[0]` — ⭐ **a real route change runs them all**, and taking
+    // the first one made this test pass whether the app put the scroll back or not.
+    const listeners = window._listeners.hashchange || [];
+    assert.ok(listeners.length, "the app does not listen for a route change — this test cannot drive a repaint");
+    const repaint = () => listeners.forEach((f) => f());
+    assert.ok(scroller, "the shim has no scrolling element, so nothing here can be observed");
+
+    // ⭐ She is reading something, and the sync brings a change.
+    scroller.scrollTop = 400;
+    repaint();
+    assert.equal(scroller.scrollTop, 400,
+      "★ the page was dropped to the top by a repaint she did not ask for — **she was reading that part of "
+      + "the screen and the sync took it away**");
+
+    // ⚠️⚠️ AND THE OTHER HALF — that a repaint she DID ask for can still move her — **cannot be asserted
+    // here, and is deliberately not pretended at.** A view that scrolls itself does it DURING its own
+    // render (the receipt in `showConfirm`, the refusal line), and this shim has no layout, so there is
+    // nothing for it to scroll to. ⭐ **An assertion that would pass either way is worse than none** — it
+    // says a thing is watched when it is not.
+    // ⭐ That half is MEASURED ON THE REAL APP instead: scrolled to 400 on the Orders screen, the sync's
+    // repaint left it at 400, and a NAVIGATION to another screen behaved exactly as it did before.
+  } finally { restore(); }
 });

@@ -16,7 +16,7 @@
 import { el, button, showPopup, toast } from "../ui.js";
 import { lastSeenIn, registerRows, registerSummary } from "../receipts.js";
 import { maybeSync, pullReceiptRegister } from "../supabase.js";
-import { orderHref, save } from "../state.js";
+import { newVoidRecord, orderHref, save } from "../state.js";
 
 import * as backups from "../backups.js";
 
@@ -213,8 +213,20 @@ export function renderReceiptRegister(root, state) {
         button("Mark it void", () => {
           if (!Array.isArray(state.voidedReceipts)) state.voidedReceipts = [];
           state.voidedReceipts = state.voidedReceipts.filter((v) => Math.floor(Number(v && v.no)) !== r.number);
-          state.voidedReceipts.push({ no: r.number, code: r.code,
-            at: new Date().toISOString(), reason: String(why.value || "").trim() });
+          // ★★★ AND IT CARRIES AN ID, OR IT CAN NEVER REACH HER OTHER PHONE (v518).
+          //
+          // ⚠️⚠️ THIS LINE SHIPPED WITHOUT ONE, AND IT COST HER A WEEK OF "MY DEVICES DO NOT SYNC" — the
+          // whole chain, proved from her own two screens:
+          //   · the check tells her to **Mark as void** for a receipt with no order behind it, and it says
+          //     the line will clear *"because a decision you have recorded is not a hole"*;
+          //   · she did it **on the Mac**, and the record was written **with no `id`**;
+          //   · ⚠️ **a record that cannot be keyed cannot travel** — `sync.js` excludes it from the POST and
+          //     sweeps it (v475), so it is silently dropped;
+          //   · ⭐ **so the phone never learns the receipt was voided, and keeps showing the SAME error, for
+          //     ever** — telling her to press a button she has already pressed.
+          // ⭐ And the record itself — WITH its id — is built by the data model, so the button and the repair
+          // for an older record cannot disagree about how a void is keyed.
+          state.voidedReceipts.push(newVoidRecord(r.number, r.code, why.value));
           save(state);
           maybeSync(state);
           close();

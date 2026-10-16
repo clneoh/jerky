@@ -310,8 +310,13 @@ test("the Pay press opens her own accounts, and picking one records which, and w
   const again = createEl("div");
   renderOrders(again, state, PARAMS());
   const tag = all(again).find((n) => String(n.className).split(/\s+/).includes("paid-tag"));
-  assert.equal(tag.children[0].text, "Paid",
-    "and the row says one word beside its status — her words: \"the tag just need one. Paid\"");
+  // ★★★ AND THE ROW NAMES THE ACCOUNT, NOT JUST THE FACT (v526). Her question: __"now i can see that an
+  // order had been paid, but how do i find out whether it is pay be TnG cash or orthers?"__ ⭐ **The tag said
+  // one word and the account was two taps away inside Note / tracking**, so the row answers it now — her
+  // v478 words set the STATE ("the tag just need one. Paid") and v526 appends WHICH account took it.
+  assert.equal(tag.children[0].text, "Paid · TNG",
+    "the row does not say which account took the money — **she has to open Note / tracking on every order to "
+    + "find out, which is the question she asked**");
 });
 
 test("the day header carries its own till — cash, TNG, still to collect", () => {
@@ -436,16 +441,36 @@ test("★ the Pay press offers every account on her OWN list, in her OWN order",
     "⚠️ and an account the fixed pair had no word for is recorded as itself, not as one of two words");
 });
 
-test("⚠️⚠️ a method that is neither Cash nor TNG no longer prints as TNG", () => {
-  // ⚠️ The tag used to read `first.paidMethod === "cash" ? "Cash" : "TNG"` — so EVERY label that was
-  // not the old lowercase "cash" printed as **TNG**, and a bank transfer wore a TNG tag. ⭐ A value
-  // that looks right and is wrong, which is the fault this app keeps having to be taught.
+// ⚠️⚠️ AND THE ACCOUNT IS NAMED THROUGH ONE READER, SO THE OLD FAULT CANNOT COME BACK (v526).
+//
+// ⚠️ The tag used to read `first.paidMethod === "cash" ? "Cash" : "TNG"` — so EVERY label that was not the old
+// lowercase "cash" printed as **TNG**, and a bank transfer wore a TNG tag. ⭐ A value that looks right and is
+// wrong, which is the fault this app keeps having to be taught. ⚠️ v478 answered it by printing** nothing but
+// the state; v526 names the account again, and **this test is what makes that safe**: the word has to come
+// from `methodLabel` (accounts.js), which knows the old lowercase "cash"/"tng" and returns every other
+// account's own name unchanged.
+test("⚠️⚠️ a method that is neither Cash nor TNG prints its OWN name, never TNG", () => {
   const root = createEl("div");
   renderOrders(root, withOrder({ status: "ready", paidReceived: true, paidMethod: "Bank" }), PARAMS());
   const tag = all(root).find((n) => String(n.className).split(/\s+/).includes("paid-tag"));
   assert.ok(tag, "the row still says the money is in");
-  assert.equal(tag.children[0].text, "Paid",
-    "⚠️⚠️ one word, so it cannot be wrong about WHICH account — the old tag printed \"TNG\" here");
+  assert.equal(tag.children[0].text, "Paid · Bank",
+    "⚠️⚠️ the row does not print the account's OWN name — **the old tag printed \"TNG\" for a bank transfer, "
+    + "and a value that looks right and is wrong is the fault this app keeps having to be taught**");
+  assert.ok(!/TNG/.test(tag.children[0].text),
+    "⚠️⚠️ a bank transfer is wearing a TNG tag again — **that is the v478 fault, back through the wording "
+    + "instead of through the reader**");
+});
+
+test("⚠️ a record from before v478 (lowercase \"cash\") prints as Cash, not as itself", () => {
+  // ⚠️ `methodLabel` is the ONE reader, and this is the half of it that matters for HER data: every order
+  // recorded before v478 holds "cash"/"tng" in lowercase, so reading the raw value would print "cash" beside
+  // a paid order — a word that looks like a database field rather than her own account name.
+  const root = createEl("div");
+  renderOrders(root, withOrder({ status: "ready", paidReceived: true, paidMethod: "cash" }), PARAMS());
+  const tag = all(root).find((n) => String(n.className).split(/\s+/).includes("paid-tag"));
+  assert.equal(tag.children[0].text, "Paid · Cash",
+    "an old lowercase record printed raw — **her own older orders would read \"cash\" instead of Cash**");
 });
 
 test("★ an account can be added while recording the payment, and it comes back picked", () => {

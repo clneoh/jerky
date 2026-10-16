@@ -182,6 +182,26 @@ function ordersOnDateStr(state, dateStr) {
   return (state.orders || []).filter((o) => o && dateIds.has(o.deliveryDateId));
 }
 
+// ★★★ HOW MUCH OF EACH PRODUCT IS ORDERED ON A DAY (v514), keyed by the DATE rather than by a delivery-date
+// id — because the production screen must be able to ask about a day that has **no row at all**.
+//
+// ⚠️ IT IS BUILT ON `ordersOnDateStr`, WHICH IS THE SET THE SHOPPING LIST AND THE ONE-DAY FINGERPRINT ALREADY
+// USE. ⭐ **Production must never disagree with the shopping list about what is on a day** — if it counted a
+// different set, a day could have ingredients taken off for bread the list never accounted for, and the two
+// would drift with no way to see it.
+//
+// ⚠️ A day with no delivery-date row has NO orders through this door, which is exactly right: **a day she
+// baked on but did not open is a day nobody could order from.**
+export function orderedOnDay(state, dateStr) {
+  const map = new Map();
+  for (const o of ordersOnDateStr(state, dateStr)) {
+    const id = String((o && o.productId) || "");
+    if (!id) continue;
+    map.set(id, (map.get(id) || 0) + (Number(o.qty) || 0));
+  }
+  return map;
+}
+
 // What changed on a covered bake day since its list was saved, and the extra
 // ingredient need of ONLY the added units. `savedFp` is that snapshot's
 // per-date fingerprint. added/removed are per-product order deltas; `items` is
@@ -579,7 +599,7 @@ export function effectiveLimit(state, dateStr, productId) {
 
 // A day's capacity, product by product: which products contribute a limit to that
 // day, what each contributes, and the total. `effectiveCapacity` is this total,
-// and the Orders screen's "Set day's availability" pop-up draws these lines — so
+// and the Orders screen's "Production & availability" pop-up draws these lines — so
 // the sum the owner reads and the number the shop uses are one computation, and
 // cannot drift into disagreeing with each other.
 //
@@ -625,7 +645,7 @@ export function effectiveCapacity(state, dateStr) {
   return dayCapacityParts(state, dateStr).total;
 }
 
-// Model for the "Set day's availability" pop-up: every active product with a
+// Model for the "Production & availability" pop-up: every active product with a
 // usual limit (menu order), plus the names of poolable value packs that follow
 // a listed base — those aren't adjusted directly.
 export function dayRuleRows(state, dateStr) {
