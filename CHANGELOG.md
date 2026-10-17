@@ -1,8 +1,35 @@
-# Munchies Furkidz — change history (v54 → v534)
+# Munchies Furkidz — change history (v54 → v535)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**17 Oct 2026 — engine v535: THE DATABASE STEP WAS EMPTY. YOU NEED TO RUN IT AGAIN, AND THIS IS MY
+MISTAKE (one paste, safe to run twice).**
+
+**1. ⚠️ What happened, plainly.** v533 told you to run `supabase/sync_cursor.sql` before deploying. **That
+file was EMPTY — zero bytes.** You ran it, it did nothing, and **nothing anywhere said so.**
+**And I made it worse: because the app falls back to reading everything when the column is missing, it
+carried on working — so I told you the step was confirmed. It was not.** I had checked that the file
+existed and that it was in your commit. **I had not checked that it had anything in it.**
+
+**2. Nothing is broken, and nothing is lost.** Your sync has been reading the whole book — **the careful,
+paged read. Slower, never wrong.** Your orders, money and bake days are untouched; no record was ever at
+risk.
+
+**3. ⚠️ So please do one thing: run `supabase/sync_cursor.sql` again, properly this time.** It is now the
+real script — the same one the bakery uses — and it **prints four numbers back at you when it finishes**
+(rows, stamped, lowest, highest). **`rows` and `stamped` must match, and `highest` must be bigger than
+`lowest`.** If they do not, stop and tell me. The script is safe to run twice, changes no record, and
+only adds a column and a trigger.
+
+**4. And a guard now exists so this cannot happen again.** A new test checks **every `.sql` file in the
+repo for actual instructions** — a step that is empty, or comments only, now fails the suite by name.
+⚠️ **A promised step that is empty looks exactly like a step that worked**, and the fallback is what made
+it invisible. **The bakery found this in our own repo's history and wrote the same guard for itself** — it
+is their catch, not mine.
+
+**Nothing else changes. No new features. No other setting to touch.**
 
 **17 Oct 2026 — engine v534: THE 30-DAY CHANGE IS NOW THE BAKERY'S, AND IT IS BETTER THAN MINE (nothing
 to run — the SQL you already ran covers it).**

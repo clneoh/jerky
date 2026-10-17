@@ -757,6 +757,36 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## v534 → v535 — the database step was EMPTY, and a guard now stops that (17 Oct 2026)
+
+**2 files: the real `supabase/sync_cursor.sql` (0 → 4,758 bytes) and a new `test/sql-steps.test.js`.**
+Suite **3513 → 3515**. ⚠️ **SHE MUST RE-RUN THE SQL** — the one she pasted was empty.
+
+### The incident
+
+⚠️⚠️ **v533's changelog said "RUN `supabase/sync_cursor.sql` BEFORE YOU DEPLOY THIS" — and the file was
+0 bytes.** She ran it; it did nothing. ⭐ **Nothing said so, because the fallback worked: with `seq`
+missing the pull does the full, paged read — slower, never wrong.** And **I then told her the step was
+confirmed**, having checked that the file *existed* and was *in the commit*, **not that it had anything in
+it.**
+
+⭐ **"A promised step that is empty looks exactly like a step that worked, and a graceful fallback is what
+makes the difference invisible."** The bakery found this in our repo's history — it wrote the guard
+first, and this is their catch, not ours.
+
+### The fix
+
+- **`supabase/sync_cursor.sql` replaced with the bakery's version**, which is better than what was meant
+  to be there: an explicit `grant usage … to authenticated` instead of `SECURITY DEFINER`, a column
+  default as well as the trigger, `set not null` (so a gap fails **loudly**), an undo block, and — ⭐
+  **a read-back of four numbers at the end (`rows`, `stamped`, `lowest`, `highest`) so she can see it
+  worked instead of being told it did.**
+- ⭐ **`test/sql-steps.test.js`** — two tests. One sweeps **every `.sql` in `supabase/`** and fails if any
+  is empty or comments-only; the other pins `sync_cursor.sql`'s own promises (the `seq` column, a stamp
+  **on UPDATE as well as insert** — *a default fires on insert only, so an edited row would sit behind
+  the cursor for ever* — the sequence grant, and idempotency).
+- **Bitten:** emptying the SQL file fails **both** tests by name.
+
 ## v533 → v534 — the 30-day change is upstreamed, in the bakery's better shape (17 Oct 2026)
 
 **5 files changed; no SQL** (the cursor script she already ran stands). Suite **3512 → 3513**.
