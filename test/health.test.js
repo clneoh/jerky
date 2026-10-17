@@ -97,8 +97,8 @@ test("★★ a receipt with no order behind it FAILS — the fault that cost her
   assert.match(r.fix, /line clears/i, "★ it does not say that marking it void actually clears the line");
   assert.match(r.fix, /WhatsApp/,
     "★ and the route for a real loss was dropped — that leaves a fault with no way out");
-  assert.match(r.why, /48 hours/,
-    "★ the reason does not say why this happens innocently: a removed order is only kept for 48 hours");
+  assert.match(r.why, /30 days/,
+    "★ the reason does not say why this happens innocently: a removed order is only kept for 30 days");
   assert.match(r.why, /receipt stands and the money is recorded/i, "the check does not say what it means");
   assert.match(r.fix, /WhatsApp/i, "the check does not say what she can do about it");
 

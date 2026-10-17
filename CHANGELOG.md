@@ -1,8 +1,37 @@
-# Munchies Furkidz — change history (v54 → v529)
+# Munchies Furkidz — change history (v54 → v530)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**17 Oct 2026 — engine v530: THE REMOVED LIST NOW REMEMBERS 30 DAYS (Munchies only — nothing to run,
+nothing to upload, pushing this is the whole of it).**
+
+**Your words: __"raise it and fix it"__. And it is worth saying plainly where the old number came
+from: two days was YOURS.** You set it in September (__"the deleted order just need to keep for
+48hrs"__), and thirty had been the developer's guess before that. So this changes your own decision,
+at your asking, and it is still yours to change again.
+
+**1. Why it needed raising.** **Check my system** opens the **oldest saved daily copy** — about a week
+back — and asks whether every order in it can be accounted for. **A two-day Removed list cannot explain
+a five-day-old removal**, so it named **seven of your own cancellations** as orders that had "left
+without a trace". Thirty days covers that copy with room to spare, so **the check can now answer
+instead of guessing.**
+
+**2. What it also means for you: a removed order can be put back for a month, not two days.** The
+Removed list says so on its own card now ("Kept for 30 days so a mistake can be put right").
+
+**3. ⚠️ And one honest limit: it cannot bring back rows already thrown away.** Rows pruned under the
+old two-day rule are gone, so **the seven you are looking at may still be named until the oldest copy
+rolls past it** — a few days. Nothing is lost by waiting; the check's own words now say why.
+
+**4. ⚠️ And a warning about the screen's own advice, which I checked while doing this.** It offers
+*"put that copy back"*. **That restores the whole app to that copy** — a week of orders, money and
+baked totals would come back as they were — and despite being called a *merge* in the code, it does
+not merge. It takes a "before" copy first, so it is recoverable, but **it is not a way to look
+something up.** Use it only if you actually want the orders back.
+
+**Nothing to run, no SQL, no upload, no setting to change on either phone.**
 
 **17 Oct 2026 — engine v529: THE STUCK SYNC IS FIXED, AND THE REMOVED LIST HOLDS ONE ROW PER ORDER
 (nothing to run, nothing to upload — pushing this is the whole of it).**

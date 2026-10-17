@@ -171,11 +171,15 @@ test("★★ an order deleted on the OTHER phone lands on this phone's shelf (v4
 });
 
 test("★ the shelf is pruned, so keeping things cannot leak", () => {
-  // ⚠️⚠️ AND HER NUMBER IS PINNED, not merely read. Her words: __"the deleted order just need to keep for
-  // 48hrs"__ — and a test that only compares against the constant would pass with ANY value in it,
-  // **including the thirty days I guessed before she corrected me.** ⭐ A duration is a decision, so the
-  // test states the decision.
-  assert.equal(REMOVED_KEEP_HOURS, 48, `★ the shelf keeps orders for ${REMOVED_KEEP_HOURS} hours, not her 48`);
+  // ⚠️⚠️ AND HER NUMBER IS PINNED, not merely read. Her words at v452: __"the deleted order just need to
+  // keep for 48hrs"__ — and a test that only compares against the constant would pass with ANY value in
+  // it, including the thirty days the developer had guessed before she corrected him. ⭐ **A duration is a
+  // decision, so the test states the decision.**
+  // ⭐⭐ AND SHE RAISED IT HERSELF ON 17 OCTOBER 2026: __"raise it and fix it"__ — thirty days, because the
+  // check opens the OLDEST DAILY copy (about a week back) and a two-day shelf could not explain a removal
+  // inside it, so it named seven of her own cancellations. ⚠️ **The pinned number moves WITH her decision;
+  // it is never quietly read off the constant.**
+  assert.equal(REMOVED_KEEP_HOURS, 720, `★ the shelf keeps orders for ${REMOVED_KEEP_HOURS} hours, not her 30 days`);
   const st = { orders: [], removedOrders: [] };
   const old = new Date(Date.now() - (REMOVED_KEEP_HOURS + 5) * 3600000).toISOString();
   st.removedOrders = [{ id: "ancient", removedAt: old }, { id: "today", removedAt: new Date().toISOString() }];

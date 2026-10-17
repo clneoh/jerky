@@ -474,7 +474,7 @@ function normalize(s) {
       // above would fix NOTHING for her: the rows are already sitting in her data on both phones** — the same
       // reason the v518 void repair had to exist for the button fix to be worth anything. ⭐ The shelf is
       // newest-first, so keeping the FIRST row for each id keeps the most recent removal — and `removedAt`
-      // is what the 48 hours are counted from.
+      // is what the keeping period above is counted from.
       .filter((r, i, all) => !(r && r.id) || all.findIndex((x) => x && x.id === r.id) === i),
     // ★★★ AND A VOID RECORD ALREADY ON A PHONE IS GIVEN ITS ID HERE (v518). ⚠️⚠️ Without this, a receipt she
     // has ALREADY marked void stays stranded for ever: the record is in her data, but it can never travel,
@@ -792,10 +792,21 @@ function splitSharedDateIds(deliveryDates, orders) {
 //
 // ⚠️ EVERY REMOVAL MUST COME THROUGH HERE. `test/order-removal-guard.test.js` fails the moment anything
 // else drops rows from `state.orders`, so a future screen cannot quietly go round it.
-// ★★ HER NUMBER, IN HER UNIT (v452): __"the deleted order just need to keep for 48hrs"__
-// ⚠️ TWO DAYS, NOT THIRTY — thirty was mine, and it was a guess dressed as a policy. **In HOURS, because
-// that is how she said it**, so the constant needs no conversion to be read against her words.
-export const REMOVED_KEEP_HOURS = 48;
+// ★★ HER NUMBER, IN HER UNIT — 48 HOURS, HER OWN WORDS AT v452: __"the deleted order just need to keep
+// for 48hrs"__ (thirty days was the developer's guess before that, and she chose two days instead).
+//
+// ⚠️⚠️ AND SHE RAISED IT HERSELF ON 17 OCTOBER 2026: __"raise it and fix it"__. ⭐ **The reason is not the
+// Removed screen — it is the CHECK.** `Check my system` opens the OLDEST DAILY saved copy (about a week
+// back) and asks whether every order in it can be accounted for: on this phone, on the Removed list, on
+// the copy's own Removed list, or covered by a receipt she marked void. ⚠️ **A 48-hour shelf cannot explain
+// a five-day-old removal**, so it named SEVEN of her own cancellations as orders that had "left without a
+// trace" — and its only suggested remedy was a full restore. ⭐ **Thirty days covers the oldest daily copy
+// with room to spare, so the check can answer instead of guessing.**
+//
+// ⚠️ **IT CANNOT BRING BACK ROWS ALREADY PRUNED** under the old rule — those stay gone, so a removal made
+// before this change may still be named until the oldest copy rolls past it.
+// **In HOURS, because that is how she speaks it**, and the number is still hers to change.
+export const REMOVED_KEEP_HOURS = 720;
 const REMOVED_MAX = 200;
 
 export function removeOrders(state, ids, reason = "") {
@@ -829,6 +840,9 @@ export function removeOrders(state, ids, reason = "") {
 
 // ⚠️ A SHELF THAT ONLY GROWS IS A LEAK. Thirty days is long enough to notice a loss and long enough for
 // the customer to come back about it, and 200 rows is far more than a bakery removes in a month.
+// ⭐ SINCE 17 OCTOBER 2026 THE CONSTANT ABOVE IS ALSO THIRTY DAYS, so this comment finally describes what
+// the code does — it had said thirty while the setting was her two days, which is how a stale note starts
+// being trusted over the code.
 function pruneRemovedOrders(state) {
   const list = Array.isArray(state.removedOrders) ? state.removedOrders : [];
   const cut = new Date(Date.now() - REMOVED_KEEP_HOURS * 3600000).toISOString();

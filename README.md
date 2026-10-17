@@ -756,6 +756,34 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## v529 → v530 — the Removed list remembers 30 days (17 Oct 2026, **jerky-only**)
+
+**One constant, raised at her asking: `REMOVED_KEEP_HOURS` 48 → 720.** ⚠️ **It is worth recording where 48
+came from, because it was HERS:** she set it at v452 — *"the deleted order just need to keep for 48hrs"* —
+after thirty days had been the developer's guess. **So this changes her own decision, and the test that
+pins it now pins the new one with her new reason beside it** (`test/order-removal-guard.test.js`).
+
+**Why.** `Check my system` opens the **oldest saved daily copy** (`oldestDaily(copies)`, ~7 days back) and
+asks whether every order in it can be accounted for — on this phone, on the Removed list, on the copy's own
+Removed list, or covered by a receipt she marked void. ⚠️ **A 48-hour shelf cannot explain a five-day-old
+removal**, so it named **seven of her own cancellations** as orders that had "left without a trace" — and
+its only offered remedy was a full restore. **30 days covers the oldest daily copy with room to spare.**
+
+⚠️ **It cannot bring back rows already pruned** under the old rule — those stay gone, so a removal made
+before this change may still be named until the oldest copy rolls past it.
+
+⚠️ **And the stale comment is fixed too:** `pruneRemovedOrders` carried *"Thirty days is long enough…"*
+while the setting was her two days — **a note that disagreed with the code and got quoted as evidence.**
+(It was quoted in this session, by me, before the constant was read.)
+
+**Engine bumped to 530 on purpose:** a change that does not move `ENGINE_VERSION` never reaches her phone —
+`freshness.js` keys the "update now" strip on it. ⚠️ **The two apps now read 529 (bakery) and 530
+(munchies) until the bakery catches up; the merge is per-file, so that is cosmetic.**
+
+**Copy updated with it:** both `health.js` messages that named "48 hours" (now 30 days, and the second
+names the *old* two-day rule as the reason a pruned row never comes back), the Removed card's *"Kept for
+30 days…"*, the Guide's two references, and `test/health.test.js`'s assertion. **Suite 3503 pass / 0 fail.**
+
 ## Engine v526 → v529 — a refused batch no longer freezes the queue, and the Removed list holds one row (17 Oct 2026)
 
 Three versions from the bakery. **9 files changed (`+529 / −47`); no SQL and nothing to deploy** — the same

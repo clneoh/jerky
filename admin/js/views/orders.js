@@ -5517,7 +5517,7 @@ function removedOrdersEl(state, root) {
     wrap.replaceChildren(
       el("h3", { style: "margin:0 0 2px" }, `↩ ${gone.length} removed order${gone.length === 1 ? "" : "s"}`),
       el("p", { class: "card-sub", style: "margin:0 0 6px" },
-        "Kept for 48 hours so a mistake can be put right. Nothing here is lost."),
+        "Kept for 30 days so a mistake can be put right. Nothing here is lost."),
       el("div", { class: "btn-row", style: "margin:0" },
         button(open ? "Hide them" : "Show them", () => { open = !open; paint(); }, "ghost small")),
       ...(open ? rows : []));

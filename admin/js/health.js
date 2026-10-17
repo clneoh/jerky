@@ -231,9 +231,10 @@ export function registerChecks(state, register, voided) {
           // because she removed the order herself.** ⚠️ **The check could not tell that from a loss, so it
           // read as a fault for six days, and I chased three wrong theories before she found it.**
           // ⭐ **TWO FACTS MAKE IT INNOCENT, AND BOTH ARE NOW ON THE PAGE: a receipt is never rewritten, and
-          // a removed order is only kept for 48 hours — so past two days there is nothing left to connect
-          // the two, and that is normal, not a fault.**
-          "A receipt was issued for money you took, and there is no order wearing that number on this phone or on the Removed list. The receipt stands and the money is recorded — a receipt is never rewritten, even when the order behind it is removed. And a removed order is only kept for 48 hours, so a removal older than that leaves nothing to connect the two.",
+          // a removed order is only kept for 30 days — so past that there is nothing left to connect
+          // the two, and that is normal, not a fault.** ⚠️ **And rows pruned under the OLD two-day rule
+          // never came back, so a removal made before 17 October 2026 can still reach here.**
+          "A receipt was issued for money you took, and there is no order wearing that number on this phone or on the Removed list. The receipt stands and the money is recorded — a receipt is never rewritten, even when the order behind it is removed. And a removed order is only kept for 30 days, so a removal older than that leaves nothing to connect the two.",
           // ⭐ AND THE WAY OUT LEADS WITH THE ONE PRESS THAT CLEARS IT, because for a deliberate removal that
           // is the whole answer. ⚠️ The second half stays: for a real order that has gone it is the only way
           // back, and a check that dropped it would leave her a fault with no way out.
@@ -377,10 +378,11 @@ export function backupChecks(state, copy, when = "") {
 
   return [missing.length
     ? fail("stable", TITLE, missing.map((c) => `#${c}`),
-      // ⚠️ AND IT NAMES BOTH INNOCENT CASES (v527). It named one, and the one it named was not hers: **the
-      // copy looks back about a week, and the Removed list remembers 48 hours** — so the whole band in
-      // between is an order she took off deliberately, with nothing left to explain it.
-      `The copy saved on ${when || "an earlier day"} holds ${missing.length === 1 ? "an order" : "orders"} that this phone no longer has — and ${missing.length === 1 ? "it is" : "they are"} not on the Removed list either, so the app has no record of taking ${missing.length === 1 ? "it" : "them"} off. TWO innocent cases look exactly the same, so check the dates before worrying: a removal made before the Removed list existed, and — because the Removed list keeps a row for only 48 hours — an order you took off yourself more than two days ago, which this copy is old enough to remember.`,
+      // ⚠️ AND IT NAMES THE INNOCENT CASES (v527, widened 17 October 2026). The copy looks back about a
+      // week and the Removed list now remembers 30 days, so that band is covered — ⚠️ **but rows pruned
+      // under the old two-day rule never came back, so an older removal still arrives with nothing to
+      // explain it.**
+      `The copy saved on ${when || "an earlier day"} holds ${missing.length === 1 ? "an order" : "orders"} that this phone no longer has — and ${missing.length === 1 ? "it is" : "they are"} not on the Removed list either, so the app has no record of taking ${missing.length === 1 ? "it" : "them"} off. TWO innocent cases look exactly the same, so check the dates before worrying: a removal made before the Removed list existed, and one whose row was pruned under the old two-day rule — a row that has already gone does not come back.`,
       "Open Backup and safety and put that copy back if these are orders you took, or search WhatsApp for the number and enter the order again by hand.")
     : pass("stable", TITLE)];
 }
