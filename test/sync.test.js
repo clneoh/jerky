@@ -2130,6 +2130,134 @@ test("★★★ flush: every row it sends has the SAME KEYS — the fault that s
   } finally { restore(); }
 });
 
+// ── v528: a refused batch must never hold her good records hostage ───────────
+//
+// ⚠️⚠️ HER REPORT: __"more and more removed order shown on phone"__ — ⭐ **the queue only GREW.** Every
+// removal she made queued a change, the server refused the batch, and because a refusal sends nothing,
+// **every change queued beside the bad one was frozen with it — for ever, however many times she pressed
+// Sync now.** ⭐ **Measured: 3, then 8, and climbing (seven removed orders and a unit).**
+test("★★★ flush: a batch the server refuses is re-offered ONE RECORD AT A TIME, so the good ones go up", async () => {
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    st.orders = [
+      { id: "o1", productId: "p1", qty: 1 },
+      { id: "o2", productId: "p1", qty: 2 },
+      { id: "o3", productId: "p1", qty: 3 },
+    ];
+    seedToken(store);
+    sync.markDirty(st, "2026-01-01T00:00:00.000Z");
+
+    const batches = [];
+    const restoreFetch = installFetch(async (url, opts) => {
+      const body = JSON.parse(opts.body);
+      batches.push(body.map((r) => r.id));
+      // ⚠️ EXACTLY AS POSTGREST BEHAVES: one object it will not take refuses the WHOLE batch, and the
+      // others in it are never written. That is the mechanism, not a stand-in for it.
+      if (body.some((r) => r.id === "o2")) return { ok: false, status: 400, text: async () => '{"code":"PGRST102"}' };
+      return { ok: true, text: async () => "" };
+    });
+    try {
+      const r = await sync.flush(st);
+      assert.ok(batches[0].length > 1, "precondition: the first attempt is not a batch");
+      // ⭐⭐ THE WHOLE OF IT: after a refusal, each record is offered on its own.
+      assert.ok(batches.length > 1, "★ a refused batch was NOT re-offered record by record — **so one "
+        + "record the server will not take freezes every change queued beside it, for ever**");
+      assert.equal(r.refusedKey, "orders:o2", "★ the refused record is not named, so it cannot be shown");
+
+      const b = JSON.parse(store.get("bakeadmin.sync"));
+      assert.equal(!!b.pending["orders:o1"], false, "★ a good record was left frozen by the refused one");
+      assert.equal(!!b.pending["orders:o3"], false, "★ a good record was left frozen by the refused one");
+      assert.ok(b.pending["orders:o2"], "★ the refused record was cleared anyway — **that is the lie that "
+        + "made 'there is no error' and 'the number never moves' both true, on the same phone**");
+      // ⭐ AND IT IS NOT REPORTED AS A CLEAN SYNC: seven of her eight changes going up is a different
+      // sentence from "synced", and the one that was refused has to be said out loud.
+      assert.equal(r.ok, false, "a refused record was reported as a clean hand-over");
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});
+
+test("★★★ flush: every row keeps the SAME FIVE KEYS even if a queued record lost one", async () => {
+  // ⚠️⚠️ **THE v467 FAULT AS A CLASS, NOT AS A FIELD.** v467 found that one object with a different key set
+  // makes PostgREST refuse the whole batch, and it fixed the one field that had produced it — an `id` that
+  // was `undefined`. ⭐ **But the filter above that fix only checks `kind` and `id`**, so a queued record
+  // whose `_deleted` or `updated_at` is missing (a hand-edited or corrupted journal, a shape from another
+  // version) is STILL sent, still loses a key, and still freezes everything beside it.
+  // ⭐ **Measured before this was written:** that record serialises to `data,id,kind,updated_at` — four keys
+  // where every good one has five — and it passes the sendable filter.
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    st.orders = [{ id: "o1", productId: "p1", qty: 1 }];
+    seedToken(store);
+    sync.markDirty(st, "2026-01-01T00:00:00.000Z");
+    // ⚠️ Put a shape in the queue that the app itself would never write, the way a corrupted journal would.
+    const b = JSON.parse(store.get("bakeadmin.sync"));
+    b.pending["uoms:uom_g"] = { kind: "uoms", id: "uom_g", data: { id: "uom_g", name: "g" } };
+    store.set("bakeadmin.sync", JSON.stringify(b));
+
+    let captured = null;
+    const restoreFetch = installFetch(async (url, opts) => {
+      captured = { url, opts };
+      return { ok: true, text: async () => "" };
+    });
+    try {
+      const r = await sync.flush(st);
+      assert.equal(r.ok, true, "the push itself failed, so nothing below proves anything");
+      const body = JSON.parse(captured.opts.body);
+      const first = JSON.stringify(Object.keys(body[0]));
+      for (const row of body) {
+        assert.equal(JSON.stringify(Object.keys(row)), first,
+          `★ a row went out with ${JSON.stringify(Object.keys(row))} against ${first} — **PostgREST refuses `
+          + "the WHOLE batch for one of them, and that is the fault that stopped every device syncing**");
+      }
+      // ⭐ AND IT IS REPAIRED, NOT DROPPED — the difference from v467. This record is sendable, so throwing
+      // it away would lose her change; the queue timestamp is the honest fallback for a missing one.
+      assert.ok(body.some((row) => row.id === "uom_g"),
+        "★ the odd-shaped record was dropped instead of repaired — **that throws her change away to save a "
+        + "batch it did not have to poison**");
+      assert.equal(JSON.parse(store.get("bakeadmin.sync")).pending["uoms:uom_g"], undefined,
+        "★ the repaired record was sent but never taken off the queue");
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});
+
+test("★★ the reason a hand-over did not complete is KEPT, and cleared by the next clean one (v528)", async () => {
+  // ⚠️⚠️ **THE APP COULD COUNT THE STUCK CHANGES AND NAME THEM, AND COULD NOT SAY WHY.** `refresh` handed
+  // the reason to whichever button pressed it and then forgot it, so the card said "Sync failed: …" for as
+  // long as it took her to read, and no other screen ever knew. ⭐ And a stale reason is worse than none.
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    st.orders = [{ id: "o1", productId: "p1", qty: 1 }];
+    seedToken(store);
+    sync.markDirty(st, "2026-01-01T00:00:00.000Z");
+
+    const bad = installFetch(async (url, opts) => {
+      if (opts && opts.method === "POST") return { ok: false, status: 400, text: async () => '{"code":"PGRST102"}' };
+      return { ok: true, json: async () => [], text: async () => "" };
+    });
+    try {
+      const r = await sync.refresh(st);
+      assert.equal(r.ok, false, "precondition: the hand-over did not fail, so nothing below proves anything");
+      const f = sync.lastFailure();
+      assert.ok(f, "★ the reason was thrown away — **so nothing on any screen can say why the queue will not empty**");
+      assert.match(String(f.reason), /PGRST102|400/, "the reason does not carry what the server said");
+      assert.equal(f.phase, "hand-over", "★ a refused WRITE and a failed READ are not distinguished");
+      assert.equal(f.key, "orders:o1", "★ which record was refused is not kept, so it cannot be named");
+    } finally { bad(); }
+
+    const good = installFetch(async (url, opts) => (
+      opts && opts.method === "POST" ? { ok: true, text: async () => "" } : { ok: true, json: async () => [], text: async () => "" }
+    ));
+    try {
+      await sync.refresh(st);
+      assert.equal(sync.lastFailure(), null,
+        "★ a reason survived a clean hand-over — **a stale reason sends her looking for a fault that has gone**");
+    } finally { good(); }
+  } finally { restore(); }
+});
+
 // ── v475: a queue holding ONLY an un-sendable record ─────────────────────────
 test("★★★ flush: a queue holding only a record that can never be sent is swept, and still reports ok", async () => {
   // ⚠️⚠️ HER REPORT, IN TWO LINES: __"after sync now, the phone still say 1 changes waiting to be send"__

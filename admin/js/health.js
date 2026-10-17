@@ -24,6 +24,7 @@
 import { byId, codeFromId, groupOrders, orderCode, orderLinePrice } from "./state.js";
 import { isCollected } from "./money.js";
 import { receiptNoOfGroup } from "./receipts.js";
+import { listFields } from "./sync.js";
 
 // The order-level facts every row of ONE order must agree on. ⚠️ DELIBERATELY NOT THE PER-LINE ONES —
 // `qty`, `unitPrice`, `unitCost` and `lineNote` are each row's own business, and a check that flagged
@@ -306,6 +307,15 @@ export function copyChecks(copies, now = new Date()) {
 // removed by hand **before v444 kept a Removed list** has no row to explain it, and it looks exactly like a
 // loss. Those copies age out of the window within about a week, so this settles by itself — and the `why`
 // below says so rather than leaving her to work it out.
+//
+// ⚠️⚠️ AND THERE IS A SECOND INNOCENT CASE, WHICH HER OWN SCREEN FOUND (v527). ⭐ **The Removed list keeps a
+// row for 48 HOURS, and this check opens a copy about a WEEK old** — so an order she took off herself three
+// days ago is in the copy, gone from the phone, and has nothing left to explain it. ⭐⭐ **Measured on her
+// data: `#4B00A9`, removed on her other phone on 11 Oct at 10:47 pm, was on the Removed shelf when she
+// looked at it that night — and by the 16th the row was pruned, so this check named it as a loss.** ⭐ **A
+// window that looks back further than the shelf can remember will always see a deliberate removal as a
+// disappearance.** The `why` now names both cases, because a check that names one cause while two exist is
+// telling her something untrue about her own data.
 export function backupChecks(state, copy, when = "") {
   const TITLE = "No order has left this phone's list without a trace";
   if (!copy || typeof copy !== "object") {
@@ -328,13 +338,49 @@ export function backupChecks(state, copy, when = "") {
   const shelfThen = codesOf(copy.removedOrders);
   // ⚠️ AND THE COPY'S OWN LIST COUNTS: an order she took off a week ago, whose shelf row has since been
   // pruned, is still explained by the copy that was written while it was on the shelf.
+  //
+  // ★★★ AND SO DOES A RECEIPT SHE HAS DECLARED VOID (v527) — **the same carve-out the receipt check has had
+  // since v448, in almost the same words: a recorded decision is not an unexplained hole.** ⭐ **Marking a
+  // receipt void IS her saying "this order is gone and I have dealt with the money"** — so it is the app's own
+  // record of that order's fate, and this check was not asking for it. ⚠️ **It reads `voidedReceipts` from
+  // BOTH sides** (this phone now, and the copy), for the same reason the Removed list is read from both: the
+  // record has to travel, and the copy is what remembers it if this phone's row is gone.
+  const voidRecs = [
+    ...(Array.isArray(state && state.voidedReceipts) ? state.voidedReceipts : []),
+    ...(Array.isArray(copy.voidedReceipts) ? copy.voidedReceipts : []),
+  ];
+  const voidedNos = new Set();
+  const voidedCodes = new Set();
+  for (const v of voidRecs) {
+    const n = Math.floor(Number(v && v.no));
+    if (Number.isFinite(n) && n > 0) voidedNos.add(n);
+    const c = String((v && v.code) || "").trim().toUpperCase();
+    if (c && c !== "??????") voidedCodes.add(c);
+  }
+  // ⚠️ MATCHED BOTH WAYS, exactly as `registerChecks` does it: the code the record names, and the receipt
+  // number the order carries — ⭐ **the two facts a receipt and an order always share.** A void record made
+  // before v441 may name a code the order no longer wears, and reading the number as well is what stops that
+  // becoming a false loss.
+  const declaredGone = new Set();
+  for (const g of groupOrders(Array.isArray(copy.orders) ? copy.orders : [])) {
+    const first = g.orders[0];
+    if (!first) continue;
+    const codes = [orderCode(first), codeFromId(first)].filter((c) => c && c !== "??????");
+    const n = Math.floor(Number(receiptNoOfGroup(g.orders)));
+    const hit = codes.some((c) => voidedCodes.has(String(c).toUpperCase()))
+      || (Number.isFinite(n) && n > 0 && voidedNos.has(n));
+    if (hit) for (const c of codes) declaredGone.add(c);
+  }
   const missing = [...codesOf(copy.orders)]
-    .filter((c) => !here.has(c) && !shelf.has(c) && !shelfThen.has(c))
+    .filter((c) => !here.has(c) && !shelf.has(c) && !shelfThen.has(c) && !declaredGone.has(c))
     .sort();
 
   return [missing.length
     ? fail("stable", TITLE, missing.map((c) => `#${c}`),
-      `The copy saved on ${when || "an earlier day"} holds ${missing.length === 1 ? "an order" : "orders"} that this phone no longer has — and ${missing.length === 1 ? "it is" : "they are"} not on the Removed list either, so the app did not take ${missing.length === 1 ? "it" : "them"} off by any route it knows. A removal made before the Removed list existed would look the same, so check the dates before worrying.`,
+      // ⚠️ AND IT NAMES BOTH INNOCENT CASES (v527). It named one, and the one it named was not hers: **the
+      // copy looks back about a week, and the Removed list remembers 48 hours** — so the whole band in
+      // between is an order she took off deliberately, with nothing left to explain it.
+      `The copy saved on ${when || "an earlier day"} holds ${missing.length === 1 ? "an order" : "orders"} that this phone no longer has — and ${missing.length === 1 ? "it is" : "they are"} not on the Removed list either, so the app has no record of taking ${missing.length === 1 ? "it" : "them"} off. TWO innocent cases look exactly the same, so check the dates before worrying: a removal made before the Removed list existed, and — because the Removed list keeps a row for only 48 hours — an order you took off yourself more than two days ago, which this copy is old enough to remember.`,
       "Open Backup and safety and put that copy back if these are orders you took, or search WhatsApp for the number and enter the order again by hand.")
     : pass("stable", TITLE)];
 }
@@ -473,7 +519,7 @@ export function contentCheck(state, cloud, payloads, pending) {
 // ★ AND WHAT IS STILL WAITING TO LEAVE (v466). ⚠️ **THIS IS THE NUMBER THAT DECIDED WHETHER THE PAGE ABOVE
 // IS A FAULT OR A PHOTOGRAPH OF A PHONE MID-SEND** — and until now nothing could show it at all. ⭐ It needs
 // no network: it is a local count.
-export function waitingCheck(waiting = 0, queued = null) {
+export function waitingCheck(waiting = 0, queued = null, state = null, lastFail = null) {
   const TITLE = "Nothing on this phone is still waiting to be sent";
   const n = Number.isFinite(Number(waiting)) ? Math.max(0, Math.floor(Number(waiting))) : 0;
   // ⚠️⚠️ AND IT NAMES THEM, INSTEAD OF COUNTING THEM (v476). Her report: __"did the 2 changes clear after
@@ -482,21 +528,62 @@ export function waitingCheck(waiting = 0, queued = null) {
   // every other check on this page follows, and the one this check was breaking.
   // ⭐ **AND IT NAMES THE UN-KEYABLE ONES TOO: an order with no number of its own is exactly the shape that
   // cannot travel, and it is invisible in a count.**
+  // ★★★ AND v528 TOOK THAT RULE THE REST OF THE WAY. Her report: __"yes, look into the stuck records"__, and
+  // __"the phone and mac having different error"__. ⚠️⚠️ **The page named them as "a removed order" and
+  // "uoms" — a KIND, not a record** — so neither she nor I could find the thing that was stuck. ⭐ **The
+  // first name was not specific enough to look up, which is the same fault v476 fixed one step up.**
+  // ⭐ And with the kind we now have the record, so an order is named by its NUMBER (what she searches) and
+  // everything else by the name she gave it.
+  const NOUN = {
+    orders: "an order", removedOrders: "a removed order", products: "a product",
+    productCategories: "a category", ingredients: "an ingredient", suppliers: "a supplier",
+    parcelCouriers: "a carrier", uoms: "a unit", deliveryDates: "a delivery date",
+    bakedDays: "a baking day", purchaseOrders: "a shopping list", expenses: "an expense",
+    deposits: "money in", credits: "a credit", rewards: "a reward", points: "a Point",
+    pointAreas: "a Point area", deliveryRoutes: "a van route", occasions: "an occasion",
+    promoCodes: "a promo code", customers: "a customer", declinedCoupons: "a declined code",
+    voidedReceipts: "a void receipt", settings: "settings",
+  };
+  const fields = listFields();
   const keys = queued instanceof Set ? [...queued] : Array.isArray(queued) ? queued : [];
   const nameOf = (key) => {
     const s = String(key);
     const at = s.indexOf(":");
     const kind = s.slice(0, at);
     const id = s.slice(at + 1);
-    if (kind === "orders") return !id || id === "undefined" ? "an order with no number" : `#${codeFromId({ id })}`;
-    if (kind === "removedOrders") return "a removed order";
-    if (kind === "settings") return "settings";
-    return kind;
+    const noun = NOUN[kind] || kind;
+    const field = fields[kind];
+    const rec = field && state && Array.isArray(state[field])
+      ? state[field].find((r) => r && String(r.id) === id) : null;
+    if (kind === "orders" || kind === "removedOrders") {
+      // ⚠️⚠️ AND A RECORD WITH NO NUMBER OF ITS OWN STILL SAYS SO (kept from v476). ⭐ **It is the shape that
+      // cannot travel at all, and it is invisible in a count** — so it must never be dressed up as an order
+      // she could search for. ⚠️ An id-less record reaches here as the STRING `"undefined"` (`JSON.stringify`
+      // turned the missing value into that when the key was written), ⭐ **and `codeFromId` would happily mint
+      // a number out of it** — the fault this whole family is about: a value that looks right and is wrong.
+      const badId = !id || id === "undefined" || id === "null" || id === "0";
+      const code = badId ? "" : (rec ? (orderCode(rec) || codeFromId(rec)) : codeFromId({ id }));
+      return code && code !== "??????" ? `${noun} #${code}` : `${noun} with no number`;
+    }
+    if (!rec) return noun;
+    const who = rec.name || rec.label || rec.title || rec.date || rec.customerName;
+    return who ? `${noun} ${String(who)}` : noun;
   };
   const named = keys.map(nameOf);
+  // ★★★ AND WHY THEY DID NOT GO (v528). ⚠️⚠️ **The app COUNTED the stuck changes and NAMED them, and could
+  // not say WHY** — because `refresh` handed the reason to whichever button pressed it and then forgot it,
+  // so the shared-data card said "Sync failed: …" for as long as it took her to read it and no other screen
+  // ever knew. ⭐ **"No error" and "the number never moves" were both true, on the same phone, and nothing
+  // could join them.** ⚠️ It is the LAST attempt only, and it is cleared on a success — **a stale reason
+  // would send her looking for a fault that has already gone.**
+  // ⭐ AND IT NAMES THE RECORD THE SERVER WOULD NOT TAKE, not just the reason — **the reason alone still leaves
+  // her (and me) hunting eight changes for the one that is refused.**
+  const failNote = lastFail && (lastFail.reason || lastFail.key)
+    ? ` The last time this phone tried${lastFail.phase === "read" ? " to READ your shared data" : " to hand these over"}, it was refused${lastFail.key ? ` — ${nameOf(lastFail.key)}` : ""}: ${lastFail.reason || "no reason given"}.`
+    : "";
   return [n > 0
     ? fail("waiting", TITLE, named.length ? named : [`${n} change${n === 1 ? "" : "s"}`],
-      `${n} change${n === 1 ? " is" : "s are"} on this phone and ${n === 1 ? "has" : "have"} not been handed to your shared data yet, so no other phone can see ${n === 1 ? "it" : "them"}.${named.length ? " They are listed below." : ""} If this number does not go down on its own, press Sync now.`,
+      `${n} change${n === 1 ? " is" : "s are"} on this phone and ${n === 1 ? "has" : "have"} not been handed to your shared data yet, so no other phone can see ${n === 1 ? "it" : "them"}.${named.length ? " They are listed below." : ""}${failNote} If this number does not go down on its own, press Sync now.`,
       "Open Settings → Shared data and press Sync now. If the number stays, this phone's sending queue needs looking at — and the records themselves are safe.")
     : pass("waiting", TITLE)];
 }
@@ -514,7 +601,7 @@ export function runHealthChecks(state, extra = {}) {
     ...reachedCloudCheck(state, extra.cloud, extra.local),
     ...cloudOnlyCheck(state, extra.cloud, extra.local),
     ...contentCheck(state, extra.cloud, extra.payloads, extra.queued),
-    ...waitingCheck(extra.waiting, extra.queued),
+    ...waitingCheck(extra.waiting, extra.queued, state, extra.lastFail),
   ];
   return {
     results,

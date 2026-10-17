@@ -23,7 +23,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { defaultState, normalize, removeOrders, restoreRemovedOrder, dropStaleShelfRows, REMOVED_KEEP_HOURS } from "../admin/js/state.js";
+import { defaultState, loadState, normalize, removeOrders, restoreRemovedOrder, dropStaleShelfRows, REMOVED_KEEP_HOURS } from "../admin/js/state.js";
 
 const JS_DIR = new URL("../admin/js/", import.meta.url).pathname;
 
@@ -56,6 +56,68 @@ test("★★ no file may drop rows from state.orders except the one door (v444)"
     assert.match(readFileSync(join(JS_DIR, rel), "utf8"), /removeOrders\(/,
       `★ ${rel} removes orders without going through the one door`);
   }
+});
+
+// ★★★ ONE ORDER, ONE SHELF ROW — ALWAYS (v528).
+//
+// ⚠️⚠️ HER REPORT: __"there is so many duplicate order number in the Removed Orders"__. ⭐ **The shelf simply
+// unshifted a new row every time, so an order that came back and was taken off again left a SECOND row with
+// the same number** — and ⭐⭐ **the shared data hands an order back whenever its removal has not landed, so
+// that is a LOOP, not an accident: the queue grows and the shelf fills with the same number.**
+test("★★★ taking the same order off twice leaves ONE row on the shelf", () => {
+  const row = () => ({ id: "o1", deliveryDateId: "d1", productId: "p1", qty: 20, customerName: "Jien" });
+  const st = { orders: [row()], deliveryDates: [], removedOrders: [] };
+
+  removeOrders(st, ["o1"]);
+  assert.equal(st.removedOrders.length, 1, "precondition: the first removal did not reach the shelf");
+
+  // ⚠️ THE LOOP, EXACTLY AS IT HAPPENS: the shared data hands the order BACK, because the removal of it
+  // never left this phone — and she takes it off again.
+  st.orders = [row()];
+  removeOrders(st, ["o1"]);
+
+  assert.equal(st.removedOrders.length, 1,
+    "★ the same order is on the shelf TWICE — **one order, one row, or her Removed list fills with the same "
+    + "order number over and over, which is what she is looking at**");
+  assert.equal(st.removedOrders[0].id, "o1", "the row kept is not the order that came off");
+});
+
+test("★★★ and the duplicates her phones already hold are collapsed when the app opens", () => {
+  // ⚠️⚠️ **WITHOUT THIS THE FIX ABOVE WOULD FIX NOTHING FOR HER** — the duplicate rows are already sitting in
+  // her data, on both phones. ⭐ The same reason the v518 void repair had to exist for the button fix to be
+  // worth anything: ⭐ **a fix to the door does not tidy the room behind it.**
+  // ⚠️ A REAL `localStorage`, because the repair lives on the LOAD path and nothing else reaches it — the
+  // same reason the v518 void-repair test had to go through `loadState`.
+  const store = new Map();
+  const real = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => { store.set(k, String(v)); },
+    removeItem: (k) => { store.delete(k); },
+  };
+  let st;
+  try {
+    store.set("bakeadmin.v1", JSON.stringify({
+      version: 1,
+      orders: [],
+      removedOrders: [
+        { id: "o1", qty: 1, removedAt: "2026-10-17T02:00:00.000Z" },
+        { id: "o2", qty: 2, removedAt: "2026-10-16T09:00:00.000Z" },
+        { id: "o1", qty: 1, removedAt: "2026-10-11T10:47:00.000Z" },
+      ],
+    }));
+    st = loadState();
+  } finally {
+    if (real === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = real;
+  }
+
+  assert.deepEqual(st.removedOrders.map((r) => r.id), ["o1", "o2"],
+    "★ the duplicate shelf rows survived a load — **so her Removed list keeps showing the same order number**");
+  // ⚠️ AND THE ROW KEPT IS THE NEWEST: `removedAt` is what the 48 hours are counted from, so keeping the
+  // older one would silently shorten the window a removed order can be put back in.
+  assert.equal(st.removedOrders[0].removedAt, "2026-10-17T02:00:00.000Z",
+    "★ the OLDER row was kept, so the 48 hours run from the wrong moment");
 });
 
 test("★ a removed order is KEPT, not destroyed — and put back exactly as it was", () => {

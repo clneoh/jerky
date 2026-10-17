@@ -469,7 +469,13 @@ function normalize(s) {
     // `dropStaleShelfRows` exists for, applied on every load. ⭐ It reads `s.orders`, the same source the
     // `orders` key above uses, so the two can never disagree about what is live.
     removedOrders: (Array.isArray(s.removedOrders) ? s.removedOrders : [])
-      .filter((r) => !(r && r.id && Array.isArray(s.orders) && s.orders.some((o) => o && o.id === r.id))),
+      .filter((r) => !(r && r.id && Array.isArray(s.orders) && s.orders.some((o) => o && o.id === r.id)))
+      // ★★★ AND THE DUPLICATE ROWS SHE ALREADY HAS ARE COLLAPSED ON LOAD (v528). ⚠️⚠️ **Without this the fix
+      // above would fix NOTHING for her: the rows are already sitting in her data on both phones** — the same
+      // reason the v518 void repair had to exist for the button fix to be worth anything. ⭐ The shelf is
+      // newest-first, so keeping the FIRST row for each id keeps the most recent removal — and `removedAt`
+      // is what the 48 hours are counted from.
+      .filter((r, i, all) => !(r && r.id) || all.findIndex((x) => x && x.id === r.id) === i),
     // ★★★ AND A VOID RECORD ALREADY ON A PHONE IS GIVEN ITS ID HERE (v518). ⚠️⚠️ Without this, a receipt she
     // has ALREADY marked void stays stranded for ever: the record is in her data, but it can never travel,
     // so her other phone keeps reporting a receipt with no order behind it **and keeps telling her to press
@@ -808,6 +814,13 @@ export function removeOrders(state, ids, reason = "") {
   for (const o of gone) {
     const kept = { ...o, removedAt: at };
     if (reason) kept.removedWhy = reason;
+    // ★★★ ONE ORDER, ONE SHELF ROW — ALWAYS (v528). ⚠️⚠️ HER REPORT: __"there is so many duplicate order
+    // number in the Removed Orders"__. ⭐ **The shelf used to simply unshift a new row, so an order that came
+    // back and was taken off again left a SECOND row with the same number** — and the shared data hands an
+    // order back whenever its removal has not landed, so that is a loop, not an accident.
+    // ⭐ **The old row is replaced rather than kept beside the new one: the shelf holds what is NOT in the
+    // list, and that is one row's worth of fact.**
+    if (o.id) state.removedOrders = state.removedOrders.filter((r) => !(r && r.id === o.id));
     state.removedOrders.unshift(kept);
   }
   pruneRemovedOrders(state);

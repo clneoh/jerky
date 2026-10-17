@@ -73,6 +73,12 @@ const SETTINGS_KEY = "settings:default";
 // list added later was never watched, which is the fault it exists to catch.
 export function syncedKinds() { return Object.keys(LISTS); }
 
+// ⭐ THE KIND → FIELD MAP, for a screen that has to look a queued record up by what it IS (v528). The waiting
+// check could name a stuck change only as "an order" or "uoms" — **a word she cannot search for** — and the
+// record itself is what she needs. Exported rather than copied, so a list added later is looked up correctly
+// without anyone remembering to add it: a second hand-written list here is the v394 fault in a new dress.
+export function listFields() { return { ...LISTS }; }
+
 // ── config ────────────────────────────────────────────────────────────────
 
 export function cloudCfg(state) {
@@ -530,7 +536,7 @@ function canonical(value) {
 // ── journal (bakeadmin.sync) ──────────────────────────────────────────────
 
 function emptyBlob() {
-  return { version: 1, pending: {}, snapshot: {}, meta: {}, lastPullAt: null };
+  return { version: 1, pending: {}, snapshot: {}, meta: {}, lastPullAt: null, lastFail: null };
 }
 
 function readSync() {
@@ -545,6 +551,8 @@ function readSync() {
           snapshot: b.snapshot && typeof b.snapshot === "object" ? b.snapshot : {},
           meta: b.meta && typeof b.meta === "object" ? b.meta : {},
           lastPullAt: typeof b.lastPullAt === "string" ? b.lastPullAt : null,
+          // ⚠️ THE ONE THING THE APP USED TO THROW AWAY (v528) — see `lastFailure`.
+          lastFail: b.lastFail && typeof b.lastFail === "object" ? b.lastFail : null,
         };
       }
     }
@@ -578,6 +586,34 @@ function writeSync(b) {
 // How many changes are waiting to be sent. ⚠️ Read from the journal, so it counts what would be lost.
 export function pendingCount() {
   return Object.keys(readSync().pending || {}).length;
+}
+
+// ★★★ WHY THE QUEUE DID NOT EMPTY, KEPT RATHER THAN RETURNED ONCE (v528).
+//
+// ⚠️⚠️ HER REPORT: __"yes, look into the stuck records"__ — and __"the phone and mac having different error"__. ⭐ **The
+// app could COUNT the stuck changes (v466) and NAME them (v476), and it still could not say WHY they would
+// not leave** — because `refresh` returned the reason to whichever button pressed it and then FORGOT it.
+// ⭐⭐ **The shared-data card showed "Sync failed: …" for as long as it took her to read it, and the next
+// screen she opened had no idea.** ⚠️ **A failure that is reported once and then forgotten is the v475 fault
+// seen from the other end: "no error" and "never moves" were both true, and neither screen could join them.**
+//
+// ⚠️ It is written on EVERY attempt — cleared to null on a success, set on a failure — so it always describes
+// the LAST hand-over, not any failure ever. ⭐ **A stale reason would be worse than none: it would send her
+// looking for a fault that has already gone.**
+export function lastFailure() {
+  return readSync().lastFail || null;
+}
+
+// ⚠️ Called by `refresh` only. Separate from `writeSync` so the journal is written once per attempt.
+function recordAttempt(ok, reason, phase, key = "") {
+  const b = readSync();
+  b.lastFail = ok
+    ? null
+    // ⚠️ `key` is the record the server would not take — **so the check can NAME it instead of describing
+    // the kind it belongs to.** See the v528 note in `waitingCheck`.
+    : { at: new Date().toISOString(), reason: String(reason || "").slice(0, 200), phase: String(phase || ""), key: String(key || "") };
+  writeSync(b);
+  return b.lastFail;
 }
 
 // Every record key THIS phone holds, as `kind:id`. ⚠️ **READ FROM `LISTS` ITSELF** — the same map the sync
@@ -1000,32 +1036,89 @@ export async function flush(state) {
     writeSync(b0);
   }
   if (!sendable.length) return { ok: true, pushed: 0 };
-  const body = sendable.map((p) => ({
-    kind: p.kind,
-    id: p.id,
-    data: p._deleted ? "null" : JSON.stringify(p.data) ?? "null",
-    _deleted: p._deleted,
-    updated_at: p.updated_at,
-  }));
+  // ⚠️⚠️ AND EVERY OBJECT IS NORMALISED TO THE SAME FIVE KEYS (v528) — **THIS IS v467's FAULT AS A CLASS.**
+  // ⭐ v467 found that ONE object with a different set of keys makes PostgREST refuse the WHOLE batch
+  // (`PGRST102 — All object keys must match`), and it fixed the ONE field that had produced it: an `id` that
+  // was `undefined`, which `JSON.stringify` drops. ⭐⭐ **The class is "a body whose key set differs", not "a
+  // record with no id"** — and the filter above still only checks `kind` and `id`, so a queued record whose
+  // `_deleted` or `updated_at` is missing (a hand-edited or corrupted journal, a shape from another version)
+  // **is still sent, still drops a key, and still freezes every change queued beside it for ever.**
+  // ⭐ **Measured before this was written:** the same record serialises to `data,id,kind,updated_at` — four
+  // keys — where every good one has five, and it passes the filter above.
+  // ⚠️ AND IT IS REPAIRED RATHER THAN DROPPED, which is the difference from v467: this record is sendable, so
+  // throwing it away would lose her change. The queue timestamp in `meta` is the honest fallback for a missing
+  // `updated_at` — it is WHEN THIS PHONE QUEUED THE RECORD, which is exactly what that column means.
+  const b1 = readSync();
+  const bodyOf = (p) => {
+    const key = `${p.kind}:${p.id}`;
+    const stamp = typeof p.updated_at === "string" && p.updated_at
+      ? p.updated_at
+      : (typeof b1.meta[key] === "string" && b1.meta[key] ? b1.meta[key] : new Date().toISOString());
+    return {
+      kind: String(p.kind),
+      id: String(p.id),
+      data: p._deleted ? "null" : (JSON.stringify(p.data) ?? "null"),
+      // ⚠️ `=== true` and not the raw value: `undefined` is what makes `JSON.stringify` DROP the key.
+      _deleted: p._deleted === true,
+      updated_at: String(stamp),
+    };
+  };
+  const body = sendable.map(bodyOf);
 
-  let res;
-  try {
-    res = await fetch(`${c.url}/rest/v1/bakery?on_conflict=kind,id`, {
-      method: "POST",
-      headers: {
-        apikey: c.anonKey,
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        Prefer: "resolution=merge-duplicates,return=minimal",
-      },
-      body: JSON.stringify(body),
-    });
-  } catch {
-    return { ok: false, pushed: 0, reason: "Offline — will retry" };
-  }
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    return { ok: false, pushed: 0, reason: `Push failed (HTTP ${res.status})${text ? " — " + text.slice(0, 120) : ""}` };
+  const post = async (objs) => {
+    let res;
+    try {
+      res = await fetch(`${c.url}/rest/v1/bakery?on_conflict=kind,id`, {
+        method: "POST",
+        headers: {
+          apikey: c.anonKey,
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Prefer: "resolution=merge-duplicates,return=minimal",
+        },
+        body: JSON.stringify(objs),
+      });
+    } catch {
+      return { ok: false, reason: "Offline — will retry" };
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      return { ok: false, reason: `Push failed (HTTP ${res.status})${text ? " — " + text.slice(0, 120) : ""}` };
+    }
+    return { ok: true, reason: "" };
+  };
+  const keyOf = (p) => `${p.kind}:${p.id}`;
+
+  // ★★★ AND ONE BAD RECORD CAN ONLY EVER BLOCK ITSELF (v528).
+  //
+  // ⚠️⚠️ HER REPORT, AND IT IS THE REASON FOR THIS: __"more and more removed order shown on phone"__ —
+  // ⭐ **the queue only GREW.** Every removal she made queued a change, the server refused the batch, and
+  // **because a refusal sends nothing, every change queued beside the bad one was frozen with it — for ever,
+  // and the queue could never empty however many times she pressed Sync now.**
+  // ⭐ **Measured: eight changes stuck (seven removed orders and a unit), and growing.**
+  // ⭐⭐ **THE FIX IS THE SAME MOVE AS v467, ONE STEP FURTHER: v467 stopped one bad record POISONING the
+  // batch; this makes a refused batch DEGRADE — each record is re-offered on its own, so the good ones go up
+  // immediately and the one the server will not take stands alone, NAMED, instead of holding seven others
+  // hostage.** ⚠️ It costs nothing in the ordinary case: single sends only happen after a batch has already
+  // been refused.
+  let sent = sendable;
+  let refused = null;
+  const whole = await post(body);
+  if (!whole.ok) {
+    if (sendable.length === 1) {
+      refused = { key: keyOf(sendable[0]), reason: whole.reason };
+      sent = [];
+    } else {
+      sent = [];
+      for (let i = 0; i < sendable.length; i++) {
+        const one = await post([bodyOf(sendable[i])]);
+        // ⚠️ Offline is NOT a refusal: the batch must not be taken apart record by record when the
+        // connection is simply down, and nothing is learned from it.
+        if (one.ok) sent.push(sendable[i]);
+        else if (/Offline/.test(one.reason || "")) return { ok: false, pushed: 0, reason: one.reason };
+        else if (!refused) refused = { key: keyOf(sendable[i]), reason: one.reason };
+      }
+    }
   }
 
   // Clear only the rows that are still byte-identical to what we sent; an edit
@@ -1038,13 +1131,15 @@ export async function flush(state) {
   // queue, and it is NOT hidden: the check on the health page lists it, because it is a record on this
   // phone that is not in the shared data — which is exactly what that check is for.**
   const b2 = readSync();
-  for (const p of sendable) {
-    const key = `${p.kind}:${p.id}`;
+  for (const p of sent) {
+    const key = keyOf(p);
     const cur = b2.pending[key];
     if (cur && cur.updated_at === p.updated_at) delete b2.pending[key];
   }
   writeSync(b2);
-  return { ok: true, pushed: sendable.length };
+  // ⭐ A REFUSAL IS REPORTED EVEN WHEN THE REST WENT UP — **"seven of your eight changes are through and one
+  // was refused" is a different sentence from "synced", and she needs the first one.**
+  return { ok: !refused, pushed: sent.length, reason: refused ? refused.reason : "", refusedKey: refused ? refused.key : "" };
 }
 
 // ── refresh: pull-then-flush ──────────────────────────────────────────────
@@ -1063,11 +1158,13 @@ export async function refresh(state) {
     // Only push after a successful pull: a failed pull means we might be
     // offline or have a stale local view — pushing would risk clobbering.
     const flushRes = pullRes.ok ? await flush(state) : { ok: true, pushed: 0 };
-    return {
-      ok: pullRes.ok && flushRes.ok,
-      changed: pullRes.changed,
-      reason: pullRes.reason || flushRes.reason,
-    };
+    const ok = pullRes.ok && flushRes.ok;
+    // ⭐ AND THE OUTCOME IS KEPT, NOT ONLY RETURNED (v528) — see `lastFailure`. ⚠️ `phase` names WHICH half
+    // refused, because the two have completely different answers: a failed READ is usually offline, and a
+    // failed WRITE with a good read is the server refusing a record, which is the one that needs looking at.
+    // ⭐ `refusedKey` is carried too, so the health check can say WHICH record the server would not take.
+    recordAttempt(ok, pullRes.reason || flushRes.reason, pullRes.ok ? "hand-over" : "read", flushRes.refusedKey);
+    return { ok, changed: pullRes.changed, reason: pullRes.reason || flushRes.reason };
   } finally {
     refreshing = false;
   }

@@ -756,6 +756,72 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## Engine v526 → v529 — a refused batch no longer freezes the queue, and the Removed list holds one row (17 Oct 2026)
+
+Three versions from the bakery. **9 files changed (`+529 / −47`); no SQL and nothing to deploy** — the same
+push carries it. Suite **3493 → 3503 pass / 0 fail**. **Zero merge conflicts.**
+
+### ★★ v528 — the worst fault this app has had
+
+Her reports, in the order they arrived: *"yes, look into the stuck records"*, *"the phone and mac having
+different error"*, *"more and more removed order shown on phone"*, *"suddenly the phone deleted order goes
+to 25"*, *"both grow to 27"*. ⚠️ **The queue could only GROW:** every change went into a sending queue, the
+server refused the batch, and **a refusal sends NOTHING — so every change beside the refused one was frozen
+with it** — and `flush` only clears what it actually sent. **Pressing Sync now could never empty it, however
+many times she pressed. Measured: 3 → 8 → 25 → 27, on BOTH devices, because each holds its own queue.**
+
+**The fix: a refused batch now DEGRADES.** Each record is re-offered on its own, so the good ones go up
+immediately and the one the server will not take **stands alone, named**, instead of holding everything else
+hostage. ⚠️ **Offline is NOT a refusal** — the batch is not taken apart record by record when the connection
+is simply down. ⚠️ **And the ordinary case costs nothing:** single sends only happen after a batch has
+already been refused.
+
+**And it now keeps the reason, which it never could.** `refresh` returned the reason to whichever button
+pressed it and forgot it — so the card showed "Sync failed" only while she was reading it and **every other
+screen was blind.** `lastFailure()` holds `{at, reason, phase, key}`, cleared by the next clean attempt, and
+the System check prints **the server's own words and the record it refused**.
+
+⚠️ **Each stuck change is named as the THING ITSELF** — an order by the number she searches, a unit by the
+name she typed — where it said *"a removed order"* and *"uoms"*: **a KIND, not a record, which is a name she
+cannot look up.** A record with no id says *"with no number"* rather than having one minted out of the string
+`undefined`.
+
+### ★ v529 — one order, one shelf row, always
+
+Her report: *"there is so many duplicate order number in the Removed Orders"*. ⚠️ **A loop, not an
+accident:** the shelf simply `unshift`ed a new row every time an order came off, **and the shared data hands
+an order back whenever its removal has not landed** — which is exactly what the frozen queue was causing —
+so she took it off again and a SECOND row with the same number went on. **That is why the same number kept
+appearing and why the list only grew.** `removeOrders` now **replaces** the row for that id.
+
+⚠️ **And the duplicate rows already in her data are collapsed when the app opens** — without that the fix
+above would tidy nothing, **the same reason the v518 void repair had to exist.** The newest row is kept,
+because `removedAt` is what the 48 hours for putting an order back are counted from. **Measured: the same
+order taken off twice leaves 1 row, not 2; a phone holding three rows for two orders opens holding 2.**
+**Nothing of hers is lost or rewritten: the same orders are on the shelf, just once each.**
+
+### ★ v527 — the check stops blaming her for her own removal
+
+The check named `#4B00A9` as an order that left *"by no route it knows"* — and the app held **two** records
+of its fate: **she removed it on her other phone on 11 Oct at 10:47 pm, then marked its receipt (#000015)
+void.**
+
+⚠️ **Why it looked like a loss:** the copy the check opens is dated **11 Oct 00:37 — written before that
+removal** — so it still holds the order, **and the Removed list keeps a row for only 48 hours, so the row
+that explained it had already been pruned by the time she looked.** **A receipt marked void now explains its
+order** — the rule the receipt check has had since v448, in almost the same words (*"a recorded decision is
+not an unexplained hole"*), **which this check was standing next to without using** — matched both by the
+code the void record names and by the receipt number the order carries (a record made before v441 holds the
+code the order wore at the time). **And the message names both innocent cases rather than one.**
+
+⚠️ **And it cannot hide a real loss:** a void record for a different receipt excuses nothing, and there is a
+test for exactly that — **a carve-out that explained everything would turn this check green for ever, which
+is the failure it exists to catch.**
+
+⚠️ **Localization: ONE new user-visible string.** The System check's record-kind map said
+`deliveryDates: "a bake day"`; jerky says **"a delivery date"**. **No test pinned it**, and the suite was
+re-run after the edit (this project's own new rule: after a localization edit, re-run the suite).
+
 ## Engine v513 → v526 — the baking box, and two sync faults (17 Oct 2026)
 
 Thirteen versions from the bakery. **17 files changed (`+1,208 / −175`); no SQL and nothing to deploy** —

@@ -286,6 +286,65 @@ test("★★★ an order that leaves the phone is caught — the fault that cost
   assert.ok(r.fix, "★ a fault with no way out is a dead end");
 });
 
+test("★★★ an order whose receipt she declared VOID is not a loss — the v448 rule, applied here too (v527)", () => {
+  // ⚠️⚠️ HER OWN SCREEN FOUND THIS. The check named `#4B00A9` as an order that left "by no route it knows"
+  // — ⭐ **and the app did have a record of its fate: she marked its receipt (#000015) void.** ⭐⭐ **The
+  // receipt check has had this carve-out since v448 in almost the same words — a recorded decision is not an
+  // unexplained hole — and this check, standing next to it, was not asking for it at all.**
+  // ⚠️ Both innocent cases are the same shape: the copy looks back about a WEEK, and the Removed list
+  // remembers 48 HOURS, so a deliberate removal in between has nothing left to explain it.
+  const week = healthy();
+  const copy = { orders: week.orders, removedOrders: [] };
+  const now = healthy();
+  now.orders = [];          // the order is gone from this phone
+  now.removedOrders = [];   // and the shelf row has long been pruned
+  now.voidedReceipts = [{ id: "void_7", no: 7, code: "D4E5F6", at: "2026-10-12T00:00:00.000Z" }];
+
+  const r = resultOf(runHealthChecks(now, {
+    register: REGISTER, copies: COPIES, copyWhen: COPY_WHEN, copy,
+  }), "stable");
+  assert.equal(r.status, "pass",
+    "★ an order whose receipt she marked VOID was still named as a loss — **voiding it IS her record of that "
+    + "order's fate, and a check that ignores the record she made is one she learns to ignore**");
+});
+
+test("★★ and a void record that names the RECEIPT NUMBER explains it too, when the code has moved", () => {
+  // ⚠️ THE OTHER HALF OF THE MATCHING (v470's lesson, applied here): a void record made before v441 holds the
+  // code the order wore THEN, which is not the code it wears now. ⭐ **The receipt number is the fact the two
+  // always share**, so an order is explained by either.
+  const week = healthy();
+  const copy = { orders: week.orders, removedOrders: [] };
+  const now = healthy();
+  now.orders = [];
+  now.removedOrders = [];
+  // ⚠️ No code at all — only the number, which is all an old record reliably carries.
+  now.voidedReceipts = [{ id: "void_7", no: 7, at: "2026-10-12T00:00:00.000Z" }];
+
+  assert.equal(resultOf(runHealthChecks(now, {
+    register: REGISTER, copies: COPIES, copyWhen: COPY_WHEN, copy,
+  }), "stable").status, "pass",
+  "★ a void record naming only the receipt NUMBER did not explain the order — **a record made before v441 "
+  + "holds the code the order wore then, so reading the number is what stops that becoming a false loss**");
+});
+
+test("★★★ …and the carve-out CANNOT hide a real loss — a void record for another receipt excuses nothing", () => {
+  // ⚠️⚠️ THE ASSERTION THAT KEEPS THE FIX HONEST. ⭐ **A carve-out that explained every missing order would
+  // turn this check green for ever, which is exactly the failure it exists to catch** (v446: 3,335 tests
+  // green while three paid orders were missing).
+  const week = healthy();
+  const copy = { orders: week.orders, removedOrders: [] };
+  const now = healthy();
+  now.orders = [];
+  now.removedOrders = [];
+  now.voidedReceipts = [{ id: "void_9", no: 9, code: "AAAAAA", at: "2026-10-12T00:00:00.000Z" }];
+
+  const r = resultOf(runHealthChecks(now, {
+    register: REGISTER, copies: COPIES, copyWhen: COPY_WHEN, copy,
+  }), "stable");
+  assert.equal(r.status, "fail", "★ a voided receipt for a DIFFERENT order excused a real loss");
+  assert.deepEqual(r.detail, ["#D4E5F6"], "★ the order that really went is not named");
+});
+
 test("★★ the same order is NOT a fault when it was removed on purpose — either list explains it", () => {
   // ⚠️⚠️ WITHOUT THIS THE CHECK COULD NEVER GO GREEN ON AN ORDER SHE DELETED HERSELF, **and a warning that
   // can never be satisfied is one she learns to ignore** — the rule this file already records for voided
@@ -558,6 +617,40 @@ test("★★★ a stuck change is NAMED, not counted — the un-keyable one says
   assert.match(r.detail.join(" | "), /removed order/i, "★ the stuck shelf row is not named");
   assert.doesNotMatch(r.detail.join(" | "), /^\d+ changes?$/,
     "★ it fell back to a bare count, which is the thing this fixes");
+});
+
+test("★★★ and each stuck change is named as the RECORD, not as its kind (v528)", () => {
+  // ⚠️⚠️ HER REPORT: __"yes, look into the stuck records"__ — and __"more and more removed order shown on
+  // phone"__. ⭐ **The page named them "a removed order" and "uoms": a KIND, not a record** — so neither she
+  // nor I could find the thing that was stuck. ⭐ **A name she cannot look up is a name she cannot act on**,
+  // which is the fault v476 fixed one step up and this finishes.
+  const st = healthy();
+  st.removedOrders = [{ id: "ord_a1b2c3d4e5f6", removedAt: "2026-10-11T10:47:00.000Z", customerName: "Peggy" }];
+  st.uoms = [{ id: "uom_g", name: "g", family: "weight", toBase: 1 }];
+  const queued = new Set(["removedOrders:ord_a1b2c3d4e5f6", "uoms:uom_g"]);
+  const r = resultOf(runHealthChecks(st, { ...emptyExtras(), waiting: 2, queued }), "waiting");
+  assert.deepEqual(r.detail, ["a removed order #D4E5F6", "a unit g"],
+    "★ a stuck change is not named as the record itself — **an order by the number she searches, and a unit "
+    + "by the name she typed**");
+});
+
+test("★★★ and the page says WHY they did not go, and WHICH record was refused (v528)", () => {
+  // ⚠️⚠️ **THE APP COULD COUNT THE STUCK CHANGES AND NAME THEM, AND COULD NOT SAY WHY** — it returned the
+  // reason to whichever button pressed it and then forgot it. ⭐ **"No error" and "the number never moves"
+  // were both true on the same phone, and nothing could join them.**
+  const st = healthy();
+  st.removedOrders = [{ id: "ord_a1b2c3d4e5f6", removedAt: "2026-10-11T10:47:00.000Z" }];
+  const queued = new Set(["removedOrders:ord_a1b2c3d4e5f6"]);
+  const lastFail = { at: "2026-10-17T02:00:00.000Z", reason: 'Push failed (HTTP 400) — {"code":"PGRST102"}', phase: "hand-over", key: "removedOrders:ord_a1b2c3d4e5f6" };
+  const r = resultOf(runHealthChecks(st, { ...emptyExtras(), waiting: 1, queued, lastFail }), "waiting");
+  assert.match(r.why, /refused/i, "the page does not say the hand-over was refused");
+  assert.match(r.why, /PGRST102/, "★ the server's own words are not shown — **she can hand me that line and nothing else has to be guessed**");
+  assert.match(r.why, /a removed order #D4E5F6/,
+    "★ the reason does not NAME the record that was refused — **the reason alone still leaves eight changes to hunt through**");
+  // ⚠️ AND A PHONE THAT HAS NEVER FAILED SAYS NOTHING ABOUT FAILING — a reason that outlives its fault sends
+  // her looking for something that has gone.
+  const clean = resultOf(runHealthChecks(st, { ...emptyExtras(), waiting: 1, queued }), "waiting");
+  assert.doesNotMatch(clean.why, /refused/i, "a phone with no recorded failure claims one");
 });
 
 test("★★⚠️ and a record with NO number says so — the shape that cannot travel", () => {

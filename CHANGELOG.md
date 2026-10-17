@@ -1,8 +1,54 @@
-# Munchies Furkidz — change history (v54 → v526)
+# Munchies Furkidz — change history (v54 → v529)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**17 Oct 2026 — engine v529: THE STUCK SYNC IS FIXED, AND THE REMOVED LIST HOLDS ONE ROW PER ORDER
+(nothing to run, nothing to upload — pushing this is the whole of it).**
+
+**Three versions from the bakery, and they are the worst fault this app has had — the one behind every
+"stuck" report you have been sending.**
+
+**1. ONE CHANGE THE SERVER REFUSES CAN NO LONGER FREEZE EVERY OTHER CHANGE WITH IT.** Your reports, in
+the order they arrived: __"yes, look into the stuck records"__, __"the phone and mac having different
+error"__, __"more and more removed order shown on phone"__, __"suddenly the phone deleted order goes to
+25"__, __"both grow to 27"__. ⚠️ **And here is what was happening: your changes go up together as one
+batch, the server refuses the batch, and a refusal sends NOTHING — so every change sitting beside the
+refused one was frozen with it.** Pressing Sync now could never empty that queue, however many times you
+pressed. **Measured: 3, then 8, then 25, then 27 — on both devices, because each phone keeps its own
+queue.** A refused batch now **comes apart**: each change is offered on its own, so the good ones go up
+straight away and the one the server will not take stands alone, **named**, instead of holding everything
+else hostage. And **your connection being down is not treated as a refusal** — nothing is taken apart
+record by record when the internet is simply off.
+
+**2. And it now remembers WHY a hand-over failed.** Before, the reason was shown to whichever button
+pressed Sync and then forgotten — so the card said "Sync failed" only while you were looking at it, and
+**every other screen was blind.** It is kept now, and **Check my system prints the server's own words and
+names the record it refused** — by the order number you would search, or by the name you gave the thing,
+rather than "a removed order" or "uoms", which is a kind of record and not one you can look up. **A
+record with no number of its own says "with no number"** rather than having one invented for it out of
+the word "undefined".
+
+**3. One order in the Removed list is now one row, always.** Your report: __"there is so many duplicate
+order number in the Removed Orders"__. ⚠️ **And it was a loop rather than an accident:** the shelf simply
+added a new row every time an order came off, and **the shared data hands an order back whenever its
+removal has not landed** — which is exactly what the frozen queue above was causing — so you took it off
+again and a second row with the same number went on. That is why the same number kept appearing and why
+the list only grew. **Taking an order off twice now leaves one row**, and **the duplicate rows already in
+your records are tidied up when the app opens** — the newest one kept, because that is where the 48 hours
+for putting an order back are counted from. **Nothing of yours is lost: the same orders are on the shelf,
+just once each.**
+
+**4. And the check stops blaming you for your own removal.** It named an order (4B00A9) as having left
+"by no route it knows" — and the app actually held two records of what happened to it: **you removed it
+yourself on your other phone**, and then marked its receipt void. The copy the check opens was made
+before that removal, and **the Removed list keeps a row for only 48 hours**, so the row that explained it
+had already gone. **A receipt you have marked void now explains its order**, and the message names both
+innocent cases rather than one. **It still cannot hide a real loss** — a void record for a different
+receipt excuses nothing, and there is a test for exactly that.
+
+**Nothing to run, no SQL, no upload, no setting to change on either phone.**
 
 **17 Oct 2026 — engine v526: HOW MANY YOU ACTUALLY BAKED, AND TWO SYNC FAULTS FIXED (nothing to run,
 nothing to upload — pushing this is the whole of it).**
