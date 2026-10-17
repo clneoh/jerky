@@ -15,7 +15,7 @@ import { availSummary, sellOpen } from "../../../availability.js";
 // same pair the shop applies, from the one module both sides read, so a note can
 // never be longer on this side than the box that collected it allowed.
 import { lineNoteOf, LINE_NOTE_MAX } from "../../../storefront-fields.js";
-import { byId, fmtRM, groupOrders, moveOrderGroup, newId, orderCode, orderLineName, orderLinePrice, removeOrders, restoreRemovedOrder, round2, save, stampOrderLine, updateOrderBadge, waNumber } from "../state.js";
+import { byId, fmtRM, groupOrders, moveOrderGroup, newId, orderCode, orderLineName, orderLinePrice, removeOrders, removedKeepWords, restoreRemovedOrder, round2, save, stampOrderLine, updateOrderBadge, waNumber } from "../state.js";
 import { orderedProducts } from "../productCategories.js";
 import { strictestCancelDays } from "../../../store/pool.js";
 import { buildConfirmation } from "../confirm.js";
@@ -5517,7 +5517,9 @@ function removedOrdersEl(state, root) {
     wrap.replaceChildren(
       el("h3", { style: "margin:0 0 2px" }, `↩ ${gone.length} removed order${gone.length === 1 ? "" : "s"}`),
       el("p", { class: "card-sub", style: "margin:0 0 6px" },
-        "Kept for 30 days so a mistake can be put right. Nothing here is lost."),
+        // ⚠️ THE WINDOW COMES FROM THE CONSTANT (v530) — a second copy of the number here is a screen that
+        // can say "48 hours" while the app keeps them for a month.
+        `Kept for ${removedKeepWords()} so a mistake can be put right. Nothing here is lost.`),
       el("div", { class: "btn-row", style: "margin:0" },
         button(open ? "Hide them" : "Show them", () => { open = !open; paint(); }, "ghost small")),
       ...(open ? rows : []));

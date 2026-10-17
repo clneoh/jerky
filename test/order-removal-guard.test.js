@@ -23,7 +23,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { defaultState, loadState, normalize, removeOrders, restoreRemovedOrder, dropStaleShelfRows, REMOVED_KEEP_HOURS } from "../admin/js/state.js";
+import { defaultState, loadState, normalize, removeOrders, removedKeepWords, restoreRemovedOrder, dropStaleShelfRows, REMOVED_KEEP_HOURS } from "../admin/js/state.js";
 
 const JS_DIR = new URL("../admin/js/", import.meta.url).pathname;
 
@@ -171,15 +171,17 @@ test("★★ an order deleted on the OTHER phone lands on this phone's shelf (v4
 });
 
 test("★ the shelf is pruned, so keeping things cannot leak", () => {
-  // ⚠️⚠️ AND HER NUMBER IS PINNED, not merely read. Her words at v452: __"the deleted order just need to
-  // keep for 48hrs"__ — and a test that only compares against the constant would pass with ANY value in
-  // it, including the thirty days the developer had guessed before she corrected him. ⭐ **A duration is a
-  // decision, so the test states the decision.**
-  // ⭐⭐ AND SHE RAISED IT HERSELF ON 17 OCTOBER 2026: __"raise it and fix it"__ — thirty days, because the
-  // check opens the OLDEST DAILY copy (about a week back) and a two-day shelf could not explain a removal
-  // inside it, so it named seven of her own cancellations. ⚠️ **The pinned number moves WITH her decision;
-  // it is never quietly read off the constant.**
-  assert.equal(REMOVED_KEEP_HOURS, 720, `★ the shelf keeps orders for ${REMOVED_KEEP_HOURS} hours, not her 30 days`);
+  // ⚠️⚠️ AND HER NUMBER IS PINNED, not merely read — **a test that only compares against the constant would
+  // pass with ANY value in it.** ⭐ A duration is a decision, so the test states the decision.
+  //
+  // ⚠️⚠️ AND THE DECISION CHANGED ON 2026-10-17, WHICH IS WHY THE NUMBER BELOW IS NOT THE ONE SHE FIRST SAID.
+  // Her words at v452: __"the deleted order just need to keep for 48hrs"__ — **chosen over the thirty days I
+  // had guessed.** ⭐ But one constant was doing TWO jobs: how long an order stays puttable-back, and how long
+  // a removal leaves a trace for the "left without a trace" check, **which opens a copy about a WEEK old and
+  // so could never be satisfied by a 48-hour shelf.** ⭐ **She was asked again, in those terms, and chose 30
+  // days.** ⚠️ **The pin stays a literal for exactly the reason it was made one: the value is her decision,
+  // and a test that read it back from the code could never tell her it had changed.**
+  assert.equal(REMOVED_KEEP_HOURS, 720, `★ the shelf keeps orders for ${REMOVED_KEEP_HOURS} hours, not her 720 (30 days)`);
   const st = { orders: [], removedOrders: [] };
   const old = new Date(Date.now() - (REMOVED_KEEP_HOURS + 5) * 3600000).toISOString();
   st.removedOrders = [{ id: "ancient", removedAt: old }, { id: "today", removedAt: new Date().toISOString() }];
@@ -188,6 +190,32 @@ test("★ the shelf is pruned, so keeping things cannot leak", () => {
   assert.equal(st.removedOrders.some((r) => r.id === "ancient"), false,
     "★ a row older than the keeping period was left on the shelf");
   assert.equal(st.removedOrders.some((r) => r.id === "today"), true, "a fresh row was pruned away");
+});
+
+test("★★★ every screen asks for the window instead of repeating it (v530)", () => {
+  // ⚠️⚠️ THE FAULT THIS PREVENTS ALREADY HAPPENED ONCE. The note above `pruneRemovedOrders` said "Thirty days
+  // is long enough" while the constant said 48 — **and that disagreement was quoted back to her as evidence.**
+  // ⭐ **A number written into a sentence is a SECOND COPY of a decision, and second copies drift.** ⭐⭐ So the
+  // window is spelled in exactly one place (`removedKeepWords`), and the screens ASK for it.
+  assert.equal(removedKeepWords(), "30 days",
+    "★ the words no longer match her decision — **the one place the window is spelled has drifted from the constant**");
+  // ⚠️⚠️ AND THE CHECK IS "SPELLS NO WINDOW", NOT "MENTIONS THE HELPER" — **I wrote the weaker version first
+  // and the bite did not fire**: a file can call `removedKeepWords()` in one message and hard-code the number
+  // in the next, and a test that only asks whether the name appears says yes either way. ⭐⭐ **That is the
+  // "a check keyed to ONE word checks one word" lesson landing on my own test, and the bite is what caught
+  // it.** ⚠️ Comments are stripped first, because this file's history legitimately quotes the old numbers.
+  const codeOnly = (rel) => readFileSync(join(JS_DIR, rel), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  for (const rel of ["health.js", "views/orders.js", "state.js"]) {
+    const src = rel === "state.js"
+      // ⚠️ `state.js` OWNS the number, so it is allowed exactly one — the constant itself.
+      ? codeOnly(rel).replace(/export const REMOVED_KEEP_HOURS = \d+;/, "")
+      : codeOnly(rel);
+    assert.doesNotMatch(src, /\b\d+\s+(hours?|days?)\b/i,
+      `★ ${rel} spells a window of its own instead of asking — **a number in a sentence is a second copy of `
+      + "her decision, and that is how a screen comes to say 48 hours while the app keeps them for a month**");
+  }
 });
 
 test("⚠️ a phone that has never removed an order, and a state written before v444, both behave as before", () => {

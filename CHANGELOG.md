@@ -1,8 +1,69 @@
-# Munchies Furkidz — change history (v54 → v532)
+# Munchies Furkidz — change history (v54 → v534)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**17 Oct 2026 — engine v534: THE 30-DAY CHANGE IS NOW THE BAKERY'S, AND IT IS BETTER THAN MINE (nothing
+to run — the SQL you already ran covers it).**
+
+**1. What happened.** I made the 30-day change here as a Munchies-only fix. The bakery has now made the
+same change properly (their v530), and **this version replaces mine with theirs.** **Your decision is
+unchanged — the Removed list keeps orders for 30 days — and nothing you see changes.**
+
+**2. The better idea, and it is theirs.** Mine typed "30 days" into each screen that mentioned it —
+the Removed card, and two sentences on Check my system. **Theirs keeps the number in ONE place and every
+screen asks for it.** ⚠️ **A number written into a sentence is a second copy of a decision, and second
+copies drift** — which is exactly what had happened: a note above the keeping code said "thirty days is
+long enough" while the setting said 48, and **that disagreement got quoted back to you as evidence.**
+
+**3. And a distinction I missed: one setting was doing two jobs.** How long a removed order stays
+**puttable back** — which is what you answered — and how long a removal **leaves a trace** for the check
+that opens a week-old copy. **They are not the same question**, and 48 hours could never satisfy the
+second one.
+
+**4. And a guard, rewritten because the first was too weak.** The first only checked that the screens
+*called* the helper — **and it passed while a hard-coded "30 days" sat in one of them.** **A check
+keyed to one occurrence checks one occurrence.** It now ignores comments and asserts that no screen
+spells a window at all.
+
+**5. ⚠️ One honest consequence: the two engine numbers have parted company.** Munchies is **v534** and the
+bakery is **v530** — because this app took four Munchies-only versions (the Removed list, Put back missing
+orders, the record count, and the paged and incremental sync) while the bakery stood still. **The numbers
+are each app's own build stamp, so this is not a fault — but the two will not match by accident again.**
+
+**Nothing to run. The database step you already did is still the only one.**
+
+**17 Oct 2026 — engine v533: THE SYNC NOW READS ONLY WHAT HAS CHANGED — AND THERE IS ONE DATABASE STEP
+FIRST.**
+
+**⚠️⚠️ RUN `supabase/sync_cursor.sql` IN YOUR SUPABASE SQL EDITOR BEFORE YOU DEPLOY THIS. A push runs no
+SQL.** One paste, safe to run twice. **If it is not run, nothing breaks** — the app notices and keeps
+reading the whole book, which is slower but never wrong. **It just will not get faster until the step is
+done.**
+
+**1. What it does now.** After its first full read, your phone asks the database for **only the records
+that changed since it last looked** — a handful, instead of the whole book, every 30 seconds.
+
+**2. ⚠️ And why it needed a database step at all — the clock.** The obvious way to ask "what changed since
+10:23?" is to trust each phone's clock. **Your two phones' clocks are not the same clock.** ⚠️ **A phone
+running behind writes its edits with a time in the PAST — and a search for "everything after 10:23" would
+never look there again.** With a full read that costs a little speed; with an incremental read **a missed
+record is missed for ever.** So the cursor is a **number the database stamps itself: every write takes a
+number strictly higher than every number before it**, whoever wrote it and whenever. **No clock can decide
+what "since" means.**
+
+**3. ⚠️ And the cursor only moves forward on a complete read.** A half-read book is never remembered as
+"seen" — otherwise the next read would start after records this one never received. **And a record written
+while the read is running always takes a higher number than anything already read, so it cannot slip
+behind: the next read asks for it by name.**
+
+**4. ⚠️ The fallback, said plainly.** If the database step has not been run, the app falls back to
+reading everything — **the same careful, paged read as before. Slower, never wrong.** It remembers that
+and stops asking.
+
+**Nothing else changes: your data, your orders, your money and the 30-second beat are all as they were.
+Nothing to run on the phones beyond this one SQL paste.**
 
 **17 Oct 2026 — engine v532: THE SYNC NO LONGER STOPS AT A THOUSAND RECORDS (nothing to run, nothing to
 upload — pushing this is the whole of it).**

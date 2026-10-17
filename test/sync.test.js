@@ -2515,3 +2515,110 @@ test("★★★ the pull reads EVERY page — a book larger than one page arrive
     } finally { restoreFetch(); }
   } finally { restore(); }
 });
+
+// ── ★★★ INCREMENTAL SYNC (17 October 2026) ─────────────────────────────────
+// ⚠️ THE FIRST PULL READS EVERYTHING; AFTER THAT IT ASKS ONLY FOR WHAT CHANGED. The cursor is a SEQUENCE
+// the SERVER stamps — never a clock — because a phone running behind would stamp its edits in the past,
+// where a cursor would never look again. ⚠️ **And a row missed once is missed for ever once a pull is
+// incremental**, so these tests pin the three things that keep that from happening.
+const EMPTY_JOURNAL = () => ({ version: 1, pending: {}, snapshot: {}, meta: {}, lastPullAt: null,
+  lastFail: null, lastSeq: null, seqUnsupported: false });
+const journalOf = (store) => {
+  const raw = store.get("bakeadmin.sync");
+  return raw ? JSON.parse(raw) : EMPTY_JOURNAL();
+};
+const setJournal = (store, patch) => {
+  const j = journalOf(store);
+  store.set("bakeadmin.sync", JSON.stringify({ ...j, ...patch }));
+};
+
+test("★★★ the pull reads EVERYTHING first, then asks only for what changed", async () => {
+  const { store, restore } = installStorage();
+  try {
+    seedToken(store);
+    const st = cloudOn(baseState());
+    const urls = [];
+    const restoreFetch = installFetch(async (url) => {
+      urls.push(url);
+      return { ok: true, json: async () => [] };
+    });
+    try {
+      await sync.pull(st);
+      assert.ok(urls.length >= 1, "no request at all");
+      assert.ok(!urls[0].includes("seq=gt."),
+        `★ the FIRST pull asked for a delta — it has no cursor yet: ${urls[0]}`);
+      assert.ok(urls[0].includes("order=seq"), urls[0]);
+
+      setJournal(store, { lastSeq: 4200, seqUnsupported: false });
+      urls.length = 0;
+      await sync.pull(st);
+      assert.ok(urls[0].includes("seq=gt.4200"),
+        `★ the second pull read the whole book again instead of asking from the cursor: ${urls[0]}`);
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});
+
+test("★★★ the cursor advances to the highest row seen — and ONLY on a complete read", async () => {
+  const { store, restore } = installStorage();
+  try {
+    seedToken(store);
+    const st = cloudOn(baseState());
+    st.products = [];
+    setJournal(store, { lastSeq: 10, seqUnsupported: false });
+
+    const row = (id, seq) => ({ kind: "products", id, seq,
+      data: JSON.stringify({ id, name: id, price: 1 }),
+      updated_at: "2026-01-01T00:00:00.000Z", _deleted: false });
+
+    const restoreFetch = installFetch(async () => ({ ok: true, json: async () => [row("p1", 11), row("p2", 19)] }));
+    try {
+      await sync.pull(st);
+      assert.equal(journalOf(store).lastSeq, 19, "★ the cursor did not advance to the highest row read");
+      assert.equal(st.products.length, 2, "the changed rows were not applied");
+    } finally { restoreFetch(); }
+
+    // ⚠️ A HALF-READ BOOK MUST NOT BE REMEMBERED AS SEEN — the next pull would start after records this
+    // one never received.
+    setJournal(store, { lastSeq: 19, seqUnsupported: false });
+    let n = 0;
+    const restoreFetch2 = installFetch(async () => {
+      n += 1;
+      return { ok: true, json: async () => Array.from({ length: sync.PULL_PAGE }, (_, i) => row(`x${n}_${i}`, 100 + n)) };
+    });
+    try {
+      await sync.pull(st);
+      assert.equal(journalOf(store).lastSeq, 19,
+        "★★ THE CURSOR ADVANCED ON AN INCOMPLETE READ — records past the hard stop would never be asked for again");
+    } finally { restoreFetch2(); }
+  } finally { restore(); }
+});
+
+test("★★★ without the database step the pull still works, in full, and stops asking", async () => {
+  // ⚠️⚠️ THE BUILD CAN LAND BEFORE THE SQL DOES. A push runs no SQL, so `sync_cursor.sql` may not have been
+  // pasted yet — and then `seq` does not exist and PostgREST answers 400. ⭐ **The answer is a full, paged
+  // read: slower, never wrong.** The flag stops this phone asking again on every beat.
+  const { store, restore } = installStorage();
+  try {
+    seedToken(store);
+    const st = cloudOn(baseState());
+    setJournal(store, { lastSeq: 500, seqUnsupported: false });
+    const urls = [];
+    const restoreFetch = installFetch(async (url) => {
+      urls.push(url);
+      if (url.includes("seq=gt.")) return { ok: false, status: 400 };   // the column does not exist
+      return { ok: true, json: async () => [] };
+    });
+    try {
+      const r = await sync.pull(st);
+      assert.equal(r.ok, true, `the pull gave up instead of falling back: ${r.reason}`);
+      assert.equal(urls.length, 2, `expected a refused delta then one full read, got ${urls.length}`);
+      assert.ok(!urls[1].includes("seq=gt."), "★ the fallback asked for a delta again");
+      assert.equal(journalOf(store).seqUnsupported, true, "★ the phone will keep asking for a column that is not there");
+
+      urls.length = 0;
+      await sync.pull(st);
+      assert.equal(urls.length, 1, "★ it retried the missing column after already learning it was missing");
+      assert.ok(!urls[0].includes("seq=gt."), urls[0]);
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});

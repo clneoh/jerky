@@ -547,7 +547,11 @@ function canonical(value) {
 // ── journal (bakeadmin.sync) ──────────────────────────────────────────────
 
 function emptyBlob() {
-  return { version: 1, pending: {}, snapshot: {}, meta: {}, lastPullAt: null, lastFail: null };
+  // ⚠️ `lastSeq` IS THE ROW CURSOR (see supabase/sync_cursor.sql): the highest write number this phone
+  // has seen. ⭐ **A NUMBER, not a timestamp — the server stamps it, so no phone's clock can decide what
+  // "since" means.** `seqUnsupported` is remembered once the database step turns out not to have been run.
+  return { version: 1, pending: {}, snapshot: {}, meta: {}, lastPullAt: null, lastFail: null,
+    lastSeq: null, seqUnsupported: false };
 }
 
 function readSync() {
@@ -562,6 +566,8 @@ function readSync() {
           snapshot: b.snapshot && typeof b.snapshot === "object" ? b.snapshot : {},
           meta: b.meta && typeof b.meta === "object" ? b.meta : {},
           lastPullAt: typeof b.lastPullAt === "string" ? b.lastPullAt : null,
+          lastSeq: Number.isFinite(b.lastSeq) ? Number(b.lastSeq) : (typeof b.lastSeq === "number" ? b.lastSeq : null),
+          seqUnsupported: b.seqUnsupported === true,
           // ⚠️ THE ONE THING THE APP USED TO THROW AWAY (v528) — see `lastFailure`.
           lastFail: b.lastFail && typeof b.lastFail === "object" ? b.lastFail : null,
         };
@@ -1012,13 +1018,13 @@ export function mergeRows(state, rows) {
  * ⚠️ `PULL_MAX_PAGES` is a hard stop. Reaching it returns `complete: false` — **and the caller must not
  * pretend it read everything.** `PULL_CEILING` is that real limit, exported so the count check agrees.
  */
-async function readAllRows(base, query, headers) {
+async function readAllRows(base, query, headers, order = "kind,id") {
   const rows = [];
   for (let page = 0; page < PULL_MAX_PAGES; page++) {
     let res;
     try {
       res = await fetch(
-        `${base}/rest/v1/bakery?${query}&order=kind,id&offset=${page * PULL_PAGE}&limit=${PULL_PAGE}`,
+        `${base}/rest/v1/bakery?${query}&order=${order}&offset=${page * PULL_PAGE}&limit=${PULL_PAGE}`,
         { headers });
     } catch {
       return { ok: false, offline: true, rows };
@@ -1041,8 +1047,26 @@ export async function pull(state) {
   const token = cachedToken();
   if (!token) return { ok: false, changed: false, reason: "Not signed in" };
 
-  const read = await readAllRows(c.url, "select=kind,id,data,updated_at,_deleted",
-    { apikey: c.anonKey, Authorization: `Bearer ${token}` });
+  const headers = { apikey: c.anonKey, Authorization: `Bearer ${token}` };
+  const b = readSync();
+  const first = !b.lastPullAt;
+  // ★★★ ASK ONLY FOR WHAT CHANGED (17 October 2026). ⭐ **The first pull of a phone, and any pull after
+  // the database step has not been run, reads everything — that is what `lastSeq` being null means.**
+  // After one complete read it asks for `seq > lastSeq`, so the ordinary 30-second beat carries a handful
+  // of rows instead of the whole book.
+  const useCursor = !b.seqUnsupported && Number.isFinite(b.lastSeq);
+  const select = "select=kind,id,data,updated_at,_deleted,seq";
+  const query = useCursor ? `${select}&seq=gt.${encodeURIComponent(String(b.lastSeq))}` : select;
+  let read = await readAllRows(c.url, query, headers, "seq");
+  // ⚠️⚠️ AND IF THE DATABASE STEP HAS NOT BEEN RUN, SAY SO BY FALLING BACK — not by leaving her with no
+  // sync at all. The `seq` column would not exist and PostgREST answers 400. ⭐ **The fallback is a FULL,
+  // PAGED read, so it is slower and never wrong**, and the flag stops this phone asking again.
+  // ⚠️ **Run `supabase/sync_cursor.sql` before this build is deployed** — a push runs no SQL.
+  if (!read.ok && read.status === 400 && !b.seqUnsupported) {
+    b.seqUnsupported = true;
+    writeSync(b);
+    read = await readAllRows(c.url, "select=kind,id,data,updated_at,_deleted", headers, "kind,id");
+  }
   if (!read.ok) {
     return { ok: false, changed: false,
       reason: read.offline ? "Offline — will retry"
@@ -1050,11 +1074,17 @@ export async function pull(state) {
         : `Pull failed (HTTP ${read.status || "?"})` };
   }
   const rows = read.rows;
-
-  const b = readSync();
-  const first = !b.lastPullAt;
   const { changed } = mergeCloudRows(state, rows, b);
   b.lastPullAt = new Date().toISOString();
+  // ⚠️⚠️ THE CURSOR ADVANCES ONLY ON A COMPLETE READ. ⭐ **A half-read book must not be remembered as
+  // "seen"** — the next pull would start after records it never received. And a write that lands *during*
+  // the scan always takes a HIGHER number than everything already read, so it cannot slip behind the
+  // cursor: the next beat asks for it by name.
+  if (read.complete && !b.seqUnsupported) {
+    const top = rows.reduce((m, r) => (Number.isFinite(Number(r && r.seq)) && Number(r.seq) > m ? Number(r.seq) : m),
+      Number.isFinite(b.lastSeq) ? b.lastSeq : 0);
+    b.lastSeq = top;
+  }
   writeSync(b);
 
   // On the first pull (or when rows changed), save so the save-hook queues any

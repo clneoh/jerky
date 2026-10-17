@@ -697,6 +697,7 @@ call as a whole and *every* customer's card stops updating):
 - `supabase/courier_fee.sql`, `supabase/courier_cod.sql` — the courier charge and cash on delivery
 - `supabase/courier_job.sql` — booking a courier job through the app
 - `supabase/postage_mode.sql` — `order_tracking.postage_quoted boolean`, the switch above
+- `supabase/sync_cursor.sql` — the `bakery.seq` row cursor that makes incremental sync possible (v533)
 
 Two **optional** Edge Functions, in her own project so the request goes out under her own name:
 `supabase/functions/courier` (price and book a job) and `supabase/functions/shop-geocode` (the
@@ -755,6 +756,78 @@ paragraph with an unpaired `**` rather than half-converting it. It works on both
 paragraph still prints its own markers, and also requires the real emphasis to be there (a guard that
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
+
+## v533 → v534 — the 30-day change is upstreamed, in the bakery's better shape (17 Oct 2026)
+
+**5 files changed; no SQL** (the cursor script she already ran stands). Suite **3512 → 3513**.
+
+⚠️ **jerky's own v530 (the 30-day Removed list) was a MUNCHIES-ONLY fix. The bakery has since made the same
+change properly — its v530 — and this replaces mine with theirs.** Her decision is unchanged; **what
+changes is where the number lives.**
+
+### Why theirs is better
+
+⭐ **`removedKeepWords()` in `admin/js/state.js` — the number spelled ONCE, and every consumer asks for
+it** (`health.js` ×2, `views/orders.js` ×1). ⚠️ **My version typed "30 days" into each screen, and a
+number written into a sentence is a second copy of a decision.** That is not theoretical here: the comment
+above `pruneRemovedOrders` said *"thirty days is long enough"* while the constant said 48, **and that
+disagreement was quoted back to her as evidence before the constant was read.**
+
+⭐ **And the bakery named a distinction I missed: ONE SETTING WAS DOING TWO JOBS** — how long a removed
+order stays **puttable back** (what she answered) and how long a removal **leaves a trace** for the check
+that opens a ~week-old copy. 48 hours could never satisfy the second.
+
+### The guard, rewritten
+
+⚠️ **The first guard only checked that the screens CALLED the helper — and it passed while a hard-coded
+"30 days" sat in one of them.** *"A check keyed to one occurrence checks one occurrence."* It now strips
+comments and asserts **no consumer spells a window at all**, and it was watched failing.
+
+### What this removes
+
+⚠️ **42 jerky-only lines from my own version are gone — deliberately.** Every one is my hand-typed window
+being superseded by the helper. **The divergence is closed**, which is the point: a jerky-only fix that
+upstreams should not leave two copies behind.
+
+### ⚠️ The engine numbers have parted company
+
+**Munchies reads v534; the bakery reads v530.** Munchies took four jerky-only versions (the Removed list,
+Put back missing orders, the record count, and the paged + incremental sync) while the bakery stood still.
+**The number is each app's own build stamp, so this is not a fault — but they will not match by accident
+again.** Recorded so the next session does not treat it as a sync that half-worked.
+
+## v532 → v533 — incremental sync: read only what changed (17 Oct 2026, **jerky-only**)
+
+**6 files changed, plus one NEW SQL script. Suite 3509 → 3512.** ⚠️ **RUN `supabase/sync_cursor.sql` BEFORE
+DEPLOYING** — a push runs no SQL. It is idempotent.
+
+### Why a database step, and why a counter rather than a timestamp
+
+⚠️ **The obvious cursor is "everything after 10:23" — and that trusts each phone's clock.** Two phones are
+two clocks. **A phone running behind writes its edits with a time in the past, where a cursor would never
+look again.** ⭐ **With a full pull that costs speed; once the pull is incremental, a missed row is missed
+FOR EVER.** ⚠️ And `updated_at` is a **text** column holding two different shapes (`…T10:23:45.123Z` from
+the app, `… 10:23:45.123456+00` from `now()`), which do not compare lexicographically as times at all.
+
+⭐ **So the cursor is a `bigint` sequence the server stamps in a `BEFORE INSERT OR UPDATE` trigger** — every
+write takes a number strictly higher than every number before it, whoever wrote it, whenever. **No clock can
+decide what "since" means.** ⚠️ The function is `SECURITY DEFINER` on purpose: the app writes as
+`authenticated`, which has no privilege on the sequence.
+
+### The client
+
+- `sync.pull` reads the journal's `lastSeq`. **Null means a full, paged read** (first run, or after a
+  fallback). Otherwise it asks `seq=gt.<lastSeq>` and pages **ordered by `seq`**.
+- ⚠️ **The cursor advances ONLY on a complete read.** A half-read book must not be remembered as seen.
+- ⚠️ **A write during the scan always takes a higher number than anything already read**, so it cannot slip
+  behind the cursor — the next beat asks for it by name.
+- ⚠️ **If the SQL has not been run**, `seq` does not exist, PostgREST answers **400**, and the pull
+  **falls back to the full paged read** — slower, never wrong — and sets `seqUnsupported` so it stops
+  asking. **That fallback is why this can be pushed even if the pasta is forgotten; it is deliberately not
+  silent-and-broken, just silent-and-slower.**
+
+**Bitten, all three:** forcing a full read every time, advancing the cursor on a partial read, and removing
+the 400 fallback each fail a named test.
 
 ## v531 → v532 — the sync no longer stops at a thousand records (17 Oct 2026, **jerky-only**)
 

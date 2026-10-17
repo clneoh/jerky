@@ -102,8 +102,11 @@ test("★★ a receipt with no order behind it FAILS — the fault that cost her
   assert.match(r.fix, /line clears/i, "★ it does not say that marking it void actually clears the line");
   assert.match(r.fix, /WhatsApp/,
     "★ and the route for a real loss was dropped — that leaves a fault with no way out");
+  // ⚠️ AND THE WINDOW IS STATED, IN HER WORDS AND AT HER NUMBER (v530): **30 days, because one constant was
+  // doing two jobs** — the put-back window she chose at 48 hours, and the trace the "left without a trace"
+  // check needs (it opens a copy about a WEEK old, which 48 hours could never satisfy).
   assert.match(r.why, /30 days/,
-    "★ the reason does not say why this happens innocently: a removed order is only kept for 30 days");
+    "★ the reason does not say why this happens innocently: a removed order is only kept for 48 hours");
   assert.match(r.why, /receipt stands and the money is recorded/i, "the check does not say what it means");
   assert.match(r.fix, /WhatsApp/i, "the check does not say what she can do about it");
 
