@@ -1453,11 +1453,20 @@ export function openDayAdjustPopup(state, date, refresh) {
 export function openBakedPopup(state, dayIso, refresh) {
   const iso = String(dayIso || "");
   if (!iso) return;
-  // ⚠️ ONLY PRODUCTS WITH A RECIPE: one with none has nothing to take off the shelf, so a box for it would
-  // move nothing at all — and a control that does nothing is a bug in this app.
-  const products = (state.products || []).filter((p) => (p.recipe || []).length);
+  // ★★★ EVERY PRODUCT IS LISTED, AND A PRODUCT WITH NO RECIPE SAYS SO ON ITS OWN ROW (v541).
+  //
+  // ⚠️⚠️ THIS USED TO LIST ONLY PRODUCTS WITH A RECIPE, and the reason was sound — a box for a product with no
+  // ingredients moves nothing, and a control that does nothing is a bug in this app. ⚠️ **But her answer named
+  // the cost, and the cost is worse:** __"i dont see them because there is no ingredient with them"__ — ⭐ **she
+  // had baked something and the app would not let her record it, because a recipe was not set up. That is a
+  // GATE, and her own rule is "guide, never a gate".**
+  // ⭐⭐ **So the row is shown and the fact is written on it** — she can record the bake, she is told plainly that
+  // it moves no stock, and the day she adds the ingredients the same box starts moving stock with nothing new
+  // to learn. ⚠️ **`applyBake` already handles an empty recipe: it iterates no ingredients and changes
+  // nothing — measured, not assumed.**
+  const products = (state.products || []).slice();
   if (!products.length) {
-    return toast("No product has a recipe yet, so there is nothing to take off the shelf. Add one under More → Products.");
+    return toast("No products yet. Add one under More → Products first.");
   }
   const ordered = orderedOnDay(state, iso);
   const isBakeDay = (state.deliveryDates || []).some((d) => d && d.date === iso);
@@ -1508,10 +1517,17 @@ export function openBakedPopup(state, dayIso, refresh) {
         // TOTAL — a second sentence explaining a total is the thing that makes it unclear.** ⚠️ And it is the
         // second time on this one control that words added to solve a problem became the problem (v517).
         // ⭐ **The label says it; nothing else does.**
+        // ⚠️ AND A PRODUCT WITH NO INGREDIENTS SAYS SO ON ITS OWN ROW (v541) — **a control that moves nothing
+        // must not look like one that does.** ⭐ The fact sits where she reads the row, not in a pop-up footer.
+        const hasRecipe = (p.recipe || []).length > 0;
+        const sub = [
+          was ? `${was} ordered` : "nothing ordered",
+          hasRecipe ? "" : "no ingredients on its recipe — this will not change your stock",
+        ].filter(Boolean).join(" · ");
         return el("div", { class: "day-adjust-row" },
           el("div", { style: "min-width:0" },
             el("p", { style: "margin:0" }, p.name),
-            el("p", { class: "card-sub", style: "margin:0" }, was ? `${was} ordered` : "nothing ordered")),
+            el("p", { class: "card-sub", style: "margin:0" }, sub)),
           el("div", { class: "day-adj-right" },
             el("span", { class: "bake-label" }, "total baked"),
             box));

@@ -1,8 +1,29 @@
-# Munchies Furkidz — change history (v54 → v536)
+# Munchies Furkidz — change history (v54 → v537)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**17 Oct 2026 — engine v537: A PRODUCT WITH NO INGREDIENTS CAN STILL BE RECORDED, AND IT SAYS IT MOVES NO
+STOCK (nothing to run, nothing to upload).**
+
+**Your words: __"why a hidden product dont appear on total baked?"__ — and then __"i dont see them because
+there is no ingredient with them"__. Both true, and both worth fixing.**
+
+**1. ⚠️ What was happening was not a bug — it was a GATE.** The baked box listed only products with a
+recipe, **because a box for a product with no ingredients moves nothing, and a control that does nothing is
+a bug in this app.** **But the cost was worse than the rule: you had made something, and the app would
+not let you record it, because a recipe was not set up.** **Your own rule is "guide, never a gate" — and this
+was a gate.**
+
+**2. So every product is listed now**, and one with no ingredients carries this on its own row: **"no
+ingredients on its recipe — this will not change your stock."**
+
+**3. And both rules are kept.** You can record the bake so the day is complete; **you are told plainly that
+it moved no stock**, so it is not a control that quietly does nothing; and **the day you add the
+ingredients, the same box starts moving stock with nothing else to learn.**
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **17 Oct 2026 — YOUR MANUAL GAINS A "DO THIS, NEVER THAT" PAGE (the app is unchanged — engine stays
 v536; the manual is now v536a).**

@@ -757,6 +757,29 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## v536a → v537 — a product with no ingredients can still be recorded (17 Oct 2026)
+
+**One bakery version (v541). 2 files; no SQL.** Suite **3535 → 3536**.
+
+**Her words:** *"why a hidden product dont appear on total baked?"* — then *"i dont see them because there
+is no ingredient with them."*
+
+⚠️ **It was not a bug; it was a GATE.** The baked box listed **only products with a recipe**, because a box
+for a product with no ingredients moves nothing — and *"a control that does nothing is a bug in this app."*
+⭐ **But the cost was worse than the rule: she had made something and the app would not let her record it,
+because a recipe was not set up.** **Her own rule is "guide, never a gate" — and this was a gate.**
+
+**Now every product is listed**, and one with no ingredients carries on its own row: **"no ingredients on
+its recipe — this will not change your stock."** ⚠️ **Both rules survive** — the day is complete, the note
+means it is not a control that quietly does nothing, and **the day she adds the ingredients the same box
+starts moving stock with nothing else to learn.**
+
+⚠️ **Checked rather than assumed:** `applyBake` was already safe with an empty recipe — it iterates no
+ingredients and changes nothing.
+
+⚠️ **The test asserts the note PER ROW**, because a page-wide match would pass with the warning beside the
+wrong product — and both the recipe-only filter and a note on the wrong row were watched failing.
+
 ## v535 → v536 — a save that fails says so, and a restore no longer hides records (17 Oct 2026)
 
 **Six bakery versions (v534–v539), 14 files merged, plus `robots.txt` and `test/publishing.test.js` new.**

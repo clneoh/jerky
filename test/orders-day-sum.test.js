@@ -2775,6 +2775,53 @@ test("★★★ Baked — how many? is the ONLY thing that moves the shelf, and 
     + "charge her twice**");
 });
 
+test("★★★ a product with NO ingredients is still listed — and its row says it will not change stock (v541)", () => {
+  // ⚠️⚠️ HER REPORT: __"why a hidden product dont appear on total baked?"__ — and then __"i dont see them because
+  // there is no ingredient with them"__. ⭐ **She had baked something and the app would not let her record it,
+  // because a recipe was not set up. That is a GATE, and her own rule is "guide, never a gate".**
+  // ⚠️ **And the old rule was not silly:** a box for a product with no ingredients moves nothing, and a control
+  // that does nothing is a bug. ⭐ **So the row is shown and the fact is written on it — both rules kept.**
+  const st = state();
+  st.products = [
+    { id: "p1", name: "Focaccia", active: true, unit: "pc",
+      recipe: [{ ingredientId: "ing_f", qty: 250, unit: "g" }] },
+    // ⚠️ HIDDEN **and** with no ingredients — exactly the product she was looking at.
+    { id: "p2", name: "Pandan cake", active: false, unit: "pc" },
+  ];
+  st.ingredients = [{ id: "ing_f", name: "Strong flour", unit: "g", uomId: "g", onHand: 5000 }];
+  st.uoms = [{ id: "g", name: "g", family: "weight", toBase: 1 }];
+  st.orders = [{ id: "o1", deliveryDateId: "d10", productId: "p1", qty: 2 }];
+
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+  buttonByText(root, "Baked — how many?")._listeners.click[0]();
+  const pop = layers["popup-layer"];
+
+  const boxes = all(pop).filter((n) => n.tagName === "INPUT" && String(n.className).includes("bake-box"));
+  assert.equal(boxes.length, 2,
+    "★ a product with no ingredients (and hidden) has no box — **she baked it and the app will not record it, "
+    + "which is the gate her own rule forbids**");
+
+  // ⭐ AND THE NOTE IS ON THE ROW IT IS ABOUT — a page-wide match would pass even if it sat beside the wrong one.
+  const rowOf = (name) => all(pop).find((n) => String(n.className).includes("day-adjust-row")
+    && String(n.textContent || "").includes(name));
+  assert.match(String(rowOf("Pandan cake").textContent), /no ingredients on its recipe/,
+    "★ the row does not say it moves no stock — **a control that moves nothing must not look like one that does**");
+  assert.doesNotMatch(String(rowOf("Focaccia").textContent), /no ingredients on its recipe/,
+    "★ the warning is on a row that HAS a recipe — **a note that fires on the wrong row is one she stops reading**");
+
+  // ⚠️ AND SAVING IT RECORDS THE BAKE AND MOVES NOTHING — both halves.
+  const flourBefore = st.ingredients[0].onHand;
+  boxes[1].value = "3";
+  (boxes[1]._listeners.input || []).forEach((f) => f());
+  buttonByText(pop, "Save")._listeners.click[0]();
+  assert.equal(st.ingredients[0].onHand, flourBefore,
+    "★ recording a product with no recipe MOVED the shelf — **there is nothing on its recipe to move**");
+  const row = (st.bakedDays || []).find((d) => d && d.date === "2026-09-10");
+  assert.equal(Number(row && row.items && row.items.p2 && row.items.p2.total), 3,
+    "★ the bake was not recorded — **the whole point was that she could record it even without a recipe**");
+});
+
 test("★★★ a day that is NOT a bake day can still say what it baked (v515)", () => {
   // ⚠️ Her words: __"make it appear everyday, as sometimes she bake on non bake day upon request by
   // customer. Even post dated"__. ⭐ **A day she baked on but never opened has no day card**, so the line the
