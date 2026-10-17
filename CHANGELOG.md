@@ -1,8 +1,34 @@
-# Munchies Furkidz — change history (v54 → v530)
+# Munchies Furkidz — change history (v54 → v531)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**17 Oct 2026 — engine v531: YOU CAN NOW PUT MISSING ORDERS BACK — WITHOUT REWINDING ANYTHING
+(nothing to run, nothing to upload — pushing this is the whole of it).**
+
+**1. A new press in Backup and safety: "Put back missing orders".** It puts back **only** the orders a
+saved copy holds that your phone can no longer account for — **not on your list, and not on the Removed
+list.** It **adds and never removes**: nothing you still have is changed, no product, no money, no day,
+no Removed row is touched, and **an order you cancelled yourself is never brought back** — if it is on
+the Removed list, it stays cancelled. **And it saves a "Before put-back" copy first**, so the press
+itself can be undone.
+
+**2. And that is what "put that copy back" should always have meant.** ⚠️ **Restore is a REWIND** — it
+takes the whole app back to the day of the copy, here, in your shared data and on your other phone.
+That is the right tool for "put everything back to how it was", and **the wrong tool for one missing
+order.** Until now it was the only thing on offer for the second question — and the check itself was
+recommending it. **Restore is unchanged, and its warning is the same.**
+
+**3. So the check's advice is fixed too.** Where it said *"put that copy back if these are orders you
+took"*, it now says to use **Put back missing orders**, and tells you plainly that leaving them alone
+costs you nothing.
+
+**4. ⚠️ And a name that was telling a lie.** The function behind Restore was called `mergeRestore` in
+the code — and **it never merged anything.** The button's warning was honest, but the name was not,
+and a name is what the next person trusts instead of the body. It says `rewindTo` now.
+
+**Nothing to run, no SQL, no upload, no setting to change on either phone.**
 
 **17 Oct 2026 — engine v530: THE REMOVED LIST NOW REMEMBERS 30 DAYS (Munchies only — nothing to run,
 nothing to upload, pushing this is the whole of it).**

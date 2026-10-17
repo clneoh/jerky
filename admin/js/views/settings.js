@@ -597,6 +597,7 @@ export function renderSettings(root, state) {
       el("div", { class: "btn-row", style: "margin:0" },
         button("View", () => viewOne(row), "soft"),
         button("Restore", () => restoreOne(row), "primary"),
+        button("Put back missing orders", () => putBackOne(row), "soft"),
         button("Download", () => downloadOne(row), "ghost"),
         button("Delete", () => deleteOne(row), "ghost")));
   }
@@ -616,6 +617,34 @@ export function renderSettings(root, state) {
         toast("Restored — reloading…");
         location.reload();
       }, { danger: true, yesLabel: "Restore" });
+  }
+
+  // ★★★ AND THE ADDITIVE REPAIR (17 October 2026). ⚠️⚠️ **Restore above is a REWIND — everything added
+  // after the copy goes, here, in the shared data and on the other phone.** That is the right tool for
+  // "put the whole app back to how it was", and the wrong tool for "one order has gone" — ⭐ **and until
+  // now the only thing on offer for the second question was the first, which the check itself recommended.**
+  // ⭐ It ADDS only, and only orders this phone cannot account for: on the list, or on the Removed shelf,
+  // and the order is left exactly as it is. **So it cannot resurrect a cancellation.**
+  //
+  // ⚠️ THE COUNT IS ASKED FOR FIRST, with a dry run that changes nothing — **a button that says nothing
+  // until it is pressed is a button she cannot judge**, and the question names the number it will add.
+  function putBackOne(row) {
+    const label = row.label || row.kind || "this backup";
+    backups.putBackOrders(state, row, { dryRun: true }).then((p) => {
+      if (!p.ok) return toast(String(p.reason || "Couldn't read that copy"));
+      if (!p.count) {
+        return toast("Nothing is missing from this copy — every order in it is on your list or on the Removed list.");
+      }
+      confirmDialog(
+        `Put back ${p.count} order${p.count === 1 ? "" : "s"} from "${label}"? Only orders that are no longer on your list and were never on the Removed list — nothing else in the copy is touched, and nothing you still have is changed or removed. A "Before put-back" copy is saved first, so you can undo this.`,
+        async () => {
+          const r = await backups.putBackOrders(state, row);
+          if (!r.ok) return toast(String(r.reason || "Put back failed"));
+          if (!r.count) return toast("Nothing was missing by the time it ran — nothing was added.");
+          toast(`Put back ${r.count} order${r.count === 1 ? "" : "s"} — reloading…`);
+          location.reload();
+        }, { yesLabel: `Put back ${p.count}` });
+    }).catch(() => toast("Couldn't read that copy"));
   }
 
   function downloadOne(row) {

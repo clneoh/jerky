@@ -25,6 +25,7 @@ import { byId, codeFromId, groupOrders, orderCode, orderLinePrice } from "./stat
 import { isCollected } from "./money.js";
 import { receiptNoOfGroup } from "./receipts.js";
 import { listFields } from "./sync.js";
+import { unaccountedOrders } from "./backups.js";
 
 // The order-level facts every row of ONE order must agree on. ⚠️ DELIBERATELY NOT THE PER-LINE ONES —
 // `qty`, `unitPrice`, `unitCost` and `lineNote` are each row's own business, and a check that flagged
@@ -323,58 +324,13 @@ export function backupChecks(state, copy, when = "") {
     return [skipped("stable", TITLE,
       "Your saved copies could not be opened — sign in to shared data and run this again.")];
   }
-  // ⚠️ BOTH WAYS AN ORDER CAN BE RECOGNISED, exactly as `registerChecks` does it: the code it wears today
-  // and the one it wore before it was grouped (v441). A check that knew only the first would report a
-  // false loss for every order that has ever gained an item.
-  const codesOf = (list) => {
-    const s = new Set();
-    for (const o of Array.isArray(list) ? list : []) {
-      if (!o) continue;
-      for (const k of [orderCode(o), codeFromId(o)]) if (k && k !== "??????") s.add(k);
-    }
-    return s;
-  };
-  const here = codesOf(state && state.orders);
-  const shelf = codesOf(state && state.removedOrders);
-  const shelfThen = codesOf(copy.removedOrders);
-  // ⚠️ AND THE COPY'S OWN LIST COUNTS: an order she took off a week ago, whose shelf row has since been
-  // pruned, is still explained by the copy that was written while it was on the shelf.
-  //
-  // ★★★ AND SO DOES A RECEIPT SHE HAS DECLARED VOID (v527) — **the same carve-out the receipt check has had
-  // since v448, in almost the same words: a recorded decision is not an unexplained hole.** ⭐ **Marking a
-  // receipt void IS her saying "this order is gone and I have dealt with the money"** — so it is the app's own
-  // record of that order's fate, and this check was not asking for it. ⚠️ **It reads `voidedReceipts` from
-  // BOTH sides** (this phone now, and the copy), for the same reason the Removed list is read from both: the
-  // record has to travel, and the copy is what remembers it if this phone's row is gone.
-  const voidRecs = [
-    ...(Array.isArray(state && state.voidedReceipts) ? state.voidedReceipts : []),
-    ...(Array.isArray(copy.voidedReceipts) ? copy.voidedReceipts : []),
-  ];
-  const voidedNos = new Set();
-  const voidedCodes = new Set();
-  for (const v of voidRecs) {
-    const n = Math.floor(Number(v && v.no));
-    if (Number.isFinite(n) && n > 0) voidedNos.add(n);
-    const c = String((v && v.code) || "").trim().toUpperCase();
-    if (c && c !== "??????") voidedCodes.add(c);
-  }
-  // ⚠️ MATCHED BOTH WAYS, exactly as `registerChecks` does it: the code the record names, and the receipt
-  // number the order carries — ⭐ **the two facts a receipt and an order always share.** A void record made
-  // before v441 may name a code the order no longer wears, and reading the number as well is what stops that
-  // becoming a false loss.
-  const declaredGone = new Set();
-  for (const g of groupOrders(Array.isArray(copy.orders) ? copy.orders : [])) {
-    const first = g.orders[0];
-    if (!first) continue;
-    const codes = [orderCode(first), codeFromId(first)].filter((c) => c && c !== "??????");
-    const n = Math.floor(Number(receiptNoOfGroup(g.orders)));
-    const hit = codes.some((c) => voidedCodes.has(String(c).toUpperCase()))
-      || (Number.isFinite(n) && n > 0 && voidedNos.has(n));
-    if (hit) for (const c of codes) declaredGone.add(c);
-  }
-  const missing = [...codesOf(copy.orders)]
-    .filter((c) => !here.has(c) && !shelf.has(c) && !shelfThen.has(c) && !declaredGone.has(c))
-    .sort();
+  // ★★★ THE COMPARISON IS ONE RULE, ASKED IN ONE PLACE (17 October 2026). ⚠️ **The press that puts these
+  // orders back has to agree with this check about WHICH orders are missing** — and two copies of a
+  // comparison is how the two come to disagree about the same seven. `unaccountedOrders` is the single
+  // reader: on this phone, on the Removed list, on the copy's own Removed list, or covered by a receipt she
+  // marked void (matched by code AND by receipt number). It returns one entry per ORDER, grouped, so the
+  // count here is a count of orders rather than of codes.
+  const missing = unaccountedOrders(state, copy).map((x) => x.code);
 
   return [missing.length
     ? fail("stable", TITLE, missing.map((c) => `#${c}`),
@@ -383,7 +339,11 @@ export function backupChecks(state, copy, when = "") {
       // under the old two-day rule never came back, so an older removal still arrives with nothing to
       // explain it.**
       `The copy saved on ${when || "an earlier day"} holds ${missing.length === 1 ? "an order" : "orders"} that this phone no longer has — and ${missing.length === 1 ? "it is" : "they are"} not on the Removed list either, so the app has no record of taking ${missing.length === 1 ? "it" : "them"} off. TWO innocent cases look exactly the same, so check the dates before worrying: a removal made before the Removed list existed, and one whose row was pruned under the old two-day rule — a row that has already gone does not come back.`,
-      "Open Backup and safety and put that copy back if these are orders you took, or search WhatsApp for the number and enter the order again by hand.")
+      // ★★★ AND THE WAY OUT NO LONGER SAYS "PUT THAT COPY BACK" (17 October 2026). ⚠️ **That was a
+      // full rewind to a week-old copy, offered as though it were a way to look something up** — and the
+      // Restore button's own dialog was the only place that said what it cost. ⭐ **The repair is now the
+      // additive press, which adds back only these orders and touches nothing else.**
+      "Open Backup and safety, find that copy, and press Put back missing orders. It adds back only the orders that are no longer on your list and were never on the Removed list — nothing else in the copy is touched, and nothing you still have is changed. If one of these is an order you took off yourself, simply leave it: nothing is lost by leaving it. And you can always search WhatsApp for the number to check what it was.")
     : pass("stable", TITLE)];
 }
 

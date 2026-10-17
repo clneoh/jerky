@@ -205,7 +205,10 @@ test("exportEnvelope wraps a copy so a downloaded file re-imports via parseImpor
   assert.equal(imported.settings.supabase.email, ""); // creds never in the cloud copy
 });
 
-test("mergeRestore takes the copy's data but keeps this phone's sign-in, cloud switch and lock", () => {
+test("rewindTo takes the copy's data but keeps this phone's sign-in, cloud switch and lock", () => {
+  // ⚠️ AND IT IS NAMED `rewindTo`, NOT `mergeRestore` (17 October 2026) — the old name promised the softer
+  // of the two behaviours and the body delivered the harder one. **This test is exactly why that mattered:
+  // it asserts the products and orders are REPLACED, while the name said "merge".**
   const snap = backups.snapshotState(cloudState()); // no device settings inside
   const live = cloudState();
   live.settings.supabase = { enabled: true, url: "https://y.supabase.co", anonKey: "anon2",
@@ -215,7 +218,7 @@ test("mergeRestore takes the copy's data but keeps this phone's sign-in, cloud s
   live.products = [{ id: "p-live", name: "Something newer", unit: "pouch" }]; // will be replaced
   live.orders = [];
 
-  const merged = backups.mergeRestore(live, snap);
+  const merged = backups.rewindTo(live, snap);
   assert.deepEqual(merged.settings.supabase, live.settings.supabase);
   assert.deepEqual(merged.settings.cloud, live.settings.cloud);
   assert.deepEqual(merged.settings.lock, live.settings.lock);
@@ -416,7 +419,7 @@ test("restoreSnapshot saves a 'Before restore' copy then writes the merged state
     assert.equal(safetyData.settings.supabase, undefined); // safety copy is stripped too
     // The phone's localStorage now holds the merged restored state.
     const written = JSON.parse(ls.store.get(LS_KEY));
-    assert.deepEqual(written, backups.mergeRestore(state, snap));
+    assert.deepEqual(written, backups.rewindTo(state, snap));
     assert.equal(written.settings.supabase.password, "pw"); // this phone stays signed in
   } finally {
     restoreFetch();
@@ -537,4 +540,110 @@ test("snapshotViewData survives sparse or empty data", () => {
   assert.equal(v.dayRows.length, 0);
   assert.deepEqual(v.productRows, []);
   assert.deepEqual(v.ingredientRows, []);
+});
+
+// ── ★★★ THE ADDITIVE REPAIR (17 October 2026) ──────────────────────────────
+// ⚠️ THE FAULT THIS EXISTS FOR: the check opened a week-old copy, found orders this phone could not
+// account for, and told her to "put that copy back" — **a full rewind of a week, offered as though it
+// were a way to look something up.** These pin the two halves: WHICH orders are unexplained (one rule,
+// shared with the check) and that putting them back ADDS ONLY THOSE.
+
+const coded = (id, qty = 1) => ({ id, productId: "p1", qty, deliveryDateId: "d1", status: "new" });
+
+test("★★★ unaccountedOrders: the four things that explain an order, and the silence that does not", () => {
+  const live = cloudState();
+  live.orders = [];
+  live.removedOrders = [];
+  live.voidedReceipts = [];
+  const snapWith = (orders, extra = {}) => ({ ...backups.snapshotState(live), orders, ...extra });
+  const gone = coded("o_aa11bb");
+
+  assert.deepEqual(backups.unaccountedOrders(live, snapWith([gone])).map((x) => x.code), ["AA11BB"],
+    "★ an order in the copy and nowhere else was not named — the very thing the check exists to see");
+
+  assert.deepEqual(backups.unaccountedOrders({ ...live, orders: [gone] }, snapWith([gone])), [],
+    "it is on this phone now");
+
+  assert.deepEqual(
+    backups.unaccountedOrders({ ...live, removedOrders: [{ ...gone, removedAt: new Date().toISOString() }] }, snapWith([gone])), [],
+    "it is on the Removed list now");
+
+  assert.deepEqual(backups.unaccountedOrders(live, snapWith([gone], { removedOrders: [{ ...gone }] })), [],
+    "the copy's own Removed list remembers it");
+
+  assert.deepEqual(
+    backups.unaccountedOrders({ ...live, voidedReceipts: [{ id: "void_1", code: "AA11BB", no: 3 }] }, snapWith([gone])), [],
+    "a receipt she marked void explains it, by code");
+
+  assert.deepEqual(
+    backups.unaccountedOrders({ ...live, voidedReceipts: [{ id: "void_1", code: "ZZ9999", no: 3 }] },
+      snapWith([{ ...gone, receiptNo: 3 }])), [],
+    "…and by receipt number, for a void record written before the order's code moved");
+});
+
+test("★★★ unaccountedOrders counts ORDERS and carries every row of a grouped one", () => {
+  const live = cloudState();
+  live.orders = []; live.removedOrders = []; live.voidedReceipts = [];
+  const a = coded("o_111111"); a.groupId = "g_111111";
+  const b = coded("o_222222", 3); b.groupId = "g_111111";   // the same order, a second line
+  const c = coded("o_333333");
+  const snap = { ...backups.snapshotState(live), orders: [a, b, c], removedOrders: [] };
+  const found = backups.unaccountedOrders(live, snap);
+  assert.equal(found.length, 2, `★ two orders were reported as ${found.length}`);
+  assert.deepEqual(found.map((x) => x.code), ["111111", "333333"], "and they are sorted by code");
+  const grouped = found.find((x) => x.code === "111111");
+  assert.equal(grouped.orders.length, 2,
+    "★ only one row of a two-line order was carried — putting it back would put back half an order");
+});
+
+test("★★★ putBackOrders ADDS only the unexplained orders — nothing is removed or rewritten", async () => {
+  const ls = installStorage();
+  seedToken(ls.store);
+  const state = cloudState();
+  state.removedOrders = [];
+  state.voidedReceipts = [];
+  const mine = { ...state.orders[0] };            // already on this phone
+  // ⚠️⚠️ AND ONE ADDED AFTER THE COPY — **the assertion that tells an ADD from a REWIND.** A rewind
+  // replaces the list with the copy's, so this order would vanish; an additive put-back leaves it alone.
+  const newer = coded("o_dd44ee", 4);
+  state.orders.push(newer);
+  const gone = coded("o_aa11bb");
+  const snap = { ...backups.snapshotState(state), orders: [mine, gone], removedOrders: [] };
+  const row = { id: 7, data: JSON.stringify(snap) };
+  let safetyPost = null;
+  const restoreFetch = installFetch(async (url, opts) => {
+    const method = (opts && opts.method) || "GET";
+    if (method === "GET" && url.includes("/rest/v1/bakery?")) return jsonRes([]);          // sync pull
+    if (method === "GET" && url.includes("/rest/v1/backup_snapshots?")) return jsonRes([row]);
+    if (method === "POST" && url.includes("/rest/v1/bakery?")) return jsonRes({});          // sync flush
+    if (method === "POST" && url.endsWith("/rest/v1/backup_snapshots")) {
+      safetyPost = JSON.parse(opts.body)[0];
+      return jsonRes({});
+    }
+    throw new Error(`unexpected request ${method} ${url}`);
+  });
+  try {
+    // ⚠️ A DRY RUN MUST CHANGE NOTHING AT ALL — not the live list, not a copy, not the phone.
+    const dry = await backups.putBackOrders(state, row, { dryRun: true });
+    assert.equal(dry.ok, true);
+    assert.equal(dry.count, 1, `★ the dry run counted ${dry.count}`);
+    assert.equal(safetyPost, null, "★ a dry run wrote a copy — it must change nothing");
+    assert.equal(state.orders.length, 2, "★ a dry run changed the live list");
+
+    const r = await backups.putBackOrders(state, row);
+    assert.equal(r.ok, true);
+    assert.equal(r.count, 1);
+    assert.equal(state.orders.length, 3, "★ the missing order was not added to the live list");
+    assert.ok(safetyPost && String(safetyPost.label).startsWith("Before put-back · "),
+      "★ no 'Before put-back' copy was saved, so the press cannot be undone");
+    const written = JSON.parse(ls.store.get(LS_KEY));
+    assert.equal(written.orders.length, 3, "the added order was not written to this phone");
+    assert.ok(written.orders.some((o) => o.id === newer.id),
+      "★★ THE ORDER ADDED AFTER THE COPY WAS REMOVED — that is a rewind, not a put-back");
+    assert.equal(written.orders.filter((o) => o.id === mine.id).length, 1,
+      "★ the order already on the list was duplicated");
+    // nothing else in the phone's state was touched
+    assert.deepEqual(written.products, state.products);
+    assert.deepEqual(written.removedOrders, state.removedOrders);
+  } finally { restoreFetch(); ls.restore(); }
 });

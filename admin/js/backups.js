@@ -13,14 +13,15 @@
 // wraps it in the same envelope as Export, so it re-imports through the file
 // Import too. Restoring writes the copy back over this phone and reloads; the
 // normal sync engine then re-pushes the rewound rows to the cloud and the other
-// phone (see mergeRestore + restoreSnapshot for how that rewinds).
+// phone (see rewindTo + restoreSnapshot for how that rewinds).
 //
 // Pure helpers run under Node for tests; all fetch/localStorage access is
 // guarded so importing the module is side-effect free.
 
 import { cachedToken } from "./supabase.js";
 import * as sync from "./sync.js";
-import { LS_KEY, normalize, orderCode, fmtRM } from "./state.js";
+import { LS_KEY, normalize, orderCode, codeFromId, groupOrders, fmtRM } from "./state.js";
+import { receiptNoOfGroup } from "./receipts.js";
 import { fmtPlaced, longDate, toISODate, todayISO } from "./dates.js";
 import { fmtStockAmount, belowReserve } from "./purchasing.js";
 import { ENGINE_VERSION } from "./version.js";
@@ -157,7 +158,18 @@ export function labelFor(kind, iso = new Date().toISOString()) {
 // the phone stays signed in and its lock stays its own (mirrors the sync
 // engine's per-device settings merge). Restored lists replace the current ones,
 // which is what makes a restore a step back in time.
-export function mergeRestore(current, snapState) {
+/**
+ * Put this phone back to a whole saved copy.
+ *
+ * ⚠️⚠️ IT WAS CALLED `mergeRestore`, AND IT NEVER MERGED ANYTHING — 2026-10-17. ⭐ **The name promised the
+ * softer of the two behaviours and the code delivered the harder one:** everything is replaced by the
+ * copy, and only the three per-device settings are carried over from the live phone. ⚠️ **The Restore
+ * button's own dialog has always said so** (it warns that everything added after the copy is removed, on
+ * this phone, in the shared data and on the other phone) — **the misleading part was the NAME, and a name
+ * is what the next reader trusts instead of the body.** It is `rewindTo` now: the function says what it
+ * does, and `putBackOrders` below is the additive tool the name used to imply.
+ */
+export function rewindTo(current, snapState) {
   const restored = normalize(snapState);
   const live = (current && current.settings) || {};
   const keep = (key) => JSON.parse(JSON.stringify(live[key] || {}));
@@ -165,6 +177,139 @@ export function mergeRestore(current, snapState) {
   restored.settings.cloud = keep("cloud");
   restored.settings.lock = keep("lock");
   return restored;
+}
+
+// ── what a copy holds that this phone cannot account for ───────────────────
+
+/**
+ * Which orders in a saved copy are UNACCOUNTED FOR on this phone?
+ *
+ * ⚠️⚠️ ONE RULE, TWO CALLERS (17 October 2026): the health check that NAMES them, and the press that puts
+ * them back. **A second copy of this comparison is how the two would come to disagree about the same seven
+ * orders** — the fault this app has now written down often enough to stop repeating.
+ *
+ * An order is accounted for when it is: on this phone now, on the Removed list now, **on the copy's own
+ * Removed list** (a removal whose row has since been pruned is still explained by the copy written while
+ * it was there), or **covered by a receipt she has marked void** — matched BOTH by the code the void record
+ * names AND by the receipt number the order carries, because a void record made before v441 may name a code
+ * the order no longer wears.
+ *
+ * ⚠️ GROUPED, because an order is several rows sharing one code. Putting back one row of it would put back
+ * a partial order, so each entry carries every row of its group.
+ *
+ * @returns {{code: string, orders: object[]}[]} sorted by code; empty when nothing is unexplained.
+ */
+export function unaccountedOrders(state, snapState) {
+  const codesOfOrder = (o) => {
+    if (!o) return [];
+    return [orderCode(o), codeFromId(o)].filter((c) => c && c !== "??????");
+  };
+  const codeSet = (list) => {
+    const s = new Set();
+    for (const o of Array.isArray(list) ? list : []) for (const c of codesOfOrder(o)) s.add(c);
+    return s;
+  };
+  const here = codeSet(state && state.orders);
+  const shelf = codeSet(state && state.removedOrders);
+  const shelfThen = codeSet(snapState && snapState.removedOrders);
+
+  // ⚠️ READ FROM BOTH SIDES, for the same reason the Removed list is: the record has to travel, and the
+  // copy is what remembers it if this phone's row is gone.
+  const voidRecs = [
+    ...(Array.isArray(state && state.voidedReceipts) ? state.voidedReceipts : []),
+    ...(Array.isArray(snapState && snapState.voidedReceipts) ? snapState.voidedReceipts : []),
+  ];
+  const voidedNos = new Set();
+  const voidedCodes = new Set();
+  for (const v of voidRecs) {
+    const n = Math.floor(Number(v && v.no));
+    if (Number.isFinite(n) && n > 0) voidedNos.add(n);
+    const c = String((v && v.code) || "").trim().toUpperCase();
+    if (c && c !== "??????") voidedCodes.add(c);
+  }
+  const declaredGone = new Set();
+  const groups = groupOrders(Array.isArray(snapState && snapState.orders) ? snapState.orders : []);
+  for (const g of groups) {
+    const first = g.orders[0];
+    if (!first) continue;
+    const codes = codesOfOrder(first);
+    const n = Math.floor(Number(receiptNoOfGroup(g.orders)));
+    const hit = codes.some((c) => voidedCodes.has(String(c).toUpperCase()))
+      || (Number.isFinite(n) && n > 0 && voidedNos.has(n));
+    if (hit) for (const c of codes) declaredGone.add(c);
+  }
+
+  const out = [];
+  const seen = new Set();
+  for (const g of groups) {
+    const first = g.orders[0];
+    if (!first) continue;
+    const codes = codesOfOrder(first);
+    if (!codes.length) continue;
+    if (codes.some((c) => here.has(c) || shelf.has(c) || shelfThen.has(c) || declaredGone.has(c))) continue;
+    const primary = orderCode(first) || codes[0];
+    if (seen.has(primary)) continue;
+    seen.add(primary);
+    out.push({ code: primary, orders: g.orders });
+  }
+  out.sort((a, b) => String(a.code).localeCompare(String(b.code)));
+  return out;
+}
+
+/**
+ * Put back ONLY the orders a saved copy holds that this phone cannot account for.
+ *
+ * ⭐ **This is the additive sibling `mergeRestore`'s name always implied.** It ADDS; it never removes, never
+ * rewrites a record that is already here, and never touches anything but `orders` — no products, no money,
+ * no bake days, no Removed list. An order that is on the list or on the Removed shelf is left exactly as it
+ * is, so **it cannot resurrect a cancellation.**
+ *
+ * ⚠️ AND IT IS NEVER ONE-WAY, the same discipline as a rewind: it takes a "Before put-back" copy first, so
+ * the press can be undone.
+ *
+ * @param {object} state  the live state (mutated only by appending the missing rows)
+ * @param {object} row    the saved copy's row from `listBackups`
+ * @param {{dryRun?: boolean}} opts  dryRun counts them and changes nothing at all
+ */
+export async function putBackOrders(state, row, { dryRun = false } = {}) {
+  const got = await getBackup(state, row && row.id);
+  if (!got || !got.ok) return { ok: false, reason: (got && got.reason) || "Couldn't load that copy" };
+  let snap;
+  try { snap = JSON.parse(got.row.data); } catch { return { ok: false, reason: "That copy couldn't be read" }; }
+  if (!snap || typeof snap !== "object") return { ok: false, reason: "That copy couldn't be read" };
+
+  const found = unaccountedOrders(state, snap);
+  if (!found.length) return { ok: true, count: 0 };
+  if (dryRun) return { ok: true, count: found.length, codes: found.map((x) => x.code) };
+
+  // Bring this phone and the sync baseline up to date first, so an order that has just come down from the
+  // other phone is not "put back" as a second copy of itself.
+  const freshen = await sync.refresh(state);
+  if (!freshen.ok) return { ok: false, reason: "You need to be online to put orders back" };
+  const safe = await postSnapshot(state, "manual", `Before put-back · ${localWhen()}`, snapshotState(state));
+  if (!safe.ok) return { ok: false, reason: `Couldn't save a "before" copy first: ${safe.reason}` };
+
+  // ⚠️ RECOMPUTED AFTER THE FRESHEN, for the same reason — the refresh may have brought one of them down.
+  const stillMissing = unaccountedOrders(state, snap);
+  const have = new Set((Array.isArray(state.orders) ? state.orders : []).map((o) => o && o.id).filter(Boolean));
+  let added = 0;
+  for (const { orders } of stillMissing) {
+    let put = false;
+    for (const o of orders) {
+      if (!o || !o.id || have.has(o.id)) continue;
+      state.orders.push(JSON.parse(JSON.stringify(o)));
+      have.add(o.id);
+      put = true;
+    }
+    if (put) added += 1;
+  }
+  if (!added) return { ok: true, count: 0 };
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(state));
+  } catch (err) {
+    return { ok: false, reason: `Couldn't write to this phone: ${netErr(err)}` };
+  }
+  return { ok: true, count: added, at: safe.at };
 }
 
 // ── read-only "View" digest ────────────────────────────────────────────────
@@ -440,7 +585,7 @@ export async function restoreSnapshot(state, row) {
   const safe = await postSnapshot(state, "manual", `Before restore · ${localWhen()}`, current);
   if (!safe.ok) return { ok: false, reason: `Couldn't save a "before" copy first: ${safe.reason}` };
 
-  const restored = mergeRestore(state, snap);
+  const restored = rewindTo(state, snap);
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(restored));
   } catch (err) {

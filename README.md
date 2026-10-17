@@ -756,6 +756,46 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## v530 → v531 — "Put back missing orders": an additive repair beside the rewind (17 Oct 2026, **jerky-only**)
+
+**6 files changed (`+305 / −62`); no SQL, nothing to deploy.** Suite **3503 → 3506**.
+
+### The fault
+
+⚠️ **`mergeRestore()` was named a merge and never merged anything** — it replaces the whole state with the
+copy, carrying over only the three per-device settings. ⚠️ **The Restore button's own dialog was always
+honest** (*"Everything added after it is removed from this phone AND your shared cloud…"*), so the rewind
+was not hidden — **but the check recommended it as the answer to "why are these orders missing?", and that
+is a week-long rewind offered as a diagnostic.** And there was **no safe way to bring back one order**.
+
+### The fix, in three parts
+
+**1. `rewindTo`** — the function now says what it does. *(Internal name only; behaviour unchanged, and its
+warning unchanged.)*
+
+**2. `unaccountedOrders(state, snap)` — ONE rule, TWO callers.** ⚠️ **The check that names the orders and
+the press that puts them back must agree about WHICH orders are missing**, and two copies of a comparison is
+how the two come to disagree about the same seven. It is exported from `backups.js`, `health.js` imports it,
+and it answers: an order is accounted for when it is on this phone, on the Removed list, **on the copy's own
+Removed list**, or **covered by a receipt she marked void** (matched both by code and by receipt number).
+⚠️ **It returns one entry per ORDER, grouped** — an order is several rows sharing one code, and putting back
+one row would put back half an order.
+
+**3. `putBackOrders(state, row, {dryRun})`** — **adds only**, and never removes, rewrites, or touches
+anything but `orders`. ⚠️ **It refreshes the sync baseline first and takes a "Before put-back" copy**, the
+same discipline a rewind has; and it **recomputes after the refresh**, so an order that has just come down
+from the other phone is not added as a second copy of itself. ⚠️ **A `dryRun` changes nothing at all** — the
+screen asks it first, so the confirmation names the number it will add rather than a button that says
+nothing until pressed.
+
+**Wiring:** the check's `fix` text now points at the new press and says leaving them alone costs nothing;
+`Backup and safety` gains **Put back missing orders** between Restore and Download.
+
+⚠️ **THE TEST THAT MATTERS MOST, and the first version of it did not:** an order **added after the copy**
+must survive. **The first test passed with a rewind put in place** — it only checked the count — which is
+exactly the "assertion that passes whatever happened" fault this repo keeps recording. It now carries a
+live-only order and asserts it is still there; **biting it with `state.orders = []` fails by name.**
+
 ## v529 → v530 — the Removed list remembers 30 days (17 Oct 2026, **jerky-only**)
 
 **One constant, raised at her asking: `REMOVED_KEEP_HOURS` 48 → 720.** ⚠️ **It is worth recording where 48
