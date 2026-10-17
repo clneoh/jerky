@@ -2258,6 +2258,195 @@ test("★★ the reason a hand-over did not complete is KEPT, and cleared by the
   } finally { restore(); }
 });
 
+// ── v531: a thousand records is a PAGE, not a cap ────────────────────────────
+//
+// ⚠️⚠️ HER WORDS, TO THE OTHER APP: __"what is the value of a system that can handle 1000 records only?"__
+// ⭐ **The read was ONE request with `limit=1000` and NO `order=`** — so a phone saw an arbitrary thousand and
+// silently never saw the rest, **and WHICH thousand could differ from one read to the next.** ⭐ **A cap on a
+// business's records is not a capacity, it is an expiry date: an order is one record per ITEM, and nothing
+// removes old orders.**
+test("★★★ pull: reads EVERY page — a thousand is a page size, not a cap (v531)", async () => {
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    seedToken(store);
+    const urls = [];
+    const row = (i) => ({ kind: "uoms", id: `u_${i}`, data: "{}", updated_at: "2026-01-01T00:00:00.000Z", _deleted: false });
+    const restoreFetch = installFetch(async (url) => {
+      urls.push(url);
+      const offset = Number(new URL(url).searchParams.get("offset") || 0);
+      // ⭐ A FULL page, then a SHORT one — the ordinary way this stops, and the only one that means "all of it".
+      const n = offset === 0 ? sync.PULL_PAGE : 250;
+      return { ok: true, json: async () => Array.from({ length: n }, (_, i) => row(offset + i)) };
+    });
+    try {
+      const r = await sync.pull(st);
+      // ⚠️ THE PAGES FIRST, and only then whether it succeeded — **the property this test is about is that it
+      // KEEPS READING.** Asserting `ok` first made a one-page read fail on a different sentence entirely, and
+      // a test that fails for the wrong reason reads like the right one passing.
+      assert.equal(urls.length, 2, "★ the read stopped after ONE page — **anything past a thousand rows is "
+        + "silently never seen, and it is not lost, it simply never arrives**");
+      assert.equal(r.ok, true, "the read itself failed, so nothing below proves anything");
+      // ⚠️ THE ORDER IS NOT COSMETIC: without it `offset` paging can repeat a row on one page and skip one
+      // between pages — the same silent loss in a new dress.
+      assert.match(urls[0], /order=kind,id/,
+        "★ the read carries no ORDER, so paging can skip and repeat rows between pages");
+      assert.equal(sync.lastCloudCount(), sync.PULL_PAGE + 250,
+        "★ the count does not describe every row the read fetched — **the number on her screen would be the "
+        + "page, not the book**");
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});
+
+test("★★★ and a book past the ceiling is REPORTED, never merged as though it were whole (v531)", async () => {
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    seedToken(store);
+    // ⭐ Every page is FULL, so the only way out is the hard stop.
+    const restoreFetch = installFetch(async () => ({
+      ok: true,
+      json: async () => Array.from({ length: sync.PULL_PAGE }, (_, i) => ({
+        kind: "uoms", id: `u_${i}`, data: "{}", updated_at: "2026-01-01T00:00:00.000Z", _deleted: false,
+      })),
+    }));
+    try {
+      const r = await sync.pull(st);
+      assert.equal(r.ok, false, "★ a read that hit the ceiling was reported as a successful one — **and a "
+        + "phone that thinks it has the whole book will PUSH on a view it knows is short**");
+      assert.match(r.reason, /records/, "the refusal does not say what happened");
+      assert.equal(sync.lastCloudCount(), null,
+        "★ a PARTIAL read recorded a count as though it had seen the whole book");
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});
+
+test("★★ an unread count is null, never 0 — `Number(null)` IS 0 (v531)", () => {
+  const { restore } = installStorage();
+  try {
+    assert.equal(sync.lastCloudCount(), null,
+      "★ a phone that has never read reported a count of 0 — **a measurement it never took, shown as a fact**");
+  } finally { restore(); }
+});
+
+// ── v533: ask only for what has CHANGED ─────────────────────────────────────
+//
+// ⚠️⚠️ AND THE NUMBER IS THE DATABASE'S, NOT THE PHONE'S CLOCK. ⭐ **Your two phones are not the same clock: a
+// phone running behind writes its edits with a time in the PAST, so "everything after 10:23" would never look
+// there again.** ⚠️ **With a full read that only costs speed; with a "since" read a missed record is missed
+// for ever.**
+const seqRow = (id, seq) => ({ kind: "uoms", id, data: "{}", updated_at: "2026-01-01T00:00:00.000Z", _deleted: false, seq });
+
+test("★★★ pull: after one full read it asks only for what CHANGED (v533)", async () => {
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    seedToken(store);
+    const urls = [];
+    const restoreFetch = installFetch(async (url) => {
+      urls.push(url);
+      return { ok: true, json: async () => [seqRow("u1", 41)] };
+    });
+    try {
+      await sync.pull(st);   // the FIRST read — the whole book, a short page
+      // ⚠️ It must NOT start with a cursor: before the first complete read there is nothing to start from.
+      assert.equal(urls[0].includes("seq=gt."), false,
+        "★ the FIRST read already carried a cursor — **there is nothing to start one from, so it would skip "
+        + "every record written before it**");
+      urls.length = 0;
+      await sync.pull(st);   // the second — only what changed
+      assert.match(urls[0], /seq=gt\.41/,
+        "★ the second read did not ask for what changed — **it downloads the whole book every 30 seconds, "
+        + "which is the thing v533 exists to stop**");
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});
+
+test("★★★ and if the database step has NOT been run, it FALLS BACK rather than stopping (v533)", async () => {
+  // ⚠️⚠️ **A missing column must never leave her with no sync at all.** ⭐ The fallback is a FULL, PAGED read:
+  // slower, never wrong — and the flag stops this phone asking again.
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    seedToken(store);
+    const urls = [];
+    const restoreFetch = installFetch(async (url) => {
+      urls.push(url);
+      // ⭐ Exactly what PostgREST does when `seq` does not exist.
+      if (url.includes("select=") && url.includes("seq")) return { ok: false, status: 400, json: async () => ({}) };
+      return { ok: true, json: async () => [] };
+    });
+    try {
+      const r = await sync.pull(st);
+      assert.equal(r.ok, true,
+        "★ a missing column stopped the sync entirely — **the fallback must be a full read: slower, never wrong**");
+      assert.equal(urls.length, 2, "the fallback did not happen (it should ask, fail, then ask again without seq)");
+      assert.equal(urls[1].includes(",seq"), false, "the retry still names the column that does not exist");
+      assert.equal(JSON.parse(store.get("bakeadmin.sync")).seqUnsupported, true,
+        "★ the refusal is not remembered — **this phone would ask for the missing column on every beat, for ever**");
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});
+
+test("★★★ a cursor read must NOT overwrite the record count with the few rows it fetched (v533)", async () => {
+  // ⚠️⚠️ **A BUG I WROTE AND CAUGHT BEFORE SHIPPING IT.** The count on Check my system comes from the last
+  // read's length — and a cursor read fetches only the CHANGED rows. ⭐ **Take its length and her book would
+  // collapse to "1 record" the first time nothing had changed** — a number that describes a different thing
+  // than it says, which is worse than no number at all.
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    seedToken(store);
+    let call = 0;
+    const restoreFetch = installFetch(async () => {
+      call += 1;
+      return { ok: true, json: async () => (call === 1
+        ? [seqRow("u1", 10), seqRow("u2", 11), seqRow("u3", 12)]   // the whole book
+        : [seqRow("u2", 11)]) };                                   // one changed row
+    });
+    try {
+      await sync.pull(st);
+      assert.equal(sync.lastCloudCount(), 3, "the first full read did not record the size of the book");
+      await sync.pull(st);
+      assert.equal(sync.lastCloudCount(), 3,
+        "★ a cursor read replaced the book's size with the number of rows that happened to change — "
+        + "**her count would read \"1 record\" on a quiet day**");
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});
+
+// ── v539: forgetting the cursor must not cost her the queue ──────────────────
+test("★★★ forgetCursor clears what the last read saw, and NOTHING else (v539)", async () => {
+  // ⚠️⚠️ IT IS CALLED FROM THE TWO PRESSES THAT REPLACE EVERYTHING — Restore and Import. ⭐ **The one thing it
+  // must never touch is `pending`:** a queue dropped here would lose exactly the unsent changes this whole file
+  // exists to protect, in the same press that is meant to be the safe way back.
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    st.orders = [{ id: "o1", productId: "p1", qty: 1 }];
+    seedToken(store);
+    sync.markDirty(st, "2026-01-01T00:00:00.000Z");
+    // A phone that has read the whole book, and is still holding two changes.
+    const b = JSON.parse(store.get("bakeadmin.sync"));
+    b.lastSeq = 41;
+    b.lastCount = 791;
+    b.pending = { "orders:o1": { kind: "orders", id: "o1", updated_at: "2026-01-01T00:00:00.000Z", data: { id: "o1" }, _deleted: false } };
+    store.set("bakeadmin.sync", JSON.stringify(b));
+    const queuedBefore = Object.keys(b.pending).length;
+
+    sync.forgetCursor();
+
+    const after = JSON.parse(store.get("bakeadmin.sync"));
+    assert.equal(after.lastSeq, null, "★ the cursor survived — the next read asks \"after\" a book this phone no longer holds");
+    assert.equal(after.lastCount, null, "the count still describes the book from before");
+    assert.equal(Object.keys(after.pending).length, queuedBefore,
+      "★ forgetting the cursor DROPPED THE QUEUE — **that loses the unsent changes the queue exists to protect, "
+      + "in the very press that is meant to be the safe way back**");
+    assert.ok(after.snapshot && Object.keys(after.snapshot).length,
+      "★ the snapshot was cleared too — **without it, nothing knows what this phone already handed over**");
+  } finally { restore(); }
+});
+
 // ── v475: a queue holding ONLY an un-sendable record ─────────────────────────
 test("★★★ flush: a queue holding only a record that can never be sent is swept, and still reports ok", async () => {
   // ⚠️⚠️ HER REPORT, IN TWO LINES: __"after sync now, the phone still say 1 changes waiting to be send"__
@@ -2547,13 +2736,16 @@ test("★★★ the pull reads EVERYTHING first, then asks only for what changed
       assert.ok(urls.length >= 1, "no request at all");
       assert.ok(!urls[0].includes("seq=gt."),
         `★ the FIRST pull asked for a delta — it has no cursor yet: ${urls[0]}`);
-      assert.ok(urls[0].includes("order=seq"), urls[0]);
+      // ⚠️ A full read is ordered by the record key, a cursor read by `seq` — the order is what makes
+      // offset paging safe in each case, so it is pinned per case rather than as one word.
+      assert.ok(urls[0].includes("order=kind,id"), `★ the full read is not ordered by key: ${urls[0]}`);
 
       setJournal(store, { lastSeq: 4200, seqUnsupported: false });
       urls.length = 0;
       await sync.pull(st);
       assert.ok(urls[0].includes("seq=gt.4200"),
         `★ the second pull read the whole book again instead of asking from the cursor: ${urls[0]}`);
+      assert.ok(urls[0].includes("order=seq"), `★ a cursor read is not ordered by the cursor: ${urls[0]}`);
     } finally { restoreFetch(); }
   } finally { restore(); }
 });

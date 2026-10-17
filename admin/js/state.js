@@ -344,10 +344,57 @@ export function ensureSupabase(state) {
   return changed;
 }
 
+// ⚠️⚠️ A SAVE THAT FAILED USED TO LOOK EXACTLY LIKE A SAVE THAT WORKED (v534).
+//
+// ⭐ **It caught the error, wrote it to the console, and carried on** — and the console is something she will
+// never see. ⚠️ **Then `saveHook` still ran, so the change was QUEUED AS THOUGH IT HAD BEEN SAVED** — meaning
+// "it saved" and "this phone is full" could both be true, silently, and the other phone would then hold a
+// change this phone had lost.
+// ⭐⭐ **This is the same disease as the stuck queue, in a different organ: a promise with nothing behind it.**
+// ⚠️ **And it is a GROWTH fault** — it only appears as her book grows, which is exactly why it had never been
+// seen. ⭐ The hook still runs on a failure, and that is deliberate: **if this phone cannot keep the change,
+// the shared data is the only place it survives.**
+// ⭐⭐ HOW MUCH ROOM THIS PHONE'S SAVED DATA TAKES, MEASURED RATHER THAN GUESSED (v534).
+// ⚠️ IN BYTES, NOT CHARACTERS: her 中文 and BM text is THREE bytes a character in UTF-8, so counting
+// characters would under-report the space and the warning would arrive late.
+// ⚠️ THE LIMIT IS THE BROWSER'S, NOT OURS — it is about 5 MB per site in Chrome and Safari, and it is the
+// same store this whole app writes to on every save. Named once here so the check's sentence and its
+// arithmetic cannot disagree.
+export const PHONE_STORE_LIMIT = 5 * 1024 * 1024; // ~5 MB, the browser's own limit
+export const PHONE_STORE_ALERT = 0.85; // a red X only when it is nearly full, never a year early
+
+export function storedBytes(state) {
+  try {
+    const s = JSON.stringify(state);
+    if (typeof TextEncoder !== "undefined") return new TextEncoder().encode(s).length;
+    return s.length; // ⚠️ A fallback that may under-count — better than claiming a number we did not measure.
+  } catch {
+    return null; // ⚠️ null, never 0: an unmeasured size must be SKIPPED, not reported as "empty".
+  }
+}
+
+// ⚠️ THE VARIABLE IS `lastSaveFailure`, NOT `saveFailure` — ⭐ **the first version declared a `let` and a
+// `function` with the SAME name at module scope, which is a SyntaxError, and it took every test that imports
+// this module down with it.** ⚠️ **Same class as the `const` among an element tree's arguments (v526): the
+// module fails to load, so the fault looks like hundreds of unrelated failures rather than one line.**
+let lastSaveFailure = null;
+export function saveFailure() { return lastSaveFailure; }
+// ⚠️ Test-only: lets a test prove the failure is REPORTED rather than swallowed.
+export function resetSaveFailure() { lastSaveFailure = null; }
+
 export function save(state) {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(state));
+    // ⭐ A clean save CLEARS the flag, so a stale failure never outlives the phone being made room on.
+    lastSaveFailure = null;
   } catch (err) {
+    // ⚠️ `QuotaExceededError` is the one that matters — the phone is full — but any failure is recorded,
+    // because "it did not save" is the only fact that matters here.
+    lastSaveFailure = {
+      at: new Date().toISOString(),
+      name: String((err && err.name) || "Error"),
+      reason: String((err && err.message) || "the phone could not store your data"),
+    };
     console.error("Failed to save", err);
   }
   saveHook?.(state);

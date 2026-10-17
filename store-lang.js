@@ -863,24 +863,29 @@ const ms = {
   orderCancelNoteOne: "Tukar atau batal sehingga 1 hari sebelum hari pos. Bayaran tidak dikembalikan — tempahan boleh dipindah ke hari lain.",
 
   confirmAddWaTitle: "Sila masukkan nombor WhatsApp anda.",
+  confirmAddrTitle: "Sila masukkan alamat pos anda.",
+  confirmAddrBody: "Kami hantar ke seluruh negara — snek anda tidak dapat dihantar tanpa alamat lengkap (jalan, kawasan, bandar & poskod).",
   confirmAddWaBody: "Kami guna untuk sahkan tempahan dan hantar QR pembayaran anda.",
   needItemTitle: "Order masih kosong.",
   needItemBody: "Pilih sesuatu dari menu di atas dahulu — kemudian anda boleh buat order.",
   needDayTitle: "Pilih hari pos anda dahulu.",
   needDayBody: "Langkah 1, di atas. Pilih hari anda mahu snek anda dibuat — kemudian anda boleh menambahnya.",
   confirmAddNameTitle: "Sila masukkan nama anda.",
-  confirmAddNameBody: "Kami guna untuk tahu order ini untuk siapa semasa mengesahkannya.",
-  confirmClosedTitle: "Tempahan untuk hari itu sudah ditutup.",
-  confirmClosedBody: "Tempahan untuk hari ini ditutup pada %1 sehari sebelum — sila pilih hari pos yang lain.",
-  confirmChangedTitle: "Tempahan anda baru sahaja berubah.",
-  confirmChangedBody: "Ada snek yang habis semasa anda menempah — kami sudah kemas kini troli anda ikut apa yang tinggal.",
-  confirmChangedSub: "Sila semak tempahan anda dan tekan Hantar tempahan sekali lagi.",
-  sendingToBakery: "Sedang menghantar tempahan anda…",
-  orderRecvTitle: "🎉 Tempahan diterima!",
-  orderRecvBody: "%1 sudah terima tempahan anda.",
-  orderRecvThanksBody: "Terima kasih %1! %2 sudah terima tempahan anda.",
-  confirmAddrTitle: "Sila masukkan alamat pos anda.",
-  confirmAddrBody: "Kami hantar ke seluruh negara — snek anda tidak dapat dihantar tanpa alamat lengkap (jalan, kawasan, bandar & poskod).",
+  // ⚠️ THE LAST OF HER 16 TRANSLATION DECISIONS TO BE APPLIED (17 Oct 2026). ⚠️ **The old line dropped the
+  // object of "guna" and dropped "with you"** — "Kami guna untuk tahu…" reads as an unfinished verb. Hers:
+  // "Kami guna **ini** untuk tahu order ini untuk siapa semasa **kami** mengesahkannya **dengan anda**."
+  // ⭐ **This string is not drawn on the shop yet** (it belongs to the step lock, which is unbuilt) — **which is
+  // exactly why it was the one nobody had looked at.** See `test/store-vocab.test.js`.
+  confirmAddNameBody: "Kami guna ini untuk tahu order ini untuk siapa semasa kami mengesahkannya dengan anda.",
+  confirmClosedTitle: "Order untuk hari itu sudah ditutup.",
+  confirmClosedBody: "Order untuk hari itu ditutup pada %1 sehari sebelum — sila pilih hari membakar yang lain.",
+  confirmChangedTitle: "Order anda baru sahaja berubah.",
+  confirmChangedBody: "Ada barang yang habis semasa anda menempah — kami sudah kemas kini troli anda ikut apa yang tinggal.",
+  confirmChangedSub: "Sila semak order anda dan tekan Hantar order sekali lagi.",
+  sendingToBakery: "Sedang menghantar order anda…",
+  orderRecvTitle: "🎉 Order diterima!",
+  orderRecvBody: "%1 sudah terima order anda.",
+  orderRecvThanksBody: "Terima kasih %1! %2 sudah terima order anda.",
   orderRecvLine: "📅 %1 · %2 · RM%3",
   orderRecvSub: "Tempahan anda sudah diterima — kami akan WhatsApp anda sebaik sahaja disahkan.",
   failTitle: "Kami tidak dapat menghantar tempahan anda buat masa ini.",
@@ -910,7 +915,11 @@ const ms = {
   promoFriend: "Diskaun bawa rakan yang dihantar kepada anda: -%1",
   tripStatus: "Penghantaran: %1",
   tripFinding: "Sedang mencari driver",
-  tripOnTheWay: "Pemandu dalam perjalanan",
+  // ⚠️ THE FIFTH DRIVER STRING, AND THE ONE HER DECISION MISSED (17 Oct 2026). ⭐ **Her rule was the WORD —
+  // __""driver", never `pemandu`"__ — and the note that recorded it listed four keys. This is the fifth.**
+  // ⭐⭐ **A rule recorded as a list of strings is a rule that stops at the end of the list**; the test below
+  // sweeps the whole Malay dictionary instead.
+  tripOnTheWay: "Driver dalam perjalanan",
   tripCollected: "Telah diambil",
   tripDelivered: "Telah dihantar",
   tripStopped: "Dibatalkan",

@@ -21,7 +21,7 @@
 // ⚠️ AND IT NEVER NAMES A CAUSE. It reports what it found and what it means. What removed an order is not
 // knowable from the data that is left — which is the whole reason v444 keeps a copy of it.
 
-import { byId, codeFromId, groupOrders, orderCode, orderLinePrice, removedKeepWords } from "./state.js";
+import { byId, codeFromId, groupOrders, orderCode, orderLinePrice, removedKeepWords, storedBytes, PHONE_STORE_LIMIT, PHONE_STORE_ALERT } from "./state.js";
 import { isCollected } from "./money.js";
 import { receiptNoOfGroup } from "./receipts.js";
 import { listFields, PULL_CEILING } from "./sync.js";
@@ -139,6 +139,33 @@ export function localChecks(state) {
         "A row on the Removed list has no date on it, so the list cannot be trusted to say how old it is.",
         "Nothing to do — this one is the app's own bookkeeping and tells us the list was written by an older version.")
       : pass("shelf", "Every removed order says when it came off"));
+  }
+
+  // ── 8 · there is room on this phone for your data (v534) ────────────────
+  //
+  // ⚠️⚠️ WHY THIS IS ON THE PAGE AT ALL. Saving used to fail into a console she never sees, and the ONLY sign
+  // was nothing at all — ⭐ **the same disease as the stuck queue: a promise with nothing behind it, and a
+  // GROWTH fault that only appears once the book is big.** ⭐ **She asked the question this answers: "any risky
+  // system handling that we should eliminate BEFORE the database builds up".**
+  // ⭐ It is a PASS showing the number until the phone is nearly full, and only then a FAIL — **a red X a year
+  // early is the warning she learns to ignore.**
+  {
+    const used = storedBytes(state);
+    if (used == null) {
+      out.push(skipped("room", "There is room on this phone for your data",
+        "This phone's storage could not be measured, so nobody can say how much room is left."));
+    } else {
+      const pct = Math.round((used / PHONE_STORE_LIMIT) * 100);
+      const mb = (n) => `${(n / (1024 * 1024)).toFixed(2)} MB`;
+      const size = `${mb(used)} of about ${mb(PHONE_STORE_LIMIT)} (${pct}%)`;
+      if (used >= PHONE_STORE_LIMIT * PHONE_STORE_ALERT) {
+        out.push(fail("room", "There is room on this phone for your data", [size],
+          `What this phone stores is ${size} full. When a browser's storage fills up, SAVING STOPS — and until v534 that happened silently, so a change could be lost while the screen still looked normal.`,
+          "This needs doing before the phone fills: the oldest cloud copies can be deleted, and a device with more room can take over. Nothing is lost — your shared data and your saved copies still hold everything."));
+      } else {
+        out.push({ ...pass("room", "There is room on this phone for your data"), detail: [size] });
+      }
+    }
   }
 
   return out;
@@ -323,13 +350,14 @@ export function backupChecks(state, copy, when = "") {
     return [skipped("stable", TITLE,
       "Your saved copies could not be opened — sign in to shared data and run this again.")];
   }
-  // ★★★ THE COMPARISON IS ONE RULE, ASKED IN ONE PLACE (17 October 2026). ⚠️ **The press that puts these
-  // orders back has to agree with this check about WHICH orders are missing** — and two copies of a
-  // comparison is how the two come to disagree about the same seven. `unaccountedOrders` is the single
-  // reader: on this phone, on the Removed list, on the copy's own Removed list, or covered by a receipt she
-  // marked void (matched by code AND by receipt number). It returns one entry per ORDER, grouped, so the
-  // count here is a count of orders rather than of codes.
-  const missing = unaccountedOrders(state, copy).map((x) => x.code);
+  // ★★★ AND THE COMPARISON IS NOT MADE HERE ANY MORE (v532). ⚠️⚠️ **ONE RULE, TWO CALLERS:** this check
+  // NAMES the orders a copy holds that this phone cannot account for, and "Put back missing orders" PUTS THEM
+  // BACK — and a second copy of the comparison is exactly how the two would come to disagree about the same
+  // orders. ⭐ `unaccountedOrders` (backups.js) owns it: on this phone now · on the Removed list now · on the
+  // copy's own Removed list · or covered by a receipt she has marked void, matched BOTH by the code the void
+  // record names and by the receipt number the order carries.
+  const found = unaccountedOrders(state, copy);
+  const missing = found.map((x) => x.code);
 
   return [missing.length
     ? fail("stable", TITLE, missing.map((c) => `#${c}`),
@@ -337,8 +365,29 @@ export function backupChecks(state, copy, when = "") {
       // copy looks back about a week, and the Removed list remembers 48 hours** — so the whole band in
       // between is an order she took off deliberately, with nothing left to explain it.
       `The copy saved on ${when || "an earlier day"} holds ${missing.length === 1 ? "an order" : "orders"} that this phone no longer has — and ${missing.length === 1 ? "it is" : "they are"} not on the Removed list either, so the app has no record of taking ${missing.length === 1 ? "it" : "them"} off. TWO innocent cases look exactly the same, so check the dates before worrying: a removal made before the Removed list existed, and — because the Removed list keeps a row for only ${removedKeepWords()} — an order you took off yourself longer ago than that, which this copy is old enough to remember.`,
-      "Open Backup and safety and put that copy back if these are orders you took, or search WhatsApp for the number and enter the order again by hand.")
+      // ⚠️⚠️ AND THE WAY OUT NO LONGER OFFERS A REWIND (v532). ⭐ **"Put that copy back" meant Restore, which
+      // takes the WHOLE app back to the day of the copy — here, in the shared data and on her other phone.**
+      // ⭐ **It is the right tool for "put everything back", and the wrong one for one missing order** — and
+      // this check was recommending it as though it were a repair. It now names the press that does exactly
+      // this job, and says the thing she needs to hear: leaving them alone costs her nothing.
+      "Open Backup and safety and press Put back missing orders — it puts back only these, and leaves everything you still have exactly as it is. Leaving them alone costs you nothing, and nothing else on this phone is changed. Or, if one of them is a real order you want back now, search WhatsApp for the number and enter it again by hand.")
     : pass("stable", TITLE)];
+}
+
+// ★★★ AND WHETHER THIS PHONE ACTUALLY SAVED WHAT IT SAID IT SAVED (v534).
+//
+// ⚠️⚠️ `save()` used to catch a full-phone error, write it to the console, and carry on — ⭐ **and the console
+// is something she will never see.** ⚠️ **It then still queued the change, so "it saved" and "the phone is
+// full" were BOTH TRUE, silently.**
+// ⭐ `saveFail` is passed in rather than read from the module, so a test can drive this without leaving a
+// global set for the tests after it.
+export function saveCheck(saveFail) {
+  const TITLE = "Every change is saved on this phone";
+  if (!saveFail || typeof saveFail !== "object") return [pass("saved", TITLE)];
+  const when = String(saveFail.at || "").slice(0, 10);
+  return [fail("saved", TITLE, [saveFail.name || "Save failed"],
+    `This phone could not store your last change${when ? ` (${when})` : ""}: ${saveFail.reason}. The change was still sent to your shared data, so it is not lost — but THIS phone could not keep its own copy of it, and on a reload this phone will take the shared data's version back down.`,
+    "This happens when the browser's storage for the app is full. The oldest cloud copies can be deleted to free room, and nothing is lost — your shared data and the remaining copies still hold everything.")];
 }
 
 // ── the check that asks whether this phone's records REACHED the other one ───
@@ -475,6 +524,34 @@ export function contentCheck(state, cloud, payloads, pending) {
 // ★ AND WHAT IS STILL WAITING TO LEAVE (v466). ⚠️ **THIS IS THE NUMBER THAT DECIDED WHETHER THE PAGE ABOVE
 // IS A FAULT OR A PHOTOGRAPH OF A PHONE MID-SEND** — and until now nothing could show it at all. ⭐ It needs
 // no network: it is a local count.
+// ★★★ HOW BIG HER SHARED DATA IS — INFORMATION, NOT A WARNING (v531).
+//
+// ⚠️⚠️ WHY IT IS ON THE PAGE AT ALL. The read used to be ONE request capped at 1,000 rows, and **`which`
+// thousand could differ from one read to the next** — so records arrived and then did not, on two devices that
+// never agreed, with nothing saying why. ⭐ **A cap on a business's records is not a capacity, it is an expiry
+// date**, and an order is one record per ITEM, so a working bakery reaches it in months.
+// ⭐ **She asked to see the number: __"you asked to see the count first"__.** It is a PASS when the book is
+// inside what one read can take, and it FAILS only at the ceiling — the one point where a record could still
+// fail to arrive. ⚠️ **Unknown is SKIPPED, never a pass**, and ⚠️ **`Number(null)` IS 0**, so an unmeasured
+// count must never be printed as "0 records".
+export function recordsCheck(count, ceiling) {
+  const TITLE = "How many records your shared data holds";
+  if (count == null || !Number.isFinite(Number(count))) {
+    return [skipped("records", TITLE, "This phone has not read your shared data yet, so it has no count to give. Sign in to shared data and run this again.")];
+  }
+  const n = Math.max(0, Math.floor(Number(count)));
+  const cap = Number.isFinite(Number(ceiling)) ? Number(ceiling) : 0;
+  const words = `${n.toLocaleString("en")} record${n === 1 ? "" : "s"}`;
+  if (!cap || n < cap) {
+    // ⚠️ A PASS RENDERS THE TITLE AND ITS DETAIL AND NOTHING ELSE — so the detail carries the number, and the
+    // sentence underneath it is the reassurance that the read no longer stops at a thousand.
+    return [{ ...pass("records", TITLE), detail: [`${words} — and every one of them reaches every phone, because the sync reads them a page at a time instead of stopping at a thousand`] }];
+  }
+  return [fail("records", TITLE, [words],
+    `Your shared data holds ${words}, which is at the limit of what one read can take. Past this a record can still fail to arrive — and it would not be lost, but it would not show on this phone either.`,
+    "Tell the person who looks after the app: the read's page limit needs raising. Nothing on this phone will fix it, and no record has been changed.")];
+}
+
 export function waitingCheck(waiting = 0, queued = null, state = null, lastFail = null) {
   const TITLE = "Nothing on this phone is still waiting to be sent";
   const n = Number.isFinite(Number(waiting)) ? Math.max(0, Math.floor(Number(waiting))) : 0;
@@ -583,6 +660,8 @@ export function runHealthChecks(state, extra = {}) {
     ...reachedCloudCheck(state, extra.cloud, extra.local),
     ...cloudOnlyCheck(state, extra.cloud, extra.local),
     ...contentCheck(state, extra.cloud, extra.payloads, extra.queued),
+    ...recordsCheck(extra.count, extra.ceiling),
+    ...saveCheck(extra.saveFail),
     ...waitingCheck(extra.waiting, extra.queued, state, extra.lastFail),
     ...recordCountCheck(extra.records),
   ];

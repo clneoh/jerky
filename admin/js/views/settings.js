@@ -563,9 +563,25 @@ export function renderSettings(root, state) {
       try { data = parseImport(text); }
       catch (err) { toast(err.message); return; }
       const counts = `${data.products.length} products · ${data.ingredients.length} ingredients · ${data.orders.length} orders`;
-      confirmDialog(`Replace ALL current data with this backup? (${counts})`,
-        () => {
+      // ★★★ AND IT IS NO LONGER A ONE-WAY DOOR (v539). ⚠️ **Restore has always saved a "Before restore" copy;
+      // Import did not, so importing the wrong file was the ONE action in the app with no way back** — the
+      // dialog said so, which was honest but not much help after the fact. ⭐ It takes the same copy now.
+      // ⚠️ THE ORDER: the copy is taken from THIS phone's data BEFORE the file is written over it.
+      // ⚠️ AND ONLY WHEN THERE IS A CLOUD TO PUT IT IN: ⭐ **an import with the cloud off is how a new phone is
+      // set up from a file, and refusing that would break the very case Import exists for.** ⚠️ But when the
+      // cloud IS ready and the copy fails, nothing is imported — the same discipline as Restore.
+      const cloudReady = backups.ready(state);
+      confirmDialog(`Replace ALL current data with this backup? (${counts})`
+          + (cloudReady ? " A \"Before import\" copy is saved first, so you can undo this." : ""),
+        async () => {
+          if (cloudReady) {
+            const safe = await backups.saveSafetyCopy(state, `Before import · ${backups.localWhen()}`);
+            if (!safe.ok) return toast(`Couldn't save a "before" copy first: ${safe.reason}. Nothing was imported.`);
+          }
           localStorage.setItem(LS_KEY, JSON.stringify(data));
+          // ⚠️⚠️ AND THE READ CURSOR IS FORGOTTEN: the whole book has just jumped, so `lastSeq` no longer
+          // describes it — **and a read that asked "after that number" would never see the older records again.**
+          sync.forgetCursor();
           location.reload();
         }, { danger: true, yesLabel: "Replace" });
     }).catch(() => toast("Couldn't read that file"));
@@ -597,6 +613,10 @@ export function renderSettings(root, state) {
       el("div", { class: "btn-row", style: "margin:0" },
         button("View", () => viewOne(row), "soft"),
         button("Restore", () => restoreOne(row), "primary"),
+        // ★★★ THE ADDITIVE SIBLING OF RESTORE (v532). ⚠️ **"Put that copy back" meant a full REWIND** — every
+        // list replaced by the copy, here, in the shared data and on her other phone — and the trace check was
+        // recommending it as though it were a repair for one missing order. ⭐ This puts back ONLY the orders
+        // that copy holds and this phone cannot account for, and touches nothing else.
         button("Put back missing orders", () => putBackOne(row), "soft"),
         button("Download", () => downloadOne(row), "ghost"),
         button("Delete", () => deleteOne(row), "ghost")));
@@ -619,31 +639,22 @@ export function renderSettings(root, state) {
       }, { danger: true, yesLabel: "Restore" });
   }
 
-  // ★★★ AND THE ADDITIVE REPAIR (17 October 2026). ⚠️⚠️ **Restore above is a REWIND — everything added
-  // after the copy goes, here, in the shared data and on the other phone.** That is the right tool for
-  // "put the whole app back to how it was", and the wrong tool for "one order has gone" — ⭐ **and until
-  // now the only thing on offer for the second question was the first, which the check itself recommended.**
-  // ⭐ It ADDS only, and only orders this phone cannot account for: on the list, or on the Removed shelf,
-  // and the order is left exactly as it is. **So it cannot resurrect a cancellation.**
-  //
-  // ⚠️ THE COUNT IS ASKED FOR FIRST, with a dry run that changes nothing — **a button that says nothing
-  // until it is pressed is a button she cannot judge**, and the question names the number it will add.
+  // ⭐ PUT BACK ONLY WHAT IS MISSING (v532) — ⚠️ **counted first with `dryRun`, so the confirmation NAMES the
+  // orders before anything is written**, and it says the two things she needs to hear: nothing she still has is
+  // changed, and a "Before put-back" copy is saved first.
   function putBackOne(row) {
-    const label = row.label || row.kind || "this backup";
-    backups.putBackOrders(state, row, { dryRun: true }).then((p) => {
-      if (!p.ok) return toast(String(p.reason || "Couldn't read that copy"));
-      if (!p.count) {
-        return toast("Nothing is missing from this copy — every order in it is on your list or on the Removed list.");
-      }
+    backups.putBackOrders(state, row, { dryRun: true }).then((d) => {
+      if (!d.ok) return toast(String(d.reason || "Couldn't read that copy"));
+      if (!d.count) return toast("Nothing in that copy is missing from this phone.");
+      const codes = d.codes.map((c) => `#${c}`).join(", ");
       confirmDialog(
-        `Put back ${p.count} order${p.count === 1 ? "" : "s"} from "${label}"? Only orders that are no longer on your list and were never on the Removed list — nothing else in the copy is touched, and nothing you still have is changed or removed. A "Before put-back" copy is saved first, so you can undo this.`,
+        `${d.count} order${d.count === 1 ? "" : "s"} in "${row.label || "this copy"}" ${d.count === 1 ? "is" : "are"} not on this phone and not on the Removed list: ${codes}. Put ${d.count === 1 ? "it" : "them"} back? Nothing you still have is changed — no product, no money, no bake day, and no Removed row — and a "Before put-back" copy is saved first.`,
         async () => {
           const r = await backups.putBackOrders(state, row);
-          if (!r.ok) return toast(String(r.reason || "Put back failed"));
-          if (!r.count) return toast("Nothing was missing by the time it ran — nothing was added.");
+          if (!r.ok) return toast(String(r.reason || "Couldn't put them back"));
           toast(`Put back ${r.count} order${r.count === 1 ? "" : "s"} — reloading…`);
           location.reload();
-        }, { yesLabel: `Put back ${p.count}` });
+        }, { yesLabel: d.count === 1 ? "Put it back" : "Put them back" });
     }).catch(() => toast("Couldn't read that copy"));
   }
 

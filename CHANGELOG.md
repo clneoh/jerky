@@ -1,8 +1,47 @@
-# Munchies Furkidz — change history (v54 → v535)
+# Munchies Furkidz — change history (v54 → v536)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**17 Oct 2026 — engine v536: A SAVE THAT FAILS NOW SAYS SO, AN IMPORT CAN BE UNDONE, AND A RESTORE NO LONGER HIDES RECORDS (nothing to run, nothing to upload).**
+
+**Six versions from the bakery, all of them from questions you asked.**
+
+**1. ⚠️ A SAVE THAT FAILS NOW TELLS YOU.** Your question: __"is there a test that you should run to detect this
+systemic problem, or any risky system handling that we should eliminate before the database build up?"__ —
+**and it found one.** When the phone is full, saving used to fail into a console you will never see, **and
+carry on as if it had worked.** ⚠️ **So "it saved" and "this phone is full" were both true at once, silently**
+— and your other phone would then hold a change this one had lost. **It says so now, and the page shows how
+full the phone is.** A full phone is a *growth* fault, which is why a year of use never showed it.
+
+**2. ⚠️⚠️ AND A REAL BUG IN THIS APP'S OWN NEW SYNC — found the same day it was built.** Your question:
+__"any other problem that can happen?"__. **Reading only what has changed needs a bookmark. Restore and
+Import both throw the whole book away and put an older one back — and the bookmark was not reset.** ⚠️ **So
+after either, the data jumped backwards while the bookmark still pointed forward, and every record older
+than it would never be read again.** Both presses now forget the bookmark, at the cost of one full read.
+⚠️ **And they forget ONLY the reading state — never the sending queue**, because that queue is exactly the
+unsent changes this app protects.
+
+**3. And an Import can now be undone.** Restore has always saved a "Before restore" copy; **Import did not,
+and its own dialog said "This cannot be undone."** It saves a "Before import" copy now.
+
+**4. The backoffice is no longer offered to search engines, and your homepage and shop deliberately are.**
+⚠️ Your app is PIN-locked, but **its title and the fact it exists were public the moment Google crawled it.**
+The homepage and the shop now say they are findable — in their own words on the page, rather than leaving it
+to chance — and your **working files** (the test folder, which the site publishes) are kept out.
+
+**5. Your sixteen wording decisions are pinned, and two were still missing.** Your Malay for "we use this to
+know who the order is for" had a verb hanging in the air, and one "Pemandu" had survived your **driver**
+decision — the note recorded four strings and there were five. **A rule recorded as a list stops at the end
+of the list.** Both are fixed.
+
+**6. ⚠️ One thing did NOT come across, and it is worth knowing why: the bakery's PDFs learned to print
+Chinese.** That work lives in its own machine's manual folder, which is never in the repository — **and your
+documents are written in English on purpose**, so nothing here needs it. **If you ever want Chinese in your
+manual, tell me and I will bring that fix over too.**
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **17 Oct 2026 — engine v535: THE DATABASE STEP WAS EMPTY. YOU NEED TO RUN IT AGAIN, AND THIS IS MY
 MISTAKE (one paste, safe to run twice).**

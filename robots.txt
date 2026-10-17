@@ -1,0 +1,21 @@
+# robots.txt — what search engines may look at (v538).
+#
+# ⚠️ WHY THIS FILE EXISTS. The site publishes EVERY file the repository tracks, so her
+# test suite is served from https://munchies.com.my/test/ — hundreds of working files with fixture names
+# and fixture phone numbers in them. ⭐ **Nothing secret is in them** (every number is an obvious fake like
+# 60111000001), but they are her working papers, not her shop, and they have no business in a search result.
+#
+# ⚠️⚠️ AND A ROBOTS BLOCK IS NOT THE SAME AS A NOINDEX TAG, SO THE TWO ARE USED IN DIFFERENT PLACES:
+#   - To keep a PAGE out of Google, the page carries <meta name="robots" content="noindex">. That works
+#     because the crawler is ALLOWED to fetch it and can therefore read the tag.
+#   - To keep a FOLDER out, this file is used — but it only stops CRAWLING. A URL can still be listed if
+#     something links to it, which is why nothing in the shop links to /test/.
+#   ⚠️ Never both on the same thing: a crawler refused the page can never read its noindex tag.
+
+User-agent: *
+# Her working papers — see above.
+Disallow: /test/
+
+# /admin/ is deliberately NOT listed here. It is PIN-locked and carries noindex, nofollow in its own
+# <head>; blocking it here would stop the crawler reaching that tag, which is the very thing being relied
+# on. The same is true of /admin/promo-card.html.

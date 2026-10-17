@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#c4552f">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <!-- ★★★ AND THE SHOP IS DELIBERATELY FINDABLE TOO (v538) — it states it rather than being left to
+       chance. ⚠️ **indexed is not the same as ready:** Google captures this page as it stands the first
+       time it crawls, so what it lists is whatever the shop says today.
+       ⚠️ **TO HIDE THE SHOP INSTEAD**, change this one line to content="noindex, nofollow" — and allow a
+       couple of weeks, because a page is not un-indexed instantly. -->
+  <meta name="robots" content="index, follow">
   <title>Order · Munchies Furkidz</title>
   <!-- The chalk hand used by the bakery's own sentence in the shelf strip (v274).
        Fetched before the stylesheet so it is already in flight when app.css asks

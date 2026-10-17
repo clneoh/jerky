@@ -757,6 +757,59 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## v535 → v536 — a save that fails says so, and a restore no longer hides records (17 Oct 2026)
+
+**Six bakery versions (v534–v539), 14 files merged, plus `robots.txt` and `test/publishing.test.js` new.**
+Suite **3515 → 3535**. **8 conflicts**, all mine against the bakery's refined version of the same feature —
+**resolved to theirs**, which converges the two repos.
+
+### ⚠️ v535 — a save that fails was silent
+
+**Her question:** *"is there a test that you should run to detect this systemic problem, or any risky system
+handling that we should eliminate before the database build up?"* — and it found one. `save()` caught a
+full-phone `QuotaExceededError`, wrote it to a console she will never see, **and carried on**. ⚠️ **"It
+saved" and "this phone is full" were both true at once**, and the save hook still ran — so the change was
+queued as though it had been kept. **It reports now, and the page shows how full the phone is.** *A growth
+fault, which is why a year of use never showed it.*
+
+### ⚠️⚠️ v539 — a real bug in OUR OWN new sync, found the same day
+
+**Her question:** *"any other problem that can happen?"*. ⚠️ **Incremental sync needs a bookmark; `rewindTo`
+and Import both replace the whole book and the bookmark was not reset** — so after either, the data jumps
+backwards while the cursor still points forward, **and every record older than it is never read again.**
+Both presses now call `forgetReadCursor()` — **`lastSeq` and `lastCount` only, never the sending queue**,
+because that queue is exactly the unsent changes this app protects. **Made to clear the queue, the test
+goes red.** And **Import is no longer a one-way door**: it saves a "Before import" copy.
+
+### v538 — search engines
+
+⚠️ **The backoffice is PIN-locked, but its title and existence were public the moment Google crawled it.**
+`admin/index.html` now carries **`noindex, nofollow`**; the homepage and `store/` carry **`index, follow`**
+in their own words; and a new **`robots.txt`** disallows **`/test/`** — her working papers, which the site
+publishes. ⚠️ **Deliberately not both on the same thing:** a crawler refused the page can never read its
+`noindex` tag.
+
+### v536 — her wording
+
+Her sixteen translation decisions pinned against the live file; **`confirmAddNameBody`** (Malay) had a verb
+hanging and dropped "with you", and **a fifth "Pemandu"** had survived her *driver* decision. ⭐ **A rule
+recorded as a list of strings stops at the end of the list.**
+
+### ⚠️ Two deliberate non-ports
+
+- **`test/store-vocab.test.js`** — the bakery's new file pins **its** shop's words (*"a bakery is a BAKERI"*,
+  *"a bake day is `hari membakar`"*, the bread line). **Jerky's shop is a pet-treats shop with none of
+  them** — it says *posting day* / *hari pos*. Dropped, like `store-track-money.test.js` before it.
+- **v537's PDF-Chinese fix** — it lives in the bakery's **gitignored `marketing/`**, so no merge can carry
+  it. Jerky's documents are English on purpose; **noted, not ported.**
+
+### ⚠️ And one jerky-only string the merge broke and I fixed
+
+`store-lang.js`'s Malay **`confirmAddrTitle`/`confirmAddrBody`** — **jerky-only** (its postal-address gate;
+the bakery has no such keys) — were **dropped from the Malay block** when theirs replaced that section.
+Restored verbatim from HEAD. ⚠️ **A key that exists in two languages and not the third is invisible until
+`store-i18n`'s key-set test catches it — and that is exactly what caught it.**
+
 ## v534 → v535 — the database step was EMPTY, and a guard now stops that (17 Oct 2026)
 
 **2 files: the real `supabase/sync_cursor.sql` (0 → 4,758 bytes) and a new `test/sql-steps.test.js`.**

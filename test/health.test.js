@@ -16,6 +16,9 @@ import assert from "node:assert/strict";
 
 const { runHealthChecks, localChecks, registerChecks, copyChecks, backupChecks, recordCountCheck } = await import("../admin/js/health.js");
 const sync = await import("../admin/js/sync.js");
+// ⭐ The phone's own storage limit, read from the SAME constant the check uses — so the test cannot pass
+// against a number the app does not actually hold itself to.
+const { PHONE_STORE_LIMIT } = await import("../admin/js/state.js");
 
 // The smallest book that should come out CLEAN — one order, one bake day, paid, numbered, on the shelf
 // nothing, and a register row that agrees with it.
@@ -60,6 +63,12 @@ const runChecks = (state, extra = {}) => runHealthChecks(state, {
   payloads: sync.localPayloads(state),
   queued: new Set(),
   waiting: 0,
+  // ⭐ AND HOW BIG THE BOOK IS (v531) — the count the last read would have found. ⚠️ **Without it the new
+  // check SKIPS, and a skipped check is invisible to this file's own "every check actually RAN" assertion**,
+  // which is exactly the trap the comment above records for the two cloud checks. ⭐ Taken from the state
+  // rather than typed, so it cannot drift from the fixture.
+  count: sync.localKeys(state).length,
+  ceiling: sync.PULL_CEILING,
 });
 
 test("★★ a healthy book passes every check — and every check actually RAN", () => {
@@ -71,10 +80,9 @@ test("★★ a healthy book passes every check — and every check actually RAN"
   // ⚠️ THE COUNT IS THE POINT. `[].every(...)` is TRUE — a check list that had quietly emptied itself
   // would pass every assertion above, on a phone with no checks at all. This project has been bitten by
   // that exact shape before (v381's doors).
-  // ⭐ SIXTEEN SINCE 17 OCTOBER 2026 — the row count. **A number here rather than a loop is the point:
-  // it makes a check that silently stopped running impossible to miss.**
-  assert.equal(res.total, 16, `the check list is no longer sixteen checks (it is ${res.total})`);
-  assert.equal(res.passedChecks, 16);
+  assert.equal(res.total, 19, `the check list is no longer nineteen checks (it is ${res.total})`);
+  // 16 since v531: the record COUNT joins the page, and it is a pass on a book inside what one read can take.
+  assert.equal(res.passedChecks, 19);
   assert.equal(res.failed, 0);
 });
 
@@ -190,11 +198,8 @@ test("★★⚠️ A CHECK THAT COULD NOT RUN IS SKIPPED — IT IS NEVER A PASS"
     "★ shared data that could not be read was reported as a pass by the reverse check too");
   assert.equal(resultOf(res, "waiting").status, "pass",
     "the waiting count is a local number and does not need the cloud to be readable");
-  // ⭐ NINE SINCE 17 OCTOBER 2026: the row count runs without the register or the copies, so it PASSES
-  // here while they skip. **That is the distinction this assertion exists to make** — a check that could
-  // not look is counted apart, and a check that could still look is still counted.
-  assert.equal(res.passedChecks, 9, "a skipped check was counted among the passes");
-  assert.equal(res.skippedChecks, 7, "the skipped checks were not counted separately");
+  assert.equal(res.passedChecks, 11, "a skipped check was counted among the passes");
+  assert.equal(res.skippedChecks, 8, "the skipped checks were not counted separately");
   assert.match(String(resultOf(res, "reached").why || ""), /shared data/i,
     "the skipped check does not say why it could not look");
   // ⚠️ AND A SKIP SAYS WHY — the same discipline the register screen follows.
@@ -268,8 +273,8 @@ test("⚠️ a phone with no orders at all is checked without throwing", () => {
   const bare = { settings: { currency: "RM" }, products: [], deliveryDates: [], orders: [], removedOrders: [] };
   const res = runChecks(bare, { register: [], copies: COPIES });
   assert.equal(res.failed, 0, "an empty book reported a fault");
-  assert.equal(res.total, 16, "the checks did not all run on an empty book");
-  assert.equal(localChecks(bare).length, 7, "the local checks are not seven");
+  assert.equal(res.total, 19, "the checks did not all run on an empty book");
+  assert.equal(localChecks(bare).length, 8, "the local checks are not eight");
   assert.equal(registerChecks(bare, []).length, 2, "the register checks are not two");
   assert.equal(backupChecks(bare, { orders: [] }).length, 1, "the copy check is not one");
 });
@@ -663,6 +668,79 @@ test("★★★ and the page says WHY they did not go, and WHICH record was refu
   // her looking for something that has gone.
   const clean = resultOf(runHealthChecks(st, { ...emptyExtras(), waiting: 1, queued }), "waiting");
   assert.doesNotMatch(clean.why, /refused/i, "a phone with no recorded failure claims one");
+});
+
+// ── v534: a save that fails must be recorded, and the room must be measured ──
+test("★★★ a save that fails is RECORDED, not swallowed into a console she never sees", async () => {
+  // ⚠️⚠️ THE FAULT: `save()` caught a full-phone error, wrote it to the console and CARRIED ON — and the
+  // console is something she will never see. ⚠️ **Then it still queued the change, so "it saved" and "the
+  // phone is full" were BOTH TRUE, silently.** ⭐ Same disease as the stuck queue, and a GROWTH fault that
+  // only appears once the book is big.
+  const st = await import("../admin/js/state.js");
+  const real = globalThis.localStorage;
+  let full = true;
+  globalThis.localStorage = {
+    getItem: () => null,
+    setItem: () => {
+      if (!full) return;
+      const e = new Error("The quota has been exceeded.");
+      e.name = "QuotaExceededError";
+      throw e;
+    },
+    removeItem() {},
+  };
+  try {
+    st.resetSaveFailure();
+    // ⚠️ AND IT MUST NOT THROW AT THE CALLER: every screen calls `save()` and none of them is ready for that.
+    st.save(st.defaultState());
+    const f = st.saveFailure();
+    assert.ok(f, "★ a save that failed left NO record — **the change is gone and nothing on any screen says so**");
+    assert.equal(f.name, "QuotaExceededError", "the record does not say what went wrong");
+    assert.ok(f.at, "the record does not say when");
+
+    // ⭐ AND A SAVE THAT WORKS CLEARS IT — a stale warning sends her looking for something that has gone.
+    full = false;
+    st.save(st.defaultState());
+    assert.equal(st.saveFailure(), null, "★ a failure outlived a save that worked");
+  } finally {
+    if (real === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = real;
+    st.resetSaveFailure();
+  }
+});
+
+test("★★★ and the page reports it, in her words", () => {
+  const r = resultOf(runHealthChecks(healthy(), {
+    ...emptyExtras(),
+    saveFail: { at: "2026-10-17T02:00:00.000Z", name: "QuotaExceededError", reason: "The quota has been exceeded." },
+  }), "saved");
+  assert.equal(r.status, "fail", "★ a phone that could not store her change reported that everything was fine");
+  assert.match(r.why, /could not store/i, "the page does not say what happened");
+  // ⭐ AND IT SAYS THE THING THAT IS TRUE AND REASSURING: the change still reached the shared data.
+  assert.match(r.why, /shared data/i,
+    "★ it does not say the change still reached the shared data — **that is the difference between a scare and a loss**");
+  assert.ok(r.fix, "a fault with no way out is a dead end");
+  // ⚠️ AND A PHONE WITH NO FAILURE SAYS NOTHING ABOUT ONE.
+  assert.equal(resultOf(runHealthChecks(healthy(), { ...emptyExtras(), saveFail: null }), "saved").status, "pass",
+    "a phone with no recorded failure claims one");
+});
+
+test("★★★ and how much room the data takes is MEASURED — and only a red X when it is nearly full", () => {
+  // ⭐ Her question: __"any risky system handling that we should eliminate before the database builds up"__.
+  // ⚠️ A red X a year early is the warning she learns to ignore, so it PASSES with the number showing until
+  // the phone is nearly full.
+  const room = (state) => localChecks(state).find((x) => x.id === "room");
+  const small = room(healthy());
+  assert.equal(small.status, "pass", "an ordinary small book was reported as a storage problem");
+  assert.match(String(small.detail), /MB of about/, "★ the pass does not show the number, so the growth is invisible");
+
+  // ⚠️ A book that really is nearly full — measured, not simulated: one long note is enough to cross the line.
+  const big = healthy();
+  big.orders = [{ ...big.orders[0], note: "x".repeat(Math.ceil(PHONE_STORE_LIMIT * 0.9)) }];
+  const full = room(big);
+  assert.equal(full.status, "fail",
+    "★ a book past the phone's limit reported that there was room — **that is the silent stop, found too late**");
+  assert.ok(full.fix, "a fault with no way out is a dead end");
 });
 
 test("★★⚠️ and a record with NO number says so — the shape that cannot travel", () => {

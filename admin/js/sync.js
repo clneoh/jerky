@@ -25,16 +25,6 @@ import { validPlace } from "./courier_place.js";
 
 const SYNC_KEY = "bakeadmin.sync";
 
-// ⚠️⚠️ THE NUMBERS THE SHARED DATA IS READ WITH, IN ONE PLACE (17 October 2026).
-// ⭐ **`PULL_PAGE` IS A PAGE SIZE, NOT A CAP.** It used to be a cap — `limit=1000` in one request — and
-// **past a thousand rows a phone saw an arbitrary thousand and never saw the rest.** ⭐⭐ **A cap on a
-// business's records is not a capacity; it is an expiry date.** The read now continues, a page at a time,
-// until the data runs out.
-// ⚠️ **`PULL_MAX_PAGES` is a hard stop so a runaway can never spin**, and `PULL_CEILING` is therefore the
-// REAL limit — exported so the check that reports the count and this loop cannot disagree about it.
-export const PULL_PAGE = 1000;
-export const PULL_MAX_PAGES = 100;
-export const PULL_CEILING = PULL_PAGE * PULL_MAX_PAGES;
 
 const LISTS = {
   orders: "orders",
@@ -547,11 +537,7 @@ function canonical(value) {
 // ── journal (bakeadmin.sync) ──────────────────────────────────────────────
 
 function emptyBlob() {
-  // ⚠️ `lastSeq` IS THE ROW CURSOR (see supabase/sync_cursor.sql): the highest write number this phone
-  // has seen. ⭐ **A NUMBER, not a timestamp — the server stamps it, so no phone's clock can decide what
-  // "since" means.** `seqUnsupported` is remembered once the database step turns out not to have been run.
-  return { version: 1, pending: {}, snapshot: {}, meta: {}, lastPullAt: null, lastFail: null,
-    lastSeq: null, seqUnsupported: false };
+  return { version: 1, pending: {}, snapshot: {}, meta: {}, lastPullAt: null, lastFail: null, lastCount: null, lastSeq: null, seqUnsupported: false };
 }
 
 function readSync() {
@@ -570,6 +556,15 @@ function readSync() {
           seqUnsupported: b.seqUnsupported === true,
           // ⚠️ THE ONE THING THE APP USED TO THROW AWAY (v528) — see `lastFailure`.
           lastFail: b.lastFail && typeof b.lastFail === "object" ? b.lastFail : null,
+          // ⭐ HOW MANY RECORDS THE LAST COMPLETE READ FOUND (v531) — see `lastCloudCount`.
+          // ⚠️⚠️ `b.lastCount != null` FIRST, AND IT IS NOT DEFENSIVE PADDING: **`Number(null)` IS 0**, so a
+          // phone that has never read would report "0 records" as a fact — the v419 fault exactly ("a missing
+          // `days` means EVERY DAY"). ⭐ A count nobody has measured is null, and null is SKIPPED, not 0.
+          lastCount: b.lastCount != null && Number.isFinite(Number(b.lastCount)) ? Number(b.lastCount) : null,
+          // ⭐ THE "SINCE" CURSOR (v533) — the highest database number this phone has read. ⚠️ Same `!= null`
+          // rule: **a cursor that came back 0 would mean "since the beginning" while looking like a cursor.**
+          lastSeq: b.lastSeq != null && Number.isFinite(Number(b.lastSeq)) ? Number(b.lastSeq) : null,
+          seqUnsupported: b.seqUnsupported === true,
         };
       }
     }
@@ -1002,29 +997,33 @@ export function mergeRows(state, rows) {
   return { state, changed: changed || dropped > 0 };
 }
 
-// ── one reader for every full scan of the shared data ─────────────────────
+// ── pull ──────────────────────────────────────────────────────────────────
 
-/**
- * Read EVERY row of one shared-data query, a page at a time.
- *
- * ⚠️⚠️ WHY THIS EXISTS. The pull used to be ONE request with `limit=1000` — a CAP, not a page size.
- * ⭐ **Past a thousand rows a phone saw an arbitrary thousand and silently never saw the rest**; and
- * because the read carried no `order=` until v532, WHICH thousand could differ from one pull to the next.
- * **That is a record arriving, then not arriving, on two devices that never agree, with nothing on any
- * screen saying why.** ⭐⭐ **A cap on a business's records is not a capacity — it is an expiry date.**
- *
- * ⚠️ `order=kind,id` IS REQUIRED, NOT COSMETIC: without a stable order, `offset` paging can repeat a row
- * on one page and skip another between pages.
- * ⚠️ `PULL_MAX_PAGES` is a hard stop. Reaching it returns `complete: false` — **and the caller must not
- * pretend it read everything.** `PULL_CEILING` is that real limit, exported so the count check agrees.
- */
+// ⭐⭐ `PULL_PAGE` IS A PAGE SIZE, NOT A CAP (v531). ⚠️⚠️ It used to be a cap — `limit=1000` in ONE request,
+// with no `order=` at all — which meant **a phone saw an arbitrary thousand rows and silently never saw the
+// rest, and WHICH thousand could differ from one pull to the next.**
+// ⭐ **A cap on a business's records is not a capacity, it is an expiry date. An order is one record per
+// ITEM, not one per order, and nothing removes old orders — so a working bakery reaches a thousand in
+// months.** ⭐ **Munchies found and fixed this first (their v532) at her asking: __"what is the value of a
+// system that can handle 1000 records only?"__**
+//
+// ⚠️ `PULL_MAX_PAGES` is a hard stop so a runaway can never spin, and `PULL_CEILING` is therefore the real
+// limit — exported so the count on Check my system is read from the SAME number the loop uses, and the two
+// can never disagree.
+export const PULL_PAGE = 1000;
+export const PULL_MAX_PAGES = 100;
+export const PULL_CEILING = PULL_PAGE * PULL_MAX_PAGES;
+
+// Read EVERY row of the shared data, a page at a time.
+// ⚠️⚠️ `order=` IS REQUIRED, NOT COSMETIC: without a stable order, `offset` paging can repeat a row on one
+// page and skip another between pages — which is the same silent loss in a new dress.
+// ⚠️ `complete: false` means the ceiling was reached, and **the caller must not pretend it read everything.**
 async function readAllRows(base, query, headers, order = "kind,id") {
   const rows = [];
   for (let page = 0; page < PULL_MAX_PAGES; page++) {
     let res;
     try {
-      res = await fetch(
-        `${base}/rest/v1/bakery?${query}&order=${order}&offset=${page * PULL_PAGE}&limit=${PULL_PAGE}`,
+      res = await fetch(`${base}/rest/v1/bakery?${query}&order=${order}&offset=${page * PULL_PAGE}&limit=${PULL_PAGE}`,
         { headers });
     } catch {
       return { ok: false, offline: true, rows };
@@ -1032,14 +1031,12 @@ async function readAllRows(base, query, headers, order = "kind,id") {
     if (!res || !res.ok) return { ok: false, status: res && res.status, rows };
     const chunk = await res.json().catch(() => null);
     if (!Array.isArray(chunk)) return { ok: false, badBody: true, rows };
-    rows.push(...chunk);
+    for (const r of chunk) rows.push(r);
     // ⭐ A SHORT PAGE IS THE END — the ordinary way this stops, and the only one that means "all of it".
     if (chunk.length < PULL_PAGE) return { ok: true, rows, complete: true };
   }
   return { ok: true, rows, complete: false };
 }
-
-// ── pull ──────────────────────────────────────────────────────────────────
 
 export async function pull(state) {
   const c = cloudCfg(state);
@@ -1049,19 +1046,23 @@ export async function pull(state) {
 
   const headers = { apikey: c.anonKey, Authorization: `Bearer ${token}` };
   const b = readSync();
-  const first = !b.lastPullAt;
-  // ★★★ ASK ONLY FOR WHAT CHANGED (17 October 2026). ⭐ **The first pull of a phone, and any pull after
-  // the database step has not been run, reads everything — that is what `lastSeq` being null means.**
-  // After one complete read it asks for `seq > lastSeq`, so the ordinary 30-second beat carries a handful
-  // of rows instead of the whole book.
-  const useCursor = !b.seqUnsupported && Number.isFinite(b.lastSeq);
+  // ★★★ AND FROM v533 IT ASKS ONLY FOR WHAT HAS CHANGED. ⭐ **After one complete read it asks for `seq > lastSeq`
+  // — a handful of rows on the ordinary 30-second beat, instead of the whole book.**
+  // ⚠️⚠️ AND THE NUMBER IS THE DATABASE'S, NOT THE PHONE'S CLOCK. The obvious version of "what changed since
+  // 10:23?" trusts the time — ⚠️ **and your two phones are not the same clock: a phone running behind writes
+  // its edits with a time in the PAST, and a search for "everything after 10:23" would never look there
+  // again.** ⭐ **With a full read that only costs speed; with a "since" read a missed record is missed for
+  // EVER.** So the cursor is a number the database stamps itself, strictly higher on every write.
+  // ⚠️ `lastSeq != null` FIRST — **`Number(null)` IS 0, and a cursor of 0 is a "since the beginning" read
+  // dressed as a normal one** (the v419 lesson, for the third time today).
+  const useCursor = !b.seqUnsupported && b.lastSeq != null && Number.isFinite(Number(b.lastSeq));
   const select = "select=kind,id,data,updated_at,_deleted,seq";
-  const query = useCursor ? `${select}&seq=gt.${encodeURIComponent(String(b.lastSeq))}` : select;
-  let read = await readAllRows(c.url, query, headers, "seq");
-  // ⚠️⚠️ AND IF THE DATABASE STEP HAS NOT BEEN RUN, SAY SO BY FALLING BACK — not by leaving her with no
-  // sync at all. The `seq` column would not exist and PostgREST answers 400. ⭐ **The fallback is a FULL,
-  // PAGED read, so it is slower and never wrong**, and the flag stops this phone asking again.
-  // ⚠️ **Run `supabase/sync_cursor.sql` before this build is deployed** — a push runs no SQL.
+  let read = await readAllRows(
+    c.url, useCursor ? `${select}&seq=gt.${encodeURIComponent(String(b.lastSeq))}` : select,
+    headers, useCursor ? "seq" : "kind,id");
+  // ⚠️⚠️ AND IF THE DATABASE STEP HAS NOT BEEN RUN, FALL BACK — NEVER LEAVE HER WITH NO SYNC AT ALL. Without
+  // the column, PostgREST answers 400 and the app would simply stop reading. ⭐ **The fallback is a FULL,
+  // PAGED read: slower, never wrong** — and the flag stops this phone asking again.
   if (!read.ok && read.status === 400 && !b.seqUnsupported) {
     b.seqUnsupported = true;
     writeSync(b);
@@ -1071,20 +1072,34 @@ export async function pull(state) {
     return { ok: false, changed: false,
       reason: read.offline ? "Offline — will retry"
         : read.badBody ? "Bad response"
-        : `Pull failed (HTTP ${read.status || "?"})` };
+          : `Pull failed (HTTP ${read.status || "?"})` };
+  }
+  // ⚠️⚠️ AND A READ THAT HIT THE CEILING IS NOT A SUCCESS. ⭐ **Merging a part of the book and reporting
+  // "ok" would let this phone PUSH on a view it knows is short** — the same class of fault as everything
+  // else on this page. It is reported instead, and the count below is how she sees it coming.
+  if (!read.complete) {
+    return { ok: false, changed: false,
+      reason: `Your shared data holds more than ${PULL_CEILING.toLocaleString("en")} records, which is more than one read can take. Nothing was changed.` };
   }
   const rows = read.rows;
+
+  const first = !b.lastPullAt;
   const { changed } = mergeCloudRows(state, rows, b);
   b.lastPullAt = new Date().toISOString();
-  // ⚠️⚠️ THE CURSOR ADVANCES ONLY ON A COMPLETE READ. ⭐ **A half-read book must not be remembered as
-  // "seen"** — the next pull would start after records it never received. And a write that lands *during*
-  // the scan always takes a HIGHER number than everything already read, so it cannot slip behind the
-  // cursor: the next beat asks for it by name.
+  // ⚠️⚠️ THE CURSOR ADVANCES ONLY ON A COMPLETE READ. ⭐ **A half-read book must not be remembered as "seen"**
+  // — the next read would start after records this one never received. ⭐ And a record written WHILE the read
+  // is running always takes a HIGHER number than anything already read, so it cannot slip behind the cursor:
+  // the next beat asks for it by name.
   if (read.complete && !b.seqUnsupported) {
     const top = rows.reduce((m, r) => (Number.isFinite(Number(r && r.seq)) && Number(r.seq) > m ? Number(r.seq) : m),
-      Number.isFinite(b.lastSeq) ? b.lastSeq : 0);
-    b.lastSeq = top;
+      b.lastSeq != null && Number.isFinite(Number(b.lastSeq)) ? Number(b.lastSeq) : 0);
+    if (top > 0) b.lastSeq = top;
   }
+  // ⭐ HOW BIG THE BOOK IS, FOR THE COUNT ON CHECK MY SYSTEM — ⚠️⚠️ **ONLY FROM A READ OF THE WHOLE BOOK.** A
+  // cursor read fetches just the changed rows, so taking its length would make her count collapse to "3
+  // records" the first time nothing had changed. ⭐ **A number that describes a different thing than it says
+  // is worse than no number.**
+  if (!useCursor) b.lastCount = rows.length;
   writeSync(b);
 
   // On the first pull (or when rows changed), save so the save-hook queues any
@@ -1092,6 +1107,34 @@ export async function pull(state) {
   // uploads existing local data on first sign-in.
   if (changed || first) save(state);
   return { ok: true, changed: changed || first };
+}
+
+// ⭐ THE SIZE OF HER SHARED DATA, AS THE LAST READ FOUND IT — or null when this phone has never read it.
+// ⚠️ **Null is reported as SKIPPED by the check, never as a pass** — the rule this whole file is built on.
+// ★★★ AND WHEN THE WHOLE STATE IS REPLACED, THE CURSOR IS FORGOTTEN (v539).
+//
+// ⚠️⚠️ TWO PRESSES REPLACE EVERYTHING: **Restore** (an older saved copy) and **Import** (a file). ⭐ **After
+// either, this phone's data jumps BACKWARDS — while `lastSeq` still points at where it was before the jump.**
+// ⚠️ **So the next read asks only for `seq > lastSeq`, and any record in the shared data that is OLDER than
+// that is never read again.** ⭐ **A restore that then failed to push could never be recovered by reading** —
+// which is the v444 shape, arriving through v533's cursor.
+// ⭐ The cost of forgetting it is ONE full read. That is the whole trade: **one read, against a class of doubt.**
+// ⚠️ It clears ONLY what the last read saw (`lastSeq`, `lastCount`) — **never `pending`, never the snapshot**,
+// because a queue that is dropped here would lose exactly the unsent changes the whole file protects.
+export function forgetCursor() {
+  const b = readSync();
+  b.lastSeq = null;
+  b.lastCount = null;
+  writeSync(b);
+}
+
+export function lastCloudCount() {
+  // ⚠️ `raw == null` FIRST — **`Number(null)` IS 0**, and a "0 records" answer would be a measurement this
+  // phone never took. (The v419 lesson, and the same one the read above guards.)
+  const raw = readSync().lastCount;
+  if (raw == null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 // ── flush ─────────────────────────────────────────────────────────────────
