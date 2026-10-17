@@ -4,6 +4,31 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**17 Oct 2026 — YOUR MANUAL GAINS A "DO THIS, NEVER THAT" PAGE (the app is unchanged — engine stays
+v536; the manual is now v536a).**
+
+**You asked for the rules, so they are page 23 of your manual rather than something in a chat you would
+have to scroll back through. Eleven DOs, eight NEVERS, and what to do if something goes wrong, in order.**
+
+**And the page says where they came from, because that is the part worth keeping.** Every rule is a fault
+that actually happened: a queue that said it was syncing and never emptied, a save that said it saved into
+a full phone, a database step that was told to you as a step and was empty. **None of it was carelessness
+in your shop — all of it was the app telling you something it had not checked.**
+
+**The DOs, one line each:** open the app on one phone every day or two · keep one phone signed in to
+shared data · press Save after recording what you baked · type the TOTAL, not the extra · read the
+numbers on Check my system · use **Put back missing orders** rather than Restore · look at the page
+before Restore or Import · test on one phone first.
+
+**The NEVERS, one line each:** never sign out of shared data casually · never clear the app data to fix a
+problem · never use Import to top up or merge · never use Restore to fix one missing order · never assume
+the paid stage says how the money came in · never mix up the order's Baked stage with the baked box ·
+never delete an order you might need · never trust a number without reading it.
+
+**And if something goes wrong, in four steps:** don't sign out, don't clear anything, don't press Restore ·
+run Check my system · send the failing line word for word · then wait, because **nothing you have is only
+in one place.**
+
 **17 Oct 2026 — engine v536: A SAVE THAT FAILS NOW SAYS SO, AN IMPORT CAN BE UNDONE, AND A RESTORE NO LONGER HIDES RECORDS (nothing to run, nothing to upload).**
 
 **Six versions from the bakery, all of them from questions you asked.**
