@@ -1,10 +1,10 @@
-# Munchies Furkidz — change history (v54 → v537)
+# Munchies Furkidz — change history (v54 → v541)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
-**17 Oct 2026 — engine v537: A PRODUCT WITH NO INGREDIENTS CAN STILL BE RECORDED, AND IT SAYS IT MOVES NO
+**17 Oct 2026 — engine v541: A PRODUCT WITH NO INGREDIENTS CAN STILL BE RECORDED, AND IT SAYS IT MOVES NO
 STOCK (nothing to run, nothing to upload).**
 
 **Your words: __"why a hidden product dont appear on total baked?"__ — and then __"i dont see them because
@@ -19,7 +19,12 @@ was a gate.**
 **2. So every product is listed now**, and one with no ingredients carries this on its own row: **"no
 ingredients on its recipe — this will not change your stock."**
 
-**3. And both rules are kept.** You can record the bake so the day is complete; **you are told plainly that
+**3. And the number itself moved from v537 to v541.** It now takes the bakery's number on each sync, so
+**the two shops read the same sticker again — which is what this Guide has always told you they do.**
+**Numbers 538 to 540 describe changes the bakery made between syncs; this app never shipped under them**, so
+skipping them costs nothing.
+
+**4. And both rules are kept.** You can record the bake so the day is complete; **you are told plainly that
 it moved no stock**, so it is not a control that quietly does nothing; and **the day you add the
 ingredients, the same box starts moving stock with nothing else to learn.**
 

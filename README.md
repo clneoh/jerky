@@ -757,7 +757,7 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
-## v536a → v537 — a product with no ingredients can still be recorded (17 Oct 2026)
+## v536a → v541 — a product with no ingredients can still be recorded (17 Oct 2026)
 
 **One bakery version (v541). 2 files; no SQL.** Suite **3535 → 3536**.
 
@@ -823,7 +823,7 @@ recorded as a list of strings stops at the end of the list.**
 - **`test/store-vocab.test.js`** — the bakery's new file pins **its** shop's words (*"a bakery is a BAKERI"*,
   *"a bake day is `hari membakar`"*, the bread line). **Jerky's shop is a pet-treats shop with none of
   them** — it says *posting day* / *hari pos*. Dropped, like `store-track-money.test.js` before it.
-- **v537's PDF-Chinese fix** — it lives in the bakery's **gitignored `marketing/`**, so no merge can carry
+- **v541's PDF-Chinese fix** — it lives in the bakery's **gitignored `marketing/`**, so no merge can carry
   it. Jerky's documents are English on purpose; **noted, not ported.**
 
 ### ⚠️ And one jerky-only string the merge broke and I fixed
