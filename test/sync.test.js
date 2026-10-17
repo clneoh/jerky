@@ -2438,3 +2438,80 @@ test("★★★★ EVERY synced list repairs a record with no id — the class, 
   sync.repairRecordIds(c);
   assert.equal(c.orders[c.orders.length - 1].id, "keep_me", "the repair renamed a record that already had an id");
 });
+
+// ── ★★★ HOW MANY ROWS THE SHARED DATA HOLDS (17 October 2026) ──────────────
+// ⚠️ THE PULL IS ONE CAPPED REQUEST with no paging: past `PULL_LIMIT` rows a phone sees only the first
+// slice, and a record she expects everywhere can be outside it. This count is the warning, so it must
+// count EVERY row — a tombstone is a row in the same table and takes the same place in that slice.
+test("★★ cloudRowCount counts every row, and says 'at least' rather than guessing past its scan", async () => {
+  const { store, restore } = installStorage();
+  try {
+    seedToken(store);
+    const st = cloudOn(baseState());
+    let asked = null;
+    const restoreFetch = installFetch(async (url) => {
+      asked = url;
+      return { ok: true, json: async () => Array.from({ length: 7 }, () => ({ kind: "orders" })) };
+    });
+    try {
+      const r = await sync.cloudRowCount(st);
+      assert.deepEqual(r, { ok: true, count: 7, atLeast: false });
+      assert.ok(asked.includes("select=kind"), `the count asked for more than it needs: ${asked}`);
+      assert.ok(asked.includes("order=kind"), "★ the count read an UNORDERED slice — offset paging can skip rows without one");
+      assert.ok(asked.includes(`limit=${sync.PULL_PAGE}`), asked);
+      assert.ok(asked.includes("offset=0"), asked);
+    } finally { restoreFetch(); }
+
+    // ⭐ AND WHEN THE READ NEVER COMES SHORT it hits its own hard stop and SAYS SO rather than pretending —
+    // the one place a record can still fail to arrive, so the count must not round it off silently.
+    let pages = 0;
+    const restoreFetch2 = installFetch(async () => {
+      pages += 1;
+      return { ok: true, json: async () => Array.from({ length: sync.PULL_PAGE }, () => ({ kind: "orders" })) };
+    });
+    try {
+      const r2 = await sync.cloudRowCount(st);
+      assert.equal(r2.ok, true);
+      assert.equal(r2.count, sync.PULL_CEILING, `the scan read ${r2.count}`);
+      assert.equal(r2.atLeast, true, "★ a scan that hit its hard stop reported an exact number");
+      assert.equal(pages, sync.PULL_MAX_PAGES, "the loop did not stop where it says it stops");
+    } finally { restoreFetch2(); }
+  } finally { restore(); }
+});
+
+// ── ★★★ THE PULL READS EVERY PAGE (17 October 2026) ────────────────────────
+// ⚠️⚠️ THIS IS THE TEST THE ORIGINAL FAULT WOULD HAVE FAILED. The pull was ONE request with
+// `limit=1000` — a CAP — so past a thousand rows a phone never saw the rest, and nothing said so.
+// ⭐ **A book bigger than one page must arrive WHOLE.** If this ever goes red, the app is silently blind
+// again to everything past the first page.
+test("★★★ the pull reads EVERY page — a book larger than one page arrives whole", async () => {
+  const { store, restore } = installStorage();
+  try {
+    seedToken(store);
+    const st = cloudOn(baseState());
+    st.products = [];
+    const TOTAL = 2500;
+    const all = Array.from({ length: TOTAL }, (_, i) => ({
+      kind: "products",
+      id: `p${String(i).padStart(5, "0")}`,
+      data: JSON.stringify({ id: `p${String(i).padStart(5, "0")}`, name: `P${i}`, price: 1 }),
+      updated_at: "2026-01-01T00:00:00.000Z",
+      _deleted: false,
+    }));
+    const offsets = [];
+    const restoreFetch = installFetch(async (url) => {
+      const m = /offset=(\d+)/.exec(url);
+      const off = m ? Number(m[1]) : 0;
+      offsets.push(off);
+      return { ok: true, json: async () => all.slice(off, off + sync.PULL_PAGE) };
+    });
+    try {
+      const r = await sync.pull(st);
+      assert.equal(r.ok, true, `the pull failed: ${r.reason}`);
+      assert.equal(st.products.length, TOTAL,
+        `★ only ${st.products.length} of ${TOTAL} records arrived — the pull stopped at a page`);
+      assert.deepEqual(offsets, [0, sync.PULL_PAGE, sync.PULL_PAGE * 2],
+        "★ the pull did not walk the pages in order");
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});

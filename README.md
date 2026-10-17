@@ -756,6 +756,54 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## v531 → v532 — the sync no longer stops at a thousand records (17 Oct 2026, **jerky-only**)
+
+**5 files changed; no SQL, nothing to deploy.** Suite **3506 → 3509**.
+
+### The fault
+
+⚠️ **`sync.refresh` pulled the whole shared data in ONE request with `limit=1000` — a CAP, not a page
+size.** Past a thousand rows a phone **saw an arbitrary thousand and silently never saw the rest**. ⚠️ **And
+the read carried no `order=` until this version, so WHICH thousand could differ between pulls.** A record
+that shows on one device and not the other, with nothing saying why — that is what "the sync is going in
+circles" looks like.
+
+⚠️ **An order is one record per ITEM**, and nothing prunes orders, so a working business reaches a thousand
+in months. **Nothing was ever deleted** — the merge only applies rows that arrive — **but records that
+never arrived were never seen.**
+
+### The fix
+
+⭐ **`readAllRows()` — one paged reader, used by all three full scans** (the pull, `cloudKeys`, and the
+count). It asks for a page, and **keeps asking until a page comes back short.** `PULL_PAGE = 1000` is now
+a **page size**; the loop is bounded by `PULL_MAX_PAGES = 100`, so **`PULL_CEILING = 100,000`** is the real
+limit — **exported, so the count check and the loop cannot disagree about where it is.**
+
+⚠️ **`order=kind,id` is required, not cosmetic:** without a stable order, `offset` paging can repeat a row
+on one page and skip another between pages.
+
+⚠️ **The hard stop reports itself**: `complete: false` reaches `cloudRowCount` as `atLeast`, and
+`recordCountCheck` fails **only** at `PULL_CEILING` — the one remaining place a record could fail to
+arrive. Its sentence imports that number rather than retyping it.
+
+### The count she asked for
+
+Still on Check my system, now **information rather than a warning**:
+
+> *"Your shared data holds 412 records — and every one of them reaches every phone, because the sync now
+> reads them a page at a time instead of stopping at a thousand."*
+
+### ⚠️ The test that would have caught the original fault
+
+`test/sync.test.js` — **"the pull reads EVERY page — a book larger than one page arrives whole"**: a
+2,500-row book, paged by a shim, must arrive **whole** with offsets `[0, 1000, 2000]`. **Biting it with the
+old one-page return fails it by name**, and so does the count's hard-stop test.
+
+⚠️ **What is honestly next:** each full read is now several requests when the book is large, every 30
+seconds. **The real cure is reading only what CHANGED** — `lastPullAt` is already stored and never used —
+**and that needs the server to stamp `updated_at` first**, because today it is the phone's clock. That is
+its own job, with one SQL script.
+
 ## v530 → v531 — "Put back missing orders": an additive repair beside the rewind (17 Oct 2026, **jerky-only**)
 
 **6 files changed (`+305 / −62`); no SQL, nothing to deploy.** Suite **3503 → 3506**.

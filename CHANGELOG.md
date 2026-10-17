@@ -1,8 +1,47 @@
-# Munchies Furkidz — change history (v54 → v531)
+# Munchies Furkidz — change history (v54 → v532)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**17 Oct 2026 — engine v532: THE SYNC NO LONGER STOPS AT A THOUSAND RECORDS (nothing to run, nothing to
+upload — pushing this is the whole of it).**
+
+**Your words: __"what is the value of a system that can handle 1000 records only?"__ — and the answer was
+none. That number had no business being there.**
+
+**1. ⚠️ What was wrong.** Your phone read its shared data in **ONE request, capped at 1,000 records**, and
+**anything past that never arrived** — silently, on every screen. **A record set with an expiry date.**
+**An order is one record per ITEM, not one per order**, and nothing removes old orders, so a working
+business reaches that number in months. **It was not lost — the app never deletes a record for being
+missing from a read — but it never arrived either.**
+
+**2. ⚠️ And it was worse than a cap.** That read had **no order at all**, so **which** thousand records a
+phone got was arbitrary — **and could be a different arbitrary thousand the next time.** That is a record
+showing on one device and not the other, with nothing saying why.
+
+**3. THE FIX: it reads a page at a time and keeps going until the data runs out.** 1,000 is now a **page
+size, not a limit** — the sync asks for the next page until one comes back short. **Every record reaches
+every phone, whatever the size of your book.** It is sorted too, so the pages cannot skip or repeat a record
+between them.
+
+**4. And there is still a hard stop, far out, and it says so if it is ever reached.** The read gives up at
+**100,000 records in one pass** rather than looping for ever, and **the count on Check my system fails only
+at that point** — the one place a record could still fail to arrive. The number in the sentence is read from
+the same constant the loop uses, so the two can never disagree.
+
+**5. And you asked to see the count first, so it is still there.** **"How many records your shared data
+holds"** on Check my system — under the stop it reads *"…and every one of them reaches every phone, because
+the sync now reads them a page at a time instead of stopping at a thousand."* **It is information now, not
+a warning.**
+
+**6. What is honestly next, and it is the better design.** Each full read is now several requests when the
+book is large, every 30 seconds. **The real cure is reading only what has CHANGED since the last sync** —
+the app already stores the moment of the last pull and never uses it. ⚠️ **That cannot be trusted until the
+change time comes from your database rather than from each phone's clock**, so it is its own job, with one
+SQL script.
+
+**Nothing to run, no SQL, no upload, no setting to change on either phone.**
 
 **17 Oct 2026 — engine v531: YOU CAN NOW PUT MISSING ORDERS BACK — WITHOUT REWINDING ANYTHING
 (nothing to run, nothing to upload — pushing this is the whole of it).**

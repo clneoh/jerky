@@ -25,6 +25,17 @@ import { validPlace } from "./courier_place.js";
 
 const SYNC_KEY = "bakeadmin.sync";
 
+// ⚠️⚠️ THE NUMBERS THE SHARED DATA IS READ WITH, IN ONE PLACE (17 October 2026).
+// ⭐ **`PULL_PAGE` IS A PAGE SIZE, NOT A CAP.** It used to be a cap — `limit=1000` in one request — and
+// **past a thousand rows a phone saw an arbitrary thousand and never saw the rest.** ⭐⭐ **A cap on a
+// business's records is not a capacity; it is an expiry date.** The read now continues, a page at a time,
+// until the data runs out.
+// ⚠️ **`PULL_MAX_PAGES` is a hard stop so a runaway can never spin**, and `PULL_CEILING` is therefore the
+// REAL limit — exported so the check that reports the count and this loop cannot disagree about it.
+export const PULL_PAGE = 1000;
+export const PULL_MAX_PAGES = 100;
+export const PULL_CEILING = PULL_PAGE * PULL_MAX_PAGES;
+
 const LISTS = {
   orders: "orders",
   // ⚠️⚠️ NAMED HERE OR IT DOES NOT TRAVEL (v444). A new list is device-local until it is registered in
@@ -639,6 +650,38 @@ export function localKeys(state) {
 
 // The set of record keys the shared data holds, as `kind:id` — or `{ ok: false, reason }` when it could not
 // be read. ⚠️ **A record marked deleted is NOT "held"**, because nothing can read it.
+/**
+ * How many rows does the shared data actually hold — including the removed ones?
+ *
+ * ⚠️⚠️ THIS EXISTS BECAUSE OF A HARD CAP NOTHING ELSE COULD SHOW HER (17 October 2026). The pull reads
+ * a page at a time (`readAllRows`), so no record set has a cap on it any more. ⭐ **It still exists because
+ * she asked for the number, and because a count is the one thing that says how big the book has grown.**
+ *
+ * ⚠️ IT COUNTS THE DELETED ROWS TOO, ON PURPOSE. A tombstone (`_deleted`) is a row in the same table and
+ * takes the same place in that slice.
+ *
+ * ⚠️ It reads `kind` only — the smallest thing PostgREST will return — and says "at least" if it ever
+ * reaches `PULL_CEILING`, rather than reporting a number it cannot prove.
+ *
+ * @returns {{ok: true, count: number, atLeast: boolean} | {ok: false, reason: string}}
+ */
+export async function cloudRowCount(state) {
+  const c = cloudCfg(state);
+  if (!c.on) return { ok: false, reason: "Shared data is switched off on this phone." };
+  const token = cachedToken();
+  if (!token) return { ok: false, reason: "This phone is not signed in to your shared data." };
+  try {
+    const read = await readAllRows(c.url, "select=kind",
+      { apikey: c.anonKey, Authorization: `Bearer ${token}` });
+    if (!read.ok) {
+      return { ok: false, reason: `Your shared data could not be read (HTTP ${read.status || "?"}).` };
+    }
+    return { ok: true, count: read.rows.length, atLeast: !read.complete };
+  } catch {
+    return { ok: false, reason: "Offline — counting needs your shared data." };
+  }
+}
+
 export async function cloudKeys(state) {
   const c = cloudCfg(state);
   if (!c.on) return { ok: false, reason: "Shared data is switched off on this phone." };
@@ -648,12 +691,12 @@ export async function cloudKeys(state) {
     // ⚠️ AND `data` COMES WITH IT NOW (v471) — **the same single read answers "which records are there" and
     // "what is IN them".** ⭐ One fetch, not two: this page already reads a register and your copies, and a
     // third round trip for a comparison nobody could see would be a poor trade.
-    const res = await fetch(`${c.url}/rest/v1/bakery?select=kind,id,data,_deleted&limit=5000`, {
-      headers: { apikey: c.anonKey, Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return { ok: false, reason: `Your shared data could not be read (HTTP ${res.status}).` };
-    const rows = await res.json().catch(() => null);
-    if (!Array.isArray(rows)) return { ok: false, reason: "Your shared data could not be read." };
+    const read = await readAllRows(c.url, "select=kind,id,data,_deleted",
+      { apikey: c.anonKey, Authorization: `Bearer ${token}` });
+    if (!read.ok) {
+      return { ok: false, reason: `Your shared data could not be read (HTTP ${read.status || "?"}).` };
+    }
+    const rows = read.rows;
     const keys = new Set();
     const data = new Map();
     for (const r of rows) {
@@ -953,6 +996,43 @@ export function mergeRows(state, rows) {
   return { state, changed: changed || dropped > 0 };
 }
 
+// ── one reader for every full scan of the shared data ─────────────────────
+
+/**
+ * Read EVERY row of one shared-data query, a page at a time.
+ *
+ * ⚠️⚠️ WHY THIS EXISTS. The pull used to be ONE request with `limit=1000` — a CAP, not a page size.
+ * ⭐ **Past a thousand rows a phone saw an arbitrary thousand and silently never saw the rest**; and
+ * because the read carried no `order=` until v532, WHICH thousand could differ from one pull to the next.
+ * **That is a record arriving, then not arriving, on two devices that never agree, with nothing on any
+ * screen saying why.** ⭐⭐ **A cap on a business's records is not a capacity — it is an expiry date.**
+ *
+ * ⚠️ `order=kind,id` IS REQUIRED, NOT COSMETIC: without a stable order, `offset` paging can repeat a row
+ * on one page and skip another between pages.
+ * ⚠️ `PULL_MAX_PAGES` is a hard stop. Reaching it returns `complete: false` — **and the caller must not
+ * pretend it read everything.** `PULL_CEILING` is that real limit, exported so the count check agrees.
+ */
+async function readAllRows(base, query, headers) {
+  const rows = [];
+  for (let page = 0; page < PULL_MAX_PAGES; page++) {
+    let res;
+    try {
+      res = await fetch(
+        `${base}/rest/v1/bakery?${query}&order=kind,id&offset=${page * PULL_PAGE}&limit=${PULL_PAGE}`,
+        { headers });
+    } catch {
+      return { ok: false, offline: true, rows };
+    }
+    if (!res || !res.ok) return { ok: false, status: res && res.status, rows };
+    const chunk = await res.json().catch(() => null);
+    if (!Array.isArray(chunk)) return { ok: false, badBody: true, rows };
+    rows.push(...chunk);
+    // ⭐ A SHORT PAGE IS THE END — the ordinary way this stops, and the only one that means "all of it".
+    if (chunk.length < PULL_PAGE) return { ok: true, rows, complete: true };
+  }
+  return { ok: true, rows, complete: false };
+}
+
 // ── pull ──────────────────────────────────────────────────────────────────
 
 export async function pull(state) {
@@ -961,18 +1041,15 @@ export async function pull(state) {
   const token = cachedToken();
   if (!token) return { ok: false, changed: false, reason: "Not signed in" };
 
-  let res;
-  try {
-    res = await fetch(`${c.url}/rest/v1/bakery?select=kind,id,data,updated_at,_deleted&limit=1000`, {
-      headers: { apikey: c.anonKey, Authorization: `Bearer ${token}` },
-    });
-  } catch {
-    return { ok: false, changed: false, reason: "Offline — will retry" };
+  const read = await readAllRows(c.url, "select=kind,id,data,updated_at,_deleted",
+    { apikey: c.anonKey, Authorization: `Bearer ${token}` });
+  if (!read.ok) {
+    return { ok: false, changed: false,
+      reason: read.offline ? "Offline — will retry"
+        : read.badBody ? "Bad response"
+        : `Pull failed (HTTP ${read.status || "?"})` };
   }
-  if (!res.ok) return { ok: false, changed: false, reason: `Pull failed (HTTP ${res.status})` };
-
-  let rows;
-  try { rows = await res.json(); } catch { return { ok: false, changed: false, reason: "Bad response" }; }
+  const rows = read.rows;
 
   const b = readSync();
   const first = !b.lastPullAt;

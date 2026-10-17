@@ -126,10 +126,14 @@ export function renderHealth(root, state) {
     // same list the sync itself uses; `pendingCount` needs no network at all. ⚠️ **A phone with shared data
     // off gets a SKIP with its reason, never a pass.**
     const cloud = await sync.cloudKeys(state).catch(() => null);
+    // ⭐ AND HOW MANY ROWS THE SHARED DATA ACTUALLY HOLDS (17 October 2026) — the pull reads ONE capped
+    // page, so this is the number that says whether everything can reach a phone at all.
+    const records = await sync.cloudRowCount(state).catch(() => null);
     if (dead) return;
     const res = runHealthChecks(state, {
       register, copies, copy, copyWhen,
       cloud, local: sync.localKeys(state), waiting: sync.pendingCount(),
+      records,
       // ⭐ WHY THE QUEUE DID NOT EMPTY (v528) — the reason `refresh` used to return once and forget.
       lastFail: sync.lastFailure(),
       // ⭐ AND THE DEEPEST PAIR (v471): what this phone holds, and what it has queued — the same single

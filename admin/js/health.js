@@ -24,7 +24,7 @@
 import { byId, codeFromId, groupOrders, orderCode, orderLinePrice } from "./state.js";
 import { isCollected } from "./money.js";
 import { receiptNoOfGroup } from "./receipts.js";
-import { listFields } from "./sync.js";
+import { listFields, PULL_CEILING } from "./sync.js";
 import { unaccountedOrders } from "./backups.js";
 
 // The order-level facts every row of ONE order must agree on. ⚠️ DELIBERATELY NOT THE PER-LINE ONES —
@@ -550,6 +550,32 @@ export function waitingCheck(waiting = 0, queued = null, state = null, lastFail 
     : pass("waiting", TITLE)];
 }
 
+// ── how many records the shared data holds ─────────────────────────────────
+
+// ⚠️⚠️ THE PULL IS PAGED NOW (17 October 2026): it reads a page at a time until the data runs out, so the
+// old 1,000-row cap — a record set with an expiry date — is gone. ⭐ **This row stays anyway, for two
+// reasons: she asked for the number before anything was redesigned, and a count is the one thing that says
+// how big the book has grown.** ⚠️ **It fails only at `sync.PULL_CEILING`, the reader's own hard stop —
+// the one point where records really CAN still stop arriving.** The threshold is IMPORTED rather than
+// typed again, so the sentence and the loop cannot disagree about where that is.
+export function recordCountCheck(count) {
+  const TITLE = "How many records your shared data holds";
+  if (!count || !count.ok) {
+    return [skipped("records", TITLE, (count && count.reason) || "Your shared data could not be read.")];
+  }
+  const n = Number(count.count) || 0;
+  if (!count.atLeast && n < PULL_CEILING) {
+    return [pass("records",
+      `Your shared data holds ${n} record${n === 1 ? "" : "s"} — and every one of them reaches every phone, because the sync now reads them a page at a time instead of stopping at a thousand.`)];
+  }
+  const seen = count.atLeast ? `at least ${PULL_CEILING}` : String(n);
+  return [fail("records",
+    `Your shared data holds ${seen} records — more than one sync can read`,
+    [`${seen} records`],
+    `The sync reads the shared data a page at a time, up to ${PULL_CEILING} records in one pass. Past that it stops — the same cliff as before, only far further out. ⚠️ Nothing is deleted; it simply cannot all be read in one go.`,
+    "Tell your developer — the next step is reading only what has CHANGED since the last sync instead of all of it every time, which needs the server to stamp the change time.")];
+}
+
 // ── and the whole verdict, in one shape the screen can draw ─────────────────
 
 // ⚠️ `register`, `copies` and `copy` absent = SKIPPED, and a skipped check is counted ON ITS OWN, never
@@ -564,6 +590,7 @@ export function runHealthChecks(state, extra = {}) {
     ...cloudOnlyCheck(state, extra.cloud, extra.local),
     ...contentCheck(state, extra.cloud, extra.payloads, extra.queued),
     ...waitingCheck(extra.waiting, extra.queued, state, extra.lastFail),
+    ...recordCountCheck(extra.records),
   ];
   return {
     results,

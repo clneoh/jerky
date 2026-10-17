@@ -14,7 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { runHealthChecks, localChecks, registerChecks, copyChecks, backupChecks } = await import("../admin/js/health.js");
+const { runHealthChecks, localChecks, registerChecks, copyChecks, backupChecks, recordCountCheck } = await import("../admin/js/health.js");
 const sync = await import("../admin/js/sync.js");
 
 // The smallest book that should come out CLEAN — one order, one bake day, paid, numbered, on the shelf
@@ -54,6 +54,9 @@ const runChecks = (state, extra = {}) => runHealthChecks(state, {
   // answers. ⭐ v469's lesson: a fixture built out of the code under test cannot catch a fault in it, so
   // this comes from `localPayloads`, which is what travels.
   cloud: { ok: true, keys: new Set(sync.localKeys(state)), data: sync.localPayloads(state) },
+  // ⭐ AND THE ROW COUNT (17 October 2026). ⚠️ **Absent it, that check SKIPS — and a skipped check is not a
+  // pass**, which is exactly what this file's "every check actually RAN" assertion is there to catch.
+  records: { ok: true, count: sync.localKeys(state).length, atLeast: false },
   payloads: sync.localPayloads(state),
   queued: new Set(),
   waiting: 0,
@@ -68,8 +71,10 @@ test("★★ a healthy book passes every check — and every check actually RAN"
   // ⚠️ THE COUNT IS THE POINT. `[].every(...)` is TRUE — a check list that had quietly emptied itself
   // would pass every assertion above, on a phone with no checks at all. This project has been bitten by
   // that exact shape before (v381's doors).
-  assert.equal(res.total, 15, `the check list is no longer fifteen checks (it is ${res.total})`);
-  assert.equal(res.passedChecks, 15);
+  // ⭐ SIXTEEN SINCE 17 OCTOBER 2026 — the row count. **A number here rather than a loop is the point:
+  // it makes a check that silently stopped running impossible to miss.**
+  assert.equal(res.total, 16, `the check list is no longer sixteen checks (it is ${res.total})`);
+  assert.equal(res.passedChecks, 16);
   assert.equal(res.failed, 0);
 });
 
@@ -165,7 +170,7 @@ test("★★⚠️ A CHECK THAT COULD NOT RUN IS SKIPPED — IT IS NEVER A PASS"
   // ⚠️⚠️ THE RULE THIS MODULE IS BUILT ON, and the register's own oldest rule: an unreadable register must
   // never be drawn as an empty one. **A verdict that counted "I could not look" as "it is fine" is worse
   // than no verdict**, because she would stop looking.
-  const res = runHealthChecks(healthy(), { register: null, copies: null });
+  const res = runHealthChecks(healthy(), { register: null, copies: null, records: { ok: true, count: 3, atLeast: false } });
   assert.equal(resultOf(res, "hasOrder").status, "skipped", "★ an unreadable register was reported as a pass");
   assert.equal(resultOf(res, "carried").status, "skipped", "★ an unreadable register was reported as a pass");
   assert.equal(resultOf(res, "copies").status, "skipped", "★ unreadable copies were reported as a pass");
@@ -182,7 +187,10 @@ test("★★⚠️ A CHECK THAT COULD NOT RUN IS SKIPPED — IT IS NEVER A PASS"
     "★ shared data that could not be read was reported as a pass by the reverse check too");
   assert.equal(resultOf(res, "waiting").status, "pass",
     "the waiting count is a local number and does not need the cloud to be readable");
-  assert.equal(res.passedChecks, 8, "a skipped check was counted among the passes");
+  // ⭐ NINE SINCE 17 OCTOBER 2026: the row count runs without the register or the copies, so it PASSES
+  // here while they skip. **That is the distinction this assertion exists to make** — a check that could
+  // not look is counted apart, and a check that could still look is still counted.
+  assert.equal(res.passedChecks, 9, "a skipped check was counted among the passes");
   assert.equal(res.skippedChecks, 7, "the skipped checks were not counted separately");
   assert.match(String(resultOf(res, "reached").why || ""), /shared data/i,
     "the skipped check does not say why it could not look");
@@ -236,6 +244,7 @@ test("★★ no check's words carry markdown — her screen prints it literally 
   // **its own words are read by this guard** — a check written next year is exactly what this covers.
   const res = runHealthChecks(st, {
     register: [{ number: 1, order_code: "FFFFFF" }], copies: [], copyWhen: COPY_WHEN,
+    records: { ok: true, count: 3, atLeast: false },
     copy: { orders: [...st.orders, { id: "ord_cccccccccccc" }], removedOrders: st.removedOrders },
   });
   assert.ok(res.failedChecks >= 5, `the fixture did not fail enough checks to read their words (${res.failedChecks})`);
@@ -256,7 +265,7 @@ test("⚠️ a phone with no orders at all is checked without throwing", () => {
   const bare = { settings: { currency: "RM" }, products: [], deliveryDates: [], orders: [], removedOrders: [] };
   const res = runChecks(bare, { register: [], copies: COPIES });
   assert.equal(res.failed, 0, "an empty book reported a fault");
-  assert.equal(res.total, 15, "the checks did not all run on an empty book");
+  assert.equal(res.total, 16, "the checks did not all run on an empty book");
   assert.equal(localChecks(bare).length, 7, "the local checks are not seven");
   assert.equal(registerChecks(bare, []).length, 2, "the register checks are not two");
   assert.equal(backupChecks(bare, { orders: [] }).length, 1, "the copy check is not one");
@@ -661,4 +670,30 @@ test("★★⚠️ and a record with NO number says so — the shape that cannot
   const r = resultOf(runHealthChecks(st, { ...emptyExtras(), waiting: 1, queued: new Set(["orders:undefined"]) }), "waiting");
   assert.deepEqual(r.detail, ["an order with no number"],
     "★ a record that has no name said nothing useful about itself");
+});
+
+
+// ── how many records the shared data holds (17 October 2026) ───────────────
+test("★★★ the record count says how close the shared data is to the pull's hard cap", () => {
+  // ⚠️ THE PULL IS ONE CAPPED REQUEST with no paging, so this number is the only warning she can get
+  // before records stop reaching a phone.
+  // ⭐ THE COUNT IS INFORMATION NOW, NOT A SENTENCE ABOUT A CAP — the pull pages, so a book of any size
+  // reaches a phone. ⚠️ **It fails only at the reader's own hard stop, and that number is IMPORTED, so the
+  // sentence and the loop cannot disagree.**
+  const [under] = recordCountCheck({ ok: true, count: 412, atLeast: false });
+  assert.equal(under.status, "pass", "★ an ordinary book was not reported as healthy");
+  assert.match(under.title, /412/, "★ the number she asked for is not in the sentence");
+  assert.match(under.title, /every phone/i, "it does not say that all of them arrive");
+
+  const [over] = recordCountCheck({ ok: true, count: 100000, atLeast: false });
+  assert.equal(over.status, "fail", "★ a book past the reader's hard stop passed — records would stop arriving in silence");
+  assert.match(over.title, /100000/, "the number is not in the sentence");
+  assert.match(over.fix, /changed|pages|paging/i, "the way out does not name the next repair");
+
+  const [huge] = recordCountCheck({ ok: true, count: 100000, atLeast: true });
+  assert.equal(huge.status, "fail");
+  assert.match(huge.title, /at least 100000/, "★ a count it could not finish was reported as an exact number");
+
+  const [off] = recordCountCheck({ ok: false, reason: "Offline — counting needs your shared data." });
+  assert.equal(off.status, "skipped", "★ an unreadable count must be SKIPPED, never a pass");
 });
