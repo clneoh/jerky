@@ -30,6 +30,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 const { customerTotal, moneyLines, promoOn, promoValue } = await import("../admin/js/courier.js");
+const { round2 } = await import("../admin/js/state.js");
 const { buildConfirmation } = await import("../admin/js/confirm.js");
 const { buildPaymentReminder, buildShippedMessage } = await import("../admin/js/messages.js");
 const { trackingSnapshot } = await import("../admin/js/supabase.js");
@@ -219,8 +220,16 @@ test("a free-delivery code on a self-collect order is worth nothing and says not
 
 test("a discount larger than the order leaves her asking for nothing, never for a negative", () => {
   const { st, g } = ordered(mkCode({ gives: { type: "rm", value: 500, cap: 0 } }));
-  assert.equal(customerTotal(st, g).total, 0, "a total she cannot collect stops at zero");
+  const t = customerTotal(st, g);
+  assert.equal(t.total, 0, "a total she cannot collect stops at zero");
   assert.ok(confirm(st, g).includes("To pay: RM 0.00"), "and the message asks for nothing rather than minus RM470");
+  // ⚠️⚠️ AND THE DISCOUNT ITSELF IS CAPPED TOO (v549). ⭐ The Total has always stopped at zero, but the
+  // discount did not — so the invoice printed lines summing to **−RM470** under a Total of RM0.00, the
+  // message above them said −RM500, and Profit's journal row disagreed with its own Sales line.
+  assert.equal(t.promo, 30, "★ the discount is larger than the goods it comes off — **every printed surface "
+    + "then shows lines that do not add up to the Total beside them**");
+  assert.equal(round2(t.items + t.courier + t.postage - t.promo - t.coupon), t.total,
+    "★ the figures do not add up to the total they sit above");
 });
 
 test("a code is taken off one order, not off every line in the basket", () => {

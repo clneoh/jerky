@@ -276,7 +276,7 @@ for (const id of ["step1", "step2", "step3", ...STEP_FIELD_IDS]) {
 // so the module-level render() hits no network.
 globalThis.fetch = async () => ({ ok: true, json: async () => [] });
 
-const { buildMessage, mergeStorefront, upcomingDates, daySpecs, dateKey, fmtDay, windowTitle, trackOrder, isOpen, postsOn, dayAsk, waNumber, phoneText, parseVia, clockWords, renderStatic, render } = await import("../store/app.js");
+const { buildMessage, mergeStorefront, upcomingDates, daySpecs, dateKey, fmtDay, windowTitle, trackOrder, isOpen, todayStillOpen, postsOn, dayAsk, waNumber, phoneText, parseVia, clockWords, renderStatic, render } = await import("../store/app.js");
 const { strictestCancelDays } = await import("../store/pool.js");
 const { CONFIG } = await import("../store/config.js");
 // v270: the shop's own line and its refusals, kept as pure functions so they are
@@ -419,10 +419,12 @@ test("★★★ the FIRST step outstanding is said, in his order — never a dea
   await press();
   // ⚠️⚠️ MUNCHIES' OWN MODEL, CONFIRMED BY HER 2026-10-12: it posts nationwide as its primary way,
   // so the way is NEVER empty and the bakery's v416 "say how you will get it" stop does not exist here.
-  // **The step that IS outstanding next is the address the order is posted to**, and its refusal is
-  // the shop's own confirm rather than a step line.
-  assert.equal(registry["confirm-msg"].children[0].children[0].text, STORE.en.confirmAddrTitle,
-    "★ the postal address was not asked for, though a posted order cannot leave without one");
+  // **The step that IS outstanding next is the address the order is posted to** — and since v548 it
+  // answers the way the name and the number boxes do: marked, its reason underneath, the page carried to it.
+  assert.ok(String(document.getElementById("address-input").className || "").includes("bad"),
+    "★ the postal address box was not marked, though a posted order cannot leave without one");
+  assert.match(fieldNote("address-input-note"), /postal address/i,
+    `★ the box says nothing about the address it wants (it reads "${fieldNote("address-input-note")}")`);
 });
 
 test("the cut-off time is written the way it is said, in all three languages", () => {
@@ -569,6 +571,21 @@ test("isOpen blocks a delivery day once its cutoff has passed the day before", (
   assert.equal(isOpen(cfg, wed, new Date(2026, 8, 1, 17, 59)), true, "open right before 6pm the day before");
   assert.equal(isOpen(cfg, wed, new Date(2026, 8, 1, 18, 0)), false, "closed exactly at 6pm the day before");
   assert.equal(isOpen(cfg, wed, new Date(2026, 8, 2, 9, 0)), false, "still closed on the delivery day itself");
+});
+
+test("★★★ today's bake is only 'closed' when she actually bakes today", () => {
+  // ⚠️⚠️ THE FAULT (v549): the heading asked "is it still before the deadline for a bake TODAY?" — and that
+  // deadline is YESTERDAY at 18:00, so it was false every day of the year. ⭐ The shop said **"Today's bake
+  // has closed"** on a Sunday the bakery never bakes, and **"You're in time" could never appear at all.**
+  const cfg = { cutoff: "18:00", deliveryDays: [1, 3, 5] };
+  // Sunday 18 Oct 2026, 00:08 — not one of her days.
+  assert.equal(todayStillOpen(cfg, new Date(2026, 9, 18, 0, 8)), true,
+    "★ a day she does not bake was reported as a bake that has closed — **there is no bake to close**");
+  // Monday 19 Oct 2026, 10:00 — a bake day, and its cut-off was Sunday 18:00.
+  assert.equal(todayStillOpen(cfg, new Date(2026, 9, 19, 10, 0)), false,
+    "precondition: once the bake day arrives, ordering for it has closed");
+  assert.equal(todayStillOpen({ cutoff: "" , deliveryDays: [1, 3, 5] }, new Date(2026, 9, 19, 10, 0)), true,
+    "with no cut-off at all there is nothing to have closed");
 });
 
 test("isOpen keeps a later day open and treats a missing cutoff as always open", () => {
@@ -839,6 +856,15 @@ test("order click sends one order and shows the success card (regression: no thr
     document.getElementById("name-input").value = "Aunty Bee";
     document.getElementById("whatsapp-input").value = "60123456789";
     document.getElementById("fulfillment")._value = "courier";
+    // ★★★ AND A COURIER ORDER WITH NO ADDRESS MUST NOT POST (v548). ⚠️⚠️ It used to: the shop asked for a
+    // name, a number and the way it travels, and then posted `address: ""` — ⭐ **an order she cannot
+    // deliver, for a fact the page had already shown a box for.** ⭐ The refusal is the phone rule, not a
+    // disabled button: the box is marked and says why, and nothing is sent.
+    await registry["order-btn"].onclick();
+    assert.equal(posted, null,
+      "★ a courier order with NO ADDRESS was posted — **the rider has nowhere to go**");
+    assert.ok(String(document.getElementById("address-input").className || "").includes("bad"),
+      "★ the address box was not marked, so the customer was not told what was missing");
     document.getElementById("address-input").value = "12 Jalan Bunga";
     await registry["order-btn"].onclick();
     await afterOrderNotice(); // ★ the notice follows her one second (v451)
@@ -852,6 +878,16 @@ test("order click sends one order and shows the success card (regression: no thr
     assert.equal(payload.address, "12 Jalan Bunga");
     const title = registry["confirm-msg"].children[0].children[0]; // .text, not textContent, in the shim
     assert.equal(title.text, "🎉 Order received!");
+    // ★★★ AND THE MENU CARDS GO BACK TO ZERO WITH THE BASKET (v549). ⚠️⚠️ The reset emptied the basket
+    // and left every card's stepper showing the last customer's number: the bar read "0 items / RM0.00"
+    // while the card beside it still said 1. ⭐ Two things on one screen saying different numbers is the
+    // fault this shop has fixed more than any other.
+    const stepperAfter = registry["menu"].children[0]
+      .children.find((c) => c.className === "card-body")
+      .children.find((c) => c.className === "stepper");
+    assert.equal(String(stepperAfter.children[1].value), "0",
+      "★ the menu still shows the last customer's quantity while the bar says 0 items — **the next "
+      + "customer would order from a number he did not choose**");
     // THE WORD THAT WAS PRINTED ON HER RECEIPT. The cancellation note is only added when
     // a product on the order states a window, and the shop's own products state none — so
     // an order placed against her live storefront carried a null in that card, and the DOM
@@ -867,6 +903,79 @@ test("order click sends one order and shows the success card (regression: no thr
       /Your order is in/,
       "the line under the missing one is still there, so the check above is not over a blank card");
   } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("★★★ a repaint during the send does not re-open Place order", async () => {
+  // ⚠️⚠️ THE FAULT: the press disabled the button for the send, and the bar set it back to ENABLED on every
+  // repaint. ⭐ **A language tap, a "+", or the 30-second refresh landing during a slow send turned it back
+  // on — and a second press posted the SAME ORDER AGAIN.** ⭐ The one disable the shop keeps is the one that
+  // stops a slow network making him order twice, so it must survive a redraw.
+  const stepperNow = () => registry["menu"].children[0]
+    .children.find((c) => c.className === "card-body")
+    .children.find((c) => c.className === "stepper");
+
+  tapDay();
+  stepperNow().children[2]._listeners.click[0]();        // "+" — one item in the basket
+  document.getElementById("name-input").value = "Aunty Bee";
+  document.getElementById("whatsapp-input").value = "60123456789";
+  document.getElementById("fulfillment")._value = "courier";
+  document.getElementById("address-input").value = "12 Jalan Bunga";
+
+  let release = null;
+  let posts = 0;
+  const gate = new Promise((r) => { release = r; });
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    if (opts && opts.method === "POST") { posts += 1; await gate; return { ok: true }; }
+    return { ok: true, json: async () => [] };
+  };
+  try {
+    const flying = registry["order-btn"].onclick();
+    // a repaint while the order is still in flight — the "+" press redraws the bar
+    stepperNow().children[2]._listeners.click[0]();
+    assert.equal(registry["order-btn"].disabled, true,
+      "★ a repaint re-opened Place order while the order was being sent — **a second tap posts the same "
+      + "order twice**");
+    release();
+    await flying;
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(posts, 1, "★ the order was posted more than once");
+  await afterOrderNotice();
+});
+
+test("★★★ a product that leaves the menu takes the basket with it, and the press says why", async () => {
+  // ⚠️⚠️ THE FAULT: the menu is replaced wholesale on the 30-second refresh. A product the bakery renamed
+  // or removed vanished from the page, **the basket kept its name**, and at Place order `lines` came out
+  // empty while step ② still read done — ⭐ **so the press did nothing at all: no order, no message.**
+  const saved = CONFIG.products.slice();
+  const stepperNow = () => registry["menu"].children[0]
+    .children.find((c) => c.className === "card-body")
+    .children.find((c) => c.className === "stepper");
+  let posts = 0;
+  const realFetch = globalThis.fetch;
+  try {
+    tapDay();
+    stepperNow().children[2]._listeners.click[0]();       // one item in the basket
+    const gone = CONFIG.products[0].name;
+    CONFIG.products = CONFIG.products.filter((p) => p.name !== gone);
+
+    globalThis.fetch = async (url, opts) => {
+      if (opts && opts.method === "POST") { posts += 1; return { ok: true }; }
+      return { ok: true, json: async () => [] };
+    };
+    await registry["order-btn"].onclick();
+
+    assert.equal(posts, 0, "★ an order was posted for a product that is no longer on the menu");
+    const said = registry["confirm-msg"].children
+      .map((n) => (n.children[0] || {}).text || "").join(" ");
+    assert.match(said, /no longer on the menu/i,
+      `★ the press did nothing and said nothing — **the customer is stuck with no clue** (said: ${JSON.stringify(said)})`);
+  } finally {
+    CONFIG.products = saved;
     globalThis.fetch = realFetch;
   }
 });
@@ -1085,8 +1194,11 @@ test("the default Post (nationwide) order is blocked until a postal address is g
     await registry["order-btn"].onclick();
     assert.equal(posted, null, "no order POSTed when the postal address is blank");
     assert.equal(registry["order-btn"].disabled, false, "button stays usable so the customer can add their address");
-    const title = registry["confirm-msg"].children[0].children[0];
-    assert.equal(title.text, "Please add your postal address.");
+    // ★★★ AND THE BOX ANSWERS, NOT A BANNER (v548) — the same way the name and the number boxes do.
+    assert.ok(String(document.getElementById("address-input").className || "").includes("bad"),
+      "the address box was not marked — the customer is not told what is missing");
+    assert.match(String((registry["address-input-note"] || {}).textContent || ""), /postal address/i,
+      "the box was marked but says nothing about the address it wants");
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -3787,8 +3899,10 @@ test("★★ a posted order is stopped until it has an address — this shop's o
     // plain field that `replaceChildren` never recomputes** — so reading it answers the value from BEFORE
     // the line was filled, and an assertion built on it is asserting nothing. This file's other tests read
     // the children for exactly this reason.
-    assert.equal(registry["confirm-msg"].children[0].children[0].text, STORE.en.confirmAddrTitle,
+    assert.ok(String(document.getElementById("address-input").className || "").includes("bad"),
       "★ an order with no way chosen falls back to Post (nationwide) — and is then stopped by the\n      postal-address rule, which is this shop's own");
+    assert.match(String((registry["address-input-note"] || {}).textContent || ""), /postal address/i,
+      "★ the postal address box was marked but says nothing about what it wants");
     assert.equal(registry["order-btn"].disabled, false,
       "⭐ the button is LIVE — this is a question, not a control that has been switched off");
     // ⚠️ WHERE THE LINE LANDS IS NOT ASSERTABLE HERE, AND THAT IS THE SHIM'S LIMIT RATHER THAN THE VIEW'S:

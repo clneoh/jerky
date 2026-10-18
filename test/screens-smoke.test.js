@@ -269,6 +269,61 @@ for (const [fn, path] of Object.entries(VIEW_FILES)) {
   modules[fn] = mod[fn];
 }
 
+// ── ★★★ A REVIEW WITH A PHOTO (v548) ───────────────────────────────────────
+//
+// ⚠️⚠️ THE FAULT THIS CATCHES: `reviewCard` called `photoEl(state, row)` with **nothing called `state` in
+// its scope** — the screen's `state` is a parameter of `renderReviews`, not visible inside a module-level
+// function. ⭐ **The first review carrying a picture threw `ReferenceError`, and the screen drew only its
+// intro paragraph: no carousel, no Publish, no Delete.** ⚠️ Every review without a photo drew perfectly,
+// which is why it went unseen — and the smoke pass builds the screen but never a CARD, because the cards
+// arrive from the network.
+test("★★★ a review that carries a PHOTO builds its card — it used to throw and take the screen down", async () => {
+  const { reviewCard } = await import("../admin/js/views/reviews.js");
+  let err = null;
+  let node = null;
+  try {
+    node = reviewCard([{ id: "r1" }],
+      { id: "r1", photo: "https://example.com/a.jpg", stars: 5, message: "Lovely", name: "Aunty" },
+      0, {}, defaultState());
+  } catch (e) { err = e; }
+  assert.equal(err, null,
+    `★ a review with a photo threw while the card was being built: ${err && err.message} — the whole `
+    + "Reviews screen draws nothing when this happens");
+  assert.ok(node, "★ the card did not build at all");
+});
+
+// ── ★★★ THE SUNDAY BOX HAS A NAME ON IT (v548) ──────────────────────────────
+//
+// ⚠️⚠️ THE FAULT: the label list started with an empty string and ended with "Sun", so **the Sunday box
+// was drawn with a blank label** and "Sun" sat at an index nothing used. ⭐ She could tick a box with no
+// name on it. ⚠️ The check is on the DRAWN labels, not on the source, because a list that parses right and
+// renders wrong is the fault itself.
+test("★★★ every bake-day box is labelled, including Sunday", () => {
+  const root = createEl("div");
+  modules.renderSettings(root, defaultState(), new URLSearchParams());
+  const labels = [];
+  // ⚠️ ONLY THE SEVEN IN THE DAY GROUP — the screen has other `.daycheck`-styled labels (toggles that
+  // borrow the class), and counting those would make this test pass or fail about the wrong thing.
+  const walk = (n) => {
+    if (!n || typeof n !== "object") return;
+    if (String(n.className || "").split(/\s+/).includes("daychecks")) {
+      for (const c of n.children || []) {
+        if (c && c.tagName === "LABEL") {
+          labels.push((c.children || []).filter((x) => x && x.nodeType === 3).map((x) => x.text).join("").trim());
+        }
+      }
+      return;
+    }
+    for (const c of n.children || []) walk(c);
+  };
+  walk(root);
+  assert.equal(labels.length, 7, `expected seven bake-day boxes, the screen drew ${labels.length}`);
+  assert.ok(labels.includes("Sun"),
+    `★ no box says Sunday — the labels on screen were ${JSON.stringify(labels)}`);
+  assert.ok(!labels.includes(""),
+    `★ a box has no name on it — **she can tick a day the screen never named** (${JSON.stringify(labels)})`);
+});
+
 // ── ★★ THE ROUTE TABLE IS THE INVITATION LIST, NOT THIS FILE ────────────────
 test("★★ every route in the app is covered by this smoke pass", async () => {
   const src = await (await import("node:fs/promises")).readFile(

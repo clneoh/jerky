@@ -36,7 +36,13 @@ function renderAll(root, state) {
 
   const form = newIngredientCard(state, root);
 
-  const low = items.filter((ing) => belowReserve(Number(ing.safetyBase) || 0, Number(ing.onHand) || 0));
+  // ⚠️⚠️ AND "NOT SOMETHING I BUY" IS NEVER "LOW" (v545). ⭐ **A low-stock line is a prompt to BUY**, and an
+  // ingredient she has marked *not something I buy* is never bought — ⚠️ **worse, its "Keep at least" control is
+  // HIDDEN on its own card, so a leftover keep level could never be cleared and the banner said "Low stock" for
+  // ever with no way out on that screen.** ⭐ **A warning she cannot clear is one she learns to ignore** — this
+  // file's own rule, applied to its own banner. ⚠️ The not-bought flag already keeps it off every shopping list;
+  // this line keeps it off the list's reminder too.
+  const low = items.filter((ing) => ing.notPurchased !== true && belowReserve(Number(ing.safetyBase) || 0, Number(ing.onHand) || 0));
   const banner = low.length ? el("div", { class: "low-stock-banner" },
     el("p", { class: "low-stock-title" }, "Low stock — below your keep level"),
     ...low.map((ing) => el("p", { class: "low-stock-line" },
@@ -345,6 +351,9 @@ function ingredientCard(state, ing, root, handle = null) {
   const onHand = Math.max(0, Number(ing.onHand) || 0);
   const keep = Math.max(0, Number(ing.safetyBase) || 0);
   const below = belowReserve(keep, onHand);
+  // ⭐ A HIDDEN INGREDIENT, AS A FACT ABOUT THIS ROW (v544) — it says "Hidden" on its card and offers "Unhide"
+  // instead of "Hide", so the way back is on the thing she is looking at.
+  const hiddenNow = ing.active === false;
 
   // ★★ THE GRIP (v399). ⚠️ `ing-card-row` IS ONLY ON A CARD THAT CAN BE MOVED, and the handle only
   // with it — the reorder helper finds its list by that class, so a hidden ingredient (which has
@@ -400,7 +409,20 @@ function ingredientCard(state, ing, root, handle = null) {
         // read as a fault" — and the difference is that the page is no longer empty of WORDS: it names
         // the card and says what will appear on it.
         button("Stock card", () => openStockCard(state, ing), "ghost small"),
-        button(usedBy.length ? "Hide" : "Delete", () => deleteIngredient(state, ing, usedBy.length > 0, root), "ghost small"))));
+        // ★★★ AND A HIDDEN ONE CAN BE BROUGHT BACK (v544). ⚠️⚠️ **HER QUESTION FOUND THIS: __"how to unhide an
+        // ingredient?"__ — AND THERE WAS NO WAY.** ⭐ **The button said "Hide" on an ingredient that was already
+        // hidden, and pressing it did nothing** — so **hiding was a ONE-WAY DOOR in the interface**, and an
+        // ingredient she tucked away years ago was stranded in the Hidden section for ever. ⚠️ **A control that
+        // cannot be undone is exactly what this app's own rules forbid.**
+        hiddenNow
+          ? button("Unhide", () => {
+            ing.active = true;
+            save(state);
+            toast(`${ing.name} is back on your list`);
+            renderAll(root, state);
+          }, "ghost small")
+          : button(usedBy.length ? "Hide" : "Delete",
+            () => deleteIngredient(state, ing, usedBy.length > 0, root), "ghost small"))));
 }
 
 // ── The ingredient's STOCK CARD (v285 as a price journal, v385 stock added, v386 named) ───
@@ -457,7 +479,10 @@ export function stockCardSheet(state, ing, refresh = null) {
     // as ringgit, so 500 grams would read "RM 500.00". **Dashes are honest; grams dressed as ringgit
     // are not** (v385), and a separate cell is how the number leaves the sentence without becoming a
     // price.
-    cols: [dayMonth(e.at), e.what],
+    // ⭐ AND THE TIME, WHEN THE ROW HAS ONE (v543). ⚠️ **Two rows on one day were indistinguishable** — her own
+    // two stocktakes could not be told apart, so nothing could say which came first or whether they were a
+    // second or an hour apart. ⭐ **Old rows carry no `ts` and show no time, which is true of them.**
+    cols: [`${dayMonth(e.at)}${timeOf(e.ts)}`, e.what],
     val: stockDeltaText(state, ing, e.delta),
     // ⚠️ `what` IS STILL BUILT. The paper, the shared text and the PDF read it, and the columns are an
     // ARRANGEMENT of the same facts rather than a different set of them — the rule `journalSheet` sets
@@ -491,7 +516,12 @@ export function stockCardSheet(state, ing, refresh = null) {
 
   return journalSheet({
     title: `${ing.name} — stock card`,
-    subtitle: `On hand: ${fmtStockAmount(state, ing, Number(ing.onHand) || 0)} · Price now: ${priceNowText(state, ing)}`,
+    // ⚠️⚠️ A HIDDEN INGREDIENT MUST NOT LOOK LIKE A LIVE ONE (v544). ⭐ **Her case: she believed she had deleted a
+    // second "Instant yeast" long ago — the app had HIDDEN it, and its stock figure lived on at 1.142 kg with
+    // nothing on the card to say it belonged to anything.** ⚠️ **A number on a card that looks exactly like a
+    // working ingredient is the kind of number that makes her stop trusting the screen** — and she was right to.
+    subtitle: `On hand: ${fmtStockAmount(state, ing, Number(ing.onHand) || 0)} · Price now: ${priceNowText(state, ing)}`
+      + (ing.active === false ? " · Hidden — kept because a recipe or a purchase used it, never on a shopping list" : ""),
     lines,
     totals: [],
     // ⚠️ A CARD THAT IS EMPTY STILL HAS TO SAY WHAT IT IS FOR — see the note on the press above. This
@@ -511,8 +541,26 @@ export function stockCardSheet(state, ing, refresh = null) {
 
 // The signed amount of one stock movement, with its unit — "+500 g", "−2.5 kg". ⚠️ MINUS IS THE
 // TYPOGRAPHIC ONE (U+2212), the same glyph the money journals use, so a printed column lines up.
+// ⭐ " · 14:32" FROM A ROW'S OWN TIMESTAMP, OR NOTHING AT ALL (v543). ⚠️ **An old row has no `ts`, and a blank
+// is the honest answer** — never a made-up time. ⚠️ The clock is the PHONE's, so it is a clue about what happened
+// on that phone, not a fact about the world.
+function timeOf(ts) {
+  const s = String(ts || "");
+  if (s.length < 16) return "";
+  return ` · ${s.slice(11, 16)}`;
+}
+
 function stockDeltaText(state, ing, delta) {
   const n = Number(delta) || 0;
+  // ★★★ A CHANGE OF NOTHING READS IN THE UNIT THE AMOUNT ABOVE IT IS SHOWN IN (v542). ⚠️ **`fmtStockAmount`
+  // picks the unit from the SIZE of the number**, so a zero came out as "+0 g" beside "10 kg to 10 kg" — ⭐ **her
+  // words: __"and also +0kgs for the 2nd"__. ⚠️ **Zero has no size to choose a unit by**, so the honest answer is
+  // the unit of the figure it belongs to, falling back to no unit at all rather than inventing one.
+  if (n === 0) {
+    const onHand = fmtStockAmount(state, ing, Math.abs(Number(ing && ing.onHand) || 0));
+    const unit = String(onHand).replace(/^[−\-+0-9.,]+\s*/, "").trim();
+    return unit ? `+0 ${unit}` : "+0";
+  }
   return `${n < 0 ? "−" : "+"}${fmtStockAmount(state, ing, Math.abs(n))}`;
 }
 
@@ -531,6 +579,11 @@ function stockDeltaText(state, ing, delta) {
 function stockRowDelete(state, ing, entry, refresh) {
   const plan = stockRowUndo(ing, entry);
   if (!plan) return;
+  // ⚠️⚠️ AND A ROW THE SHELF CANNOT GIVE BACK IS REFUSED OUT LOUD (v546). ⭐ **No confirm box, because there is
+  // nothing to confirm** — and the message names the way through, which is a stocktake, not a quieter removal.
+  if (plan.blocked) {
+    return toast(`That line can't be taken back: your shelf holds ${fmtStockAmount(state, ing, plan.was)}, and undoing it needs ${fmtStockAmount(state, ing, plan.blocked)} more. Set the real amount with Adjust instead.`);
+  }
   confirmDialog(
     `Remove this line from the card? Your ${ing.name} is ${fmtStockAmount(state, ing, plan.was)} now, and taking this movement back leaves ${fmtStockAmount(state, ing, plan.now)}. This cannot be undone.`,
     () => {
@@ -560,8 +613,13 @@ function openStockCard(state, ing) {
         // card — but her answer was "only when the price moves, PLUS TODAY", and "today" is the
         // half a movement list cannot carry by itself. ⚠️ Both figures, because a stock section
         // without the amount on the shelf would leave the reader doing the sum.
+        // ⚠️⚠️ THIS LINE IS THE ONE ON SCREEN, AND IT IS NOT THE SHEET'S `subtitle` — `journalBodyEl`
+        // deliberately draws no subtitle, so the sheet's own subtitle reaches only the paper, the shared text
+        // and the PDF. ⭐ **Both carry the Hidden note, because both are read by her.** ⚠️ **I put it on the
+        // sheet first and it did not appear — found by looking at the screen, not by reading the code.**
         el("p", { class: "card-sub", style: "margin:0 0 10px" },
-          `On hand: ${fmtStockAmount(state, ing, Number(ing.onHand) || 0)} · Price now: ${priceNowText(state, ing)}`),
+          `On hand: ${fmtStockAmount(state, ing, Number(ing.onHand) || 0)} · Price now: ${priceNowText(state, ing)}`
+          + (ing.active === false ? " · Hidden — kept because a recipe or a purchase used it, never on a shopping list" : "")),
         journalBodyEl(sheet, cur),
         el("div", { class: "popup-actions" }, ...journalButtons(sheet, cur)));
     },
@@ -626,11 +684,16 @@ function openAmountPopup(state, ing, root, kind) {
         // figures — "1.5 kg to 2 kg" — because a stocktake is a correction, and the only useful thing
         // about it later is what she changed it FROM. ⚠️ The setting-and-logging rule itself lives in
         // `setStock` (stock.js), where it is tested, rather than in this callback.
-        setStock(ing, base, {
+        const moved = setStock(ing, base, {
           why: "stocktake",
           label: (was, now) => `Stocktake — ${fmtStockAmount(state, ing, was)} to ${fmtStockAmount(state, ing, now)}`,
         });
-        toast(`${ing.name}: on hand ${fmtStockAmount(state, ing, base)}`);
+        // ⭐ AND IF NOTHING MOVED, SAY SO OUT LOUD (v542) — otherwise a press that changed nothing looks exactly
+        // like one that worked, and the row it leaves behind is the only clue. ⚠️ Her words: __"and also +0kgs
+        // for the 2nd"__ — ⭐ **the shelf is unchanged and she is told, rather than left to find a row later.**
+        toast(moved && moved.delta === 0
+          ? `${ing.name}: already ${fmtStockAmount(state, ing, base)} — nothing changed`
+          : `${ing.name}: on hand ${fmtStockAmount(state, ing, base)}`);
       } else if (base <= 0) {
         clearLevel(close);
         return;

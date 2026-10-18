@@ -26,6 +26,7 @@ import { isCollected } from "./money.js";
 import { receiptNoOfGroup } from "./receipts.js";
 import { listFields, PULL_CEILING } from "./sync.js";
 import { unaccountedOrders } from "./backups.js";
+import { dayMonth } from "./dates.js";
 
 // The order-level facts every row of ONE order must agree on. ⚠️ DELIBERATELY NOT THE PER-LINE ONES —
 // `qty`, `unitPrice`, `unitCost` and `lineNote` are each row's own business, and a check that flagged
@@ -141,7 +142,68 @@ export function localChecks(state) {
       : pass("shelf", "Every removed order says when it came off"));
   }
 
-  // ── 8 · there is room on this phone for your data (v534) ────────────────
+  // ── 8 · no two ingredients share a NAME (v544) ──────────────────────────
+  //
+  // ⚠️⚠️ HER OWN CASE, AND IT IS THE ONE THAT MADE HER DOUBT THE WHOLE SCREEN. Two records called "Instant
+  // yeast" — one at 70 g, one at 1.142 kg — and ⭐ **the stock card and the list row disagreed because they were
+  // NOT THE SAME RECORD.** ⚠️ **The card and the row both read `onHand`, so an app can only show two figures for
+  // one name if there are two ingredients.**
+  // ⚠️ **AND NOTHING STOPS A SECOND ONE BEING MADE** — there is no name check when an ingredient is added, so
+  // this is the same fault the app already guards for ORDERS ("No order appears twice"), in a list that never
+  // had the guard. ⭐ **Her question named the consequence: __"it is not reliable"__** — and she was right for
+  // exactly this reason.
+  {
+    const by = new Map();
+    for (const i of (Array.isArray(state && state.ingredients) ? state.ingredients : [])) {
+      if (!i) continue;
+      const k = String(i.name || "").trim().toLowerCase();
+      if (!k) continue;
+      by.set(k, (by.get(k) || []).concat(i));
+    }
+    const dupes = [...by.values()].filter((a) => a.length > 1)
+      .map((a) => `${String(a[0].name || "(ingredient)")} ×${a.length}`);
+    out.push(dupes.length
+      ? fail("dupeIngredient", "No two ingredients share a name", dupes,
+        "Two or more ingredients carry the same name. Their stock is separate, so a stock card can show one amount and the list another — and a recipe takes from whichever one it points at. Neither is wrong; they are simply two records with one name.",
+        "Open each one, see which your recipes use, and hide or delete the other. Then set the stock on the one that is left, so the number means something.")
+      : pass("dupeIngredient", "No two ingredients share a name"));
+  }
+
+  // ── 9 · no recipe points at an ingredient you have HIDDEN (v544) ────────
+  //
+  // ⚠️⚠️ HER OWN CASE, AND IT TOOK TWO SCREENSHOTS TO SEE. She believed she had deleted a second "Instant
+  // yeast" long ago. ⭐ **She had not — the app HIDES an ingredient a recipe uses rather than deleting it** (her
+  // own base rule: anything a transaction already uses cannot be deleted). ⚠️ **And a hidden ingredient keeps
+  // its stock figure**, so two "yeast" numbers lived on, one of them belonging to nothing she could see.
+  // ⚠️⚠️ **THE RISK BEHIND IT IS THE PART THAT MATTERS:** the shopping list tops up only **active** ingredients,
+  // ⚠️ **but a bake still consumes a hidden one** — so **if a recipe points at the hidden ingredient, that
+  // ingredient is used on every bake and never appears on a list to be bought again.** ⭐ **It would run out and
+  // nothing would say so.**
+  // ⭐ **That is worth a check rather than a warning on one screen: it is a fact about her data, and this page is
+  // where she looks when she is worried.**
+  {
+    const hidden = new Map();
+    for (const i of (Array.isArray(state && state.ingredients) ? state.ingredients : [])) {
+      if (i && i.id && i.active === false) hidden.set(i.id, String(i.name || "(ingredient)"));
+    }
+    const bad = [];
+    if (hidden.size) {
+      for (const p of (Array.isArray(state && state.products) ? state.products : [])) {
+        if (!p) continue;
+        for (const line of (Array.isArray(p.recipe) ? p.recipe : [])) {
+          const name = line && hidden.get(String(line.ingredientId || ""));
+          if (name) bad.push(`${p.name || "(product)"} → ${name}`);
+        }
+      }
+    }
+    out.push(bad.length
+      ? fail("hiddenUsed", "No recipe uses an ingredient you have hidden", bad,
+        "A recipe points at an ingredient that is hidden. A bake still takes that ingredient off your shelf, but a hidden ingredient is never put on a shopping list — so it is used and never topped up, and it can run out without anything saying so.",
+        "Open the product's recipe and point that line at the ingredient you are actually using, or un-hide the hidden one if it is the right one.")
+      : pass("hiddenUsed", "No recipe uses an ingredient you have hidden"));
+  }
+
+  // ── 9 · there is room on this phone for your data (v534) ────────────────
   //
   // ⚠️⚠️ WHY THIS IS ON THE PAGE AT ALL. Saving used to fail into a console she never sees, and the ONLY sign
   // was nothing at all — ⭐ **the same disease as the stuck queue: a promise with nothing behind it, and a
@@ -166,6 +228,23 @@ export function localChecks(state) {
         out.push({ ...pass("room", "There is room on this phone for your data"), detail: [size] });
       }
     }
+  }
+
+  // ── 11 · this phone could read its own saved copy (v548) ────────────────
+  //
+  // ⚠️⚠️ THE FAULT THIS ANSWERS. A damaged stored book used to make the app come up EMPTY and say nothing —
+  // the only trace was a `console.warn`, and the next save wrote the empty book over the only local copy.
+  // ⭐ **The damaged text is now kept under its own key, and this check speaks for it.**
+  // ⭐ **AND IT CLEARS ITSELF** the moment a pull puts records back or a Restore/Import replaces the book —
+  // ⚠️ **so it appears exactly when the cloud did NOT save her**, which is the only case that matters.
+  {
+    const bad = state && state.unreadableSave;
+    out.push(bad
+      ? fail("readable", "This phone could read its saved copy",
+        [`${dayMonth(String(bad.at || "").slice(0, 10))} · ${Number(bad.chars) || 0} characters kept`],
+        "On that opening, this phone's stored book was damaged and could not be read. A copy of the damaged text was kept on this phone, and the app came up with an empty book. Anything that had already reached your shared data is safe; anything that lived only on this phone is in that kept copy.",
+        "Do not clear the app or the browser data. Let your shared data finish a sync (More → Settings) — if it is intact, the book refills and this note clears itself. If it does not refill, restore your newest backup instead.")
+      : pass("readable", "This phone could read its saved copy"));
   }
 
   return out;

@@ -656,8 +656,17 @@ test("explodeBomDates merges different products' lines and dedupes shared warnin
   assert.equal(flour.totalQty, 1000, "the valid day still contributes its flour");
 });
 
-test("explodeBomDates flags an ingredient measured in different units on different days", () => {
-  const st = fixtureState();
+test("explodeBomDates ADDS UP an ingredient measured in different units on different days", () => {
+  // ⚠️⚠️ THIS TEST USED TO PIN THE WARNING, AND THE WARNING WAS THE LESSER HALF OF THE FAULT (v548).
+  // ⭐ **It said "check units" over a total that was simply wrong: 500 g plus 2 kg was added as 502.**
+  // ⚠️ v545 fixed the raw sum inside ONE product's recipe and left these cross-day and cross-order
+  // accumulators alone — the same arithmetic in three more places. ⭐ **Now the number is right, so there
+  // is nothing left for the warning to warn about**, and the flag means "a unit we cannot convert" again.
+  // ⚠️ BOTH units must exist for the conversion to mean anything: the first version of this test wrote
+  // a recipe line in "kg" against a fixture whose unit list was empty, so "kg" was a name nothing could
+  // resolve — **a state the app cannot actually produce** (kg is seeded on every install). ⭐ A fix
+  // cannot be proved against a fixture the app will never be in.
+  const st = unitState();
   st.deliveryDates.push({ id: "del_b", date: "2026-09-14", notes: "" });
   // A second product recipes flour in kg; each day alone is internally
   // consistent (g one day, kg the other), so the clash is cross-day only.
@@ -670,9 +679,15 @@ test("explodeBomDates flags an ingredient measured in different units on differe
   ];
   const res = explodeBomDates(st, st.deliveryDates);
   const flour = res.items.find((i) => i.ingredientId === "ing_f");
-  assert.equal(flour.unitsOk, false);
-  assert.ok(res.warnings.some((w) => w.includes('"Strong flour"') && w.includes("different units")),
-    res.warnings.join(" | "));
+  // 500 g + 2 kg = 2,500 g, expressed in whichever unit came first (g).
+  assert.equal(flour.totalQty, 2500,
+    "★ a day written in kg was added to a day written in g as a raw number — **500 g plus 2 kg came to "
+    + "502 instead of 2,500**");
+  assert.equal(flour.unitsOk, true,
+    "★ the units differ but both belong to the ingredient's family, so they convert — a warning here "
+    + "would cry wolf over a total that is now right");
+  assert.ok(!res.warnings.some((w) => w.includes("different units")),
+    "★ the list still warns about units that it has just added up correctly");
 });
 
 test("explodeBomDates with no dates returns an empty combined list", () => {

@@ -80,10 +80,26 @@ test("★★ a healthy book passes every check — and every check actually RAN"
   // ⚠️ THE COUNT IS THE POINT. `[].every(...)` is TRUE — a check list that had quietly emptied itself
   // would pass every assertion above, on a phone with no checks at all. This project has been bitten by
   // that exact shape before (v381's doors).
-  assert.equal(res.total, 19, `the check list is no longer nineteen checks (it is ${res.total})`);
-  // 16 since v531: the record COUNT joins the page, and it is a pass on a book inside what one read can take.
-  assert.equal(res.passedChecks, 19);
+  assert.equal(res.total, 22, `the check list is no longer twenty-two checks (it is ${res.total})`);
+  // 17 since v548: "This phone could read its saved copy" joins the page.
+  assert.equal(res.passedChecks, 22);
   assert.equal(res.failed, 0);
+});
+
+test("★★★ a damaged saved copy FAILS the check, and a good one passes it", () => {
+  // ⚠️⚠️ v548: a stored book that could not be read used to come up EMPTY and say nothing. ⭐ **The check
+  // must now speak for it — and it must clear itself once the book is readable again**, or a red X would
+  // outlive the damage and become the warning she learns to ignore.
+  const damaged = healthy();
+  damaged.unreadableSave = { at: "2026-10-18T00:07:00.000Z", chars: 4210 };
+  const r = resultOf(runChecks(damaged, { register: REGISTER, copies: COPIES }), "readable");
+  assert.equal(r.status, "fail",
+    "★ this phone could not read its saved copy and the check said nothing — **the reset is silent, which "
+    + "is the fault being fixed**");
+  assert.match(String(r.detail && r.detail[0]), /4,?210/, "★ the check did not say how much was kept");
+
+  const ok = resultOf(runChecks(healthy(), { register: REGISTER, copies: COPIES }), "readable");
+  assert.equal(ok.status, "pass", "★ a book that read cleanly was reported as damaged");
 });
 
 test("★★ a receipt with no order behind it FAILS — the fault that cost her three orders", () => {
@@ -198,7 +214,7 @@ test("★★⚠️ A CHECK THAT COULD NOT RUN IS SKIPPED — IT IS NEVER A PASS"
     "★ shared data that could not be read was reported as a pass by the reverse check too");
   assert.equal(resultOf(res, "waiting").status, "pass",
     "the waiting count is a local number and does not need the cloud to be readable");
-  assert.equal(res.passedChecks, 11, "a skipped check was counted among the passes");
+  assert.equal(res.passedChecks, 14, "a skipped check was counted among the passes");
   assert.equal(res.skippedChecks, 8, "the skipped checks were not counted separately");
   assert.match(String(resultOf(res, "reached").why || ""), /shared data/i,
     "the skipped check does not say why it could not look");
@@ -273,8 +289,8 @@ test("⚠️ a phone with no orders at all is checked without throwing", () => {
   const bare = { settings: { currency: "RM" }, products: [], deliveryDates: [], orders: [], removedOrders: [] };
   const res = runChecks(bare, { register: [], copies: COPIES });
   assert.equal(res.failed, 0, "an empty book reported a fault");
-  assert.equal(res.total, 19, "the checks did not all run on an empty book");
-  assert.equal(localChecks(bare).length, 8, "the local checks are not eight");
+  assert.equal(res.total, 22, "the checks did not all run on an empty book");
+  assert.equal(localChecks(bare).length, 11, "the local checks are not eleven");
   assert.equal(registerChecks(bare, []).length, 2, "the register checks are not two");
   assert.equal(backupChecks(bare, { orders: [] }).length, 1, "the copy check is not one");
 });
@@ -723,6 +739,58 @@ test("★★★ and the page reports it, in her words", () => {
   // ⚠️ AND A PHONE WITH NO FAILURE SAYS NOTHING ABOUT ONE.
   assert.equal(resultOf(runHealthChecks(healthy(), { ...emptyExtras(), saveFail: null }), "saved").status, "pass",
     "a phone with no recorded failure claims one");
+});
+
+test("★★★ two ingredients sharing a NAME are named — the fault that made her doubt the screen (v544)", () => {
+  // ⚠️⚠️ HER CASE: __"last time there is 2 yeast, but i think i deleted it long time ago"__ — and then
+  // __"it is not reliable"__. ⭐ **Two records called "Instant yeast", one at 70 g and one at 1.142 kg.**
+  // ⚠️ **The stock card and the list row both read `onHand`, so an app can only show two figures for one name if
+  // there are two ingredients** — ⭐ **and nothing stops a second one being made.** This is the same guard the
+  // app already keeps for ORDERS, in a list that never had it.
+  const st = healthy();
+  st.ingredients = [
+    { id: "i1", name: "Instant yeast", active: true },
+    { id: "i2", name: "instant yeast ", active: true },   // ⚠️ case and spacing must not hide it
+    { id: "i3", name: "Strong flour", active: true },
+  ];
+  const r = resultOf(runHealthChecks(st, emptyExtras()), "dupeIngredient");
+  assert.equal(r.status, "fail", "★ two ingredients with one name were reported as fine");
+  assert.deepEqual(r.detail, ["Instant yeast ×2"],
+    "★ it does not name the ingredient and how many there are, so she cannot go and look");
+  assert.match(r.fix, /hide|delete/i, "a fault with no way out is a dead end");
+
+  // ⭐ AND A NORMAL KITCHEN DOES NOT GET FLAGGED.
+  const clean = healthy();
+  clean.ingredients = [{ id: "i1", name: "Instant yeast", active: true }, { id: "i2", name: "Flour", active: true }];
+  assert.equal(resultOf(runHealthChecks(clean, emptyExtras()), "dupeIngredient").status, "pass");
+});
+
+test("★★★ a recipe pointing at a HIDDEN ingredient is named — it is used and never topped up (v544)", () => {
+  // ⚠️⚠️ HER OWN CASE. She believed she had deleted a second "Instant yeast"; ⭐ **the app HIDES an ingredient a
+  // recipe uses rather than deleting it**, and **a hidden ingredient keeps its stock figure** — so two numbers
+  // lived on, one belonging to nothing she could see.
+  // ⚠️ **THE RISK BEHIND IT:** a bake still TAKES a hidden ingredient off the shelf, but the shopping list tops
+  // up only ACTIVE ones — ⭐ **so if a recipe points at the hidden one, it is used on every bake and never
+  // appears on a list again. It would run out and nothing would say so.**
+  const withRecipe = (ingredientId) => {
+    const st = healthy();
+    st.ingredients = [
+      { id: "i_live", name: "Instant yeast", active: true },
+      { id: "i_hid", name: "Instant yeast", active: false },
+    ];
+    st.products[0].recipe = [{ ingredientId, qty: 11, unit: "g" }];
+    return st;
+  };
+
+  const bad = resultOf(runHealthChecks(withRecipe("i_hid"), emptyExtras()), "hiddenUsed");
+  assert.equal(bad.status, "fail", "★ a recipe pointing at a hidden ingredient was reported as fine");
+  assert.deepEqual(bad.detail, ["Focaccia → Instant yeast"],
+    "★ it does not name the product and the ingredient, so she cannot go and fix it");
+  assert.match(bad.fix, /recipe/, "a fault with no way out is a dead end");
+
+  // ⭐ AND THE SAME RECIPE ON THE LIVE ONE IS FINE — the check must not cry wolf on an ordinary kitchen.
+  assert.equal(resultOf(runHealthChecks(withRecipe("i_live"), emptyExtras()), "hiddenUsed").status, "pass",
+    "★ a recipe pointing at a LIVE ingredient was flagged");
 });
 
 test("★★★ and how much room the data takes is MEASURED — and only a red X when it is nearly full", () => {

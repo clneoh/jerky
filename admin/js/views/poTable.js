@@ -168,7 +168,12 @@ function rowFor(state, it, currency) {
       el("span", {}, it.buyText),
       needLine);
   } else {
-    qtyCell = el("td", { class: "num" }, fmtQty(it.openQty != null ? it.openQty : it.totalQty, it.unit));
+    // ⚠️ THE AMOUNT TO BUY CARRIES ITS OWN UNIT (v548) — `openQty` is in the ingredient's COOKING unit,
+    // not the recipe line's, and printing "0.5g" for half a kilogram is a thousand-fold lie.
+    qtyCell = el("td", { class: "num" },
+      it.openQty != null
+        ? fmtQty(it.openQty, it.openUnit || it.unit)
+        : fmtQty(it.totalQty, it.unit));
   }
 
   return el("tr", { class: it.covered ? "po-covered" : undefined },

@@ -91,6 +91,23 @@ test("chosenSupplier returns null with no usable price and skips cross-family pa
   assert.equal(chosenSupplier(familyMix, familyMix.ingredients[0]), null);
 });
 
+test("★★★ a loose line's amount is LABELLED with the unit it is really in", () => {
+  // ⚠️⚠️ THE FAULT (v548): `openQty` is in the ingredient's COOKING unit — kg here — and it was printed
+  // with the RECIPE LINE's unit, g. ⭐ **"0.5g" for half a kilogram: the right number under a unit a
+  // thousand times too small**, and the amend box said "amount in g" over a figure that meant kg.
+  const st = {
+    uoms: UOMS,
+    suppliers: [],
+    ingredients: [{ id: "ing_f", name: "Strong flour", unit: "kg", uomId: "kg", onHand: 0,
+      safetyBase: 0, costPerUnit: 5 }],
+  };
+  const r = priceItems(st, [{ ingredientId: "ing_f", ingredientName: "Strong flour", unit: "g",
+    totalQty: 500, costPerUnit: 5 }])[0];
+  assert.equal(r.openQty, 0.5, "precondition: half a kilogram, expressed in kg");
+  assert.equal(r.openUnit, "kg",
+    "★ the amount to buy is labelled with the recipe line's unit — **half a kilogram reads as 0.5 g**");
+});
+
 test("priceItems rounds a priced ingredient up to whole packs with pack-based cost", () => {
   const st = makeState([ingredient({
     supplierPrices: [{ supplierId: "s_mydin", qty: 4000, uomId: "g", price: 25 }],

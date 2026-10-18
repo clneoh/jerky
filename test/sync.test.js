@@ -264,6 +264,58 @@ test("mergeRows: a shop added on one phone appears on the phone that had none", 
   } finally { restore(); }
 });
 
+test("★★★ an old one-row-for-the-day arrives as two records — the retired row never lands", () => {
+  // ⚠️⚠️ THE FAULT (v547): v546 made a baking day one record per product, but the OLD records are still
+  // in the cloud. A pull pushed one back into the list and the next load split it into ids that were
+  // already there, so the day came out recorded twice. ⭐ **This is the door, not the rewind:** the old
+  // row is turned into the records it should have been before it can enter the list.
+  const { store, restore } = installStorage();
+  try {
+    const st = baseState();
+    st.bakedDays = [];
+    seedJournal(store);
+    const old = { id: "bake_2026-10-16", date: "2026-10-16",
+      items: { p1: { total: 4, applied: 4 }, p2: { total: 3, applied: 3 } } };
+    sync.mergeRows(st, [cloudRow("bakedDays", "bake_2026-10-16", old, "2026-10-16T10:00:00.000Z")]);
+
+    assert.deepEqual(st.bakedDays.map((r) => r.id).sort(),
+      ["bake_2026-10-16_p1", "bake_2026-10-16_p2"],
+      "★ the old day-wide row landed as ONE record — the next load splits it on top of the per-product "
+      + "rows, and the day is recorded twice");
+    assert.deepEqual(st.bakedDays.find((r) => r.id === "bake_2026-10-16_p1").items,
+      { p1: { total: 4, applied: 4 } }, "★ the split lost what she recorded");
+  } finally { restore(); }
+});
+
+test("★★★ a removed unit is a SYNCED record — the other phone must learn it was deleted", () => {
+  // ⚠️⚠️ v547 kept the removal on the phone that made it, and `uoms` travels — so the other phone
+  // re-seeded the unit and pushed it back. ⭐ **A list that is not registered in LISTS is device-local by
+  // accident**, which is exactly what happened.
+  assert.ok(sync.syncedKinds().includes("uomsRemoved"),
+    "★ the removed-unit note is not a synced kind — **the other phone will re-seed the unit and push it "
+    + "straight back**");
+  const recs = sync.computeRecords({ ...baseState(), uomsRemoved: [{ id: "loaf" }] });
+  assert.ok(recs.some((r) => r.kind === "uomsRemoved" && r.id === "loaf"),
+    "★ the removal produced no record to send");
+});
+
+test("★★★ a pull that puts records back CLEARS the could-not-read note", () => {
+  // ⚠️ v548: a damaged saved copy comes up empty. ⭐ The note exists for the case where the cloud could NOT
+  // put the book back — **so a pull that actually restores something is the repair, and the note goes.**
+  // ⚠️ Without this the check stays red after the data is fine, which is how a warning stops being read.
+  const { store, restore } = installStorage();
+  try {
+    const st = baseState();
+    st.orders = [];
+    st.unreadableSave = { at: "2026-10-18T00:07:00.000Z", chars: 4210 };
+    seedJournal(store);
+    sync.mergeRows(st, [cloudRow("orders", "o1", { id: "o1", qty: 1 }, "2026-10-18T00:00:00.000Z")]);
+    assert.equal(st.orders.length, 1, "precondition: the pull did not put the order back");
+    assert.equal(st.unreadableSave, null,
+      "★ the note survived a pull that repaired the book — **the check would stay red for ever**");
+  } finally { restore(); }
+});
+
 test("mergeRows: a supplier newly saved on this phone is queued to be pushed", () => {
   const { store, restore } = installStorage();
   try {
@@ -858,6 +910,44 @@ test("pull: merges cloud rows, persists lastPullAt, reports changed", async () =
       assert.equal(st.orders[0].qty, 4);
       const b = JSON.parse(store.get("bakeadmin.sync"));
       assert.ok(b.lastPullAt, "lastPullAt recorded");
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});
+
+test("★★★ a save made WHILE a pull is running is not lost", async () => {
+  // ⚠️⚠️ THE FAULT: the sync journal was read BEFORE the network round trip and written back after it. If
+  // she changed anything while the read was in flight, **the merge used the stale copy and then overwrote
+  // the journal** — her edit was replaced by the cloud's version AND fell out of the queue, so it was never
+  // sent and nothing ever noticed. ⭐ A 30-second beat means this happens on an ordinary tap, not a rare race.
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    st.orders = [{ id: "o1", status: "new" }];
+    seedToken(store);
+    // Her earlier save, already queued, OLDER than the cloud row on its way down.
+    sync.markDirty(st, "2026-10-17T00:00:00.000Z");
+
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    const restoreFetch = installFetch(async () => {
+      await gate;
+      return { ok: true, json: async () => [cloudRow("orders", "o1", { id: "o1", status: "paid" },
+        "2026-10-18T00:00:00.000Z")] };
+    });
+    try {
+      const flying = sync.pull(st);
+      // …she taps New → Baked while the read is still open.
+      st.orders[0].status = "baked";
+      sync.markDirty(st, "2026-10-18T00:00:01.000Z");
+      release();
+      await flying;
+
+      assert.equal(st.orders[0].status, "baked",
+        "★ her edit was overwritten by a pull that had already started — **the change is gone from this "
+        + "phone and the cloud's older version is what it now holds**");
+      const b = JSON.parse(store.get("bakeadmin.sync"));
+      assert.ok(b.pending["orders:o1"],
+        "★ her edit fell out of the queue — **it will never be sent, and nothing will ever ask again**");
     } finally { restoreFetch(); }
   } finally { restore(); }
 });

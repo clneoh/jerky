@@ -18,7 +18,10 @@ import { activeCourier, courierLabel } from "../couriers.js";
 import { CONFIG } from "../../../store/config.js";
 
 export function renderSettings(root, state) {
-  const dayNames = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  // ⚠️⚠️ INDEXED BY THE SAME NUMBER AS A CHECKBOX, and 0 IS SUNDAY (v548). The list used to start with
+  // an empty string and end with "Sun", so the **Sunday box was drawn with a blank label** and "Sun" sat
+  // at an index nothing used. ⭐ She could tick a box with no name on it and the app then said "Sun".
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const cur = state.settings;
   let dead = false; // the cloud-copies fill never touches the DOM after a re-render
   seedStorefront(state); // prefill the editor from store/config.js once, then stay editable

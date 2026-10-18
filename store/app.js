@@ -37,7 +37,7 @@ import { ENGINE_VERSION } from "../admin/js/version.js";
 // cache.** ⚠️ And it must be kept in step with `admin/js/version.js` by hand, which is a second place for
 // one fact: ⭐ **that is accepted here ONLY because a test fails the moment they disagree** (see
 // `store-build-notice.test.js`), so a forgotten bump is a red suite rather than a shop that lies.
-export const SHOP_BUILD = "541";
+export const SHOP_BUILD = "549";
 // "Is this page the newest one?" — the comparison and the probe's address, kept on their own so a
 // test can pin them (this file calls `render()` at the top level and cannot be imported at all).
 import { BUILD_TRIED_KEY, VERSION_URL, newerBuild } from "./build.js";
@@ -624,6 +624,21 @@ export function isOpen(cfg, d, now = new Date()) {
   return now.getTime() < deadline.getTime();
 }
 
+// ★★★ IS TODAY'S BAKE STILL CATCHABLE? (v549)
+//
+// ⚠️⚠️ THE FAULT: the heading asked `isOpen(cfg, today)` — "is it still before the deadline for a bake
+// TODAY?" — and that deadline is **yesterday at 18:00**, so the answer was false on every day of the year.
+// ⭐ The page said **"Today's bake has closed"** on a Sunday the bakery never bakes, and **"You're in
+// time" could never appear at all.**
+// ⭐ Two truths, and the heading follows them:
+//   • a day she does not bake has no bake to have closed → he is in time for the next one;
+//   • a day she does bake is open only until its own cut-off (the day before).
+export function todayStillOpen(cfg, now = new Date()) {
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const bakesToday = Array.isArray(cfg && cfg.deliveryDays) && cfg.deliveryDays.includes(start.getDay());
+  return !bakesToday || isOpen(cfg, start, now);
+}
+
 // ★★ "6PM", NOT "18:00" (v405). ⚠️ A stranger reads a clock the way they speak. 18:00 is the form the
 // baker's admin stores and it is right THERE; on the customer's page it is a small puzzle, and the
 // whole finding of this version is that small puzzles are where a nervous customer goes wrong.
@@ -680,7 +695,12 @@ function paintDayAnswer(cfg, cutoffSay) {
   // ⚠️ "TODAY'S BAKE HAS CLOSED" IS ONLY TRUE WHEN TODAY IS NOT ONE OF HER DAYS, and it is the case he
   // hit — but a page that says it on a Tuesday when the bakery bakes Tuesday would be wrong. So the
   // heading follows the fact, not the clock.
-  const todayOpen = isOpen(cfg, new Date(new Date().setHours(0, 0, 0, 0)));
+  // ⚠️⚠️ AND "TODAY'S BAKE" ONLY EXISTS ON A DAY SHE BAKES (v549). ⭐ `isOpen(cfg, today)` asks "is it
+  // still before the deadline for a bake TODAY?" — and that deadline is **yesterday at 18:00**, so it was
+  // false on every day of the year: the heading read "Today's bake has closed" on a Sunday the bakery
+  // never bakes, and **"You're in time" could never appear at all.** ⭐ A day she does not bake has no
+  // bake to have closed; and a day she does bake is open until its own cut-off.
+  const todayOpen = todayStillOpen(cfg);
   box.hidden = false;
   box.classList.toggle("ok", todayOpen);
   document.getElementById("answer-kicker").textContent = t(todayOpen ? "ansInTime" : "ansClosed");
@@ -2372,6 +2392,21 @@ function clearFieldMarks() {
     // A code the customer has already used on this phone, or one that is for first
     // orders only, comes back "soft" here for the same reason it did when it was
     // typed: it is on the order, with its caveat.
+    // ★★★ A CODE THE PAGE HAS ALREADY JUDGED IS JUDGED AGAIN (v549).
+    //
+    // ⚠️⚠️ The refusal was stored ONCE and reprinted on every repaint, with the shortfall frozen into
+    // it — ⭐ **so "Add RM14.00 more to use it" stayed on screen after the customer had added the RM14**,
+    // and the code they qualified for was never applied. ⚠️ And a **`?promo=` link** is judged at boot,
+    // before the codes have arrived, so a perfectly good code was refused and **never looked at again**
+    // even when the codes landed a second later. ⭐ The applied code has always been re-judged here; the
+    // REFUSED one was not, which is the same rule applied to half the page.
+    const boxed = promoInput ? tidyCode(promoInput.value) : "";
+    if (promoRefusal && boxed) {
+      const again = judge(boxed, total);
+      if (again.kind === "no") promoRefusal = again;
+      else { promoApplied = again.code; promoRefusal = null; }
+    }
+
     let got = null;
     if (promoApplied) {
       const j = judge(promoApplied, total);
@@ -2849,6 +2884,19 @@ function clearFieldMarks() {
       const box = document.getElementById("menu-note");
       if (box) { box.hidden = true; box.replaceChildren(); }
       return notes;
+    }
+    // ★★★ A PRODUCT THAT LEFT THE MENU LEAVES THE BASKET TOO (v548).
+    // ⚠️⚠️ The menu is replaced wholesale on the 30-second refresh. When the bakery renamed or removed a
+    // product, the card vanished and **the basket kept the old name** — so at Place order `lines` came out
+    // EMPTY while step ② still read done, `refuseAtFirstMissing` found nothing to name, ⭐ **and the press
+    // did nothing at all: no order, no message, no idea.** ⭐ A basket that cannot become an order must
+    // empty itself and say why.
+    for (const [name, q] of [...cart]) {
+      if ((q || 0) <= 0) continue;
+      if (!CONFIG.products.some((p) => p.name === name)) {
+        cart.delete(name);
+        notes.push(sub(t("fixGone"), name));
+      }
     }
     const byProduct = prodAvail && prodAvail[selected] ? prodAvail[selected] : {};
     const groups = poolGroups(CONFIG.products);
@@ -3553,6 +3601,14 @@ function clearFieldMarks() {
     }
   }
 
+  // ★★★ THE SEND IS A STATE THAT OUTLIVES A REPAINT (v548).
+  //
+  // ⚠️⚠️ The press disables the button while the order is in flight, and this bar set it back to ENABLED on
+  // every repaint — ⭐ **so a language tap, a "+", or the 30-second refresh landing during a slow send turned
+  // it back on, and a second press posted the SAME ORDER AGAIN.** ⭐ `var`, not `let`, because a repaint can
+  // legitimately run before this line is reached textually and a `let` would throw on the way.
+  var sending = false;
+
   // A function declaration (hoisted) because reconcileCart runs from the first
   // repaint, before this line is reached textually.
   // The basket's full-price total — the one number the bar, the order and the
@@ -3588,7 +3644,8 @@ function clearFieldMarks() {
     // a child, which the test shims read differently from their own. **The number is a decoration —
     // it needs no translating and no screen reader — so it belongs to the stylesheet, and this line
     // goes on setting exactly the label it always did.**
-    document.getElementById("order-btn").textContent = t("placeOrder");
+    // ⚠️ A REPAINT DURING A SEND KEEPS THE BUTTON AS IT WAS (v548) — see `sending` above.
+    document.getElementById("order-btn").textContent = sending ? t("sending") : t("placeOrder");
     // ★★★ AND IT IS NEVER DISABLED FOR AN EMPTY BASKET (v452).
     // ⚠️⚠️ THE RULE WAS ALREADY WRITTEN DOWN TWENTY LINES FURTHER ON, IN THE PRESS'S OWN COMMENT:
     // *"THE BUTTON IS NEVER DISABLED (her standing rule — a site rule must not hide or block a sale)"* —
@@ -3600,7 +3657,8 @@ function clearFieldMarks() {
     // he is; the button now says what to do about it.
     // ⚠️ The one disable that remains is the one in the press itself, WHILE the order is being sent — that
     // is what stops a slow network making him tap twice and posting two orders.
-    document.getElementById("order-btn").disabled = false;
+    // ⚠️ `sending`, not a flat `false`: a repaint mid-send must not re-open the press (v548).
+    document.getElementById("order-btn").disabled = !!sending;
     // ⚠️⚠️ AND THE BALL IS NOT TOUCHED HERE (v439). v438 dimmed it with an empty basket; her phone
     // showed the result — ④ pale, ② and ③ solid. **A step marker is not a state**, so nothing on
     // this repaint changes it: it keeps ①②③'s colour whether the basket is empty or full.
@@ -3707,6 +3765,21 @@ function clearFieldMarks() {
     // then how he gets it — **and it stops at the FIRST one missing.** ⚠️ That order is the point: a message
     // about step 3 shown to somebody who has not done step 2 sends him backwards down the page to fix
     // something the page was not yet asking him for.
+    // ★★★ A BASKET WHOSE PRODUCTS HAVE ALL LEFT THE MENU (v548). ⚠️⚠️ The menu is replaced wholesale on a
+    // refresh; when the bakery renamed or removed what he had picked, `lines` came out EMPTY while step ②
+    // still read done — and `refuseAtFirstMissing` had nothing to name, ⭐ **so the press did nothing at
+    // all: no order, no message, no clue.** ⭐ Clearing the basket and SAYING SO is the only honest answer:
+    // what he chose is gone, and he must pick again from what is actually there.
+    if (!lines.length && cart.size) {
+      const gone = [...cart.keys()];
+      cart.clear();
+      renderBar();
+      showConfirm([
+        el("p", { class: "confirm-title" }, t("confirmChangedTitle")),
+        ...gone.map((n) => el("p", { class: "confirm-body" }, sub(t("fixGone"), n))),
+      ], "warn");
+      return;
+    }
     if (!lines.length) {
       // ★★★ THE SAME LINE AS EVERY OTHER REFUSAL, AT STEP 2 (v493) — and the banner at the foot of the page
       // is RETIRED with its own competing scroll. ⚠️ **Those two fought, exactly as the closed-day banner
@@ -3753,13 +3826,15 @@ function clearFieldMarks() {
     const fulEl = document.getElementById("fulfillment");
     const fulfillment = (fulEl && fulEl._value) || "courier";
     const address = (document.getElementById("address-input").value || "").trim();
-    if (fulfillment === "courier" && !address) {
+    // ★★★ AND THE ADDRESS ANSWERS THE WAY THE NAME AND THE NUMBER DO (v548). ⚠️ Its refusal used to be a
+    // banner at the foot of the page — a third way of saying one sentence inside one step. ⭐ The box is
+    // marked, its reason underneath, and the page carried to it.
+    // ⭐ A typed address OR a dropped pin is a door (the pin's own save treats the pair as sufficient).
+    // Requiring the text as well would refuse a customer who marked the place on the map.
+    if (fulfillment === "courier" && !address && !doorPin) {
       const addrInput = document.getElementById("address-input");
-      if (addrInput && addrInput.focus) addrInput.focus();
-      showConfirm([
-        el("p", { class: "confirm-title" }, t("confirmAddrTitle")),
-        el("p", { class: "confirm-body" }, t("confirmAddrBody")),
-      ], "warn");
+      clearFieldMarks();
+      markField(addrInput, "confirmAddrTitle", "confirmAddrBody");
       return;
     }
     // Cutoff guard: a customer may have the page open across the deadline, so
@@ -3853,6 +3928,7 @@ function clearFieldMarks() {
 
     // Immediate feedback + block the button while sending, so a slow network
     // can't make a customer tap repeatedly and send duplicates.
+    sending = true;          // ⚠️ survives the repaints that follow (v548)
     orderBtn.disabled = true;
     orderBtn.textContent = t("sending");
     // ★ The step is DONE the moment he places it — painted here, so it shows during the send.
@@ -3876,7 +3952,14 @@ function clearFieldMarks() {
       // one path where the order really landed** — the same reason `rememberShopOrder` is here and
       // nowhere else — and an order that fell back to WhatsApp keeps its stamp on purpose.
       forgetVia();
+      sending = false;       // the order landed — the next customer may order (v548)
       cart.clear();
+      // ★★★ AND THE MENU IS REBUILT, NOT JUST THE BAR (v549). ⚠️⚠️ The reset emptied the basket and left
+      // every card's stepper reading the last customer's number: the bar said **"0 items / RM0.00"** while
+      // the Focaccia card still showed **1**. ⭐ Two things on one screen saying different numbers is the
+      // fault this shop has fixed more times than any other, and the steppers are built from `cart`, so
+      // they are rebuilt from it here.
+      renderMenu();
       // …and with it every note typed against it, or the next customer's first
       // look at the menu would open with the last person's words sitting in the
       // boxes. Nothing else on this page is carried over; neither is this.
@@ -4018,6 +4101,7 @@ function clearFieldMarks() {
       // cart stays intact if it can't open.
       const url = CONFIG.whatsapp ? waUrl(order, dayLabel) : null;
       const opened = url ? tryOpenWa(url) : false;
+      sending = false;
       orderBtn.disabled = false;
       orderBtn.textContent = t("placeOrder");
       showConfirm([

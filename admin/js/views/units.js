@@ -139,6 +139,16 @@ function deleteUnit(state, uom, root) {
   }
   confirmDialog(`Delete unit "${uom.name}"?`, () => {
     state.uoms = state.uoms.filter((u) => u.id !== uom.id);
+    // ★★ AND THE DELETE IS REMEMBERED (v547). ⚠️ The eleven selling units and the four time/length
+    // pairs are re-seeded on every load, so without this the unit came back the next time the app
+    // opened — **a Delete that undid itself**, which reads exactly like a button that does nothing.
+    // ⚠️ A RECORD, NOT A STRING, because this list TRAVELS (v548): the other phone must learn that the
+    // unit was deleted, or it re-seeds the unit and pushes it straight back.
+    const gone = Array.isArray(state.uomsRemoved) ? state.uomsRemoved : (state.uomsRemoved = []);
+    const name = String(uom.name || "").trim().toLowerCase();
+    if (name && !gone.some((r) => String((r && r.id) || r).toLowerCase() === name)) {
+      gone.push({ id: name, at: new Date().toISOString() });
+    }
     toast("Unit deleted");
     save(state);
     renderAll(root, state);

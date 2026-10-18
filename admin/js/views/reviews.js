@@ -70,11 +70,12 @@ export function renderReviews(root, state) {
       wrap.replaceChildren(...children);
       return;
     }
+    // ⚠️ `state` GOES WITH IT (v548) — see the note on `photoEl`'s call site.
     children.push(reviewCarousel([...waiting, ...live], afterId, {
       onPublish: (row, nextId) => setPublished(row, true, nextId),
       onTakeDown: (row, nextId) => setPublished(row, false, nextId),
       onDelete: (row, nextId) => askDelete(row, nextId),
-    }));
+    }, state));
     wrap.replaceChildren(...children);
   }
 
@@ -123,14 +124,19 @@ export function renderReviews(root, state) {
 // is the decision screen, so the review in front of you stays put. Acting on a
 // card (via `actions`) calls back with the review that follows it, so the
 // carousel moves on to the next review after Publish / Take down / Delete.
-function reviewCarousel(rows, startId, actions) {
+// ⚠️⚠️ `state` IS A PARAMETER, NOT A MODULE BINDING (v548). The card called `photoEl(state, row)` with
+// nothing in scope, so **the first review that carried a picture threw `ReferenceError: state is not
+// defined` while the screen was being built** — and the screen drew only its intro paragraph: no carousel,
+// no Publish, no Take down, no Delete. ⭐ The trigger was the PHOTO, which is why every review without one
+// drew perfectly and the fault could sit there unseen.
+function reviewCarousel(rows, startId, actions, state) {
   const holder = el("div", { class: "r-slider" });
   const stage = el("div", { class: "r-stage" });
   const track = el("div", { class: "r-track" });
   rows.forEach((row, idx) => {
     const slide = el("div", { class: "r-slide" });
     slide.setAttribute("aria-roledescription", "slide");
-    slide.appendChild(reviewCard(rows, row, idx, actions));
+    slide.appendChild(reviewCard(rows, row, idx, actions, state));
     track.appendChild(slide);
   });
   stage.appendChild(track);
@@ -228,7 +234,9 @@ function photoEl(state, row) {
 // The homepage card replica: photo → stars → message → name → language · date
 // (homepage CSS classes in app.css). The moderation buttons ride along at the
 // bottom; acting calls the `actions` callbacks with the review that follows.
-function reviewCard(rows, row, idx, actions) {
+// ⚠️ EXPORTED FOR THE TEST THAT WOULD HAVE CAUGHT THIS (v548) — the smoke pass builds the screen, but
+// the cards arrive from the network, so nothing had ever built one.
+export function reviewCard(rows, row, idx, actions, state) {
   const bits = [];
   if (row.photo) bits.push(photoEl(state, row));
   const starsN = Math.max(0, Math.min(5, Math.round(Number(row.stars) || 0)));

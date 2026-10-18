@@ -543,9 +543,13 @@ function amendRow(state, items, i, paint, refresh, cur) {
   }
 
   const loose = it.loose === true;
-  const countLabel = loose ? `amount in ${it.unit || "units"}` : "packs";
+  // ⚠️⚠️ A LOOSE LINE'S AMOUNT AND ITS PRICE ARE IN THE INGREDIENT'S COOKING UNIT (v548) — `amendItem`
+  // multiplies what she types by `cookBase`. ⭐ Labelling that box with the RECIPE LINE's unit made a line
+  // say "amount in g" over a figure that meant kilograms, and typing "1" put 1,000 g on her shelf.
+  const amountUnit = loose ? (it.openUnit || it.unit || "units") : "";
+  const countLabel = loose ? `amount in ${amountUnit}` : "packs";
   const priceLabel = loose
-    ? `RM per ${it.unit || "unit"}`
+    ? `RM per ${amountUnit || "unit"}`
     : `RM per ${trimNum(it.packQty)}${it.packUomName || ""} pack`;
 
   const count = el("input", { class: "input amend-num", type: "number", inputmode: "decimal",

@@ -120,6 +120,15 @@ export function refundOf(state, group) {
   // ⚠️ THE AMOUNT IS ASKED FIRST, AND THE MARK IS THE FALLBACK — never the gate. Gating on the mark
   // would make an amount with no mark do nothing at all, which is a silent way to lose the whole
   // refund; and the amount is the more specific of the two facts.
+  // ⚠️⚠️ A REFUND THAT ANSWERED AN EDIT IS NOT SUBTRACTED AGAIN (v549).
+  //
+  // ⭐ **MEASURED: RM30 paid, edited down to RM15, accept "Refund RM15?" — and the order's takings read
+  // RM0, although she kept RM15.** ⚠️ The edit had ALREADY taken the RM15 out of her takings (that is what
+  // the save dialog says: *"Saving takes RM15 out of your accounts — your hand will not change"*), so
+  // subtracting the refund as well counts one event twice. ⭐ **The refund is still recorded** — the
+  // receipt register reads `refundAmountRM` directly and still says the money went back — **it simply does
+  // not move the takings a second time.**
+  if (first.refundFromEdit) return 0;
   const stored = Number(first.refundAmountRM);
   if (Number.isFinite(stored) && stored > 0) return round2(stored);
   if (first.refundedAt) return round2(customerTotal(state, group).total);

@@ -1,8 +1,75 @@
-# Munchies Furkidz — change history (v54 → v541)
+# Munchies Furkidz — change history (v54 → v549)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**18 Oct 2026 — engine v549: A FULL AUDIT OF EVERY SCREEN FOUND TWENTY-TWO
+FAULTS, AND ALL TWENTY-TWO ARE NOW FIXED (nothing to run, no SQL, nothing to upload).**
+
+**Your words: __"since there is so many error, why not you do a thorough audit on all small details then
+draft a plan to rectify it one off."__ So every screen, every calculation and every save-and-load path
+was read end to end — the app, the shop, the sync, the backups, the dates and the money.**
+
+**1. ⚠️ The part worth keeping is how they were found.** **All 3,525 tests were green while all sixteen
+were live.** **Every fault here was found by reading the code and measuring the number it produced — not by
+a test going red.** **A green suite proves the app does what its tests say; it does not prove the tests
+said the right thing.**
+
+**2. The faults that put a WRONG NUMBER in front of you.**
+- **A recipe line's cost used the price per kg on a quantity written in grams** — a RM2.50 pouch costed at
+  RM2,500, and Profit's cost of sales a thousand times out.
+- **500 g plus 1 kg came to 501**, because quantities in different units were added as plain numbers.
+- **Correcting one product's bake gave back ANOTHER product's ingredient**, and a correction the shelf could
+  not cover invented stock that was never there.
+- **The "amount to buy" box in the amend popup named the wrong unit** — typing 1 where it meant kg put
+  1,000 g on the shelf.
+- **A blank in your saved posting-day pattern was printed as Sunday** — the app told you Monday, Sunday and
+  Wednesday, a day you never ticked. It is cleaned when it loads now, and a blank is never named as a day.
+- **A discount larger than the order left the printed lines not adding up.** The Total stopped at RM0.00,
+  but the discount did not stop — so the lines under it summed to minus RM470. **The discount is now capped
+  at what there is to take off, so every printed surface adds up to its own Total.**
+
+**3. Two phones.**
+- **A unit you deleted came back — and came back on your other phone too.** **The removal was remembered only
+  on the phone that made it**, so the other phone pulled the unit back and pushed it in again. **A removal is
+  now a record of its own and travels**, so a delete stays deleted on both.
+- **A change made during a sync could be thrown away** — your edit replaced by the cloud's older copy, and
+  never sent.
+- **Two products recorded on the same day are now two records, not one.** **One record per day meant the
+  two phones could overwrite each other's day**; an old one-row day is split when it loads, moving no stock.
+
+**4. The shop.**
+- **A product you renamed or removed left a customer's basket stuck**: Place order did nothing at all, with
+  no message. **The basket now empties itself and says which item went and why.**
+- **A slow send could post the same order twice**, because any repaint turned the button back on. **The
+  sending state now survives a repaint.**
+- **A courier order could be placed with no address at all.** **The address box now marks itself and says
+  why**, the same way the name and the number boxes do — **and a pin dropped on the map counts as an
+  address, so a customer who marks the place is not refused.**
+- **"Today has closed" was printed on a day you do not post.** **The heading now asks whether today is one
+  of your posting days**, and a day that is open says so.
+- **A refused promo code was judged once and never again** — "add RM14 more" stayed on screen after the
+  customer had added the RM14. **A code the page has judged is judged again whenever the basket or the
+  codes change.**
+- **The menu kept the last customer's quantity boxes after an order.** **The menu is rebuilt with the
+  basket now.**
+
+**5. One refund.** **A refund after editing an order down was taken off twice** — you kept RM15 and the
+order read RM0. **The refund is still recorded, and it no longer moves your takings a second time.**
+**An ordinary refund, on an order you have not edited, is unchanged.**
+
+**6. The rest.**
+- **A stock card shows the TIME**, so two movements on one day can be told apart.
+- **A stocktake that changes nothing now records its own +0 row**, so the day is not silently missing.
+- **Two ingredients sharing one name are findable**, and **a hidden ingredient can be unhidden** — hiding
+  used to be a one-way door.
+- **Removing stock the shelf cannot cover is refused**, and says so, instead of leaving a shelf that cannot
+  go negative with no explanation.
+
+**7. The engine number is 549 because on each sync this app takes the bakery's number**, so both shops read
+the same sticker. **Nothing of yours was rewritten, and nothing needs running: no SQL, no upload, no
+database step.**
 
 **17 Oct 2026 — engine v541: A PRODUCT WITH NO INGREDIENTS CAN STILL BE RECORDED, AND IT SAYS IT MOVES NO
 STOCK (nothing to run, nothing to upload).**

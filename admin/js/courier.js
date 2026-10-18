@@ -307,24 +307,40 @@ export function customerTotal(state, group) {
   // is named on their own tracking page, and it is the one they will ask about. The friend's
   // coupon is NOT spent when that happens (it is written unused — see `giveCredits`), so it
   // is still theirs to use on the next order.
+  // ⚠️⚠️ AND A DISCOUNT CAN NEVER BE MORE THAN THERE IS TO TAKE OFF (v549). ⭐ The TOTAL was floored at
+  // nothing, but the DISCOUNT was not — so a RM500 code on RM30 of bread printed an invoice whose lines
+  // summed to **−RM470** under a Total of **RM0.00**, and Profit's journal row said −RM470 while its Sales
+  // line for the same order said RM0. ⭐ **A figure that is capped in one place and not in the others is
+  // four screens disagreeing about one order** — the invoice, the message, the journal and the takings.
+  const gross = round2(items + courier + postage);
+  const promoCut = round2(Math.min(promo.money, Math.max(0, gross)));
   const coupon = promo.money > 0
     ? { amount: 0, id: "", code: "", role: "" }
-    : couponAgainst(state, orders, items + courier - promo.money);
-  // Floored at nothing: a discount larger than the order (a free-delivery code on a
-  // collect order has no fee to waive, but a hand-edited code could still overshoot)
-  // must never leave her asking for a negative amount.
-  const total = Math.max(0, round2(items + courier + postage - promo.money - coupon.amount));
+    : couponAgainst(state, orders, items + courier - promoCut);
+  // The friend's coupon is priced against the goods and the delivery charge, never against the flat
+  // nationwide postage - that is how this shop has always priced it.
+  const couponCut = round2(Math.min(coupon.amount, Math.max(0, items + courier - promoCut)));
+  const total = Math.max(0, round2(gross - promoCut - couponCut));
   return {
     items, courier, cod, postage, quoted,
-    promo: promo.money, promoCode: promo.code,
+    promo: promoCut, promoCode: promo.code,
     notApplied: missed ? missed.code : "", promoMinimum: missed ? missed.minimum : 0,
-    coupon: coupon.amount, couponId: coupon.id, couponCode: coupon.code,
+    coupon: couponCut, couponId: coupon.id, couponCode: coupon.code,
     // ★ WHICH KIND IT WAS (v336), so the wording can be right: the friend was SENT theirs and the
     // referrer EARNED hers, and a receipt that calls a reward "the one you were sent" reads as
     // somebody else's coupon on her order.
     couponRole: coupon.role || "",
     total,
   };
+}
+
+// ★★★ THE DELIVERY CHARGE THAT MAY BE REFUNDED (v549) — **only what she was actually paid.**
+// ⚠️⚠️ A cash-on-delivery fee is handed to the courier at the door; it never passed through her hands, and
+// `customerTotal` already keeps it out of the bill. ⭐ The refund box offered it anyway, so a RM16 order with
+// an RM8 COD charge read **"Ticked so far RM24.00"** beside **"up to RM16.00"** — and then refused her own
+// press. ⭐ ONE READER, so the dialog cannot drift from the bill it is refunding.
+export function refundableCharge(state, group) {
+  return round2(customerTotal(state, group).courier || 0);
 }
 
 // The money part of every message, in ONE place so the confirmation, the payment

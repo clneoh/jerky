@@ -8,9 +8,9 @@
 // items) and never goes below 0. Re-adding after an undo recomputes from the
 // recipe, which keeps it symmetric for a fixed recipe.
 
-import { byId, round2 } from "./state.js";
+import { byId, round2, bakeId } from "./state.js";
 import { expandProduct } from "./bom.js";
-import { cookingUnit } from "./purchasing.js";
+import { cookingUnit, baseFactorOf } from "./purchasing.js";
 import { longDate, todayISO } from "./dates.js";
 
 // ── ★★ the stock journal (v385) ───────────────────────────────────────────────
@@ -37,19 +37,37 @@ export function stockLogOf(ingredient) {
 // here — grams or kilograms is the display's decision, the same rule the rest of the app follows.
 // `why` is one word so the reason can be told apart without reading the sentence; `what` is the
 // sentence a person reads; `ref` ties a row back to the order or the list that caused it.
-export function logStock(ingredient, { at, delta, why, what, ref } = {}) {
+export function logStock(ingredient, { at, delta, why, what, ref, productId, keepZero = false } = {}) {
   if (!ingredient) return null;
   const n = Number(delta);
   // ⚠️ A movement of nothing is not a movement — the same rule the price log keeps. (A bake whose
   // recipe no longer resolves an ingredient must not write a row saying it moved none of it.)
-  if (!Number.isFinite(n) || n === 0) return null;
+  // ★★★ BUT AN ACT SHE PERFORMED IS STILL AN ACT (v542). ⚠️⚠️ Her instruction, looking at two
+  // "0 g to 10 kg" rows on one phone: __"the 2nd one should label from 10kg to 10kgs"__ and __"and also +0kgs
+  // for the 2nd"__. ⭐ **A stocktake that changes nothing must still say so, honestly** — because a count she
+  // took is a fact about that day, and the only thing worse than showing it is showing a false one.
+  // ⚠️ `keepZero` IS OPT-IN AND ONLY `setStock` PASSES IT: the rule above still holds for a BAKE, where a
+  // zero is an ingredient its recipe no longer resolves — that must never write a row.
+  if (!Number.isFinite(n) || (n === 0 && !keepZero)) return null;
   if (!Array.isArray(ingredient.stockLog)) ingredient.stockLog = [];
   const entry = {
     at: at || todayISO(),
+    // ★★★ AND WHEN IT WAS WRITTEN, TO THE SECOND (v543). ⚠️⚠️ **`at` HAS ALWAYS BEEN A DATE AND NOTHING MORE**,
+    // so two stocktakes on one day were indistinguishable — ⭐ **her own two "0 g to 10 kg" rows could not be
+    // told apart, and NEITHER SHE NOR I COULD SAY WHICH CAME FIRST OR HOW FAR APART THEY WERE.** That is the
+    // whole of why that could not be explained.
+    // ⚠️ A SEPARATE FIELD, NOT A LONGER `at`: `dayMonth(e.at)` builds the When column from a DATE string, and
+    // handing it a timestamp would break the column it is drawn in. ⚠️ **Old rows have no `ts` — they simply
+    // show no time, which is true of them.**
+    ts: new Date().toISOString(),
     delta: round2(n),
     why: String(why || ""),
     what: String(what || ""),
     ref: String(ref || ""),
+    // ★★ WHICH PRODUCT'S BAKE WROTE THIS (v548). ⚠️ A row written by a bake had only a DAY on it, so a
+    // correction could not tell one product's take from another's — see the bound in `applyBake`. ⭐ Absent
+    // on every row that is not a bake, and on the ones already stored, so nothing existing changes shape.
+    ...(productId ? { productId: String(productId) } : {}),
   };
   ingredient.stockLog.unshift(entry);
   if (ingredient.stockLog.length > STOCK_LOG_CAP) ingredient.stockLog.length = STOCK_LOG_CAP;
@@ -72,7 +90,10 @@ export function setStock(ingredient, base, { why, label, at } = {}) {
   const now = round2(Math.max(0, Number(base) || 0));
   ingredient.onHand = now;
   const delta = round2(now - was);
-  logStock(ingredient, { at, delta, why, what: typeof label === "function" ? label(was, now) : "" });
+  // ⚠️ `keepZero: true` — **this is an absolute correction, so setting the amount it already was is a real
+  // answer she gave, and the row says "10 kg to 10 kg" with a change of 0.** ⭐ The bake path below never passes
+  // it, so a recipe that resolves nothing still writes no row.
+  logStock(ingredient, { at, delta, why, what: typeof label === "function" ? label(was, now) : "", keepZero: true });
   return { was, now, delta };
 }
 
@@ -111,16 +132,29 @@ export function stockRowUndo(ingredient, entry) {
   const log = stockLogOf(ingredient);
   if (log.indexOf(entry) < 0) return null;
   const was = Number(ingredient.onHand) || 0;
-  // ⚠️ STOCK NEVER GOES BELOW ZERO, so a reversal that would is CLAMPED — and the caller must show the
-  // clamped figure, because that is the number her shelf will really hold.
-  const now = round2(Math.max(0, was - (Number(entry.delta) || 0)));
-  return { was, now, moved: round2(now - was) };
+  // ★★★ AND A ROW THE SHELF CANNOT GIVE BACK IS REFUSED, NOT CLAMPED (v546).
+  //
+  // ⚠️⚠️ **THE FAULT: the reversal was clamped at zero and the row was taken off the card anyway** — so its
+  // WHOLE movement left the journal while only PART of it left the shelf, and **the rows that remained no longer
+  // added up to the shelf they exist to explain.** ⭐ My first attempt kept the row and rewrote its delta, and
+  // **my own measurement showed it did not do what it claimed** — so it was reverted, and this is the answer
+  // instead.
+  // ⭐ **REMOVING A ROW MEANS UNDOING THAT MOVEMENT. If the shelf cannot give it all back, the movement cannot be
+  // undone** — so this says so and changes nothing. ⚠️ **The alternative was to rewrite the row into something it
+  // never said**, which is the class of fault this whole week has been about.
+  // ⭐ **The refusal names the way through** (her rule): a stocktake sets the real amount, which is the honest
+  // tool when the shelf and the journal disagree.
+  const raw = round2(was - (Number(entry.delta) || 0));
+  if (raw < 0) return { was, now: was, moved: 0, blocked: round2(-raw) };
+  return { was, now: raw, moved: round2(raw - was), blocked: 0 };
 }
 
 // Take that line off the card and put its movement back, in one step.
 export function undoStockRow(ingredient, entry) {
   const plan = stockRowUndo(ingredient, entry);
   if (!plan) return null;
+  // ⚠️ A REFUSAL CHANGES NOTHING AT ALL — the row stays on the card and the shelf does not move (v546).
+  if (plan.blocked) return plan;
   ingredient.onHand = plan.now;
   stockLogOf(ingredient).splice(stockLogOf(ingredient).indexOf(entry), 1);
   return plan;
@@ -182,16 +216,10 @@ export function undoShopBought(state, moves, { shopLabel = "", day = "", ref = "
 // by name is only honoured when it shares the ingredient's cooking family: now
 // that hr/min/cm/m exist as convertible units, a cross-family line unit (say
 // "hr" on a gram ingredient) must never distort stock by a ×60/×100 factor.
-function baseOf(state, ingredient, unitName) {
-  const list = state.uoms || [];
-  const cook = cookingUnit(list, ingredient);
-  const byName = unitName
-    ? list.find((u) => String(u.name || "").toLowerCase() === String(unitName).toLowerCase()
-        && (!cook || u.family === cook.family))
-    : null;
-  const u = byName || cook;
-  return Number(u && u.toBase) || 1;
-}
+// ⚠️ THE BODY MOVED TO `purchasing.js` AS `baseFactorOf` (v545) — **the shopping list needed the same rule and
+// could not import this module without a cycle.** ⭐ **One rule, three callers; this is a name, not a second
+// copy** — which is the whole point.
+const baseOf = baseFactorOf;
 
 // ★★★ THE ONE READING OF A RECIPE (v514). Recipe ingredient amounts for a NUMBER of one product, in base
 // units per ingredient. null when the product is gone (nothing to take off stock).
@@ -244,15 +272,47 @@ export function applyBake(state, product, dayIso, delta) {
     const ing = byId(state.ingredients || [], ingredientId);
     if (!ing) continue;
     const before = Number(ing.onHand) || 0;
+    // ★★★ AND A CORRECTION MAY NEVER PUT BACK MORE THAN THE BAKE ACTUALLY TOOK (v545).
+    //
+    // ⚠️⚠️ **MEASURED, ON THE REAL FUNCTIONS: 1,000 g on the shelf, bake 10 (it needs 2,500 g) — the shelf
+    // stops at 0, correctly — then correct that bake back to 0, and the shelf becomes 2,500 g. ⭐ SHE STARTED
+    // WITH 1,000 g: the correction INVENTED 1,500 g OF FLOUR.**
+    // ⚠️ **The deduction is clamped at zero and the add-back was not** — so the journal read −1,000 then
+    // +2,500 for a bake that netted nothing, and the shelf drifted permanently away from reality.
+    // ⭐ **The bound is the day's OWN journal**: the most that may come back is what this day's bake actually
+    // took off this ingredient. ⚠️ **If those rows were deleted, nothing comes back** — the delta is 0, no row
+    // is written, and the shelf does not move, which is exactly right.
+    // ⭐ **AND IT MAKES THE JOURNAL SUM TO THE SHELF BY CONSTRUCTION**, because every row is the change that
+    // really happened.
+    // ⚠️ WHICH PRODUCT THIS ROW BELONGS TO (v548) — read by the bound below and written on the row.
+    const pid = String((product && product.id) || "");
+    let give = base;
+    if (n < 0) {
+      const day = String(dayIso || "");
+      // ⚠️⚠️ AND IT MUST BE THIS PRODUCT'S TAKE, NOT THE WHOLE DAY'S (v548). ⚠️ **MEASURED: the shelf was
+      // 1,000 g, product A's bake took all of it, product B's bake took nothing — and correcting B back to
+      // zero put 1,000 g back.** ⭐ v545 wrote this bound when a baking day was ONE record; v546 made it one
+      // record PER PRODUCT and **this filter was not re-read** — the same shape as the van that went to her
+      // own kitchen: when a thing stops being per-day and becomes per-product, every per-day filter must
+      // be re-read. ⚠️ Rows stored before v548 carry no product id and are still counted, or an old
+      // correction would suddenly refuse to give anything back.
+      const taken = stockLogOf(ing)
+        .filter((e) => e && e.why === "produced" && String(e.ref || "") === day && Number(e.delta) < 0
+          && (!e.productId || String(e.productId) === pid))
+        .reduce((s, e) => s - (Number(e.delta) || 0), 0);
+      give = Math.min(base, round2(taken));
+      if (!(give > 0)) continue; // nothing was taken that day — nothing to give back, and no row
+    }
     // ⚠️ `Math.max(0, …)` mirrors `consumeOrder`: stock never goes below zero, so a bake against an empty
     // shelf moves nothing — and the row records the movement that HAPPENED, never the recipe's figure,
     // or the journal stops summing to the number it explains.
-    ing.onHand = round2(Math.max(0, before + (n > 0 ? -base : base)));
+    ing.onHand = round2(Math.max(0, before + (n > 0 ? -base : give)));
     logStock(ing, {
       delta: round2((Number(ing.onHand) || 0) - before),
       why: "produced",
       what,
       ref: String(dayIso || ""),
+      productId: pid,
     });
   }
 }
@@ -281,14 +341,15 @@ export function applyBake(state, product, dayIso, delta) {
 //   `applied` — **the extra pans actually taken off the shelf so far.** ⭐ Storing what we DID, rather than
 //               recomputing it from the orders each time, is what makes a correction exact: the shelf
 //               follows the difference from a number we know we moved.
-export function bakedDayOf(state, dayIso) {
+export function bakedDayOf(state, dayIso, productId) {
   const day = String(dayIso || "");
-  if (!day) return null;
-  return (state.bakedDays || []).find((r) => r && r.date === day) || null;
+  const pid = String(productId || "");
+  if (!day || !pid) return null;
+  return (state.bakedDays || []).find((r) => r && r.id === bakeId(day, pid)) || null;
 }
 
 export function bakedOf(state, dayIso, productId) {
-  const row = bakedDayOf(state, dayIso);
+  const row = bakedDayOf(state, dayIso, productId);
   return (row && row.items && row.items[String(productId || "")]) || null;
 }
 
@@ -307,9 +368,11 @@ export function setBakedTotal(state, product, dayIso, total) {
   const pid = String((product && product.id) || "");
   if (!day || !pid) return { wanted: 0, delta: 0 };
   const list = state.bakedDays || (state.bakedDays = []);
-  let row = list.find((r) => r && r.date === day);
+  // ⚠️ THE KEY IS THE DAY **AND THE PRODUCT** (v546) — see `bakeId`. ⭐ **Two phones recording different bread
+  // on one day make two rows, not two versions of one.**
+  let row = list.find((r) => r && r.id === bakeId(day, pid));
   if (!row) {
-    row = { id: `bake_${day}`, date: day, items: {} };
+    row = { id: bakeId(day, pid), date: day, items: {} };
     list.push(row);
   }
   const items = row.items || (row.items = {});

@@ -9,6 +9,7 @@ import { groupValue, moneyTagOf, orderNet } from "./money.js";
 // ⚠️ THE VAN'S OWN DAY (v429) — the same reader every other surface uses, never a second reading
 // of "which day does the van go". See courier_job.js.
 import { courierDayOf } from "./courier_job.js";
+import { addDays, toISODate } from "./dates.js";
 
 // The delivery date for an order. New orders snapshot their delivery date, so
 // history survives a delivery date being deleted; older orders fall back to
@@ -23,7 +24,14 @@ export function deliveryDateOf(state, o) {
 // older orders fall back to the createdAt timestamp's date.
 export function orderDateOf(o) {
   if (o.orderDate) return o.orderDate;
-  if (o.createdAt) return String(o.createdAt).slice(0, 10);
+  if (o.createdAt) {
+    // ⚠️⚠️ THE TIMESTAMP'S OWN DAY, IN HER CLOCK (v548). `slice(0, 10)` keeps the UTC day, so an order
+    // placed at 00:30 in Penang was dated **yesterday** here while the Orders row said "Placed 18 Oct ·
+    // 00:30" — ⭐ two readings of one order disagreeing, and the weekly count short by a day's orders.
+    const d = new Date(o.createdAt);
+    if (!Number.isNaN(d.getTime())) return toISODate(d);
+    return String(o.createdAt).slice(0, 10);
+  }
   return "";
 }
 
@@ -188,7 +196,11 @@ export function customerList(state, sort = "recent", filter = "all", today = "")
     });
   }
 
-  const cutoff = today ? daysAgoISO(today, 30) : "";
+  // ★ A DAY IS A LOCAL DAY (v547). ⚠️ This used a helper that built local midnight and then read it
+  // back as UTC, so in Malaysia it was always ONE DAY EARLY: asking for 30 days before 17 Oct gave
+  // 16 Sep. ⭐ `addDays` in dates.js is the one day-arithmetic in the app, and it reads the day back
+  // with local getters — so "Recent 30 days" is 30 days.
+  const cutoff = today ? addDays(today, -30) : "";
   if (filter === "phone") {
     rows = rows.filter((r) => r.whatsapp);
   } else if (filter === "recent30" && cutoff) {
@@ -271,8 +283,3 @@ export function ordersForCustomer(state, row) {
   return out;
 }
 
-function daysAgoISO(iso, n) {
-  const d = new Date(`${iso}T00:00:00`);
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
-}

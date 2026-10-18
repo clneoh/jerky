@@ -757,6 +757,53 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## v541 → v549 — the full detail audit, twenty-two faults fixed (18 Oct 2026)
+
+**Eight bakery versions (v542–v549). 35 files; no SQL, no Edge Function, no CSS.** Suite **3536 → 3574**.
+
+**Her words:** *"since there is so many error, why not you do a thorough audit on all small details then
+draft a plan to rectify it one off."* Every screen, calculation and save/load path was read end to end.
+⚠️ **The finding worth keeping: all 3,525 tests were green while all sixteen of the first batch were
+live** — every one was found by reading the producer and measuring the number, not by a test going red.
+
+**The wrong-number faults (v544–v549).** A recipe line's cost applied the ingredient's own unit factor to
+a quantity written in the line's unit (RM2,500 for a RM2.50 item, Profit's cost of sales ×1000 out);
+quantities in different units were summed as raw numbers (500 g + 1 kg = 501); correcting one product's
+bake gave back another product's ingredient; a correction the shelf could not cover invented stock (it is
+now **refused**); the amend popup's "amount to buy" named the wrong unit; **a blank in the saved
+`deliveryDays` pattern was printed as Sunday** (`Number(null) IS 0` — the third appearance of that
+coercion); and **a discount larger than the bill printed lines that did not add up to their Total**
+(`promoCut`/`couponCut` are now capped at the gross, so every printed surface agrees with itself).
+
+**Two phones.** A removed unit was remembered only on the phone that removed it, so `uoms` (which **is**
+cloud-synced — the old comment said "per device" and was stale) re-seeded it there and pushed it back:
+**`uomsRemoved` is now a registered list**, its own records travelling. A product's bake day became
+**one record per product** (`bakeId`), because one row per day let two phones overwrite each other — an
+old one-row day is split on load, moving no stock. A change made during a sync is no longer swallowed.
+
+**The shop (v548–v549), seven faults.** A product renamed or removed left the basket stuck — `lines` came
+out empty while step ② still read done, and the press did nothing with no message; the basket now empties
+and says which item went (`fixGone`, `confirmChangedTitle`). A repaint mid-send re-enabled Place order, so
+a slow network could post the same order twice — the send state is now a `var` that survives repaints. A
+courier order could be posted with `address: ""`; **the address box now marks itself** (jerky's own
+`confirmAddrTitle`/`confirmAddrBody` wording, `markField` rather than the old foot-of-page banner), and
+**a dropped pin counts as an address**. `todayStillOpen` replaces `isOpen(cfg, today)` for the heading,
+whose deadline is *yesterday* — so "closed" showed on every day of the year. A refused promo was judged
+once and reprinted frozen ("add RM14 more" stayed after the RM14 was added); it is re-judged on every
+repaint. `renderMenu()` now runs with the basket reset.
+
+**Jerky-only decisions kept.** The postal-address gate stays; it is now marked on the box like the name and
+number boxes, and the pin counts. The two bakery-only `confirmAddAddr*` keys were not taken. The
+`confirmAddWaBody` Malay wording is jerky's ("tempahan"), not the bakery's ("order"). The `store/` guardrails
+(🐾, "Post (nationwide)", `apply("courier")`, `dayAsk`/`postsOn`/`missNote`/`calMiss`/`calClose`) all survive.
+
+**Two new guards taken:** `test/ingredient-audit.test.js` (nine tests against the real modules) and
+`test/weekday-names.test.js` (a blank is not Sunday; `normalize` cleans `deliveryDays`). **Not taken:**
+`AUDIT-2026-10-18.md` (the bakery's own report, addressed to that business) — its content is in this
+entry, `CHANGELOG.md` and the Guide instead.
+
+**Engine 549**, because from 17 Oct 2026 this app takes the bakery's number on each sync.
+
 ## v536a → v541 — a product with no ingredients can still be recorded (17 Oct 2026)
 
 **One bakery version (v541). 2 files; no SQL.** Suite **3535 → 3536**.

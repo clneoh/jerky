@@ -247,14 +247,31 @@ test("★★⚠️ removing a card line puts its movement back — the row and t
   assert.equal(stockLogOf(ing)[0].why, "bought", "the wrong row came off");
 });
 
-test("⚠️ a removal that would take stock below zero is CLAMPED, and the plan says so in advance", () => {
-  // ⚠️ Stock never goes below zero, so taking back a +8 kg buy against a 7.5 kg shelf cannot leave
-  // −0.5 kg. ⚠️⚠️ THE PLAN MUST REPORT THE CLAMPED FIGURE, because the confirm shows it to her BEFORE
-  // she commits — a one-way change to her stock is not something a tap should discover afterwards.
+// ★★★ v546 — SHE CHANGED THIS RULE, AND THE OLD ONE LEFT THE JOURNAL NOT ADDING UP.
+//
+// ⚠️ The old rule CLAMPED the reversal at zero and then took the row off the card anyway — ⭐ **so its whole
+// movement left the journal while only part of it left the shelf, and the rows that remained no longer added up
+// to the shelf they exist to explain.**
+// ⚠️ **My first attempt kept the row and rewrote its delta — and my own measurement showed it did not do what
+// its comment claimed** (shelf 0, journal 5,000), so it was reverted.
+// ⭐ **REMOVING A ROW MEANS UNDOING THAT MOVEMENT. If the shelf cannot give it all back, it cannot be undone** —
+// so it is REFUSED, nothing changes, and the way through is a stocktake.
+test("★★★ a removal the shelf cannot give back is REFUSED, and nothing moves", () => {
   const ing = flour(7500);
   logStock(ing, { at: "2026-10-08", delta: 8000, why: "bought", what: "Bought — Mydin" });
   const plan = stockRowUndo(ing, stockLogOf(ing)[0]);
-  assert.equal(plan.now, 0, "the plan offered a figure her shelf can never hold");
+  assert.equal(plan.now, 7500, "★ the plan offered a figure her shelf can never hold — and worse, it offered to "
+    + "take a movement back that the shelf cannot cover");
+  assert.equal(plan.blocked, 500, "★ the refusal does not say HOW MUCH the shelf is short, so the message "
+    + "cannot name the way through");
+  assert.equal(plan.moved, 0, "a refused removal reports movement");
+
+  // ⭐ AND THE ROW STAYS, AND THE SHELF STAYS — a refusal must change nothing at all.
+  const before = stockLogOf(ing).length;
+  undoStockRow(ing, stockLogOf(ing)[0]);
+  assert.equal(ing.onHand, 7500, "★ a refused removal moved her shelf");
+  assert.equal(stockLogOf(ing).length, before, "★ a refused removal took the row off the card anyway — **that "
+    + "is the fault: the journal then stops adding up to the shelf it explains**");
 });
 
 test("⚠️ a row that is not on the card cannot be removed through it", () => {
@@ -351,13 +368,59 @@ test("★ a stocktake DOWN is recorded as a negative move", () => {
   assert.equal(stockLogOf(ing)[0].delta, -500, "a correction downwards recorded as an increase");
 });
 
-test("⚠️ a stocktake that sets the SAME number writes NOTHING", () => {
-  // ⚠️ A correction that changes nothing is not a movement — the same rule the price log keeps. Without
-  // this a card she opens and saves would fill its own journal with rows saying nothing happened.
+// ★★★ v542 — SHE CHANGED THIS RULE, AND SHE IS RIGHT.
+//
+// ⚠️ The old rule was "a correction that changes nothing is not a movement", and it was sound. ⚠️⚠️ **But she
+// was looking at two identical "0 g to 10 kg" rows on ONE phone and said what the second should have been:**
+// __"the 2nd one should label from 10kg to 10kgs"__ — and __"and also +0kgs for the 2nd"__.
+// ⭐⭐ **A count she took is a fact about that day, and the only thing worse than showing it is showing a FALSE
+// one.** ⚠️ **So a stocktake that changes nothing now writes the truth — "10 kg to 10 kg", a change of 0** — and
+// the press says so out loud instead of leaving a row to be found later.
+//
+// ⚠️ THE OLD RULE STILL HOLDS WHERE IT WAS AIMED: a **bake** whose recipe resolves no ingredient must write NO
+// row at all — a zero there means "this recipe does not touch this ingredient", not "she counted it". That is
+// the assertion under this one.
+test("★★ a stocktake that sets the SAME number now says so — 10 kg to 10 kg, +0", () => {
   const ing = flour(1500);
-  setStock(ing, 1500, { why: "stocktake", label: () => "Stocktake — no change" });
-  assert.equal(stockLogOf(ing).length, 0, "a no-op correction wrote a row");
-  assert.equal(ing.onHand, 1500);
+  const r = setStock(ing, 1500, { why: "stocktake", label: (was, now) => `Stocktake — ${was} to ${now}` });
+  assert.equal(ing.onHand, 1500, "the shelf was moved by a correction that sets the same amount");
+  assert.equal(r.delta, 0, "a correction that changed nothing reports a change");
+  const log = stockLogOf(ing);
+  assert.equal(log.length, 1,
+    "★ a stocktake that changed nothing wrote NO row — **she asked for exactly this row, and without it the "
+    + "count she took is invisible**");
+  assert.equal(log[0].delta, 0, "★ the row claims a movement the shelf did not make — **a false row is worse "
+    + "than no row**");
+  assert.equal(log[0].what, "Stocktake — 1500 to 1500", "the row does not name both figures");
+});
+
+test("★★★ a stock row records WHEN it was written, so two on one day can be told apart (v543)", () => {
+  // ⚠️⚠️ **`at` HAS ALWAYS BEEN A DATE AND NOTHING MORE**, so her two "0 g to 10 kg" rows on 17 Oct were
+  // indistinguishable — ⭐ **neither of us could say which came first, or whether they were a second or an hour
+  // apart, and that is the whole of why it could not be explained.**
+  const ing = flour(0);
+  logStock(ing, { delta: 10, why: "stocktake", what: "Stocktake — 0 g to 10 kg" });
+  logStock(ing, { delta: 10, why: "stocktake", what: "Stocktake — 0 g to 10 kg" });
+  const log = stockLogOf(ing);
+  assert.equal(log.length, 2, "precondition: two rows were not written");
+  assert.match(String(log[0].ts), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/,
+    "★ the row carries NO TIME — **two movements on one day cannot be told apart, which is exactly the state "
+    + "her own journal was in**");
+  // ⚠️ AND `at` MUST STAY A PLAIN DATE: the When column is built with `dayMonth(e.at)`, which is `longDate`
+  // with the year sliced off. ⭐ **A timestamp there would break the column it is drawn in** — the reason the
+  // time went into its own field rather than into `at`.
+  assert.match(String(log[0].at), /^\d{4}-\d{2}-\d{2}$/,
+    "★ `at` is no longer a plain date — **the When column builds from it and would stop rendering**");
+});
+
+test("⚠️ but a BAKE that resolves no ingredient still writes NOTHING", () => {
+  // ⚠️ THE RULE ABOVE IS OPT-IN, AND THIS IS WHY: a zero from a recipe means "this bake does not touch this
+  // ingredient", which is not something she did — it is something the app could not find.
+  const ing = flour(1500);
+  assert.equal(logStock(ing, { delta: 0, why: "produced", what: "Baked extra — 0 × Focaccia" }), null,
+    "★ a bake wrote a row saying it moved none of an ingredient — **a movement of nothing is not a movement, "
+    + "and a row saying otherwise would fill her journal with noise no one performed**");
+  assert.equal(stockLogOf(ing).length, 0);
 });
 
 test("⚠️ an impossible amount is floored at nothing, and the row says what really moved", () => {

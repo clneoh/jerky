@@ -76,8 +76,14 @@ export function weekdayName(dateStr) {
 // The same names the other way round: a weekday NUMBER (0 = Sunday) as a name, for
 // naming a weekday rule rather than a date — a delivery-day pattern, or "the next
 // Monday" on a calendar column.
+// ⚠️⚠️ A MISSING NUMBER IS NOT SUNDAY (v548). `Number(null)`, `Number("")` and `Number(false)` are all
+// **0**, and 0 is Sunday — so a blank entry in a saved pattern was printed as a day she never chose. ⭐ Her
+// own rule, from the v441 fault: `Number(null)` IS 0, and this is the third time it has worn a new dress.
 export function dayName(n) {
-  return WEEKDAY_NAMES[Number(n)] || "";
+  if (n === null || n === undefined || n === "" || typeof n === "boolean") return "";
+  const i = Number(n);
+  if (!Number.isInteger(i) || i < 0 || i > 6) return "";
+  return WEEKDAY_NAMES[i] || "";
 }
 
 // "Mon, Wed and Fri" — a list of weekday numbers said the way a person would,

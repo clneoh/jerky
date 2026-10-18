@@ -108,7 +108,7 @@ export function profitBetween(state, from, to) {
   let expensesTotal = 0;
   let drawings = 0;
   for (const e of state.expenses || []) {
-    if (!e || !isWithin(String(e.date || ""), from, to)) continue;
+    if (!e || e.transfer || !isWithin(String(e.date || ""), from, to)) continue;
     const amount = Number(e.amount) || 0;
     const cls = classOfCategory(state, e.category);
     if (cls === "drawing") { drawings += amount; continue; }
@@ -120,7 +120,12 @@ export function profitBetween(state, from, to) {
 
   let capital = 0;
   for (const d of state.deposits || []) {
-    if (d && isWithin(String(d.date || ""), from, to)) capital += Number(d.amount) || 0;
+    // ⚠️⚠️ A MOVE BETWEEN HER OWN ACCOUNTS IS NOT CAPITAL, AND A PAYBACK IS NOT EITHER (v548). ⭐ The
+    // transfer form says it plainly — "nothing enters the business and nothing leaves it" — and the Money
+    // screen already excludes both. ⚠️ **Profit counted them anyway, so a RM200 transfer showed as
+    // "Capital you put in RM200" AND "Drawings you took out −RM200" on the same day's page.**
+    if (!d || d.transfer || d.repay) continue;
+    if (isWithin(String(d.date || ""), from, to)) capital += Number(d.amount) || 0;
   }
 
   return {
@@ -157,7 +162,7 @@ export function profitBetween(state, from, to) {
 export function expenseRows(state, from, to, label = null) {
   const rows = [];
   for (const e of state.expenses || []) {
-    if (!e || !isWithin(String(e.date || ""), from, to)) continue;
+    if (!e || e.transfer || !isWithin(String(e.date || ""), from, to)) continue;
     const cls = classOfCategory(state, e.category);
     if (cls === "drawing" || cls === "stock") continue;
     const category = e.category || "Other";

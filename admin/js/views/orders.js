@@ -23,7 +23,7 @@ import { buildPaymentReminder, buildPickupReminder, buildShippedMessage } from "
 import { claimReceipt, maybePublishTracking, maybeSync, publishTracking, refundReceipt, stuckOrders, unrefundReceipt } from "../supabase.js";
 import { receiptLine, receiptNoOf, receiptNoOfGroup, receiptStatus } from "../receipts.js";
 import { couponDeclined, couponOnAny } from "../referrals.js";
-import { writeCourierCharge, courierFeeOf, courierPayerOf, courierCodOf, customerCourierFee, isCourierOrder, codeMissed, codeNotApplied, couponAgainst, customerTotal, receiptNote, receiptRows, promoOn, promoValue } from "../courier.js";
+import { writeCourierCharge, courierFeeOf, courierPayerOf, courierCodOf, customerCourierFee, isCourierOrder, codeMissed, codeNotApplied, couponAgainst, customerTotal, receiptNote, receiptRows, promoOn, promoValue, refundableCharge } from "../courier.js";
 import { isCash, isTng, methodLabel, methodRank, methodsOf } from "../accounts.js";
 // ★ HER OWN EDITOR AND ITS ＋ CHIP (v478). The payment sheet adds an account ON THE SPOT with the
 // same form the money lists use, rather than a second way to write `state.settings.payMethods`.
@@ -2837,7 +2837,7 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
             // as the app having made its mind up for her.
             `THE MONEY IS IN. ${fmtRM(short, cfgCur)} less was paid than this order now `
             + `comes to — so the customer is owed that difference back. Refund it?`,
-            () => refundOrder(state, group, first, { root, dateId }),
+            () => refundOrder(state, group, first, { root, dateId, fromEdit: true }),
             { yesLabel: `Refund ${fmtRM(short, cfgCur)}` });
         },
         { yesLabel: "Save it" });
@@ -4176,7 +4176,12 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
         const cod = who === "customer" && collect ? theirs : 0;
         // The promo comes off what they owe here exactly as it does in the message they
         // are sent, so the two figures she can read side by side are the same figure.
-        const off = promo.money;
+        // ⚠️⚠️ AND A DELIVERY-TYPE CODE IS WORTH THE CHARGE IN THE BOX, NOT THE ONE SAVED (v549). ⭐ This
+        // box let her change the charge, and kept the code's value from the order as it stood — so a
+        // free-delivery code on a changed fee read "Total RM20.00" here while the saved order, its
+        // message and its invoice all said RM16.00. ⚠️ The Edit popup already re-values per keystroke;
+        // this one captured it once.
+        const off = promo.money > 0 ? promoValue(state, first.promo, itemsTotal, theirs).money : 0;
         // And the same discount here (v330) — the two cards list one order's money, so a
         // discount named on one and missing from the other is the fault this pairing exists
         // to prevent. Read off the SAVED order, which is what this box is for.
@@ -5310,7 +5315,9 @@ function firstOf(group) {
 // ⚠️ AND THE RECEIPT KEEPS ITS NUMBER. It is MARKED, never renumbered and never deleted —
 // the money really moved, and a receipt that vanished would leave exactly the gap in the
 // sequence that the numbering exists to prevent.
-function refundOrder(state, group, first, { root, dateId } = {}) {
+// ⚠️ `fromEdit` (v549): this refund ANSWERS an edit that already lowered the order's takings. See the
+// note in `money.js refundOf` — the money must not be counted twice.
+function refundOrder(state, group, first, { root, dateId, fromEdit = false } = {}) {
   const cur = (state.settings && state.settings.currency) || "RM";
   // ⚠️⚠️ THE CAP IS WHAT THE CUSTOMER ACTUALLY PAID — never the goods' face price. A coupon or a
   // promo code means they handed over less than the bread was priced at, and handing back the
@@ -5321,7 +5328,11 @@ function refundOrder(state, group, first, { root, dateId } = {}) {
   const lines = group.orders.map((o) => ({
     id: o.id, qty: Number(o.qty) || 0, price: orderLinePrice(state, o), name: orderLineName(state, o),
   }));
-  const charge = round2(customerCourierFee(first) || 0);
+  // ⚠️⚠️ ONLY THE CHARGE SHE ACTUALLY RECEIVED IS REFUNDABLE (v549). ⭐ A cash-on-delivery fee is paid to
+  // the courier at the door — it never passed through her hands, and `customerTotal` already keeps it out of
+  // the bill. ⚠️ Offering it made the box read **"Ticked so far RM24.00"** beside **"up to RM16.00"**, and
+  // then refuse her own press. ⭐ `bill.courier` is the same figure the invoice prints.
+  const charge = refundableCharge(state, group);
 
   const ticks = new Map();
   let courierWanted = false;
@@ -5433,6 +5444,12 @@ function refundOrder(state, group, first, { root, dateId } = {}) {
           for (const o of group.orders) {
             o.refundedAt = at;
             o.refundAmountRM = value;
+            // ⚠️⚠️ AND WHETHER THIS REFUND IS ANSWERING AN EDIT (v549). ⭐ A refund recorded from the
+            // ordinary Refund press is money going back on top of what the order is worth; **a refund
+            // recorded right after an edit-down is the SAME money the edit has already taken off** — so
+            // the flag is what stops it being counted twice. ⭐ Cleared by any ordinary refund, because a
+            // later real refund is a real one.
+            if (fromEdit) o.refundFromEdit = true; else delete o.refundFromEdit;
             if (items.length) o.refundItems = items; else delete o.refundItems;
             if (why) o.refundNote = why; else delete o.refundNote;
           }

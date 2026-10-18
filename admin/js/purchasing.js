@@ -104,6 +104,47 @@ export function belowReserve(safety, onHand) {
   return s > 0 && (Number(onHand) || 0) * 10 < s * 9;
 }
 
+// ★★★ THE UNIT FACTOR FOR A NAMED UNIT — ONE RULE, THREE CALLERS (v545).
+//
+// ⚠️⚠️ THIS EXISTED ALREADY, AS `baseOf` INSIDE `stock.js`, AND THE SHOPPING LIST DID NOT USE IT. The list
+// multiplied a quantity **written in the recipe line's unit** by **the ingredient's own unit factor**, which is
+// only the same number when those two units happen to match. ⚠️ **An ingredient measured in kg with a recipe
+// line saying 500 g was read as 500 kg — a THOUSAND times too much to buy** — while the bake, which used the
+// correct conversion, took 500 g. ⭐ **Two calculations of one need, disagreeing by 1000×**, which is the class
+// this project has already written down (the x60/x100 leak).
+//
+// ⭐ IT LIVES HERE because `bom.js` and `stock.js` both import this module and this module imports neither —
+// so all three can share ONE reading without a cycle. ⚠️ **A second copy of this arithmetic is exactly how the
+// two would come to disagree again.**
+// ⚠️ A unit found by name is honoured ONLY when it shares the ingredient's cooking family: now that hr/min/cm/m
+// exist as convertible units, a cross-family line unit (say "hr" on a gram ingredient) must never distort stock
+// by a ×60/×100 factor.
+export function baseFactorOf(state, ingredient, unitName) {
+  const list = (state && state.uoms) || [];
+  const cook = cookingUnit(list, ingredient);
+  const byName = unitName
+    ? list.find((u) => String(u.name || "").toLowerCase() === String(unitName).toLowerCase()
+        && (!cook || u.family === cook.family))
+    : null;
+  const u = byName || cook;
+  return Number(u && u.toBase) || 1;
+}
+
+// ★ IS THIS UNIT NAME ONE WE CAN CONVERT WITH? (v548)
+//
+// ⚠️ `baseFactorOf` falls back to the ingredient's COOKING unit when the name is unknown or belongs to
+// another family — which is the right fallback for a number, and **the wrong answer for a warning**: the
+// quantity then means something nobody wrote. ⭐ So this answers the question the warning is actually about:
+// **can this line's number be trusted as the unit it says it is?** An unknown name is NOT ok either.
+export function unitInFamily(state, ingredient, unitName) {
+  const list = (state && state.uoms) || [];
+  const cook = cookingUnit(list, ingredient);
+  if (!cook) return true;                 // no cooking unit: there is no family to break
+  if (!unitName) return true;             // no unit written: the cooking unit is assumed
+  const u = list.find((x) => String(x.name || "").toLowerCase() === String(unitName).toLowerCase());
+  return !!u && u.family === cook.family;
+}
+
 export function priceItems(state, bomItems, { reserve = true } = {}) {
   return (bomItems || []).map((item) => {
     const ingredient = byId(state.ingredients || [], item.ingredientId);
@@ -114,9 +155,12 @@ export function priceItems(state, bomItems, { reserve = true } = {}) {
     // list by another route.
     if (ingredient && ingredient.notPurchased === true) return null;
     const out = { ...item, buyText: null };
+    // ⚠️⚠️ THE QUANTITY IS IN THE **LINE'S** UNIT, SO IT IS THE LINE'S UNIT THAT CONVERTS IT (v545).
+    const needBase = baseFactorOf(state, ingredient, item.unit) * (Number(item.totalQty) || 0);
+    // ⚠️ `cookBase` is a DIFFERENT question and still needed below: the PACK maths works in the ingredient's own
+    // cooking unit (one 1 kg pack is 1000 g), which has nothing to do with what the recipe line said.
     const cook = cookingUnit(state.uoms || [], ingredient);
     const cookBase = cook ? Number(cook.toBase) || 1 : 1;
-    const needBase = cookBase * (Number(item.totalQty) || 0);
     const onHand = Math.max(0, Number(ingredient && ingredient.onHand) || 0);
     // The keep-at-least reserve rides the buy gap ONLY once stock has truly
     // dropped (>10% under the level) AND this is a full list — extra-only delta
@@ -131,6 +175,11 @@ export function priceItems(state, bomItems, { reserve = true } = {}) {
     out.openBase = openBase;
     out.haveBase = Math.min(needBase + safety, onHand);
     out.openQty = openBase / cookBase;
+    // ★★ `openQty` IS IN THE INGREDIENT'S COOKING UNIT, SO IT MUST BE LABELLED WITH IT (v548).
+    // ⚠️⚠️ It was printed with the RECIPE LINE's unit: an ingredient cooking in kg, with a 500 g line,
+    // read **"0.5g"** on the shopping list — **the right number under a unit a thousand times too small.**
+    // ⭐ The line's unit is still right for the NEED ("need 500g"); this is the AMOUNT TO BUY.
+    out.openUnit = cook ? cook.name : (item.unit || "");
     // A need is only shown when bakes actually need some — a reserve-only row
     // (below-keep ingredient with no bake need this time) must not read "need 0".
     if (needBase > 0) out.needText = fmtQtyText(item.totalQty, item.unit);

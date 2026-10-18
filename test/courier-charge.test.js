@@ -27,7 +27,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { applyCourierCharge, courierFeeOf, courierPayerOf, courierCodOf, customerCourierFee, customerTotal } =
+const { applyCourierCharge, courierFeeOf, courierPayerOf, courierCodOf, customerCourierFee, customerTotal, refundableCharge } =
   await import("../admin/js/courier.js");
 const { groupValue, journalFor, moneyBetween } = await import("../admin/js/money.js");
 const { buildPaymentReminder, buildShippedMessage } = await import("../admin/js/messages.js");
@@ -456,6 +456,21 @@ test("a COD charge is split OUT of the advance total, not folded into it", () =>
 
 
     "the charge is named in cod, and the total asks for the bread alone");
+});
+
+test("★★★ a COD charge can never be offered back — she never received it", () => {
+  // ⚠️⚠️ THE FAULT (v549): the refund box offered `customerCourierFee`, which INCLUDES a cash-on-delivery
+  // charge. ⭐ On a RM16 order with an RM8 COD charge the box read **"Ticked so far RM24.00"** beside
+  // **"up to RM16.00"** — and then refused her own press. ⭐ The charge was handed to the courier at the
+  // door; it never passed through her hands.
+  const st = state();
+  assert.equal(refundableCharge(st, codOrder(st)), 0,
+    "★ a COD charge was offered as refundable — **she would be paying back money she never took**");
+  const st2 = state();
+  st2.orders[0].courierFee = 8;
+  st2.orders[0].courierPaidBy = "customer";
+  assert.equal(refundableCharge(st2, groupOf(st2)), 8,
+    "precondition: a charge the customer paid IN ADVANCE is refundable");
 });
 
 test("the same charge with the order still sits inside the total, exactly as before", () => {

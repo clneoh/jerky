@@ -3,7 +3,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalize, defaultState, updateOrderBadge, groupOrders, orderCode, waNumber, ensureSupabase, productUnitOptions, productUsesUnit, BUILTIN_SUPABASE } from "../admin/js/state.js";
+import { normalize, defaultState, loadState, save, updateOrderBadge, groupOrders, orderCode, waNumber, ensureSupabase, productUnitOptions, productUsesUnit, BUILTIN_SUPABASE } from "../admin/js/state.js";
 import { lockEnabled } from "../admin/js/pin.js";
 import { planOf } from "../admin/js/production.js";
 import { planBackwards } from "../admin/js/bakeday.js";
@@ -369,6 +369,83 @@ test("preload is idempotent and never overwrites a same-name unit", () => {
   assert.equal(boxes[0].id, "uom_mybox", "the user's own unit is untouched");
   assert.equal(boxes[0].family, "weight");
   assert.equal(second.uoms.length, first.uoms.length, "second normalize adds nothing");
+});
+
+test("★★★ a unit she deleted stays deleted — the seed does not put it back", () => {
+  // ⚠️⚠️ THE FAULT (v547): the seed runs on EVERY load, so deleting a standard unit removed it for one
+  // session and the next open put it straight back — **a delete that undoes itself.** ⭐ The removal is
+  // remembered on the state (`uomsRemoved`), and the seed skips a name that is in it.
+  const out = normalize({
+    version: 1,
+    uoms: OLD_UOMS.map((u) => ({ ...u })),
+    uomsRemoved: ["loaf", "hr"],
+  });
+  const names = out.uoms.map((u) => u.name.toLowerCase());
+  assert.ok(!names.includes("loaf"), "★ 'loaf' came back — the seed re-added a unit she had deleted");
+  assert.ok(!names.includes("hr"), "★ 'hr' came back — the time seed re-added a unit she had deleted");
+  assert.ok(names.includes("box"), "precondition: the other standard units are still seeded");
+  const again = normalize(out);
+  assert.ok(!again.uoms.map((u) => u.name.toLowerCase()).includes("loaf"),
+    "★ a second load put the deleted unit back");
+});
+
+test("★★★ a removed unit is stored as a record, so it can travel to the other phone", () => {
+  // ⚠️⚠️ v547 kept the removal as a bare string on one phone. ⭐ `uoms` IS synced, so the other phone
+  // re-seeded the unit and pushed it straight back — **the delete undid itself on both phones.** ⭐ The
+  // note is a list of `{id}` records now, and `sync.js` carries it. ⚠️ Old strings still read correctly,
+  // so a phone upgrading in the middle of this keeps its removals.
+  const rec = normalize({ version: 1, uoms: OLD_UOMS.map((u) => ({ ...u })),
+    uomsRemoved: ["loaf", { id: "HR" }, "loaf"] });
+  assert.deepEqual(rec.uomsRemoved.map((r) => r.id), ["loaf", "hr"],
+    "★ the removals were not turned into unique lowercased records — the other phone cannot receive them");
+  assert.ok(!rec.uoms.some((u) => u.name.toLowerCase() === "loaf"), "★ a removed unit was seeded back");
+  assert.ok(!rec.uoms.some((u) => u.name.toLowerCase() === "hr"), "★ a removed unit was seeded back");
+});
+
+test("★★ and a unit she types back in by hand is kept, even after she deleted one of that name", () => {
+  const mine = { id: "uom_my_loaf", name: "loaf", family: "count", toBase: 1 };
+  const out = normalize({
+    version: 1,
+    uoms: [...OLD_UOMS.map((u) => ({ ...u })), mine],
+    uomsRemoved: ["loaf"],
+  });
+  const loaves = out.uoms.filter((u) => u.name.toLowerCase() === "loaf");
+  assert.equal(loaves.length, 1, "her own unit is not duplicated by the seed");
+  assert.equal(loaves[0].id, "uom_my_loaf", "her own unit is untouched");
+});
+
+test("★★★ a damaged saved copy is KEPT and reported, not silently replaced by an empty book", () => {
+  // ⚠️⚠️ THE FAULT (v548): a stored book that could not be read made the app come up EMPTY and say nothing —
+  // the only trace was a `console.warn` — and the next save wrote that empty book over the only local copy.
+  // ⭐ **A damaged save is how a phone tells you it is in trouble; destroying the evidence is the one thing
+  // it must not do.**
+  const store = new Map();
+  const real = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => { store.set(k, String(v)); },
+    removeItem: (k) => { store.delete(k); },
+  };
+  try {
+    const good = JSON.stringify({ version: 1, orders: [{ id: "o1", customerName: "Peggy", qty: 2 }] });
+    const damaged = good.slice(0, good.length - 12);        // a save cut short
+    store.set("bakeadmin.v1", damaged);
+
+    const st = loadState();
+    assert.equal((st.orders || []).length, 0, "precondition: an unreadable book comes up empty");
+
+    assert.equal(store.get("bakeadmin.v1.unreadable"), damaged,
+      "★ the damaged text was NOT kept — **the next save writes an empty book over the only local copy, and "
+      + "the damage becomes permanent with nothing on screen**");
+    assert.ok(st.unreadableSave && st.unreadableSave.chars === damaged.length,
+      "★ nothing recorded that this phone failed to read its own book, so no screen can report it");
+
+    save(st);
+    assert.equal(store.get("bakeadmin.v1.unreadable"), damaged,
+      "★ a later save overwrote the kept copy");
+  } finally {
+    if (real === undefined) delete globalThis.localStorage; else globalThis.localStorage = real;
+  }
 });
 
 test("normalize keeps a stored product uomId and links legacy products by name", () => {

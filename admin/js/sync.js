@@ -17,7 +17,7 @@
 // Pure helpers run under Node for tests; fetch/localStorage are guarded.
 
 import { login as loginSupabase, cachedToken } from "./supabase.js";
-import { removeOrders, dropStaleShelfRows, save, STOCK_PRODUCTION } from "./state.js";
+import { removeOrders, dropStaleShelfRows, save, STOCK_PRODUCTION, bakeId } from "./state.js";
 import { mergeWeekCheck } from "./weekly.js";
 // The one answer to "is this a place" — see placeForSync below for why the courier
 // module's own rule is asked rather than a copy of it written here.
@@ -43,6 +43,10 @@ const LISTS = {
   suppliers: "suppliers", // who you buy from — pack prices ride ingredients, so the shops must too
   parcelCouriers: "parcelCouriers", // the carriers she posts parcels with — a carrier added on one phone has to exist on the other, or the order screen offers a list that is different on every phone
   uoms: "uoms", // units of measure — a unit added on one phone has to exist on the other
+  // ⚠️⚠️ AND A UNIT'S REMOVAL HAS TO TRAVEL WITH IT (v548). v547 kept the removal on the phone that made
+  // it, so the other phone **re-seeded the unit on its next load and pushed it straight back** — the delete
+  // undid itself on both. ⭐ One record per removed name, so either phone's removal reaches the other.
+  uomsRemoved: "uomsRemoved",
   deliveryDates: "deliveryDates",
   // ⚠️⚠️ NAMED HERE OR IT DOES NOT TRAVEL (v514) — and this one DID NOT, which is how the baker found the
   // fault: __"and my phone and my mac not sync"__. ⭐ **I had put production inside `settings` on the
@@ -817,7 +821,40 @@ export function markDirty(state, nowIso = new Date().toISOString()) {
 
 // ── mergeCloudRows: apply cloud rows newest-wins ──────────────────────────
 
+// ★★★ AN OLD ONE-ROW-FOR-THE-DAY ARRIVES SPLIT, AT THE DOOR (v547).
+//
+// ⚠️⚠️ THE FAULT: v546 changed a baking day from ONE record to ONE PER PRODUCT, but the old records are
+// still in the cloud — nothing ever deleted them. A pull pushed one back into the list, the next load
+// split it into ids that were ALREADY there, and the day came out recorded twice. ⭐ **Repairing the list
+// on load is the rewind after the fact; this stops the old row entering at all.**
+// ⭐ Each part is merged as the record it should always have been, and the old id is returned as a
+// tombstone so the merge loop does not resurrect what it has just replaced. Since only list rows are
+// uploaded, the retired row is never written back up.
+function expandOldBakeRows(rows) {
+  const out = [];
+  for (const row of rows || []) {
+    if (row && row.kind === "bakedDays" && !row._deleted && typeof row.data === "string") {
+      let p = null;
+      try { p = JSON.parse(row.data); } catch { p = null; }
+      const pids = p && p.items && typeof p.items === "object" ? Object.keys(p.items) : [];
+      const oldShape = !!(p && p.date && pids.length
+        && !(pids.length === 1 && p.id === bakeId(p.date, pids[0])));
+      if (oldShape) {
+        for (const pid of pids) {
+          const id = bakeId(p.date, pid);
+          out.push({ ...row, id, data: JSON.stringify({ ...p, id, items: { [pid]: p.items[pid] } }) });
+        }
+        out.push({ ...row, _deleted: true, data: null });
+        continue;
+      }
+    }
+    out.push(row);
+  }
+  return out;
+}
+
 function mergeCloudRows(state, rows, b, nowIso = new Date().toISOString()) {
+  rows = expandOldBakeRows(rows);
   let changed = false;
 
   for (const row of rows || []) {
@@ -992,7 +1029,13 @@ export function mergeRows(state, rows) {
   // ⚠️ **AND IF ANYTHING WAS DROPPED, THE STATE IS SAVED — which queues the removal so it goes UP**, or the
   // shared data would hand the same stale row back on every pull, for ever.
   const dropped = dropStaleShelfRows(state);
-  if (dropped) save(state);
+  // ★ AND A PULL THAT PUT RECORDS BACK HAS REPAIRED THE BOOK (v548). ⚠️ The "this phone could not read its
+  // saved copy" note exists for the case where a damaged save came up empty and the cloud could NOT put it
+  // back — ⭐ so the moment a pull actually restores something, the note clears. **It appears exactly when
+  // the cloud did not save her, which is the only case that matters.**
+  const healed = (changed || dropped > 0) && !!state.unreadableSave;
+  if (healed) state.unreadableSave = null;
+  if (dropped || healed) save(state);
   writeSync(b);
   return { state, changed: changed || dropped > 0 };
 }
@@ -1082,6 +1125,25 @@ export async function pull(state) {
       reason: `Your shared data holds more than ${PULL_CEILING.toLocaleString("en")} records, which is more than one read can take. Nothing was changed.` };
   }
   const rows = read.rows;
+
+  // ★★★ A SAVE THAT LANDS WHILE THE READ IS IN FLIGHT MUST NOT BE LOST (v548).
+  //
+  // ⚠️⚠️ `b` WAS READ BEFORE THE NETWORK ROUND TRIP. If she changes something while the read is running, the
+  // save hook writes a NEWER journal to the phone — and this function then merged into the STALE copy and
+  // wrote it back, ⭐ **discarding the queued edit AND rewriting the record from the cloud, so her change
+  // was never sent and nothing ever noticed it.** ⭐ So the journal is re-read here and the newer entries are
+  // taken: a pending record newer than the cloud row wins, which is exactly what this file's pull-then-flush
+  // rule promises, and what a same-beat edit deserves.
+  const fresh = readSync();
+  for (const k of Object.keys(fresh.pending)) {
+    const a = b.pending[k];
+    const f = fresh.pending[k];
+    if (!a || String((f && f.updated_at) || "") >= String((a && a.updated_at) || "")) b.pending[k] = f;
+  }
+  for (const k of Object.keys(fresh.meta)) {
+    if (!b.meta[k] || String(fresh.meta[k]) > String(b.meta[k])) b.meta[k] = fresh.meta[k];
+  }
+  for (const k of Object.keys(fresh.snapshot)) b.snapshot[k] = fresh.snapshot[k];
 
   const first = !b.lastPullAt;
   const { changed } = mergeCloudRows(state, rows, b);

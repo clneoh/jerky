@@ -6,6 +6,11 @@ import assert from "node:assert/strict";
 import { customerList, deliveryDateOf, orderDateOf, ordersForCustomer } from "../admin/js/customers.js";
 import { orderCode } from "../admin/js/state.js";
 
+// ⚠️ THE BAKER'S OWN CLOCK, pinned for this file (v547). The 30-day window was ONE DAY EARLY only east
+// of UTC, so a test run in UTC would pass against the fault and prove nothing. ⭐ Malaysian time is
+// where this app lives, so that is where the question is asked.
+process.env.TZ = "Asia/Kuala_Lumpur";
+
 function state(orders, deliveryDates = [], products = []) {
   return { orders, deliveryDates, products };
 }
@@ -134,6 +139,34 @@ test("who-filters: all, phone, recent30, gone30 (relative to a 30-day cutoff)", 
   assert.deepEqual(customerList(st, "recent", "recent30", "2026-09-10").map((r) => r.name).sort(), ["Recent Bo", "Walk-in"]);
   assert.deepEqual(customerList(st, "recent", "gone30", "2026-09-10").map((r) => r.name), ["Old Nia"]);
   assert.equal(customerList(st, "recent", "recent30", "").length, 3); // no date given → like "all"
+});
+
+test("★★★ an order with no order date is dated by HER day, not the UTC one", () => {
+  // ⚠️⚠️ 2026-10-17T16:30Z is **Sunday 18 Oct, 00:30 in Penang.** The fallback read the first ten
+  // characters of the timestamp, which is the UTC day — so this order was dated Saturday while the
+  // Orders row beside it said "Placed 18 Oct · 00:30", and the week's count missed it.
+  assert.equal(orderDateOf({ createdAt: "2026-10-17T16:30:00Z" }), "2026-10-18",
+    "★ an order placed after midnight was dated YESTERDAY — **the UTC day, while every screen shows hers**");
+  assert.equal(orderDateOf({ orderDate: "2026-10-16", createdAt: "2026-10-17T16:30:00Z" }), "2026-10-16",
+    "precondition: an order that states its day keeps it");
+});
+
+test("★★★ the 30-day window is 30 days in Malaysia, not 31", () => {
+  // ⚠️⚠️ THE FAULT (v547): the cutoff was built as local midnight and then read back with
+  // `toISOString()`, which is the UTC day — always ONE DAY EARLY in Malaysia. Asking for 30 days before
+  // 17 Oct gave 16 Sep, so a customer whose last order was 31 days ago still read as "Recent 30 days"
+  // and dropped out of "Gone quiet" a day late.
+  const st = state([
+    { id: "o1", qty: 1, customerName: "Exactly 30", whatsapp: "6011-000", orderDate: "2026-09-17" },
+    { id: "o2", qty: 1, customerName: "Day 31", whatsapp: "6012-000", orderDate: "2026-09-16" },
+  ]);
+  const recent = customerList(st, "recent", "recent30", "2026-10-17").map((r) => r.name);
+  assert.ok(recent.includes("Exactly 30"), "precondition: an order 30 days old is inside the window");
+  assert.ok(!recent.includes("Day 31"),
+    "★ a customer whose last order was 31 days ago still reads as recent — **the cutoff is one day "
+    + "early, because the day was read in UTC instead of her own time**");
+  assert.ok(customerList(st, "recent", "gone30", "2026-10-17").map((r) => r.name).includes("Day 31"),
+    "★ and 31 days did not fall out of the quiet list");
 });
 
 test("ordersForCustomer returns one block per storefront order, newest-placed first", () => {

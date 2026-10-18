@@ -903,9 +903,15 @@ test("the next customer does not inherit the last one's front door", async (t) =
     posted = null;
     // ⚠️ A NAME IS REQUIRED (v452) — her decision. Without it the press refuses.
     document.getElementById("name-input").value = "Aunty Bee";
+    // ★ AND SINCE v548 A COURIER ORDER NEEDS SOME KIND OF DOOR: a typed address or a dropped pin, but
+    // not neither. ⚠️ This test used to leave BOTH empty, which was the fault the gate now refuses —
+    // **an order with no address is one she cannot deliver.** A typed address keeps the test's own
+    // subject intact: the PIN must not be inherited, and this customer never dropped one.
+    document.getElementById("address-input").value = "7 Jalan Melati";
     await el("order-btn").onclick();
     assert.ok(posted, "the second order went through");
     assert.equal("place" in posted, false, "a courier order nobody pinned carries no door");
+    assert.equal(posted.address, "7 Jalan Melati", "and the address posted is HIS, not the last customer's");
   } finally {
     globalThis.fetch = realFetch;
   }

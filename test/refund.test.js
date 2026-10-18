@@ -14,7 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { dayMoney, moneyBetween, isCollected, isRefunded } = await import("../admin/js/money.js");
+const { dayMoney, moneyBetween, isCollected, isRefunded, orderNet } = await import("../admin/js/money.js");
 const { profitBetween, tradingRows } = await import("../admin/js/profit.js");
 
 function state() {
@@ -43,6 +43,29 @@ test("isRefunded reads a group or a bare row, because two books walk different s
   assert.equal(isRefunded({ orders: [{}] }), false);
   assert.equal(isRefunded({}), false);
   assert.equal(isRefunded(null), false);
+});
+
+// ── a refund that ANSWERS AN EDIT (v549) ─────────────────────────────────────
+
+test("★★★ a refund that answers an EDIT is not taken off a second time", () => {
+  // ⚠️⚠️ MEASURED: RM30 paid, edited down to 1 × RM15, accept "Refund RM15?" — the takings read **RM0**,
+  // although she kept RM15. ⭐ The edit had ALREADY taken the RM15 out (the save dialog says so in those
+  // words), so subtracting the refund too counted one event twice. ⭐ The refund is still on the order —
+  // the receipt register still says the money went back — it just does not move the takings again.
+  const st = state();
+  st.orders = [row({ qty: 1, paidReceived: true, paidMethod: "cash",
+    refundedAt: REFUND, refundAmountRM: 15, refundFromEdit: true })];
+  assert.equal(orderNet(st, { orders: st.orders }), 15,
+    "★ the order's takings fell to zero after a refund that answered an edit — **she kept RM15 and her "
+    + "books say she kept nothing**");
+});
+
+test("★★ and an ORDER'S OWN refund is still taken off — the flag is not a loophole", () => {
+  const st = state();
+  st.orders = [row({ qty: 1, paidReceived: true, paidMethod: "cash",
+    refundedAt: REFUND, refundAmountRM: 15 })];
+  assert.equal(orderNet(st, { orders: st.orders }), 0,
+    "★ an ordinary refund stopped being taken off — the takings show money she handed back");
 });
 
 // ── the money ────────────────────────────────────────────────────────────────

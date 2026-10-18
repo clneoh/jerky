@@ -163,6 +163,17 @@ export function defaultState() {
     // usual ones in one press.
     parcelCouriers: [],
     uoms: seedUoms(),  // units of measure; g/kg/ml/L/pcs convert within a family
+    // ★★ UNITS SHE DELETED ON PURPOSE (v547). ⚠️ The standard units are re-seeded on every load by
+    // `ensureCountUnits`/`ensurePlanningUnits`, so without this note a unit she removed came back the
+    // next time the app opened — **a delete that undoes itself**. ⚠️⚠️ AND IT MUST TRAVEL (v548): `uoms`
+    // itself is synced, so a removal kept on one phone was undone by the other phone re-seeding it. It is
+    // registered in `sync.js`'s LISTS as one record per removed name.
+    uomsRemoved: [],
+    // ★★ THE ONE TIME THIS PHONE COULD NOT READ ITS OWN COPY (v548). ⚠️ `loadState` used to answer a
+    // damaged save by **coming up empty and saying nothing** — see the note there. This remembers that it
+    // happened so Check my system can say so, and it is device-local on purpose: it is a fact about THIS
+    // phone's storage, not about her book.
+    unreadableSave: null,
     products: [],
     // The shop's categories, a tree of any depth (see js/productCategories.js).
     // A separate list from settings.categories, which is the EXPENSE chart — one
@@ -290,9 +301,34 @@ export function loadState() {
     if (s && s.version === 1) return normalize(s);
     if (s) return migrate(s);
   } catch (err) {
-    console.warn("Corrupt stored data, resetting to defaults", err);
+    // ⚠️⚠️ A DAMAGED SAVE USED TO COME UP EMPTY AND SAY NOTHING (v548). It logged to a console she never
+    // opens and handed back a fresh book — and **the next save wrote that empty book over the only local
+    // copy**, so the damage became permanent without a single word on screen. ⭐ **The unreadable text is
+    // now KEPT under a key of its own, and the fact is remembered in `unreadableSave`**, so Check my system
+    // can report it. ⭐ This is the module's own rule: **a check that could not read must never pass.**
+    const kept = keepUnreadable();
+    console.warn("Corrupt stored data, kept and resetting to defaults", err);
+    const fresh = seedFreshState();
+    if (kept) fresh.unreadableSave = kept;
+    return fresh;
   }
   return seedFreshState();
+}
+
+// Put the unreadable copy aside, under its own key. ⚠️ It keeps the LONGEST copy it has seen: a damaged
+// save is usually a TRUNCATED one, so the longer text holds more of her book. ⚠️ A phone too full to hold
+// even this still resets — the copy is a second chance, never the thing that stops the app opening.
+function keepUnreadable() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    const key = `${LS_KEY}.unreadable`;
+    const existing = localStorage.getItem(key);
+    if (!existing || String(existing).length < String(raw).length) localStorage.setItem(key, raw);
+    return { at: new Date().toISOString(), chars: String(raw).length };
+  } catch {
+    return null;
+  }
 }
 
 // First run on a device (no saved state at all) ships preconnected so a fresh
@@ -460,6 +496,41 @@ function plainMap(v) {
 
 // Defensive normalization for hand-edited or older imports: guarantees the
 // shape the rest of the app relies on, dropping unknown fields.
+// ★★★ ONE BAKING DAY IS ONE RECORD PER PRODUCT (v546), AND A LIST THAT ALREADY HOLDS BOTH SHAPES IS
+// COLLAPSED HERE (v547).
+//
+// ⚠️⚠️ THE FAULT v546 LEFT BEHIND: the cloud still holds the OLD one-row-for-the-day records, because
+// nothing ever deleted them. A pull puts one back into the list, and the next load splits it into ids
+// that are ALREADY there — so the day ends up recorded twice, and stays that way. ⭐ The split therefore
+// asks what is already in the list: **a row that is already per product always wins over one derived
+// from the old shape**, because the proper row is the one she has been using and its `applied` is what
+// the shelf agrees with.
+export function splitBakedDays(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  const pidsOf = (row) => (row && row.items && typeof row.items === "object" ? Object.keys(row.items) : []);
+  const isPerProduct = (row) =>
+    !!(row && row.date && pidsOf(row).length === 1 && row.id === bakeId(row.date, pidsOf(row)[0]));
+
+  const out = [];
+  const seen = new Set();
+  for (const row of list) {
+    if (!isPerProduct(row) || seen.has(row.id)) continue;
+    seen.add(row.id);
+    out.push(row);
+  }
+  for (const row of list) {
+    if (!row || !row.date || isPerProduct(row)) continue;
+    const items = row.items && typeof row.items === "object" ? row.items : {};
+    for (const pid of Object.keys(items)) {
+      const id = bakeId(row.date, pid);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push({ ...row, id, items: { [pid]: items[pid] } });
+    }
+  }
+  return out;
+}
+
 function normalize(s) {
   const d = defaultState();
   const out = {
@@ -471,6 +542,18 @@ function normalize(s) {
       cloud: { ...d.settings.cloud, ...((s.settings || {}).cloud || {}) },
       lock: { ...d.settings.lock, ...(((s.settings || {}).lock) || {}) },
       storefront: cleanStorefront((s.settings || {}).storefront),
+      // ⚠️⚠️ A BLANK ENTRY IN THE BAKE-DAY PATTERN IS DROPPED (v548), and an out-of-range one too. ⭐
+      // `Number(null)` is 0 and 0 is SUNDAY, so an imported `[1, null, 3]` made the app say "Mon, Sun and
+      // Wed" about a Sunday she never chose. ⚠️ An emptied pattern falls back to the default rather than
+      // leaving the app with no bake days at all — **a blank is not an answer to "which days do you bake".**
+      deliveryDays: (() => {
+        const raw = Array.isArray((s.settings || {}).deliveryDays)
+          ? s.settings.deliveryDays : d.settings.deliveryDays;
+        const set = [...new Set(raw
+          .filter((x) => x !== null && x !== undefined && x !== "" && typeof x !== "boolean")
+          .map(Number).filter((x) => Number.isInteger(x) && x >= 0 && x <= 6))].sort((a, b) => a - b);
+        return set.length ? set : d.settings.deliveryDays;
+      })(),
       referrals: { ...d.settings.referrals, ...(((s.settings || {}).referrals) || {}) },
       // A hand-edited import must not put an unknown style in: the message builders
       // read exactly one value, and a third one would silently send "plain" while
@@ -500,13 +583,26 @@ function normalize(s) {
     // it without the shape being assumed.
     parcelCouriers: Array.isArray(s.parcelCouriers) ? s.parcelCouriers : [],
     uoms: (Array.isArray(s.uoms) && s.uoms.length) ? s.uoms : seedUoms(),
+    uomsRemoved: normalizeRemovedUnits(s.uomsRemoved),
+    unreadableSave: (s.unreadableSave && typeof s.unreadableSave === "object") ? s.unreadableSave : null,
     products: Array.isArray(s.products) ? s.products : [],
     // The shop's category tree. Guarded like every other list: a phone that has
     // never built one behaves exactly as before, and the cloud merge can land a
     // tree on it without the shape being assumed.
     productCategories: Array.isArray(s.productCategories) ? s.productCategories : [],
     deliveryDates: Array.isArray(s.deliveryDates) ? s.deliveryDates : [],
-    bakedDays: Array.isArray(s.bakedDays) ? s.bakedDays : [],
+    // ★★★ ONE RECORD PER DAY **PER PRODUCT**, AND THE OLD SHAPE IS SPLIT ON LOAD (v546).
+    //
+    // ⚠️⚠️ **THE FAULT: the id was `bake_<day>`, ONE ROW FOR ALL PRODUCTS.** ⭐ **Two phones recording different
+    // bread on the same day were two versions of ONE record** — and the sync keeps the newest whole record, so
+    // **one phone's totals were discarded** and the next correction re-took a bake that had already come off
+    // the shelf.
+    // ⭐ **A record per product is a separate row each (`bake_<day>_<product>`), so two phones recording
+    // DIFFERENT bread MERGE instead of overwriting** — the same reason `removedOrders` and `rewards` are lists.
+    // ⚠️ **AND AN OLD ROW IS SPLIT HERE, KEEPING EVERY `total` AND `applied` EXACTLY**, so **no stock moves** —
+    // a shape change only. ⭐ A row already in the new shape is left untouched, so this is safe to run on every
+    // load and on a phone that has already been updated.
+    bakedDays: splitBakedDays(s.bakedDays),
     orders: Array.isArray(s.orders)
       ? s.orders.map((o) => (o && typeof o === "object" ? { ...o, status: o.status || "new" } : o))
       : [],
@@ -657,16 +753,46 @@ function makeUnit(name, [family, toBase]) {
   return { id: `uom_${rand}`, name, family, toBase: Number(toBase) || 1 };
 }
 
-// Make sure the standard pet-treat selling units exist. uoms are stored per
-// device (not cloud-synced) and an existing install keeps its own list
-// wholesale, so this normalize-time step is the only path that reaches an older
-// phone. Never touches a unit that already exists under the same name,
-// whatever its family.
+// Make sure the standard pet-treat selling units exist. ⚠️ `uoms` IS cloud-synced (this comment said "per
+// device" for a long time, and that was stale — it is what let a deleted unit be pushed back), and an
+// existing install keeps its own list wholesale, so
+// this normalize-time step is the only path that reaches an older phone. Never
+// touches a unit that already exists under the same name, whatever its family.
+// ★★ A REMOVED UNIT IS A RECORD, AND IT TRAVELS (v548).
+//
+// ⚠️⚠️ v547 remembered a deletion on the ONE phone that made it — and **`uoms` IS cloud-synced** (the note
+// in this file said "per device", and that note is stale). So the other phone pulled the deleted unit away,
+// **re-seeded it on its next load and pushed it straight back**: ⭐ **the delete came undone on both
+// phones.** ⭐ This is a LIST now, registered in `sync.js` like every other list she owns, so a removal
+// reaches the other phone as its own record instead of living only here.
+// ⚠️ Stored as `{ id, at }` where `id` is the lowercased NAME — a unit has no other stable key.
+export function normalizeRemovedUnits(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  const seen = new Set();
+  const out = [];
+  for (const r of list) {
+    const name = String(r && typeof r === "object" ? (r.id || r.name || "") : r).trim().toLowerCase();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    out.push({ id: name, ...(r && typeof r === "object" && r.at ? { at: r.at } : {}) });
+  }
+  return out;
+}
+
+// The names the seed must not put back.
+export function removedUnitNames(state) {
+  return new Set(normalizeRemovedUnits(state && state.uomsRemoved).map((r) => r.id));
+}
+
 export function ensureCountUnits(state) {
   const have = new Map();
   for (const u of state.uoms || []) have.set(String(u.name || "").toLowerCase(), u);
+  // ⚠️ A UNIT SHE DELETED STAYS DELETED (v547). Without this the seed put it straight back on the
+  // next load, so "Delete" was a press that undid itself. ⭐ And a unit she later adds with the same
+  // name is respected, because `have` is asked first — this list only suppresses the RE-SEED.
+  const gone = removedUnitNames(state);
   for (const n of TREAT_COUNT) {
-    if (have.has(n)) continue;
+    if (have.has(n) || gone.has(n)) continue;
     const u = { id: `uom_${n}`, name: n, family: "count", toBase: 1 };
     state.uoms.push(u);
     have.set(n, u);
@@ -680,8 +806,10 @@ export function ensureCountUnits(state) {
 export function ensurePlanningUnits(state) {
   const have = new Map();
   for (const u of state.uoms || []) have.set(String(u.name || "").toLowerCase(), u);
+  // ⚠️ The same rule as `ensureCountUnits` (v547): a unit she deleted is not put back.
+  const gone = removedUnitNames(state);
   for (const [name, family, toBase] of TIME_LENGTH) {
-    if (have.has(name)) continue;
+    if (have.has(name) || gone.has(name)) continue;
     const u = { id: `uom_${name}`, name, family, toBase };
     state.uoms.push(u);
     have.set(name, u);
@@ -1162,6 +1290,11 @@ export function newId(prefix) {
 // model, because **the button that creates the record and the repair that fixes an older one must not be
 // able to disagree about it.**
 export const voidIdOf = (no) => `void_${Math.floor(Number(no))}`;
+
+// ⭐ THE ONE PLACE A BAKING DAY RECORD IS KEYED (v546) — a day AND a product, so two phones recording
+// different bread on one day make two rows instead of two versions of one. ⚠️ It lives in `state.js` because the
+// load repair needs it and `stock.js` already imports from here — the other direction would be a cycle.
+export const bakeId = (day, pid) => `bake_${String(day || "")}_${String(pid || "")}`;
 
 export function newVoidRecord(no, code, reason = "", at = "") {
   return {

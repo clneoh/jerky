@@ -41,6 +41,27 @@ test("sales, cost of sales and gross profit come from what was sold", () => {
   assert.equal(pl.uncosted, 0, "the recipe prices this product");
 });
 
+test("★★★ a transfer between her own accounts is neither capital nor drawings", () => {
+  // ⚠️⚠️ THE FAULT (v548): the profit page summed EVERY deposit as capital and EVERY drawing-class
+  // expense as money she took out — including the two halves of one transfer. ⭐ **The transfer form says
+  // it plainly: "nothing enters the business and nothing leaves it"** — and the Money screen already
+  // excluded both, so the two screens disagreed about the same RM200.
+  const st = state();
+  st.deposits = [{ id: "dep_t", date: "2026-09-10", amount: 200, method: "Cash", source: "TNG", transfer: true },
+    { id: "dep_r", date: "2026-09-11", amount: 50, method: "Cash", source: "Loan", repay: true }];
+  st.expenses = [{ id: "exp_t", date: "2026-09-10", amount: 200, category: "My own withdrawal",
+    method: "Cash", source: "TNG", transfer: true }];
+  const pl = profitBetween(st, "2026-09-01", "2026-09-30");
+  assert.equal(pl.capital, 0,
+    "★ a transfer and a payback were counted as money she put IN — **nothing entered the business**");
+  assert.equal(pl.drawings, 0,
+    "★ the other half of the same transfer was counted as money she took OUT");
+  // ⭐ AND THE JOURNAL BEHIND THE STATEMENT MUST AGREE WITH IT — a transfer that is out of the total but
+  // still listed as a running cost would make the rows add up to more than the line above them.
+  assert.equal(expenseRows(st, "2026-09-01", "2026-09-30").length, 0,
+    "★ a transfer still appears as a running cost in the journal behind the line");
+});
+
 test("a price she changed on the order is what the sale counts", () => {
   const st = state();
   st.orders = [order({ unitPrice: 12.5 })];
