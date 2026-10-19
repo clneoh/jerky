@@ -26,6 +26,17 @@ quoted.
 **3. And it runs where the data arrives** — when the app opens, after a merge, and on every sync — so
 there is no press to find for either field.
 
+**4. And a false alarm is gone: "nothing" has three spellings and they are one answer.** **One line of an
+order carried `promo` as an empty value and the other as a missing one — both mean NO CODE — and the check
+compared their spelling, so it reported a disagreement that did not exist and no press could ever clear.**
+**It compares the meaning now.** ⚠️ **`false` is still an answer and still disagrees with an empty one**,
+so a line that says "not paid" cannot hide behind this.
+
+**5. And the receipt check's own way out is corrected.** **It said "open the order and press Save, then
+Paid again" — and Paid is not offered on an order that already reads paid**, so it named a button that is
+not there. **It names the Invoice now, which is the app's own second chance and draws the same number the
+register already holds.**
+
 **Nothing to run, no SQL, nothing to upload.**
 
 **19 Oct 2026 — engine v601: THE ORDER THAT COULD NOT BE FIXED BY ANY PRESS NOW REPAIRS ITSELF (nothing

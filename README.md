@@ -783,7 +783,12 @@ shows on the check (v602: the check named `promo` on AC8542 once the payment was
 **Guards:** `test/sync.test.js` (two — the pull drops the stale row and queues it; the pull settles the
 half-written payment) and two unit tests in `test/order-removal-guard.test.js`. Both pull tests wire
 the save hook by hand (app.js wires it in the real app); **each was watched failing before it was
-kept.** Suite 3871 → 3875. **No SQL, no upload.**
+kept.** Suite 3871 → 3875. **And a false alarm in the same check (v602):** `agree` compared order-level fields with
+`JSON.stringify`, so `promo: ""` on one line and `promo: null` on the other — **both meaning no code** —
+reported as a disagreement for ever. `sameValue()` treats absent, null and `""` as one fact; **`false`
+and `0` stay distinct.** `test/health.test.js` pins both halves, watched failing.
+
+**No SQL, no upload.**
 
 ## v549 → v599 — five more sweeps, and the last one found faults in the fixes before it (19 Oct 2026)
 

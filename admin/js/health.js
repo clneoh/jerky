@@ -98,12 +98,20 @@ export function localChecks(state) {
 
   // ── 4 · every line of one order agrees about the order ──────────────────
   {
+    // ★★★⚠️ "NOTHING" HAS THREE SPELLINGS, AND THEY ARE THE SAME ANSWER (v602).
+    // ⚠️⚠️ MEASURED ON HER BOOK, 19 Oct: `promo` was `""` on one line of an order and `null` on the other —
+    // ⭐ **both mean "no code on this sale", yet `JSON.stringify("") !== JSON.stringify(null)` reported them
+    // as disagreeing for ever.** ⚠️ **A check that reports a difference of SPELLING teaches her to ignore
+    // the line, which is the failure this page exists to avoid.** ⚠️ `false` and `0` are ANSWERS and stay
+    // distinct — only absent, null and empty string are one fact.
+    const sameValue = (a, b) => JSON.stringify(a == null || a === "" ? "" : a)
+      === JSON.stringify(b == null || b === "" ? "" : b);
     const groups = groupOrders(orders).filter((g) => g.orders.length > 1);
     const bad = [];
     for (const g of groups) {
       const first = g.orders[0];
       for (const field of ORDER_LEVEL) {
-        if (g.orders.some((o) => JSON.stringify(o[field]) !== JSON.stringify(first[field]))) {
+        if (g.orders.some((o) => !sameValue(o[field], first[field]))) {
           bad.push(`#${orderCode(first)} · ${field}`);
           break;
         }
@@ -487,7 +495,12 @@ export function registerChecks(state, register, voided) {
         return wrong.length
           ? fail("carried", "Every receipt's number is on the order it names", wrong,
             "A number was issued for these orders and the order is not carrying it, so your filing page can print \"none yet\" beside a receipt your register can name in full.",
-            "Open the order's own receipt — or open the order and press Save, then Paid again. Either way the app asks for the number again and gets back the SAME one, never a new one.")
+            // ⚠️ AND IT NAMES THE PRESS THAT EXISTS (v602). ⚠️ "Press Paid again" is impossible on an order that
+        // already reads paid — the Pay press is not offered — so an advice that named it left her with a
+        // red X and nothing to press. ⭐ The Invoice is the app's own second chance, and it draws the same
+        // number the register already holds.
+        "Open the order and press Invoice — the number is drawn and stamped then, and it is the SAME one "
+        + "your register already holds, never a new one.")
           : pass("carried", "Every receipt's number is on the order it names");
       })(),
     ];

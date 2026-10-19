@@ -184,6 +184,30 @@ test("★★ one order's lines disagreeing about the order FAILS", () => {
     "★ a perfectly ordinary two-item order was reported as disagreeing with itself");
 });
 
+test("★★★ an empty value and a missing one are the SAME answer, not a disagreement (v602)", () => {
+  // ⚠️⚠️ MEASURED ON HER BOOK, 19 Oct: order AC8542's `promo` was `""` on one line and `null` on the other.
+  // ⭐ **Both mean "no code on this sale"**, and the check compared their spelling, so it reported a
+  // disagreement that did not exist — for ever, on an order nothing could fix.
+  const st = healthy();
+  st.orders = [
+    { ...st.orders[0], id: "ord_a1b2c3d4e5f6", promo: "" },
+    { ...st.orders[0], id: "ord_a1b2c3d4e5f7", promo: null },
+  ];
+  assert.equal(resultOf(runChecks(st, { register: REGISTER, copies: COPIES }), "agree").status, "pass",
+    "★ an empty value and a missing one were reported as disagreeing — **they are one fact**");
+
+  // ⚠️ AND AN ANSWER IS STILL AN ANSWER: `false` is not `""`, and 0 is not missing. A check that flattened
+  // those would hide a real disagreement behind a normalisation.
+  const paid = healthy();
+  paid.orders = [
+    { ...paid.orders[0], id: "ord_a1b2c3d4e5f6", paidReceived: false },
+    { ...paid.orders[0], id: "ord_a1b2c3d4e5f7", paidReceived: "" },
+  ];
+  assert.equal(resultOf(runChecks(paid, { register: REGISTER, copies: COPIES }), "agree").status, "fail",
+    "★ `false` was flattened into nothing — a line that says NOT PAID must still disagree with one "
+    + "that says the money is in");
+});
+
 test("★★★ an order on a DELETED bake day is FINE — the app shows it; only an unplaceable one fails (v572)", () => {
   // ⚠️⚠️ The app's own Delete button removes a bake day and keeps its orders on purpose, and the Orders list
   // draws them with "its bake day was removed — tap to put it on one". ⭐ The check used to fail for ever on
