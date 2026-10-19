@@ -73,6 +73,21 @@ export function sanitize(text) {
 // A character as the single byte WinAnsi stores it in, or 0x3F ("?") for anything the encoding
 // cannot hold. Nothing reaches this that `sanitize` has not already been over, so "?" is a
 // last resort that a test asserts is never reached by a real journal.
+// ★★★ CAN THIS DOCUMENT BE DRAWN AT ALL? (v573)
+// ⚠️⚠️ The file is WinAnsi: **every character outside it becomes "?"** — so a Chinese customer's name or a
+// product written in 中文 arrived in the PDF as **"?????"**, while the screen and the paper print were right.
+// ⭐ Encoding a Unicode font in the browser is a different project; the honest answer is to NOT make a file
+// that would misprint her customer's name, and to say which way through there is.
+export function canDrawAll(text) {
+  // ⚠️ Over the SANITISED text: the journals already map an em dash and an arrow to ASCII, so what matters
+  // is what would reach the encoder, not what she typed.
+  for (const ch of sanitize(text)) {
+    if (ch === "?") continue;
+    if (byteOf(ch) === 0x3f && ch !== "\ufffd") return false;
+  }
+  return true;
+}
+
 function byteOf(ch) {
   const code = ch.codePointAt(0);
   if (code < 128) return code;

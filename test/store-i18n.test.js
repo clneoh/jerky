@@ -299,11 +299,18 @@ test("an order with a discount and NO code reads as bring-a-friend, and never as
   // name** — the app refuses to label one without it. If that ever stopped being true, a
   // code would start printing the friend's label.
   const app = readFileSync(new URL("../store/app.js", import.meta.url), "utf8");
-  assert.match(app, /row\.promo_rm > 0 && row\.promo_code/,
-    "the card no longer draws a discount line at all");
-  assert.match(app, /t\("promoFriend"\)/, "and no longer has the friend's words to draw it with");
-  assert.match(app, /: row\.promo_rm > 0[\s\S]{0,200}t\("promoFriend"\)/,
+  assert.match(app, /if \(off > 0\) \{/, "the card no longer draws a discount line at all");
+  assert.match(app, /"promoFriend"/, "and no longer has the friend's words to draw it with");
+  assert.match(app, /rows\.push\(code[\s\S]{0,900}?"promoFriend"/,
     "the choice must be made ON the code being present, not on some other flag");
+  // ★★★ AND THE FRIEND'S OWN TWO WORDINGS (v571) — a reward the referrer EARNED is not a coupon they
+  // were sent. ⭐ The role rides the published row; a card with no role reads as it always did.
+  assert.match(app, /promo_role[\s\S]{0,80}"reward"[\s\S]{0,80}"promoReward"[\s\S]{0,40}"promoFriend"/,
+    "★ the card cannot tell a reward from a discount — **a referrer is shown somebody else's coupon's words**");
+  for (const l of LANGS.slice(1)) {
+    assert.ok(STORE[l].promoReward && STORE[l].promoReward.trim(), `${l}.promoReward is present`);
+    assert.notEqual(STORE[l].promoReward, STORE.en.promoReward, `${l}.promoReward is translated`);
+  }
 });
 
 test("the COD charge is worded differently from the plain one in every language", () => {

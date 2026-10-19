@@ -85,12 +85,22 @@ export function carouselStep(total, index, step) {
 
 // Client-side gate before anything is sent: a name, an integer rating 1–5 and a
 // message of 1–400 characters. The database checks the same rules as a backstop.
-export function reviewOk(name, n, message) {
+// ★★★ WHICH ANSWER IS MISSING, ONE BY ONE (v583). ⚠️ The error was one alert with nothing it belonged to, so
+// a screen reader announced "fill in every field" with no field named. ⭐ The same rule is read twice: once for
+// the yes/no, and once to put the message ON the boxes that need it.
+export function reviewProblems(name, n, message) {
   const s = Number(n);
   const m = String(message || "").trim();
-  return String(name || "").trim().length > 0
-    && Number.isInteger(s) && s >= 1 && s <= 5
-    && m.length >= 1 && m.length <= 400;
+  return {
+    name: String(name || "").trim().length === 0,
+    stars: !(Number.isInteger(s) && s >= 1 && s <= 5),
+    message: m.length < 1 || m.length > 400,
+  };
+}
+
+export function reviewOk(name, n, message) {
+  const p = reviewProblems(name, n, message);
+  return !p.name && !p.stars && !p.message;
 }
 
 export function photoOk(file) {
@@ -157,18 +167,26 @@ export async function shrinkReviewPhoto(file) {
   return blob || null;
 }
 
-// Approved reviews for the homepage grid, newest first. Any failure quietly
-// returns [] so an offline page never shows an error — just the empty state.
+// Approved reviews for the homepage grid, newest first.
+//
+// ★★★ "COULD NOT LOAD" IS NOT "THERE ARE NONE" (v565). ⚠️⚠️ A failed or offline fetch used to return `[]`,
+// and the grid then printed **"No reviews yet — be the first!"** — ⭐ **so a bakery with a page of good
+// reviews told every visitor, in airplane mode or after one bad minute, that it had none.** ⭐ This now
+// answers `null` for "I could not look", and the grid says that instead. ⚠️ An empty list is still an
+// empty list: the customer is told the truth either way, which is the whole difference.
 export async function loadApproved() {
   try {
     const res = await fetch(
-      `${BASE}/rest/v1/reviews?select=name,stars,message,lang,photo,created_at&published=eq.true&order=created_at.desc`,
+      // ⚠️⚠️ `id` IS SELECTED (v599). ⚠️ v598's place-keeping compared `r.id`, which the query never asked
+      // for — ⚠️ **so `findIndex` was always -1 and every language switch still opened slide 1.** ⭐ The
+      // carousel's own `onSlide` already reports it; it just had nothing to report.
+      `${BASE}/rest/v1/reviews?select=id,name,stars,message,lang,photo,created_at&published=eq.true&order=created_at.desc`,
       { headers: { apikey: SUPABASE.anonKey } });
-    if (!res.ok) return [];
-    const rows = await res.json().catch(() => []);
-    return Array.isArray(rows) ? rows : [];
+    if (!res.ok) return null;
+    const rows = await res.json().catch(() => null);
+    return Array.isArray(rows) ? rows : null;
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -266,11 +284,20 @@ export async function refreshReviews() {
   drawGrid();
 }
 
+// ⚠️ WHICH REVIEW IS ON SCREEN (v598) — survives a redraw, so a language switch keeps the reader's place.
+let currentReviewId = "";
+function onSlide(id) { currentReviewId = String(id || ""); }
+
 function drawGrid() {
   const grid = byId("review-grid");
   if (!grid) return;
   if (stopCarousel) { stopCarousel(); stopCarousel = null; }
   grid.replaceChildren();
+  if (rowsCache === null) {
+    // ⭐ the fetch failed — say so, rather than claiming the bakery has no reviews.
+    grid.appendChild(emptyNote(tHome("rvUnavailable")));
+    return;
+  }
   const rows = rowsCache || [];
   if (!rows.length) {
     grid.appendChild(emptyNote(tHome("rvEmpty")));
@@ -282,7 +309,7 @@ function drawGrid() {
     grid.appendChild(card);
     return;
   }
-  const ctl = buildCarousel(rows);
+  const ctl = buildCarousel(rows, currentReviewId);
   grid.appendChild(ctl.el);
   stopCarousel = ctl.stop;
 }
@@ -323,7 +350,8 @@ function reviewCard(row) {
   }
   const starsEl = document.createElement("div");
   starsEl.className = "review-card-stars";
-  starsEl.setAttribute("aria-label", `${Number(row.stars) || 0} out of 5 stars`);
+  // ⚠️ THE ONE LABEL A SCREEN READER READS ON EVERY CARD WAS ENGLISH ONLY (v565).
+  starsEl.setAttribute("aria-label", tHome("rvStarsOf").replace("{n}", String(Number(row.stars) || 0)));
   starsEl.textContent = stars(row.stars);
   card.appendChild(starsEl);
 
@@ -334,7 +362,7 @@ function reviewCard(row) {
 
   const nameEl = document.createElement("div");
   nameEl.className = "review-card-name";
-  nameEl.textContent = String(row.name || "Anonymous");
+  nameEl.textContent = String(row.name || tHome("rvAnon"));
   card.appendChild(nameEl);
 
   const meta = document.createElement("div");
@@ -349,7 +377,7 @@ function reviewCard(row) {
 
 // One published review at a time: auto-advances ~every 6 s, pauses on hover,
 // touch or a hidden tab, and is fully usable by arrows, dots or a swipe.
-function buildCarousel(rows) {
+function buildCarousel(rows, startId = "") {
   const n = rows.length;
   const holder = document.createElement("div");
   holder.className = "r-slider";
@@ -402,7 +430,10 @@ function buildCarousel(rows) {
 
   holder.append(stage, navEl, live);
 
-  let i = 0;
+  // ⚠️⚠️ A LANGUAGE SWITCH USED TO THROW THE READER TO SLIDE 1 (v598). ⚠️ The grid is rebuilt, and the
+  // carousel started at 0 every time — ⚠️ **a customer reading review 5 in English tapped BM and lost their
+  // place.** ⭐ The review they were reading is where the rebuilt carousel opens.
+  let i = Math.max(0, rows.findIndex((r) => r && r.id === startId));
   let timer = null;
   let downX = null;
   let hovered = false;
@@ -414,8 +445,15 @@ function buildCarousel(rows) {
     loadPhoto(slides[i]);
     loadPhoto(slides[carouselStep(n, i, 1)]);
     track.style.transform = `translateX(-${i * 100}%)`;
-    dotEls.forEach((d, j) => d.classList.toggle("is-on", j === i));
+    // ⚠️⚠️ ONLY THE SLIDE ON SCREEN IS READ (v597). ⚠️ Every review stayed in the accessibility tree, so a
+    // screen reader read all eight consecutively and the "1 / 8" line meant nothing.
+    slides.forEach((sl, j) => sl.setAttribute("aria-hidden", j === i ? "false" : "true"));
+    dotEls.forEach((d, j) => {
+      d.classList.toggle("is-on", j === i);
+      d.setAttribute("aria-pressed", j === i ? "true" : "false");
+    });
     live.textContent = `${i + 1} / ${n}`;
+    onSlide(rows[i] && rows[i].id);
   }
   function go(target) {
     i = carouselStep(n, i, target - i);
@@ -424,11 +462,11 @@ function buildCarousel(rows) {
   function clearTimer() {
     if (timer) { clearInterval(timer); timer = null; }
   }
-  function restart() {
-    clearTimer();
-    if (document.hidden || hovered) return;
-    timer = setInterval(() => { i = carouselStep(n, i, 1); move(); }, 6000);
-  }
+  // ★★★ AND IT DOES NOT ADVANCE ITSELF (v565). ⚠️⚠️ It moved every six seconds on a timer, and the only
+  // pauses were hover and a momentary touch — ⭐ **on a phone that means a review slides away while it is
+  // being read**, and it is against this project's own standing carousel rule. ⭐ Arrows, dots and swipe
+  // are the whole of the movement now; nothing changes without the customer's own hand.
+  function restart() { clearTimer(); }
   const onVis = () => { if (document.hidden) clearTimer(); else restart(); };
 
   prev.addEventListener("click", () => { go(i - 1); restart(); });
@@ -458,6 +496,14 @@ function buildCarousel(rows) {
   };
 }
 
+// Which thank-you the customer reads, from what was actually sent (v581). ⚠️ A review that carried no
+// picture must not be thanked for one — `rvThanksMain` is only for a picture that ARRIVED.
+export function thanksKeyFor(photoState) {
+  if (photoState === "sent") return "rvThanksMain";
+  if (photoState === "failed") return "rvThanksNoPhoto";
+  return "rvThanksWords";
+}
+
 function initReviews() {
   const form = byId("review-form");
   const grid = byId("review-grid");
@@ -476,7 +522,11 @@ function initReviews() {
   const submitBtn = byId("rv-submit");
   const langBtns = Array.from(form.querySelectorAll(".rv-lang"));
 
-  let rating = 5;
+  // ⚠️⚠️ NO STAR IS PAINTED UNTIL THE CUSTOMER TAPS ONE (v565). ⭐ The rating defaulted to 5 with all five
+  // stars already pressed, so **a one-star complaint could be posted as five stars by someone who never
+  // touched a star at all.** `reviewOk` already refuses 0, so an untapped rating is asked for, not assumed.
+  let rating = 0;
+  void 5;
   let lang = "en";
   let chosenFile = null;
 
@@ -486,6 +536,7 @@ function initReviews() {
     buttons.forEach((b) => {
       const on = Number(b.dataset.val) <= rating;
       b.classList.toggle("is-on", on);
+      if (b.setAttribute) b.setAttribute("aria-pressed", String(on));
       b.setAttribute("aria-pressed", String(on));
     });
   }
@@ -502,7 +553,11 @@ function initReviews() {
   langBtns.forEach((b) => {
     b.addEventListener("click", () => {
       lang = b.dataset.lang;
-      langBtns.forEach((x) => x.classList.toggle("is-on", x === b));
+      langBtns.forEach((x) => {
+      const on = x === b;
+      x.classList.toggle("is-on", on);
+      if (x.setAttribute) x.setAttribute("aria-pressed", String(on));
+    });
     });
   });
 
@@ -546,13 +601,37 @@ function initReviews() {
     if (error) error.textContent = text;
   }
 
-  function showThanks(critical) {
+  // ⚠️⚠️ THE ERROR NOW BELONGS TO THE BOXES IT IS ABOUT (v583). ⭐ Each field points at the message
+  // (`aria-describedby`) and says whether IT is the one that needs an answer (`aria-invalid`), so the alert is
+  // announced with the control it concerns rather than on its own.
+  function markFields(bad = {}) {
+    const pairs = [[nameInput, "name"], [message, "message"], [byId ? byId("rv-stars") : null, "stars"]];
+    for (const [node, key] of pairs) {
+      if (!node || typeof node.setAttribute !== "function") continue;
+      if (error && error.id) node.setAttribute("aria-describedby", error.id);
+      node.setAttribute("aria-invalid", bad[key] ? "true" : "false");
+    }
+  }
+
+  // ⚠️⚠️ A PICTURE THAT DID NOT UPLOAD MUST NOT BE THANKED FOR (v553). ⭐ The review went out with
+  // `photo: ""` and the thanks said **"your review and photo reached the baker"** — so the customer believed
+  // a picture had arrived that never did, and the moderation card had none. ⭐ The words tell the truth now.
+  // ⚠️⚠️ AND A REVIEW SENT WITH NO PICTURE AT ALL IS NOT THANKED FOR ONE (v581). ⭐ v553 taught this
+  // sentence the difference between "a picture failed" and "a picture arrived" — but ⚠️ **a customer who
+  // chose no picture at all was still told "your review and photo reached the baker".** ⭐ The words now
+  // follow what she actually sent: the picture, the failure, or the review alone.
+  function showThanks(critical, photoState = "none") {
     if (!thanks) return;
-    const parts = [tHome("rvThanksMain")];
+    const parts = [tHome(thanksKeyFor(photoState))];
     if (critical) parts.push(tHome("rvThanksHonest"));
     thanks.textContent = parts.join(" ");
     thanks.hidden = false;
     if (form) form.hidden = true;
+    // ⚠️⚠️ AND IT IS HEARD AND FOCUSED (v591). ⚠️ The form's Send button was the focused element and the form
+    // is now hidden, so focus fell to `<body>` and a screen reader said NOTHING — ⚠️ **a customer did not know
+    // their review had been sent.** ⭐ The thanks is a live region (`role=status` in index.html) and takes
+    // focus, so the message is both announced and where the next Tab continues from.
+    try { thanks.setAttribute("tabindex", "-1"); thanks.focus({ preventScroll: true }); } catch { /* no focus */ }
     if (grid) grid.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
@@ -560,9 +639,11 @@ function initReviews() {
     ev.preventDefault();
     const name = (nameInput && nameInput.value) || "";
     if (!reviewOk(name, rating, message.value)) {
+      markFields(reviewProblems(name, rating, message.value));
       setError(tHome("rvErrFields"));
       return;
     }
+    markFields({});
     if (submitBtn) {
       submitBtn.disabled = true;
       submitBtn.textContent = tHome("rvSending");
@@ -570,11 +651,14 @@ function initReviews() {
     setError("");
     const critical = rating <= 3;
     let photo = "";
+    let photoFailed = false;   // she chose a picture and it did not make it — say so afterwards
     if (chosenFile) {
-      // Shrink first so any phone photo is a small upload; an unreadable file
-      // just means the review goes out without a picture.
+      // Shrink first so any phone photo is a small upload. ⚠️ An unreadable file, or an upload that comes
+      // back empty, means the review goes out WITHOUT a picture — and the thanks no longer pretends
+      // otherwise (v553).
       const ready = await shrinkReviewPhoto(chosenFile);
-      if (ready) photo = await uploadPhoto(ready);
+      if (ready) { photo = await uploadPhoto(ready); if (!photo) photoFailed = true; }
+      else photoFailed = true;
     }
     const res = await submitReview({ name, stars: rating, message: message.value, lang, photo });
     if (submitBtn) {
@@ -585,16 +669,25 @@ function initReviews() {
       setError(tHome("rvErrSend"));
       return;
     }
+    // ⚠️⚠️ WHAT TO THANK THEM FOR IS DECIDED BEFORE ANYTHING IS CLEARED (v587). ⚠️ `clearPicked()` below wipes
+    // `chosenFile`, and the thanks were worked out AFTER it — ⚠️ **so "the picture did not upload" could never be
+    // said: a customer whose photo failed was thanked as if they had sent none.** ⭐ The test checked the
+    // wording in isolation and missed the call site; this reads the file before it is emptied.
+    const thanksState = photo ? "sent" : (chosenFile ? "failed" : "none");
     form.reset();
     if (nameInput) nameInput.value = "";
     if (message) message.value = "";
-    rating = 5;
+    rating = 0;
     paintStars();
     lang = "en";
-    langBtns.forEach((x) => x.classList.toggle("is-on", x.dataset.lang === "en"));
+    langBtns.forEach((x) => {
+      const on = x.dataset.lang === "en";
+      x.classList.toggle("is-on", on);
+      if (x.setAttribute) x.setAttribute("aria-pressed", String(on));
+    });
     if (preview) preview.replaceChildren();
     clearPicked();
-    showThanks(critical);
+    showThanks(critical, thanksState);
   });
 
   paintStars();
@@ -605,7 +698,14 @@ if (hasDOM) {
   // Re-draw the reviews section in the new language (home.js persists the
   // choice and fires this event); the data is cached, so no re-fetch.
   window.addEventListener("i18nchange", () => {
-    if (rowsCache) drawGrid();
+    // ⚠️⚠️ AND A FAILED LOAD'S NOTE FOLLOWS THE SWITCH TOO (v598). ⚠️ `rowsCache` is null after a failed
+    // fetch, so this skipped the redraw and "Reviews can't load right now" stayed English on the Chinese page.
+    // ⚠️⚠️ THE NOTE IS REDRAWN IN THE NEW LANGUAGE (v599). ⚠️ The old fallback called `loadApproved()` and
+    // threw the answer away, so a failed note stayed in the previous language while the rest of the page
+    // switched. ⭐ Draw what is known now; only when nothing is cached is a fresh read started, and it
+    // redraws if it lands.
+    drawGrid();
+    if (!rowsCache) loadApproved().then((rows) => { if (rows) { rowsCache = rows; drawGrid(); } });
   });
   initReviews();
 }

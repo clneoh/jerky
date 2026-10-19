@@ -29,7 +29,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { customerTotal, moneyLines, promoOn, promoValue } = await import("../admin/js/courier.js");
+const { customerTotal, moneyLines, promoOn, promoValue, promoOnBasket, freezePromoOnOrders, paymentShift } = await import("../admin/js/courier.js");
 const { round2 } = await import("../admin/js/state.js");
 const { buildConfirmation } = await import("../admin/js/confirm.js");
 const { buildPaymentReminder, buildShippedMessage } = await import("../admin/js/messages.js");
@@ -81,6 +81,22 @@ function ordered(code = mkCode(), order = {}) {
 }
 
 const confirm = (st, g) => buildConfirmation(st, g, "https://x/track").message;
+
+test("★★★ an order KEEPS its discount after the code is deleted", () => {
+  // ⚠️⚠️ THE FAULT (v551): the delete screen promises "those keep it, and you still owe them what you
+  // promised" — and the order stored only the code's NAME, so once the code was gone it priced at nothing
+  // and **every order that carried it went UP.**
+  const { st, g } = ordered();
+  const before = customerTotal(st, g);
+  assert.equal(before.total, 20, "precondition: RM30 of goods less the RM10 the code gives");
+  // Deleting the code freezes what it was worth onto the orders, then removes it.
+  for (const o of g.orders) o.promoRM = before.promo;
+  st.promoCodes = [];
+  const after = customerTotal(st, g);
+  assert.equal(after.promo, 10,
+    "★ deleting the code raised this order by RM10 — **she promised those orders would keep it**");
+  assert.equal(after.total, 20, "and the Total the customer was quoted stands");
+});
 
 // ── the discount reaches the customer ────────────────────────────────────────
 test("the confirmation names the code and takes it off the Total", () => {
@@ -288,13 +304,26 @@ test("a code that has been fully claimed still discounts the orders that claimed
 
 // ── the shape of the answer ──────────────────────────────────────────────────
 test("promoValue answers the same way for an order as for a figure handed in", () => {
-  // promoOn is a thin reader over promoValue, and the Edit form goes through promoValue
-  // because the basket is not saved yet. A drift between the two would make the form's
-  // preview total disagree with the message sent a moment later.
+  // ⚠️ The Edit form goes through `promoOnBasket` (v590), which adds the frozen-deleted-code rule to
+  // `promoValue`. For a LIVE code the three must agree, or the form's preview and the message differ.
   const { st, g } = ordered();
   assert.deepEqual(promoOn(st, g.orders), promoValue(st, "FRESH10", 30, 0));
+  assert.deepEqual(promoOnBasket(st, g.orders, 30, 0), promoValue(st, "FRESH10", 30, 0));
   assert.deepEqual(promoValue(st, "", 30, 0), { code: "", money: 0 }, "no code, no discount");
   assert.deepEqual(promoValue(st, "NOPE", 30, 0), { code: "", money: 0 }, "an unknown code, no discount");
+});
+
+test("★★★ a deleted code's frozen discount still prices a DRAFT basket (v590)", () => {
+  // ⚠️⚠️ MEASURED: the Edit card and the Note/tracking panel priced the code with `promoValue` alone —
+  // ⚠️ **so for a code she had deleted the card showed the order at full price, while `customerTotal` kept
+  // the frozen discount, and the false "has the extra been paid?" question followed.**
+  const { st, g } = ordered();
+  for (const o of g.orders) o.promoRM = 10;   // exactly what the delete freezes
+  st.promoCodes = [];
+  assert.equal(promoValue(st, "FRESH10", 30, 0).money, 0, "a deleted code gives nothing live");
+  const draft = promoOnBasket(st, g.orders, 30, 0);
+  assert.equal(draft.money, 10, "★ the edit card priced a deleted code at full price");
+  assert.equal(draft.frozen, true, "and it says the amount is the frozen promise, not a live award");
 });
 
 test("the money lines put the promo between the workings and the total", () => {
@@ -412,4 +441,43 @@ test("the smallest basket is judged while the code's dates are not", () => {
   const reached = ordered(minCode(30, { state: "ended", when: { from: "", to: "2026-09-01" } }));
   assert.equal(customerTotal(reached.st, reached.g).promo, 10,
     "and an ended code still keeps what it gave on a basket that did reach it");
+});
+
+test("★★★ deleting a code FREEZES what each carrying order was promised (v577)", () => {
+  // ⚠️⚠️ THE FAULT: the freeze compared two `normalizeCode` OBJECTS, so it matched nothing — ⚠️ **deleting
+  // FRESH10 (RM5 off) left the order pricing at nothing and its Total went UP by RM5**, after the dialog had
+  // promised "those keep it, and you still owe them what you promised".
+  const st = state();
+  st.promoCodes = [{
+    id: "c1", code: "FRESH10", state: "live", vis: "public", frozen: false,
+    who: { type: "all" }, when: { from: "", to: "" }, basket: { type: "none", amount: 0 },
+    gives: { type: "rm", value: 5, cap: 0 }, often: { type: "unlimited", n: 0, maxRM: 0 },
+    beside: { type: "anything" }, say: "", sayZh: "", sayMs: "", used: 0, given: 0,
+  }];
+  st.orders = orders({ promo: "FRESH10" });
+  assert.equal(promoOn(st, st.orders).money, 5, "precondition: the code takes RM5 off");
+
+  // ⭐ A typed code arrives from the shop in any spelling; the match must not care.
+  const frozen = freezePromoOnOrders(st, " fresh10 ");
+  assert.equal(frozen, 1, "★ the freeze matched nothing — **two normalizeCode objects are never equal**");
+  assert.equal(st.orders[0].promoRM, 5, "★ the order was not told what it is owed");
+
+  // And with the code gone from her list, the order still prices at the amount it was promised.
+  st.promoCodes = [];
+  assert.equal(promoOn(st, st.orders).money, 5,
+    "★★ deleting the code took the discount off the order — **its Total goes up by RM5**");
+});
+
+test("★★★ an edit on a PAID order says which way the money moved (v577)", () => {
+  // ⚠️⚠️ Only the SHORTFALL was asked about. ⚠️ **Measured: RM16 paid by Cash, a second RM16 loaf added to the
+  // order, and Money counted RM32 of takings while the row still said Paid · Cash with no Pay press left.**
+  // ⭐ One helper answers both directions, so neither can be forgotten again.
+  assert.deepEqual(paymentShift(16, 32), { dir: "extra", amount: 16 },
+    "★ an edit UP on a paid order is silent — the extra is counted as money received");
+  assert.deepEqual(paymentShift(32, 16), { dir: "short", amount: 16 });
+  assert.deepEqual(paymentShift(16, 16), { dir: "", amount: 0 });
+  // ⚠️ An UNPAID order has no shift to ask about, whatever the number does.
+  assert.deepEqual(paymentShift(0, 32), { dir: "", amount: 0 },
+    "★ an order that was never paid was asked a question about its money");
+  assert.deepEqual(paymentShift(16, null), { dir: "", amount: 0 });
 });

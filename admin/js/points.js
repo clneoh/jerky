@@ -26,7 +26,7 @@
 //
 // Pure: no DOM, no storage. Runs under Node for tests.
 
-import { newId, round2, waNumber } from "./state.js";
+import { newId, round2, waNumber, groupOrders } from "./state.js";
 import { phoneDigits } from "./customers.js";
 import { fmtPlace, validPlace } from "./courier_place.js";
 // The app's ONE window - how a time window is read, packed and said (v304). A LEAF, so this
@@ -174,6 +174,18 @@ export function servedEveryDay(point) {
 }
 
 // The days a Place is served, cleaned — the one reader every screen and the publish go through.
+// ★★★ HOW MANY ORDERS HAVE COLLECTED AT A POINT (v550) — **ORDERS, not rows.**
+// ⚠️⚠️ Every ITEM is its own row, so a single customer with a two-item basket is TWO rows and ONE order.
+// ⭐ Counting rows read **"2 orders"** on the card and **"2 orders have collected there"** on the delete
+// warning, for one customer. ⭐ The rest of the app groups rows into orders; this is that same count, in
+// the one place it lives, so the card and the warning cannot drift from each other.
+export function ordersAtPoint(point, orders) {
+  const id = String((point && point.id) || "");
+  const rows = (Array.isArray(orders) ? orders : [])
+    .filter((o) => o && String(o.pointId || "") === id);
+  return groupOrders(rows).length;
+}
+
 export function pointDays(point) {
   return normalizeDays(point && point.days);
 }
@@ -639,7 +651,13 @@ export function setOrderPoint(state, order, pointId) {
 export function fulfillmentText(state, order) {
   if (order && order.fulfillment === "courier") return "Post (nationwide)";
   const name = orderPointName(state, order);
-  return name ? `Collect (local) at ${name}` : "Collect (local)";
+  if (name) return `Collect (local) at ${name}`;
+  // ⚠️⚠️ COLLECT (LOCAL) ALONE DOES NOT SAY WHERE, BUT THESE WORDS DO NOT CHANGE (v569). ⭐ A customer who
+  // tapped Collect (local) and left the Point picker alone gets an order with no Point — the KITCHEN — and
+  // the shop had promised the exact collection point. ⚠️ An order placed before Points existed is the SAME
+  // state, so its message must read exactly as it always has. ⭐ The place is added where a message has a
+  // line for it: the confirmation's kitchen address, and the tracking card's own address line.
+  return "Collect (local)";
 }
 
 // Where to go, for a collection at a Point: the LIVE Point's address, or "" when it has none or

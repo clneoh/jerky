@@ -29,7 +29,14 @@ function createEl(tag) {
     // print could not find its own section and would silently do nothing.
     appendChild(c) { if (c != null) { if (c.nodeType === 1) c.parentNode = node; node.children.push(c); } return c; },
     append(...cs) { for (const c of cs) if (c != null) { if (c.nodeType === 1) c.parentNode = node; node.children.push(c); } },
-    replaceChildren(...cs) { node.children = []; for (const c of cs) if (c != null) { if (c.nodeType === 1) c.parentNode = node; node.children.push(c); } },
+    // ⚠️⚠️ AS UNFORGIVING AS THE REAL DOM (v582). The real `replaceChildren(null)` turns null into a TEXT
+    // NODE that prints the word "null" — ⚠️ **and a filtering shim hid exactly that on the Write-a-list card.**
+    replaceChildren(...cs) { node.children = [];
+      for (const c of cs) {
+        const child = c == null ? { nodeType: 3, text: "null" } : c;
+        if (child.nodeType === 1) child.parentNode = node;
+        node.children.push(child);
+      } },
     addEventListener(t, f) { (node._listeners[t] ||= []).push(f); },
     removeEventListener(t, f) { node._listeners[t] = (node._listeners[t] || []).filter((x) => x !== f); },
     setAttribute(k, v) { node.attrs[k] = String(v); },
@@ -115,7 +122,7 @@ globalThis.window = {
   print() { printed.push(true); },
 };
 
-import { renderPO, manualPO } from "../admin/js/views/po.js";
+import { renderPO, manualPO, saveManual, generate } from "../admin/js/views/po.js";
 import * as poTableModule from "../admin/js/views/poTable.js";
 import { readFileSync } from "node:fs";
 
@@ -740,4 +747,55 @@ test("★★★ the quantity can be TYPED — and the box survives the second di
 
   // ⭐ AND THE LIST ITSELF FOLLOWS: 12 loaves × 500 g is 6,000 g of flour.
   assert.match(textOf(layer), /6,000|6000/, "the ingredient quantities did not follow the typed number");
+});
+
+test("★★★ a list with nothing to buy is refused, not saved as RM0.00 (v582)", () => {
+  // ⚠️⚠️ MEASURED: a product with an EMPTY recipe was offered by the picker; picking it passed the
+  // "pick a product" guard (units counted), exploded to no lines, ⚠️ **and saved an RM0.00 list with
+  // nothing on it while saying "List saved to history".**
+  const st = { ...freshState(), purchaseOrders: [] };
+  const before = hashValue;
+  const bom = { totalUnits: 1, orders: [{ productId: "prd_loaf" }], productLines: [], warnings: [] };
+  saveManual(st, bom, [], 0, null, todayISO());
+  assert.equal(st.purchaseOrders.length, 0, "★ an empty list was saved to history");
+  assert.equal(hashValue, before, "★ it even navigated her to a list that does not exist");
+  // The control: the same list with one line on it saves as it always did.
+  saveManual(st, bom, [{ ingredientId: "ing_flour", totalQty: 500, unit: "g" }], 3, null, todayISO());
+  assert.equal(st.purchaseOrders.length, 1, "a real list stopped saving");
+});
+
+test("★★ the Write-a-list card never prints the word null (v582, seen live)", async () => {
+  // ⚠️⚠️ `replaceChildren(null)` prints "null" — the trap this suite's shim used to filter away, ⭐ **so the
+  // empty card showed "null" under its product picker and nothing here could see it.**
+  const st = freshState();
+  const root = createEl("div");
+  renderPO(root, st, new URLSearchParams());
+  const open = walk(root).find((n) => n.tagName === "BUTTON" && textOf(n).includes("Write a list by hand"));
+  assert.ok(open, "the hand-written card is not offered");
+  open._listeners.click.forEach((f) => f());
+  const layer = registry["popup-layer"];
+  // ⚠️ A WORD-BOUNDARY REGEX MISSED THIS ONCE: the stray text ran straight into the product name
+  // ("Sourdoughnull…"), ⭐ **so the check asks for the text node itself, not for a word in a run-together
+  // string.**
+  const stray = walk(layer).filter((n) => n.nodeType === 3 && String(n.text ?? "").trim() === "null");
+  assert.equal(stray.length, 0,
+    "★ the card prints the word null where a child was missing");
+});
+
+test("★★★ an empty GENERATED list is refused, and the day is not marked shopped (v587)", () => {
+  // ⚠️⚠️ MEASURED: a product whose recipe is `[]` counts as an order but explodes to no lines — ⚠️ **so
+  // "Generate & Save" saved a PO with nothing on it and the day then read "✓ saved" for ever.** ⭐ v582
+  // guarded the hand-written list only.
+  const st = { ...freshState(), purchaseOrders: [] };
+  const day = st.deliveryDates[0];
+  const before = hashValue;
+  const bom = { orders: [{ productId: "prd_loaf" }], totalUnits: 1, productLines: [], warnings: [] };
+  generate(st, [day], bom, [], 0);
+  assert.equal(st.purchaseOrders.length, 0, "★ a list with nothing on it was saved");
+  assert.equal(hashValue, before, "and it navigated her to it");
+  assert.equal(day.fp, undefined, "★ the day was marked shopped by a list that buys nothing");
+
+  // The control: the same day with one line on it saves, as it always did.
+  generate(st, [day], bom, [{ ingredientId: "ing_flour", totalQty: 500, unit: "g", buyText: "500 g" }], 3);
+  assert.equal(st.purchaseOrders.length, 1, "a real list stopped saving");
 });

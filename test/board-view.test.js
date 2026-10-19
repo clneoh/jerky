@@ -101,7 +101,7 @@ function createEl(tag) {
     // screen asks it through this.
     get firstChild() { return this.children[0] || null; },
     appendChild(c) { if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parent = this; } return c; },
-    append(...cs) { for (const c of cs) if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parent = this; } },
+    append(...cs) { for (const c of cs) { const n = c == null ? { nodeType: 3, text: "null" } : c; this.children.push(n); if (n.nodeType === 1) n.parent = this; } },
     // Faithful on purpose, and this is the one place it matters most: the real
     // `replaceChildren` does NOT skip a null the way `el()` skips a null child — it
     // converts every argument with String(), so `replaceChildren(ask, readout)` with
@@ -352,7 +352,7 @@ globalThis.localStorage = {
   removeItem: (k) => store.delete(k),
 };
 
-const { renderScenario, renderBoard, trainScale, coachGeom, lineWidth, trainPlacement, panRange, minsWords } =
+const { renderScenario, renderBoard, boardAhead, trainScale, coachGeom, lineWidth, trainPlacement, panRange, minsWords } =
   await import("../admin/js/views/scenario.js");
 const { renderProduction } = await import("../admin/js/views/production.js");
 const { ONE_BAKER_SCENARIO, computeScenario, scenarioPlanPatch, jobKey, PX_PER_MIN_CHOICES } =
@@ -572,6 +572,27 @@ test("the board draws the day chart and the next-up strip, under the day's own n
   assert.equal(textOf(title), String(sc.name || "").trim(), "the top of the page names something other than her day");
   assert.match(textOf(root), /Next up/);
 });
+
+test("★★★ every hand is on the board, and calls-off does not hide one (v583)", () => {
+  // ⚠️⚠️ MEASURED: the strip kept six people, ⚠️ **so with seven or eight the last two never appeared** — and
+  // it dropped anyone whose CALLS were switched off, ⚠️ **telling a worker at the bench "there is nobody to be
+  // anywhere next".** ⭐ Calls govern the phone's alerts, not who is on the day.
+  // ⚠️ Asked of `boardAhead` directly at minute 0: the rendered board is frozen at 09:00, where most of the
+  // day's jobs have already gone by and the strip is legitimately shorter.
+  // ⚠️ EIGHT MODULES THAT EACH NEED HANDS: two of the stock day's eight stages are waits in the proofer, so
+  // cloning them would test six windows and prove nothing about a six-person cap.
+  const base = ONE_BAKER_SCENARIO.modules.find((m) => m.id === "solo_pack");
+  const eight = { ...ONE_BAKER_SCENARIO, modules: Array.from({ length: 8 }, (_, i) => ({
+    ...base, id: `hand${i + 1}`, name: `Packing ${i + 1}`, person: i + 1, repeats: 1, startMin: 480 + i * 20,
+  })) };
+  const st = makeState();
+  const ahead = boardAhead(eight, st, { nowMin: 0 });
+  assert.equal(ahead.people.length, 8, "★ the last two hands are not on the board");
+  st.settings.personCalls = { 1: false };
+  assert.equal(boardAhead(eight, st, { nowMin: 0 }).people.length, 8,
+    "★ a worker with calls off vanished from the board");
+});
+
 
 test("and not one word of nothing is written onto it", () => {
   // Found live on the real screen rather than reasoned about: the board withholds the

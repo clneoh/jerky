@@ -3,13 +3,37 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalize, defaultState, loadState, save, updateOrderBadge, groupOrders, orderCode, waNumber, ensureSupabase, productUnitOptions, productUsesUnit, BUILTIN_SUPABASE } from "../admin/js/state.js";
+import { normalize, defaultState, removeOrders, loadState, save, updateOrderBadge, groupOrders, orderCode, ordersOnDate, waNumber, ensureSupabase, productUnitOptions, productUsesUnit, BUILTIN_SUPABASE, sameNameIngredient, duplicateIngredientPlan } from "../admin/js/state.js";
 import { lockEnabled } from "../admin/js/pin.js";
 import { planOf } from "../admin/js/production.js";
 import { planBackwards } from "../admin/js/bakeday.js";
 
 const HASH_1234 = "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4";
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 0.01, `${msg} (got ${a})`);
+
+test("★★★ the homepage product she picked survives a load (v595)", () => {
+  // ⚠️⚠️ MEASURED: it was written by Settings but NOT in cleanStorefront's whitelist — ⚠️ **every open, Import
+  // and Restore silently discarded it**, and the next publish reverted the homepage card.
+  const out = normalize({ version: 1, settings: { storefront: { homeProductId: "prd_abc" } } });
+  assert.equal(out.settings.storefront.homeProductId, "prd_abc",
+    "★ the choice was dropped on load — the homepage falls back to the first focaccia");
+});
+
+test("★★★ renaming a seeded unit survives a load (v595)", () => {
+  // ⚠️⚠️ The seed was keyed by NAME only, so "doz" looked missing and "dozen" was seeded back beside it; the
+  // duplicate id was then deduped in the seed's favour.
+  const out = normalize({ version: 1,
+    uoms: [{ id: "uom_dozen", name: "doz", family: "count", toBase: 1 }] });
+  const dozen = out.uoms.filter((u) => u.id === "uom_dozen");
+  assert.equal(dozen.length, 1, "the rename was duplicated");
+  assert.equal(dozen[0].name, "doz", "★ the rename was undone by the next load");
+});
+
+test("★★★ a declined coupon on a phone is migrated to a keyed record (v595)", () => {
+  // ⚠️ Raw id strings cannot be keyed by sync, so a decline on one phone never reached the other.
+  const out = normalize({ version: 1, declinedCoupons: ["crc_1", { id: "crc_2" }] });
+  assert.deepEqual(out.declinedCoupons.map((c) => c.id), ["crc_1", "crc_2"]);
+});
 
 test("normalize fills the default storefront when missing", () => {
   const out = normalize({ version: 1, settings: {} });
@@ -120,6 +144,37 @@ test("normalize consolidates duplicate delivery dates and re-points orders", () 
   const moved = out.orders.find((o) => o.id === "o2");
   assert.equal(moved.deliveryDateId, "del_a");
   assert.deepEqual(out.orders.map((o) => o.qty), [1, 2, 4], "no orders lost");
+});
+
+test("★★★ a date repair re-points the REMOVED shelf too (v592)", () => {
+  // ⚠️⚠️ MEASURED: the repair moved live orders to the surviving date id, but a removed order on the shelf kept
+  // the dead id — ⚠️ **put back, it belonged to no day: absent from its delivery day and that day could be
+  // sold over capacity.**
+  const out = normalize({
+    version: 1,
+    deliveryDates: [
+      { id: "del_a", date: "2026-09-04", notes: "" },
+      { id: "del_b", date: "2026-09-04", notes: "" },
+    ],
+    orders: [{ id: "o1", deliveryDateId: "del_a", productId: "p", qty: 1 }],
+    removedOrders: [{ id: "o9", deliveryDateId: "del_b", deliveryDate: "2026-09-04", productId: "p", qty: 2,
+      removedAt: "2026-09-05T00:00:00.000Z" }],
+  });
+  const shelfRow = out.removedOrders.find((o) => o.id === "o9");
+  assert.ok(shelfRow, "the shelf row is gone");
+  assert.equal(shelfRow.deliveryDateId, "del_a",
+    "★ a removed order still points at a day that no longer exists");
+});
+
+test("★★★ deleting every unit is not undone by the next load (v592)", () => {
+  // ⚠️⚠️ MEASURED: an empty `uoms` was read as "never seeded" and every unit came back on the next load,
+  // cancelling the removal files — ⚠️ **Delete was a press that undid itself.** ⭐ A list that exists is an
+  // answer, even when it is empty; `uomsRemoved` is what records the deletions.
+  const gone = ["g", "kg", "ml", "l", "min", "hr", "cm", "m", "pcs",
+    "loaf", "piece", "box", "jar", "bag", "tub", "tin", "pack", "dozen", "set", "slice", "pouch"].map((id) => ({ id }));
+  const out = normalize({ version: 1, uoms: [], uomsRemoved: gone });
+  assert.equal((out.uoms || []).length, 0,
+    "★ the units came back on load — **the deletion was undone and its tombstone cancelled**");
 });
 
 test("normalize keeps a day's availability adjustments on its delivery date", () => {
@@ -695,4 +750,158 @@ test("normalize keeps the planner's people exactly as they arrived", () => {
     "the names she typed survive a reload, including a name she has emptied but not deleted");
   assert.deepEqual(out.settings.personCalls, { 2: false, 3: true },
     "and a tick that is OFF is kept as an answer, not thrown away as falsy");
+});
+
+// ── ★★★ one name, one record (v564) ────────────────────────────────────────
+//
+// ⚠️⚠️ HER REPORT: __"for strong flour, on hand show 0, but open up the stock card says on hand 6kgs"__
+// and __"the yeast might have the same problem too"__. ⭐ **The card and the stock card both read
+// `onHand`, so two figures for one name can only mean two records with that name.**
+
+test("★★★ a second ingredient with the same name is FOUND, case and spacing ignored", () => {
+  const st = { ingredients: [
+    { id: "i1", name: "Strong flour" },
+    { id: "i2", name: "instant yeast " },
+  ] };
+  assert.equal(sameNameIngredient(st, "strong FLOUR").id, "i1");
+  assert.equal(sameNameIngredient(st, "  Instant   Yeast ").id, "i2",
+    "★ spacing is not a distinction, so this duplicate would be created again");
+  assert.equal(sameNameIngredient(st, "Sea salt"), null);
+  assert.equal(sameNameIngredient(st, ""), null);
+
+  // ⚠️ AND A RECORD BEING RENAMED MUST NOT CLASH WITH ITSELF.
+  assert.equal(sameNameIngredient(st, "Strong flour", "i1"), null,
+    "★ renaming a card to its own name was reported as a clash with itself");
+});
+
+test("★★★ the spare is the one NO recipe uses, and an ambiguous pair is left alone", () => {
+  const st = {
+    ingredients: [{ id: "a", name: "Strong flour" }, { id: "b", name: "strong flour" }],
+    products: [{ id: "p", recipe: [{ ingredientId: "a", qty: 1 }] }],
+  };
+  const plan = duplicateIngredientPlan(st);
+  assert.equal(plan.length, 1);
+  assert.equal(plan[0].keep.id, "a", "★ the press would hide the card her recipes use");
+  assert.equal(plan[0].hide.id, "b");
+
+  // ⚠️ BOTH USED, OR NEITHER USED: her recipes do not decide it, so no press is offered.
+  const both = { ingredients: st.ingredients, products: [{ id: "p", recipe: [{ ingredientId: "a" }, { ingredientId: "b" }] }] };
+  assert.deepEqual(duplicateIngredientPlan(both), [], "★ an ambiguous pair was decided for her");
+  const neither = { ingredients: st.ingredients, products: [] };
+  assert.deepEqual(duplicateIngredientPlan(neither), [], "★ a pair with no recipe behind it was guessed at");
+});
+
+test("★★★ the storage figure counts EVERY copy the app keeps, not only the book (v569)", async () => {
+  // ⚠️⚠️ THE GAUGE MEASURED ONE FILE OF THREE. ⭐ Beside `bakeadmin.v1` sit the sync journal and, after a
+  // damaged open, the kept text — ⚠️ **measured at 3.2x the book before a flush**, so the warning could not
+  // fire before saving began to fail.
+  const { phoneUsage } = await import("../admin/js/state.js");
+  const real = globalThis.localStorage;
+  const store = new Map([
+    ["bakeadmin.v1", "a".repeat(600000)],
+    ["bakeadmin.sync", "b".repeat(1400000)],
+    ["bakeadmin.v1.unreadable", "c".repeat(100000)],
+    ["something.else", "d".repeat(9999999)],
+  ]);
+  globalThis.localStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => { store.set(k, String(v)); },
+    removeItem: (k) => { store.delete(k); },
+  };
+  try {
+    const u = phoneUsage();
+    assert.equal(u.total, 2100000, "★ the figure does not count all three copies of the book");
+    assert.equal(u.parts["bakeadmin.sync"], 1400000);
+    assert.equal("something.else" in u.parts, false, "★ a key the app does not own was counted");
+  } finally {
+    if (real === undefined) delete globalThis.localStorage; else globalThis.localStorage = real;
+  }
+  // ⚠️ Without a storage API the BOOK's own size is measured and says so.
+  const fb = phoneUsage({ orders: [{ id: "o1" }], settings: {} });
+  assert.equal(fb.fallback, true);
+  assert.ok(fb.total > 0);
+});
+
+test("★★★ the Removed shelf SAYS when its own size guard cleared the oldest (v570)", () => {
+  // ⚠️ Her 30-day rule is stated on the screen; the 200-row guard is the app's own and was silent. ⭐ A row it
+  // cleared is an order she can no longer put back, so it is said rather than done quietly.
+  const st = defaultState();
+  st.orders = Array.from({ length: 250 }, (_, i) => ({ id: `ord_${i}`, status: "new", qty: 1 }));
+  for (const o of st.orders) removeOrders(st, [o.id], "test");
+  assert.equal(st.removedOrders.length, 200, "the shelf is not bounded any more");
+  assert.equal(st.removedTrim && st.removedTrim.total, 50,
+    "★ 50 rows were cleared off the Removed shelf and nothing recorded it");
+});
+
+test("★★★ the Removed shelf's note SURVIVES a reload (v572)", () => {
+  // ⚠️ It was written on removal and never read back by `normalize`, so the screen's sentence vanished on the
+  // next open and the running total restarted.
+  const out = normalize({ version: 1, removedTrim: { at: "2026-10-18T00:00:00.000Z", n: 1, total: 51 } });
+  assert.equal(out.removedTrim && out.removedTrim.total, 51, "★ the shelf's own note is lost on load");
+});
+
+test("★★★ the kept damaged copy can be MEASURED and DELETED, and the warning goes with it (v574)", async () => {
+  // ⚠️ Since v548 a phone that cannot read its saved book keeps that text — ⭐ **but nothing could ever clear
+  // it, so it counted toward the phone's storage for ever.** ⭐ Deleting is her decision, and the note that
+  // makes the check speak must go in the same breath or the page warns about a copy that is no longer there.
+  const st = await import("../admin/js/state.js");
+  const real = globalThis.localStorage;
+  const store = new Map([["bakeadmin.v1.unreadable", "x".repeat(2048)]]);
+  globalThis.localStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => { store.set(k, String(v)); },
+    removeItem: (k) => { store.delete(k); },
+  };
+  try {
+    const had = st.unreadableCopy();
+    assert.equal(had && had.chars, 2048, "★ the kept copy cannot be measured");
+    const state = { unreadableSave: { at: "2026-10-18T00:00:00.000Z", chars: 2048 }, settings: {} };
+    const gone = st.dropUnreadableCopy(state);
+    assert.equal(gone && gone.chars, 2048);
+    assert.equal(store.has("bakeadmin.v1.unreadable"), false, "★ the press did not remove the copy");
+    // ⚠️ v598: the COPY note goes, but the HOLD stays — deleting the damaged text does not restore the book,
+    // and releasing the hold here let the next save tombstone her whole shared book.
+    assert.ok(state.unreadableSave && state.unreadableSave.removedAt,
+      "★ the hold was released by deleting the copy — **the next save can tombstone the cloud**");
+    assert.equal(store.has("bakeadmin.v1.unreadable"), false, "the copy is gone");
+    // ⚠️ And a second press is not a second deletion.
+    assert.equal(st.dropUnreadableCopy({ settings: {} }), null);
+  } finally {
+    if (real === undefined) delete globalThis.localStorage; else globalThis.localStorage = real;
+  }
+});
+
+test("★★★ two records with one id are ONE record on load (v582)", () => {
+  // ⚠️⚠️ Every list was checked to be an array and NOTHING checked that its ids were unique — ⚠️ **so a
+  // duplicated row counted twice on this phone while the sync, keying by id, sent only the last one.**
+  const raw = defaultState();
+  raw.products = [
+    { id: "p1", name: "First", price: 1 },
+    { id: "p2", name: "Other", price: 2 },
+    { id: "p1", name: "Second", price: 3 },
+  ];
+  const out = normalize(raw);
+  assert.equal(out.products.length, 2, "★ a duplicated id still counts twice on this phone");
+  assert.equal(out.products.find((p) => p.id === "p1").name, "Second",
+    "★ the kept row is not the one the sync would publish (the last)");
+  // And an ordinary list is not rebuilt at all — the same array comes back.
+  const clean = defaultState();
+  clean.products = [{ id: "a", name: "A", price: 1 }, { id: "b", name: "B", price: 1 }];
+  const same = normalize(clean);
+  assert.equal(same.products.length, 2);
+});
+
+test("★★★ a bake day is asked about in ORDERS, not order lines (v583)", () => {
+  // ⚠️⚠️ MEASURED: one customer with a two-item cart read **"has 2 order(s) on it"** — ⚠️ **a single sale,
+  // described as two.**
+  const st = defaultState();
+  st.orders = [
+    { id: "a1", groupId: "cart1", deliveryDateId: "d1", productId: "p1", qty: 1 },
+    { id: "a2", groupId: "cart1", deliveryDateId: "d1", productId: "p2", qty: 1 },
+    { id: "b1", groupId: "cart2", deliveryDateId: "d1", productId: "p1", qty: 1 },
+    { id: "c1", groupId: "cart3", deliveryDateId: "d2", productId: "p1", qty: 1 },
+  ];
+  assert.equal(ordersOnDate(st, "d1"), 2, "★ a cart of two items is counted as two orders");
+  assert.equal(ordersOnDate(st, "d2"), 1);
+  assert.equal(ordersOnDate(st, "nope"), 0);
 });

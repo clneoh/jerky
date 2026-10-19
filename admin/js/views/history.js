@@ -11,7 +11,7 @@
 // "orders changed" rounds read it). Both are deliberately left alone by the amend below.
 
 import { longDate, todayISO, weekdayName } from "../dates.js";
-import { el, button, emptyState, showPopup, toast, confirmDialog } from "../ui.js";
+import { el, button, emptyState, showPopup, toast, confirmDialog, printPage } from "../ui.js";
 import { byId, fmtRM, newId, round2, save } from "../state.js";
 import { maybeSync } from "../supabase.js";
 import { poTableEl, totalOf } from "./poTable.js";
@@ -45,9 +45,11 @@ function poHeadline(po) {
   // kind this is. Her words: __"I want to add a manual PO issuing … it dont tie to specific bake date"__.
   if (po && po.manual) return "Written by hand";
   const dates = poDateStrs(po);
-  const base = dates.length
+  // ⚠️ A MALFORMED DATE PRINTS NOTHING (v596), so the join would leave a bare ", " — fall back to the name.
+  const named = dates.length && longDate(dates[0])
     ? `${weekdayName(dates[0])}, ${longDate(dates[0])}`
-    : "Purchase order";
+    : "";
+  const base = named || "Purchase order";
   if (dates.length <= 1) return base;
   return el("span", {},
     base,
@@ -381,7 +383,8 @@ function boughtNote(po) {
   const p = listProgress(po);
   if (!p.total) return null;
   if (p.landed === 0) {
-    return el("p", { class: "po-snapshot-note" },
+    // ⚠️ SCREEN INSTRUCTION — never on a printed sheet (v596).
+    return el("p", { class: "po-snapshot-note no-print" },
       "Tap Bought on each shop as you pay for it. Nothing goes into your stock until you do.");
   }
   if (p.done) {
@@ -428,7 +431,8 @@ function renderDetail(root, state, po) {
           `Corrected ${fmtTime(po.amendedAt)} — this is what you actually took and paid.`)
       : null,
     boughtNote(po),
-    po.warnings?.length ? el("div", { class: "warn", style: "margin-top:10px" }, po.warnings.join(" ")) : null);
+    // ⚠️ A WARNING FOR HER SCREEN, NOT FOR THE PAPER (v599).
+    po.warnings?.length ? el("div", { class: "warn no-print", style: "margin-top:10px" }, po.warnings.join(" ")) : null);
 
   // Correcting the list is offered only until something has LANDED — bought OR marked not buying
   // (her decision, 3 Oct 2026, widened at v389). Once a shop's packs are on the shelf the money may
@@ -440,7 +444,7 @@ function renderDetail(root, state, po) {
     el("div", { class: "btn-row" },
       button("← Back", () => navigate("#/history"), "ghost"),
       canAmend ? button("Amend", () => amendPO(state, po, root), "soft") : null,
-      button("Print", () => window.print(), "soft"),
+      button("Print", () => printPage(), "soft"),
       // Regenerate stays available after a shop is bought, and that is deliberate rather than an
       // oversight: it builds a list from the need as it stands NOW, and the bought packs are already
       // on the shelf — so the regenerated list reads "already have" and buys only what is genuinely

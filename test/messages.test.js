@@ -5,7 +5,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildPaymentReminder, buildPickupReminder, buildShippedMessage } from "../admin/js/messages.js";
+import { buildPaymentReminder, buildPickupReminder, buildShippedMessage, hello } from "../admin/js/messages.js";
 
 function state(overrides = {}) {
   return {
@@ -166,4 +166,12 @@ test("a Point with no hours leaves every later message promising only the day (v
   assert.ok(built.message.includes("Farlim, Air Itam"), "still told where");
   assert.ok(!/collect \d/.test(built.message), "and nothing about a time");
   assert.ok(!built.message.includes("10-12"), "nor the van's window");
+});
+
+test("★★★ an order with no name is greeted 'Hi!', never 'Hi !'", () => {
+  // ⚠️⚠️ An order with a number but no name is ORDINARY — neither form requires one — and every message
+  // opened on "Hi ! Your order…". ⭐ One reading, used by the confirmation and all three later messages.
+  assert.equal(hello(""), "Hi!", "★ a nameless order opened on a greeting with a hole in it");
+  assert.equal(hello("   "), "Hi!", "and a name of spaces is no name either");
+  assert.equal(hello("Aunty Bee"), "Hi Aunty Bee!", "a real name still reads as it always did");
 });

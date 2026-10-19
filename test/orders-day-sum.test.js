@@ -18,7 +18,7 @@ function createEl(tag) {
     scrollTop: 0, parentNode: null, _listeners: {},
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     appendChild(c) { if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parentNode = this; } return c; },
-    append(...cs) { for (const c of cs) if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parentNode = this; } },
+    append(...cs) { for (const c of cs) { const n = c == null ? { nodeType: 3, text: "null" } : c; this.children.push(n); if (n.nodeType === 1) n.parentNode = this; } },
     replaceChildren(...cs) {
       // The children it drops are ORPHANED, not merely forgotten. A pop-up closes by
       // emptying its layer, and a screen inside that pop-up asks whether it is still
@@ -26,7 +26,7 @@ function createEl(tag) {
       // taken out of would go on answering "yes, still here" for the rest of the run.
       for (const old of this.children) if (old && old.nodeType === 1) old.parentNode = null;
       this.children = [];
-      for (const c of cs) if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parentNode = this; }
+      for (const c of cs) { const n = c == null ? { nodeType: 3, text: "null" } : c; this.children.push(n); if (n.nodeType === 1) n.parentNode = this; }
     },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener() {},
@@ -1678,8 +1678,11 @@ test("the price she types in Edit reaches the card the customer is reading", asy
 
 test("an edit that changes nothing the card shows leaves it alone", async () => {
   // The other half of the bargain: the door hands the card over on every save, so the
-  // card has to be the one that knows when there is nothing to say. The WhatsApp number
-  // is on the order but not on the card, so editing it writes no card at all.
+  // card has to be the one that knows when there is nothing to say.
+  // ⚠️⚠️ AND THAT IS NO LONGER THE WHATSAPP NUMBER (v558) — **the number is ON the card now, because it is
+  // the second key the customer looks their order up with.** ⭐ Changing it MUST republish, or a customer
+  // who corrects their number can no longer open their own card. ⭐ The case below uses her COST instead:
+  // what a loaf cost her is deliberately never published.
   const st = state();
   st.products[0].price = 15;
   st.orders[0].unitPrice = 15;
@@ -1692,6 +1695,32 @@ test("an edit that changes nothing the card shows leaves it alone", async () => 
     await drain();
     assert.equal(spy.posts.length, 1, "the first save is the card's first version");
 
+    // Her own cost, which the customer's card never shows.
+    st.orders[0].unitCost = 3;
+    const again = editOn(st);
+    buttonByText(again.pop, "Save changes")._listeners.click[0]();
+    await drain();
+  } finally { spy.stop(); }
+
+  assert.equal(st.orders[0].unitCost, 3, "her own copy of the order did take the change");
+  assert.equal(spy.posts.length, 1, "and the customer's card was not written for a figure it does not show");
+});
+
+test("★★★ and changing the customer's NUMBER does republish — it is the key they look their order up with", async () => {
+  // ⚠️⚠️ The tracking lookup is now code AND phone (v558). ⭐ A customer who corrects their number must not
+  // be left holding a card they can no longer open, so the edit that changes the number must write it.
+  const st = state();
+  st.products[0].price = 15;
+  st.orders[0].unitPrice = 15;
+  cloud(st);
+  const spy = publishSpy();
+  try {
+    forgetPublishedCards();
+    const first = editOn(st);
+    buttonByText(first.pop, "Save changes")._listeners.click[0]();
+    await drain();
+    const before = spy.posts.length;
+
     const again = editOn(st);
     const wa = all(again.pop).find((n) =>
       n.tagName === "INPUT" && n.attrs && n.attrs.placeholder === "e.g. 012-345 6789");
@@ -1700,10 +1729,13 @@ test("an edit that changes nothing the card shows leaves it alone", async () => 
     wa._listeners.input[0].call(wa);
     buttonByText(again.pop, "Save changes")._listeners.click[0]();
     await drain();
-  } finally { spy.stop(); }
 
-  assert.equal(st.orders[0].whatsapp, "60111222333", "her own copy of the order did take the change");
-  assert.equal(spy.posts.length, 1, "and the customer's card was not written for a number it does not show");
+    assert.equal(spy.posts.length, before + 1,
+      "★ the number changed and the card was NOT rewritten — **the customer can no longer open their own "
+      + "order, because the phone they type is no longer the one published**");
+    assert.equal(spy.posts[spy.posts.length - 1].whatsapp, "60111222333",
+      "★ the card was rewritten without the new number on it");
+  } finally { spy.stop(); }
 });
 
 // ── v188: a courier's price becomes the charge on the order ──────────────────

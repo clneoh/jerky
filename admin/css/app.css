@@ -416,9 +416,15 @@ body { min-height: 100vh; }
   padding: 20px 18px;
   margin-bottom: 6px;
   color: #fff;
+  /* ⚠️⚠️ MEASURED, THEN FIXED (v566). ⭐ The eyebrow sat at **3.94:1 at the dark end and 2.91:1 under the
+     cream highlight**, and the cut-off line — the one sentence she reads first in the morning — at
+     **4.03:1 down to 2.98:1**. ⭐ Same three pairs as the shop's banner: the same hues one step deeper, the
+     highlight at a quarter strength, and no transparency on the text. **Worst point now 4.61:1.**
+     ⚠️ The highlight lands exactly where the text is, and a 40% cream wash over terracotta cannot carry
+     white text. */
   background:
-    radial-gradient(120% 140% at 90% -10%, rgba(255, 220, 160, .4), transparent 60%),
-    linear-gradient(130deg, #c4552f, #d9742c 55%, #d99a3a);
+    radial-gradient(120% 140% at 90% -10%, rgba(255, 220, 160, .10), transparent 60%),
+    linear-gradient(130deg, #b04c2a, #a4551d 55%, #8d601b);
   box-shadow: var(--shadow-lg);
 }
 .hero-row {
@@ -433,7 +439,8 @@ body { min-height: 100vh; }
   font-weight: 700;
   letter-spacing: .6px;
   text-transform: uppercase;
-  opacity: .9;
+  /* ⚠️ No transparency on text over a gradient (v566) — .9 measured 3.94:1. */
+  opacity: 1;
   margin: 0 0 4px;
 }
 .hero-title {
@@ -442,7 +449,7 @@ body { min-height: 100vh; }
   line-height: 1.2;
   margin: 0 0 8px;
 }
-.hero-sub { font-size: 13px; opacity: .92; margin: 0; }
+.hero-sub { font-size: 13px; opacity: 1; margin: 0; }
 .hero .hero-btn {
   flex: 0 0 auto;
   background: #fff;
@@ -458,10 +465,26 @@ body { min-height: 100vh; }
 .view {
   max-width: 540px;
   margin: 0 auto;
-  padding: 14px 14px calc(var(--tabbar-h) + 20px + env(safe-area-inset-bottom));
+  /* ⚠️ ⚠️ AND THE UPDATE STRIP'S OWN HEIGHT (v555) — measured by freshness.js into --update-bar-h.
+     Without it the amber bar's ~50px sat over the last row of every long screen at full scroll. */
+  padding: 14px 14px calc(var(--tabbar-h) + 20px + env(safe-area-inset-bottom) + var(--update-bar-h, 0px));
   outline: none;
 }
 .view:focus { outline: none; }
+
+/* ★★★ A KEYBOARD USER CAN SEE WHERE THEY ARE (v566). ⚠️⚠️ Only text inputs declared a ring; every button,
+   tab and pill fell back to the browser's default, which this app's own resets can erase. ⭐ `:focus-visible`
+   keeps it off a finger's press and on a keyboard's.
+   ⚠️ `.view` is the page container the router focuses on a navigation; it is not interactive, so its own
+   ring stays suppressed — the ring above is for the things she can press. */
+.btn:focus-visible,
+.tab:focus-visible,
+.style-pill:focus-visible,
+[role="button"]:focus-visible,
+.check-toggle:focus-visible {
+  outline: 2px solid var(--brown-dark);
+  outline-offset: 2px;
+}
 
 /* ---------- Bottom tab bar ---------- */
 .tabbar {
@@ -530,7 +553,10 @@ body { min-height: 100vh; }
 }
 /* A delivery day whose order window has passed (after the 6pm cut-off) but
    that hasn't ended yet — kept visible, greyed out until the day is over. */
-.card.closed { opacity: .55; filter: saturate(.8); }
+.card.closed { background: #f3e9dd; }
+/* ⚠️⚠️ NOT `opacity: .55` (v566). ⭐ Composited over the page that measured **3.13:1 for the day's title and
+   2.10:1 for "N ordered · N orders closed"** — ⭐ the one line she reads to know the day is shut was the
+   least readable text in the app. A tinted card says the same thing and measures **11.39:1 and 4.58:1**. */
 .card.tappable {
   cursor: pointer;
   transition: transform .12s ease, box-shadow .12s ease;
@@ -574,7 +600,14 @@ body { min-height: 100vh; }
 /* ⚠️ AND THE COLUMNS GROW, rather than the row's own `space-between` pushing the name away from the
    grip it belongs to — which left a dead gap between the handle and the text on every card. */
 .ing-card-row .card-row > div { flex: 1 1 auto; }
-.ing-card-row .li-right { justify-content: flex-end; }
+/* ⚠️⚠️ AND ITS BUTTONS ARE ALWAYS ON A ROW OF THEIR OWN (v566). ⭐ Her report, with a picture:
+   **"why the display format is inconsistent"** — and the cause is this file's own `flex: 1 1 auto` on
+   every column: ⚠️ **the buttons sat BESIDE the stock lines on a card whose text was short, and dropped
+   BELOW them on a card whose "Used in" list was long.** ⭐ Two shapes for one card, decided by the length
+   of a sentence — so a list of ingredients read as several different designs.
+   ⭐ Now every ingredient card is the same: the text column takes the line, the buttons take the next.
+   ⚠️ The selector carries `.card-row >` so it outranks the `> div` rule above it. */
+.ing-card-row .card-row > .li-right { flex: 1 1 100%; justify-content: flex-start; }
 
 /* The grip a row is dragged by — the Categories, Products, Ingredients, collection-Point and money
    lists. One rule for all of them, because it is one gesture: the lists reorder with the same helper
@@ -865,14 +898,14 @@ h3.cat-head-tail { color: var(--muted); font-weight: 600; }
   font-weight: 700;
   padding: 12px 18px;
   cursor: pointer;
-  background: linear-gradient(180deg, #d0632f, #b34a28);
+  background: linear-gradient(180deg, #b9582a, #b34a28);
   color: #fff;
   min-height: 46px;
   box-shadow: 0 3px 10px rgba(140, 70, 40, .28);
   -webkit-tap-highlight-color: transparent;
 }
 .btn:active { transform: translateY(1px) scale(.99); box-shadow: 0 1px 4px rgba(140,70,40,.25); }
-.btn.primary { background: linear-gradient(180deg, #d0632f, #b34a28); color: #fff; }
+.btn.primary { background: linear-gradient(180deg, #b9582a, #b34a28); color: #fff; }
 .btn.ghost { background: var(--surface); color: var(--brown-dark); border: 1px solid var(--line); box-shadow: none; }
 .btn.danger { background: linear-gradient(180deg, #d0564b, #b3352b); color: #fff; box-shadow: 0 3px 10px rgba(190, 60, 50, .28); }
 .btn.soft { background: var(--brown-soft); color: var(--brown-dark); box-shadow: none; }
@@ -992,7 +1025,11 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
 .avail-listed { display: flex; align-items: flex-start; gap: 10px; margin: 12px 0 2px; }
 .avail-listed-text { font-size: 13px; color: var(--muted); line-height: 1.35; }
 .switch { flex: none; position: relative; display: inline-block; width: 44px; height: 25px; margin-top: 1px; }
-.switch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+/* ⚠️⚠️ THE INPUT IS THE TARGET, AND IT IS 36px TALL AND CENTRED (v568). ⭐ The switch draws 25px; a separate
+   rule tried to grow the input, but it was written BEFORE this one, so `inset: 0; height: 100%` won and the
+   translate stayed — ⚠️ **the invisible input sat 12.5px high, so the bottom half of every switch answered no
+   tap at all.** ⭐ Now the one rule does both: full width, 36px tall, centred on the track. */
+.switch input { position: absolute; left: 0; right: 0; top: 50%; width: 100%; height: 36px; transform: translateY(-50%); margin: 0; opacity: 0; cursor: pointer; }
 .switch-track {
   position: absolute; inset: 0; border-radius: 999px;
   background: var(--line); transition: background .15s;
@@ -1854,7 +1891,11 @@ option.tone-off { color: var(--muted); }
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
+  /* ⚠️⚠️ `vh` IS THE LARGE VIEWPORT ON iOS SAFARI (v566) — with the toolbar showing, the bottom of a long
+     card sat underneath it and the layer does not scroll. `dvh` is the height actually on screen; the `vh`
+     line above stays as the fallback for a browser that has never heard of it. */
   max-height: calc(100vh - 28px);
+  max-height: calc(100dvh - 28px);
 }
 .popup-card.wide { max-width: 560px; }
 /* The card's title bar is its handle — drag it and the card comes with you. A
@@ -2440,6 +2481,9 @@ option.tone-off { color: var(--muted); }
   font-size: 15px;
   font-weight: 700;
   line-height: 1;
+  /* ⚠️ About 26x35 measured (v566); the floor is 36. */
+  min-width: 36px;
+  min-height: 36px;
   padding: 10px 10px 10px 6px;
   border-radius: 8px;
   cursor: pointer;
@@ -2484,7 +2528,8 @@ option.tone-off { color: var(--muted); }
   color: var(--brown-dark);
   font-weight: 600;
   font-size: 13px;
-  padding: 7px 12px;
+  /* ⚠️ About 30px tall (v566); the app's floor is 36. */
+  padding: 10px 12px;
   border-radius: 999px;
   cursor: pointer;
 }
@@ -2673,6 +2718,8 @@ option.tone-off { color: var(--muted); }
 .check-label.done { color: var(--muted); text-decoration: line-through; }
 .check-toggle {
   flex: 1; min-width: 0;
+  /* ⚠️ It measured about 20px tall (v566) — a row you cannot hit is a row you learn to avoid. */
+  min-height: 36px;
   display: flex; align-items: center; gap: 10px;
   padding: 0; border: none; background: none;
   font: inherit; color: inherit; text-align: left; cursor: pointer;
@@ -2680,9 +2727,10 @@ option.tone-off { color: var(--muted); }
 .check-toggle:active .check-label { opacity: .7; }
 .check-row { gap: 6px; }
 .check-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.check-acts { flex: none; display: flex; gap: 2px; }
+.check-acts { flex: none; display: flex; gap: 6px; }
 .act-btn {
-  flex: none; width: 32px; height: 32px;
+  /* ⚠️ 32px, two pixels from its neighbour (v566): a thumb aiming for the pencil hit the cross. */
+  flex: none; width: 36px; height: 36px;
   display: inline-flex; align-items: center; justify-content: center;
   border: none; border-radius: 8px; background: none;
   color: var(--muted); font-size: 15px; line-height: 1; padding: 0;
@@ -2745,7 +2793,7 @@ option.tone-off { color: var(--muted); }
 .chip-date {
   border: 1px solid var(--line); background: var(--surface);
   border-radius: 999px; padding: 2px 8px; font-size: 12px;
-  color: var(--ink); min-height: 26px; line-height: 1;
+  color: var(--ink); min-height: 36px; line-height: 1;
 }
 .chip-date:active { background: var(--gray-bg); }
 .fore-empty { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
@@ -2841,7 +2889,8 @@ option.tone-off { color: var(--muted); }
 }
 .cal-cell {
   position: relative;
-  height: 34px;
+  /* ⚠️ 34px tall, the first screen she opens (v566); 36 is the app's own floor. */
+  height: 36px;
   border: none;
   background: none;
   padding: 0;
@@ -3164,7 +3213,9 @@ option.tone-off { color: var(--muted); }
    next line. */
 .pill-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
 .pill-row .btn { flex: 0 0 auto; font-size: 13px; padding: 8px 13px; min-height: 36px; }
-.btn.cal-mode-on { background: var(--brown); border-color: var(--brown); color: #fff; box-shadow: none; }
+/* ⚠️ WHITE ON --brown IS 4.48:1 — UNDER THE 4.5 A BODY-SIZE CONTROL OWES (v593). ⭐ The darker brown keeps
+   the brand and measures 5.5:1, and the ON pill is a state a low-vision baker must be able to see. */
+.btn.cal-mode-on { background: var(--brown-dark); border-color: var(--brown-dark); color: #fff; box-shadow: none; }
 
 /* The eight mark colours. --occ-solid is a mark's own colour, used solid for its
    tag and swatch; the band and the single-day box are it mixed down at low alpha
@@ -3489,13 +3540,14 @@ option.tone-off { color: var(--muted); }
   font-size: 13px;
   line-height: 1;
   padding: 8px 8px 8px 13px;
-  min-height: 34px;
+  min-height: 36px;
   border-radius: 999px;
   cursor: pointer;
 }
 .occ-chip-x {
-  width: 18px;
-  height: 18px;
+  /* ⚠️ An 18px ✕ inside a 34px chip (v566) — 28px keeps it inside the chip and hittable. */
+  width: 28px;
+  height: 28px;
   border: none;
   padding: 0;
   margin: 0;
@@ -3541,11 +3593,14 @@ option.tone-off { color: var(--muted); }
 }
 .mycal-row:last-child { border-bottom: none; }
 .mycal-row input[type="checkbox"] {
-  width: 17px;
-  height: 17px;
+  /* ⚠️ 17px was a fingertip target in a list of a dozen (v566). 24px is the smallest a box may be; the
+     row itself is taller, so the aim is no longer the box alone. */
+  width: 24px;
+  height: 24px;
   flex: none;
   accent-color: var(--brown-dark);
 }
+.mycal-row { min-height: 44px; }
 .mycal-dot {
   width: 12px;
   height: 12px;
@@ -3787,15 +3842,25 @@ tr.po-covered td { color: var(--muted); }
 .r-btn:hover { background: var(--green); color: #fff; }
 .r-dots { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 .r-dot {
-  width: 10px;
-  height: 10px;
+  /* ⚠️⚠️ A 10px DOT IS A 10px TAP TARGET (v566). ⭐ The button is 36px — the app's own floor — and the dot
+     is drawn inside it, so the look is unchanged and a thumb can find it. */
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   border: none;
-  background: #d6c09e;
+  background: transparent;
   padding: 0;
   cursor: pointer;
+  position: relative;
 }
-.r-dot.is-on { background: var(--green); }
+.r-dot::after {
+  content: "";
+  position: absolute;
+  inset: 13px;
+  border-radius: 50%;
+  background: #8a7355;
+}
+.r-dot.is-on::after { background: var(--green); }
 .r-live {
   border: 0;
   clip: rect(0 0 0 0);

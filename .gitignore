@@ -12,3 +12,6 @@ marketing/
 # Owner's original source photos (large files) — never publish. Keep images/ (the
 # optimised web copies) tracked instead.
 homepage-photos/
+
+# Supabase CLI local state (machine-specific; rewritten on every deploy)
+supabase/.temp/

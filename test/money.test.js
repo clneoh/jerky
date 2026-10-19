@@ -152,8 +152,8 @@ function domShim() {
       _listeners: {},
       classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
       appendChild(c) { if (c != null) this.children.push(c); return c; },
-      append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
-      replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) this.children.push(c); },
+      append(...cs) { for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
+      replaceChildren(...cs) { this.children = []; for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
       addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
       removeEventListener() {},
       setAttribute(k, v) { this.attrs[k] = String(v); },
@@ -949,6 +949,11 @@ test("★ Pay back an account moves money INTO it and brings it back to zero, in
   assert.equal(added[0].amount, 25);
   assert.equal(added[0].category, "My own withdrawal", "her own money going back to her");
   assert.equal(added[0].method, "Cash", "and it came out of the till");
+  // ⚠️⚠️ BOTH HALVES SAY WHAT THEY ARE (v579). ⭐ The deposit always carried `repay`; its expense half did
+  // not, ⚠️ **so Profit read the payment as Drawings and Your investment read "Taken back" — money that
+  // settled a debt, reported as money she took out.**
+  assert.equal(added[0].repay, true,
+    "★ the expense half of a payback does not say it is a payback — Profit reads it as a withdrawal");
   assert.equal(st.deposits.length, 1);
   assert.equal(st.deposits[0].method, "Personal Pocket Kean", "the pocket is told it was paid");
   assert.equal(st.deposits[0].repay, true, "marked as a payback, not money she put in");
@@ -962,6 +967,25 @@ test("★ Pay back an account moves money INTO it and brings it back to zero, in
   assert.ok(rows.some((r) => r.includes("Paid back by the till")),
     "the pocket's own list says it was paid back");
   assert.ok(!rows.some((r) => r.includes("From my pocket")), "and does not call it money she put in");
+});
+
+test("★★★ a payback is NOT money she took out — Your investment does not move (v579)", () => {
+  // ⚠️⚠️ MEASURED FAULT: Kean's account went RM100 down paying for packaging, the till paid him back,
+  // and ⚠️ **"Your investment" read "taken back RM100, still in −RM100"** although nothing left the
+  // business — the business settled what it owed.
+  const st = pocketState();
+  st.expenses = [{ id: "e1", date: "2026-09-16", amount: 40, category: "My own withdrawal",
+    method: "Cash", repay: true }];
+  st.deposits = [{ id: "d2", date: "2026-09-16", amount: 40, method: "Personal Pocket Kean", repay: true }];
+  const inv = investmentOf(st);
+  assert.equal(inv.takenBack, 0,
+    "★ paying an account back is counted as money she took out of the business");
+  assert.deepEqual(inv.rows.map((r) => r.what), [],
+    "★ the investment book lists a payback as a withdrawal");
+  // The control: without the mark, the same row IS a withdrawal — otherwise this test proves nothing
+  // about the mark.
+  st.expenses[0].repay = false;
+  assert.equal(investmentOf(st).takenBack, 40, "an ordinary withdrawal stopped counting as one");
 });
 
 test("the payback lowers the till and the pocket line, and leaves profit alone", () => {
@@ -1581,4 +1605,97 @@ test("★★ 'All' reaches money that is older than any window the buttons offer
   const all = expensesBetween(st, "", "");
   assert.equal(all.total, 44, "⚠️ a row outside every preset window is unreachable — 'All' does not see it");
   assert.equal(all.rows.length, 1);
+});
+
+test("★★★ deleting one half of a TRANSFER takes the other half with it (v587)", () => {
+  // ⚠️⚠️ MEASURED: deleting the "TNG out" row of a RM200 transfer left the "Cash in" row standing — ⚠️ **Cash and
+  // Net overstated by RM200, with nothing said.** ⭐ A courier charge already clears both its halves; a transfer
+  // and a payback never did.
+  globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+  const today = todayISO();
+  const st = state();
+  st.settings.payMethods = ["Cash", "TNG"];
+  st.expenses = [{ id: "e_t", date: today, amount: 200, category: "My own withdrawal", method: "TNG",
+    transfer: true, source: "Cash" }];
+  st.deposits = [{ id: "d_t", date: today, amount: 200, method: "Cash", source: "TNG", transfer: true }];
+  const root = document.createElement("div");
+  renderMoney(root, st);
+
+  const expenseRow = allOf(root).find((n) => String(n.className).includes("info-row")
+    && n.children[0] && n.children[0].textContent.includes("My own withdrawal"));
+  assert.ok(expenseRow, "the transfer's expense half is on the screen");
+  crossIn(expenseRow)._listeners.click[0]();
+  assert.match(allOf(screen["confirm-layer"])[0].children[0].textContent, /other half/i,
+    "★ she is not told the other half will go too");
+  tapDelete(screen);
+
+  assert.equal(st.expenses.length, 0, "the row she deleted is still there");
+  assert.equal(st.deposits.length, 0,
+    "★ the other half survived — **Cash and Net now overstate by the whole transfer**");
+});
+
+test("★★★ an edit's refund stays out of the sale's month and moves the refund's month (v589)", async () => {
+  // ⚠️⚠️ MEASURED: RM30 paid in Cash on 5 Sep; edited down to one loaf (RM15) on 2 Oct, accepting "Refund
+  // RM15?". ⚠️ **September's takings became RM15 — a past month rewritten — and October showed nothing
+  // leaving**, which is exactly the fault v578 was written to prevent. ⭐ The sale keeps the amount she was
+  // paid; the refund is money OUT on the day it went back.
+  const { orderTakings, refundOf, refundsBetween } = await import("../admin/js/money.js");
+  const st = state();
+  st.deliveryDates = [{ id: "d18", date: "2026-09-05" }];
+  st.orders = [row({ id: "ed1", deliveryDateId: "d18", deliveryDate: "2026-09-05",
+    status: "delivered", paidReceived: true, paidMethod: "Cash",
+    paidAt: "2026-09-05T08:00:00.000Z", refundedAt: "2026-10-02T08:00:00.000Z",
+    refundAmountRM: 15, refundFromEdit: true, paidWasRM: 30 })];
+  const g = { orders: st.orders };
+  assert.equal(orderTakings(st, g), 30, "★ the sale's own month was rewritten by the edit");
+  assert.equal(refundOf(st, g), 15, "★ the refund is not counted as money going back");
+  assert.equal(refundsBetween(st, "2026-09-01", "2026-09-30").total, 0,
+    "the refund must not be counted in the sale's month");
+  assert.equal(refundsBetween(st, "2026-10-01", "2026-10-31").total, 15,
+    "★ October's tin never moves — the refund is invisible in the month it went back");
+
+  // ⚠️ A LEGACY edit-refund (recorded before this version, with no frozen sale amount) still answers 0:
+  // its sale was genuinely rewritten by the edit, so counting the refund too would take it off twice.
+  const legacy = [row({ id: "ed2", status: "delivered", paidReceived: true, paidMethod: "Cash",
+    refundedAt: "2026-10-02T08:00:00.000Z", refundAmountRM: 15, refundFromEdit: true })];
+  assert.equal(refundOf(st, { orders: legacy }), 0, "a legacy edit-refund must not be counted twice");
+});
+
+test("★★★ a transfer between her own accounts is not money she put in (v590)", () => {
+  // ⚠️⚠️ MEASURED: the line under the accounts summed every deposit including `transfer` and `repay` rows —
+  // ⚠️ **one RM200 TNG-to-Cash move on a quiet day read "of the money in, RM200.00 was your own", though
+  // nothing entered the business.** ⭐ The same two flags the expense half already ignores.
+  globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+  const today = todayISO();
+  const st = state();
+  st.settings.payMethods = ["Cash", "TNG"];
+  st.deliveryDates = [{ id: "d18", date: today }];
+  st.orders = [];
+  st.deposits = [{ id: "t1", date: today, amount: 200, method: "Cash", source: "TNG", transfer: true }];
+  const root = document.createElement("div");
+  renderMoney(root, st);
+  const said = allOf(root).map((n) => String(n.textContent || "")).join(" | ");
+  assert.equal(/was your own/.test(said), false,
+    "★ a move between her own accounts was counted as new money — **Cash and TNG both gained, she gained nothing**");
+});
+
+test("★★★ a refund on an order with no way of paying is SHOWN, not silent (v587)", () => {
+  // ⚠️⚠️ MEASURED: it fell into an "unmarked" bucket no block, journal or Net reads — ⚠️ **Money was silent about
+  // a refund Profit reported.** ⭐ It cannot go into an account it was never paid from; it can be said.
+  globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+  const today = todayISO();
+  const st = state();
+  st.settings.payMethods = ["Cash", "TNG"];
+  st.deliveryDates = [{ id: "d18", date: today }];
+  // A pre-accounts order: delivered and refunded, with no way of paying recorded. Both days are TODAY so the
+  // screen's default one-day stretch holds them.
+  st.orders = [row({ id: "old1", deliveryDateId: "d18", deliveryDate: today,
+    status: "delivered", paidReceived: true, unitPrice: 30, paidAt: `${today}T08:00:00.000Z`,
+    refundedAt: `${today}T09:00:00.000Z`, refundAmountRM: 30 })];
+  delete st.orders[0].paidMethod;
+  const root = document.createElement("div");
+  renderMoney(root, st);
+  const said = allOf(root).map((n) => String(n.textContent || "")).join(" | ");
+  assert.match(said, /Refunded, no account recorded/,
+    "★ a refund that belongs to no account is not on the screen at all — **Profit reports it and Money does not**");
 });

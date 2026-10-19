@@ -25,10 +25,13 @@ globalThis.localStorage.setItem("bakeadmin.supabase",
   JSON.stringify({ access_token: "tok", expires_at: Date.now() + 3600000 }));
 
 const { receiptNoOf, receiptLabel, receiptLine, isRefunded, receiptStatus,
+  receiptLineOfGroup, receiptStatusOfGroup,
   copyKnowsCode, lastSeenIn, registerRows, registerSummary, voidedIndex } = await import("../admin/js/receipts.js");
-const { claimReceipt, pullReceiptRegister } = await import("../admin/js/supabase.js");
-const { journalSheet } = await import("../admin/js/journal.js");
+const { claimReceipt, pullReceiptRegister, refundReceipt } = await import("../admin/js/supabase.js");
+const { journalSheet, buildJournalText } = await import("../admin/js/journal.js");
 const { orderCode } = await import("../admin/js/state.js");
+const { customerTotal } = await import("../admin/js/courier.js");
+const { readFileSync } = await import("node:fs");
 
 const stateWith = () => ({
   settings: {
@@ -37,8 +40,10 @@ const stateWith = () => ({
       email: "a@b.c", password: "p" },
   },
   orders: [],
+  products: [{ id: "p1", name: "Focaccia", price: 15, active: true }],
 });
-const paidUnnumbered = () => ({ id: "ord_1", groupId: "ordg_1", paidReceived: true });
+const paidUnnumbered = () => ({ id: "ord_1", groupId: "ordg_1", paidReceived: true,
+  productId: "p1", qty: 1, unitPrice: 15 });
 
 // ── what the paper says ──────────────────────────────────────────────────────
 
@@ -88,6 +93,39 @@ test("a refund is marked, and the number stays", () => {
   assert.equal(receiptStatus(o), "Receipt #000007 — refunded");
   // ⚠️ THE NUMBER IS STILL THERE. Deleting it would leave the gap the sequence exists to prevent.
   assert.equal(receiptNoOf(o), "000007", "a refund never takes the number away");
+});
+
+test("★★★ the invoice's line and status read the WHOLE sale, not its first row (v577)", () => {
+  // ⚠️⚠️ THE FAULT: the invoice numbered itself from a serial found on ANY row while its receipt line and
+  // status were built from the first — ⭐ **so a numbered sale whose first row carried no stamp printed
+  // "Invoice #000007" directly above "No receipt number yet",** and a refund stamped on a later row was
+  // never mentioned. ⭐ Same rule as `receiptNoOfGroup` (v445): a fact about the ORDER is read from
+  // whichever row knows it.
+  const rows = [{ id: "a" }, { id: "b", receiptNo: 7 }];
+  assert.equal(receiptLineOfGroup(rows, "A3F9C2"), "Receipt #000007 · Order #A3F9C2",
+    "★ the line is built from a row that never carried the number");
+  assert.equal(receiptStatusOfGroup(rows), "Receipt #000007",
+    "★ the status says there is no number about a sale that HAS one");
+  // A refunded row that carries neither the number nor anything else still speaks for the sale.
+  assert.equal(receiptStatusOfGroup([{ receiptNo: 7 }, { refundedAt: "2026-10-03T00:00:00Z", refundAmountRM: 5 }]),
+    "Receipt #000007 — RM 5.00 refunded",
+    "★ a refund stamped on a later row is not mentioned, and the serial is not named");
+  assert.equal(receiptStatusOfGroup([]), "", "no rows is no sentence, not a made-up one");
+});
+
+test("★★★ the shared TEXT carries the serial and the refund sentence, not only the screen (v577)", () => {
+  // ⚠️⚠️ THE FAULT: the screen and the paper drew "Receipt #000123"; the text that goes into WhatsApp and
+  // the PDF did not — ⭐ **the number that proves the sequence was missing from exactly the copies the
+  // customer keeps.** ⭐ The PDF is gated on this same text (v573), so pinning the text pins both.
+  const text = buildJournalText({
+    title: "Invoice #A3F9C2",
+    receipt: "Receipt #000123 · Order #A3F9C2",
+    note: "RM 5.00 returned on 3 Oct 2026.",
+  });
+  assert.match(text, /Receipt #000123 · Order #A3F9C2/,
+    "★ the shared text omits the receipt serial, so the customer's copy cannot prove the sequence");
+  assert.match(text, /RM 5\.00 returned on 3 Oct 2026/,
+    "★ the shared text omits a refund the screen states");
 });
 
 test("the sheet carries the serial and the note, and every other journal passes neither", () => {
@@ -140,6 +178,11 @@ test("a paid order claims its number, and NAMES THE ORDER rather than the press"
   assert.match(seen.url, /\/rest\/v1\/rpc\/claim_receipt_number$/, "it asks the claiming function");
   assert.equal(seen.body.p_order_code, orderCode(order),
     "★ the ORDER is named — which is what makes a second press return the same number");
+  // ⚠️⚠️ AND THE BILL GOES WITH IT (v585) — the ceiling the database refuses a refund above.
+  // ⚠️ Before this, `refund_receipt` had no upper bound at all: **any signed-in client could write
+  // RM 999,999 as the size of a refund.**
+  assert.equal(seen.body.p_bill, customerTotal(st, { orders: [order] }).total,
+    "★ the claim does not carry the order's bill, so the refund has no ceiling to refuse against");
   assert.equal(order.receiptNo, 123, "and the number the server handed back is the one stored");
 });
 
@@ -373,6 +416,26 @@ test("★ an unreadable register is NEVER reported as an empty one", async () =>
   assert.equal(calls, 0, "the register was asked for with the cloud switched off");
 });
 
+test("★★★ the register is read in PAGES — past 1,000 receipts it does not silently stop", async () => {
+  // ⚠️⚠️ THE FAULT (v551): one request with no limit, and the server answers at most 1,000 rows. ⭐ Past
+  // #001000 the register simply ended, the screen said **"The run is unbroken"**, and a receipt beyond
+  // the ceiling was invisible. ⭐ **A cap on her records is not a capacity, it is an expiry date.**
+  const st = stateWith();
+  const urls = [];
+  globalThis.fetch = async (url) => {
+    urls.push(String(url));
+    const offset = Number((String(url).match(/[?&]offset=(\d+)/) || [])[1] || 0);
+    const n = offset === 0 ? 1000 : 1;          // a full page, then the last one
+    return { ok: true, json: async () => Array.from({ length: n }, (_, i) => raw(offset + i + 1, "AAAAAA")) };
+  };
+  const r = await pullReceiptRegister(st);
+  assert.equal(r.ok, true);
+  assert.equal(r.rows.length, 1001,
+    "★ the register stopped at the server's own ceiling — **receipt 1,001 is invisible and the run is "
+    + "reported unbroken**");
+  assert.ok(urls.length >= 2, "the register was read in one request, so it cannot have seen past the ceiling");
+});
+
 test("the register is read from the receipts table, oldest number first", async () => {
   const st = stateWith();
   let seen = null;
@@ -385,4 +448,92 @@ test("the register is read from the receipts table, oldest number first", async 
   assert.equal(r.rows.length, 1);
   assert.match(seen, /\/rest\/v1\/receipt_numbers\?/, "the register was not read from the receipts table");
   assert.match(seen, /order=number\.asc/, "the run was asked for in an order a register cannot be read in");
+});
+
+test("★★★ a refund the register did NOT change is not reported as done", async () => {
+  // ⚠️⚠️ THE FAULT (v553): the receipt functions return the number they changed, and **NULL when no
+  // register row matches** — still with HTTP 200. ⭐ The app read only `res.ok`, so it stamped "refunded"
+  // on the order while the register row was untouched: **the register showed the sale as unrefunded, and
+  // the invoice drew a number with no mark.** ⭐ HTTP 200 is not "it happened".
+  const st = stateWith();
+  const order = { id: "ordabc123", groupId: "ordgabc123", status: "paid" };
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    if (String(url).includes("/rpc/refund_receipt")) return { ok: true, json: async () => null };
+    return { ok: true, json: async () => [] };
+  };
+  const ok = await refundReceipt(st, order, 5);
+  assert.equal(ok, false,
+    "★ a refund that changed nothing in the register was reported as done — **her register and her order "
+    + "now disagree about money that went back**");
+  assert.equal(order.refundedAt, undefined, "★ and the order was stamped refunded anyway");
+});
+
+test("★★★ no receipt number is drawn for a code ANOTHER ORDER is already wearing", async () => {
+  // ⚠️⚠️ The register keys its serials by the order code, so two orders on one code are given THE SAME
+  // number — ⭐ **and each invoice would print the other's serial.** The refusal is not silent: the invoice
+  // says the number could not be drawn, and Check my system names the two orders and the number.
+  const st = stateWith();
+  st.orders = [
+    { id: "ord_123456aaaaaa1a2b3c", groupId: "", paidReceived: true, status: "paid" },
+    { id: "ord_987654bbbbbb1a2b3c", groupId: "", paidReceived: true, status: "paid" },
+  ];
+  let called = false;
+  globalThis.fetch = async () => { called = true; return { ok: true, json: async () => [] }; };
+  const ok = await claimReceipt(st, st.orders[0]);
+  assert.equal(ok, false,
+    "★ a number was drawn for a code two orders share — **both invoices would print the same serial**");
+  assert.equal(called, false, "it should not even ask the register");
+});
+
+test("★★★ refund_receipt has an UPPER bound, and the bill it is measured against (v585)", () => {
+  // ⚠️⚠️ MEASURED FAULT: the app clamped to the customer's bill and the FUNCTION did not — ⚠️ **a signed-in
+  // client could write a refund of RM 999,999, and the register would print it as the size of the refund.**
+  const raw = readFileSync(new URL("../supabase/receipts.sql", import.meta.url), "utf8");
+  const sql = raw.split("\n").filter((l) => !/^\s*--/.test(l)).join("\n");
+
+  assert.match(sql, /add column if not exists bill_rm numeric/i,
+    "★ nothing stores what the order was worth, so a refund has nothing to be measured against");
+  assert.match(sql, /claim_receipt_number\(p_order_code text, p_bill numeric default null\)/,
+    "★ the claim does not take the bill");
+  const refund = sql.slice(sql.indexOf("create function public.refund_receipt"));
+  assert.match(refund, /p_amount\s*>\s*coalesce\(\s*\(select r\.bill_rm/,
+    "★ the refund is not bounded by the stored bill — **a refund of any size can be written**");
+  // ⚠️ AND THE FALLBACK IS THE SAME CEILING THE COLUMN MAY NOT EXCEED (v587) — a caller cannot raise it.
+  assert.match(refund, /\), 20000\)/, "a receipt drawn before the bill existed has no fallback ceiling");
+  assert.match(sql, /check \(bill_rm is null or \(bill_rm > 0 and bill_rm <= 20000\)\)/,
+    "★ the stored bill itself is unbounded — **a caller claiming RM999,999 raises the refund ceiling**");
+
+  // ⚠️ AND THE ORDER OF THE DROPS — the lesson of her own 42P13, and of a second run of this file.
+  for (const sig of ["claim_receipt_number(text)", "claim_receipt_number(text, numeric)"]) {
+    const drop = sql.indexOf(`drop function if exists public.${sig}`);
+    const create = sql.indexOf("create function public.claim_receipt_number");
+    assert.ok(drop > 0 && create > 0 && drop < create,
+      `★ ${sig} is not dropped before the claim is created — **the second run of this file fails**`);
+  }
+});
+
+test("★★★ every GRANT and REVOKE names a signature this file actually CREATES (v585)", () => {
+  // ⚠️⚠️ THIS IS THE FAULT THAT STOPPED THE FILE: the claim gained a second argument, and the revoke/grant
+  // block still named the ONE-argument signature — ⚠️ **the whole file failed with 42883, `function
+  // public.claim_receipt_number(text) does not exist`, because the one-argument version had already been
+  // dropped at the top.** ⭐ A grant naming a signature nobody created is an error, not a no-op — the file's
+  // own comment already said the grant must match exactly, and nothing measured it.
+  const raw = readFileSync(new URL("../supabase/receipts.sql", import.meta.url), "utf8");
+  const sql = raw.split("\n").filter((l) => !/^\s*--/.test(l)).join("\n");
+  const norm = (sig) => sig.replace(/\s+/g, "");
+  // ⚠️ A CREATE names its parameters; a GRANT names only their TYPES. ⭐ Postgres identifies a function by the
+  // types, so each parameter is reduced to its type — the last word, with any `default ...` removed first.
+  const typesOf = (params) => params.split(",").map((p) => {
+    const t = p.replace(/\bdefault\b[\s\S]*$/i, "").trim();
+    return t.split(/\s+/).pop();
+  }).join(",");
+  const created = new Set([...sql.matchAll(/create\s+(?:or\s+replace\s+)?function\s+public\.([a-z_]+)\(([^)]*)\)/gi)]
+    .map((m) => norm(`${m[1]}(${typesOf(m[2])})`)));
+  const named = [...sql.matchAll(/\b(?:grant|revoke)\b[^;]*?function\s+public\.([a-z_]+)\(([^)]*)\)/gi)]
+    .map((m) => norm(`${m[1]}(${m[2]})`));
+  assert.ok(named.length >= 6, "the grants and revokes were not found — this guard is looking at nothing");
+  const orphan = named.filter((sig) => !created.has(sig));
+  assert.deepEqual([...new Set(orphan)], [],
+    "★ a grant or revoke names a signature this file never creates — **the file fails at that line with 42883**");
 });

@@ -4,9 +4,9 @@
 // The arithmetic lives in js/profit.js, next to the cash side it must never be
 // confused with.
 
-import { el, button, showPopup } from "../ui.js";
+import { el, button, modeButton, showPopup } from "../ui.js";
 import { fmtRM } from "../state.js";
-import { profitBetween, expenseRows, tradingRows } from "../profit.js";
+import { profitBetween, expenseRows, refundRows, tradingRows } from "../profit.js";
 import { addDays, longDate, todayISO } from "../dates.js";
 import { periodSpan } from "../consolidated.js";
 import { journalSheet, journalButtons, bakeryName } from "../journal.js";
@@ -37,7 +37,7 @@ const dayMonth = (iso) => longDate(String(iso).slice(0, 10)).slice(0, -5);
 // steady from then on, but the figure it settled at is that day's recipe cost, not what the
 // flour cost when the order was actually baked. The app never recorded one; saying otherwise
 // would be inventing a number.
-const COST_OF_SALES_NOTE = "Cost of sales is built from the recipe and the ingredient prices you have recorded. It is frozen onto each order when you take it, so changing a recipe or a price from now on does not rewrite a sale already made. Orders taken before this was introduced were pinned at the cost they were already showing. It is still not what you actually spent, and gross profit is a guide to your pricing rather than your bank balance — the Money screen is where the cash is.";
+const COST_OF_SALES_NOTE = "Cost of sales is built from the recipe and the ingredient prices you have recorded. It is frozen onto each order when you take it, so changing a recipe or a price from now on does not rewrite a sale already made. Orders taken before this was introduced were pinned at the cost they were already showing. It is still not what you actually spent, and gross profit is a guide to your pricing rather than your bank balance — your record of cash is where the money is.";
 
 // The cash half of the same story: a pack bought today is not costed all at once. It closes
 // with the one choice she has to make about her own hours, and carries the month's own count
@@ -45,7 +45,7 @@ const COST_OF_SALES_NOTE = "Cost of sales is built from the recipe and the ingre
 // function of the statement rather than a fixed string.
 const cashFooter = (pl) => "A pack bought today is not costed all at once — it is cash on the Money screen and stock on the shelf, and becomes cost of sales as the treats made from it are sold. Sales are counted by the day you post. "
   + (pl.uncosted ? `${pl.uncosted} line${pl.uncosted === 1 ? "" : "s"} this month had no recipe cost and was counted as nothing — check that product's recipe. ` : "")
-  + "Your own unpaid hours are not costed on their own: either pay yourself a Salary (you), with EPF and SOCSO as their own category, or mark Labour as a not-bought ingredient (More → Ingredients) and put the hours into the recipes. Count them one way, never both.";
+  + "Your own unpaid hours are not costed on their own: either pay yourself a Salary (you), with EPF and SOCSO as their own category, or mark Labour as a not-bought ingredient (Ingredients, in the app) and put the hours into the recipes. Count them one way, never both.";
 
 // A statement line is a total, and a total nobody can open is a figure to be trusted on
 // faith. Tap it and the rows it is made of are here — the same rows the Money screen
@@ -77,9 +77,9 @@ function openExpenseJournal(state, label, from, to, monthTitle) {
     totals: [{ label: "Total", amount: -total }],
     empty: `Nothing recorded under ${label || "your running costs"} in ${monthTitle}.`,
     note: rows.length
-      ? "These are the rows the line above is made of, each with what it was for and how it was paid. They are recorded on the Money screen (Add an expense), so a correction is made there — and both screens move together, because this is the same list."
-      : "It will fill up on its own as you record spending under this category on the Money screen (Add an expense).",
-    where: "More → Profit",
+      ? "These are the rows the line above is made of, each with what it was for and how it was paid. They are recorded as expenses, so a correction is made there — and both screens move together, because this is the same list."
+      : "It will fill up on its own as you record spending under this category.",
+    where: "her bookkeeping app",
     bakery: bakeryName(state),
   });
 
@@ -96,8 +96,49 @@ function openExpenseJournal(state, label, from, to, monthTitle) {
       el("span", {}, "Total"), el("span", { class: "info-val" }, fmtRM(-total, cur))),
     el("p", { class: "card-sub", style: "margin:10px 0 0" },
       rows.length
-        ? "These are the rows the line above is made of, each with what it was for and how it was paid. They are recorded on the Money screen (Add an expense), so a correction is made there — and both screens move together, because this is the same list."
-        : "It will fill up on its own as you record spending under this category on the Money screen (Add an expense)."),
+        ? "These are the rows the line above is made of, each with what it was for and how it was paid. They are recorded as expenses, so a correction is made there — and both screens move together, because this is the same list."
+        : "It will fill up on its own as you record spending under this category."),
+    el("div", { class: "popup-actions" }, ...journalButtons(sheet, cur))));
+}
+
+// ⭐ THE MONEY THAT WENT BACK (v578) — its own line and its own journal, because it is not a sale and it
+// belongs to the month it was given in, not the month its sale was delivered.
+function openRefundJournal(state, from, to, monthTitle) {
+  const cur = state.settings.currency || "RM";
+  const rows = refundRows(state, from, to);
+  const total = rows.reduce((s, r) => s + r.amount, 0);
+  const line = (r) => el("div", { class: "info-row journal-line" },
+    el("span", { class: "j-what" },
+      [`${dayMonth(r.date)} · ${r.what}`, r.customer].filter(Boolean).join(" · ")),
+    el("span", { class: "info-val" }, fmtRM(-r.amount, cur)));
+
+  const sheet = journalSheet({
+    title: "Refunds given",
+    subtitle: `Refunds given · ${monthTitle}`,
+    lines: rows.map((r) => ({
+      what: [`${dayMonth(r.date)} · ${r.what}`, r.customer].filter(Boolean).join(" · "),
+      amount: -r.amount,
+    })),
+    totals: [{ label: "Total", amount: -total }],
+    empty: `No refunds were given in ${monthTitle}.`,
+    note: "These are the refunds recorded on your orders, each on the day the money went back. They are "
+      + "recorded when you press Refund on an order, so a correction is made there — and both screens move "
+      + "together, because this is the same list.",
+    where: "her bookkeeping app",
+    bakery: bakeryName(state),
+  });
+
+  showPopup(el("div", { class: "popup-title-row" }, "Refunds given"), () => el("div", {},
+    el("p", { class: "card-sub", style: "margin:0 0 10px" }, `Refunds given · ${monthTitle}`),
+    rows.length
+      ? el("div", {}, ...rows.map(line))
+      : el("p", { class: "card-sub" }, `No refunds were given in ${monthTitle}.`),
+    el("div", { class: "info-row pl-total" },
+      el("span", {}, "Total"), el("span", { class: "info-val" }, fmtRM(-total, cur))),
+    el("p", { class: "card-sub", style: "margin:10px 0 0" },
+      "These are the refunds recorded on your orders, each on the day the money went back. They are "
+      + "recorded when you press Refund on an order, so a correction is made there — and both screens move "
+      + "together, because this is the same list."),
     el("div", { class: "popup-actions" }, ...journalButtons(sheet, cur))));
 }
 
@@ -136,8 +177,8 @@ function openTradingJournal(state, which, from, to, monthTitle) {
     empty: sales ? `Nothing was sold in ${monthTitle}.` : `Nothing was baked for sale in ${monthTitle}.`,
     note: sales
       ? "These are the order lines the figure above is made of, each with the customer's own name. A sale counts on the day it is DELIVERED, not the day it was ordered — the same day the day headers and the customer's calendar use. They are recorded in Orders, so a correction is made there; both screens move together, because this is the same list."
-      : `These are what those very lines cost to bake, taken from your recipes — not the packs you bought, which are cash on the Money screen and stock on the shelf.${uncosted ? ` ${uncosted} line${uncosted === 1 ? "" : "s"} this month had no recipe cost and was counted as nothing, so check that product's recipe.` : ""}`,
-    where: "More → Profit",
+      : `These are what those very lines cost to bake, taken from your recipes — not the packs you bought, which are cash in your cash record and stock on the shelf.${uncosted ? ` ${uncosted} line${uncosted === 1 ? "" : "s"} this month had no recipe cost and was counted as nothing, so check that product's recipe.` : ""}`,
+    where: "her bookkeeping app",
     bakery: bakeryName(state),
   });
 
@@ -245,6 +286,7 @@ export function renderProfit(root, state) {
       subtitle: monthTitle,
       lines: [
         { what: "Sales", amount: pl.sales },
+        { what: "Refunds given", amount: -pl.refunds },
         { what: "Cost of sales", amount: -pl.cost },
         { what: "Gross profit", amount: pl.gross, cls: "pl-total" },
         { what: "Running costs", heading: true },
@@ -255,7 +297,7 @@ export function renderProfit(root, state) {
       ],
       totals: [],
       note: `${COST_OF_SALES_NOTE}\n\n${cashFooter(pl)}`,
-      where: "More → Profit",
+      where: "her bookkeeping app",
       bakery: bakeryName(state),
     });
 
@@ -264,8 +306,7 @@ export function renderProfit(root, state) {
       // ★★ WHAT KIND OF WINDOW, AND THEN WHICH ONE (v403) — the same two-part chooser as Money and the
       // invoice, so all three screens ask the same question the same way.
       el("div", { class: "cal-modes" },
-        ...MODES.map(([id, text]) => button(text, () => draw(id),
-          `ghost small${pRange === id ? " cal-mode-on" : ""}`))),
+        ...MODES.map(([id, text]) => modeButton(text, pRange === id, () => draw(id)))),
       // ⚠️ NO ARROWS ON "All" — nothing to step to, and a dead arrow reads as a fault.
       el("div", { class: "range-stepper" },
         pRange === "all" ? null : button("‹", () => { stepSpan(-1); draw(); }, "ghost small range-nav"),
@@ -277,6 +318,8 @@ export function renderProfit(root, state) {
           pl.lines ? "Trading · tap a line to see the orders behind it" : "Trading"),
         line("Sales", pl.sales, "",
           () => openTradingJournal(state, "sales", from, to, monthTitle)),
+        line("Refunds given", -pl.refunds, "",
+          () => openRefundJournal(state, from, to, monthTitle)),
         line("Cost of sales", -pl.cost, "",
           () => openTradingJournal(state, "cost", from, to, monthTitle)),
         line("Gross profit", pl.gross, " pl-total"),
@@ -302,7 +345,7 @@ export function renderProfit(root, state) {
       el("div", { class: "card" },
         el("p", { class: "card-title" }, "Your own money"),
         el("p", { class: "card-sub", style: "margin:0 0 8px" },
-          "What you put in is capital and what you take out is drawings. Neither is income and neither is a cost — they move cash, and the Money screen is where you check that."),
+          "What you put in is capital and what you take out is drawings. Neither is income and neither is a cost — they move cash, and your cash record is where you check that."),
         line("Capital you put in", pl.capital),
         line("Drawings you took out", -pl.drawings),
         line("In the business so far this month", pl.capital - pl.drawings, " pl-total")),

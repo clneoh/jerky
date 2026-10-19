@@ -133,7 +133,14 @@ export function logPriceMoves(ingredient, before, { source = "edit", at = todayI
   const newList = Array.isArray(ingredient.supplierPrices) ? ingredient.supplierPrices : [];
   const moved = [];
   for (const next of newList) {
-    const prev = oldList.find((e) => sameEntry(e, next));
+    // ⚠️⚠️ A CHANGED PACK SIZE IS STILL THE SAME ARRANGEMENT (v583). ⚠️ The old row was matched by supplier
+    // AND qty, so editing "3 kg for RM27.50" to "5 kg for RM30" matched nothing — ⚠️ **and the journal said
+    // the price "was not on file", losing the figure it exists to record.** ⭐ An exact match still wins; when
+    // there is no exact one and the supplier has a SINGLE row, that row is the old price. ⚠️ With several
+    // packs from one supplier it does not guess.
+    const exact = oldList.find((e) => sameEntry(e, next));
+    const same = exact ? [] : oldList.filter((e) => sameSupplier(e, next));
+    const prev = exact || (same.length === 1 ? same[0] : null);
     const was = prev ? Number(prev.price) : null;
     const now = Number(next && next.price);
     if (!Number.isFinite(now) || now < 0) continue;

@@ -309,8 +309,12 @@ function servicesFor(): Service[] {
   if (key) {
     queue.push({
       name: "google",
-      url: (q: string) => `${GOOGLE}?address=${encodeURIComponent(q)}&components=country:MY&language=en&key=${encodeURIComponent(key)}`,
-      headers: {},
+      // ⚠️⚠️ THE KEY RIDES IN A HEADER, NOT THE ADDRESS (v561). ⭐ In the query string it is part of the
+      // URL — and Deno's request errors routinely EMBED the URL, so an unreachable Google put the key in
+      // the function's own log. ⭐ `suggest.ts` already kept its key out of the address for exactly this
+      // reason; geocoding did not. ⚠️ Google accepts `X-Goog-Api-Key` on this API.
+      url: (q: string) => `${GOOGLE}?address=${encodeURIComponent(q)}&components=country:MY&language=en`,
+      headers: { "X-Goog-Api-Key": key },
       read: placesFromGoogle,
       trouble: googleTrouble,
     });
@@ -357,8 +361,12 @@ export async function lookupAddress(
   if (!q) return { ok: false, why: "empty" };
 
   const queue = servicesFor();
+  // ⚠️⚠️ THE SERVER'S BUDGET STAYS UNDER THE CALLER'S (v592). ⚠️ At three services this was exactly 12,000 ms,
+  // which is the shop's whole patience — ⚠️ **so a place found at 11.9 s always arrived after the customer's
+  // AbortController had already fired, and the page reported a failure the function believed it had answered.**
+  // ⭐ 10,500 ms leaves the round trip room to land inside the caller's 12 seconds.
   const perAsk = timeoutMs == null
-    ? (queue.length > 2 ? Math.floor(12000 / queue.length) : 5000)
+    ? (queue.length > 2 ? Math.floor(10500 / queue.length) : 5000)
     : timeoutMs;
 
   let missed = false;

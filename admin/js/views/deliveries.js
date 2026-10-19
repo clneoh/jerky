@@ -6,9 +6,9 @@
 
 import { navigate } from "../app.js";
 import { dayListLabel, dayName, deliveryStatus, generateUpcomingDates, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
-import { bookedUnitsOnDate, effectiveCapacity } from "../bom.js";
-import { el, button, confirmDialog, showPopup, toast } from "../ui.js";
-import { groupOrders, newId, save } from "../state.js";
+import { bookedUnitsOnDate, effectiveCapacity, totalUnitsOnDate } from "../bom.js";
+import { el, button, confirmDialog, showPopup, toast, modeButton } from "../ui.js";
+import { groupOrders, newId, ordersOnDate, save } from "../state.js";
 import { needsVan, runDayOf, stopKeyOf } from "../courier_job.js";
 import { maybeSync, maybeSyncStorefront } from "../supabase.js";
 import {
@@ -68,7 +68,10 @@ function renderAll(root, state) {
 // ⚠️ The message says what happens to the orders when there are any: they are KEPT, and the date is
 // un-set from the day rather than the order being touched.
 function deleteDate(state, date) {
-  const count = state.orders.filter((o) => o.deliveryDateId === date.id).length;
+  // ⚠️⚠️ ONE CUSTOMER WITH A TWO-ITEM CART IS ONE ORDER, NOT TWO (v583). ⚠️ The count was of order ROWS, so
+  // the question read **"has 2 order(s) on it"** about a single sale. ⭐ Counted by the order, the way the app
+  // and she both use the word.
+  const count = ordersOnDate(state, date.id);
   // ⚠️ THE DAY IS NAMED THE WAY SHE READS IT ("Tue, 13 Oct"), not as the ISO string it is stored in.
   // ⚠️⚠️ THIS MATTERS MORE THAN IT LOOKS ON A CONFIRMATION: a question that names the day in a form she
   // has to decode is one she has to stop and think about — **and a confirmation she has to think about is
@@ -176,8 +179,8 @@ function buildAddCard(state) {
     renderAll(view(), state);
   };
   const modes = el("div", { class: "cal-modes" },
-    button("Add dates", () => setMode(false), `ghost small${occMode ? "" : " cal-mode-on"}`),
-    button("Mark an occasion", () => setMode(true), `ghost small${occMode ? " cal-mode-on" : ""}`));
+    modeButton("Add dates", !occMode, () => setMode(false)),
+    modeButton("Mark an occasion", occMode, () => setMode(true)));
 
   const weeks = monthWeeks(viewMonth.year, viewMonth.month);
   const heading = occMode
@@ -377,7 +380,7 @@ function dayCell(state, date, today, addedMap, pickable, allowPast = false) {
   // than left standing as a description of behaviour that no longer happens.
   // ⚠️ A date that carries orders already asked; now so does one that does not.
   if (added && !past) {
-    return el("button", { class: `${cls} tappable`,
+    return el("button", { class: `${cls} tappable`, "aria-label": longDate(date),
       onclick: () => { nameDay(state.occasions, date, past); deleteDate(state, addedTo); } }, ...inner);
   }
   // ⚠️⚠️ A PAST DAY IS PICKABLE WHEN THE **ADD** CALENDAR ASKS FOR IT (v464) — and never in occasion mode,
@@ -394,6 +397,9 @@ function dayCell(state, date, today, addedMap, pickable, allowPast = false) {
   const cell = el("button", {
     class: `${cls} tappable pick-cell${selected ? " sel" : ""}`,
     dataset: { date },
+    // ⚠️ A DAY IS NAMED BY ITS DATE HERE TOO (v598) — "14, button" on the calendar she adds days from.
+    "aria-label": longDate(date),
+    "aria-pressed": selected ? "true" : "false",
   }, ...inner);
   pickable.set(date, cell);
   return cell;
@@ -755,7 +761,7 @@ function buildOccGrid(state, weeks) {
       const inner = cellInner(added || sol, added, dayNum);
       const tip = tipEl(state.occasions, d, past);
       if (tip) inner.push(tip);
-      const cell = el("button", { class: base, dataset: { date: d } }, ...inner);
+      const cell = el("button", { class: base, dataset: { date: d }, "aria-label": longDate(d) }, ...inner);
       byDate.set(d, cell);
       cells.push(cell);
     }

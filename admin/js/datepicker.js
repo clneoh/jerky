@@ -20,7 +20,10 @@ import { longDate, todayISO } from "./dates.js";
 // How many months the free date field's arrows reach either way from today.
 // Wide enough to record an order she took last week or plan one well ahead,
 // narrow enough that the arrows always stop somewhere sensible.
-const SPAN = 12;
+// ⚠️⚠️ TWENTY-FOUR, NOT TWELVE (v570). ⭐ Twelve months meant a receipt or an expense from **thirteen months
+// ago could not be entered at all**, and opening an existing older date clamped the grid to today-12. ⭐ Two
+// years either way still stops somewhere sensible, and it covers every date her own book holds.
+const SPAN = 24;
 
 function monthOf(iso) {
   const d = new Date(`${iso}T00:00:00`);
@@ -51,8 +54,14 @@ function gridEl(shown, { selected, today, onPick, occasions }) {
     // own bubble (see valSpan) rather than one drawn above the day. `past` is
     // passed as false: a date field records days that have already been, and a
     // holiday an order was taken on is just as worth reading back.
-    return el("button", { class: `${cls} tappable`,
-      onclick: () => { nameDay(occasions, iso, false); onPick(iso); } }, dayNum);
+    // ⚠️⚠️ A DAY IS NAMED BY ITS DATE, NOT ONLY ITS NUMBER (v597) — "14, button" told a screen-reader user
+    // nothing, and the chosen day was said by a class alone.
+    return el("button", {
+      class: `${cls} tappable`,
+      "aria-label": longDate(iso),
+      "aria-pressed": iso === selected ? "true" : "false",
+      onclick: () => { nameDay(occasions, iso, false); onPick(iso); },
+    }, dayNum);
   });
   return el("div", { class: "cal-grid" },
     ...DOW.map((d) => el("span", { class: "cal-dow" }, d)),

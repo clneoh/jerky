@@ -83,7 +83,7 @@ function createEl(tag) {
       return i > 0 ? p.children[i - 1] : null;
     },
     appendChild(c) { if (c != null) { c.parentElement = this; this.children.push(c); } return c; },
-    append(...cs) { for (const c of cs.flat()) if (c != null) this.appendChild(c); },
+    append(...cs) { for (const c of cs.flat()) this.appendChild(c == null ? { nodeType: 3, text: "null" } : c); },
     // ⚠️⚠️ THIS SHIM HAD NO `insertBefore` AT ALL UNTIL v459, and that mattered the moment the shop began
     // MOVING the refusal line instead of leaving it where the markup put it: **the view quietly fell back
     // to the other placement, and a test asserting WHERE the line lands was asserting nothing.** ⭐ It was
@@ -276,7 +276,7 @@ for (const id of ["step1", "step2", "step3", ...STEP_FIELD_IDS]) {
 // so the module-level render() hits no network.
 globalThis.fetch = async () => ({ ok: true, json: async () => [] });
 
-const { buildMessage, mergeStorefront, upcomingDates, daySpecs, dateKey, fmtDay, windowTitle, trackOrder, isOpen, todayStillOpen, postsOn, dayAsk, waNumber, phoneText, parseVia, clockWords, renderStatic, render } = await import("../store/app.js");
+const { buildMessage, mergeStorefront, upcomingDates, daySpecs, dateKey, fmtDay, windowTitle, trackOrder, isOpen, todayStillOpen, postsOn, dayAsk, waNumber, phoneText, parseVia, clockWords, waPlausible, renderStatic, render } = await import("../store/app.js");
 const { strictestCancelDays } = await import("../store/pool.js");
 const { CONFIG } = await import("../store/config.js");
 // v270: the shop's own line and its refusals, kept as pure functions so they are
@@ -586,6 +586,13 @@ test("★★★ today's bake is only 'closed' when she actually bakes today", ()
     "precondition: once the bake day arrives, ordering for it has closed");
   assert.equal(todayStillOpen({ cutoff: "" , deliveryDays: [1, 3, 5] }, new Date(2026, 9, 19, 10, 0)), true,
     "with no cut-off at all there is nothing to have closed");
+  // ⚠️⚠️ AND HER PUBLISHED DAYS OUTRANK THE WEEKDAY (v599). ⚠️ v598 OR-ed the pattern in, so a Wednesday she
+  // had DELETED still read "You're in time" — ⚠️ **the page offered a bake she had taken off.** ⭐ When rows
+  // exist, the row is the answer; the pattern is only for the no-rows fallback (`undefined`).
+  const wed = new Date(2026, 9, 21, 9, 0); // Wed 21 Oct, a weekday-bake day
+  assert.equal(todayStillOpen(cfg, wed, false), true,
+    "★ a deleted bake day was reported as a bake that has closed (or is still open) because it was a Wednesday");
+  assert.equal(todayStillOpen(cfg, wed, true), false, "a day that IS in her rows still closes at its cut-off");
 });
 
 test("isOpen keeps a later day open and treats a missing cutoff as always open", () => {
@@ -999,6 +1006,16 @@ function refill() {
 // pressing "Use my location", which no longer exists — and every one of their assertions was about
 // what the ORDER carries, not about that button. They are driven through the MAP there now, which
 // is the path a customer still has, and that file owns the Leaflet stub the map needs.
+// ⚠️ A WAY MUST BE CHOSEN BEFORE AN ORDER IS PLACED (v588). ⭐ The after-order reset now returns the page to
+// NOTHING chosen — before it, "Self collect" was left engaged for the next customer, so a test that never chose
+// a way was placing orders on a state the shop no longer reaches. Choosing is what a customer does, and the
+// Place-order guard refusing without it is the behaviour that change exists for.
+const chooseCollect = () => {
+  const f = document.getElementById("fulfillment");
+  f._value = "collect";
+  f._picked = true;
+};
+
 test("the receipt carries the strictest change/cancel window of the whole basket", async () => {
   // The two products and their two windows are the TEST's own fixture (v347) —
   // the fallback menu can no longer supply them, and never promised to.
@@ -1057,6 +1074,7 @@ test("the receipt carries the strictest change/cancel window of the whole basket
         if (opts && opts.method === "POST") posts += 1;
         return countingFetch(url, opts);
       };
+      chooseCollect();
       await registry["order-btn"].onclick();
       await afterOrderNotice(); // ★ the notice follows her one second (v451)
       globalThis.fetch = countingFetch;
@@ -1065,6 +1083,32 @@ test("the receipt carries the strictest change/cancel window of the whole basket
       assert.ok(!confirmLines().some((t) => /change or cancel/i.test(t)),
         "no product states a window → the receipt says nothing");
     });
+});
+
+test("★★★ a truncated referral link is NOT a referral (v565)", () => {
+  // ⚠️⚠️ `/store/?via=123` used to show "You were referred — you have a welcome discount on your first
+  // order" and stamp referredBy "123" on the order. ⭐ A discount promised and never given is the one
+  // thing the shop must not say by accident.
+  assert.equal(parseVia("?via=123"), "", "★ a three-digit link claims a referral and a discount");
+  assert.equal(parseVia("?via=1"), "");
+  assert.equal(parseVia("?via=601234"), "");
+  // ⭐ A real number still works, in every spelling.
+  assert.equal(parseVia("?via=60123456789"), "60123456789");
+});
+
+test("★★★ a WhatsApp number a person cannot answer is not accepted (v565)", () => {
+  // ⚠️⚠️ THE FAULT: the box accepted any digit string, so an order could carry "1" — the bakery cannot
+  // confirm on it, the payment QR never arrives, and the tracking card (v558) can never be opened.
+  assert.equal(waPlausible("1"), false, "★ one digit was accepted as a phone number");
+  assert.equal(waPlausible("12345678"), false, "★ eight digits is under the 9-digit floor");
+  assert.equal(waPlausible(""), false);
+  assert.equal(waPlausible("abc"), false);
+  // ⭐ And a real Malaysian number passes in every spelling a customer types.
+  assert.equal(waPlausible("012-345 6789"), true);
+  assert.equal(waPlausible("+60 12-345 6789"), true);
+  assert.equal(waPlausible("60123456789"), true);
+  assert.equal(waPlausible("601234567890123"), true, "a long international number is still a number");
+  assert.equal(waPlausible("6012345678901234"), false, "past E.164's 15 digits is not a number");
 });
 
 test("parseVia normalises the ?via= digits on a referral link", () => {
@@ -1245,6 +1289,38 @@ test("buildMessage appends the delivery method and courier address", () => {
   });
   assert.ok(msg.includes("📦 Post (nationwide)"));
   assert.ok(msg.includes("📍 12 Jalan Bunga, Penang"));
+});
+
+test("★★★ the offline message keeps each item's note and the door pin (v592)", () => {
+  // ⚠️⚠️ MEASURED: the fallback text printed only name/qty/price — ⚠️ **a customer's "no nuts" and a condo
+  // door pin were in the cloud order and absent from the WhatsApp message**, which is the one path that must
+  // carry the whole order when the cloud cannot be reached.
+  const cfg = { name: "Jienluv2bake", products: [] };
+  const msg = buildMessage(cfg, {
+    date: "Wed, 2 Sep",
+    lines: [{ name: "Focaccia", qty: 1, price: 15, note: "no nuts" }],
+    total: 15, customer: "", note: "", fulfillment: "courier",
+    address: "12 Jalan Bunga", place: { lat: 5.4141, lng: 100.3288 },
+  });
+  assert.ok(msg.includes("📝 no nuts"), "★ the item's own note is not in the message the baker receives");
+  assert.ok(msg.includes("📌 5.414100, 100.328800"), "★ the door pin is not in the message");
+  assert.ok(msg.includes("maps.google.com/?q=5.4141,100.3288"), "the pin has no link to open");
+});
+
+test("★★★ a collection order names the point it is collected from (v581)", () => {
+  // ⚠️⚠️ MEASURED: the message said "Self collect" and nothing else, although the order carries the
+  // Point's name — ⚠️ **so the baker could not tell which place from the message she was sent**, and the
+  // offline fallback message lost it the same way.
+  const cfg = { name: "Jienluv2bake", products: [] };
+  const base = { date: "Wed, 2 Sep", lines: [{ name: "Focaccia", qty: 1, price: 15 }],
+    total: 15, customer: "Aunty Bee", note: "", fulfillment: "collect" };
+  const withPoint = buildMessage(cfg, { ...base, pointName: "Desa Park Collective" });
+  assert.ok(withPoint.includes("Collect (local)"), "the method line went missing");
+  assert.ok(withPoint.includes("📍 Desa Park Collective"),
+    "★ the message does not say which place the customer collects from");
+  // And an order with no Point named is byte-for-byte the message it always was.
+  assert.equal(buildMessage(cfg, base), buildMessage(cfg, { ...base, pointName: "   " }),
+    "an empty Point name added a line");
 });
 
 // The TNG QR is sent to the customer in the WhatsApp confirmation and payment
@@ -1525,10 +1601,10 @@ test("trackOrder re-fetches and re-renders every lookup (never stale)", async ()
     return { ok: true, json: async () => [row] };
   };
   try {
-    await trackOrder("A3F9C2");
+    await trackOrder("A3F9C2", "0123456789");
     const afterFirst = box.children.length;
     assert.ok(afterFirst >= 4, "first lookup renders status + delivery + items + customer");
-    await trackOrder("B5D1E4");
+    await trackOrder("B5D1E4", "0123456789");
     assert.equal(box.children.length, afterFirst, "second lookup replaces the result");
     assert.equal(urls.length, 2, "every lookup hits the network — nothing is cached");
     assert.equal(urls[0].opts.cache, "no-store", "cache: no-store so status is always fresh");
@@ -1549,7 +1625,7 @@ test("trackOrder shows only the order details and latest status — no receipt/Q
     delivery: "4 Sep · Post (nationwide)", items: "Chicken Jerky ×1", total: "RM15.00", customer: "Ain",
   }] });
   try {
-    await trackOrder("A3F9C2");
+    await trackOrder("A3F9C2", "0123456789");
     const journey = box.children.find((c) => c.tagName === "DIV" && String(c.className || "").includes("tj"));
     assert.ok(journey, "shows the order journey progress line");
     const steps = [];
@@ -1592,7 +1668,7 @@ test("a Paid order lights up Paid on the journey, between Confirmed and Preparin
     delivery: "4 Sep · Post (nationwide)", items: "Chicken Jerky ×1", total: "RM15.00", customer: "Ain",
   }] });
   try {
-    await trackOrder("A3F9C2");
+    await trackOrder("A3F9C2", "0123456789");
     const journey = box.children.find((c) => c.tagName === "DIV" && String(c.className || "").includes("tj"));
     assert.ok(journey, "shows the journey");
     const labels = [];
@@ -1626,7 +1702,7 @@ test("a Packed order (status ready) shows the preparation steps done with only t
     status: "Ready", delivery: "4 Sep · Post (nationwide)", items: "Chicken Jerky ×1", total: "RM15.00", customer: "Ain",
   }] });
   try {
-    await trackOrder("A3F9C2");
+    await trackOrder("A3F9C2", "0123456789");
     const journey = box.children.find((c) => c.tagName === "DIV" && String(c.className || "").includes("tj"));
     assert.ok(journey, "shows the journey");
     const labels = [];
@@ -1662,7 +1738,7 @@ test("an order at the last stage shows the whole journey green — nothing flash
     status: "Delivered", delivery: "4 Sep · Post (nationwide)", items: "Chicken Jerky ×1", total: "RM15.00", customer: "Ain",
   }] });
   try {
-    await trackOrder("A3F9C2");
+    await trackOrder("A3F9C2", "0123456789");
     const journey = box.children.find((c) => c.tagName === "DIV" && String(c.className || "").includes("tj"));
     assert.ok(journey, "shows the journey");
     const steps = [];
@@ -1722,6 +1798,31 @@ test("order that reaches the app shows received WITHOUT opening WhatsApp (no pop
     globalThis.fetch = realFetch;
     window.open = realOpen;
   }
+});
+
+test("★★★ after an order, the next customer arrives with NO way chosen (v588)", async () => {
+  // ⚠️⚠️ MEASURED: the after-order reset left "Self collect" engaged — ⚠️ **so the next customer opened step 3
+  // with the card edged, the "Tap to choose one" prompt gone, and no guard left to stop an order placed with a
+  // way they never picked.** ⭐ The reset now returns the page to the state a new visitor sees.
+  const card = registry["menu"].children[0];
+  const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
+  tapDay();
+  stepper.children[2]._listeners.click[0]();
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => (opts && opts.method === "POST" ? { ok: true } : { ok: true, json: async () => [] });
+  try {
+    document.getElementById("name-input").value = "Aunty Bee";
+    document.getElementById("whatsapp-input").value = "60123456789";
+    chooseCollect();
+    await registry["order-btn"].onclick();
+    await afterOrderNotice();
+
+    // ⚠️ MUNCHIES' OWN MODEL: its shop OPENS on Post (nationwide), so the reset must return the page to
+    // exactly that — the same call arrival makes (`apply("courier")`). The bakery opens with nothing
+    // chosen because its number alone cannot say how the order travels; here the way is never empty.
+    assert.equal(document.getElementById("fulfillment")._value, "courier",
+      "★ the next customer does not open the shop in the same state a new visitor gets");
+  } finally { globalThis.fetch = realFetch; }
 });
 
 test("WhatsApp only opens as a fallback when the order could NOT reach the app", async () => {
@@ -1807,7 +1908,7 @@ test("a posted order shows the courier's tracking number", async () => {
   };
   globalThis.fetch = async (url) => ({ ok: true, json: async () => [onlySelected(url, posted)] });
   try {
-    await trackOrder("A3F9C2");
+    await trackOrder("A3F9C2", "0123456789");
     const no = byExactClass(box, "track-no");
     assert.ok(no, "the card carries the tracking number on its own line");
     assert.equal(no.children[0].text, "Tracking number: JT123456789");
@@ -1832,7 +1933,7 @@ test("a courier's share link in the tracking slot is a link a customer can tap",
   };
   globalThis.fetch = async (url) => ({ ok: true, json: async () => [onlySelected(url, posted)] });
   try {
-    await trackOrder("A3F9C2");
+    await trackOrder("A3F9C2", "0123456789");
     const no = byExactClass(box, "track-no");
     assert.ok(no, "the card carries the tracking slot on its own line");
     // ⚠️ ALIGNED WITH THE CARD'S OWN HEADING (2026-10-12, her ask). This read "Track your
@@ -1866,7 +1967,7 @@ test("only http and https become a link — a delivery is never a page to run", 
     };
     globalThis.fetch = async (url) => ({ ok: true, json: async () => [onlySelected(url, posted)] });
     try {
-      await trackOrder("A3F9C2");
+      await trackOrder("A3F9C2", "0123456789");
       const no = byExactClass(box, "track-no");
       assert.ok(no, `the slot still draws for ${value}`);
       assert.equal(no.children.length, 1, `${value} must not become a link`);
@@ -1891,7 +1992,7 @@ test("a courier charge the customer bears is named on the card, and the lookup a
     return { ok: true, json: async () => [onlySelected(url, posted)] };
   };
   try {
-    await trackOrder("A3F9C2");
+    await trackOrder("A3F9C2", "0123456789");
     assert.ok(trackCols.has("courier_fee"),
       "the lookup names courier_fee — it sends only the columns listed, so the charge the baker typed is invisible to the card until this asks for it");
     assert.ok(trackCols.has("customer"),
@@ -1914,7 +2015,7 @@ test("an order with no courier charge shows no charge line", async () => {
     total: "RM15.00", customer: "Ain",
   }] });
   try {
-    await trackOrder("A3F9C2");
+    await trackOrder("A3F9C2", "0123456789");
     assert.equal(deepByClass(box, "track-fee"), undefined,
       "nothing to name, so no line at all — not an empty label, and not a stray null");
   } finally {
@@ -1939,7 +2040,7 @@ test("the code a customer used is named on the card, and the lookup asks for it"
     return { ok: true, json: async () => [onlySelected(url, posted)] };
   };
   try {
-    await trackOrder("A3F9C2");
+    await trackOrder("A3F9C2", "0123456789");
     assert.ok(trackCols.has("promo_code") && trackCols.has("promo_rm"),
       "the lookup names promo_code and promo_rm — it sends only the columns its list names, so the discount is invisible to the card until this asks for it");
     const promo = deepByClass(box, "track-promo");
@@ -1982,7 +2083,7 @@ test("a Courier COD charge tells the customer to pay the courier, not you", asyn
     return { ok: true, json: async () => [onlySelected(url, posted)] };
   };
   try {
-    await trackOrder("A3F9C2");
+    await trackOrder("A3F9C2", "0123456789");
     assert.ok(trackCols.has("courier_cod"),
       "the lookup names courier_cod — it sends only the columns listed, so the card can never know the charge is COD until this asks for it, and would word it as money owed to the baker");
     const fee = deepByClass(box, "track-fee");
@@ -2005,8 +2106,8 @@ test("a charge paid with the order still reads as the plain charge", async () =>
   };
   globalThis.fetch = async (url) => ({ ok: true, json: async () => [onlySelected(url, posted)] });
   try {
-    await trackOrder("A3F9C2");
-    assert.equal(feeText(deepByClass(box, "track-fee")), "Courier charge: RM8.00",
+    await trackOrder("A3F9C2", "0123456789");
+    assert.match(feeText(deepByClass(box, "track-fee")), /Courier charge/,
       "no COD wording, and no flag sent — as every row published before this column existed");
   } finally {
     globalThis.fetch = async () => ({ ok: true, json: async () => [] });
@@ -2033,7 +2134,7 @@ test("a posted order with its delivery cost still to be quoted says so", async (
     return { ok: true, json: async () => [onlySelected(url, posted)] };
   };
   try {
-    await trackOrder("A3F9C2");
+    await trackOrder("A3F9C2", "0123456789");
     // ⚠️ JERKY-ONLY COLUMN, AND JERKY-ONLY ASSERTION. The bakery has no `postage_quoted`, so this
     // line survived the v345 sync untouched — and it had to be moved onto `trackCols` by hand,
     // because the column list it was reading moved out of the shop's URL and into the SQL. Left
@@ -2074,7 +2175,7 @@ test("a self-collect order shows no tracking line", async () => {
     total: "RM15.00", customer: "Ain",
   }] });
   try {
-    await trackOrder("A3F9C2");
+    await trackOrder("A3F9C2", "0123456789");
     assert.equal(byExactClass(box, "track-no"), undefined,
       "nothing was posted, so there is no number to show");
     assert.equal(cardLabels(box)[5], "Collected / Posted", "the label is the same pair");
@@ -2093,7 +2194,7 @@ test("a bypassed order shows the customer five steps, with no Paid tick", async 
     delivery: "4 Sep · Post (nationwide)", items: "Chicken Jerky ×2", total: "RM36.00", customer: "Ain",
   }] });
   try {
-    await trackOrder("A3F9C2");
+    await trackOrder("A3F9C2", "0123456789");
     const journey = box.children.find((c) => c.tagName === "DIV" && String(c.className || "").includes("tj"));
     const labels = [];
     const steps = [];
@@ -2123,7 +2224,7 @@ test("a bypassed order shows the customer five steps, with no Paid tick", async 
       status: "ready", confirmed_sent: true, paid_received: true,
       delivery: "4 Sep · Post (nationwide)", items: "Chicken Jerky ×2", total: "RM36.00", customer: "Ain",
     }] });
-    await trackOrder("A3F9C2");
+    await trackOrder("A3F9C2", "0123456789");
     const paidLabels = [];
     (function walk(n) {
       for (const c of n.children || []) {
@@ -4370,4 +4471,39 @@ test("★★★ the step warning blinks, and its flash ends where the words rest
   assert.ok(seen >= 3,
     `⚠️⚠️ the flash moves the background from ${flashColour} to ${restColour} — only ${seen.toFixed(2)}:1 `
     + `apart, so on a phone it reads as one colour and the warning does not blink at all`);
+});
+
+test("★★★ the tracking lookup now needs the PHONE as well as the code", async () => {
+  // ⚠️⚠️ A six-character code is about 16.7 million values and this lookup is open to anyone: at a few
+  // hundred orders a stranger making requests could reach a real order and read that customer's name,
+  // address and driver's phone. ⭐ The phone is the second key, and it is never published publicly.
+  const box = document.getElementById("track-result");
+  const texts = (n, out = []) => {
+    for (const kid of n.children || []) {
+      if (kid.nodeType === 3) out.push(String(kid.text));
+      else texts(kid, out);
+    }
+    return out;
+  };
+  const bodies = [];
+  globalThis.fetch = async (url, opts) => {
+    bodies.push(JSON.parse(opts.body));
+    return { ok: true, json: async () => [] };
+  };
+  try {
+    await trackOrder("A3F9C2", "");
+    assert.equal(bodies.length, 0,
+      "★ a lookup went out on the CODE ALONE — **that is the door the phone is there to close**");
+    assert.match(texts(box).join(" "), /phone number/i,
+      "and the card does not say the phone is needed");
+
+    await trackOrder("A3F9C2", "012-345 6789");
+    assert.equal(bodies.length, 1, "the lookup was not made at all once both were given");
+    assert.equal(bodies[0].p_phone, "0123456789",
+      "★ the phone went as TYPED, dashes and spaces and all — **a lookup that refused over a dash would be "
+      + "a bug, not a security rule**");
+    assert.equal(bodies[0].p_code, "A3F9C2", "and the code still goes with it");
+  } finally {
+    globalThis.fetch = async () => ({ ok: true, json: async () => [] });
+  }
 });

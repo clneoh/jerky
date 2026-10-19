@@ -49,8 +49,8 @@
   <header class="hero">
     <div class="hero-top">
       <p id="eyebrow" class="hero-eyebrow"></p>
-      <nav id="lang-switch" class="lang-switch" aria-label="Language">
-        <button type="button" class="lang-pill is-on" data-lang="en">EN</button>
+      <nav id="lang-switch" class="lang-switch" aria-label="Language" data-i18n-aria="langAria">
+        <button type="button" class="lang-pill" data-lang="en">EN</button>
         <button type="button" class="lang-pill" data-lang="zh">中文</button>
         <button type="button" class="lang-pill" data-lang="ms">BM</button>
       </nav>
@@ -101,7 +101,7 @@
                  data-i18n-ph="promoPh" placeholder="e.g. FRESH10">
           <button id="promo-apply" class="promo-apply" type="button" data-i18n="promoApply">Use it</button>
         </div>
-        <p id="promo-say" class="card-sub promo-say" hidden></p>
+        <p id="promo-say" class="card-sub promo-say" role="status" hidden></p>
         <button id="promo-clear" class="promo-clear" type="button" hidden data-i18n="promoRemove">Remove the code</button>
       </div>
     </div>
@@ -145,7 +145,7 @@
     <p class="step-note" id="step-note" role="status" hidden></p>
     <div class="step-head" id="step2"><span class="step-num">2</span>
       <h2 class="section" data-i18n="sWhat">What would you like?</h2></div>
-    <div id="menu-note" class="menu-note" hidden></div>
+    <div id="menu-note" class="menu-note" role="status" hidden></div>
     <div id="menu" class="menu"></div>
 
     <div class="step-head" id="step3"><span class="step-num">3</span>
@@ -176,13 +176,14 @@
            it can say honestly is that the total under this page is the bread's.
            ⚠️ NEITHER ROW IS EVER DISABLED. This is a description, never a gate. -->
       <div class="field">
-        <label data-i18n="howGet">How will you get your order?</label>
+        <!-- ⚠️ A <label> WITH NO FOR= NAMES NOTHING (v588) — the same fault v583 fixed on the homepage. -->
+        <span class="field-label" id="fulfil-label" data-i18n="howGet">How will you get your order?</span>
         <!-- ★★ AND THE LINE THAT SAYS IT IS A QUESTION TO ANSWER (v416). Her words: __"you need a
              'click to choose' after the title, and self collect should not be default"__. ⚠️ With
              NEITHER card wearing the edge, the two of them read as two descriptions rather than as
              two things to pick — **so this stands under the question until he picks one.** -->
         <p class="seg-prompt" id="fulfil-pick" data-i18n="fulfilPick">Tap to choose one.</p>
-        <div class="seg" id="fulfillment">
+        <div class="seg" id="fulfillment" role="group" aria-labelledby="fulfil-label">
           <div class="seg-opt" data-opt="collect">
             <button type="button" class="seg-btn" data-fulfillment="collect">
               <span class="seg-head-row">
@@ -289,10 +290,18 @@
           Placed an order? Enter the order number from your confirmation (it starts with <strong>#</strong>, e.g. #A3F9C2).
         </p>
         <div class="track-row">
-          <input id="track-input" class="input" type="text" data-i18n-ph="trackPh" placeholder="e.g. A3F9C2" autocomplete="off">
+          <!-- ⚠️⚠️ A PLACEHOLDER IS NOT A NAME (v583): with no label, a screen reader announced these two
+               boxes as "edit text" and nothing said which was which. ⭐ Each carries its own name. -->
+          <input id="track-input" class="input" type="text" data-i18n-ph="trackPh" placeholder="e.g. A3F9C2" autocomplete="off" autocapitalize="characters" data-i18n-aria="trackNoLabel" aria-label="Order number">
+        </div>
+        <!-- ★★★ AND THE PHONE THE ORDER WAS PLACED WITH (v558). ⚠️ A six-character code is about 16.7
+             million values and this lookup is open to anyone, so a stranger making requests could reach a
+             real order. ⭐ The phone is the second key, and it is not published anywhere public. -->
+        <div class="track-row track-row-phone">
+          <input id="track-phone" class="input" type="tel" inputmode="tel" data-i18n-ph="trackPhonePh" placeholder="phone you ordered with" autocomplete="tel" data-i18n-aria="trackPhoneLabel" aria-label="Phone you ordered with">
           <button id="track-btn" class="track-btn" data-i18n="trackBtn">Track</button>
         </div>
-        <div id="track-result" class="track-result" hidden></div>
+        <div id="track-result" class="track-result" role="status" hidden></div>
       </div>
     </section>
 
@@ -303,7 +312,7 @@
       </div>
     </section>
 
-    <div id="confirm-msg" class="confirm-msg" hidden></div>
+    <div id="confirm-msg" class="confirm-msg" role="status" hidden></div>
     <div id="social" class="social"></div>
     <div id="dev-foot" class="dev-foot" hidden></div>
     <div id="fb-foot" class="fb-foot" hidden></div>

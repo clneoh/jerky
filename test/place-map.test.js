@@ -47,11 +47,11 @@ function makeEl(tag) {
   return {
     tagName: String(tag || "").toUpperCase(), nodeType: 1, children: [], attrs: {}, dataset: {},
     className: "", style: {}, _listeners: {}, parentNode: null, isConnected: true,
-    append(...cs) { for (const c of cs) if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parentNode = this; } },
+    append(...cs) { for (const c of cs) { const n = c == null ? { nodeType: 3, text: "null" } : c; this.children.push(n); if (n.nodeType === 1) n.parentNode = this; } },
     appendChild(c) { if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parentNode = this; } return c; },
     replaceChildren(...cs) {
       this.children = [];
-      for (const c of cs) if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parentNode = this; }
+      for (const c of cs) { const n = c == null ? { nodeType: 3, text: "null" } : c; this.children.push(n); if (n.nodeType === 1) n.parentNode = this; }
     },
     setAttribute(k, v) { this.attrs[k] = String(v); },
     getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null; },

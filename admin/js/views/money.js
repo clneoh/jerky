@@ -4,9 +4,9 @@
 // maths lives in js/money.js — the same module the Orders day header reads, so the
 // two can never disagree; this screen only draws it.
 
-import { el, button, select, showPopup, toast, confirmDialog, wireRowReorder } from "../ui.js";
+import { el, button, select, showPopup, toast, confirmDialog, wireRowReorder, modeButton } from "../ui.js";
 import { byId, fmtRM, newId, round2, save } from "../state.js";
-import { accountBalance, accountsBetween, depositsBetween, expensesBetween, investmentOf, journalFor, moneyBetween } from "../money.js";
+import { accountBalance, accountsBetween, depositsBetween, expensesBetween, investmentOf, journalFor, moneyBetween, refundsBetween } from "../money.js";
 import { clearCourierCharge } from "../courier.js";
 import { categoriesOf, categoryLabels, classOfCategory, drawingLabel, isCash, isLockedAccount, isOther, isTng, methodLabel, methodRank, methodsOf, moveListEntry, sourcesOf } from "../accounts.js";
 import { entryForm, moveAccountRecords, newEntryChip, openMoveAccount, removeEntry } from "./accountsEditor.js";
@@ -307,7 +307,7 @@ function openBooks(state, from, to, stretchLabel) {
   // Every way she has on her list, plus any way that moved here but is no longer on it —
   // a method she renamed still has money in the books, so it still gets a door.
   const moved = new Set();
-  for (const t of [moneyBetween(state, from, to), depositsBetween(state, from, to), expensesBetween(state, from, to)]) {
+  for (const t of [moneyBetween(state, from, to), depositsBetween(state, from, to), expensesBetween(state, from, to), refundsBetween(state, from, to)]) {
     for (const label of (t.byMethod ? t.byMethod.keys() : [])) moved.add(label);
   }
   const labels = [...new Set([...methodsOf(state), ...moved])]
@@ -502,15 +502,35 @@ function openListsManager(state, redraw) {
 function pocketRow(state, e, what, listKey, redraw, cur) {
   const how = methodLabel(e.method) || "no method";
   const courier = listKey === "expenses" && e.courierFor ? e.courierFor : "";
+  // ⚠️⚠️ A TRANSFER OR A PAYBACK IS TWO ROWS, AND ONE PRESS MUST TAKE BOTH (v587). ⚠️ Deleting the "TNG out"
+  // half of a RM200 transfer left the "Cash in" half standing — ⚠️ **Cash and Net overstated by RM200, with
+  // nothing said.** ⭐ A courier charge already clears both its halves; these two never did. ⭐ The pair is the
+  // row in the OTHER list with the same day, the same amount, and the same kind of move.
+  // ⚠️ AND THESE LIVE ABOVE THE ELEMENT TREE, NOT INSIDE ITS ARGUMENTS — a `const` among `el()`'s arguments is
+  // a SYNTAX ERROR, the fault this project has recorded once already.
+  const moveKind = e.transfer ? "transfer" : e.repay ? "repay" : "";
+  const partnerRow = () => {
+    if (!moveKind) return null;
+    const other = listKey === "expenses" ? "deposits" : "expenses";
+    const day = String(e.date || "").slice(0, 10);
+    return (state[other] || []).find((x) => x && String(x.date || "").slice(0, 10) === day
+      && Number(x.amount) === Number(e.amount) && x[moveKind] === true) || null;
+  };
   return el("div", { class: "info-row" },
     el("span", {}, `${dayMonth(String(e.date))} · ${what}${e.note ? ` · ${e.note}` : ""}`),
     el("span", { class: "info-val" }, fmtRM(Number(e.amount) || 0, cur),
       el("span", { class: "muted" }, `  ${how}`),
       button("✕", () => confirmDialog(
         `Delete this ${listKey === "deposits" ? "money-in record" : "expense"}? ${fmtRM(Number(e.amount) || 0, cur)} — ${what}, ${how}.`
-          + (courier ? ` The courier charge comes off order #${courier} with it.` : ""),
+          + (courier ? ` The courier charge comes off order #${courier} with it.` : "")
+          + (partnerRow() ? ` Its other half (the ${listKey === "expenses" ? "money-in" : "expense"} row of the same ${moveKind === "transfer" ? "transfer" : "payback"}) goes with it — one move, both rows.` : ""),
         () => {
           state[listKey] = (state[listKey] || []).filter((x) => x.id !== e.id);
+          const partner = partnerRow();
+          if (partner) {
+            const other = listKey === "expenses" ? "deposits" : "expenses";
+            state[other] = (state[other] || []).filter((x) => x.id !== partner.id);
+          }
           // A charge you paid lives in two places at once, so it has to leave both at
           // once. The customer's total moves with it, which is why the card is offered
           // the new version here exactly as the order's own box does.
@@ -525,7 +545,8 @@ function pocketRow(state, e, what, listKey, redraw, cur) {
         }, { danger: true, yesLabel: "Delete" }), "ghost small")));
 }
 const expenseRow = (state, e, redraw, cur) =>
-  pocketRow(state, e, e.poId ? "Shopping run (PO)"
+  pocketRow(state, e, e.repay ? "Paid back"   // ⭐ not "My own withdrawal" (v579)
+    : e.poId ? "Shopping run (PO)"
     : e.courierFor ? `Courier (order #${e.courierFor})`   // the same words the journal uses
     : (e.category || "Expense"), "expenses", redraw, cur);
 // ★ A money-in row names the pot it came from (v394). ⚠️ It used to read a FIXED __From my pocket__
@@ -551,12 +572,16 @@ function pillRow(names, current, onPick, { addKind, state, onAdded } = {}) {
   const wrap = el("div", { class: "pill-row" });
   const mark = (label) => {
     for (const b of wrap.children) {
-      if (b.tagName === "BUTTON") b.classList.toggle("cal-mode-on", b.textContent === label);
+      if (b.tagName === "BUTTON") {
+        const on = b.textContent === label;
+        b.classList.toggle("cal-mode-on", on);
+        // ⚠️ AND THE STATE IS SAID (v594) — the colour is not a name.
+        if (typeof b.setAttribute === "function") b.setAttribute("aria-pressed", on ? "true" : "false");
+      }
     }
   };
   for (const name of names) {
-    wrap.append(button(name, () => { onPick(name); mark(name); },
-      `ghost small${name === current ? " cal-mode-on" : ""}`));
+    wrap.append(modeButton(name, name === current, () => { onPick(name); mark(name); }));
   }
   if (addKind) wrap.append(newEntryChip(addKind, () => { if (onAdded) onAdded(null); }));
   return wrap;
@@ -637,10 +662,8 @@ function openExpenseForm(state, redraw) {
     isOther(method)
       ? el("div", { class: "field" }, el("label", {}, "Whose money paid for it?"),
           el("div", { class: "pill-row" },
-            button("The business owes me", () => { mine = "owed"; refresh(); },
-              `ghost small${mine === "owed" ? " cal-mode-on" : ""}`),
-            button("It is my investment", () => { mine = "invested"; refresh(); },
-              `ghost small${mine === "invested" ? " cal-mode-on" : ""}`)),
+            modeButton("The business owes me", mine === "owed", () => { mine = "owed"; refresh(); }),
+            modeButton("It is my investment", mine === "invested", () => { mine = "invested"; refresh(); })),
           el("p", { class: "card-sub", style: "margin:6px 0 0" },
             mine === "invested"
               ? `${method} paid for this out of your own money, and it stays in the business — it counts as money you have PUT IN, and nothing is owed back to you for it.`
@@ -807,8 +830,7 @@ function openPayBackForm(state, from, to, redraw, label) {
         "An account that paid out more than it took in is down by the difference. This moves money into it from another account, so it sits at zero again — its block on the Money screen says what it holds. It is your own money moving between your accounts: never a cost, so your profit does not move."),
       el("div", { class: "field" }, el("label", {}, "Which account is down?"),
         el("div", { class: "pill-row" },
-          ...all.map((m) => button(m, () => pick(m),
-            `ghost small${m === account ? " cal-mode-on" : ""}`)),
+          ...all.map((m) => modeButton(m, m === account, () => pick(m))),
           newEntryChip("method", () => { adding = true; paint(); })),
         adding
           ? entryForm(state, { kind: "method", onDone: (newLabel) => {
@@ -824,8 +846,7 @@ function openPayBackForm(state, from, to, redraw, label) {
       el("div", { class: "field" }, el("label", {}, "How much are you paying back?"), amount),
       el("div", { class: "field" }, el("label", {}, "Paid out of"),
         el("div", { class: "pill-row" },
-          ...all.filter((m) => m !== account).map((m) => button(m, () => { outOf = m; paint(); },
-            `ghost small${m === outOf ? " cal-mode-on" : ""}`)))),
+          ...all.filter((m) => m !== account).map((m) => modeButton(m, m === outOf, () => { outOf = m; paint(); })))),
       el("div", { class: "field" }, el("label", {}, "The day you paid it back"), datePick),
       el("div", { class: "field" }, el("label", {}, "What it was for (optional)"), note),
       el("div", { class: "popup-actions" },
@@ -838,9 +859,15 @@ function openPayBackForm(state, from, to, redraw, label) {
           const typed = note.value.trim();
           state.expenses = Array.isArray(state.expenses) ? state.expenses : [];
           state.deposits = Array.isArray(state.deposits) ? state.deposits : [];
+          // ⚠️⚠️ THE EXPENSE CARRIES `repay` TOO (v579). ⭐ The deposit has always said "this is a payback",
+          // but its OTHER half — the money leaving the till — was an ordinary drawing-category expense, so
+          // ⚠️ **Profit read "Drawings RM100" and Your investment read "Taken back RM100, still in −RM100"
+          // for money that settled a debt and never left the business.** ⭐ Both halves now say what they are.
           state.expenses.push({ id: newId("exp"), date, amount: value,
-            category: drawingLabel(state), method: outOf,
-            note: typed || `Paid back to ${account}` });
+            category: drawingLabel(state), method: outOf, repay: true,
+            // ⭐ The note is the ACCOUNT's name and nothing more: the row is already labelled "Paid back",
+            // so "Paid back · Paid back to Kean" said it twice (seen live, v579).
+            note: typed || account });
           state.deposits.push({ id: newId("dep"), date, amount: value, method: account,
             note: typed, repay: true });
           save(state);
@@ -906,12 +933,10 @@ function openTransferForm(state, redraw) {
         + `should be with you does not move. The day you moved it is the day it shows in both books.`),
       el("div", { class: "field" }, el("label", {}, "From"),
         el("div", { class: "pill-row" },
-          ...pots.map((m) => button(m, () => pickFrom(m),
-            `ghost small${m === fromPot ? " cal-mode-on" : ""}`)))),
+          ...pots.map((m) => modeButton(m, m === fromPot, () => pickFrom(m))))),
       el("div", { class: "field" }, el("label", {}, "To"),
         el("div", { class: "pill-row" },
-          ...pots.map((m) => button(m, () => pickTo(m),
-            `ghost small${m === toPot ? " cal-mode-on" : ""}`)))),
+          ...pots.map((m) => modeButton(m, m === toPot, () => pickTo(m))))),
       el("div", { class: "field" }, el("label", {}, "How much?"), amount),
       el("div", { class: "field" }, el("label", {}, "The day you moved it"), datePick),
       el("div", { class: "field" }, el("label", {}, "A note (optional)"), note),
@@ -1021,6 +1046,9 @@ export function renderMoney(root, state) {
     const m = moneyBetween(state, from, to);
     const out = expensesBetween(state, from, to);
     const mine = depositsBetween(state, from, to);
+    // ⭐ AND THE MONEY THAT WENT BACK, IN THIS STRETCH (v578) — her answer: money out in the month it
+    // went back. ⚠️ It is a movement of its own, so it leaves the account it was paid into, on its own day.
+    const refunds = refundsBetween(state, from, to);
     // ★★ NET IS THE WHOLE BUSINESS NOW (v480), NOT THE TIN.
     //
     // Her words: __"can it be treated like cash and TNG? any problem or impact?"__ — and, shown the
@@ -1041,16 +1069,24 @@ export function renderMoney(root, state) {
     // holds.** ⚠️ **This is what replaced the four special Cash/TNG rows and the `Paid by X` lines
     // under them** — two different shapes for one idea, which is what made her ask twice what the
     // difference was.
-    const accounts = accountsBetween(state, [m, mine], [out]);
+    const accounts = accountsBetween(state, [m, mine], [out, refunds]);
     // ⚠️ ALL of her own money that came in this stretch, through ANY account — the sub-line under
     // the blocks. It read `mine.cash + mine.tng`, which was the same two-accounts-only mistake.
-    const mineTotal = [...(mine.byMethod || new Map()).values()].reduce((s, v) => s + v, 0);
+    // ⚠️ A TRANSFER OR A PAYBACK IS NOT MONEY SHE PUT IN (v590). ⚠️ Summing every deposit counted a RM200
+    // TNG-to-Cash move as RM200 of her own money arriving — ⚠️ **the card said "of the money in, RM200 was
+    // your own" on a day nothing entered the business.** ⭐ The same two flags the expense half already uses.
+    const mineOwn = (mine.rows || []).filter((d) => d && !d.transfer && !d.repay);
+    const mineTotal = mineOwn.reduce((s, d) => s + (Number(d.amount) || 0), 0);
     // ⚠️⚠️ AND NET IS THE SUM OF WHAT THEY HOLD, taken from the very same rows the blocks are drawn
     // from. ⭐ It is the v480 figure by construction rather than by a second formula that could drift
     // away from the lines above it — "the total must agree with the rows it totals" is the whole
     // reason this screen has one builder.
     // Money still to collect stays out, for the reason it always did: it is owed, not held.
     const net = accounts.reduce((s, a) => s + a.holds, 0);
+    // ⚠️⚠️ A REFUND WITH NO WAY OF PAYING RECORDED BELONGS TO NO ACCOUNT (v587). ⚠️ It fell into an "unmarked"
+    // bucket that no block, journal or Net reads — ⚠️ **so Money was silent about a refund Profit reported.**
+    // ⭐ It cannot go into an account it was never paid from; it can be SAID.
+    const looseRefunds = Number(refunds.unmarked) || 0;
 
     root.replaceChildren(
       el("h2", { class: "section" }, "Money"),
@@ -1058,8 +1094,7 @@ export function renderMoney(root, state) {
       // ⚠️ The old row of three picked the kind and stopped there, so "This week" could only ever be
       // the current week. The arrows are what let her look at LAST week, which she had no way to do.
       el("div", { class: "cal-modes" },
-        ...MODES.map(([id, text]) => button(text, () => draw(id),
-          `ghost small${range === id ? " cal-mode-on" : ""}`))),
+        ...MODES.map(([id, text]) => modeButton(text, range === id, () => draw(id)))),
       // ⚠️ NO ARROWS ON "All" — there is nothing to step to, and a pair of dead arrows on a screen
       // reads as a fault (the v290 rule about controls that do not do what they look like they do).
       el("div", { class: "range-stepper" },
@@ -1132,6 +1167,10 @@ export function renderMoney(root, state) {
             ? row("Paid, no method", m.unmarked + mine.unmarked)
             : null,
           out.unmarked ? row("Spent, no method recorded", -out.unmarked) : null,
+          // ⚠️⚠️ AND A REFUND GIVEN ON AN ORDER WITH NO WAY OF PAYING RECORDED (v587) — ⚠️ it belongs to no
+          // account, so without this line Money is silent about a refund Profit reports. ⭐ Shown as money OUT,
+          // which is what it is; it is not in the Net, because no account can honestly hold it.
+          looseRefunds ? row("Refunded, no account recorded", -looseRefunds) : null,
           mineTotal
             ? el("p", { class: "card-sub", style: "margin:8px 0 0" },
                 `· of the money in, ${fmtRM(mineTotal, cur)} was your own`)

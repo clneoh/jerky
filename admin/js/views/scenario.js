@@ -22,18 +22,18 @@
 // It is a planner she types into: nothing here reads an order, and nothing here
 // blocks a sale.
 
-import { el, button, select, showPopup, toast, confirmDialog } from "../ui.js";
+import { el, button, select, showPopup, toast, confirmDialog, modeButton } from "../ui.js";
 import { save } from "../state.js";
 import { trim } from "../production.js";
 import {
-  computeScenario, climbSteps, descentSteps, DEFAULT_SCENARIO, SISTER_SCENARIO, ONE_BAKER_SCENARIO,
+  computeScenario, climbSteps, descentSteps, descentToastWords, DEFAULT_SCENARIO, SISTER_SCENARIO, ONE_BAKER_SCENARIO,
   hoursAndMinutes,
   clockOf, moveModule, removeModule, newModuleId, blankModule, copyScenario,
   PX_PER_MIN_CHOICES, scenarioFacts, moduleFacts, chainLine, latestStarts,
   combinedScenario, reassignSlot, pinArrangement, linesInForce, moduleOf, minuteAtPx, placesOn, clampBatchStart,
   alignBatches, batchMismatches, personName, callWindows, jobKey,
   START_MODES, START_MODE_LABELS, START_MODE_HINTS, START_MODE_READINGS,
-  startModeOf, setStartMode, skillsOf,
+  startModeOf, setStartMode, skillsOf, forgetModuleSkills,
 } from "../scenario.js";
 
 // A colour per PERSON, so a row reads as one worker's day rather than as a
@@ -852,7 +852,7 @@ function applyDescent(sc, down, on) {
   const to = new Map(down.steps[0].items.map((it) => [it.id, it.to]));
   sc.modules = sc.modules.map((m) => (to.has(m.id) ? { ...m, repeats: to.get(m.id) } : m));
   on.persist();
-  toast("The day is down to the number you asked for");
+  toast(descentToastWords(down));
   on.refresh();
 }
 
@@ -996,6 +996,8 @@ function controlsRow(r, sc, on, state, run) {
       el("span", { class: "tl-ctl-lab" }, "Walk the day"),
       el("button", {
         type: "button", class: `tl-chip${run.on ? " on" : ""}`,
+        // ⚠️ The chip's "on" state was colour alone (v566).
+        "aria-pressed": String(!!run.on),
         onclick: () => (run.on ? stopDay(run, on) : startDay(run, sc, state, on)),
       }, run.on ? "Stop" : "Start the day now"),
       el("button", {
@@ -2944,13 +2946,13 @@ function boardControls(r, sc, state, on, run) {
       el("div", { class: "tl-ctl-group" },
         el("span", { class: "tl-ctl-lab" }, "Scale"),
         el("button", {
-          type: "button", class: "tl-step",
+          type: "button", class: "tl-step", "aria-label": "A wider view — more of the day on the screen",
           disabled: at <= 0,
           onclick: () => step(-1),
         }, "−"),
         el("span", { class: "tl-step-name" }, scaleName),
         el("button", {
-          type: "button", class: "tl-step",
+          type: "button", class: "tl-step", "aria-label": "A closer view — the minutes, larger",
           disabled: at >= PX_PER_MIN_CHOICES.length - 1,
           onclick: () => step(1),
         }, "+"))));
@@ -3004,20 +3006,25 @@ function boardCallsOff(run, on) {
 // and they are renamed whenever anything moves, so the board names the JOBS instead.
 // That is not a lesser answer — the job and the time are what somebody standing at
 // the bench acts on.
-function boardAhead(sc, state, run) {
-  const calls = state.settings.personCalls || {};
-  const mine = callWindows(sc).filter((w) => calls[w.who] !== false && w.to > run.nowMin);
+export function boardAhead(sc, state, run) {
+  // ⚠️⚠️ CALLS OFF IS NOT "NOT WORKING" (v583). ⚠️ The board filtered people out when their CALLS were
+  // switched off — ⚠️ **so a worker standing at the bench, with alerts turned off, was told by the board
+  // "there is nobody to be anywhere next".** ⭐ Calls govern the phone's alerts and nothing else; the board
+  // names everybody on the day.
+  const mine = callWindows(sc).filter((w) => w.to > run.nowMin);
   const shared = (sc.modules || []).some((m) => Number(m.person) > 0
     || (m.crew || []).some((p) => Number(p) > 0)
     || Object.values(m.slotPerson || {}).some((v) => Number(v) > 0));
-  if (!shared) return { people: [], jobs: mine.slice(0, 3) };
+  if (!shared) return { people: [], jobs: mine.slice(0, 3), moreJobs: Math.max(0, mine.length - 3) };
   const byWho = new Map();
   for (const w of mine) {
     if (!byWho.has(w.who)) byWho.set(w.who, []);
     byWho.get(w.who).push(w);
   }
   return {
-    people: [...byWho].slice(0, 6).map(([who, list]) => ({
+    // ⚠️ EVERY PERSON, NOT THE FIRST SIX (v583): with seven or eight hands the last two never appeared,
+    // and a board that leaves people out is a board they stop reading.
+    people: [...byWho].map(([who, list]) => ({
       who, doing: list[0], then: list[1] || null,
     })),
     jobs: [],
@@ -3055,6 +3062,12 @@ function boardTopBody(r, sc, state, run, on) {
     for (const w of ahead.jobs) {
       lines.push(el("div", { class: "bd-next" }, el("div", { class: "bd-job" },
         el("span", { class: "bd-what" }, what(w)))));
+    }
+    // ⚠️ AND THE THREE ARE NAMED AS THREE OF HOWEVER MANY (v583) — a list that quietly stops reads as the
+    // whole day.
+    if (ahead.moreJobs) {
+      lines.push(el("div", { class: "bd-note" },
+        `and ${ahead.moreJobs} more job${ahead.moreJobs === 1 ? "" : "s"} after ${ahead.jobs.length === 1 ? "it" : "these"}`));
     }
   }
 
@@ -3213,7 +3226,11 @@ function boardJobCard(r, m, live, sc, state, k) {
   const cyc = win && win.cycle >= 0 ? (here.cycles || [])[win.cycle] : null;
   const name = cyc ? String(cyc.name || "").trim() : "";
   boardReadout(`${live.icon || m.icon} ${live.name} · batch ${k + 1} of ${n}`, [
-    ["When", `${clockAt(sc.dayStartMin, at)} → ${clockAt(sc.dayStartMin, end)}`],
+    // ⚠️⚠️ THE BOARD'S OWN CLOCK (v550). ⭐ While the day is being walked, `r.dayStartMin` is the hour the
+    // run is actually at — the ruler, the strip and the person card all read it (see the note at 3038).
+    // ⚠️ This card read the PLAN's start, so after pressing **Start the day now** it said "When 3:00 pm →
+    // 3:20 pm" beside a ruler at 9:00 am: **two clocks in one popup.**
+    ["When", `${clockAt(r.dayStartMin, at)} → ${clockAt(r.dayStartMin, end)}`],
     ["How long", `${trim(here.cycleMin)} min a batch` + (here.touchMin ? `, ${trim(here.touchMin)} min of hands` : ", no hands")],
     ["Where", here.lines > 1 ? `line ${(p && p.line != null ? p.line : 0) + 1} of ${here.lines}` : null],
     ["What for", name || null],
@@ -3231,7 +3248,8 @@ function boardJobCard(r, m, live, sc, state, k) {
 // from `m` because only it has been through the chain.
 function boardModuleCard(r, m, live, sc, state) {
   const notes = moduleNotes(r, m, live);
-  const batches = (m.passes || []).map((p, k) => ["", `Batch ${k + 1}: ${clockAt(sc.dayStartMin, p.at)} → ${clockAt(sc.dayStartMin, p.end)}`]);
+  // ⚠️ `r`, not `sc`: the module's card must read the same clock as its own batch cards (v550).
+  const batches = (m.passes || []).map((p, k) => ["", `Batch ${k + 1}: ${clockAt(r.dayStartMin, p.at)} → ${clockAt(r.dayStartMin, p.end)}`]);
   boardReadout(`${(live.icon || m.icon)} ${live.name || m.name}`, [
     ["", notes.tags.length ? notes.tags.map((t) => t.text).join(" · ") : null],
     ["When", notes.when],
@@ -5560,12 +5578,12 @@ function editModule(saved, sc, on, isNew = false, r = null, state = null) {
       (() => {
         const row = el("div", { class: "pill-row" });
         for (const mode of START_MODES) {
-          row.append(button(START_MODE_LABELS[mode], () => {
+          row.append(modeButton(START_MODE_LABELS[mode], startModeOf(live) === mode, () => {
             setStartMode(live, mode);
             on.persist();
             on.refresh();
             refresh();
-          }, `ghost small${startModeOf(live) === mode ? " cal-mode-on" : ""}`));
+          }));
         }
         return row;
       })(),
@@ -5851,6 +5869,9 @@ function editModule(saved, sc, on, isNew = false, r = null, state = null) {
           `Delete the module "${live.name}"? The day will answer without it.`,
           () => {
             sc.modules = removeModule(sc.modules, live.id);
+            // ⚠️ AND ITS TRAINING WITH IT (v583) — a new module can reuse the id, and nobody should read as
+            // trained for a thing that no longer exists.
+            sc.skills = forgetModuleSkills(sc.skills, live.id);
             on.persist();
             on.refresh();
             toast("Module deleted");

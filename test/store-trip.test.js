@@ -43,8 +43,8 @@ function createEl(tag) {
       },
     },
     appendChild(c) { if (c != null) this.children.push(c); return c; },
-    append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
-    replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) this.children.push(c); },
+    append(...cs) { for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
+    replaceChildren(...cs) { this.children = []; for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener(t, f) { this._listeners[t] = (this._listeners[t] || []).filter((x) => x !== f); },
     scrollIntoView() {},
@@ -136,7 +136,7 @@ function paras(node = box(), out = []) {
 
 async function card(row) {
   TRACK_ROW = row;
-  await trackOrder("A3F9C2");
+  await trackOrder("A3F9C2", "0123456789");
   return paras();
 }
 
@@ -301,16 +301,48 @@ test("the public cannot read the tracking table, only ask for one order", () => 
     "no read policy hands the table to the public");
   assert.ok(/security\s+definer/i.test(sql),
     "the lookup is SECURITY DEFINER, which is what lets it match a code before RLS applies");
-  assert.ok(/grant\s+execute\s+on\s+function\s+public\.track_order\(text\)\s+to\s+anon/i.test(sql),
-    "anon may call the lookup");
+  assert.ok(/grant\s+execute\s+on\s+function\s+public\.track_order\(text,\s*text\)\s+to\s+anon/i.test(sql),
+    "anon may call the lookup — with the TWO arguments the phone check needs (v558)");
+  // ★★★ AND THE PHONE IS A SECOND KEY (v558). ⭐ A six-character code is about 16.7 million values and
+  // this lookup is open to anyone; the phone is what a stranger does not have. ⚠️ The guard reads the
+  // body, so a function that took the phone and then ignored it would be caught here.
+  assert.ok(/and\s*\([\s\S]*?t\.whatsapp[\s\S]*?p_phone/i.test(sql),
+    "★ the lookup does not match the PHONE — **the code alone still opens any order it happens to name**");
+  // ⭐ AND A NUMBER SHORTER THAN THE COUNTRY CODE STILL MATCHES (v561): a foreign number typed without
+  // its code shares fewer than nine digits, so the suffix branch is what keeps it findable.
+  assert.ok(/right\(regexp_replace\(t\.whatsapp[\s\S]*?length\(regexp_replace\(coalesce\(p_phone/i.test(sql),
+    "★ a foreign number typed without its country code would find nothing — **the customer's own fingers "
+    + "may write only the local part**");
   assert.ok(/drop\s+policy\s+if\s+exists\s+"public read"\s+on\s+order_tracking/i.test(sql),
     "the old permissive read is dropped, so a database that already has it is repaired");
+});
+
+test("★★★ the lookup has NO code-only door, and this file creates every column it reads (v585)", () => {
+  const raw = readFileSync(new URL("../supabase/tracking.sql", import.meta.url), "utf8");
+  // ⚠️ CODE, not comments — this file explains the closed door in its own paragraphs.
+  const sql = raw.split("\n").filter((l) => !/^\s*(--|\*)/.test(l)).join("\n");
+  // ⚠️⚠️ MEASURED FAULT: a row whose `whatsapp` was '' stayed findable by its code alone — ⚠️ **name, address
+  // and the driver's phone, to anyone who knew six characters.**
+  assert.ok(!/coalesce\(t\.whatsapp,\s*''\)\s*=\s*''/.test(sql),
+    "★ the code-only door is back — a phone-less order is readable by its code alone");
+
+  // ⚠️ AND ON A FRESH PROJECT THIS FILE USED TO FAIL AS A WHOLE: its lookup reads courier_* and promo_*
+  // columns that four other files add. ⭐ It creates them itself now, `if not exists`.
+  const body = sql.slice(sql.indexOf("as $$"), sql.indexOf("$$;"));
+  const reads = [...new Set([...body.matchAll(/\bt\.([a-z_]+)/g)].map((m) => m[1]))];
+  const added = new Set([...sql.matchAll(/add column if not exists ([a-z_]+)/g)].map((m) => m[1]));
+  const tableAt = sql.indexOf("create table if not exists order_tracking");
+  const tableBlock = sql.slice(tableAt, sql.indexOf(");", tableAt));
+  const declared = new Set([...tableBlock.matchAll(/^\s{2}([a-z_]+)\s+[a-z]/gm)].map((m) => m[1]));
+  const missing = reads.filter((c) => !added.has(c) && !declared.has(c));
+  assert.deepEqual(missing, [],
+    `★ the lookup reads ${missing.join(", ")}, which this file never creates — **on a fresh project it fails whole**`);
 });
 
 // ── the silent failure, measured off the lookup's own column list ────────────
 test("every trip column the card reads is named in the lookup's own column list", async () => {
   TRACK_ROW = null;
-  await trackOrder("A3F9C2");
+  await trackOrder("A3F9C2", "0123456789");
   const asked = TRACK_URL[TRACK_URL.length - 1] || "";
   assert.ok(asked, "the page asked for the order");
   assert.ok(asked.includes("/rest/v1/rpc/track_order"),
@@ -323,13 +355,26 @@ test("every trip column the card reads is named in the lookup's own column list"
   const declared = sql.slice(sql.indexOf("returns table"), sql.indexOf("language sql"));
   const body = sql.slice(sql.indexOf("as $$"), sql.indexOf("$$;"));
   const wanted = ["courier_name", "courier_phase", "courier_driver", "courier_plate",
-    "courier_phone", "tracking_no"];
+    "courier_phone", "tracking_no", "promo_role"];
   for (const col of wanted) {
     assert.ok(declared.includes(col), `${col} is declared in the function's returns table`);
     // A column declared but not selected raises at call time, and the customer's card
     // is simply empty with nothing anywhere saying why — so both halves are checked.
     assert.ok(body.includes(col), `${col} is selected in the function's body`);
   }
+});
+
+test("★★★ the lookup is DROPPED before it is recreated, or the file cannot run (v571)", () => {
+  // ⚠️⚠️ HER OWN ERROR, WORD FOR WORD: `ERROR: 42P13: cannot change return type of existing function ...
+  // HINT: Use DROP FUNCTION track_order(text,text) first.` ⭐ The hint was right and the FIRST version of this
+  // file still failed, because the drop sat UNDER the create — so the create failed before the line that would
+  // have fixed it was ever reached. ⭐ This pins the ORDER, which is the part a reader cannot see at a glance.
+  const sql = readFileSync(new URL("../supabase/tracking.sql", import.meta.url), "utf8");
+  const create = sql.indexOf("create or replace function public.track_order");
+  const drop2 = sql.indexOf("drop function if exists public.track_order(text, text)");
+  assert.ok(create > 0 && drop2 > 0, "the create and the two-argument drop are both in the file");
+  assert.ok(drop2 < create,
+    "★ the drop comes AFTER the create — **the file fails with 42P13 before it reaches the drop**");
 });
 
 // ── the words themselves ────────────────────────────────────────────────────

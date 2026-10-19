@@ -691,6 +691,37 @@ test("★★ forgetting an ordering customer keeps their history as ONE row, not
   assert.equal(theirs.whatsapp, "", "their number is still on the row");
 });
 
+test("★★★ forgetting clears the person from the REMOVED shelf too (v595)", () => {
+  // ⚠️⚠️ MEASURED: the shelf kept their name, number and address, and "Put it back" restored the whole order.
+  const person = { id: "o_live", customerName: "Aunty Bee", whatsapp: "60123456789", address: "12 Jalan Bunga",
+    deliveryDateId: "d1", productId: "p1", qty: 1 };
+  const cancelled = { ...person, id: "o_gone", removedAt: "2026-10-01T00:00:00.000Z", deliveryDateId: "d2" };
+  const st = { orders: [person], removedOrders: [cancelled], customers: [], credits: [], rewards: [],
+    promoCodes: [], points: [] };
+  forgetCustomer(st, keyOf(person));
+  assert.equal(cancelled.customerName, undefined, "★ the cancelled order still carries their name on the shelf");
+  assert.equal(cancelled.whatsapp, undefined, "and their number");
+  assert.equal(cancelled.address, undefined, "and their address");
+  assert.ok((st.redactions || []).some((r) => r.id === "o_gone"),
+    "★ no redaction was recorded for the shelf row — **Put it back would bring the person back**");
+});
+
+test("★★★ forgetting writes one synced redaction per order row (v592)", () => {
+  // ⚠️⚠️ WITHOUT THIS RECORD THE REDACTION CANNOT TRAVEL: the cleared fields alone are a change to a row the
+  // other phone is about to replace — ⚠️ **one later edit brought the name back on both.** ⭐ One record per
+  // order id, applied on every load and pull.
+  const st = filled();
+  forgetCustomer(st, keyOf(st.orders[0]));
+  const rows = st.orders.slice(0, 2);
+  assert.ok(Array.isArray(st.redactions), "no redaction list was written");
+  assert.deepEqual(st.redactions.map((r) => r.id).sort(), rows.map((o) => o.id).sort(),
+    "★ the redaction list does not name every redacted row");
+  for (const r of st.redactions) {
+    assert.ok(r.at, "a redaction without a time can never win a merge");
+    assert.ok(r.key, "a redaction without the shared key fragments the person's history");
+  }
+});
+
 test("★★ forgetting clears every personal field, and touches NO money", () => {
   const st = filled();
   const before = customerList(st).find((r) => r.name === "Aunty Bee").totalSpend;

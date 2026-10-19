@@ -41,6 +41,22 @@ test("sales, cost of sales and gross profit come from what was sold", () => {
   assert.equal(pl.uncosted, 0, "the recipe prices this product");
 });
 
+test("★★★ a payback settles a debt — it is not drawings, and it is not a running cost (v579)", () => {
+  // ⚠️⚠️ THE FAULT: the money paid out of the till to settle an account carried `repay` on its deposit
+  // half only, ⚠️ **so Profit read the payment as Drawings — "money you took out" — although the business
+  // merely paid what it owed.**
+  const st = state();
+  st.expenses = [{ id: "exp_r", date: "2026-09-16", amount: 40, category: "My own withdrawal",
+    method: "Cash", repay: true }];
+  const pl = profitBetween(st, "2026-09-01", "2026-09-30");
+  assert.equal(pl.drawings, 0, "★ paying an account back is reported as money she took out");
+  assert.equal(pl.expensesTotal, 0, "★ and it was also counted as a running cost");
+  // The control: an ordinary withdrawal of the same shape is still drawings.
+  st.expenses[0].repay = false;
+  assert.equal(profitBetween(st, "2026-09-01", "2026-09-30").drawings, 40,
+    "an ordinary withdrawal stopped being counted as money she took out");
+});
+
 test("★★★ a transfer between her own accounts is neither capital nor drawings", () => {
   // ⚠️⚠️ THE FAULT (v548): the profit page summed EVERY deposit as capital and EVERY drawing-class
   // expense as money she took out — including the two halves of one transfer. ⭐ **The transfer form says
@@ -195,7 +211,11 @@ test("the chart of accounts covers what she named, and is hers to change", () =>
   assert.ok(!categoryLabels(st).includes("Rent"), "gone from the picker");
   assert.equal(classOfCategory(st, "Rent"), "expense",
     "but the rows already written under it still count as a cost");
-  assert.ok(profitBetween(st, "2026-09-01", "2026-09-30").expenses.every((e) => e.label !== "Rent"),
+  const stmt = profitBetween(st, "2026-09-01", "2026-09-30");
+  // ⚠️ `every` IS TRUE OF AN EMPTY LIST (v557) — the chart is always drawn, so this precondition is a
+  // guard on the guard: if the chart ever came back empty, the line below would say nothing.
+  assert.ok(stmt.expenses.length > 0, "precondition: the statement prints a chart of accounts");
+  assert.ok(stmt.expenses.every((e) => e.label !== "Rent"),
     "and the statement stops printing a line for it");
 });
 
@@ -214,8 +234,8 @@ function domShim() {
       _listeners: {},
       classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
       appendChild(c) { if (c != null) this.children.push(c); return c; },
-      append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
-      replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) this.children.push(c); },
+      append(...cs) { for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
+      replaceChildren(...cs) { this.children = []; for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
       addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
       removeEventListener() {},
       setAttribute(k, v) { this.attrs[k] = String(v); },
@@ -584,8 +604,9 @@ test("the statement says the cost is a recipe cost, and that it is FROZEN onto t
     "⚠️ and it admits what the older orders' frozen cost actually is, rather than implying it is history");
   assert.match(text, /not what you actually spent/,
     "so the figure is never read as money she paid out");
-  assert.match(text, /the Money screen is where the cash is/,
-    "and she is sent to the screen that does hold the cash");
+  // ⚠️ v599: the note appears on PAPER, so it names the record rather than an app screen she is not holding.
+  assert.match(text, /your record of cash is where the money is/,
+    "and she is sent to the record that does hold the cash");
 });
 
 // ── the month arrows (v115) ──────────────────────────────────────────────────
@@ -677,7 +698,7 @@ test("the Profit and loss card prints and shares the whole statement, figure for
     // The reader of Gross profit on paper needs the same warning the screen gives.
     assert.match(shared.text, /built from the recipe and the ingredient prices you have recorded/,
       "the statement explains its own cost figure on paper too");
-    assert.match(shared.text, /the Money screen is where the cash is/);
+    assert.match(shared.text, /your record of cash is where the money is/);
   } finally { delete globalThis.navigator.share; }
 });
 
@@ -714,7 +735,8 @@ test("every journal behind a statement line wears the pair, and shares its own b
     assert.match(shared.text, /Focaccia × 2 · Aisyah/, "what leaves is the journal she opened");
     assert.ok(shared.text.split("\n").find((l) => l.startsWith("Total")).endsWith("RM 30.00"),
       "and it lands on that line's own figure");
-    assert.match(shared.text, /From More → Profit\./, "with where it came from on it");
+    // ⚠️ v599: an app ROUTE printed on an accountant's paper. The source is named without a screen to tap.
+    assert.match(shared.text, /From her bookkeeping app\./, "with where it came from on it");
   } finally { delete globalThis.navigator.share; }
 });
 

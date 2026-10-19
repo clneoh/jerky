@@ -15,8 +15,8 @@ function createEl(tag) {
     scrollTop: 0, _listeners: {},
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     appendChild(c) { if (c != null) this.children.push(c); return c; },
-    append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
-    replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) this.children.push(c); },
+    append(...cs) { for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
+    replaceChildren(...cs) { this.children = []; for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener() {},
     setAttribute(k, v) { this.attrs[k] = String(v); },
@@ -289,13 +289,19 @@ test("mailing: FROM from the settings box, TO the customer, ORDER the parcel", (
   });
 });
 
-test("mailing without a business address prints a reminder instead of a blank FROM", () => {
+test("★★★ mailing without a bakery address prints NO reminder on the parcel (v583)", () => {
+  // ⚠️⚠️ THIS TEST USED TO PIN THE FAULT. ⚠️ With no mailing address the FROM block printed
+  // **"Set your bakery address in Settings → Mailing labels"** — ⚠️ **on the outside of a parcel a courier
+  // is carrying.** ⭐ The sheet says nothing it cannot say; the preview names what is missing.
   const data = packingLabelData(makeState(), group(singleOrder({
     fulfillment: "courier", whatsapp: "60123456789", address: "88 Jalan Merdeka",
   })), "mailing");
   assert.equal(data.style, "mailing");
-  assert.equal(data.rows[0][1], "FROM");
-  assert.ok(data.rows.some(([k, t]) => k === "mail-line" && t.includes("Settings")));
+  // ⚠️ v592: no address, no heading either. A bare FROM on the outside of a parcel is an incomplete block.
+  assert.equal(data.rows.some(([k, t]) => k === "mail-sec" && t === "FROM"), false,
+    "★ a bare FROM heading was printed with nothing under it");
+  assert.equal(data.rows.some(([k, t]) => k === "mail-line" && t.includes("Settings")), false,
+    "★ an instruction to the baker is printed on the parcel");
 });
 
 test("an unknown style behaves like full", () => {

@@ -11,7 +11,10 @@
      other — change them together or the two screens disagree about one word. */
   --muted: #7b6552;
   --line: #f0e2d2;
-  --brown: #c4552f;
+  /* ⚠️⚠️ ONE STEP DEEPER (v583): #c4552f carried white at **4.48:1**, a hair under the 4.5 floor — ⚠️ **every
+     solid terracotta control (track, apply, step numbers, the product stamp) was just under it.** ⭐ #c1502b
+     measures **4.72:1** and is the same hue. */
+  --brown: #c1502b;
   --brown-dark: #a84322;
   /* ★★ THE SHOP'S DELIVERY GREEN (v510) — **the backoffice's own `--green`, written out here**, for the
      same reason `--muted`, `--red` and `--amber` are: the two files define their own tokens, so moving
@@ -139,9 +142,17 @@ html, body {
   color: #fff;
   padding: 26px 20px calc(20px + env(safe-area-inset-top));
   padding-top: calc(26px + env(safe-area-inset-top));
+  /* ★★★ WHITE TEXT ON THIS BANNER NOW MEASURES 4.6:1 OR MORE (v565).
+     ⚠️⚠️ MEASURED BEFORE THE FIX, over the gradient AND its highlight: the eyebrow was **3.75:1**, the
+     tagline **3.62:1**, and the "Our homepage" pill **3.58:1 at its darkest and 2.10:1 at the light end** —
+     all under the 4.5:1 a small white line needs. ⭐ Three measured pairs do the work, and no new colour
+     enters the palette: the same hues, one step deeper; the highlight at a quarter of its strength; and
+     the frosted pills turned dark instead of light. ⭐ **Measured after: 4.61:1 at the worst point of the
+     gradient, 6.3:1 on the pills.** ⚠️ The highlight had to shrink because it lands exactly where the
+     language pills and the eyebrow sit — a 40% cream wash over terracotta cannot carry white text. */
   background:
-    radial-gradient(120% 150% at 90% -10%, rgba(255, 220, 160, .4), transparent 60%),
-    linear-gradient(130deg, #c4552f, #d9742c 55%, #d99a3a);
+    radial-gradient(120% 150% at 90% -10%, rgba(255, 220, 160, .10), transparent 60%),
+    linear-gradient(130deg, #b04c2a, #a4551d 55%, #8d601b);
   box-shadow: var(--shadow-lg);
 }
 .hero-eyebrow {
@@ -150,7 +161,8 @@ html, body {
   font-weight: 700;
   letter-spacing: .6px;
   text-transform: uppercase;
-  opacity: .9;
+  /* ⚠️ NO TRANSPARENCY ON TEXT OVER A GRADIENT (v565) — .9 white measured 4.29:1 against the worst stop. */
+  opacity: 1;
 }
 
 /* EN / 中文 / BM switch sits on the hero's top row, right of the eyebrow. */
@@ -170,10 +182,16 @@ html, body {
 .lang-pill {
   appearance: none;
   border: 1px solid rgba(255, 255, 255, .45);
-  background: rgba(255, 255, 255, .14);
+  /* ⚠️ A WHITE WASH UNDER WHITE TEXT LOWERS THE CONTRAST (v565): 14% white measured 3.6:1. A dark wash
+     measures 6.3:1. Same pill, same border, inverted fill. */
+  background: rgba(0, 0, 0, .18);
   color: #fff;
   font: inherit;
   font-size: 11px;
+  /* ⚠️ AND A PILL IS A TAP TARGET: it measured about 23px tall, and 36px is this app's own floor. */
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
   font-weight: 700;
   padding: 4px 10px;
   border-radius: 999px;
@@ -185,14 +203,14 @@ html, body {
   border-color: #fff;
   color: var(--brown-dark);
 }
-.lang-pill:not(.is-on):active { background: rgba(255, 255, 255, .3); }
+.lang-pill:not(.is-on):active { background: rgba(0, 0, 0, .34); }
 .hero-title {
   margin: 0 0 6px;
   font-family: var(--serif);
   font-size: 28px;
   line-height: 1.15;
 }
-.hero-sub { margin: 0; font-size: 14px; opacity: .92; }
+.hero-sub { margin: 0; font-size: 14px; opacity: 1; }
 
 /* The way back to the brand page. Its own line under the tagline, so it belongs
    to the banner and never competes with the language pills on the top row —
@@ -206,14 +224,14 @@ html, body {
   padding: 6px 14px;
   border: 1px solid rgba(255, 255, 255, .45);
   border-radius: 999px;
-  background: rgba(255, 255, 255, .14);
+  background: rgba(0, 0, 0, .18);
   color: #fff;
   font-size: 12px;
   font-weight: 700;
   text-decoration: none;
   -webkit-tap-highlight-color: transparent;
 }
-.hero-home:active { background: rgba(255, 255, 255, .3); }
+.hero-home:active { background: rgba(0, 0, 0, .34); }
 
 /* ---------- Layout ---------- */
 .view {
@@ -310,6 +328,12 @@ html, body {
   font-size: 17px;
   line-height: 1;
   min-width: 36px;
+  /* ⚠️⚠️ THE SHOP'S OWN 36px FLOOR, ON THE HEIGHT TOO (v583): these arrows were ~31px tall, ⚠️ **under the
+     target size this shop sets for every other control.** */
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 6px 0;
   border-radius: 9px;
   cursor: pointer;
@@ -521,7 +545,13 @@ html, body {
   transform: translateX(-50%);
   z-index: 3;
   pointer-events: none;
-  white-space: nowrap;
+  /* ⚠️⚠️ A LONG OCCASION NAME PUSHED THE PAGE SIDEWAYS AT 375px (v583): the bubble never wrapped and was
+     never clipped, ⚠️ **so its width became the page's.** ⭐ It wraps inside the screen now. */
+  white-space: normal;
+  width: max-content;
+  max-width: min(200px, 70vw);
+  overflow-wrap: anywhere;
+  text-align: center;
   background: var(--ink);
   color: #fff;
   font-size: 11px;
@@ -710,8 +740,8 @@ html, body {
   box-shadow: 0 1px 3px rgba(80, 50, 30, .25);
 }
 .prod-stamp.soldout { background: #c0392b; }
-.menu-item.soldout .card-title { color: #b6a892; }
-.menu-item.soldout .step-btn { background: #f1e9de; color: #c9b8a5; cursor: default; }
+.menu-item.soldout .card-title { color: #75634f; } /* 5.38:1 — was 2.18 (v583) */
+.menu-item.soldout .step-btn { background: #f1e9de; color: #6e5c49; cursor: default; } /* 5.3:1 — was 1.6 (v583) */
 
 /* Small notes under a product's stepper: why the card is unavailable on this
    date (a value pack's advance window, a from–to window, orders closed, or a day
@@ -1007,7 +1037,7 @@ button.prod-next.off::after { content: ""; }
 
 /* ---------- Forms ---------- */
 .field { margin-bottom: 12px; }
-.field label {
+.field label, .field .field-label {
   display: block;
   font-size: 13px;
   font-weight: 600;
@@ -1257,6 +1287,8 @@ button.prod-next.off::after { content: ""; }
   gap: 8px;
 }
 .track-row .input { flex: 1; min-width: 0; }
+/* ⚠️ THE PHONE ROW SITS UNDER THE CODE ROW (v558): two boxes and a button on one line is 375px of nothing. */
+.track-row + .track-row { margin-top: 8px; }
 .track-btn {
   appearance: none;
   border: none;
@@ -1569,7 +1601,8 @@ button.prod-next.off::after { content: ""; }
   appearance: none;
   border: none;
   border-radius: 999px;
-  background: linear-gradient(180deg, #d0632f, #b34a28);
+  /* ⚠️⚠️ THE TOP STOP WAS 3.81:1 AGAINST WHITE (v583). ⭐ #bd5127 measures **4.81:1**; the bottom is unchanged. */
+  background: linear-gradient(180deg, #bd5127, #b34a28);
   color: #fff;
   font-size: 15px;
   font-weight: 700;
@@ -1861,7 +1894,9 @@ button.prod-next.off::after { content: ""; }
   word-break: break-word;
 }
 .promo-dot {
-  width: 28px; height: 28px;           /* WCAG 2.5.8 floor is 24; this clears it */
+  /* ⚠️ 36, THE APP'S OWN FLOOR (v593): the homepage's identical dot is 36, and two dots that look alike must
+     be as easy to hit as each other. WCAG's 24 is a minimum, not this app's standard. */
+  width: 36px; height: 36px;
   padding: 0; border: 0; background: none; cursor: pointer;
   display: grid; place-items: center;
   border-radius: 999px;

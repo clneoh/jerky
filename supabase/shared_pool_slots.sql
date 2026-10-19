@@ -46,6 +46,7 @@ declare
   p        jsonb;
   pname    text;
   pqty     integer;
+  hits     integer;
 begin
   -- Only newly placed orders change the counts.
   if new.status is distinct from 'new' then
@@ -68,6 +69,52 @@ begin
       return new;
     end if;
 
+    -- ⚠️⚠️ A HUNDRED LINES OF A HUNDRED IS STILL AN ABSURD ORDER (v596). ⚠️ The per-line ceiling above stops
+    -- one line; it did not stop a hundred legal-looking lines adding up to 10,000 and zeroing a day. ⭐ The whole
+    -- order's count is summed first, and above a generous day (200) the order moves NO count at all.
+    declare
+      total_wanted integer := 0;
+      t_line       jsonb;
+      t_qty        integer;
+    begin
+      for t_line in select * from jsonb_array_elements(j->'lines') loop
+        if jsonb_typeof(t_line->'qty') = 'number' and (t_line->>'qty') ~ '^[0-9]+$' then
+          t_qty := (t_line->>'qty')::integer;
+        else
+          t_qty := 0;
+        end if;
+        -- ⚠️⚠️ A PACK LINE'S OWN QUANTITY IS NOT A DAY SLOT (v598) — its pieces arrive in `pool`, and counting
+        -- both would count every pack twice. The row tells us which kind it is.
+        -- ⚠️ ONLY A LINE THAT HITS A PUBLISHED ROW COUNTS (v599) — an unpublished name moves no count anyway,
+        -- and a pack whose pack row did not publish would otherwise be counted twice toward the ceiling.
+        if t_qty between 1 and 100
+           and exists (select 1 from public.product_availability pa
+                        where pa.date = odate and pa.product = coalesce(btrim(t_line->>'name'), ''))
+           and not exists (select 1 from public.product_availability pa
+                            where pa.date = odate and pa.product = coalesce(btrim(t_line->>'name'), '')
+                              and pa.pool_base is not null) then
+          total_wanted := total_wanted + t_qty;
+        end if;
+      end loop;
+      if jsonb_typeof(j->'pool') = 'array' then
+        for t_line in select * from jsonb_array_elements(j->'pool') loop
+          if jsonb_typeof(t_line->'qty') = 'number' and (t_line->>'qty') ~ '^[0-9]+$' then
+            t_qty := (t_line->>'qty')::integer;
+          else
+            t_qty := 0;
+          end if;
+          -- ⚠️⚠️ NO 100 CAP HERE (v599): step 3 no longer caps a pool row, so a forged pool qty outside 1..100
+          -- was neither capped NOR counted — ⚠️ **1,000,000,000 pieces zeroed a day through the pre-check's blind
+          -- spot.** ⭐ Every positive pool qty is summed, so the whole-order ceiling catches it.
+          if t_qty >= 1 then total_wanted := total_wanted + t_qty; end if;
+        end loop;
+      end if;
+      if total_wanted > 200 then
+        raise notice 'order % asks for % units — the counts are ignored', new.id, total_wanted;
+        return new;
+      end if;
+    end;
+
     -- 1) Top-level lines. Each one lowers the matching product row by its
     --    quantity — but only if the row is a BASE row. A derived pack row
     --    (pool_base IS NOT NULL) is never decremented on its own: it gets
@@ -80,22 +127,31 @@ begin
       else
         lqty := 0;
       end if;
-      if lqty < 1 or lname = '' then
+      -- ⚠️⚠️ AN ABSURD LINE DOES NOT MOVE THE COUNTS (v565). ⭐ The public order form takes any
+      -- non-negative integer, so a scripted POST with qty 1000000000 zeroed a whole bake day
+      -- for everyone. ⭐ A real line is a few dozen pans; above a hundred the line is not an order and
+      -- the counts ignore it. ⚠️ The ORDER still saves — this is a count, not a gate.
+      if lqty < 1 or lqty > 100 or lname = '' then
         continue;
       end if;
-      day_qty := day_qty + lqty;
       update public.product_availability
         set slots_left = greatest(0, slots_left - lqty), updated_at = now()
         where date = odate and product = lname and pool_base is null;
+      -- ⚠️⚠️ ONLY A LINE THAT HIT A BASE ROW IS A DAY SLOT (v598). ⚠️ A pack's line matched nothing here, and its
+      -- pieces are added by step 3 — counting this too dropped the day by 1 + 4 for one 4-pack.
+      get diagnostics hits = row_count;
+      if hits > 0 then
+        day_qty := day_qty + lqty;
+      elsif not exists (
+        -- ⚠️⚠️ AN UNLIMITED PRODUCT HAS NO ROW, AND ITS LINE IS STILL A DAY SLOT (v599). ⚠️ v598's ROW_COUNT gate
+        -- skipped it — ⚠️ **5 buns on a 12-loaf day left the shop reading 12.** ⭐ No row at all = a real sale;
+        -- a derived (pool_base) row = a pack, whose pieces arrive in step 3.
+        select 1 from public.product_availability pa
+         where pa.date = odate and pa.product = lname
+      ) then
+        day_qty := day_qty + lqty;
+      end if;
     end loop;
-
-    -- 2) The day's availability (the date pill) drops by the top-level count.
-    --    Pool pieces are NOT day slots, so they don't touch this.
-    if day_qty > 0 then
-      update public.availability
-        set slots_left = greatest(0, slots_left - day_qty), updated_at = now()
-        where date = odate;
-    end if;
 
     -- 3) Every pack in `pool` draws its base out of the shared pool in whole
     --    pieces: lower that base's row by the pieces the pack just took.
@@ -108,13 +164,25 @@ begin
         else
           pqty := 0;
         end if;
+        -- ⚠️ A POOL ROW IS AN AGGREGATE OF PIECES, NOT ONE LINE (v598): 26 four-packs is a legitimate 104-piece
+        -- row. The whole-order ceiling above is what bounds abuse.
         if pqty < 1 or pname = '' then
           continue;
         end if;
         update public.product_availability
           set slots_left = greatest(0, slots_left - pqty), updated_at = now()
           where date = odate and product = pname and pool_base is null;
+        -- ⚠️⚠️ AND A PACK'S PIECES ARE DAY SLOTS TOO (v596). ⚠️ The app counts a 4-pack as four toward the day
+        -- (v587/v590); this trigger added the pack COUNT, so the day pill overstated by three.
+        day_qty := day_qty + pqty;
       end loop;
+    end if;
+
+    -- 2) The day's availability (the date pill) drops by the top-level lines AND the pack pieces.
+    if day_qty > 0 then
+      update public.availability
+        set slots_left = greatest(0, slots_left - day_qty), updated_at = now()
+        where date = odate;
     end if;
 
     -- 4) Recompute every derived row on this date from its base's row, so a

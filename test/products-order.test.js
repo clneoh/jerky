@@ -47,8 +47,8 @@ function createEl(tag) {
       this.children.splice(at < 0 ? this.children.length : at, 0, c);
       return c;
     },
-    append(...cs) { for (const c of cs) if (c != null) this.appendChild(c); },
-    replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) this.appendChild(c); },
+    append(...cs) { for (const c of cs) this.appendChild(c == null ? { nodeType: 3, text: "null" } : c); },
+    replaceChildren(...cs) { this.children = []; for (const c of cs) this.appendChild(c == null ? { nodeType: 3, text: "null" } : c); },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener() {},
     setAttribute(k, v) { this.attrs[k] = String(v); if (k === "hidden") this.hidden = true; },

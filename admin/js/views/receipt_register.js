@@ -142,7 +142,7 @@ export function renderReceiptRegister(root, state) {
     const gapTxt = reg.gaps.map((n) => `#${String(n).padStart(6, "0")}`).join(", ");
 
     root.replaceChildren(head,
-      el("div", { class: "card" },
+      el("div", { class: "card receipt-card" },
         el("p", { class: "card-title" }, "Receipts issued"),
         el("p", { class: "card-sub", style: "margin:0 0 8px" }, registerSummary(reg)),
 
@@ -166,10 +166,42 @@ export function renderReceiptRegister(root, state) {
 
         el("div", { class: "reg-list" }, ...reg.rows.map(row)),
 
-        el("p", { class: "card-sub", style: "margin:10px 0 0" },
+        // ⚠️⚠️ AN INSTRUCTION FOR THE SCREEN WAS PRINTED ON THE PAPER (v582): "Press an Order number to open
+        // that order" means nothing on a sheet an auditor reads — ⭐ **and the register is the one page whose
+        // whole purpose is paper.** ⭐ It wears `no-print`, so the screen still says it.
+        el("p", { class: "card-sub no-print", style: "margin:10px 0 0" },
           "Press an Order number to open that order, so you can look at it or amend it. A receipt whose order is not on this phone has nothing to open and says so."),
         el("div", { class: "btn-row", style: "margin-top:10px" },
-          button("Read again", () => load(), "soft small"))),
+          button("Read again", () => load(), "soft small"),
+          // ⚠️⚠️ THIS PAGE SAID "KEEP THIS PAGE" AND COULD NOT BE PRINTED (v572). ⭐ Every other card is hidden
+          // in print, so a browser print here came out blank — ⭐ **the one record that proves the receipt
+          // numbers have no gaps was the one record she could not put on paper.** ⭐ The class is on the body
+          // for the instant of printing only, so no other screen's print is affected.
+          // ⚠️⚠️ THE CLASS COMES OFF ON `afterprint`, NOT IN A `finally` (v582). ⚠️ A browser that returns
+          // from `window.print()` BEFORE it renders the sheet found the class already gone — ⚠️ **the register
+          // printed BLANK, the v572 fault again on a different print.** ⭐ The same guard every other print
+          // uses: `afterprint`, with a ten-second fallback so a browser that never fires it cannot leave a
+          // body class behind and hide the app.
+          button("Print this page", () => {
+            // ⚠️ A PHONE THAT CANNOT PRINT SAYS SO (v592) — the class is not added, so nothing is left behind.
+            if (!(typeof window !== "undefined" && typeof window.print === "function")) {
+              toast("This phone can't print — use Share instead.");
+              return;
+            }
+            document.body.classList.add("receipt-print");
+            const done = () => {
+              document.body.classList.remove("receipt-print");
+              if (typeof window !== "undefined" && window.removeEventListener) {
+                window.removeEventListener("afterprint", done);
+              }
+              clearTimeout(timer);
+            };
+            const timer = setTimeout(done, 10000);
+            if (typeof window !== "undefined" && window.addEventListener) {
+              window.addEventListener("afterprint", done);
+            }
+            try { window.print(); } catch { done(); toast("This phone couldn't print — use Share instead."); }
+          }, "soft small"))),
 
       el("div", { class: "card" },
         el("p", { class: "card-title" }, "What this run is for"),

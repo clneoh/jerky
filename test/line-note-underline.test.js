@@ -13,6 +13,7 @@
 // renderOrders and the pop-up layer, exactly as order-line-note.test.js does.
 
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 
 function createEl(tag) {
@@ -302,4 +303,56 @@ test("the label sheet underlines the note beside its item, exactly as the row do
   const marks = underlines(itemRow);
   assert.equal(marks.length, 1, "one underline on the sheet, wrapping the note");
   assert.equal(marks[0].textContent, " (no nuts)", "and not the item name");
+});
+
+test("★★★ the label prints on HER paper: 100 × 150 mm, and only for that print (v575)", async () => {
+  // ⚠️⚠️ `@page` CANNOT BE SCOPED BY A BODY CLASS — it applies to the whole document. ⭐ A fixed rule in the
+  // stylesheet would force the receipt, the journal and the purchase order onto label stock too, so the size
+  // is injected for the instant of the label print and removed with it.
+  const src = readFileSync(new URL("../admin/js/views/orders.js", import.meta.url), "utf8");
+  assert.match(src, /size:\s*100mm 150mm/,
+    "★ the label print does not set the paper size — **the printer then decides, and 100 × 150 stock comes out wrong**");
+  assert.match(src, /label-page-size/, "the injected page rule has no id, so it cannot be removed again");
+  // ⭐ And the sheet is the paper's own width — it was 90 mm (110 for mailing) on a page of no fixed size.
+  const css = readFileSync(new URL("../admin/css/print.css", import.meta.url), "utf8");
+  const block = css.slice(css.indexOf("body.label-print .label-sheet {"), css.indexOf("style-mailing"));
+  assert.match(block, /width:\s*100mm/, "★ the label sheet is not the label's width — **it will shrink or spill**");
+  assert.doesNotMatch(block, /90mm/, "★ the old 90 mm width is back");
+});
+
+test("★★★ a parcel label never carries an instruction to her (v583)", () => {
+  // ⚠️⚠️ MEASURED: with no mailing address the FROM block printed **"Set your bakery address in Settings →
+  // Mailing labels"** ⚠️ **on the outside of a parcel a courier is carrying.** ⭐ The sheet says nothing it
+  // cannot say; the preview names what is missing instead.
+  const st = state();
+  st.orders[0].fulfillment = "courier";
+  st.orders[0].address = "12 Jalan Bunga\n11600 Penang";
+  st.orders[0].status = "baking";
+  st.settings.mailingAddress = "";
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+  tap(buttonByText(rowOf(root, "o1"), "Print label"));
+
+  const pop = layers["popup-layer"];
+  const sheets = all(pop).filter((n) => String(n.className || "").startsWith("label-sheet"));
+  assert.equal(sheets.length, 1, "the mailing sheet is not drawn");
+  assert.equal(/Set your bakery address/.test(sheets[0].textContent), false,
+    "★ an instruction to the baker is printed on the parcel");
+  const warned = all(pop).some((n) => /mailing address is not set/.test(String(n.textContent || "")));
+  assert.equal(warned, true, "★ the preview does not say the FROM block is missing");
+
+  // And WITH an address, the parcel carries it and the warning is gone.
+  const st2 = state();
+  st2.orders[0].fulfillment = "courier";
+  st2.orders[0].address = "12 Jalan Bunga\n11600 Penang";
+  st2.orders[0].status = "baking";
+  st2.settings.mailingAddress = "Jien Luv 2 Bake\n5 Jalan Nuri\n11600 Penang";
+  const root2 = createEl("div");
+  renderOrders(root2, st2, new URLSearchParams({ date: "d10" }));
+  tap(buttonByText(rowOf(root2, "o1"), "Print label"));
+  const pop2 = layers["popup-layer"];
+  const sheet2 = all(pop2).find((n) => String(n.className || "").startsWith("label-sheet"));
+  assert.match(sheet2.textContent, /5 Jalan Nuri/, "her own address is not on the parcel label");
+  assert.equal(all(pop2).some((n) => /mailing address is not set/.test(String(n.textContent || ""))), false,
+    "a label that has its address still warns about it");
 });

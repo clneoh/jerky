@@ -20,7 +20,7 @@
 
 import { cachedToken } from "./supabase.js";
 import * as sync from "./sync.js";
-import { LS_KEY, normalize, orderCode, codeFromId, groupOrders, fmtRM } from "./state.js";
+import { LS_KEY, normalize, applyRedactions, orderCode, codeFromId, groupOrders, fmtRM } from "./state.js";
 import { receiptNoOfGroup } from "./receipts.js";
 import { fmtPlaced, longDate, toISODate, todayISO } from "./dates.js";
 import { fmtStockAmount, belowReserve } from "./purchasing.js";
@@ -105,9 +105,10 @@ export function dueKinds(rows, now = new Date()) {
 }
 
 // Ids to delete so only the newest 7 daily / 4 weekly / 3 monthly survive.
-// Manual copies are never pruned. Callers pass the rows seen BEFORE posting a
-// new copy — the fresh copy is the newest, so pruning that list is exact.
-export function pruneIds(rows) {
+// Manual copies are never pruned. ⚠️⚠️ CALLERS PASS THE ROWS SEEN **BEFORE** THE NEW COPIES ARE POSTED (v583) —
+// ⚠️ so keeping 7 of those leaves **7 old + 1 new = 8**, ⚠️ **one more than the card promises.** ⭐ `extra` says
+// how many copies of each kind are about to be written, and those slots are counted against the keep.
+export function pruneIds(rows, extra = {}) {
   const kill = [];
   for (const kind of Object.keys(KEEP)) {
     const mine = (rows || [])
@@ -116,7 +117,8 @@ export function pruneIds(rows) {
         if (a.created_at !== b.created_at) return a.created_at < b.created_at ? 1 : -1;
         return String(b.id).localeCompare(String(a.id)); // newest id first on a tie
       });
-    for (const row of mine.slice(KEEP[kind])) kill.push(row.id);
+    const incoming = Math.max(0, Number(extra && extra[kind]) || 0);
+    for (const row of mine.slice(Math.max(0, KEEP[kind] - incoming))) kill.push(row.id);
   }
   return kill;
 }
@@ -169,6 +171,16 @@ export function rewindTo(current, snapState) {
   restored.settings.supabase = keep("supabase");
   restored.settings.cloud = keep("cloud");
   restored.settings.lock = keep("lock");
+  // ⚠️⚠️ AND A FORGOTTEN CUSTOMER IS NOT UN-FORGOTTEN BY AN OLD COPY (v598). ⚠️ A copy taken before the forget
+  // carries the name, number and address, and the restored book was pushed as-is — ⚠️ **a Restore quietly put a
+  // person back.** ⭐ This phone's redactions survive the rewind and are applied to the restored orders.
+  const mine = Array.isArray(current && current.redactions) ? current.redactions : [];
+  if (mine.length) {
+    const merged = new Map((restored.redactions || []).map((r) => [r && r.id, r]));
+    for (const r of mine) if (r && r.id) merged.set(r.id, r);
+    restored.redactions = [...merged.values()].filter(Boolean);
+    applyRedactions(restored);
+  }
   return restored;
 }
 
@@ -262,7 +274,7 @@ export async function putBackOrders(state, row, { dryRun = false } = {}) {
   // ⚠️ BRING THIS PHONE AND THE SYNC BASELINE UP TO DATE FIRST, so an order that has just come down from the
   // other phone is not "put back" as a SECOND COPY of itself.
   const freshen = await sync.refresh(state);
-  if (!freshen.ok) return { ok: false, reason: "You need to be online to put orders back" };
+  if (!freshen.ok) return { ok: false, reason: freshenRefusal(freshen, "put orders back") };
   const safe = await postSnapshot(state, "manual", `Before put-back · ${localWhen()}`, snapshotState(state));
   if (!safe.ok) return { ok: false, reason: `Couldn't save a "before" copy first: ${safe.reason}` };
 
@@ -400,10 +412,20 @@ function notReadyReason() {
   return "Shared data is off or you're not signed in";
 }
 
+// ⚠️⚠️ "A SYNC IS RUNNING" IS NOT "YOU ARE OFFLINE" (v587). ⚠️ The 30-second beat can be mid-pull when she
+// presses Restore, and the refusal — `Sync already running` — was reported as "you need to be online":
+// ⚠️ **the one instruction that cannot help, about a phone that is plainly online.** ⭐ The real reason, in her
+// words, and the answer is to press again in a moment.
+export function freshenRefusal(res, what) {
+  const why = String((res && res.reason) || "");
+  if (/already running/i.test(why)) return `A sync is finishing — press ${what} again in a moment`;
+  return `You need to be online to ${what}`;
+}
+
 async function getRows(state, select, limit) {
   const a = auth(state);
   if (!a) return { ok: false, reason: notReadyReason(), rows: [] };
-  const limitParam = limit ? `&limit=${limit}` : "";
+  const limitParam = limit ? `&limit=${limit}` : ""; // `limit` may carry more params (see listBackups)
   try {
     const res = await fetch(`${a.base}/rest/v1/${TABLE}?select=${select}&order=created_at.desc${limitParam}`, {
       headers: { apikey: a.anonKey, Authorization: `Bearer ${a.token}` },
@@ -422,8 +444,26 @@ export async function listMeta(state) {
 }
 
 // The Settings card list — adds the human label/summary, still no heavy data.
+// ⚠️⚠️ EIGHT ROWS HID EVERYTHING BUT THE DAILIES (v570). ⭐ Retention keeps 7 daily, 4 weekly, 3 monthly,
+// plus her manual copies and the "Before restore/import" ones — ⚠️ **seven dailies are always newer than any
+// weekly, so the weekly and monthly copies were never on the screen at all: restoring to a month ago was
+// impossible from the app even though the copy existed in the cloud.** ⭐ The list asks for enough to show
+// the whole ladder; the screen renders what it gets.
+// ⚠️⚠️ SIXTY WAS A HIDDEN CEILING (v587). ⚠️ Manual copies are never pruned, and each restore, import,
+// put-back and delete-all adds one — ⚠️ **so the oldest manual copy was in the cloud with no Restore, Download
+// or Delete anywhere in the app.** ⭐ The card now pages through the list until the cloud has no more, and the
+// page size is a batch, not a rule.
+const LIST_PAGE = 100;
 export async function listBackups(state) {
-  return getRows(state, "id,kind,label,engine,created_at,summary", 8);
+  const all = [];
+  for (let page = 0; page < 50; page += 1) {
+    const r = await getRows(state, "id,kind,label,engine,created_at,summary",
+      `${LIST_PAGE}&offset=${all.length}`);
+    if (!r.ok) return page === 0 ? r : { ok: true, rows: all };
+    all.push(...r.rows);
+    if (r.rows.length < LIST_PAGE) break;
+  }
+  return { ok: true, rows: all };
 }
 
 // The one full copy (with data) — fetched on tap for Download or Restore only.
@@ -521,7 +561,7 @@ export async function maybeAutoBackup(state) {
       if (!r.ok) return { ok: false, reason: r.reason };
     }
     // Prune after a successful capture; manual copies are never pruned.
-    const kill = pruneIds(meta.rows);
+    const kill = pruneIds(meta.rows, due.reduce((o, k) => ({ ...o, [k]: 1 }), {}));
     if (kill.length) await deleteSnapshots(state, kill);
     return { ok: true, made: due };
   } finally {
@@ -555,7 +595,7 @@ export async function restoreSnapshot(state, row) {
   // removed and tombstoned instead of coming back on the next pull — that is
   // what makes a restore a real rewind on any phone, fresh or stale.
   const freshen = await sync.refresh(state);
-  if (!freshen.ok) return { ok: false, reason: "You need to be online to restore a backup" };
+  if (!freshen.ok) return { ok: false, reason: freshenRefusal(freshen, "restore a backup") };
 
   // Safety copy of the current (freshest) state, so a restore is never one-way.
   const current = snapshotState(state);

@@ -3,6 +3,15 @@
 
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
+  // ★★★ A DIV WITH A CLICK IS A BUTTON, AND SAYS SO (v566).
+  // ⚠️⚠️ Twenty-four controls in this app are a div or a span with an `onclick` and nothing else — the Home
+  // tiles, a delivery day, a history row — ⭐ **so a keyboard or a switch could not reach them at all**, and a
+  // screen reader did not announce them as pressable. ⭐ Doing it HERE means every one of them, and every one
+  // written tomorrow, is a button without a call site being touched.
+  // ⚠️ Only when the caller has not said otherwise, and never on a real <button>/<a>.
+  const clickish = attrs && typeof attrs.onclick === "function" && /^(div|span|li)$/i.test(tag);
+  const madeButton = clickish && !attrs.role && !("tabindex" in attrs);
+  if (madeButton) { attrs = { ...attrs, role: "button", tabindex: "0" }; }
   for (const [k, v] of Object.entries(attrs)) {
     // Skip null/undefined AND false: `selected: false` must not become a
     // setAttribute call — "selected" is a boolean attribute, so ANY presence
@@ -22,11 +31,152 @@ export function el(tag, attrs = {}, ...children) {
     if (child == null || child === false) continue;
     node.append(child.nodeType ? child : document.createTextNode(String(child)));
   }
+  // ⚠️ And Enter/Space press it, the way a real button does — otherwise the tab stop is a dead end.
+  if (madeButton) {
+    node.addEventListener("keydown", (e) => {
+      // ⚠️ ONLY WHEN THE KEY WAS PRESSED ON THIS CONTROL (v568). A chip that CONTAINS a ✕ gets the ✕'s own
+      // key press bubbling up; acting on it would run the chip's press instead of the button's — the ✕
+      // would paste the chip's name back into the box instead of removing it.
+      if (e.target !== node) return;
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      e.preventDefault();
+      attrs.onclick(e);
+    });
+  }
   return node;
 }
 
+// ★★★ EVERY BOX GETS ITS OWN NAME (v566).
+//
+// ⚠️⚠️ THE APP HAD 246 `<label>` ELEMENTS AND **NOT ONE `for=`**, and about 178 of its boxes carried no
+// `aria-label` at all: ⭐ **so a screen reader announced every one of them as "edit text", and voice control
+// could not say which box was which.** ⚠️ The labels were there and VISIBLE — this app has always drawn the
+// words above each field — but a label that is only *near* a box is not attached to it.
+// ⭐ Doing it here, once, after each render, means every screen (and every screen written tomorrow) gets the
+// words it already prints. ⚠️ It never overwrites a name a field was given.
+function tagOf(node) {
+  return String((node && node.tagName) || "").toLowerCase();
+}
+
+function labelFor(box) {
+  // ⚠️⚠️ A LABEL THAT WRAPS THE BOX ALREADY NAMES IT — AND IT MUST WIN (v568). ⭐ The first version of this
+  // helper looked past a wrapping label and took the PREVIOUS row's instead, so `<label><input>Monday</label>`
+  // was named "Sun", Tuesday "Mon", and so on — ⭐ **and an `aria-label` OVERRIDES the correct implicit name,
+  // so a control that was already right was relabelled wrong.** ⚠️ Found by an adversarial read of the
+  // change, not by its tests; the wrapped case is pinned now.
+  for (let up = box.parentNode, depth = 0; up && depth < 4; up = up.parentNode, depth++) {
+    if (tagOf(up) === "label") return up;
+    if (tagOf(up) === "body" || tagOf(up) === "html") break;
+  }
+  // 2) the nearest label BEFORE it, walking out of a few wrappers
+  let node = box;
+  for (let depth = 0; depth < 4 && node; depth++) {
+    let sib = node.previousSibling;
+    while (sib) {
+      if (sib.nodeType === 1) {
+        if (tagOf(sib) === "label") return sib;
+        const inner = typeof sib.querySelector === "function" ? sib.querySelector("label") : null;
+        if (inner) return inner;
+      }
+      sib = sib.previousSibling;
+    }
+    node = node.parentNode;
+  }
+  // 2) otherwise the first label in the block the box sits in
+  let scope = box.parentNode;
+  for (let depth = 0; depth < 3 && scope; depth++) {
+    const l = typeof scope.querySelector === "function" ? scope.querySelector("label") : null;
+    if (l) return l;
+    scope = scope.parentNode;
+  }
+  return null;
+}
+
+// Name every unnamed box in `root`. Returns how many it named (0 is a normal answer, not a fault).
+export function nameFields(root) {
+  if (!root || typeof root.querySelectorAll !== "function") return 0;
+  const boxes = root.querySelectorAll("input, select, textarea");
+  let named = 0;
+  for (const box of boxes) {
+    if (!box || typeof box.getAttribute !== "function" || typeof box.setAttribute !== "function") continue;
+    if (box.getAttribute("aria-label") || box.getAttribute("aria-labelledby")) continue;
+    const id = box.getAttribute("id");
+    if (id && typeof root.querySelector === "function") {
+      try { if (root.querySelector(`label[for="${id}"]`)) continue; } catch { /* odd id; keep going */ }
+    }
+    const label = labelFor(box);
+    if (!label) continue;
+    let words = String(label.textContent || "").replace(/\s+/g, " ").trim();
+    if (!words) {
+      // ⚠️⚠️ A SWITCH'S WORDS SIT BESIDE IT (v591). ⚠️ The markup is `<label class=switch><input><span>
+      // <span></label>` with the description in the NEXT sibling — so the label's own text is empty and the
+      // box was given NO name at all: **a screen reader said just "checkbox", and voice control could not
+      // name it.** ⭐ The words next to the switch are its name.
+      const side = label.nextElementSibling || label.previousElementSibling;
+      words = side ? String(side.textContent || "").replace(/\s+/g, " ").trim() : "";
+    }
+    if (!words) continue;
+    box.setAttribute("aria-label", words);
+    named += 1;
+  }
+  return named;
+}
+
+// ⚠️⚠️ A DIALOG HOLDS THE KEYBOARD AND HANDS IT BACK (v591). ⚠️ Both dialog styles claimed `aria-modal`
+// but did NOT trap Tab or restore focus: **Tab walked out of the card into the page behind it**, Escape then
+// stopped working (its listener is on the card/layer), and closing left focus on `<body>` — a keyboard user
+// restarted at the top. ⭐ These two helpers give every dialog the same two behaviours.
+function focusablesIn(root) {
+  if (!root || typeof root.querySelectorAll !== "function") return [];
+  try {
+    return [...root.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+      .filter((n) => n && !n.disabled && !n.hidden);
+  } catch { return []; }
+}
+
+function trapTab(e, root) {
+  if (!e || e.key !== "Tab") return false;
+  const list = focusablesIn(root);
+  const active = (typeof document !== "undefined" && document.activeElement) || null;
+  if (!list.length) {
+    e.preventDefault();
+    try { root.focus({ preventScroll: true }); } catch { /* no focus in a shim */ }
+    return true;
+  }
+  const first = list[0];
+  const last = list[list.length - 1];
+  if (e.shiftKey && (active === first || active === root || !list.includes(active))) {
+    e.preventDefault();
+    try { last.focus({ preventScroll: true }); } catch { /* no focus in a shim */ }
+    return true;
+  }
+  if (!e.shiftKey && (active === last || !list.includes(active))) {
+    e.preventDefault();
+    try { first.focus({ preventScroll: true }); } catch { /* no focus in a shim */ }
+    return true;
+  }
+  return false;
+}
+
+// ⚠️⚠️ A GLYPH IS NOT A NAME (v593). ⚠️ "‹", "›" and "✕" were announced by their CHARACTER names, so a
+// screen reader said "‹, button" and voice control could not say "next month". ⭐ Every glyph press is named
+// here, once, so every one written tomorrow is named too; call sites that know more say more.
+const GLYPH_NAMES = { "‹": "Previous", "›": "Next", "✕": "Remove", "×": "Remove", "＋": "One more", "+": "One more", "−": "One less", "-": "One less" };
+
 export function button(text, onClick, cls = "") {
-  return el("button", { class: `btn ${cls}`.trim(), onclick: onClick }, text);
+  const node = el("button", { class: `btn ${cls}`.trim(), onclick: onClick }, text);
+  const name = GLYPH_NAMES[String(text).trim()];
+  if (name) node.setAttribute("aria-label", name);
+  return node;
+}
+
+// ⚠️⚠️ A CHOSEN PILL IS SAID, NOT ONLY COLOURED (v594). ⚠️ Money, Profit, Deliveries, the account editor and
+// the planner all mark a chosen option with `cal-mode-on` and nothing else — ⚠️ **a screen reader heard a row
+// of buttons with no way to tell which one was in force.** ⭐ One builder, so every pill says its state.
+export function modeButton(text, on, onClick) {
+  const node = button(text, onClick, `ghost small${on ? " cal-mode-on" : ""}`);
+  node.setAttribute("aria-pressed", on ? "true" : "false");
+  return node;
 }
 
 // ★ ONE ROW OF "SOMEWHERE ELSE TO GO" (v312). A title, a line under it saying
@@ -144,19 +294,77 @@ export function emptyState(title, hint) {
     hint ? el("p", { class: "muted" }, hint) : null);
 }
 
-export function confirmDialog(message, onYes, { danger = false, yesLabel = "Confirm" } = {}) {
+// ⚠️⚠️ AND IT CAN OFFER A SECOND REAL ANSWER (v577). ⭐ A question like "has the extra been paid too?"
+// has no neutral Cancel — closing the card would leave her question unanswered while the order saves
+// either way. ⚠️ `onNo` makes the left-hand button an ANSWER (`noLabel`) instead of a dismissal, so both
+// outcomes are spoken rather than one being the absence of a press.
+export function confirmDialog(message, onYes, { danger = false, yesLabel = "Confirm", onNo = null, noLabel = "Cancel" } = {}) {
   const layer = document.getElementById("confirm-layer");
-  const card = el("div", { class: "confirm-card" },
-    el("p", { class: "confirm-text" }, message),
+  const textId = `confirm-text-${++popupSeq}`;
+  const card = el("div", {
+    class: "confirm-card", role: "alertdialog", "aria-modal": "true", "aria-labelledby": textId, tabindex: "-1",
+  },
+    el("p", { class: "confirm-text", id: textId }, message),
     el("div", { class: "confirm-actions" },
-      button("Cancel", () => close(), "ghost"),
-      button(yesLabel, () => { close(); onYes(); }, danger ? "danger" : "primary")));
+      // ⚠️⚠️ THE ACTION RUNS BEFORE FOCUS IS HANDED BACK (v595). ⚠️ `close()` restored it first, and a delete's
+      // re-render then removed that control — ⚠️ **focus fell to `<body>`, the very fault v591 set out to fix.**
+      // ⭐ Close and act, then restore only what is still on the page.
+      button(noLabel, () => { close({ restore: false }); try { if (onNo) onNo(); } finally { restoreOpener(); } }, "ghost"),
+      button(yesLabel, () => { close({ restore: false }); try { onYes(); } finally { restoreOpener(); } }, danger ? "danger" : "primary")));
+  // ⚠️ THE CONTROL THAT OPENED THE QUESTION GETS THE KEYBOARD BACK WHEN IT CLOSES (v591).
+  const opener = (typeof document !== "undefined" && document.activeElement) || null;
   layer.replaceChildren(card);
   layer.hidden = false;
-  function close() {
+  // ⚠️ The same two gaps a pop-up had (v566): no Escape, and focus left where it was.
+  const onKey = (e) => {
+    if (e.key === "Escape") { e.preventDefault(); close(); return; }
+    trapTab(e, card);
+  };
+  card.addEventListener("keydown", onKey);
+  try { card.focus({ preventScroll: true }); } catch { /* no focus in a shim */ }
+  function restoreOpener() {
+    try {
+      // ⚠️⚠️ A DIALOG THE ACTION OPENED KEEPS THE KEYBOARD (v599). ⚠️ "Save it" opens the refund card before
+      // this runs, and the title fallback then took focus OUT of the card it had just opened — ⚠️ **the refund
+      // sheet was on screen with its first control skipped and the keyboard nowhere near it.** ⭐ If focus is
+      // already inside another VISIBLE dialog, leave it exactly where the action put it.
+      const active = typeof document !== "undefined" ? document.activeElement : null;
+      if (active && active !== opener && insideOpenCard(active)) return;
+      if (opener && opener.focus && opener.isConnected !== false) { opener.focus({ preventScroll: true }); return; }
+      // ⚠️⚠️ AND WHEN THE ACTION REBUILT THE SCREEN, FOCUS GOES SOMEWHERE SAID (v598). ⚠️ A delete's re-render
+      // removes the control that opened the question, so focus fell to `<body>` and the next Tab started at the
+      // top — ⚠️ **the very fault v591 set out to fix.** ⭐ The screen's own title takes the keyboard.
+      const title = typeof document !== "undefined" && document.getElementById && document.getElementById("view-title-text");
+      if (title && title.focus) {
+        if (typeof title.setAttribute === "function") title.setAttribute("tabindex", "-1");
+        title.focus({ preventScroll: true });
+      }
+    } catch { /* no focus in a shim */ }
+  }
+  function close({ restore = true } = {}) {
+    card.removeEventListener("keydown", onKey);
     layer.hidden = true;
     layer.replaceChildren();
+    if (restore) restoreOpener();
   }
+}
+
+// ⚠️ IS THIS NODE INSIDE A VISIBLE CARD? (v599) — read from the layers themselves, because a node removed
+// from a closed layer is still `document.activeElement` for one instant and must not count.
+function insideOpenCard(node) {
+  if (!node || typeof document === "undefined" || typeof document.getElementById !== "function") return false;
+  for (const id of ["confirm-layer", "popup-layer"]) {
+    const layer = document.getElementById(id);
+    if (!layer || layer.hidden !== false || !layer.children) continue;
+    const stack = Array.from(layer.children);
+    while (stack.length) {
+      const n = stack.pop();
+      if (!n) continue;
+      if (n === node) return true;
+      if (n.children) stack.push(...Array.from(n.children));
+    }
+  }
+  return false;
 }
 
 // A card opens over the screen it is about, and on a phone it covers the very
@@ -431,12 +639,24 @@ export function keepStill(anchor, fn) {
 // screen with a dimmed scrim; `makeBody(refresh, close)` is called to (re)fill
 // the scrollable body, so callers re-invoke `refresh()` after changing anything
 // that should re-render the form (e.g. adding an item row). Returns close().
+// ⚠️ Unique ids for the title a dialog points at; two cards are never on screen at once, but the
+// counter keeps a stale id from ever matching a new card.
+let popupSeq = 0;
+
 export function showPopup(title, makeBody, { wide = false, onTitle = null, className = "" } = {}) {
   const layer = document.getElementById("popup-layer");
   if (!layer) return () => {};
+  // ⚠️ AND THE CONTROL THAT OPENED THE CARD GETS THE KEYBOARD BACK (v591).
+  const opener = (typeof document !== "undefined" && document.activeElement) || null;
+  let closeFn = null;
   const close = () => {
+    // ⚠️ The Escape listener lives on the LAYER, not the page: the card is focused, so a key press
+    // bubbles to it, and a shim that has no `document.addEventListener` still works.
+    const f = closeFn; closeFn = null;
+    if (f) f();
     layer.hidden = true;
     layer.replaceChildren();
+    try { if (opener && opener.focus && opener.isConnected !== false) opener.focus({ preventScroll: true }); } catch { /* gone */ }
   };
   const body = el("div", { class: "popup-body" });
   // Repainting a pop-up replaces the body wholesale, which is fine for a short
@@ -457,24 +677,44 @@ export function showPopup(title, makeBody, { wide = false, onTitle = null, class
     const keepTop = body.scrollTop;
     const made = makeBody(refresh, close);
     body.replaceChildren(...(Array.isArray(made) ? made : [made]));
+    // ⚠️ A CARD'S BOXES ARE NAMED TOO (v566) — the Edit forms live here, not on a screen the router draws.
+    try { nameFields(body); } catch { /* an unnamed box is not a dead card */ }
     body.scrollTop = keepTop;
   };
-  const titleEl = el("div", { class: "popup-title" }, title);
+  // ★★★ A CARD IS A DIALOG, AND IT SAYS SO (v566). ⚠️⚠️ The title was a plain div and the card had no
+  // role, so a screen reader announced an unnamed region and the most-used control in the app was read as
+  // "✕". ⭐ `role="dialog"` + `aria-modal` + a title the card points at is what makes it a card, and the
+  // close button now has a name. ⚠️ Escape closes it, because a keyboard user had no way out but Tab.
+  const titleId = `popup-title-${++popupSeq}`;
+  const titleEl = el("div", { class: "popup-title", id: titleId }, title);
   // The card's heading is built once and never repainted, which is right for every
   // card whose heading is a name it was opened with. The one card whose heading
   // follows something she is still typing — the person's name — takes the node and
   // rewrites it itself, because there is no other way to reach a heading that lives
   // outside the body the card is free to rebuild.
   if (onTitle) onTitle(titleEl);
-  const head = el("div", { class: "popup-head" },
-    titleEl,
-    button("✕", close, "ghost small"));
+  const closeBtn = el("button", { class: "btn ghost small", type: "button", "aria-label": "Close", onclick: close }, "✕");
+  const head = el("div", { class: "popup-head" }, titleEl, closeBtn);
   // ⚠️ A CARD MAY NAME ITSELF (v390), so a stylesheet can size THAT card without a rule broad enough to
   // move every other one. Her words: __"can optimise for desktop as well"__ — the stock card is a
   // table, and a table is the one thing that gets better with width.
-  const card = el("div", { class: `popup-card${wide ? " wide" : ""}${className ? ` ${className}` : ""}` }, head, body);
+  const card = el("div", {
+    class: `popup-card${wide ? " wide" : ""}${className ? ` ${className}` : ""}`,
+    role: "dialog", "aria-modal": "true", "aria-labelledby": titleId, tabindex: "-1",
+  }, head, body);
   layer.replaceChildren(card);
   layer.hidden = false;
+  // ⚠️ Escape, on the layer itself, and only while this card is the one on screen.
+  const onKey = (e) => {
+    // ⚠️ `firstChild` in a browser, `children[0]` in a shim — one answer, read the same way.
+    const top = layer.firstChild || (layer.children && layer.children[0]) || null;
+    if (layer.hidden || (top && top !== card)) return;
+    if (e.key === "Escape") { e.preventDefault(); close(); return; }
+    trapTab(e, card);
+  };
+  layer.addEventListener("keydown", onKey);
+  closeFn = () => layer.removeEventListener("keydown", onKey);
+  try { card.focus({ preventScroll: true }); } catch { /* no focus in a shim */ }
   dragByHead(card, head, layer);
   refresh();
   return close;
@@ -520,10 +760,26 @@ export async function guarded({ btn = null, hold, work, said, trouble }) {
   }
 }
 
+// ⚠️⚠️ A PRESS THAT CANNOT PRINT SAYS SO (v592). ⚠️ The journal had this guard; the purchase order and the
+// expense history called `window.print()` bare — ⚠️ **on a browser without printing the press threw, and with
+// it silently did nothing.** ⭐ One guard, the same sentence the journal uses.
+export function printPage() {
+  if (typeof window !== "undefined" && typeof window.print === "function") {
+    // ⚠️ A print that THROWS says so (v598) — a defined-but-broken print used to leave the press silent.
+    try { window.print(); return true; }
+    catch { toast("This phone couldn't print — use Share instead."); return false; }
+  }
+  toast("This phone can't print — use Share instead.");
+  return false;
+}
+
 export function toast(msg) {
   let t = document.querySelector(".toast");
   if (!t) {
-    t = el("div", { class: "toast" });
+    // ⚠️⚠️ A TOAST NOBODY ANNOUNCES IS A SILENT SAVE (v566). ⭐ Every "Saved" was invisible to a screen
+    // reader: a plain div that appears and leaves. `role="status"` is the polite announcement, which is
+    // the right weight for a confirmation she does not have to act on.
+    t = el("div", { class: "toast", role: "status", "aria-live": "polite" });
     document.body.appendChild(t);
   }
   t.textContent = msg;

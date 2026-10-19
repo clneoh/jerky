@@ -6,7 +6,9 @@
 import { el, button } from "../ui.js";
 import * as sync from "../sync.js";
 
-export function renderLogin(root, state, { onSuccess, onOffline } = {}) {
+// ⚠️ THE SIGN-IN CALL IS INJECTABLE (v584) so the error branch — the one that tells her WHY she is still
+// looking at the gate — can be driven. It had no test at all.
+export function renderLogin(root, state, { onSuccess, onOffline, signIn = sync.signIn } = {}) {
   const sb = state.settings.supabase || {};
   const url = el("input", { class: "input", type: "url", inputmode: "url", autocomplete: "off",
     placeholder: "https://xxxx.supabase.co", value: sb.url || "" });
@@ -26,7 +28,7 @@ export function renderLogin(root, state, { onSuccess, onOffline } = {}) {
     }
     btn.disabled = true;
     btn.textContent = "Signing in…";
-    sync.signIn(state, url.value, anonKey.value, email.value, password.value)
+    signIn(state, url.value, anonKey.value, email.value, password.value)
       .then(() => { if (onSuccess) onSuccess(); })
       .catch((err) => {
         btn.disabled = false;

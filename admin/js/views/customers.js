@@ -460,7 +460,11 @@ function profileBlockEl(state, r, refresh, onSaved) {
         // ★★ v374 IS WHY IT IS OFFERED TO EVERYONE NOW. `forgetCustomer` redacts the ORDERS as well, so
         // the press finally does the whole of what it says: the details go, the sales record stays, and
         // the two cases differ only in how much there is to say about it. See `forgetPress`.
-        button("🗑 Forget", () => forgetPress(state, r, refresh, onSaved), "ghost small"))),
+        // ⚠️ AND NOT ON A ROW THAT ALREADY READS "Details removed" (v599): its `_key` is the redaction key,
+        // so the press matched no order and reported "0 orders cleaned" while doing nothing. A dead control.
+        (state.orders || []).some((o) => o && o.redactedKey && o.redactedKey === r._key)
+          ? null
+          : button("🗑 Forget", () => forgetPress(state, r, refresh, onSaved), "ghost small"))),
     // WHAT THIS ADVOCATE GETS AND WHAT THEY HAVE HAD (v291). It sits UNDER the profile top rather
     // than inside `.profile-who`, because it carries a press and the who-column is a flex child
     // beside the avatar. It was a bare sentence from v289 until she asked how to EXERCISE the
@@ -553,6 +557,9 @@ function editProfilePopup(state, r, afterSave, opts = {}) {
   const p = profileFor(state, r._key) || {};
   let close = () => {};
   let photo = String(p.dogPhoto || "");
+  // ⚠️⚠️ THE PICTURE IS NOT SAVED YET (v553) — see `saveProfile`. Reading a large photo takes a moment,
+  // and pressing Save before it finished wrote the OLD one while the screen said "Profile saved".
+  let photoPending = false;
 
   const name = el("input", { class: "input", value: p.name != null ? p.name : (r.name && r.name !== "(no name)" ? r.name : "") });
   const whatsapp = el("input", { class: "input", type: "tel", value: p.whatsapp != null ? p.whatsapp : (r.whatsapp || "") });
@@ -588,13 +595,20 @@ function editProfilePopup(state, r, afterSave, opts = {}) {
   file.addEventListener("change", () => {
     const f = file.files && file.files[0];
     if (!f) return;
+    photoPending = true;
     readPhoto(f, (dataUrl) => {
+      photoPending = false;
       if (dataUrl) { photo = dataUrl; draw(); toast("Photo added"); }
       else toast("That file couldn't be read as a photo");
     });
   });
 
   const saveProfile = () => {
+    // ⚠️ THE PICTURE COMES FIRST — saving without it loses it silently (v553).
+    if (photoPending) {
+      toast("The picture is still being prepared — give it a second, then press Save again");
+      return;
+    }
     const prof = upsertProfile(state, {
       id: p.id || "",
       name: name.value,

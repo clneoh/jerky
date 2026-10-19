@@ -19,7 +19,7 @@ function createEl(tag) {
     scrollTop: 0, hidden: false, _listeners: {}, _val: "",
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     appendChild(c) { if (c != null) this.children.push(c); return c; },
-    append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
+    append(...cs) { for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
     // Faithful on purpose, the same rule test/board-view.test.js:106 carries: the real
     // `replaceChildren` has NO null filter — `el()` does, a DOM method does not — it
     // converts every argument with String(), so a bare `?: null` left in a list prints

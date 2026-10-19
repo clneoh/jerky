@@ -35,15 +35,21 @@ function pythonCanParse(file) {
   execFileSync("python3", ["-c", 'import ast,sys; ast.parse(open(sys.argv[1], encoding="utf-8").read())', file], { stdio: "pipe" });
 }
 
-test("the PDF builders are still valid Python", { skip }, () => {
+test("the PDF builders are still valid Python", { skip }, (t) => {
   // ⚠️ No Python on this machine is not a fault in the guide — the builders only run when she runs them.
+  // ⚠️⚠️ A GUARD THAT DID NOT RUN MUST NOT REPORT AS A PASS (v557). ⭐ These returned early and node counted
+  // a PASS — so a machine without python3, or without PyMuPDF, showed green for a check that never looked.
+  // ⭐ `t.skip` is the reporter's own word for it, and it shows on the run.
   try { execFileSync("python3", ["-c", "print(1)"], { stdio: "pipe" }); }
-  catch { return; }
+  catch { t.skip("python3 is not on this machine"); return; }
 
   for (const f of BUILDERS) {
     if (!present(f)) continue;
     try {
-      pythonCanParse(f);
+      // ⚠️ AN ABSOLUTE PATH, so the guard does not depend on the directory the suite was started from (v576).
+      // ⭐ It failed from `marketing/` with "No such file" and reported it as "not valid Python" — a guard
+      // whose answer changes with the shell is a guard that lies.
+      pythonCanParse(here(f).pathname);
     } catch (e) {
       const said = String((e && e.stderr) || (e && e.message) || "");
       const line = (/line (\d+)/.exec(said) || [])[1];
@@ -83,57 +89,23 @@ const OUTPUTS = {
 
 // ★★★ AND HER 中文 MUST BE IN THE CHANGELOG PDF, NOT A GAP IN IT (v536).
 //
-// ⚠️⚠️ THE FAULT: the changelog's Chinese blocks were drawn with faces that had NO Chinese in them, so
-// **`**已烤好**` printed as NOTHING** — ⭐ **her own wording decisions were holes in the document that records
-// them.** ⚠️ It was silent: the build only warned, and nothing read the PDF back.
-// ⭐⭐ **So this reads the built PDF back and asks for the characters themselves.**
-// ⚠️ It needs PyMuPDF to read text out of a PDF. **Without it this SKIPS rather than fails** — a guard that
-// goes red because a package she does not ship is missing is a guard that gets ignored.
-test("★★★ her Chinese is IN the changelog PDF — not a gap where her words should be", { skip }, () => {
-  try { execFileSync("python3", ["-c", "import fpdf, fitz"], { stdio: "pipe" }); }
-  catch { return; }
-  if (!present("CHANGELOG.md") || !present("marketing/build_changelog.py")) return;
+// ⚠️⚠️ A DELIBERATE NON-PORT (munchies, 2026-10-19). The bakery's v537 guard asks the built changelog
+// PDF for the Chinese phrases in CHANGELOG.md. **MUNCHIES' CHANGELOG IS ENGLISH ON PURPOSE** — its own
+// rule is that `build_changelog.py` turns CJK into `?`, so no Chinese is written there at all, and this
+// test would assert a property this repo deliberately does not have. It is dropped here, like
+// `store-vocab.test.js` and `store-track-money.test.js`. ⚠️ Do not restore it in a later sync without
+// first deciding whether munchies' change history should carry Chinese at all.
 
-  // ⚠️ The phrases to look for are taken FROM THE CHANGELOG ITSELF, so this cannot drift from the document it
-  // is checking. Every CJK run in it must survive into the PDF.
-  const md = readFileSync(here("CHANGELOG.md"), "utf8");
-  // ⚠️ `中文` IS EXCLUDED ON PURPOSE, and it is not an exception to the rule — **the builder deliberately
-  // prints it as the English word "Mandarin"**, because it appears in ordinary prose as the NAME of a
-  // language rather than as a word of hers. ⭐ Measured the hard way: this check first went red on it alone,
-  // and the fault was the check, not the PDF.
-  const runs = [...new Set(md.match(/[一-鿿]{2,}/g) || [])].filter((r) => r !== "中文");
-  if (!runs.length) return; // nothing to check — the document carries no Chinese today
-
-  const out = OUTPUTS["marketing/build_changelog.py"];
-  const before = existsSync(here(out)) ? readFileSync(here(out)) : null;
-  try {
-    execFileSync("python3", [here("marketing/build_changelog.py").pathname], { stdio: "pipe", cwd: here("").pathname });
-    // ⚠️ `maxBuffer` MATTERS: this is the text of a 326-page document, and the default 1 MB overflows
-    // (`spawnSync python3 ENOBUFS`) — ⭐ the test would fail for the size of her history rather than for a gap
-    // in it. Measured: it needs a few MB today, so 64 leaves room for years of entries.
-    const read = execFileSync("python3", ["-c",
-      "import fitz,sys; d=fitz.open(sys.argv[1]); print('\\n'.join(p.get_text() for p in d))",
-      here(out).pathname], { stdio: "pipe", maxBuffer: 64 * 1024 * 1024 }).toString("utf8");
-    const missing = runs.filter((r) => !read.includes(r));
-    assert.deepEqual(missing, [],
-      `★ ${missing.length} of her Chinese phrases are MISSING from the changelog PDF — **they were drawn with a `
-      + "font that has no Chinese in it, so her own wording prints as a GAP**");
-    // ⭐ AND THE ONE DELIBERATE MAPPING STILL WORKS: `中文` prints as the English word, on purpose.
-    assert.ok(read.includes("Mandarin"),
-      "★ `中文` no longer prints as \"Mandarin\" — **it is the name of a language in ordinary prose, not one of "
-      + "her words, and the builder maps it so the sentence still reads**");
-  } finally {
-    if (before) writeFileSync(here(out), before); // ⚠️ the PDF goes back exactly as it was, as above
-  }
-});
-
-test("the PDF builders actually RUN (a valid file can still kill the build)", { skip }, () => {
+test("the PDF builders actually RUN (a valid file can still kill the build)", { skip }, (t) => {
+  // ⚠️⚠️ `catch { return; }` INSIDE A TEST IS A PASS (v584). ⚠️ With `python3` off PATH this reported
+  // **ok — the PDF builders actually RUN**, ⚠️ **certifying builders on a machine that never ran them.** ⭐ A
+  // skipped test says so; a returned one lies.
   try { execFileSync("python3", ["-c", "print(1)"], { stdio: "pipe" }); }
-  catch { return; }
+  catch { t.skip("python3 is not on PATH here"); return; }
   // ⚠️ `fpdf` is what the builders draw with; without it this cannot tell a broken guide from a missing
   // package, and a guard that goes red for the wrong reason is a guard that gets ignored.
   try { execFileSync("python3", ["-c", "import fpdf"], { stdio: "pipe" }); }
-  catch { return; }
+  catch { t.skip("fpdf is not installed here"); return; }
 
   for (const f of BUILDERS) {
     if (!present(f)) continue;

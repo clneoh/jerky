@@ -24,6 +24,7 @@
 // The only thing stubbed anywhere below is `fetch` — never a function under test.
 
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 
@@ -115,15 +116,24 @@ test("sandbox unless production is said out loud, so a typo cannot spend real mo
 test("each documented code becomes a sentence she can act on", () => {
   const say = (code) => plainReason({ errors: [{ code }] }, 400);
   assert.match(say("ERR_REVERSE_GEOCODE_FAILURE"), /^Lalamove could not place one of these addresses — put the pin on the map/);
-  assert.match(say("ERR_QUOTATION_EXPIRED"), /five minutes old/);
-  assert.match(say("ERR_QUOTATION_NOT_FOUND"), /fresh one/);
+  // ⚠️⚠️ THESE ARE THE IDS LALAMOVE'S OWN TABLE USES (v566). ⭐ Four of the old ones — QUOTATION_EXPIRED,
+  // QUOTATION_NOT_FOUND, INSUFFICIENT_BALANCE and INVALID_STOPS — do not exist in it, so their sentences
+  // were dead lines and she saw the raw code. ⭐ A wrong-or-expired price is ONE code.
+  assert.match(say("ERR_INVALID_QUOTATION_ID"), /five minutes old/);
   assert.match(say("ERR_INSUFFICIENT_CREDIT"), /wallet/);
-  assert.match(say("ERR_INSUFFICIENT_BALANCE"), /wallet/);
+  assert.match(say("ERR_INVALID_FIELD"), /fault in the app/);
+  assert.match(say("ERR_MISSING_FIELD"), /fault in the app/);
+  assert.match(say("ERR_ORDER_NOT_FOUND"), /no record of that trip/);
   assert.match(say("ERR_OUT_OF_SERVICE_AREA"), /does not cover/);
   assert.match(say("ERR_INVALID_SERVICE_TYPE"), /does not run that vehicle/);
   assert.match(say("ERR_INVALID_PHONE_NUMBER"), /phone number/);
-  assert.match(say("ERR_INVALID_STOPS"), /one of the stops/);
   assert.match(say("ERR_CANCELLATION_FORBIDDEN"), /will not let this trip be cancelled/);
+  // ⚠️ AND THE FOUR DEAD ONES MUST NOT COME BACK: if any of these ever matches a sentence, the map has
+  // grown a line the API can never fire.
+  for (const dead of ["ERR_QUOTATION_EXPIRED", "ERR_QUOTATION_NOT_FOUND", "ERR_INSUFFICIENT_BALANCE", "ERR_INVALID_STOPS"]) {
+    assert.equal(say(dead).includes("Lalamove would not") || say(dead).includes("five minutes"), false,
+      `★ ${dead} is not in Lalamove's error table, so its sentence is dead code`);
+  }
 });
 
 test("the two codes whose own words would be useless carry the number she needs", () => {
@@ -143,7 +153,7 @@ test("the code is read from errors[].id too, because the two releases disagree",
 });
 
 test("the code wins over the API's own message, so the sentence she gets is the useful one", () => {
-  const out = plainReason({ message: "Bad Request", errors: [{ code: "ERR_QUOTATION_EXPIRED", message: "quotation not valid" }] }, 400);
+  const out = plainReason({ message: "Bad Request", errors: [{ code: "ERR_INVALID_QUOTATION_ID", message: "quotation not valid" }] }, 400);
   assert.match(out, /five minutes old/);
   assert.equal(out.includes("quotation not valid"), false, "the raw text is dropped when the code is known");
 });
@@ -229,16 +239,24 @@ test("a failure with nothing in it still says something true", () => {
 
 // ── the fleet, read from Lalamove rather than written down here ───────────
 
-test("every vehicle in every city, each named once", () => {
+test("★★★ every vehicle in every city, named in the vendor's own words", () => {
+  // ⚠️⚠️ THE CITIES REPLY HAS NO `name` FIELD (v566). ⭐ Each service carries `key`, `description`,
+  // `dimensions`, `load` and `specialRequests` — so `name` was always empty and every vehicle was
+  // labelled from a table in this app. ⭐ The fixture used to invent a `name`, which is why the suite
+  // could never see it: **a fixture is a consumer, and it has to be the shape the producer sends.**
   const data = { data: [
-    { locode: "MYPEN", services: [{ key: "MOTORCYCLE", name: "Motorcycle" }, { key: "CAR", name: "Car" }] },
-    { locode: "MYKUL", services: [{ key: "CAR", name: "Car" }, { key: "VAN", name: "Van" }] },
+    { locode: "MYPEN", services: [
+      { key: "MOTORCYCLE", description: "Ideal for small to medium goods" },
+      { key: "CAR", description: "For goods needing extra care" }] },
+    { locode: "MYKUL", services: [
+      { key: "CAR", description: "For goods needing extra care" },
+      { key: "VAN", description: "" }] },
   ] };
   assert.deepEqual(servicesIn(data), [
-    { key: "MOTORCYCLE", name: "Motorcycle" },
-    { key: "CAR", name: "Car" },
-    { key: "VAN", name: "Van" },
-  ], "the first spelling of a repeated key is kept, and the order is the API's own");
+    { key: "MOTORCYCLE", name: "Ideal for small to medium goods" },
+    { key: "CAR", name: "For goods needing extra care" },
+    { key: "VAN", name: "" },
+  ], "the vendor's description is the name; a repeated key keeps the first; the order is the API's own");
 });
 
 test("a malformed city list yields what it can and invents nothing", () => {
@@ -343,6 +361,32 @@ test("the market and a fresh nonce travel with every call", async () => {
     assert.equal(s.sent[1].headers.Market, "MY");
     assert.match(s.sent[0].headers["Request-ID"], UUID);
     assert.notEqual(s.sent[0].headers["Request-ID"], s.sent[1].headers["Request-ID"], "a retried call must not look like a duplicate");
+  } finally { s.restore(); }
+});
+
+test("★★★ an unreadable reply or a 5xx is UNKNOWN, never a refusal or a booked trip (v589)", async () => {
+  // ⚠️⚠️ MEASURED: a 200 carrying HTML was reported as `{ok:true, data:null}` — ⚠️ **an unreadable booking
+  // was SUCCESS with no order** — and a 502 was an ordinary refusal. ⚠️ Either way the Book press stayed
+  // live under a trip that may already be booked and charged. ⭐ 4xx stays a definite refusal.
+  let s = stubFetch({ ok: true, status: 200, text: async () => "<html>fault</html>" });
+  try {
+    const a = await llmRequest(cfg(), { method: "POST", path: "/v3/orders", body: {} });
+    assert.equal(a.ok, false, "★ a 200 that is not JSON was reported as a booked trip");
+    assert.equal(a.unknown, true, "★ an unreadable booking reply left the Book press live");
+  } finally { s.restore(); }
+
+  s = stubFetch({ ok: false, status: 502, text: async () => "<html>bad gateway</html>" });
+  try {
+    const b = await llmRequest(cfg(), { method: "POST", path: "/v3/orders", body: {} });
+    assert.equal(b.ok, false);
+    assert.equal(b.unknown, true, "★ a 502 was reported as an ordinary refusal — a second Book may charge twice");
+  } finally { s.restore(); }
+
+  s = stubFetch(jsonReply({ message: "invalid" }, 422));
+  try {
+    const c = await llmRequest(cfg(), { method: "POST", path: "/v3/orders", body: {} });
+    assert.equal(c.ok, false);
+    assert.notEqual(c.unknown, true, "a 4xx is a real refusal, and must not claim the trip may exist");
   } finally { s.restore(); }
 });
 
@@ -1134,4 +1178,16 @@ test("every price wears the vehicle's own name, and a refused vehicle wears one 
     const again = await lalamove.quote(STATE, readyTrip(), { services: ["7FT_VAN"] });
     assert.equal(again.quotes[0].name, "7Ft Van");
   } finally { lalamove.forget(); s.restore(); }
+});
+
+test("★★★ no Lalamove call may hang, and a timed-out BOOKING is UNKNOWN (v585)", () => {
+  // ⚠️⚠️ MEASURED FAULT: there was no timeout on ANY Lalamove call — ⚠️ **a hung vendor held the invocation, and
+  // `book` could complete after the app gave up at 25 seconds: a trip booked, and the app does not know.**
+  // ⭐ Source-level, and named as such: the provider runs on Deno. ⚠️ What it can hold is the rule, and the
+  // words a timeout must use — an aborted booking is UNKNOWN, never "refused".
+  const src = readFileSync(new URL("../supabase/functions/courier/providers/lalamove.ts", import.meta.url), "utf8");
+  assert.match(src, /signal:\s*AbortSignal\.timeout\(\s*20_?000\s*\)/,
+    "★ the Lalamove call has no timeout again — a hung vendor can hold the invocation past the app's wait");
+  assert.match(src, /the trip is UNKNOWN, not refused/,
+    "★ a timed-out request must say the trip is UNKNOWN — **saying it was refused would send her to book a second one**");
 });

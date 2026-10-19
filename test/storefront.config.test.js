@@ -3,6 +3,7 @@
 // store.test.js so store/app.js can render at import time.
 
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 
 function createEl(tag) {
@@ -12,8 +13,8 @@ function createEl(tag) {
     scrollTop: 0, _listeners: {},
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     appendChild(c) { if (c != null) this.children.push(c); return c; },
-    append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
-    replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) this.children.push(c); },
+    append(...cs) { for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
+    replaceChildren(...cs) { this.children = []; for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener() {},
     setAttribute(k, v) { this.attrs[k] = String(v); },
@@ -87,7 +88,7 @@ globalThis.fetch = async (url) => {
 };
 
 const { mergeStorefront, placeOrder, labelOpenToCount, labelOpenCounter, postLabelOpen,
-  cutoffText, nextOpenDay } = await import("../store/app.js");
+  cutoffText, nextOpenDay, upcomingDates, firstOpenSpec, dateKey } = await import("../store/app.js");
 const { CONFIG } = await import("../store/config.js");
 
 const settle = async () => {
@@ -234,6 +235,23 @@ test("mergeStorefront replaces arrays wholesale and never touches supabase", () 
   ], "a written description survives adoption; a blank one is dropped");
   assert.deepEqual(out.supabase, { url: "u" }, "the Supabase connection is never overridden");
   assert.equal(base.supabase.url, "u", "base is not mutated");
+});
+
+test("★★★ an EMPTY published menu or bake-day list is adopted, not ignored (v581)", () => {
+  // ⚠️⚠️ MEASURED: deleting her last product or her last bake day left the local fallback on sale —
+  // ⚠️ **the shop showing more than she has published.** ⭐ The publisher sends these lists every time, so
+  // an empty one is an answer. ⚠️ A list of rubbish is not.
+  const base = { name: "A", deliveryDays: [1, 3, 5],
+    products: [{ name: "X", price: 1, unit: "u" }] };
+  const out = mergeStorefront(base, { deliveryDays: [], products: [] });
+  assert.deepEqual(out.deliveryDays, [], "★ her last bake day deleted, and the fallback days stayed on sale");
+  assert.deepEqual(out.products, [], "★ her last product deleted, and the fallback menu stayed on sale");
+  // ⭐ And the calendar built from that empty day list has no days in it — which is what takes the
+  // fallback weekdays off the page, without the shop having to distrust its own availability table.
+  assert.equal(upcomingDates(out).length, 0, "★ her last bake day deleted, and the shop still offers days");
+  const messy = mergeStorefront(base, { products: [null], deliveryDays: [9] });
+  assert.deepEqual(messy.products, base.products, "a list of rubbish emptied her shop");
+  assert.deepEqual(messy.deliveryDays, base.deliveryDays, "a list of rubbish emptied her calendar");
 });
 
 test("mergeStorefront ignores null and malformed values", () => {
@@ -604,4 +622,36 @@ test("★★ the next day a customer can ACTUALLY have bread is the answer, not 
   assert.equal(onMonday.getDate(), 14,
     "⚠️ on the delivery day itself the answer is still that day — its 6pm deadline was the night before");
   assert.equal(onMonday.getDay(), 3, "and Wednesday is the next day she bakes");
+});
+
+test("★★★ the answer box follows the REAL days, and skips one that is sold out (v590)", () => {
+  // ⚠️⚠️ MEASURED: the box was drawn once from the WEEKDAY RULE and never repainted — ⚠️ **a day that had
+  // closed, sold out or been removed went on being named, under a deadline already in the past.** ⭐ Every
+  // repaint now passes the same list the calendar is drawn from.
+  const wed = new Date(2026, 9, 21);
+  const fri = new Date(2026, 9, 23);
+  assert.equal(firstOpenSpec([wed, fri], {}), wed, "with both open, the first is the answer");
+  assert.equal(firstOpenSpec([wed, fri], { [dateKey(wed)]: 0 }), fri,
+    "★ a SOLD-OUT day was still named as the next day a customer can have bread");
+  assert.equal(firstOpenSpec([wed, fri], { [dateKey(wed)]: 3 }), wed, "a day with slots left is still the answer");
+  assert.equal(firstOpenSpec([], {}), null, "no day at all says nothing rather than guessing");
+
+  // ⚠️ AND THE REPAINT IS WIRED, not only computed: `rerender` must call the box with that list.
+  const SRC = readFileSync(new URL("../store/app.js", import.meta.url), "utf8");
+  assert.match(SRC, /paintDayAnswer\(CONFIG, cutoffText\(CONFIG\.cutoff\), firstOpenSpec\(dates, avail\),/,
+    "★ the box is still painted once from the weekday rule — **it can name a day that has gone**");
+});
+
+test("★★ the closed-day refusal speaks the page's own clock, not the stored 18:00 (v581)", () => {
+  // ⚠️⚠️ MEASURED: the refusal said "close at 18:00" while every other sentence on the page says "6pm" —
+  // ⭐ one fact in two forms on one screen. ⚠️ Source-level, and named as such: the sentence is built
+  // inside the Place-order handler, which this suite cannot press.
+  const SRC = readFileSync(new URL("../store/app.js", import.meta.url), "utf8");
+  assert.doesNotMatch(SRC, /sub\(t\("confirmClosedBody"\), CONFIG\.cutoff\)/,
+    "★ the refusal prints the stored 18:00 beside a page that says 6pm");
+  // ⚠️ MUNCHIES' SHOP HAS ITS OWN CLOCK FORMATTER (`clockWords`), the same one every other sentence on
+  // the page uses — the bakery routes the same job through `home-facts.js`'s `cutoffText`. Either is
+  // "the page's own clock"; what must never appear is the stored 18:00.
+  assert.match(SRC, /sub\(t\("confirmClosedBody"\), clockWords\(CONFIG\.cutoff\)\)/,
+    "★ the refusal no longer names the cut-off at all");
 });

@@ -401,7 +401,7 @@ function createEl(tag) {
       contains(c) { return this._set.has(c); },
     },
     appendChild(c) { if (c != null) this.children.push(c); return c; },
-    append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
+    append(...cs) { for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
     replaceChildren(...cs) { this.children = cs.map((c) => (c && c.nodeType ? c : { nodeType: 3, text: String(c) })); },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener() {},

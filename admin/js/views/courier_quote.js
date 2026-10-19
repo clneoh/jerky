@@ -46,6 +46,8 @@
 // puts on its vehicles. No courier's name, service keys or error codes appear below.
 
 import { button, confirmDialog, el, guarded, keepStill, toast } from "../ui.js";
+import { save } from "../state.js";
+import { maybeSync } from "../supabase.js";
 import { todayISO } from "../dates.js";
 import {
   courierDayOf, pickupTimeOf,
@@ -146,6 +148,13 @@ export function courierQuoteSection({
   // A booking or a cancellation in flight. One at a time, because both spend money and
   // a second press while the first is unanswered is a second vehicle.
   let jobBusy = false;
+  // ⚠️⚠️ A BOOKING WHOSE REPLY WAS LOST IS NOT KNOWN TO HAVE FAILED (v566). ⭐ The function has no timeout of
+  // its own, so the browser giving up can leave a trip already booked and already charged. ⭐ While this is
+  // set, every Book press is refused with the sentence that says so — the way back is to look in Lalamove.
+  // ⚠️⚠️ AND IT IS READ OFF THE ORDER, NOT ONLY FROM THIS SCREEN'S MEMORY (v587). ⚠️ A repaint or reopening the
+  // card rebuilt this section with the flag false — ⚠️ **so every Book press came back under a trip that may
+  // already exist.** ⭐ The fact is stamped onto the order, where a rebuild cannot lose it.
+  let bookUnknown = Boolean(first && first.courierUnknownAt);
 
   const bodyWrap = el("div", { style: "margin-top:10px" });
   bodyWrap.hidden = true;
@@ -1003,6 +1012,11 @@ export function courierQuoteSection({
       // A price-only host has nowhere to put a trip, so the press is refused here as well
       // as not drawn — a stray call cannot put a real vehicle on the road.
       if (!canBook) return;
+      // ⚠️ A lost booking must be LOOKED AT before another is made (v566).
+      if (bookUnknown) {
+        toast(`Open ${courier.label} and check whether the last booking went through before booking again.`);
+        return;
+      }
       if (jobBusy || !wrap.isConnected) return;
       const trip = pricedTrip;
       if (!trip) { toast("Ask for a price first — a trip is booked at the price it was quoted at."); return; }
@@ -1044,6 +1058,14 @@ export function courierQuoteSection({
       if (!wrap.isConnected) return;
       jobBusy = false;
       if (!out.ok) {
+        // ⚠️⚠️ AN UNKNOWN BOOKING DISABLES EVERY BOOK PRESS (v566). ⭐ Leaving "Book this trip" under a
+        // sentence that says the trip may already exist is how she books and pays twice.
+        if (out.unknown) {
+          bookUnknown = true;
+          if (first) first.courierUnknownAt = new Date().toISOString();
+          save(state);
+          maybeSync(state);
+        }
         statusLine.textContent = out.reason;
         paintQuotes();
         paintJob();
@@ -1180,9 +1202,11 @@ export function courierQuoteSection({
       return courierDayOf(first);
     }
     function whenTime() {
-      // ★ HER TYPED PICKUP TIME WINS (v341), and her own Settings dispatch time is the fallback.
-      // She set that fallback herself; what neither reads is the bake plan.
-      return pickupTimeOf(first) || String(((state.settings || {}).courier || {}).dispatch || "").trim();
+      // ⚠️⚠️ HER TYPED PICKUP TIME, AND NOTHING ELSE (v583). ⚠️ The old fallback read
+      // `settings.courier.dispatch` — a **10:00** no screen has written since that box was taken away — ⚠️ **so a
+      // price was asked for a ten o'clock collection she never asked for, while the note said it was for the
+      // order's own Pickup time.** ⭐ No time now means no time: the courier prices it as soon as possible.
+      return pickupTimeOf(first);
     }
     const whenNote = el("p", { class: "card-sub", style: "margin:6px 0 0" });
 
@@ -1199,8 +1223,11 @@ export function courierQuoteSection({
     // belong to a time she has since left, THAT.
     function paintWhen() {
       const d = String(whenDay() || "").trim();
+      const t = String(whenTime() || "").trim();
       whenNote.textContent = d
-        ? "The price is asked for the order's own Courier delivery date and Pickup time, above."
+        ? (t
+          ? "The price is asked for the order's own Courier delivery date and Pickup time, above."
+          : "The price is asked for the order's Courier delivery date, with no pickup time — the courier prices it as soon as possible that day. Type the Pickup time above to price the hour.")
         : "No day has been set for the van yet, so this prices collection as soon as possible. Set the Courier delivery date on the order, above, to schedule it.";
       if (pricedFor && pricedFor !== whenLabel()) {
         whenNote.textContent += ` The prices below were asked for ${pricedFor}.`;
@@ -1217,6 +1244,18 @@ export function courierQuoteSection({
     priceStatusLine = statusLine;
     const askBtn = button(`Get a price from ${courier.label}`, () => ask(), "primary");
     const askRow = el("div", { class: "btn-row", style: "margin-top:12px" }, askBtn);
+    // ⭐ THE WAY BACK, AND ONLY SHE CAN TAKE IT: the app cannot look in her courier account, so this press is
+    // her word that she did and the trip is not there. ⚠️ It is drawn ONLY while a booking is unknown.
+    const unknownRow = el("div", { class: "btn-row", style: "margin-top:8px", hidden: !bookUnknown },
+      button("I checked — it is not in my courier app", () => {
+        bookUnknown = false;
+        if (first) delete first.courierUnknownAt;
+        save(state);
+        maybeSync(state);
+        unknownRow.hidden = true;
+        paintQuotes();
+        paintJob();
+      }, "ghost small"));
 
     function useFee(q) {
       if (!onUseFee || quoteExpired(q)) return;
@@ -1300,7 +1339,8 @@ export function courierQuoteSection({
         // `why` covers everything `unbookable` used to, and more — except the dead clock,
         // which is this row's own reading of the time and not a property of the quote.
         if (bookBtn) {
-          bookBtn.disabled = dead || !!why || !!bookBlocked || jobBusy;
+          // ⚠️ AND A LOST BOOKING TAKES EVERY BOOK PRESS AWAY (v566) — see `bookUnknown`.
+          bookBtn.disabled = dead || !!why || !!bookBlocked || jobBusy || bookUnknown;
           if (dead) bookBtn.textContent = "Expired";
         }
       });
@@ -1531,6 +1571,7 @@ export function courierQuoteSection({
       endsRow,
       whenNote,
       askRow,
+      unknownRow,
       statusLine,
       quoteBox,
       canBook ? el("p", { class: "card-sub", style: "margin:14px 0 0" },

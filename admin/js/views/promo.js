@@ -20,7 +20,8 @@
 import { el, button, copyText, emptyState, confirmDialog, showPopup, toast, menuRow } from "../ui.js";
 import { qrSvg } from "../qr.js";
 import { shopLink } from "../promo-card.js";
-import { fmtRM, newId, save } from "../state.js";
+import { fmtRM, groupOrders, newId, save } from "../state.js";
+import { promoOn, freezePromoOnOrders } from "../courier.js";
 import { todayISO, toISODate, longDate } from "../dates.js";
 import { fetchPromoVisits, maybeSyncStorefront } from "../supabase.js";
 import { translateTo, translateAllowed } from "../translate.js";
@@ -798,6 +799,14 @@ function deleteCode(state, code, root, used) {
     ? `Delete code "${code.code}"? ${used} order${used === 1 ? " carries" : "s carry"} it — those keep it, and you still owe them what you promised. The shop stops accepting the code.`
     : `Delete code "${code.code}"? The shop stops accepting it.`,
   () => {
+    // ⚠️⚠️ FREEZE WHAT EACH CARRYING ORDER IS OWED, WHILE THE CODE IS STILL HERE (v551). ⭐ The question
+    // above promises __"those keep it, and you still owe them what you promised"__ — and until now the app
+    // stored only the code's NAME on the order, so deleting it made **every one of those orders price at
+    // nothing and go UP.** ⭐ The amount rides on the order now, and `promoOn` reads it when the code is gone.
+    // ⚠️⚠️ ONE READER FOR THE FREEZE (v577) — it lives beside `promoOn`, where it can be tested. ⚠️ The old
+    // loop compared two `normalizeCode` OBJECTS and therefore matched nothing: deleting a code raised the
+    // Total of every order carrying it.
+    freezePromoOnOrders(state, code.code);
     state.promoCodes = (state.promoCodes || []).filter((c) => c.id !== code.id);
     commit(state, root, `${code.code} deleted`);
   }, { danger: true, yesLabel: "Delete" });

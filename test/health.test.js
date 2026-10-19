@@ -14,7 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { runHealthChecks, localChecks, registerChecks, copyChecks, backupChecks, recordCountCheck } = await import("../admin/js/health.js");
+const { hideSparesBlocked, runHealthChecks, localChecks, registerChecks, copyChecks, backupChecks, recordCountCheck } = await import("../admin/js/health.js");
 const sync = await import("../admin/js/sync.js");
 // ⭐ The phone's own storage limit, read from the SAME constant the check uses — so the test cannot pass
 // against a number the app does not actually hold itself to.
@@ -80,9 +80,9 @@ test("★★ a healthy book passes every check — and every check actually RAN"
   // ⚠️ THE COUNT IS THE POINT. `[].every(...)` is TRUE — a check list that had quietly emptied itself
   // would pass every assertion above, on a phone with no checks at all. This project has been bitten by
   // that exact shape before (v381's doors).
-  assert.equal(res.total, 22, `the check list is no longer twenty-two checks (it is ${res.total})`);
+  assert.equal(res.total, 24, `the check list is no longer twenty-four checks (it is ${res.total})`);
   // 17 since v548: "This phone could read its saved copy" joins the page.
-  assert.equal(res.passedChecks, 22);
+  assert.equal(res.passedChecks, 24);
   assert.equal(res.failed, 0);
 });
 
@@ -184,12 +184,21 @@ test("★★ one order's lines disagreeing about the order FAILS", () => {
     "★ a perfectly ordinary two-item order was reported as disagreeing with itself");
 });
 
-test("★ an order not on any delivery date FAILS — the order that is invisible", () => {
+test("★★★ an order on a DELETED bake day is FINE — the app shows it; only an unplaceable one fails (v572)", () => {
+  // ⚠️⚠️ The app's own Delete button removes a bake day and keeps its orders on purpose, and the Orders list
+  // draws them with "its bake day was removed — tap to put it on one". ⭐ The check used to fail for ever on
+  // that ordinary state, with a sentence saying the orders were invisible — **which the app contradicts.**
   const st = healthy();
-  st.orders[0].deliveryDateId = "d_gone";
-  const r = resultOf(runChecks(st, { register: REGISTER, copies: COPIES }), "day");
-  assert.equal(r.status, "fail", "★ an order no delivery date can show was not reported");
-  // ⚠️ ASSERTIONS ON USER-VISIBLE COPY → jerky's admin says "delivery date".
+  st.orders[0].deliveryDateId = "d_gone";     // the day is gone, the order keeps its own date
+  assert.equal(resultOf(runChecks(st, { register: REGISTER, copies: COPIES }), "day").status, "pass",
+    "★ a normal tidy-up was reported as a fault — **a red X she cannot clear by doing something wrong**");
+
+  // ⚠️ And an order with NO day at all — no id and no date — is the one that really is unplaceable.
+  const lost = healthy();
+  lost.orders[0].deliveryDateId = "d_gone";
+  delete lost.orders[0].deliveryDate;
+  const r = resultOf(runChecks(lost, { register: REGISTER, copies: COPIES }), "day");
+  assert.equal(r.status, "fail", "★ an order nothing can place was not reported");
   assert.match(r.fix, /delivery date/, "the check does not say what she can do about it");
 });
 
@@ -214,7 +223,7 @@ test("★★⚠️ A CHECK THAT COULD NOT RUN IS SKIPPED — IT IS NEVER A PASS"
     "★ shared data that could not be read was reported as a pass by the reverse check too");
   assert.equal(resultOf(res, "waiting").status, "pass",
     "the waiting count is a local number and does not need the cloud to be readable");
-  assert.equal(res.passedChecks, 14, "a skipped check was counted among the passes");
+  assert.equal(res.passedChecks, 16, "a skipped check was counted among the passes");
   assert.equal(res.skippedChecks, 8, "the skipped checks were not counted separately");
   assert.match(String(resultOf(res, "reached").why || ""), /shared data/i,
     "the skipped check does not say why it could not look");
@@ -289,8 +298,8 @@ test("⚠️ a phone with no orders at all is checked without throwing", () => {
   const bare = { settings: { currency: "RM" }, products: [], deliveryDates: [], orders: [], removedOrders: [] };
   const res = runChecks(bare, { register: [], copies: COPIES });
   assert.equal(res.failed, 0, "an empty book reported a fault");
-  assert.equal(res.total, 22, "the checks did not all run on an empty book");
-  assert.equal(localChecks(bare).length, 11, "the local checks are not eleven");
+  assert.equal(res.total, 24, "the checks did not all run on an empty book");
+  assert.equal(localChecks(bare).length, 13, "the local checks are not thirteen");
   assert.equal(registerChecks(bare, []).length, 2, "the register checks are not two");
   assert.equal(backupChecks(bare, { orders: [] }).length, 1, "the copy check is not one");
 });
@@ -316,6 +325,14 @@ test("★★★ an order that leaves the phone is caught — the fault that cost
   assert.deepEqual(r.detail, ["#D4E5F6"], "★ the check does not name the order that went missing");
   assert.match(r.why, /Removed list/, "★ it does not say the app has no record of taking the order off");
   assert.match(r.why, /copy saved on/, "★ it does not say which copy it looked at");
+  // ⚠️⚠️ AND IT NAMES ALL THREE INNOCENT CASES (v550). ⭐ It named two, and her own screen showed a third:
+  // **an order removed on her OTHER phone while this phone had never received it** — this phone has nothing
+  // to record, so a deliberate removal on the other phone reads here as a loss.
+  assert.match(r.why, /THREE innocent cases/,
+    "★ the reason does not say how many innocent explanations there are, so she cannot tell whether hers is one");
+  assert.match(r.why, /OTHER phone/,
+    "★ the reason does not name an order removed on her other phone — **the one case a second phone makes, "
+    + "and this phone cannot record it at all**");
   assert.ok(r.fix, "★ a fault with no way out is a dead end");
 });
 
@@ -741,23 +758,67 @@ test("★★★ and the page reports it, in her words", () => {
     "a phone with no recorded failure claims one");
 });
 
-test("★★★ two ingredients sharing a NAME are named — the fault that made her doubt the screen (v544)", () => {
+test("★★★ two ingredients sharing a NAME are named — the fault that made her doubt the screen (v544)", async () => {
   // ⚠️⚠️ HER CASE: __"last time there is 2 yeast, but i think i deleted it long time ago"__ — and then
   // __"it is not reliable"__. ⭐ **Two records called "Instant yeast", one at 70 g and one at 1.142 kg.**
   // ⚠️ **The stock card and the list row both read `onHand`, so an app can only show two figures for one name if
   // there are two ingredients** — ⭐ **and nothing stops a second one being made.** This is the same guard the
   // app already keeps for ORDERS, in a list that never had it.
   const st = healthy();
+  st.uoms = [{ id: "g", name: "g", family: "weight", toBase: 1 },
+    { id: "kg", name: "kg", family: "weight", toBase: 1000 }];
   st.ingredients = [
-    { id: "i1", name: "Instant yeast", active: true },
-    { id: "i2", name: "instant yeast ", active: true },   // ⚠️ case and spacing must not hide it
+    { id: "i1", name: "Instant yeast", active: true, unit: "g", uomId: "g", onHand: 70 },
+    { id: "i2", name: "instant yeast ", active: true, unit: "g", uomId: "g", onHand: 1142 },   // ⚠️ case and spacing must not hide it
     { id: "i3", name: "Strong flour", active: true },
   ];
   const r = resultOf(runHealthChecks(st, emptyExtras()), "dupeIngredient");
   assert.equal(r.status, "fail", "★ two ingredients with one name were reported as fine");
-  assert.deepEqual(r.detail, ["Instant yeast ×2"],
-    "★ it does not name the ingredient and how many there are, so she cannot go and look");
+  // ★★★ AND IT SAYS WHICH CARD IS WHICH (v564). ⚠️ Her report: __"on hand show 0, but open up the stock
+  // card says on hand 6kgs"__ — ⭐ **"×2" is true and useless; the amounts and the recipe use are what let
+  // her decide which one to keep.**
+  assert.equal(r.detail.length, 1);
+  assert.match(r.detail[0], /Instant yeast ×2/, "★ it does not name the ingredient");
+  assert.match(r.detail[0], /70 g/, "★ it does not say what one card holds");
+  assert.match(r.detail[0], /1\.142 kg/, "★ it does not say what the other holds");
+  assert.match(r.detail[0], /no recipe uses this one/,
+    "★ it does not say which card a recipe points at, so she cannot tell which to keep");
   assert.match(r.fix, /hide|delete/i, "a fault with no way out is a dead end");
+
+  // ⭐ AND WHEN HER OWN RECIPES SETTLE IT, THERE IS A PRESS. One recipe points at i1, so i2 is the spare.
+  const withRecipe = JSON.parse(JSON.stringify(st));
+  withRecipe.products = [{ id: "p1", name: "Focaccia", active: true, recipe: [{ ingredientId: "i1", qty: 5, unit: "g" }] }];
+  const r2 = resultOf(runHealthChecks(withRecipe, emptyExtras()), "dupeIngredient");
+  assert.equal(r2.repair, "dupeIngredient",
+    "★ the pair is decided by her recipes and the check offers no press to put the spare away");
+  assert.match(r2.detail[0], /used in 1 recipe/);
+  // ⚠️ And hiding the spare leaves the used one alone.
+  const { duplicateIngredientPlan } = await import("../admin/js/state.js");
+  const plan = duplicateIngredientPlan(withRecipe);
+  assert.equal(plan.length, 1);
+  assert.equal(plan[0].hide.id, "i2", "★ the press picked the card her recipe DOES use");
+  assert.equal(plan[0].keep.id, "i1");
+  // ⚠️⚠️ AND IT MAY NOT TAKE 1.142 kg OFF THE LISTS WITHOUT A WORD (v580). ⚠️ The measured case: the card
+  // a recipe uses holds 70 g, the spare holds 1.142 kg — ⭐ **and the press hid the 1.142 kg card, naming no
+  // amount.** ⭐ It now refuses, names the stock, and says the two stocktakes that settle it.
+  assert.match(hideSparesBlocked(withRecipe, plan), /instant yeast \(the spare\) holds 1\.142 kg/i,
+    "★ the card holding the stock is hidden and nothing says how much stock that takes off the lists");
+  assert.match(hideSparesBlocked(withRecipe, plan), /Count Instant yeast, the card your recipes use/i,
+    "★ it names no way to settle the stock");
+  const empty = JSON.parse(JSON.stringify(withRecipe));
+  empty.ingredients[1].onHand = 0;
+  assert.equal(hideSparesBlocked(empty, duplicateIngredientPlan(empty)), "",
+    "★ a spare holding nothing is refused too — the press that should work on a clean pair stopped working");
+
+  // ⚠️⚠️ AND A HIDDEN CARD IS NOT A LIVE DUPLICATE (v564). ⭐ Hiding the spare is the resolution this
+  // check recommends, so counting hidden records left the line red after its own press had run.
+  const hid = healthy();
+  hid.ingredients = [
+    { id: "i1", name: "Strong flour", active: true, onHand: 100 },
+    { id: "i2", name: "Strong flour", active: false, onHand: 0 },
+  ];
+  assert.equal(resultOf(runHealthChecks(hid, emptyExtras()), "dupeIngredient").status, "pass",
+    "★ the spare was hidden and the check still calls a duplicate — **its own press cannot clear it**");
 
   // ⭐ AND A NORMAL KITCHEN DOES NOT GET FLAGGED.
   const clean = healthy();
@@ -845,4 +906,120 @@ test("★★★ the record count says how close the shared data is to the pull's
 
   const [off] = recordCountCheck({ ok: false, reason: "Offline — counting needs your shared data." });
   assert.equal(off.status, "skipped", "★ an unreadable count must be SKIPPED, never a pass");
+});
+
+
+test("★★★ two orders on one order number are NAMED — the code that two customers would share", () => {
+  // ⚠️⚠️ The code is six hex characters of the order's own id — about 3% by 1,000 orders — and the shared
+  // data keys the tracking card AND the receipt register by it. ⭐ Two orders on one code would share one
+  // tracking card and one receipt number, so this must be a sentence on her screen, not a silent merge.
+  const st = healthy();
+  const base = st.orders[0];
+  st.orders = [
+    { ...base, id: "ord_123456aaaaaa1a2b3c", groupId: "" },
+    { ...base, id: "ord_987654bbbbbb1a2b3c", groupId: "" },
+  ];
+  const r = resultOf(runChecks(st, { register: REGISTER, copies: COPIES }), "dupCode");
+  assert.equal(r.status, "fail",
+    "★ two orders wearing one number were not reported — **their tracking card and receipt number are the same**");
+  assert.deepEqual(r.detail, ["#1A2B3C"], "★ the check does not name the number to look up");
+  assert.ok(r.fix, "★ a fault with no way out is a dead end");
+});
+
+test("★★★ a stock card whose rows do not add up to the shelf is NAMED — her own strong flour", () => {
+  // ⚠️⚠️ HER CARD, VERBATIM: eight rows summing to +14 kg under an "On hand" of 10 kg, with two identical
+  // "0 g to 10 kg" stocktakes and two identical "Baked extra — 2 ×" rows. ⭐ **The amount at the top is
+  // right; the history over-counts** — the fingerprint of one action recorded on two phones.
+  const st = healthy();
+  // ⚠️ The units decide how the figures are WORDED — without them the check would print raw base amounts,
+  // and this test would be asserting a format the app never shows her.
+  st.uoms = [{ id: "g", name: "g", family: "weight", toBase: 1 },
+    { id: "kg", name: "kg", family: "weight", toBase: 1000 }];
+  st.ingredients = [{ id: "i1", name: "Strong flour", unit: "kg", uomId: "kg", onHand: 10000,
+    stockLog: [
+      { delta: -6000 }, { delta: 10000 }, { delta: 10000 }, { delta: -5000 },
+      { delta: 5000 }, { delta: -1000 }, { delta: -1000 }, { delta: 2000 },
+    ] }];
+  const r = resultOf(runChecks(st, { register: REGISTER, copies: COPIES }), "stockAddsUp");
+  assert.equal(r.status, "fail",
+    "★ her card's rows add to 14 kg under a shelf of 10 kg and the check said nothing");
+  assert.match(String(r.detail[0]), /Strong flour/, "★ the check does not name the ingredient");
+  assert.match(String(r.detail[0]), /14 kg/, "★ it does not say what the rows add to");
+  assert.match(String(r.detail[0]), /10 kg/, "★ it does not say what the shelf holds");
+  // ⭐ AND THE WAY OUT MUST NOT BE THE ✕ — removing a duplicated row would take 10 kg off a shelf that
+  // never gained it.
+  assert.match(r.fix, /DO NOT remove|Do NOT remove/, "the check does not warn against the ✕");
+  // ★★★ AND THERE IS A PRESS THAT CLEARS IT (v563). ⚠️ Before it, this check could never go green on her
+  // own book: a stocktake sets the same amount and changes the sum by nothing.
+  assert.equal(r.repair, "stockCards",
+    "★ the check names a fault with no press to fix it — **a check she can only read is one she cannot clear**");
+});
+
+test("★★★ the press actually CLEARS it — and tells the truth about which of the two it was", async () => {
+  // ⚠️⚠️ HER EIGHT CARDS WERE TWO DIFFERENT STORIES. One over-counted (strong flour); seven counted LESS
+  // than the shelf, because the amount was on it before the card kept a history. The old sentence told
+  // all eight the over-count story.
+  const { reconcileCards } = await import("../admin/js/stock.js");
+  const st = healthy();
+  st.uoms = [{ id: "g", name: "g", family: "weight", toBase: 1 },
+    { id: "kg", name: "kg", family: "weight", toBase: 1000 }];
+  st.ingredients = [
+    { id: "i1", name: "Strong flour", unit: "kg", uomId: "kg", onHand: 10000,
+      stockLog: [{ delta: 10000 }, { delta: 10000 }, { delta: -6000 }] },
+    { id: "i2", name: "Sea salt", unit: "g", uomId: "g", onHand: 100,
+      stockLog: [{ delta: -460 }] },
+  ];
+  const before = resultOf(runChecks(st, { register: REGISTER, copies: COPIES }), "stockAddsUp");
+  assert.equal(before.status, "fail", "precondition");
+
+  const out = reconcileCards(st);
+  assert.equal(out.done.length, 2);
+
+  const after = resultOf(runChecks(st, { register: REGISTER, copies: COPIES }), "stockAddsUp");
+  assert.equal(after.status, "pass",
+    "★★ the press ran and the check STILL fails — **she would press it and see the same red line**");
+  // ⭐ AND HER SHELVES DID NOT MOVE.
+  assert.deepEqual(st.ingredients.map((i) => i.onHand), [10000, 100],
+    "★★ the repair moved a shelf — it may only write the missing line");
+  // ⭐ Both stories are said, because both happened.
+  assert.match(before.why, /MORE than the shelf/);
+  assert.match(before.why, /LESS than the shelf/);
+});
+
+test("★★★ a cloud that could not be read in full is SKIPPED, never judged (v569)", () => {
+  // ⚠️⚠️ THE FAULT THIS PREVENTS: the comparison read was ONE request capped at 1,000 rows, so past that the
+  // page would name every record beyond an arbitrary thousand as "on this phone and NOT in your shared
+  // data" — permanently. ⭐ A partial read now says it could not look, on all three cloud checks.
+  const st = healthy();
+  const partial = { ok: true, keys: new Set(["orders:x"]), data: new Map([["orders:x", "{}"]]), complete: false };
+  for (const id of ["reached", "cloudOnly", "content"]) {
+    const r = resultOf(runHealthChecks(st, { ...emptyExtras(), cloud: partial }), id);
+    assert.equal(r.status, "skipped",
+      `★ "${id}" judged a cloud read that did not finish — **a partial cloud looks exactly like a missing record**`);
+  }
+});
+
+test("★★ and a card with too many movements to add up is SKIPPED, never passed", async () => {
+  const st = healthy();
+  const { STOCK_LOG_CAP } = await import("../admin/js/stock.js");
+  st.ingredients = [{ id: "i1", name: "Flour", unit: "g", uomId: "g", onHand: 0,
+    stockLog: Array.from({ length: STOCK_LOG_CAP }, () => ({ delta: 1 })) }];
+  const r = resultOf(runChecks(st, { register: REGISTER, copies: COPIES }), "stockAddsUp");
+  assert.equal(r.status, "skipped",
+    "★ a stock card whose oldest rows are gone was reported as ADDING UP — **nobody could have looked**");
+});
+
+test("★★★ a change still in the queue is not reported as missing from the cloud (v573)", () => {
+  // ⚠️ A record edited a moment ago is queued, not lost — and a record DELETED a moment ago is still in the
+  // cloud until its tombstone lands. ⭐ Both used to raise a second red X beside `waiting`, which already
+  // reports the queue once.
+  const st = healthy();
+  const cloud = { ok: true, keys: new Set(["orders:ord_old"]), data: new Map(), complete: true };
+  const local = ["orders:ord_old", "orders:ord_new"];
+  const queued = new Set(["orders:ord_new"]);
+  assert.equal(resultOf(runHealthChecks(st, { ...emptyExtras(), cloud, local, queued }), "reached").status,
+    "pass", "★ a queued change was reported as not having reached the shared data");
+  const gone = { ...cloud, keys: new Set(["orders:ord_old", "orders:ord_zapped"]), data: new Map([["orders:ord_zapped", "{}"]]) };
+  assert.equal(resultOf(runHealthChecks(st, { ...emptyExtras(), cloud: gone, local: ["orders:ord_old"], queued: new Set(["orders:ord_zapped"]) }), "cloudOnly").status,
+    "pass", "★ a deletion still in the queue was reported as a record in the cloud that is not on this phone");
 });

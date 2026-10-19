@@ -8,6 +8,7 @@ import {
   stockOf, applyBought, applyBake, setBakedTotal, bakedOf,
   stockLogOf, logStock, setStock, STOCK_LOG_CAP,
   stockRowUndo, undoStockRow, shopUndoPlan, undoShopBought,
+  cardGap, closeCardGap, reconcileCards,
 } from "../admin/js/stock.js";
 import { orderedOnDay } from "../admin/js/bom.js";
 import { computeSlots } from "../admin/js/supabase.js";
@@ -34,6 +35,27 @@ const bread = () => ({ id: "p_bread", name: "Sourdough", active: true, recipe: [
 ] });
 const order = (qty = 1, status = "paid") =>
   ({ id: "o", deliveryDateId: "del", productId: "p_bread", qty, status });
+
+test("★★★ a recipe line written in kg takes EXACTLY what it says (v590)", () => {
+  // ⚠️⚠️ MEASURED: the recipe quantity was rounded to 2 decimals IN THE LINE'S OWN UNIT before it became
+  // stock — ⚠️ **a 0.025 kg line (25 g) took 30 g off the shelf, five loaves took 130 g, and a 0.004 kg line
+  // (4 g) rounded to 0 and wrote NO stock row at all.** ⭐ The exact quantity now travels to the shelf.
+  const ing = flour(1000);
+  ing.unit = "kg";
+  ing.uomId = "kg";
+  const st = baseState([ing], [{ id: "p_x", name: "Loaf", active: true, recipe: [
+    { ingredientId: "ing_f", qty: 0.025, unit: "kg" },
+  ] }]);
+  assert.equal(stockMod.productConsumption(st, st.products[0], 1).get("ing_f"), 25,
+    "★ a 25 g line took 30 g — **rounding in the recipe's unit changes what the shelf gives up**");
+  assert.equal(stockMod.productConsumption(st, st.products[0], 5).get("ing_f"), 125,
+    "★ five loaves took 130 g instead of 125");
+
+  // ⚠️ AND A 4 g LINE DOES NOT ROUND AWAY TO NOTHING.
+  st.products[0].recipe[0].qty = 0.004;
+  assert.equal(stockMod.productConsumption(st, st.products[0], 1).get("ing_f"), 4,
+    "★ a 4 g line rounded to 0 and the bake wrote no stock row");
+});
 
 test("stockOf is the on-hand count, never below zero", () => {
   const st = baseState([flour(500)]);
@@ -146,6 +168,59 @@ test("★★ a bake writes a row naming the PRODUCT and the day, with what actua
   assert.equal(log[0].ref, "2026-10-19", "the row cannot be tied back to the day it belongs to");
 });
 
+test("★★★ removing a bake's stock row leaves NO bake record claiming it (v592)", () => {
+  // ⚠️⚠️ MEASURED: the ✕ put the shelf back and lowered `took`, but the bake row kept `total`/`applied` —
+  // ⚠️ **re-saving the same total was a no-op and clearing to 0 left the shelf high: the screen claimed 10
+  // baked while that flour never came off.** ⭐ A row with nothing taken is removed the way `setBakedTotal`
+  // removes one.
+  const ing = flour(10000);
+  const p = { id: "p_b", name: "Loaf", active: true,
+    recipe: [{ ingredientId: "ing_f", qty: 1000, unit: "g" }] };
+  const st = baseState([ing], [p]);
+  st.bakedDays = [];
+  setBakedTotal(st, p, "2026-10-19", 10);
+  assert.equal(ing.onHand, 0, "precondition: ten pans took ten kilos");
+  const row = stockLogOf(ing).find((e) => e.why === "produced");
+  assert.ok(row, "the bake wrote no produced row");
+  undoStockRow(ing, row, st);
+  assert.equal(ing.onHand, 10000, "the shelf did not come back");
+  assert.equal((st.bakedDays || []).length, 0,
+    "★ the bake record still says 10 was baked while nothing has come off");
+
+  setBakedTotal(st, p, "2026-10-19", 0);
+  assert.equal(ing.onHand, 10000, "clearing a bake that no longer exists gave stock back again");
+  setBakedTotal(st, p, "2026-10-19", 10);
+  assert.equal(ing.onHand, 0, "re-saving the same total did not take stock again — **the two records disagree**");
+});
+
+test("★★★ removing a BOUGHT row is refused too — the purchase owns it (v595)", () => {
+  // ⚠️⚠️ MEASURED: the ✕ took the stock off but left the purchase marked Bought, so a later Undo of that
+  // purchase reversed the same packs a second time — ⚠️ **flour she already had was written off (5 kg → 0).**
+  const ing = flour(13000);
+  logStock(ing, { delta: 8000, why: "bought", what: "Bought — Mydin" });
+  const entry = stockLogOf(ing)[0];
+  const plan = stockRowUndo(ing, entry);
+  assert.equal(plan.bought, true, "★ a purchase row is treated as a movement of its own");
+  assert.equal(plan.moved, 0);
+  undoStockRow(ing, entry);
+  assert.equal(ing.onHand, 13000, "the shelf moved on a refused removal");
+  assert.ok(stockLogOf(ing).includes(entry), "the row was removed anyway");
+});
+
+test("★★★ removing an Un-bought row is refused — it belongs with the purchase (v592)", () => {
+  // ⚠️⚠️ MEASURED: the ✕ undid the stock half and left the purchase order marked to buy — ⚠️ **the next Buy
+  // added the packs again and wrote a second expense (0 → 8 kg → undo → ✕ → Buy = 16 kg).** ⭐ The row is
+  // refused; undoing the PURCHASE reverses both halves.
+  const ing = flour(8000);
+  const entry = logStock(ing, { delta: -8000, why: "unbought", what: "Un-bought — Mydin (9 Oct)" });
+  const plan = stockRowUndo(ing, entry);
+  assert.equal(plan.unbought, true, "★ an Un-bought row is treated as a movement of its own");
+  assert.equal(plan.moved, 0);
+  undoStockRow(ing, entry);
+  assert.equal(ing.onHand, 8000, "the shelf moved on a refused removal");
+  assert.ok(stockLogOf(ing).includes(entry), "the row was removed anyway");
+});
+
 test("★ correcting a bake upward and back down writes rows that cancel out", () => {
   const ing = flour(1000);
   const st = baseState([ing], [bread()]);
@@ -233,7 +308,8 @@ test("★★⚠️ removing a card line puts its movement back — the row and t
   // act. Reversing only the list would leave her shelf holding packs she had just deleted the record
   // of; reversing only the shelf would leave a card whose rows no longer explain the figure above them.
   const ing = flour(7500);
-  logStock(ing, { at: "2026-10-08", delta: 8000, why: "bought", what: "Bought — Mydin" });
+  // ⚠️ An ordinary movement, not a purchase: a "bought" row is refused for its own reason (v595).
+  logStock(ing, { at: "2026-10-08", delta: 8000, why: "stocktake", what: "Stocktake — the shelf read 15.5 kg" });
   logStock(ing, { at: "2026-10-09", delta: -500, why: "baked", what: "Baked — Sourdough ×2" });
   const bake = stockLogOf(ing)[0]; // newest first, so this is the bake
 
@@ -244,7 +320,7 @@ test("★★⚠️ removing a card line puts its movement back — the row and t
   undoStockRow(ing, bake);
   assert.equal(ing.onHand, 8000, "the shelf did not move with the row");
   assert.equal(stockLogOf(ing).length, 1, "the row was not taken off the card");
-  assert.equal(stockLogOf(ing)[0].why, "bought", "the wrong row came off");
+  assert.equal(stockLogOf(ing)[0].why, "stocktake", "the wrong row came off");
 });
 
 // ★★★ v546 — SHE CHANGED THIS RULE, AND THE OLD ONE LEFT THE JOURNAL NOT ADDING UP.
@@ -258,7 +334,8 @@ test("★★⚠️ removing a card line puts its movement back — the row and t
 // so it is REFUSED, nothing changes, and the way through is a stocktake.
 test("★★★ a removal the shelf cannot give back is REFUSED, and nothing moves", () => {
   const ing = flour(7500);
-  logStock(ing, { at: "2026-10-08", delta: 8000, why: "bought", what: "Bought — Mydin" });
+  // ⚠️ An ordinary movement, not a purchase: a "bought" row is refused for its own reason (v595).
+  logStock(ing, { at: "2026-10-08", delta: 8000, why: "stocktake", what: "Stocktake — the shelf read 15.5 kg" });
   const plan = stockRowUndo(ing, stockLogOf(ing)[0]);
   assert.equal(plan.now, 7500, "★ the plan offered a figure her shelf can never hold — and worse, it offered to "
     + "take a movement back that the shelf cannot cover");
@@ -333,6 +410,9 @@ test("⚠️ a shop whose lines the shelf already covered plans no movement at a
 });
 
 test("★ the log is capped, newest first, and the OLDEST rows fall off", () => {
+  // ⚠️⚠️ THE CAP IS A LITERAL, NOT A READ-BACK (v584). ⚠️ This test compared the log with `STOCK_LOG_CAP`
+  // itself, ⚠️ **so changing the constant from 50 to 5 shrank her stock history and the suite stayed green.**
+  assert.equal(STOCK_LOG_CAP, 50, `★ the stock card keeps ${STOCK_LOG_CAP} rows, not the 50 it has kept`);
   const ing = flour(0);
   for (let i = 0; i < STOCK_LOG_CAP + 10; i++) {
     logStock(ing, { at: `2026-01-${String((i % 28) + 1).padStart(2, "0")}`, delta: 1, why: "bought",
@@ -497,4 +577,239 @@ test("★★ applyBake is one function with a sign, and a movement of nothing wr
     "a delta of zero wrote a journal row saying the shelf moved by nothing");
   applyBake(st, p, "2026-10-16", -2);
   assert.equal(ing.onHand, 1000, "…and the same function with the sign the other way puts it back");
+});
+
+// ── ★★★ a card that does not add up CAN BE PUT RIGHT (v563) ─────────────────
+//
+// ⚠️⚠️ HER OWN EIGHT CARDS. "Check my system" named them and the screen offered no way to clear a single
+// one: a stocktake sets the SAME amount and writes a zero row, so the sum never changes. ⭐ **A check that
+// can only be read is a check she cannot fix.**
+
+test("★★★ the opening amount a card never recorded is written, and the SHELF does not move", () => {
+  // Her sea salt, in grams: 100 g on the shelf, and the rows add up to −460 g — the card began keeping
+  // rows AFTER 560 g had already been put on the shelf.
+  const ing = { id: "ing_s", name: "Sea salt", unit: "g", uomId: "g", onHand: 100,
+    stockLog: [{ delta: -460, why: "baked", what: "Baked — 2 × Focaccia" }] };
+  assert.equal(cardGap(ing), 560, "precondition: the card is short by 560 g");
+  const wrote = closeCardGap(ing);
+  assert.equal(wrote, 560);
+  assert.equal(ing.onHand, 100,
+    "★ the repair MOVED HER SHELF — **the amount at the top is the figure her kitchen agrees with**");
+  assert.equal(cardGap(ing), 0, "★ the card still does not add up after the repair");
+  assert.match(String(stockLogOf(ing)[0].what), /Opening balance/,
+    "★ the new row does not say what it is — it must read as the opening amount, not as a movement");
+});
+
+test("★★★ and a history that counted a movement twice is corrected DOWNWARD, shelf unchanged", () => {
+  // Her strong flour: 10 kg on the shelf, rows adding to 14 kg — two phones each wrote their own
+  // absolute stocktake while the shelf took the amount once.
+  const ing = { id: "ing_f", name: "Strong flour", unit: "g", uomId: "g", onHand: 10000,
+    stockLog: [{ delta: 10000, why: "stocktake", what: "Stocktake — 0 g to 10 kg" },
+      { delta: 10000, why: "stocktake", what: "Stocktake — 0 g to 10 kg" },
+      { delta: -6000, why: "baked", what: "Baked extra — 6 × Focaccia" }] };
+  assert.equal(cardGap(ing), -4000, "precondition: the rows over-count by 4 kg");
+  assert.equal(closeCardGap(ing), -4000);
+  assert.equal(ing.onHand, 10000, "★ the flour shelf moved — it must not");
+  assert.equal(cardGap(ing), 0);
+  assert.match(String(stockLogOf(ing)[0].what), /counted twice/,
+    "★ a downward correction reads as the opening-balance sentence, which is the wrong story");
+});
+
+test("★★★ a card that already adds up gets no row, and a FULL card is skipped rather than half-fixed", () => {
+  const fine = { id: "ing_ok", name: "Butter", unit: "g", uomId: "g", onHand: 500,
+    stockLog: [{ delta: 500, why: "bought", what: "Bought — 1 pack" }] };
+  assert.equal(closeCardGap(fine), 0, "★ a card that adds up was given a correction row anyway");
+  assert.equal(stockLogOf(fine).length, 1);
+
+  // ⚠️ A CARD AT ITS CAP: its oldest rows are already gone, so another row would drop one more and the
+  // sum would still mean nothing.
+  const full = { id: "ing_cap", name: "Yeast", unit: "g", uomId: "g", onHand: 1000,
+    stockLog: Array.from({ length: STOCK_LOG_CAP }, () => ({ delta: 10, why: "baked", what: "Baked" })) };
+  const before = stockLogOf(full).length;
+  const out = reconcileCards({ ingredients: [fine, full] });
+  assert.deepEqual(out.done, [], "★ a card that cannot be judged was 'repaired'");
+  assert.deepEqual(out.skipped, ["Yeast"]);
+  assert.equal(stockLogOf(full).length, before, "★ a full card was written to and lost an older row");
+});
+
+test("★★★ reconcileCards clears ALL of her eight, and says how many it touched", () => {
+  const mk = (name, onHand, deltas) => ({ id: `ing_${name}`, name, unit: "g", uomId: "g", onHand,
+    stockLog: deltas.map((d) => ({ delta: d, why: "baked", what: "Baked" })) });
+  const st = { ingredients: [
+    mk("Strong flour", 10000, [10000, 10000, -6000]),
+    mk("Instant yeast", 1000, [-142]),
+    mk("Sea salt", 100, [-460]),
+    mk("Olive oil EV", 2375, [-1645]),
+    mk("Electricity", 1.1, [-0.4]),
+    mk("cycle time for focaccia", 50, [20]),
+    mk("labour", 78, [31.2]),
+    mk("Olive oil premium", 200, [-240]),
+  ] };
+  const out = reconcileCards(st);
+  assert.equal(out.done.length, 8, "★ her eight cards were not all put back in step");
+  for (const ing of st.ingredients) {
+    assert.equal(cardGap(ing), 0, `★ ${ing.name} still does not add up`);
+  }
+  assert.deepEqual(st.ingredients.map((i) => i.onHand), [10000, 1000, 100, 2375, 1.1, 50, 78, 200],
+    "★★ a repair moved one of her shelves — **it must only ever write the missing line**");
+});
+
+
+test("★★★ the correction line Check my system writes CANNOT be undone into stock (v568)", () => {
+  // ⚠️⚠️ THE REGRESSION THIS PINS. `closeCardGap` writes the line that makes a card add up and does NOT touch
+  // the shelf. ⚠️ **The ✕ on that row assumed every row moved the shelf** — measured: strong flour 10 kg went
+  // to 14 kg, and sea salt was refused outright. ⭐ Both contradict the confirm's promise that the shelf does
+  // not move.
+  const ing = { id: "ing_f", name: "Strong flour", unit: "g", uomId: "g", onHand: 10000,
+    stockLog: [{ delta: 10000, why: "stocktake" }, { delta: 10000, why: "stocktake" }, { delta: -6000, why: "baked" }] };
+  closeCardGap(ing);
+  const correction = stockLogOf(ing)[0];
+  assert.equal(correction.delta, -4000, "precondition: the correction is -4 kg");
+  const plan = stockRowUndo(ing, correction);
+  assert.equal(plan.repair, true, "★ a correction line was treated as an ordinary movement");
+  const undone = undoStockRow(ing, correction);
+  assert.equal(undone.repair, true, "★ the ✕ was allowed on a correction line");
+  assert.equal(ing.onHand, 10000,
+    "★★ undoing the correction MOVED THE SHELF — **it is not a movement, and removing it must change nothing**");
+  assert.equal(stockLogOf(ing)[0], correction, "★ the correction line was taken off the card anyway");
+
+  const salt = { id: "ing_s", name: "Sea salt", unit: "g", uomId: "g", onHand: 500,
+    stockLog: [{ delta: 500, why: "stocktake" }] };
+  const normal = stockRowUndo(salt, stockLogOf(salt)[0]);
+  assert.equal(normal.repair, undefined);
+  assert.equal(normal.now, 0);
+});
+
+test("★★★ a correction still works after the stock card has FORGOTTEN the day (v570)", () => {
+  // ⚠️⚠️ THE FAULT: the bound on a correction was the day's `produced` ROWS, and a stock card keeps only its
+  // newest 50. ⭐ On a busy flour those rows fall off inside two months — and the correction then gave nothing
+  // back, wrote no row, **and still recorded itself as applied on the bake row**, so the book said one thing
+  // and the shelf another. ⭐ The figure now lives on the bake row, which is not capped.
+  const st = baseState([], []);
+  st.ingredients = [{ id: "i1", name: "Flour", unit: "g", uomId: "g", onHand: 10000, stockLog: [] }];
+  const p = { id: "p1", name: "Focaccia", active: true, unit: "pc", recipe: [{ ingredientId: "i1", qty: 250, unit: "g" }] };
+  st.products = [p];
+
+  setBakedTotal(st, p, "2026-10-17", 10);           // 2,500 g taken
+  assert.equal(st.ingredients[0].onHand, 7500, "precondition: the bake came off the shelf");
+  const row = st.bakedDays.find((r) => r.id === "bake_2026-10-17_p1");
+  assert.equal(row.items.p1.took.i1, 2500, "★ the bake row does not remember what it took");
+
+  // The card forgets the day — the cap, or a card she cleared by hand.
+  st.ingredients[0].stockLog = [];
+
+  // A PARTIAL correction: 10 pans down to 6 gives back four pans (1,000 g) and keeps the rest owed.
+  setBakedTotal(st, p, "2026-10-17", 6);
+  assert.equal(st.ingredients[0].onHand, 8500,
+    "★★ the correction gave NOTHING back once the journal was gone — **the bake row said 6 and the shelf stayed short**");
+  assert.equal(row.items.p1.applied, 6);
+  assert.equal(row.items.p1.took.i1, 1500, "★ what is left to give back is not being spent down");
+
+  // And down to nothing gives the rest, then the 0/0 row is cleared away as it always has been.
+  setBakedTotal(st, p, "2026-10-17", 0);
+  assert.equal(st.ingredients[0].onHand, 10000);
+  assert.equal(st.bakedDays.some((r) => r.id === "bake_2026-10-17_p1"), false,
+    "★ a cleared day left a record of nothing behind");
+
+  // ⚠️ And it still cannot invent stock: correcting again gives nothing more.
+  setBakedTotal(st, p, "2026-10-17", 0);
+  assert.equal(st.ingredients[0].onHand, 10000);
+});
+
+test("★★★ an OLD bake (no memory of what it took) survives add → correct → clear (v572)", () => {
+  // ⚠️⚠️ MEASURED BEFORE THE FIX: bake 10 (2,500 g), correct to 6 (right), back to 10, then clear — the row
+  // was deleted at 8,500 with `applied` 0 and **1,500 g stayed off the shelf with nothing to explain it.**
+  // ⭐ An add on a pre-v570 record wrote a figure that shadowed the journal; the journal is now copied onto
+  // the row the first time it is touched, in either direction.
+  const st = baseState([], []);
+  st.ingredients = [{ id: "i1", name: "Flour", unit: "g", uomId: "g", onHand: 10000, stockLog: [] }];
+  const p = { id: "p1", name: "Focaccia", active: true, unit: "pc", recipe: [{ ingredientId: "i1", qty: 250, unit: "g" }] };
+  st.products = [p];
+  setBakedTotal(st, p, "2026-10-17", 10);
+  // Make it look like a PRE-v570 record: the memory was never written.
+  const row = st.bakedDays.find((r) => r.id === "bake_2026-10-17_p1");
+  delete row.items.p1.took;
+
+  setBakedTotal(st, p, "2026-10-17", 6);     // journal fallback gives four pans back
+  assert.equal(st.ingredients[0].onHand, 8500);
+  setBakedTotal(st, p, "2026-10-17", 10);    // back up
+  assert.equal(st.ingredients[0].onHand, 7500);
+  setBakedTotal(st, p, "2026-10-17", 0);     // and clear
+  assert.equal(st.ingredients[0].onHand, 10000,
+    "★★ an old bake lost stock on add → correct → clear — **the shelf ends short with no bake row left**");
+});
+
+test("★★★ the ✕ is REFUSED on a bake correction, so the day's pans and the shelf cannot disagree (v572)", () => {
+  // ⚠️⚠️ A correction row is half of one arithmetic. Removing it put stock back out and left the day's
+  // `applied` untouched — ⚠️ **measured: clearing the day afterwards gave back 1,500 g where 2,500 belonged,
+  // and the shelf ended at 9,000 instead of 10,000.** ⭐ It is refused with the way through: the baked box.
+  const st = baseState([], []);
+  st.ingredients = [{ id: "i1", name: "Flour", unit: "g", uomId: "g", onHand: 10000, stockLog: [] }];
+  const p = { id: "p1", name: "Focaccia", active: true, unit: "pc", recipe: [{ ingredientId: "i1", qty: 250, unit: "g" }] };
+  st.products = [p];
+  setBakedTotal(st, p, "2026-10-17", 10);
+  setBakedTotal(st, p, "2026-10-17", 6);
+  const correction = st.ingredients[0].stockLog[0];
+  assert.equal(correction.delta, 1000, "precondition: the newest row is the give-back");
+  const plan = stockRowUndo(st.ingredients[0], correction);
+  assert.equal(plan.correction, true, "★ the ✕ was allowed on a bake correction");
+  assert.equal(undoStockRow(st.ingredients[0], correction, st).correction, true);
+  assert.equal(st.ingredients[0].onHand, 8500, "★ the refused ✕ moved the shelf anyway");
+  assert.equal(stockLogOf(st.ingredients[0])[0], correction, "★ the correction line was taken off the card");
+  // ⭐ And the day still clears correctly from here.
+  setBakedTotal(st, p, "2026-10-17", 0);
+  assert.equal(st.ingredients[0].onHand, 10000);
+});
+
+// ── ★★★ a correction is measured against what the bake TOOK (v576) ─────────
+test("★★★ clearing a bake gives back what it took, even after the RECIPE changed", () => {
+  // ⚠️⚠️ MEASURED BEFORE THE FIX: 800 g on the shelf, bake 5 pans × 100 g (took 500, shelf 300); the recipe is
+  // then changed to 20 g/pan and the bake cleared → the shelf rose to **400, not 800**. ⭐ A correction is the
+  // share of what the day's bake actually took, not a re-reading of today's recipe.
+  const st = baseState([], []);
+  st.ingredients = [{ id: "i1", name: "Flour", unit: "g", uomId: "g", onHand: 800, stockLog: [] }];
+  const p = { id: "p1", name: "Focaccia", active: true, unit: "pc", recipe: [{ ingredientId: "i1", qty: 100, unit: "g" }] };
+  st.products = [p];
+  setBakedTotal(st, p, "2026-10-17", 5);
+  assert.equal(st.ingredients[0].onHand, 300, "precondition: the bake took 500 g");
+  p.recipe = [{ ingredientId: "i1", qty: 20, unit: "g" }];   // she edits the recipe afterwards
+  setBakedTotal(st, p, "2026-10-17", 0);
+  assert.equal(st.ingredients[0].onHand, 800,
+    "★★ a correction after a recipe change gave back only what TODAY's recipe says — **the shelf ends short**");
+});
+
+test("★★★ and an ingredient REMOVED from the recipe is still given back", () => {
+  // ⚠️ The recipe no longer names the flour at all; without the memory it would never be visited and the shelf
+  // would stay down with no row to explain it.
+  const st = baseState([], []);
+  st.ingredients = [{ id: "i1", name: "Flour", unit: "g", uomId: "g", onHand: 800, stockLog: [] }];
+  const p = { id: "p1", name: "Focaccia", active: true, unit: "pc", recipe: [{ ingredientId: "i1", qty: 100, unit: "g" }] };
+  st.products = [p];
+  setBakedTotal(st, p, "2026-10-17", 5);
+  assert.equal(st.ingredients[0].onHand, 300, "precondition");
+  p.recipe = [];
+  setBakedTotal(st, p, "2026-10-17", 0);
+  assert.equal(st.ingredients[0].onHand, 800,
+    "★★ an ingredient taken out of the recipe was never given back — **the shelf stays short, silently**");
+});
+
+test("★★★ a PARTIAL correction gives back its share, not the whole take", () => {
+  const st = baseState([], []);
+  st.ingredients = [{ id: "i1", name: "Flour", unit: "g", uomId: "g", onHand: 2000, stockLog: [] }];
+  const p = { id: "p1", name: "Focaccia", active: true, unit: "pc", recipe: [{ ingredientId: "i1", qty: 100, unit: "g" }] };
+  st.products = [p];
+  setBakedTotal(st, p, "2026-10-17", 10);          // took 1,000
+  assert.equal(st.ingredients[0].onHand, 1000);
+  setBakedTotal(st, p, "2026-10-17", 6);           // four pans back = 400
+  assert.equal(st.ingredients[0].onHand, 1400, "★ a partial correction did not give back its own share");
+});
+
+test("★★★ a card at its cap is never given an 'opening balance' it never needed (v583)", () => {
+  // ⚠️⚠️ Past 50 rows the oldest are gone, so the gap is TRUNCATION. ⚠️ Writing an opening-balance line
+  // would name a cause nobody found — and drop one more real row to make room for it.
+  const ing = { id: "i1", name: "Flour", unit: "g", unitId: "g", onHand: 6000,
+    stockLog: Array.from({ length: STOCK_LOG_CAP }, (_, i) => ({ at: "2026-09-0" + ((i % 9) + 1), delta: 100, why: "in" })) };
+  assert.notEqual(cardGap(ing), 0, "the fixture is meant to have a gap");
+  assert.equal(closeCardGap(ing), 0, "★ a truncated card was 'repaired' with an invented opening balance");
+  assert.equal(ing.stockLog.length, STOCK_LOG_CAP, "and the repair row pushed a real movement off the card");
 });

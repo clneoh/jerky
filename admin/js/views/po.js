@@ -12,8 +12,8 @@
 // packs round on the combined total, and a running grand total shows below.
 
 import { longDate, todayISO, weekdayName, shortDate } from "../dates.js";
-import { explodeBomDates, explodePicks, ordersFingerprint, effectiveCapacity, dayChangeInfo, restockOnlyItems } from "../bom.js";
-import { el, button, emptyState, toast, select, showPopup } from "../ui.js";
+import { explodeBomDates, explodePicks, ordersFingerprint, effectiveCapacity, dayChangeInfo, restockOnlyItems, unitsOfOrder } from "../bom.js";
+import { el, button, emptyState, toast, select, showPopup, printPage } from "../ui.js";
 import { byId, save, newId } from "../state.js";
 import { priceItems, notPurchasedNames, fmtQtyText } from "../purchasing.js";
 import { orderedProducts } from "../productCategories.js";
@@ -95,7 +95,9 @@ export function renderPO(root, state, params) {
 function metaOf(state, rec) {
   const past = rec.date < todayISO();
   const orders = (state.orders || []).filter((o) => o.deliveryDateId === rec.id);
-  const units = orders.reduce((s, o) => s + (Number(o.qty) || 0), 0);
+  // ⚠️ A 4-PACK IS FOUR UNITS HERE TOO (v590). ⚠️ Raw quantities made the PO's own over-capacity warning
+  // impossible to trigger — "4 units planned (capacity 12)" for sixteen pieces.
+  const units = orders.reduce((s, o) => s + unitsOfOrder(state, o), 0);
   const covered = coveringPO(state, rec.date);
   const fp = covered ? ordersFingerprint(state, rec.date) : "";
   const accurate = covered ? poAccurate(state, covered, rec.date, fp) : false;
@@ -336,8 +338,14 @@ function rightTag(m) {
 // text share. A single day reads exactly as it always did.
 function headline(recs) {
   const first = recs[0];
-  if (recs.length === 1) return `${weekdayName(first.date)}, ${longDate(first.date)}`;
-  return recs.map((r) => shortDate(r.date)).join(" · ");
+  // ⚠️ A BAD DATE MUST NOT PRINT A DANGLING COMMA (v599) — `longDate`/`shortDate` answer "" for a
+  // malformed one, so the weekday was left naming a day with no date beside it.
+  if (recs.length === 1) {
+    const day = longDate(first.date);
+    return day ? `${weekdayName(first.date)}, ${day}` : "This delivery date";
+  }
+  const days = recs.map((r) => shortDate(r.date)).filter(Boolean);
+  return days.length ? days.join(" · ") : "These delivery dates";
 }
 
 function previewCard(state, chosen, bom, needsReview) {
@@ -378,14 +386,16 @@ function previewCard(state, chosen, bom, needsReview) {
     el("p", { class: "card-sub", style: "margin:0 0 8px" }, sub),
     chips,
     overCap ? el("div", { class: "danger-banner" }, "Over capacity — check the order list.") : null,
-    bom.warnings.length ? el("div", { class: "warn" }, bom.warnings.join(" ")) : null,
+    bom.warnings.length ? el("div", { class: "warn no-print" }, bom.warnings.join(" ")) : null,
     table,
     notBought.length ? el("p", { class: "po-snapshot-note" },
       `Not on this list: ${notBought.join(", ")} — marked as not something you buy. Their cost still counts in the products that use them.`) : null,
     el("div", { class: "btn-row" },
       button("💾 Generate & Save", () => generate(state, chosen, bom, items, total), "primary"),
-      button("Print", () => window.print(), "soft")),
-    el("p", { class: "po-snapshot-note" },
+      button("Print", () => printPage(), "soft")),
+    // ⚠️ AN INSTRUCTION TO HER IS NOT PRINTED FOR THE SHOP (v596). ⚠️ The live PO's paper told Mydin to tap
+    // Bought and that a press saves a snapshot. ⭐ The note stays on screen; the sheet carries the order.
+    el("p", { class: "po-snapshot-note no-print" },
       multi
         ? "Generating saves ONE snapshot of these days to PO History — each becomes \"✓ saved\" and drops out of the default list."
         : "Generating saves this list to PO History. Changing orders later won't change it — and once you're at the shop you can correct the prices and the amounts there until you tap Bought."));
@@ -400,10 +410,12 @@ function emptyPreview(state, chosen, needsReview) {
           "It stays out of your list until you tell the app how to handle it. Tap the day above marked \"orders changed\" to see the new order — then ignore it, or save an extra-only list. Until you do, any further new orders just add onto that same list."));
     }
     return el("div", { class: "card po-card" },
-      emptyState(anyOrders ? "Those days are already shopped ✓" : "No orders yet",
-        anyOrders
-          ? "Every day with orders already has a saved, unchanged list. Tick any day above to rebuild it."
-          : "The PO is built from orders — add some orders to a posting day first, then come back."));
+      // ⚠️ AND AN EMPTY PREVIEW IS A SCREEN INSTRUCTION, NOT PAPER (v599).
+      el("div", { class: "no-print" },
+        emptyState(anyOrders ? "Those days are already shopped ✓" : "No orders yet",
+          anyOrders
+            ? "Every day with orders already has a saved, unchanged list. Tick any day above to rebuild it."
+            : "The PO is built from orders — add some orders to a posting day first, then come back.")));
   }
   return el("div", { class: "card po-card" },
     emptyState("Nothing to buy",
@@ -429,7 +441,11 @@ function emptyPreview(state, chosen, needsReview) {
 function openManualPO(state, root) {
   // ★★ IN HER ORDER (v418) — see `orderedProducts`. The picker used to list the raw array, so a
   // reorder made with the handle never reached it.
-  const products = orderedProducts(state, (state.products || []).filter((p) => p && p.active !== false && Array.isArray(p.recipe)));
+  // ⚠️ AND AN EMPTY RECIPE IS NOT OFFERED (v582): it explodes to no lines, ⚠️ **so picking it produced a
+  // list with nothing on it that still said "List saved to history".**
+  const products = orderedProducts(state, (state.products || []).filter((p) => p && p.active !== false
+    && Array.isArray(p.recipe)
+    && p.recipe.some((l) => l && (Number(l.qty) || 0) > 0 && (l.ingredientId || l.productId))));
   if (!products.length) return toast("Add a product with a recipe first");
   let picks = []; // [{ productId, qty }]
 
@@ -495,7 +511,10 @@ function openManualPO(state, root) {
         }, "Add a product…")
       : el("p", { class: "card-sub", style: "margin:0" }, "Every product is on the list.");
 
-    body.replaceChildren(
+    // ⚠️⚠️ `replaceChildren(null)` PRINTS THE WORD "null" (v582, seen live). ⚠️ The rules above keep three
+    // slots that are null until something is picked — ⚠️ **so the empty card showed "null" under the product
+    // picker.** ⭐ The children are filtered here, the way `el()` already filters its own.
+    body.replaceChildren(...[
       el("p", { class: "card-sub", style: "margin:0 0 10px" },
         // ⚠️ JERKY'S DAY WORD: "posting day", never "bake day" — this screen was localized at the first
         // sync and the new copy must follow it (see the playbook's vocabulary rule).
@@ -534,7 +553,8 @@ function openManualPO(state, root) {
           + "bake day, and it never marks one as shopped.")),
       el("div", { class: "popup-actions" },
         button("Cancel", () => closeManual(), "ghost"),
-        picks.length ? button("Save list", () => saveManual(state, bom, items, total, root, writtenOn), "primary") : null));
+        picks.length ? button("Save list", () => saveManual(state, bom, items, total, root, writtenOn), "primary") : null),
+    ].filter((x) => x != null));
   };
 
 
@@ -573,16 +593,31 @@ export function manualPO(bom, items, total, writtenOn) {
   };
 }
 
-function saveManual(state, bom, items, total, root, writtenOn) {
-  if (!bom.totalUnits) return toast("Pick at least one product");
+export function saveManual(state, bom, items, total, root, writtenOn) {
+  // ⚠️⚠️ A LIST WITH NOTHING TO BUY IS NOT A LIST (v582). ⚠️ `totalUnits` counts the PRODUCTS picked, so a
+  // product whose recipe is empty passed this guard, saved an RM0.00 list with no lines, and said "List
+  // saved to history". ⭐ The guard is the thing she would actually buy.
+  if (!items.length) {
+    return toast(!bom.totalUnits
+      ? "Pick at least one product"
+      : "Nothing to buy on this list — the recipe has no ingredients you buy");
+  }
   state.purchaseOrders.unshift(manualPO(bom, items, total, writtenOn));
   save(state);
   toast("List saved to history");
   location.hash = `#/history?po=${state.purchaseOrders[0].id}`;
 }
 
-function generate(state, recs, bom, items, total) {
+export function generate(state, recs, bom, items, total) {
   if (!bom.orders.length) return toast("No orders — nothing to generate");
+  // ⚠️⚠️ AN EMPTY LIST MUST NOT MARK THE DAY AS SHOPPED (v587). ⚠️ A product whose recipe is EMPTY counts as an
+  // order but explodes to no lines — ⚠️ **so this saved a PO with nothing on it, and the day then read
+  // "✓ saved" and was never suggested again.** ⭐ v582 guarded the hand-written list; this is the same rule on
+  // the generated one.
+  if (!items.length) {
+    return toast("Nothing to buy on this list — its recipe has no ingredients you buy, so nothing was saved "
+      + "and the day is still waiting");
+  }
   const po = {
     id: newId("po"),
     deliveryDateId: recs[0].id, // backward-compatible single-day pointer

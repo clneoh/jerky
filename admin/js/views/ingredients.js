@@ -8,10 +8,10 @@ import { el, button, select, emptyState, confirmDialog, showPopup, toast, wireRo
 // ⚠️ THE ORDER HELPERS ARE GENERIC AND ALREADY PROVEN on the Products screen — they work on any
 // `{ id, sort }` records, which an ingredient now is. See the note on `renderAll`.
 import { indexForDrop, moveInTail, tailOrder } from "../productCategories.js";
-import { byId, fmtRM, newId, round2, save } from "../state.js";
+import { byId, fmtRM, newId, round2, save, sameNameIngredient } from "../state.js";
 import { fmtStockAmount, priceEntryLabels, belowReserve, chosenSupplier, trimNum } from "../purchasing.js";
-import { logPriceMoves, priceLogOf } from "../prices.js";
-import { setStock, stockLogOf, stockRowUndo, undoStockRow } from "../stock.js";
+import { PRICE_LOG_CAP, logPriceMoves, priceLogOf } from "../prices.js";
+import { STOCK_LOG_CAP, setStock, stockLogOf, stockRowUndo, undoStockRow } from "../stock.js";
 import { dayMonth, longDate } from "../dates.js";
 import { bakeryName, journalBodyEl, journalButtons, journalSheet } from "../journal.js";
 
@@ -164,6 +164,35 @@ function buildIngredientEditor(state, ingredient) {
   function makeRow(draft) {
     const family = cookingFamilyOf(list, unitSel.value);
     const cookingUnit = byId(list, unitSel.value);
+    // ⚠️⚠️ A PACK RECORDED IN ANOTHER FAMILY IS NOT RE-READ AS THE NEW ONE (v580). ⚠️ MEASURED: a pack
+    // "30 pcs = RM10" whose cooking unit is later changed to kg opened as **"30 g"** and SAVED as
+    // **"30 kg for RM10"** — ⚠️ **a number nobody typed, at a price per kilo she never paid, which the
+    // purchase order then actually used.** ⭐ The number and the unit it was typed against are kept
+    // together: the row asks to be entered again (or dropped with ✕) instead of being reinterpreted.
+    // ⚠️⚠️ AND A RETURN TO THE PACK'S OWN UNIT CLEARS THE WARNING (v587). ⚠️ The stale marker was never
+    // cleared, ⚠️ **so switching the cooking unit back to the one the pack was typed in still refused the save
+    // with "the cooking unit is now pcs" — a sentence that had stopped being true.** ⭐ The stored number comes
+    // back with it, because it was never wrong.
+    if (draft.staleUnit && draft.staleUomId) {
+      const original = byId(list, draft.staleUomId);
+      if (original && original.family === family) {
+        draft.qty = draft.staleQty;
+        draft.price = draft.stalePrice;
+        delete draft.staleUnit;
+        delete draft.staleQty;
+        delete draft.stalePrice;
+        delete draft.staleUomId;
+      }
+    }
+    const storedU = draft.uomId ? byId(list, draft.uomId) : null;
+    if (storedU && storedU.family !== family && !draft.staleUnit) {
+      draft.staleQty = String(draft.qty ?? "");
+      draft.stalePrice = String(draft.price ?? "");
+      draft.staleUnit = storedU.name;
+      draft.staleUomId = draft.uomId;
+      draft.qty = "";
+      draft.price = "";
+    }
     const packDefault = () => {
       if (draft.uomId && byId(list, draft.uomId)?.family === family) return draft.uomId;
       if (cookingUnit?.family === family) return cookingUnit.id;
@@ -187,6 +216,15 @@ function buildIngredientEditor(state, ingredient) {
         draft.price = price.value;
       },
       read() {
+        // ⚠️ THE STALE ROW IS ANSWERED FIRST, before any other rule can speak about it (v580, seen live):
+        // ⚠️ with a supplier still chosen the generic "add the pack size" error won, ⭐ **so the one
+        // sentence that says what the pack WAS — 30 pcs — never reached her.**
+        if (draft.staleUnit && qty.value.trim() === "") {
+          return { error: `${supplierName()}: this pack was recorded as ${draft.staleQty} ${draft.staleUnit}`
+            + `${draft.stalePrice !== "" ? ` for RM${draft.stalePrice}` : ""}, and the cooking unit is now `
+            + `${cookingUnit?.name || "a different unit"}. Enter the pack again in ${cookingUnit?.name || "the new unit"}, `
+            + `or press ✕ on the row to drop it` };
+        }
         const filled = supplierSel.value || qty.value.trim() !== "" || price.value.trim() !== "";
         if (!filled) return null;
         const s = supplierSel.value;
@@ -223,7 +261,14 @@ function buildIngredientEditor(state, ingredient) {
       del.classList.add("price-del");
       del.setAttribute("aria-label", "Remove this supplier price");
       return el("div", { class: "price-row" },
-        el("div", { class: "price-grid" }, r.supplierSel, r.qty, r.packSel, r.price, del));
+        el("div", { class: "price-grid" }, r.supplierSel, r.qty, r.packSel, r.price, del),
+        draft.staleUnit
+          ? el("p", { class: "hint", style: "margin:4px 0 0" },
+              `This pack was recorded as ${draft.staleQty} ${draft.staleUnit}`
+              + `${draft.stalePrice !== "" ? ` for RM${draft.stalePrice}` : ""} — the cooking unit is now `
+              + `${byId(list, unitSel.value)?.name || "different"}. Enter the pack again in the new unit, or `
+              + `press ✕ to drop it.`)
+          : null);
     });
     const hint = hasSuppliers ? null
       : el("p", { class: "warn", style: "margin:0 0 8px" },
@@ -240,6 +285,14 @@ function buildIngredientEditor(state, ingredient) {
   function collect() {
     const n = name.value.trim();
     if (!n) return { error: "Ingredient needs a name" };
+    // ⚠️⚠️ A CLEARED COST SAVED AS 0, AND A NEGATIVE PASSED (v583). ⚠️ **Every recipe using that
+    // ingredient was then costed at zero, or below** — a price nobody typed. ⭐ Blank means "no fallback
+    // price set", which costs nothing; a negative is refused in words.
+    const costText = String(cost.value).trim();
+    const costNum = Number(costText);
+    if (costText !== "" && (!Number.isFinite(costNum) || costNum < 0)) {
+      return { error: "The fallback cost cannot be below zero — leave it blank if there is no price" };
+    }
     const uomId = unitSel.value;
     const uom = byId(list, uomId);
     const supplierPrices = [];
@@ -254,14 +307,18 @@ function buildIngredientEditor(state, ingredient) {
         name: n,
         unit: uom ? uom.name : "g",
         uomId: uomId || undefined,
-        costPerUnit: Number(cost.value) || 0,
+        ...(costText === "" ? {} : { costPerUnit: costNum }),
         purchaseNote: note.value.trim() || undefined,
         supplierPrices: supplierPrices.length ? supplierPrices : undefined,
         // Only ever written when on; the edit path deletes the key when it is off, so
         // an unticked switch leaves an ingredient exactly as it was.
         notPurchased: notPurchased ? true : undefined,
       },
-      drop: notPurchased ? [] : ["notPurchased"],
+      drop: [
+        ...(notPurchased ? [] : ["notPurchased"]),
+        // ⚠️ AND A CLEARED PRICE TAKES THE KEY AWAY rather than writing 0 over it.
+        ...(costText === "" ? ["costPerUnit"] : []),
+      ],
     };
   }
 
@@ -299,10 +356,24 @@ function newIngredientCard(state, root) {
     button("Add ingredient", () => {
       const { error, values } = editor.collect();
       if (error) return toast(error);
-      state.ingredients.push({ id: newId("ing"), ...values, active: true });
-      toast("Ingredient added");
-      save(state);
-      renderAll(root, state);
+      const add = () => {
+        state.ingredients.push({ id: newId("ing"), ...values, active: true });
+        toast("Ingredient added");
+        save(state);
+        renderAll(root, state);
+      };
+      const clash = sameNameIngredient(state, values.name);
+      // ⚠️⚠️ A SECOND CARD WITH THE SAME NAME IS HOW TWO FIGURES FOR ONE NAME HAPPEN (v564). ⭐ Her own
+      // report: the list said 0 while the stock card said 6 kg — **two records, one name.** ⚠️ Nothing
+      // stopped the second one being made. ⭐ It is still her choice (there can be a real reason), so it
+      // asks with the existing amount and the consequence, rather than refusing.
+      if (clash) {
+        return confirmDialog(
+          `${clash.name} already exists — ${fmtStockAmount(state, clash, Math.max(0, Number(clash.onHand) || 0))} on hand`
+          + `${clash.active === false ? ", hidden" : ""}. A second card with the same name keeps its OWN stock, so the list and the stock card can then show two different amounts. Add a second one anyway?`,
+          add, { yesLabel: "Add anyway" });
+      }
+      add();
     }, "block primary"));
 }
 
@@ -318,19 +389,32 @@ function openEditIngredientPopup(state, ing, root) {
         button("Update ingredient", () => {
           const { error, values, drop } = editor.collect();
           if (error) return toast(error);
-          // A price corrected HERE is a price that moved, and the journal has to be told (v285).
-          // A log that only ever held the moves made from a shopping list would be titled as
-          // this ingredient's price history while quietly missing the rest of it.
-          const before = Array.isArray(ing.supplierPrices)
-            ? ing.supplierPrices.map((e) => ({ ...e }))
-            : [];
-          Object.assign(ing, values);
-          for (const k of drop || []) delete ing[k];
-          const moved = logPriceMoves(ing, before);
-          toast(moved.length ? `Ingredient updated — ${moved.length} price change recorded` : "Ingredient updated");
-          save(state);
-          close();
-          renderAll(root, state);
+          const apply = () => {
+            // A price corrected HERE is a price that moved, and the journal has to be told (v285).
+            // A log that only ever held the moves made from a shopping list would be titled as
+            // this ingredient's price history while quietly missing the rest of it.
+            const before = Array.isArray(ing.supplierPrices)
+              ? ing.supplierPrices.map((e) => ({ ...e }))
+              : [];
+            Object.assign(ing, values);
+            for (const k of drop || []) delete ing[k];
+            const moved = logPriceMoves(ing, before);
+            toast(moved.length ? `Ingredient updated — ${moved.length} price change recorded` : "Ingredient updated");
+            save(state);
+            close();
+            renderAll(root, state);
+          };
+          // ⚠️⚠️ A RENAME IS THE OTHER WAY TWO CARDS END UP WITH ONE NAME (v564). ⭐ The rule is about the
+          // CLASS of the act, not about the Add button: renaming this one onto another's name has the
+          // same consequence, and this is the only other place a name is written.
+          const clash = sameNameIngredient(state, values.name, ing.id);
+          if (clash) {
+            return confirmDialog(
+              `${clash.name} already exists — ${fmtStockAmount(state, clash, Math.max(0, Number(clash.onHand) || 0))} on hand`
+              + `${clash.active === false ? ", hidden" : ""}. Renaming this one to the same name leaves two cards that cannot be told apart by name. Rename it anyway?`,
+              apply, { yesLabel: "Rename anyway" });
+          }
+          apply();
         }, "primary")));
   }, { wide: true });
 }
@@ -531,8 +615,19 @@ export function stockCardSheet(state, ing, refresh = null) {
     // empty card both together read as a wall she has to wade through — found by looking at it. The
     // note is for a card that HAS rows, where it explains the columns; an empty card is explained by
     // its own sentence.
+    // ⚠️⚠️ A CARD KEEPS ITS NEWEST 50 MOVEMENTS, AND NEVER SAID SO (v583). ⚠️ Past that its oldest rows are
+    // gone, ⚠️ **so the rows above no longer add up to the amount at the top and the card looked like a fault
+    // with no explanation.** ⭐ It says WHICH of the two it is: full history, or its newest 50 only.
     note: lines.length
       ? "Stock: every time the amount on your shelf moved, and what moved it — baking takes the recipe off, un-baking puts it back, Bought adds what you bought, and a stocktake or Day one sets the real amount. Price: every time this ingredient's cost moved — what it moved to, and what it was before. Buying the same thing again at the same price is not a change, so it is not listed. The amount on the shelf and the price your recipes use are the two figures at the top."
+        + (stockLogOf(ing).length >= STOCK_LOG_CAP
+          ? " This card keeps its newest 50 stock movements: older ones have been dropped, so these rows may not add up to the amount at the top — the shelf figure is right, the history below it is short."
+          : "")
+        // ⚠️ AND THE PRICE HISTORY HAS THE SAME CAP (v587) — v583 named only the stock one, so a truncated
+        // PRICE section said nothing at all.
+        + (priceLogOf(ing).length >= PRICE_LOG_CAP
+          ? " The Price section keeps its newest 50 price changes, for the same reason."
+          : "")
       : "",
     where: "Ingredients",
     bakery: bakeryName(state),
@@ -581,13 +676,26 @@ function stockRowDelete(state, ing, entry, refresh) {
   if (!plan) return;
   // ⚠️⚠️ AND A ROW THE SHELF CANNOT GIVE BACK IS REFUSED OUT LOUD (v546). ⭐ **No confirm box, because there is
   // nothing to confirm** — and the message names the way through, which is a stocktake, not a quieter removal.
+  // ⚠️ A CORRECTION WRITTEN BY "Check my system" IS NOT A MOVEMENT (v568) — see `stockRowUndo`.
+  if (plan.correction) {
+    return toast("That line is a bake correction, not a movement of its own — taking it off would leave the day's pans and your shelf disagreeing. Change the day's baked figure instead.");
+  }
+  if (plan.repair) {
+    return toast("That line is the correction the check wrote so the card adds up — it is not a movement of your shelf, so it cannot be taken back off it. If the card is wrong, run Check my system again.");
+  }
+  if (plan.bought) {
+    return toast("That line is a purchase. Undo the purchase in Purchase order history — that takes the stock and the money back together. Removing this line alone would leave the order marked Bought, and a later Undo would reverse the same packs twice. If that list offers no Undo (an older list, or a deleted order), set the shelf with Adjust instead.");
+  }
+  if (plan.unbought) {
+    return toast("That line undid a purchase, so it belongs with the purchase order. Undo the purchase in Purchase order history — that puts the stock and the money back together. Removing this line alone would leave the order still marked bought, and the next Buy would add the packs again.");
+  }
   if (plan.blocked) {
     return toast(`That line can't be taken back: your shelf holds ${fmtStockAmount(state, ing, plan.was)}, and undoing it needs ${fmtStockAmount(state, ing, plan.blocked)} more. Set the real amount with Adjust instead.`);
   }
   confirmDialog(
     `Remove this line from the card? Your ${ing.name} is ${fmtStockAmount(state, ing, plan.was)} now, and taking this movement back leaves ${fmtStockAmount(state, ing, plan.now)}. This cannot be undone.`,
     () => {
-      undoStockRow(ing, entry);
+      undoStockRow(ing, entry, state);
       save(state);
       toast(`${ing.name} is now ${fmtStockAmount(state, ing, Number(ing.onHand) || 0)}`);
       refresh();

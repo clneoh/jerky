@@ -168,7 +168,11 @@ export function priceItems(state, bomItems, { reserve = true } = {}) {
     // re-buys the reserve the main list already covered.
     const keep = reserve ? Math.max(0, Number(ingredient && ingredient.safetyBase) || 0) : 0;
     const safety = belowReserve(keep, onHand) ? keep : 0;
-    const openBase = Math.max(0, (needBase + safety) - onHand);
+    // ⚠️⚠️ FLOAT NOISE IS NOT A NEED (v595). ⚠️ v590 stopped rounding recipe quantities, so 0.1 kg + 0.2 kg
+    // became 0.30000000000000004 kg — 300.00000000000006 g — ⚠️ **a 300 g pack read as one too many, and a shelf
+    // holding exactly 300 g read as short.** ⭐ Snap to a millionth of a base unit: far below anything real.
+    const snapBase = (v) => Math.round((Number(v) || 0) * 1e6) / 1e6;
+    const openBase = snapBase(Math.max(0, (needBase + safety) - onHand));
     out.onHand = onHand;
     out.needBase = needBase;
     out.safetyBase = keep;
@@ -208,7 +212,7 @@ export function priceItems(state, bomItems, { reserve = true } = {}) {
       out.estCost = 0;
       return out;
     }
-    const packs = Math.max(1, Math.ceil(openBase / packBase));
+    const packs = Math.max(1, Math.ceil(openBase / Math.max(1e-6, snapBase(packBase))));
     out.supplierId = c.supplierId;
     out.supplier = c.name;
     out.supplierWhatsapp = c.whatsapp;
@@ -255,7 +259,9 @@ export function amendItem(state, item, { packs, packPrice } = {}) {
     const cookBase = Number(src.cookBase) || 1;
     out.addBase = count * cookBase;
     out.estCost = round2(count * price);
-    out.buyText = `${trimNum(count)}${src.unit || ""}`;
+    // ⚠️⚠️ THE COUNT IS IN THE COOKING UNIT, SO IT IS LABELLED WITH IT (v592). ⚠️ It was stamped with the
+    // RECIPE LINE's unit — ⚠️ **a flour cooking in kg, amended to 2 kg, printed "2g" on the saved list.**
+    out.buyText = `${trimNum(count)}${src.openUnit || src.unit || ""}`;
     if (out.addBase > 0) delete out.covered;
     return out;
   }

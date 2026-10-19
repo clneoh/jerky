@@ -117,6 +117,31 @@ test("referralFlag: ordering through your own link → self (never a credit)", (
   assert.equal(referralFlag(st, grp), "self");
 });
 
+test("★★★ referralFlag: an order she REFUNDED IN FULL does not make them an existing customer", () => {
+  // ⚠️⚠️ THE FAULT (v551): a refunded sale was still read as a previous order, so their next referred
+  // order said **"already ordered before — not a new friend, no coupon"** — ⭐ **a coupon they had earned,
+  // refused by a sale she gave back.**
+  const st = baseState();
+  st.orders = [order({ id: "aaaaaa", groupId: "gbbbb1", whatsapp: "60123456789", referredBy: "",
+    refundedAt: "2026-10-02T00:00:00.000Z", refundAmountRM: 18, refundedFull: true })];
+  const grp = groupOf(order({ whatsapp: "60123456789", referredBy: "60139876543" }));
+  assert.equal(referralFlag(st, grp), "new",
+    "★ a refunded sale still counted as a previous order — **the friend's coupon is refused for a sale "
+    + "that never happened**");
+});
+
+test("★★★ broughtIn: a cart she refunded in full is not a customer she brought in", () => {
+  const st = baseState();
+  st.orders = [
+    order({ id: "b11111", groupId: "gb1111", whatsapp: "60123456789", referredBy: "60139876543" }),
+    order({ id: "b22222", groupId: "gb2222", whatsapp: "60177777777", referredBy: "60139876543",
+      refundedAt: "2026-10-02T00:00:00.000Z", refundAmountRM: 18, refundedFull: true }),
+  ];
+  assert.equal(broughtIn(st, { whatsapp: "60139876543" }), 1,
+    "★ the advocate's count includes a sale that was given back — **she can be shown a reward due on money "
+    + "she returned**");
+});
+
 test("referralFlag: number already in history (outside this order) → existing", () => {
   const st = baseState();
   st.orders = [order({ id: "aaaaaa", groupId: "gbbbb1", whatsapp: "60123456789", referredBy: "" })];
@@ -177,6 +202,26 @@ test("validCredits only returns usable credits", () => {
 
 // ── giveCredits ────────────────────────────────────────────────────────────
 
+test("★★★ two PHONES granting one referral write the SAME record, not two", () => {
+  // ⚠️⚠️ THE FAULT (v551): the credits were given RANDOM ids, so both phones — each holding the order
+  // before either synced — passed the "already given" check and wrote their own pair. ⭐ The ledger ended
+  // with **two rewards and two coupons for one referral**, and the referrer could spend RM6 of RM3.
+  // ⭐ v519's rule: an id derived from the record's CONTENT is the same id on every phone.
+  const a = baseState();
+  const b = baseState();
+  const mine = order({ whatsapp: "60123456789", customerName: "Nadia", referredBy: "60139876543" });
+  a.orders = [JSON.parse(JSON.stringify(mine))];
+  b.orders = [JSON.parse(JSON.stringify(mine))];      // the same order, on the second phone
+  const ra = giveCredits(a, groupOf(a.orders[0]), schemeOf(a), T);
+  const rb = giveCredits(b, groupOf(b.orders[0]), schemeOf(b), T);
+  assert.ok(ra.created && rb.created, "precondition: each phone grants it once on its own");
+  assert.deepEqual(ra.rows.map((r) => r.id).sort(), rb.rows.map((r) => r.id).sort(),
+    "★ the two phones wrote DIFFERENT ids for one referral — **the sync keeps both, and she can spend the "
+    + "reward twice**");
+});
+
+
+
 test("giveCredits creates a reward for the referrer and a friend discount", () => {
   const st = baseState();
   st.orders = [
@@ -226,7 +271,11 @@ test("giveCredits: a credit can carry no expiry when the scheme says never", () 
   const st = baseState();
   st.settings.referrals.validDays = "";
   const grp = groupOf(order({ whatsapp: "60123456789", referredBy: "60139876543" }));
-  giveCredits(st, grp, schemeOf(st), T);
+  const r = giveCredits(st, grp, schemeOf(st), T);
+  // ⚠️⚠️ `every` IS TRUE OF AN EMPTY LIST (v557). ⭐ Without this precondition the test passed when
+  // `giveCredits` wrote NOTHING at all — the one outcome it exists to catch.
+  assert.equal(r.created, true, "precondition: the couple was written");
+  assert.equal(st.credits.length, 2, "precondition: two credits, so the check below has something to read");
   assert.ok(st.credits.every((c) => c.expiresAt === ""), "blank expiry written, not a date");
 });
 

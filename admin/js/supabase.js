@@ -5,18 +5,19 @@
 // Pure helpers (computeSlots) run under Node for tests; all fetch/localStorage
 // access is guarded so importing the module is side-effect free.
 
-import { generateUpcomingDates, shortDate, todayISO } from "./dates.js";
+import { generateUpcomingDates, shortDate, todayISO, toISODate } from "./dates.js";
 import { normRules } from "../../availability.js";
 import { publishOccasions } from "./occasion_catalog.js";
 import { flattenTree, primaryCategoryId, productsInCategory } from "./productCategories.js";
 import { isThumb, lineNoteOf } from "../../storefront-fields.js";
-// ⚠️ JERKY'S OWN READER, NOT THE BAKERY'S: this project deleted `totalUnitsOnDate` (a by-ID
-// counter) in the 7 Oct fix and reads `bookedUnitsOnDate(state, DATE)` — the whole day, counted
-// once. Taking the bakery's import line verbatim left a symbol that does not exist here.
-import { bookedUnitsOnDate, costOf, effectiveCapacity, effectiveLimit, isPoolablePack, poolRemaining } from "./bom.js";
-import { byId, fmtRM, newId, orderCode, orderLineName, round2, save, stampOrderLine } from "./state.js";
+import { bookedUnitsOnDate, costOf, effectiveCapacity, effectiveLimit, hiddenPackBase, isPoolablePack, poolRemaining, totalUnitsOnDate } from "./bom.js";
+import { byId, fmtRM, newId, orderCode, orderLineName, round2, save, saveFailure, stampOrderLine, duplicateOrderCodes, waNumber, groupOrders, redactedPhones, discardImportedRows } from "./state.js";
 import { phoneDigits } from "./customers.js";
 import { customerTotal } from "./courier.js";
+// ⚠️ ONE WORDING FOR HOW AN ORDER REACHES THE CUSTOMER (v569) — the messages already read these; the card
+// was the one surface that built its own, which is why it could say "Self collect" where the message said
+// "Self collect at Farlim".
+import { fulfillmentText, pointAddressFor } from "./points.js";
 // The promo-code engine. Only two things are asked of it here: what the shop may
 // advertise and judge (publishCodes), and how a code a customer typed is spelled
 // by the time it reaches an order (normCode).
@@ -245,18 +246,25 @@ export async function syncAvailability(state) {
   const plainRows = productRows.filter((r) => !("pool_base" in r));
   const packRows = productRows.filter((r) => "pool_base" in r);
   let pushedProducts = 0;
-  const pushProductBatch = async (rows) => {
+  const pushProductBatch = async (rows, count = true) => {
     if (!rows.length) return null;
     const res = await upsert("product_availability", rows, "date,product");
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       return { ok: false, reason: `Product sync failed (HTTP ${res.status})${text ? " — " + text.slice(0, 160) : ""}` };
     }
-    pushedProducts += rows.length;
+    // ⚠️ The clearing batch publishes no stamp, so it is not counted as a product row (v598).
+    if (count) pushedProducts += rows.length;
     return null;
   };
-  for (const batch of [plainRows, packRows]) {
-    const batchErr = await pushProductBatch(batch);
+  // ⚠️⚠️ AND A PRODUCT THAT STOPPED BEING A PACK LOSES ITS OLD POOL COLUMNS (v598). ⚠️ The upsert merges by key
+  // and omits keys it is not given, so a pack made into a plain product kept `pool_base` — ⚠️ **the trigger then
+  // treated it as derived and ignored its own limit and sales.** ⭐ One more batch, of explicit NULLs for the plain
+  // rows: on a project without the pool columns it fails alone, exactly like the pack batch, and the singles
+  // still publish.
+  const clearedRows = plainRows.map((r) => ({ date: r.date, product: r.product, pool_base: null, pool_qty: null }));
+  for (const [batch, count] of [[plainRows, true], [clearedRows, false], [packRows, true]]) {
+    const batchErr = await pushProductBatch(batch, count);
     if (batchErr) return batchErr;
   }
 
@@ -324,7 +332,15 @@ export function storefrontPayload(state) {
   // list, so adding/editing/hiding a product in the app updates the customer
   // page after a publish. No separate menu to drift or clobber.
   const products = (Array.isArray(state.products) ? state.products : [])
-    .filter((p) => p && p.draft !== true && p.active !== false && String(p.name || "").trim())
+    // ⚠️⚠️ A PRODUCT WITH NO PRICE IS NOT PUBLISHED AS RM0.00 (v589). ⚠️ `Number(p.price) || 0` turned a
+    // cleared price into a FREE loaf: the shop drew RM0.00 and accepted the order, while the homepage's own
+    // price reader refused zero and kept its typed figure. ⭐ Only a priced product reaches the shop; the
+    // Products screen says which ones are waiting for a price.
+    .filter((p) => p && p.draft !== true && p.active !== false && String(p.name || "").trim()
+      && Number(p.price) > 0
+      // ⚠️ AND A PACK WHOSE BASE IS HIDDEN IS NOT OFFERED (v598) — its cap has left the shop, so selling it
+      // would be selling pieces of a bread she has taken off.
+      && !hiddenPackBase(state, p))
     .map((p) => {
       const out = {
         name: String(p.name).trim(),
@@ -463,6 +479,19 @@ export function storefrontPayload(state) {
     deliveryDays: (state.settings && state.settings.deliveryDays) || [],
     cutoff: (state.settings && state.settings.cutoff) || "",
     capacity: (state.settings && state.settings.defaultCapacity) || 0,
+    // ⚠️⚠️ WHICH PRODUCT THE HOMEPAGE CARD PRICES (v593 — her choice). ⚠️ The card used to take the first
+    // name containing "focaccia", ⚠️ **so a pack named "4 × Focaccia Box" could put RM60 on the loaf's card.**
+    // ⭐ She names the product in Settings; the exact published NAME travels, because the shop addresses
+    // products by name and the id means nothing on the public page. Absent = the homepage's old rule.
+    homeProduct: (() => {
+      // ⚠️⚠️ A PACK IS NEVER THE HOMEPAGE PRODUCT (v599) — a stale id from before the picker excluded packs
+      // would price the loaf's card with a box. ⭐ An unknown/stale id publishes nothing, and the homepage
+      // falls back to its own rule rather than a wrong name.
+      const pick = byId(state.products || [], sf.homeProductId);
+      if (pick && isPoolablePack(state, pick) !== null) return "";
+      return pick && pick.active !== false && pick.draft !== true && Number(pick.price) > 0
+        && String(pick.name || "").trim() ? String(pick.name).trim() : "";
+    })(),
     products,
     // The standard days she has loaded onto her own calendar, for the tinted days
     // and their tap-to-name bubble on the customer's delivery calendar. Always
@@ -554,7 +583,10 @@ export function maybeSyncStorefront(state) {
 // fresh phone is up to date before its first Settings visit.
 export async function refreshStorefront(state) {
   const c = cfg(state);
-  if (!c.url || !c.anonKey) return false;
+  // ⚠️ LIVE AVAILABILITY OFF MEANS NO CALL AT ALL (v588). The URL and anon key ship in code, so this read still
+  // went out on a phone where the switch that owns it — Enable live availability — was off. ⭐ Nothing here
+  // needs a login, so `enabled` is the flag, not `ready()`.
+  if (!c.enabled || !c.url || !c.anonKey) return false;
   const base = String(c.url).replace(/\/+$/, "");
   try {
     const res = await fetch(
@@ -573,6 +605,19 @@ export async function refreshStorefront(state) {
     if (typeof remote.instagram === "string") sf.instagram = remote.instagram;
     if (typeof remote.facebook === "string") sf.facebook = remote.facebook;
     if (typeof remote.tngQr === "string") sf.tngQr = remote.tngQr;
+    // ⚠️⚠️ AND THE HOMEPAGE PRODUCT FOLLOWS THE PUBLISHED NAME (v598). ⚠️ Without this the second phone kept an
+    // empty choice and its next publish sent `homeProduct: ""` — ⚠️ **silently reverting the homepage card to the
+    // first name containing focaccia.** ⭐ A NAME that is published is adopted onto the local product; an empty
+    // one is "no opinion" and clears nothing (a phone that never chose must not erase another phone's choice).
+    // ⚠️⚠️ AND ONLY A REAL PRODUCT IS ADOPTED — NEVER A VALUE PACK (v599). ⚠️ The published NAME was matched
+    // without the pack exclusion the picker has, so a stale or hand-edited name could point the loaf's card
+    // at a 4-loaf box. ⭐ And an empty list (a fresh phone's first sign-in, racing the first pull) adopts
+    // nothing, leaving the choice to the pull rather than writing "" over the other phone's pick.
+    if (typeof remote.homeProduct === "string" && remote.homeProduct.trim() && (state.products || []).length) {
+      const wanted = remote.homeProduct.trim().toLowerCase();
+      const hit = (state.products || []).find((p) => p && String(p.name || "").trim().toLowerCase() === wanted);
+      if (hit && isPoolablePack(state, hit) === null) sf.homeProductId = hit.id;
+    }
     // The developer credit follows the same rule: the published values win, so
     // the More → Settings & this app ✉ rows and the footers match what customers see.
     let dev = state.settings.developer;
@@ -610,9 +655,15 @@ export function trackingSnapshot(state, group) {
   const del = first.deliveryDateId ? byId(state.deliveryDates, first.deliveryDateId) : null;
   const date = del ? del.date : String(first.deliveryDate || "");
   const courier = first.fulfillment === "courier";
-  const fulfillment = courier ? "Post (nationwide)" : "Collect (local)";
-  const address = courier && String(first.address || "").trim()
-    ? ` · ${String(first.address).trim()}` : "";
+  // ⚠️⚠️ THE CARD NOW SAYS THE SAME THING THE MESSAGE DOES (v569). ⭐ It used to write its own words, so a
+  // collection at a Point read **"Self collect"** on the card and **"Self collect at Farlim"** in the
+  // WhatsApp confirmation — two answers to one question. ⭐ `fulfillmentText` is the one wording, and a
+  // Point's own street rides beside it exactly as a courier order's address does.
+  const fulfillment = fulfillmentText(state, first);
+  const where = courier
+    ? String(first.address || "").trim()
+    : pointAddressFor(state, first);
+  const address = where ? ` · ${where}` : "";
   // The customer's tracking page shows what they were sold, at the price they
   // were sold it — never today's menu.
   const items = orders.map((o) => {
@@ -631,7 +682,7 @@ export function trackingSnapshot(state, group) {
   // ask them for the charge at the door (19 Sep 2026).
   const {
     courier: courierFee, cod: courierCod, quoted, total: totalNum,
-    promo: promoRm, promoCode, coupon: couponRm,
+    promo: promoRm, promoCode, coupon: couponRm, couponRole,
   } = customerTotal(state, group);
   // ★★ THE CARD'S DISCOUNT COLUMN CARRIES BOTH KINDS (v323), AND THAT IS DELIBERATE.
   // A customer who ordered through a friend's link has the RM3 taken off their total — and
@@ -752,6 +803,10 @@ export function trackingSnapshot(state, group) {
     // The ONE discount on this order — a code, or the friend's first-order coupon, never
     // both. See the note where this number is worked out.
     promo_rm: (promoRm + couponRm) > 0 ? round2(promoRm + couponRm) : null,
+    // ⚠️⚠️ WHICH KIND OF FRIEND DISCOUNT IT IS (v571) — 'sent' for the friend, 'reward' for the referrer.
+    // ⭐ The card had one sentence for both, so a reward she earned was described as a coupon she was given.
+    // ⚠️ ONLY when the friend's coupon is the one that paid — a code that paid says so in its own line.
+    promo_role: couponRm > 0 ? String(couponRole || "") : "",
     // Who is carrying it, where it has got to, and who is driving — each null when the
     // order has no trip or the trip has not told us that yet.
     //
@@ -799,10 +854,25 @@ export function trackingSnapshot(state, group) {
     // (the van's day and window ride `whenText`) and **named neither**.
     // ⭐ A COLLECTION KEEPS THE BARE DATE: for a collection the bake day IS the day they get their
     // bread, and the word "Delivery" on that line is honest.
-    delivery: `${date ? (courierDayOf(first) ? `Bake ${shortDate(date)}` : shortDate(date)) : ""} · ${fulfillment}${address}${whenText}`,
+    // ⚠️⚠️ A POINT ORDER ON A VAN RUN IS READY THE DAY THE VAN ARRIVES (v570). ⭐ The delivery run writes a
+    // courier day onto every order it carries, including Point orders — and the reminder has used it since
+    // v429 — ⚠️ **but the card kept the BAKE day, so a run reaching the Point the morning after the bake told
+    // the customer one day on the card and another in the message.** ⭐ A collection shows the van's day when
+    // there is one, and the bake day when there is not (the common case, unchanged).
+    delivery: `${(courier ? date : (courierDayOf(first) || date))
+      ? (courier && courierDayOf(first) ? `Bake ${shortDate(date)}` : shortDate(courier ? date : (courierDayOf(first) || date)))
+      : ""} · ${fulfillment}${address}${whenText}`,
     items,
     total,
     customer: String(first.customerName || ""),
+    // ★★★ THE PHONE THE ORDER WAS PLACED WITH (v558) — the SECOND KEY on the customer's way in.
+    // ⚠️⚠️ A six-character code is about 16.7 million values and the lookup is open to anyone, so the
+    // customer's card is now found by **code AND phone**, and the phone is never published anywhere public.
+    // ⭐ Stored as the digits the app already uses to match a customer (`waNumber`), so the same number
+    // typed as 012-345 6789, 0123456789 or 60123456789 is one key.
+    // ⚠️ **THE COLUMN MUST EXIST BEFORE THIS APP PUBLISHES IT** — a column that does not yet exist kills
+    // publishing for EVERY order, silently. `supabase/tracking.sql` adds it; run that file first.
+    whatsapp: waNumber(first.whatsapp),
     updated_at: new Date().toISOString(),
     // The customer's journey map ticks Confirmed/Paid green only when the
     // baker actually pressed Send confirmation / Paid, not when the status was
@@ -884,6 +954,28 @@ export async function maybePublishTracking(state, group) {
   await pushTracking(c, row, content);
 }
 
+// ★★★ WRITE EVERY ORDER'S CARD ONCE (v559).
+//
+// ⚠️⚠️ Since v558 a customer tracks with their order number AND the phone they ordered with — but a card
+// only learns the phone when it is REWRITTEN, and **an order that is finished and never touched again would
+// keep none of it for good.** ⭐ This is the press that covers the old cards: every order's card, written
+// once, so the door the phone closes is closed for them too.
+// `onProgress(done, total)` is the screen's line; `publish` is the test's seam and defaults to the real door.
+// ⚠️ Every card goes through `publishTracking`, the same function every other door uses, so this cannot
+// word or write a card differently from the rest of the app.
+export async function republishEveryCard(state, { onProgress = null, publish = publishTracking } = {}) {
+  const groups = groupOrders((state && state.orders) || []);
+  let ok = 0;
+  let bad = 0;
+  for (const g of groups) {
+    let good = false;
+    try { good = await publish(state, g); } catch { good = false; }
+    if (good) ok += 1; else bad += 1;
+    if (typeof onProgress === "function") onProgress(ok + bad, groups.length);
+  }
+  return { ok, bad, total: groups.length };
+}
+
 // Test seam: the map above is per-process, so a suite that publishes the same card
 // twice from identical fixtures can start from a clean sheet.
 export function forgetPublishedCards() {
@@ -920,11 +1012,27 @@ export async function claimReceipt(state, order) {
   if (!ready(c)) return false;
   const code = String(orderCode(order) || "").trim();
   if (!code) return false;
+  // ⚠️⚠️ AND NEVER TOUCH A REGISTER ROW ANOTHER ORDER IS ALREADY WEARING (v554). ⭐ The register keys its
+  // serials by the code, so two orders on one code would be given **the same receipt number** — and the
+  // invoice for each would print the other's serial. ⚠️ Refusing here is not silent: the invoice then says
+  // the number could not be drawn, and Check my system names the two orders and the number they share.
+  if (duplicateOrderCodes(state && state.orders).some((d) => d.code === code)) return false;
   let token = cachedToken();
   if (!token) {
     try { token = await login(c.url, c.anonKey, c.email, c.password); }
     catch { return false; }
   }
+  // ★★★ AND WHAT THE ORDER WAS WORTH, SO A REFUND HAS A CEILING (v585). ⚠️ The database now refuses a refund
+  // larger than the bill stored with the number — ⚠️ **before this, any signed-in client could write RM 999,999
+  // as the size of a refund.** ⭐ The bill is computed HERE, at the one moment the app knows it: the same
+  // `customerTotal` the confirmation, the tracking card and the invoice read. ⚠️ The whole order, not this row
+  // — a cart's lines share a groupId.
+  // ⚠️ THE ORDER ITSELF IS ALWAYS IN THE FAMILY — a groupId with no other rows on this phone (a
+  // just-placed order, or a phone that has not synced) must not price an empty cart.
+  const gid = order.groupId;
+  const family = [order].concat((state.orders || []).filter((o) => o && o !== order
+    && (!gid || o.groupId === gid)));
+  const bill = round2(customerTotal(state, { orders: family }).total);
   try {
     const res = await fetch(`${c.url}/rest/v1/rpc/claim_receipt_number`, {
       method: "POST",
@@ -933,7 +1041,9 @@ export async function claimReceipt(state, order) {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ p_order_code: code }),
+      body: JSON.stringify(Number.isFinite(bill) && bill > 0
+        ? { p_order_code: code, p_bill: bill }
+        : { p_order_code: code }),
     });
     if (!res || !res.ok) return false;
     const rows = await res.json();
@@ -978,14 +1088,30 @@ export async function pullReceiptRegister(state) {
     catch { return { ok: false, rows: [] }; }
   }
 
+  // ★★★ AND IT IS READ IN PAGES (v551). ⚠️⚠️ It was ONE request with no limit — and the server answers at
+  // most 1,000 rows, so **past receipt #001000 the register simply ended**: the screen said "Receipts
+  // #000001 to #001000 — 1,000 issued" and "The run is unbroken", and a receipt beyond the ceiling was
+  // invisible. ⭐ **A cap on her records is not a capacity, it is an expiry date** — the same lesson the
+  // sync learned in v531. ⚠️ `order=number.asc` is what makes `offset` paging safe here: a receipt number
+  // never moves.
+  const PAGE = 1000;
+  const MAX_PAGES = 50;                       // a hard stop so a runaway can never spin
+  const rows = [];
   try {
-    const res = await fetch(
-      `${c.url}/rest/v1/receipt_numbers?select=number,order_code,issued_at,refunded_at,refunded_amount&order=number.asc`,
-      { headers: { apikey: c.anonKey, Authorization: `Bearer ${token}` } });
-    if (!res || !res.ok) return { ok: false, rows: [] };
-    const rows = await res.json().catch(() => null);
-    if (!Array.isArray(rows)) return { ok: false, rows: [] };
-    return { ok: true, rows };
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const res = await fetch(
+        `${c.url}/rest/v1/receipt_numbers?select=number,order_code,issued_at,refunded_at,refunded_amount`
+        + `&order=number.asc&limit=${PAGE}&offset=${rows.length}`,
+        { headers: { apikey: c.anonKey, Authorization: `Bearer ${token}` } });
+      if (!res || !res.ok) return { ok: false, rows: [] };
+      const got = await res.json().catch(() => null);
+      if (!Array.isArray(got)) return { ok: false, rows: [] };
+      rows.push(...got);
+      if (got.length < PAGE) return { ok: true, rows };
+    }
+    // ⚠️ A READ THAT HIT THE CEILING IS NOT A SUCCESS — the register would present a part as the whole.
+    return { ok: false, rows: [],
+      reason: `The register holds more than ${(PAGE * MAX_PAGES).toLocaleString("en")} receipts, which is more than one read can take.` };
   } catch { return { ok: false, rows: [] }; }
 }
 
@@ -999,6 +1125,11 @@ async function receiptRpc(state, order, fn, extra = {}) {
   if (!ready(c)) return false;
   const code = String(orderCode(order) || "").trim();
   if (!code) return false;
+  // ⚠️⚠️ AND NEVER TOUCH A REGISTER ROW ANOTHER ORDER IS ALREADY WEARING (v554). ⭐ The register keys its
+  // serials by the code, so two orders on one code would be given **the same receipt number** — and the
+  // invoice for each would print the other's serial. ⚠️ Refusing here is not silent: the invoice then says
+  // the number could not be drawn, and Check my system names the two orders and the number they share.
+  if (duplicateOrderCodes(state && state.orders).some((d) => d.code === code)) return false;
   let token = cachedToken();
   if (!token) {
     try { token = await login(c.url, c.anonKey, c.email, c.password); }
@@ -1014,7 +1145,17 @@ async function receiptRpc(state, order, fn, extra = {}) {
       },
       body: JSON.stringify({ p_order_code: code, ...extra }),
     });
-    return !!(res && res.ok);
+    if (!res || !res.ok) return false;
+    // ⚠️⚠️ HTTP 200 IS NOT "IT HAPPENED" (v553). ⭐ The receipt functions return the number they changed
+    // — and **NULL when no `receipt_numbers` row matches**, still with a 200. ⭐ This read only `res.ok`, so
+    // the app stamped "refunded" on the order while the register row was untouched: **the register showed
+    // the sale as unrefunded and counted nothing marked**, and the invoice drew a number with no mark.
+    // ⚠️ That happens to an order whose receipt was never claimed (it was claimed while the phone was
+    // offline), or one grouped before v441 whose code has moved — ⭐ **the register's reader accepts the old
+    // code as an alias, but this writer only knows today's.** A null body is the honest "nothing matched".
+    let body = null;
+    try { body = await res.json(); } catch { body = null; }
+    return body != null;
   } catch { return false; }
 }
 
@@ -1102,14 +1243,23 @@ export function unmatchedLinesNote(lines, cur = "RM") {
 // a fact that is only true of THIS phone's last poll. The queue is re-read every 30 seconds, so
 // memory is the honest place for it.
 let stuckIncoming = [];
+// ⚠️⚠️ AND WHETHER THE READ HIT ITS CEILING (v582). ⚠️ The queue is read 200 rows at a time, newest first,
+// and 200 unimportable rows fill it — ⚠️ **so rows behind them were not read, and nothing said so.** ⭐ The
+// cap is now known and reported beside the rows it held back.
+let incomingCap = false;
 
 export function stuckOrders() {
   return stuckIncoming;
 }
 
+export function incomingCapReached() {
+  return incomingCap;
+}
+
 // For a test seam, the way `forgetPublishedCards` is.
 export function forgetStuckOrders() {
   stuckIncoming = [];
+  incomingCap = false;
 }
 
 // Why a row could not be read, in words she can act on. ⚠️ NEVER a code and never a shrug — the one
@@ -1141,11 +1291,26 @@ export async function pullIncoming(state) {
 
   try {
     const auth = { apikey: c.anonKey, Authorization: `Bearer ${token}` };
-    const res = await fetch(
-      `${c.url}/rest/v1/incoming_orders?select=id,data&status=eq.new&limit=50`,
-      { headers: auth });
-    if (!res.ok) return { ok: false, imported: [] };
-    const rows = await res.json().catch(() => []);
+    // ★★★ NEWEST FIRST, AND IN PAGES (v551). ⚠️⚠️ THE FAULT: one read of the first 50 — **with no order
+    // at all** — and a row that cannot be imported is deliberately left `new` so it keeps retrying. ⭐ **So
+    // fifty such rows filled the ceiling for ever, and a real customer's order behind them was never even
+    // READ:** the app said "nothing is lost, it is tried again every 30 seconds" while it could not see it.
+    // ⭐ Newest-first puts a fresh order at the front of the first page; the pages cover a backlog behind
+    // it. ⚠️ The cap is reported, never silently applied.
+    const PAGE = 50;
+    const MAX_PAGES = 4;
+    const rows = [];
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const res = await fetch(
+        `${c.url}/rest/v1/incoming_orders?select=id,data,created_at&status=eq.new`
+        + `&order=created_at.desc&limit=${PAGE}&offset=${rows.length}`,
+        { headers: auth });
+      if (!res.ok) return { ok: false, imported: [] };
+      const got = await res.json().catch(() => []);
+      if (!Array.isArray(got)) return { ok: false, imported: [] };
+      rows.push(...got);
+      if (got.length < PAGE) break;
+    }
     const imported = [];
     // ★ AND EVERY ROW THAT COULD NOT BE READ IS KEPT, IN WORDS (v364) — see `stuckOrders`.
     const stuck = [];
@@ -1178,6 +1343,35 @@ export async function pullIncoming(state) {
       const created = importIncoming(state, row);
       if (!created) continue;
       imported.push(row.id);
+      // ⚠️⚠️ SAVED BEFORE THE CLOUD COPY IS DELETED (v589). ⚠️ The claim was flipped and the queue row
+      // DELETEd while the order existed only in memory, and the one save came after the whole loop — ⚠️ **an
+      // interruption (phone locks, tab discarded) lost every order imported so far: the queue only reads
+      // `status=new`, so nothing retried and no screen recorded the loss.** ⭐ Each row is made durable
+      // before its source is removed.
+      save(state);
+      // ⚠️⚠️ AND A SAVE THAT FAILED KEEPS ITS SOURCE (v595). ⚠️ `save` swallows a full phone, so the order could
+      // exist only in memory while the queue row was DELETED — ⚠️ **the customer's order would then exist
+      // nowhere.** ⭐ The row is left `imported` (not re-queued, which would duplicate it) and the order stays
+      // for the next successful save.
+      if (saveFailure()) {
+        // ⚠️⚠️ AND THE IMPORT IS UNDONE AND THE ROW RE-QUEUED (v598). ⚠️ Leaving it `imported` meant the queue
+        // never retried (`status=eq.new`) while the order existed only in memory — ⚠️ **a phone closed before
+        // any save succeeded lost that customer's order from everywhere the app can reach.** ⭐ The rows this
+        // import created are removed from memory (so a retry cannot duplicate them) and the claim is released.
+        const ids = Array.isArray(created) ? created.map(String) : [];
+        // ⚠️⚠️ THE RELEASE IS CHECKED BEFORE THE ROWS ARE DISCARDED (v599). ⚠️ The PATCH was fire-and-forget,
+        // so a connection that dropped between the claim and the release left the queue row `imported` (never
+        // retried) while the orders had already been removed from memory — ⚠️ **the customer's order existed
+        // nowhere.** ⭐ A failed release keeps the orders in memory for the next save; the row stays `imported`,
+        // so a retry can never duplicate them.
+        const released = await fetch(`${c.url}/rest/v1/incoming_orders?id=eq.${row.id}`, {
+          method: "PATCH",
+          headers: { ...auth, "Content-Type": "application/json", Prefer: "return=minimal" },
+          body: JSON.stringify({ status: "new" }),
+        }).then((r) => !!(r && r.ok)).catch(() => false);
+        if (released) discardImportedRows(state, ids);
+        continue;
+      }
       // The claim already prevents a second import; delete is just cleanup.
       await fetch(`${c.url}/rest/v1/incoming_orders?id=eq.${row.id}`, {
         method: "DELETE",
@@ -1189,8 +1383,12 @@ export async function pullIncoming(state) {
     // configured, no token, the queue unreachable — leaves it EXACTLY as it was, because on those
     // paths the queue's state is UNKNOWN. Clearing it would be a claim that nothing is waiting,
     // made on a request that never came back. (The same rule the promo label's open count follows.)
+    // ⚠️ A FULL LAST PAGE MEANS THERE MAY BE MORE (v582). The cap is a fact this phone knows, so it says
+    // it rather than letting a customer's order sit behind the window unread and unmentioned.
+    const capped = rows.length >= PAGE * MAX_PAGES;
     stuckIncoming = stuck;
-    return { ok: true, imported, stuck };
+    incomingCap = capped && stuck.length > 0;
+    return { ok: true, imported, stuck, capped };
   } catch {
     return { ok: false, imported: [] };
   }
@@ -1200,6 +1398,14 @@ export async function pullIncoming(state) {
 // match a backoffice product are skipped (the owner adds them by hand). Creates
 // the delivery date if it isn't in the plan yet. Returns the created order ids,
 // or null when nothing matched.
+// The local calendar day a queue row was written on — the customer's own moment, in this phone's clock.
+function placedDay(row) {
+  const at = row && row.created_at;
+  if (!at) return todayISO();
+  const d = new Date(at);
+  return Number.isNaN(d.getTime()) ? todayISO() : toISODate(d);
+}
+
 function importIncoming(state, row) {
   let data;
   try { data = JSON.parse(row.data); } catch { return null; }
@@ -1257,7 +1463,11 @@ function importIncoming(state, row) {
       id: newId("ord"),
       deliveryDateId: del.id,
       deliveryDate: dateStr,
-      orderDate: todayISO(),
+      // ⚠️⚠️ THE DAY THE ORDER WAS PLACED, NOT THE DAY THIS PHONE READ IT (v572). ⭐ `todayISO()` stamped the
+      // PULL — so an order placed at 23:50 and imported at 00:10 was dated the next day, and a phone offline
+      // over a weekend was two days out, on the invoice she prints for it. ⭐ The queue row's own `created_at`
+      // is the customer's moment, read in HER clock; `todayISO()` is the fallback for a row that has none.
+      orderDate: placedDay(row),
       productId: product.id,
       qty,
       customerName: String(data.customer || "").trim(),
@@ -1332,6 +1542,20 @@ function importIncoming(state, row) {
     if (first) {
       const said = unmatchedLinesNote(droppedLines, (state.settings && state.settings.currency) || "RM");
       first.note = [first.note, said].filter(Boolean).join("\n");
+    }
+  }
+  // ⚠️⚠️ AN ORDER FROM SOMEONE SHE HAS FORGOTTEN ARRIVES WITHOUT THEIR DETAILS (v598). ⚠️ A storefront order
+  // imported after the forget carried the name, number and address straight back into the book — ⚠️ **the sale
+  // is kept; the identification is not.** ⭐ Matched on the phone the redaction recorded.
+  const forgotten = redactedPhones(state);
+  if (forgotten.size) {
+    for (const id of created) {
+      const o = state.orders.find((x) => x && x.id === id);
+      if (!o) continue;
+      if (!forgotten.has(waNumber(o.whatsapp))) continue;
+      delete o.customerName;
+      delete o.whatsapp;
+      delete o.address;
     }
   }
   return created.length ? created : null;
@@ -1491,8 +1715,14 @@ export async function fetchReviews(state) {
       `${c.url}/rest/v1/reviews?select=id,name,stars,message,lang,photo,published,created_at&order=created_at.desc`,
       { headers: await reviewAuth(c) });
     if (!res.ok) return { ok: false, reason: `Reviews failed to load (HTTP ${res.status})`, reviews: [] };
-    const rows = await res.json().catch(() => []);
-    return { ok: true, reviews: Array.isArray(rows) ? rows : [] };
+    // ⚠️⚠️ A REPLY THIS APP CANNOT READ IS NOT AN EMPTY LIST (v553). ⭐ A 200 whose body is a proxy or a
+    // captive-portal page parsed to nothing, and this reported `ok: true` with no reviews — ⭐ **so the
+    // screen said there are none, which is the opposite of "I could not ask".** The rule this file already
+    // keeps for the register, applied here: **an unreadable answer is a FAILED read, never an empty one.**
+    let rows = null;
+    try { rows = await res.json(); } catch { rows = null; }
+    if (!Array.isArray(rows)) return { ok: false, reason: "The reviews came back in a form this app could not read", reviews: [] };
+    return { ok: true, reviews: rows };
   } catch (err) {
     return { ok: false, reason: reviewErr(err, "Couldn't reach Supabase"), reviews: [] };
   }
@@ -1587,11 +1817,23 @@ export async function pendingReviewCount(state) {
   const c = cfg(state);
   if (!ready(c)) return null;
   try {
+    // ⚠️⚠️ A COUNT READ AS ROWS STOPS AT THE SERVER'S CEILING (v553). ⭐ One read of every unpublished id
+    // is capped at 1,000, so **the badge said "1000" and never moved again** — and with 1,005 reviews the
+    // ones among the oldest could never be found at all. ⭐ The count is ASKED FOR now, not counted by
+    // hand: one row, and the exact total comes back in the reply's own header.
+    const auth = await reviewAuth(c);
     const res = await fetch(
-      `${c.url}/rest/v1/reviews?select=id&published=eq.false`,
-      { headers: await reviewAuth(c) });
+      `${c.url}/rest/v1/reviews?select=id&published=eq.false&limit=1`,
+      { headers: { ...auth, Prefer: "count=exact" } });
     if (!res.ok) return null;
-    const rows = await res.json().catch(() => null);
+    const range = res.headers && typeof res.headers.get === "function" ? res.headers.get("content-range") : "";
+    const total = Number(String(range || "").split("/")[1]);
+    if (Number.isFinite(total)) return total;
+    // ⚠️ A SERVER THAT SENT NO HEADER gets the OLD question asked again in full — the one row above was
+    // asked only for its count and is not a list to count.
+    const again = await fetch(`${c.url}/rest/v1/reviews?select=id&published=eq.false`, { headers: auth });
+    if (!again.ok) return null;
+    const rows = await again.json().catch(() => null);
     return Array.isArray(rows) ? rows.length : null;
   } catch {
     return null;
@@ -1621,12 +1863,25 @@ export async function fetchPromoVisits(state, codes) {
     .filter(Boolean);
   if (!wanted.length) return { ok: true, byCode: new Map() };
   try {
-    const res = await fetch(
-      `${c.url}/rest/v1/promo_visit_days?select=code,day,n&code=in.(${wanted.join(",")})`,
-      { headers: await reviewAuth(c) });
-    if (!res.ok) return { ok: false, reason: `Supabase said ${res.status}` };
-    const rows = await res.json().catch(() => null);
-    if (!Array.isArray(rows)) return { ok: false, reason: "Supabase sent something unreadable" };
+    // ⚠️⚠️ AND IT IS READ IN PAGES (v553). ⭐ The view is one row per code per DAY, so forty codes over a
+    // month is 1,200 rows — and one unpaged read is capped at 1,000, ⭐ **so "Opened N times" and the
+    // 28-day strip undercounted with nothing on screen to say so.** ⚠️ `order=code,day` is what makes
+    // `offset` paging safe: a day's count never moves once written.
+    const PAGE = 1000;
+    const MAX_PAGES = 20;
+    const rows = [];
+    const auth = await reviewAuth(c);
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const res = await fetch(
+        `${c.url}/rest/v1/promo_visit_days?select=code,day,n&code=in.(${wanted.join(",")})`
+        + `&order=code.asc,day.asc&limit=${PAGE}&offset=${rows.length}`,
+        { headers: auth });
+      if (!res.ok) return { ok: false, reason: `Supabase said ${res.status}` };
+      const got = await res.json().catch(() => null);
+      if (!Array.isArray(got)) return { ok: false, reason: "Supabase sent something unreadable" };
+      rows.push(...got);
+      if (got.length < PAGE) break;
+    }
     const byCode = new Map();
     for (const r of rows) {
       const code = normCode(r && r.code);

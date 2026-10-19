@@ -166,3 +166,25 @@ test("a courier order at this stage is unchanged — its van is booked later (v3
   assert.ok(built.message.includes("Your courier delivery time will be confirmed separately."),
     "the customer is told the van's time is still to come");
 });
+
+test("★★★ a collection with no Point still says WHERE (v569)", () => {
+  // ⚠️⚠️ THE HOLE: a customer who tapped Self collect and left the Point picker alone gets an order with no
+  // Point — the KITCHEN — and every message said only "Self collect", with no place at all, while the shop
+  // promised "we message you the exact collection point". ⭐ The kitchen's street is added when she has typed
+  // one, from the mailing address the labels already use.
+  const group = { orders: [{
+    id: "ord_ab12cd34ef56", groupId: "ordg_112233445566",
+    deliveryDateId: "d1", fulfillment: "collect",
+    whatsapp: "+60 12-345 6789", customerName: "Aunty Bee",
+    productId: "p1", qty: 2,
+  }] };
+  const withAddr = buildConfirmation(state({
+    settings: { currency: "RM", mailingAddress: "12, Jalan Bunga\n11600 Penang",
+      storefront: { name: "Jienluv2bake", whatsapp: "60123456789", tngQr: "https://img/tng.png" } },
+  }), group, "https://bake.app/store/?track=445566");
+  assert.ok(withAddr.message.includes("Where: 12, Jalan Bunga"),
+    "★ a kitchen collection gave a day and no place — **the shop promised the exact point**");
+  // ⚠️ And no invented place when she has typed no address.
+  const bare = buildConfirmation(state(), group, "https://bake.app/store/?track=445566");
+  assert.equal(bare.message.includes("Where:"), false, "★ a place was invented for a bakery with no address on file");
+});

@@ -1,8 +1,73 @@
-# Munchies Furkidz — change history (v54 → v549)
+# Munchies Furkidz — change history (v54 → v599)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**19 Oct 2026 — engine v550 to v599: FIVE MORE SWEEPS THROUGH THE WHOLE APP, AND
+THE LAST OF THEM FOUND FAULTS IN THE FIXES BEFORE IT (one database step to run first, and the
+five uploaded functions to redeploy — both named at the end).**
+
+**Fifty versions, all in one stretch: an audit of what the audits left, then a check of that check,
+five times over. Two of the sweeps found faults created by the sweep before them — which is worth
+saying plainly, because it is the reason the last one was called a freeze rather than a finish.**
+
+**1. ⚠️ THE TRACKING PAGE NOW NEEDS THE PHONE THE ORDER WAS PLACED WITH.** **The code alone used to
+open any order, and a code is six characters.** **The customer now types the code and the WhatsApp
+number they ordered with, and the database itself refuses to answer for a code alone** — so knowing a
+code gives nobody a name, an address or a driver's phone number. **The one press that puts the old
+codes back in reach** (her own screen) applies the phone to every card already out there.
+
+**2. ⚠️ A REFUND IS MONEY OUT IN THE MONTH IT WENT BACK, AND ONE SALE IS ONE INVOICE NUMBER.** **A
+refund used to be counted in the month the ORDER was placed**, so a refund in October for a September
+sale left both months wrong. **And a sale whose lines sat on two posting days drew two invoice
+numbers** — one sale, one number now.
+
+**3. ⚠️ PAYING A POCKET BACK SETTLES A DEBT — IT IS NOT A WITHDRAWAL.** **Paying back a pocket that
+paid for something moved the money twice in the books**: once as the debt settling and once as money
+she had taken out. **It settles now, and only once.**
+
+**4. The paper.** **Labels print on a 100 by 150 mm sheet** instead of a shape no printer had. **An
+invoice now says who it is for** — it had a total and no name. **And nothing addressed to her prints
+on a customer's or a shop's sheet**: the invoice no longer tells whoever reads it to "open this app
+again", and the purchase order no longer prints an instruction to her for the shop to see.
+
+**5. The shop.** **A customer cannot place an order with a number that cannot be answered** — it is
+marked at the box, in the same red edge as a missing name. **The day the customer tapped keeps the
+keyboard**, instead of the page throwing them back to the top. **A code the page has judged is judged
+again** whenever the basket changes. **And the next customer arrives in exactly the state a new
+visitor does** — which here means Post (nationwide) chosen, the way this shop opens.
+
+**6. The homepage.** **The price on the homepage card follows the product you pick in Settings**, so
+a price change made once reaches both pages. **And the cut-off and the posting days are read from your
+settings rather than typed into the page** — so the homepage and the shop cannot say different things.
+
+**7. The stock card, the money and the trips.** **A stock card whose rows do not add up to the shelf
+is named by Check my system**, with the two identical stocktakes that caused it — that is the answer
+to the two "+10" rows of 17 October. **Eight stock cards that could not be put right now can be.** **A
+trip can no longer be booked twice** by two presses, and **a booking that may have gone through says so
+rather than pretending it failed.**
+
+**8. The security.** **Two database functions that only exist to be fired by an order are no longer
+callable by name by anyone**, and an order's stored data has a size limit. **None of it changes what
+you see; all of it closes a door.**
+
+**9. And the tests.** **Several guards could not fail** — they checked that a screen called a thing,
+not that the thing worked, and one of them passed while a hard-coded number sat beside it. **Those are
+rewritten, and one of them caught a fault in the fix before it.**
+
+**⚠️ BEFORE YOU DEPLOY THIS ONE: run `supabase/tracking.sql` in the SQL editor first** — the tracking
+page asks for a phone now, and the old database function cannot answer that question. **Then run
+`supabase/receipts.sql` and `supabase/shared_pool_slots.sql`** (the
+refund month, the invoice number and the slot counts), **and `supabase/advisor_fixes.sql`** (the door).
+**Then redeploy all five uploaded functions** — courier, parcel, shop-geocode, shop-feedback (which
+gains a file, so it must be uploaded whole) and wish-mail. **If the SQL goes in first, the shop keeps
+working the whole time; if it goes in after, tracking is broken until it does.**
+
+**⚠️ `supabase/instant_slots.sql` is RETIRED — do not run it.** **It refuses by itself: it checks the
+rule already installed in your database and stops with "This file is retired … nothing has been
+changed."** **That refusal is the file protecting your live counts, not a fault, and there is nothing
+to fix.** **`shared_pool_slots.sql` is the one that replaces it, and it is the only one to run.**
 
 **18 Oct 2026 — engine v549: A FULL AUDIT OF EVERY SCREEN FOUND TWENTY-TWO
 FAULTS, AND ALL TWENTY-TWO ARE NOW FIXED (nothing to run, no SQL, nothing to upload).**

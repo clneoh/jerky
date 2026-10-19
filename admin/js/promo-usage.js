@@ -60,6 +60,10 @@ export function usageByCode(state) {
   for (const group of groupOrders(orders)) {
     const rows = group.orders;
     if (!rows.length) continue;
+    // ⚠️⚠️ A SALE THAT WAS REFUNDED IN FULL DID NOT HAPPEN (v551). ⭐ It counted against the code's
+    // quota and against its "RM given away" — so a customer refunded in full still used up one of her
+    // remaining orders, and a third customer was refused "fully claimed".
+    if (rows[0].refundedFull) continue;
     const code = byName.get(normCode(rows[0].promo));
     if (!code) continue;
     const before = out.get(code.code) || { used: 0, given: 0 };

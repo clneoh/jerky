@@ -218,7 +218,17 @@ Deno.serve(async (req) => {
     const out = await placeOrder(cfg, req.value);
     if (!out.ok) {
       console.error("[courier] booking refused:", out.reason);
-      return json({ ok: false, reason: out.reason });
+      // ⚠️⚠️ AND AN UNKNOWN OUTCOME IS SAID AS ONE (v587). ⚠️ With no flag, the app read a timed-out booking as
+      // an ordinary refusal, left the Book press live and offered the one instruction that books a second,
+      // charged trip. ⭐ `unknown` is what removes that press.
+      return json({ ok: false, ...(out.unknown ? { unknown: true } : {}), reason: out.reason });
+    }
+    // ⚠️⚠️ A 2xx WITH NO TRIP BACK IS UNKNOWN, NOT SUCCESS (v595). ⚠️ A 204 or a lost body was answered as
+    // `{ok:true, order:null}` and the app turned that into a plain refusal — ⚠️ **Book stayed live under a trip
+    // that was created and charged.**
+    if (out.data == null) {
+      return json({ ok: false, unknown: true,
+        reason: "The courier accepted the booking but sent no trip back — check your courier app before booking again." });
     }
     return json({ ok: true, order: out.data });
   }
@@ -233,7 +243,7 @@ Deno.serve(async (req) => {
     // a SECOND call, and a refusal from it is expected rather than a fault — the driver's
     // endpoint says nothing until an hour before the pickup — so the driver is attached
     // as an extra and its absence leaves the check itself untouched.
-    return json({ ok: true, order: await orderWithDriver(cfg, out.data) });
+    return json({ ok: true, order: await orderWithDriver(cfg, out.data, id) });
   }
 
   if (action === "cancel") {
@@ -244,8 +254,12 @@ Deno.serve(async (req) => {
       // A refusal here is ORDINARY, not a fault: Lalamove only allows a cancellation
       // while a driver is still being found, or within five minutes of one being
       // matched. Logged rather than treated as a failure of the function.
+      // ⚠️⚠️ EXCEPT WHEN IT TIMED OUT (v589). ⚠️ The provider marks a 20-second timeout UNKNOWN, and this
+      // branch dropped the flag — ⚠️ **the run said the cancellation was refused and kept the job stamped as
+      // booked, with nothing recording that nobody knows whether the trip is still coming.** ⭐ The flag is
+      // forwarded as the booking branch forwards it.
       console.error("[courier] cancellation refused:", out.reason);
-      return json({ ok: false, reason: out.reason });
+      return json({ ok: false, ...(out.unknown ? { unknown: true } : {}), reason: out.reason });
     }
     return json({ ok: true });
   }

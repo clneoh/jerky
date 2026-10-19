@@ -96,6 +96,8 @@ export function defaultState() {
         // Her ask, 28 Sep 2026: "add a switch whether a flat postage or quote by courier".
         postageMode: "flat",
         postageModeSet: false, // true once she has chosen — gates THIS choice's sync, exactly like postageSet
+        // ⚠️ WHICH PRODUCT THE HOMEPAGE CARD PRICES (v593) — a product id, or "" for the old rule.
+        homeProductId: "",
         products: [], // [{ name, price, unit }]
       },
       referrals: { // bring-a-friend scheme; synced so both phones agree
@@ -192,6 +194,11 @@ export function defaultState() {
     // ★★ ORDERS THAT WERE REMOVED, KEPT SO THEY CAN BE PUT BACK (v444). See `removeOrders` — this is
     // what stops any removal, hers or the engine's, from being permanent.
     removedOrders: [],
+    // ★★★ AND A "FORGET THIS CUSTOMER" IS A FACT OF ITS OWN (v592). ⚠️⚠️ It used to live only on the order
+    // rows, and the merge is newest-wins — ⚠️ **so one newer edit from the other phone (a Paid press) put the
+    // name, number and address straight back on both.** ⭐ One redaction record per order id, merged like any
+    // other list and APPLIED on every load and pull, so the same person cannot come back by being edited.
+    redactions: [],
     // ★★ COUPONS SHE HAS TAKEN OFF AN ORDER BY HAND (v450). ⚠️ The credit itself is NOT touched — this is
     // a note that says "not on this one", so putting it back needs no repair.
     declinedCoupons: [],
@@ -331,6 +338,44 @@ function keepUnreadable() {
   }
 }
 
+// ★★★ THE KEPT DAMAGED COPY, AND THE ONE WAY TO CLEAR IT (v574).
+//
+// ⚠️ Since v548 a phone that cannot read its saved book keeps the damaged text under its own key rather than
+// throwing it away — ⭐ **that copy is the only remnant of whatever lived only on that phone.** ⚠️ But nothing
+// could ever clear it, so it counted toward the phone's storage for ever.
+// ⭐ These two are the honest pair: one says how much it is, one deletes it — and deleting it is HER decision,
+// taken in Settings, with a confirmation that says what it is.
+export function unreadableCopy() {
+  try {
+    const raw = localStorage.getItem(`${LS_KEY}.unreadable`);
+    return raw ? { chars: String(raw).length, bytes: byteLen(raw) } : null;
+  } catch {
+    return null;
+  }
+}
+
+// Returns what was removed, or null when there was nothing to remove. ⚠️ It also clears the note on this
+// phone's state, because the check that speaks for the copy reads that note — leaving it behind would keep a
+// warning about a copy that no longer exists.
+export function dropUnreadableCopy(state) {
+  const had = unreadableCopy();
+  if (!had) return null;
+  try {
+    localStorage.removeItem(`${LS_KEY}.unreadable`);
+  } catch {
+    return null;
+  }
+  if (state && "unreadableSave" in state) {
+    // ⚠️⚠️ THE HOLD STAYS (v598). ⚠️ Deleting the damaged copy does not restore the book — the phone is still
+    // holding the SEED — ⚠️ **so releasing it here let the next save tombstone her whole shared book, while the
+    // dialog promised the cloud was not touched.** ⭐ The note stays (marked "the copy is gone"), and only a
+    // complete read releases it.
+    state.unreadableSave = { ...(state.unreadableSave || {}), removedAt: new Date().toISOString() };
+    save(state);
+  }
+  return had;
+}
+
 // First run on a device (no saved state at all) ships preconnected so a fresh
 // phone works after ONE sign-in: shared data + live availability on, and the
 // 8899 PIN on. This template lives ONLY here — normalize() keeps neutral
@@ -398,6 +443,48 @@ export function ensureSupabase(state) {
 // arithmetic cannot disagree.
 export const PHONE_STORE_LIMIT = 5 * 1024 * 1024; // ~5 MB, the browser's own limit
 export const PHONE_STORE_ALERT = 0.85; // a red X only when it is nearly full, never a year early
+
+// ★★★ WHAT THIS PHONE ACTUALLY STORES, NOT JUST THE BOOK (v569).
+//
+// ⚠️⚠️ THE GAUGE MEASURED ONE FILE AND THE BROWSER STORES THREE. ⭐ Beside `bakeadmin.v1` sit the sync journal
+// (`bakeadmin.sync` — a `canonical` copy of every record plus a second copy of every pending one) and, after a
+// damaged open, the kept text (`bakeadmin.v1.unreadable`). ⚠️ **Measured: 655 KB of book was 2.11 MB stored
+// before a flush and still about 2.2x after it** — so the 85% warning could never fire before saving began to
+// fail. ⭐ A gauge that does not measure what fills up is a gauge that says 13% while the phone is full.
+export const PHONE_KEYS = ["bakeadmin.v1", "bakeadmin.sync", "bakeadmin.v1.unreadable"];
+
+function byteLen(text) {
+  const s = String(text || "");
+  try {
+    if (typeof TextEncoder !== "undefined") return new TextEncoder().encode(s).length;
+  } catch { /* fall through to a character count */ }
+  return s.length;
+}
+
+// Returns `{ total, parts: { key: bytes }, fallback? }`, or null when nothing could be measured — ⚠️ null, never 0.
+// ⚠️ Without a storage API (a test shim, or a browser that refuses it) the BOOK's own size is measured and
+// `fallback: true` says so — ⭐ a number that is too small and says which number it is beats no number at all,
+// and the real app always has storage.
+export function phoneUsage(state) {
+  if (typeof localStorage === "undefined" || typeof localStorage.getItem !== "function") {
+    const only = storedBytes(state);
+    if (only == null) return null;
+    return { total: only, parts: { "bakeadmin.v1": only }, fallback: true };
+  }
+  const parts = {};
+  let total = 0;
+  try {
+    for (const k of PHONE_KEYS) {
+      const v = localStorage.getItem(k);
+      const n = v == null ? 0 : byteLen(v);
+      parts[k] = n;
+      total += n;
+    }
+  } catch {
+    return null;
+  }
+  return { total, parts };
+}
 
 export function storedBytes(state) {
   try {
@@ -582,7 +669,16 @@ function normalize(s) {
     // carrier behaves exactly as before, and the cloud merge can land the list on
     // it without the shape being assumed.
     parcelCouriers: Array.isArray(s.parcelCouriers) ? s.parcelCouriers : [],
-    uoms: (Array.isArray(s.uoms) && s.uoms.length) ? s.uoms : seedUoms(),
+    // ⚠️⚠️ AN EMPTY LIST IS AN ANSWER *WHEN THE REMOVALS EXPLAIN IT* (v592). ⚠️ `s.uoms.length ? … : seedUoms()`
+    // re-seeded every unit whenever the list was empty — ⚠️ **so deleting them all lasted until the next load,
+    // and the tombstones were cancelled.** ⚠️ But a damaged or pre-units save with an empty list and NO
+    // removals still needs its units. ⭐ `uomsRemoved` is what tells those two empty lists apart.
+    uoms: (() => {
+      const list = Array.isArray(s.uoms) ? s.uoms : null;
+      const gone = normalizeRemovedUnits(s.uomsRemoved);
+      if (list && (list.length || gone.length)) return list;
+      return seedUoms();
+    })(),
     uomsRemoved: normalizeRemovedUnits(s.uomsRemoved),
     unreadableSave: (s.unreadableSave && typeof s.unreadableSave === "object") ? s.unreadableSave : null,
     products: Array.isArray(s.products) ? s.products : [],
@@ -611,6 +707,11 @@ function normalize(s) {
     // ⚠️⚠️ AND A ROW FOR AN ORDER THAT IS BACK IN THE LIVE LIST IS DROPPED HERE (v474) — the invariant
     // `dropStaleShelfRows` exists for, applied on every load. ⭐ It reads `s.orders`, the same source the
     // `orders` key above uses, so the two can never disagree about what is live.
+    // ⚠️ AND THE SHELF'S OWN NOTE SURVIVES A LOAD (v572) — it was written on removal and never read back, so
+    // the screen's sentence vanished on the next open and the running total restarted.
+    removedTrim: s.removedTrim && typeof s.removedTrim === "object"
+      ? { at: String(s.removedTrim.at || ""), n: Number(s.removedTrim.n) || 0, total: Number(s.removedTrim.total) || 0 }
+      : null,
     removedOrders: (Array.isArray(s.removedOrders) ? s.removedOrders : [])
       .filter((r) => !(r && r.id && Array.isArray(s.orders) && s.orders.some((o) => o && o.id === r.id)))
       // ★★★ AND THE DUPLICATE ROWS SHE ALREADY HAS ARE COLLAPSED ON LOAD (v528). ⚠️⚠️ **Without this the fix
@@ -628,7 +729,13 @@ function normalize(s) {
       ? s.voidedReceipts.map((v) => (v && !v.id && Number.isFinite(Number(v && v.no))
         ? { ...v, id: voidIdOf(v.no) } : v))
       : [],
-    declinedCoupons: Array.isArray(s.declinedCoupons) ? s.declinedCoupons : [],
+    redactions: Array.isArray(s.redactions) ? s.redactions : [],
+    // ⚠️⚠️ A RECORD NEEDS AN ID TO TRAVEL (v595). ⚠️ This list held raw id STRINGS, and the sync keys records
+    // by `id` — ⚠️ **so a coupon declined on one phone never reached the other, and the two showed different
+    // Totals.** ⭐ One object per declined code, migrated from the old strings on load.
+    declinedCoupons: (Array.isArray(s.declinedCoupons) ? s.declinedCoupons : [])
+      .map((x) => (x && typeof x === "object" ? x : { id: String(x || "") }))
+      .filter((x) => String(x.id || "").trim()),
     customers: Array.isArray(s.customers) ? s.customers : [],
     purchaseOrders: Array.isArray(s.purchaseOrders) ? s.purchaseOrders : [],
     expenses: Array.isArray(s.expenses) ? s.expenses : [],
@@ -645,17 +752,116 @@ function normalize(s) {
     // reach a screen or the shop un-clamped.
     promoCodes: Array.isArray(s.promoCodes) ? s.promoCodes : [],
   };
-  const consolidated = consolidateDeliveryDates(out.deliveryDates, out.orders);
+  const consolidated = consolidateDeliveryDates(out.deliveryDates, out.orders, out.removedOrders);
   out.deliveryDates = consolidated.deliveryDates;
   out.orders = consolidated.orders;
-  const split = splitSharedDateIds(out.deliveryDates, out.orders);
+  out.removedOrders = consolidated.removedOrders;
+  const split = splitSharedDateIds(out.deliveryDates, out.orders, out.removedOrders);
   out.deliveryDates = split.deliveryDates;
   out.orders = split.orders;
+  out.removedOrders = split.removedOrders;
   ensureCountUnits(out);
   ensurePlanningUnits(out);
   backfillUnitRefs(out);
   linkProductUnits(out);
   upgradeProductionPlan(out.settings.production, ((s.settings || {}).production) || {});
+  // ⚠️⚠️ TWO RECORDS WITH ONE ID ARE ONE RECORD THAT TRAVELS AND TWO THAT COUNT (v582). ⭐ Every list is
+  // checked to be an ARRAY and nothing checked that its ids were unique — ⚠️ **so a duplicated row counted
+  // twice on this phone while the sync, which keys by id, sent only the last one.** ⭐ Deduped here, on
+  // load, keeping the LAST occurrence: ⚠️ **the one the sync would have published is the one kept**, so
+  // what she counts and what reaches her other phone are the same record.
+  for (const k of ID_LISTS) out[k] = dedupeById(out[k]);
+  // ⚠️ AND A REDACTION IS APPLIED AFTER EVERY LOAD (v592) — see `applyRedactions`.
+  applyRedactions(out);
+  return out;
+}
+
+// The fields "Forget this customer" clears. One list, so the button and the re-application cannot drift.
+export const REDACTED_FIELDS = ["customerName", "whatsapp", "address", "customerPlace",
+  "note", "lineNote", "refundNote"];
+
+// Apply every synced redaction to the orders it names. ⭐ Returns how many rows it cleared.
+// ⚠️ A NEWER order row is still redacted: the redaction is a separate decision that outweighs an edit —
+// which is the whole point (v592). A redaction older than the row's OWN redaction loses to it.
+// ⚠️ THE PHONES OF EVERYONE SHE HAS FORGOTTEN (v598) — so a profile that merges back, or a storefront order
+// that arrives after the forget, cannot identify them again. ⭐ Read from the redaction records themselves.
+export function redactedPhones(state) {
+  const out = new Set();
+  for (const r of Array.isArray(state && state.redactions) ? state.redactions : []) {
+    const who = String((r && r.who) || "").trim();
+    if (who) out.add(who);
+  }
+  return out;
+}
+
+export function applyRedactions(state) {
+  const best = new Map();
+  for (const r of Array.isArray(state && state.redactions) ? state.redactions : []) {
+    if (!r || !r.id) continue;
+    const prev = best.get(r.id);
+    if (!prev || String(r.at || "") >= String(prev.at || "")) best.set(r.id, r);
+  }
+  if (!best.size) return 0;
+  // ⚠️ AND THEIR PROFILE IS GONE FOR GOOD (v598) — a newer profile edit from the other phone used to merge it
+  // back as a live customer with the full name and number.
+  const phones = redactedPhones(state);
+  // ⚠️⚠️ AND A PERSON WITH NO PHONE IS MATCHED BY THEIR PROFILE'S KEY (v599). ⚠️ `redactedPhones` is built
+  // from `who`, which is empty for a customer who only ever gave a name — ⚠️ **so a newer profile row from an
+  // offline phone merged the name back in as a live customer.** ⭐ The key was recorded with the redaction.
+  const profileKeys = new Set();
+  for (const r of Array.isArray(state && state.redactions) ? state.redactions : []) {
+    const k = String((r && r.profileKey) || "").trim();
+    if (k) profileKeys.add(k);
+  }
+  if ((phones.size || profileKeys.size) && Array.isArray(state.customers)) {
+    state.customers = state.customers.filter((c) => c
+      && !phones.has(String(c.whatsapp || "").trim())
+      && !profileKeys.has(String(c.key || "")));
+  }
+  let cleared = 0;
+  // ⚠️⚠️ AND THE REMOVED SHELF (v595). ⚠️ It was not redacted: ⚠️ **a forgotten customer's cancelled order kept
+  // their name in the Removed list, and "Put it back" restored the whole person.** ⭐ Both lists are hers.
+  const rows = [...((state && state.orders) || []), ...((state && state.removedOrders) || [])];
+  for (const o of rows) {
+    const r = o && best.get(o.id);
+    if (!r) continue;
+    if (o.redactedAt && String(o.redactedAt) >= String(r.at || "")) continue;
+    o.redactedAt = String(r.at || o.redactedAt || "");
+    if (r.key) o.redactedKey = String(r.key);
+    for (const k of REDACTED_FIELDS) delete o[k];
+    cleared += 1;
+  }
+  return cleared;
+}
+
+// The lists whose rows are keyed by an `id`, and therefore the ones a duplicate can split.
+// ⚠️ `removedOrders` is NOT here: it already has its own dedupe, and it keeps the FIRST row because the
+// shelf is newest-first — a different answer that belongs to that list alone.
+const ID_LISTS = ["ingredients", "suppliers", "parcelCouriers", "products", "productCategories",
+  "deliveryDates", "bakedDays", "orders", "purchaseOrders", "expenses", "deposits", "credits",
+  "rewards", "occasions", "points", "pointAreas", "deliveryRoutes", "promoCodes", "uoms", "redactions"];
+
+// One row per id, the LAST one winning. ⭐ An ordinary list is returned as it was — the same array, not a
+// copy — so a load with nothing to fix touches nothing. A row with no id (an imported occasion, say) is
+// left exactly as it is, because it cannot be the other half of a duplicate.
+function dedupeById(list) {
+  if (!Array.isArray(list)) return list;
+  let keyed = 0;
+  const seen = new Set();
+  for (const r of list) {
+    if (r && typeof r === "object" && r.id != null) { keyed++; seen.add(String(r.id)); }
+  }
+  if (keyed === 0 || seen.size === keyed) return list;
+  const out = [];
+  const kept = new Set();
+  for (let i = list.length - 1; i >= 0; i--) {
+    const r = list[i];
+    if (!r || typeof r !== "object" || r.id == null) { out.unshift(r); continue; }
+    const k = String(r.id);
+    if (kept.has(k)) continue;
+    kept.add(k);
+    out.unshift(r);
+  }
   return out;
 }
 
@@ -786,13 +992,17 @@ export function removedUnitNames(state) {
 
 export function ensureCountUnits(state) {
   const have = new Map();
+  // ⚠️⚠️ AND BY ID (v595). ⚠️ The seed was keyed by NAME only, so renaming "dozen" to "doz" left the id
+  // `uom_dozen` present and the name absent — ⚠️ **the next load seeded "dozen" back beside it, and the
+  // dedupe kept the seed, so the rename was undone.** ⭐ An id that exists is this unit, whatever it is called.
+  const ids = new Set((state.uoms || []).map((u) => String(u.id || "")));
   for (const u of state.uoms || []) have.set(String(u.name || "").toLowerCase(), u);
   // ⚠️ A UNIT SHE DELETED STAYS DELETED (v547). Without this the seed put it straight back on the
   // next load, so "Delete" was a press that undid itself. ⭐ And a unit she later adds with the same
   // name is respected, because `have` is asked first — this list only suppresses the RE-SEED.
   const gone = removedUnitNames(state);
   for (const n of TREAT_COUNT) {
-    if (have.has(n) || gone.has(n)) continue;
+    if (have.has(n) || gone.has(n) || ids.has(`uom_${n}`)) continue;
     const u = { id: `uom_${n}`, name: n, family: "count", toBase: 1 };
     state.uoms.push(u);
     have.set(n, u);
@@ -805,11 +1015,12 @@ export function ensureCountUnits(state) {
 // touches a unit that already exists under the same name, whatever its family.
 export function ensurePlanningUnits(state) {
   const have = new Map();
+  const ids = new Set((state.uoms || []).map((u) => String(u.id || "")));
   for (const u of state.uoms || []) have.set(String(u.name || "").toLowerCase(), u);
   // ⚠️ The same rule as `ensureCountUnits` (v547): a unit she deleted is not put back.
   const gone = removedUnitNames(state);
   for (const [name, family, toBase] of TIME_LENGTH) {
-    if (have.has(name) || gone.has(name)) continue;
+    if (have.has(name) || gone.has(name) || ids.has(`uom_${name}`)) continue;
     const u = { id: `uom_${name}`, name, family, toBase };
     state.uoms.push(u);
     have.set(name, u);
@@ -876,7 +1087,7 @@ export function productUnitOptions(state, product) {
 // before they synced, then the merge kept both) show up as two tabs and split
 // orders between them. Keep the first entry per date and re-point every order
 // to it. Nothing is deleted from the business data — orders are preserved.
-function consolidateDeliveryDates(deliveryDates, orders) {
+function consolidateDeliveryDates(deliveryDates, orders, removedOrders) {
   const byDate = new Map();
   const removed = new Map(); // removedId -> survivingId
   const out = [];
@@ -890,12 +1101,14 @@ function consolidateDeliveryDates(deliveryDates, orders) {
       out.push(d);
     }
   }
-  if (!removed.size) return { deliveryDates, orders };
+  if (!removed.size) return { deliveryDates, orders, removedOrders };
   const reId = (o) =>
     (o && o.deliveryDateId && removed.has(o.deliveryDateId))
       ? { ...o, deliveryDateId: removed.get(o.deliveryDateId) }
       : o;
-  return { deliveryDates: out, orders: orders.map(reId) };
+  // ⚠️⚠️ THE REMOVED SHELF IS RE-POINTED TOO (v592). ⚠️ It was not, so an order put back from the shelf kept
+  // a day id that no longer existed — ⚠️ **it vanished from its day and that day could be sold over capacity.**
+  return { deliveryDates: out, orders: orders.map(reId), removedOrders: (removedOrders || []).map(reId) };
 }
 
 // ★ THE ONE SHAPE THE MERGE ABOVE CANNOT SEE (v326). Two records for the SAME
@@ -925,7 +1138,7 @@ function consolidateDeliveryDates(deliveryDates, orders) {
 // produces cannot be produced twice, because after it no id is shared.
 //
 // Nothing is deleted. Every day, every order and every price survives.
-function splitSharedDateIds(deliveryDates, orders) {
+function splitSharedDateIds(deliveryDates, orders, removedOrders) {
   const held = new Map(); // id -> the date of the record that keeps it
   const moved = []; // { oldId, date, id } for each record that had to move
   const out = (deliveryDates || []).map((d) => {
@@ -939,12 +1152,26 @@ function splitSharedDateIds(deliveryDates, orders) {
     moved.push({ oldId: d.id, date: d.date, id });
     return { ...d, id };
   });
-  if (!moved.length) return { deliveryDates, orders };
+  if (!moved.length) return { deliveryDates, orders, removedOrders };
   const reId = (o) => {
     const hit = moved.find((m) => o && o.deliveryDateId === m.oldId && o.deliveryDate === m.date);
     return hit ? { ...o, deliveryDateId: hit.id } : o;
   };
-  return { deliveryDates: out, orders: (orders || []).map(reId) };
+  // ⚠️⚠️ AND THE SHELF (v592) — the same predicate: the row's own deliveryDate names which of the two days
+  // it belonged to.
+  return { deliveryDates: out, orders: (orders || []).map(reId), removedOrders: (removedOrders || []).map(reId) };
+}
+
+// ★★ ROWS AN IMPORT CREATED AND COULD NOT SAVE (v598). ⚠️ They were never her orders — the write failed, so
+// they exist only in memory — and they must go without landing on the Removed shelf (which exists for orders
+// SHE removed). ⭐ A named door, so `order-removal-guard` still means what it says: every OTHER removal goes
+// through `removeOrders`.
+export function discardImportedRows(state, ids) {
+  const want = new Set((ids || []).map(String));
+  if (!want.size || !Array.isArray(state.orders)) return 0;
+  const before = state.orders.length;
+  state.orders = state.orders.filter((o) => !o || !want.has(String(o.id)));
+  return before - state.orders.length;
 }
 
 // ★★ THE ONE DOOR OUT, AND IT DOES NOT DESTROY (v444).
@@ -1033,7 +1260,18 @@ export function removeOrders(state, ids, reason = "") {
 function pruneRemovedOrders(state) {
   const list = Array.isArray(state.removedOrders) ? state.removedOrders : [];
   const cut = new Date(Date.now() - REMOVED_KEEP_HOURS * 3600000).toISOString();
-  state.removedOrders = list.filter((r) => r && String(r.removedAt || "") >= cut).slice(0, REMOVED_MAX);
+  // ⚠️ The 30-day window is HER rule and is stated on the screen. The SIZE guard is the app's own, and until
+  // v570 it cut the oldest rows off in silence — ⭐ so an order she could still have put back simply vanished.
+  // ⭐ It still bounds the shelf, and it now SAYS it did.
+  const withinTime = list.filter((r) => r && String(r.removedAt || "") >= cut);
+  state.removedOrders = withinTime.slice(0, REMOVED_MAX);
+  const dropped = withinTime.length - state.removedOrders.length;
+  if (dropped > 0) {
+    // ⭐ EVERY REMOVAL PAST THE 200th CLEARS ONE MORE, so the number that matters is how many have been cleared
+    // IN ALL — `n` is this event, `total` is what the screen says.
+    const before = Number(state.removedTrim && state.removedTrim.total) || 0;
+    state.removedTrim = { at: new Date().toISOString(), n: dropped, total: before + dropped };
+  }
 }
 
 // ★★★ AND A SHELF ROW FOR AN ORDER THAT IS BACK IS STALE BY DEFINITION (v474).
@@ -1149,6 +1387,10 @@ function cleanStorefront(sf) {
     // every save written before this switch existed already has.
     postageMode: src.postageMode === "quote" ? "quote" : "flat",
     postageModeSet: src.postageModeSet === true,
+    // ⚠️⚠️ THE HOMEPAGE PRODUCT SHE PICKED (v595). ⚠️ It was written by Settings but NOT in this whitelist —
+    // ⚠️ **every app open, Import and Restore silently discarded it**, and the next publish put the homepage
+    // back on the first product.
+    homeProductId: String(src.homeProductId || "").trim(),
     products,
   };
 }
@@ -1230,10 +1472,95 @@ export function orderCode(order) {
   return hex || "??????";
 }
 
+// ★★★ NO TWO ORDERS MAY WEAR THE SAME NUMBER (v554).
+//
+// ⚠️⚠️ THE CODE IS THE LAST SIX HEX CHARACTERS of the order's own id — about **3% by 1,000 orders** — and
+// the shared data keys BOTH the tracking card and the receipt register by it. ⭐ **Two orders landing on
+// one code would share one tracking card and one receipt number: two customers reading each other's
+// bread.** ⚠️ It cannot simply be lengthened, because that would MOVE every code already given out —
+// **v441 was exactly that fault, and it cost a live receipt and a confirmation that pointed nowhere.**
+// ⭐ So this FINDS the collision instead of preventing it, and the app can say so on her screen.
+// Answers one `{ code, ids }` per code worn twice, in the order the codes first appear.
+export function duplicateOrderCodes(orders) {
+  const byCode = new Map();
+  for (const g of groupOrders(Array.isArray(orders) ? orders : [])) {
+    const first = (g.orders || [])[0];
+    if (!first) continue;
+    const code = orderCode(first);
+    if (!code || code === "??????") continue;
+    const row = byCode.get(code) || { code, ids: [] };
+    row.ids.push(String(first.groupId || first.id || ""));
+    byCode.set(code, row);
+  }
+  return [...byCode.values()].filter((r) => r.ids.length > 1);
+}
+
+// ★★ ONE NAME, ONE RECORD — CASE AND SPACING ARE NOT A DISTINCTION (v564).
+//
+// ⚠️⚠️ HER OWN REPORT: __"for strong flour, on hand show 0, but open up the stock card says on hand
+// 6kgs"__ and __"the yeast might have the same problem too"__. ⭐ **Two ingredients with one name is the
+// only way two screens can show two figures for one name** — the card and the sheet both read `onHand`.
+// ⚠️ And nothing stopped a second one being made. `exceptId` is the record being RENAMED, which must not
+// count as a clash with itself.
+// ⚠️ ONE SPELLING OF "THE SAME NAME" (v568). The check and the Add warning must agree: case, surrounding
+// spaces AND runs of spaces inside it are collapsed, so "Strong  flour" is the same card as "Strong flour".
+export function ingredientNameKey(name) {
+  return String(name || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+export function sameNameIngredient(state, name, exceptId = "") {
+  const key = ingredientNameKey;
+  const wanted = key(name);
+  if (!wanted) return null;
+  return (Array.isArray(state && state.ingredients) ? state.ingredients : [])
+    .find((i) => i && String(i.id) !== String(exceptId) && key(i.name) === wanted) || null;
+}
+
+// ★★ WHICH OF A DUPLICATED PAIR CAN BE PUT AWAY, DECIDED BY HER OWN RECIPES (v564).
+//
+// ⚠️ **"Strong flour ×2" tells her there is a problem and not which card to keep.** ⭐ The fact that
+// settles it is already in her book: **a recipe points at exactly one of the two**, and the other is a
+// card nothing uses. ⚠️ It is only offered when the answer is UNAMBIGUOUS — a pair where exactly one is
+// used, and a pair and nothing else. ⚠️ **HIDING, NEVER DELETING**: her base rule is that anything a
+// transaction has used cannot be deleted, and hiding keeps the stock card it explains.
+export function duplicateIngredientPlan(state) {
+  const key = ingredientNameKey;
+  const byName = new Map();
+  for (const i of (Array.isArray(state && state.ingredients) ? state.ingredients : [])) {
+    if (!i || !key(i.name)) continue;
+    // ⚠️⚠️ A HIDDEN CARD IS NOT PART OF A LIVE PAIR (v568) — the check skips hidden records too. ⭐ Without
+    // this, "Salt" (an active card no recipe uses, and a HIDDEN one that a recipe does use) made the press
+    // hide the ACTIVE card and leave the name with no visible card at all.
+    if (i.active === false) continue;
+    byName.set(key(i.name), (byName.get(key(i.name)) || []).concat(i));
+  }
+  const uses = (id) => (Array.isArray(state && state.products) ? state.products : [])
+    .filter((p) => p && (Array.isArray(p.recipe) ? p.recipe : []).some((l) => l && String(l.ingredientId || "") === String(id)))
+    .length;
+  const plan = [];
+  for (const group of byName.values()) {
+    if (group.length !== 2) continue;
+    const [a, b] = group;
+    const ua = uses(a.id);
+    const ub = uses(b.id);
+    if (ua > 0 && ub === 0) plan.push({ keep: a, hide: b });
+    else if (ub > 0 && ua === 0) plan.push({ keep: b, hide: a });
+  }
+  return plan;
+}
+
 // ★ THE CODE AN ORDER CARRIED BEFORE IT WAS EVER GROUPED (v441) — the id-only derivation, kept for
 // ONE job: a receipt written before this fix holds THAT code, and the register must still be able to
 // find the order it belongs to. ⚠️ It is a look-up alias and nothing else — `orderCode` is what every
 // screen and every new receipt shows.
+// HOW MANY ORDERS ARE ON A BAKE DAY — counted the way she uses the word (v583). ⚠️ A customer with a
+// two-item cart is ONE order; the day's delete question used to count its two ROWS and say "2 order(s)".
+export function ordersOnDate(state, dateId) {
+  const rows = (Array.isArray(state && state.orders) ? state.orders : [])
+    .filter((o) => o && o.deliveryDateId === dateId);
+  return groupOrders(rows).length;
+}
+
 export function codeFromId(order) {
   const hex = String((order && order.id) || "")
     .replace(/[^0-9a-f]/gi, "")
@@ -1394,7 +1721,12 @@ export function stampOrderLine(o, product, unitCost) {
   const name = String(product.name || "").trim();
   if (name) o.productName = name;
   const price = product.price;
-  if (price != null && price !== "" && Number.isFinite(Number(price))) o.unitPrice = Number(price);
+  // ⚠️⚠️ ROUNDED TO THE CENT WHERE IT IS FROZEN (v577). ⭐ MEASURED: two lines sold at RM0.005 printed as
+  // "RM 0.01" each under a Total of RM0.01 — the invoice added its printed lines and demanded RM0.02, while
+  // the confirmation and the tracking card rounded the sum and said RM0.01. ⚠️ **One sale, two totals, both on
+  // paper.** A price is money; the half-cent existed because a 3-decimal number was accepted and then shown
+  // rounded. ⭐ Fixed at the ORIGIN, so every surface reads the same number — and no stored order is rewritten.
+  if (price != null && price !== "" && Number.isFinite(Number(price))) o.unitPrice = round2(Number(price));
   // ⚠️⚠️ A ZERO IS DELIBERATELY NOT STAMPED, and so is anything unreadable. A
   // product whose recipe prices to nothing YET would otherwise have 0 locked
   // onto every order it ever had — and stay 0 for ever once she builds the

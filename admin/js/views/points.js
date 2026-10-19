@@ -23,7 +23,7 @@ import { flattenTree, groupPointsByArea, movePointInArea } from "../pointAreas.j
 import { routeNamesOf, routesOf } from "../deliveryRoutes.js";
 import { dayListLabel, dayName } from "../dates.js";
 import {
-  DEFAULT_FEE_RM, addPoint, deletePoint, orderPointName, pointById, pointDays, pointPhoneText,
+  DEFAULT_FEE_RM, addPoint, deletePoint, orderPointName, ordersAtPoint, pointById, pointDays, pointPhoneText,
   pointMinOrder, pointPlace, pointPlaceText, pointProblem, pointWindow, pointWindowText, pointsOf,
   servedEveryDay, setPointPaused, setPointPlace,
   updatePoint,
@@ -393,9 +393,10 @@ function openEditPointPopup(state, point, root) {
 // How many orders have been placed to this Point. Read off the orders rather than kept as
 // a tally on the Point — the same recount-not-remember rule the promo codes follow, so
 // nothing can drift and re-importing an order can never double-count.
+// ⚠️⚠️ AN ORDER IS NOT A ROW (v550). ⭐ The count lives in the model (`ordersAtPoint`) so the card and the
+// delete warning read ONE number, and a test can drive it without a screen.
 function usedBy(state, point) {
-  return (state.orders || []).filter((o) =>
-    o && String(o.pointId || "") === point.id).length;
+  return ordersAtPoint(point, state.orders);
 }
 
 function pointCard(state, point, root) {

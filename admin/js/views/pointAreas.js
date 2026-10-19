@@ -205,7 +205,12 @@ function moveTo(list, id, toIndex) {
   const at = Math.max(0, Math.min(Number(toIndex) || 0, siblings.length));
   const ordered = [...siblings.slice(0, at), area, ...siblings.slice(at)];
   const rank = new Map(ordered.map((a, i) => [a.id, i]));
-  return (list || []).map((a) => (a && rank.has(a.id) ? { ...a, sort: rank.get(a.id) } : a));
+  // ⚠️⚠️ THE RECORDS KEEP THEIR IDENTITY (v555) — the same fault the Categories screen had: cloning left
+  // each row's Edit button pointing at the OLD object, so a drag followed by an edit changed nothing.
+  for (const a of (list || [])) {
+    if (a && rank.has(a.id)) a.sort = rank.get(a.id);
+  }
+  return list;
 }
 
 // ⚠️ TWO REASONS TO REFUSE, AND BOTH ARE ABOUT SOMETHING GOING MISSING RATHER THAN BEING TIDY.

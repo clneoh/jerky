@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { REVIEW_LANGS, langName, stars, fmtDate, reviewOk, photoOk, loadApproved, submitReview, uploadPhoto, MAX_INPUT_BYTES } from "../reviews.js";
+import { REVIEW_LANGS, langName, stars, fmtDate, reviewOk, reviewProblems, photoOk, loadApproved, submitReview, uploadPhoto, MAX_INPUT_BYTES, thanksKeyFor } from "../reviews.js";
 
 const realFetch = globalThis.fetch;
 
@@ -90,14 +90,21 @@ test("loadApproved fetches published reviews newest first with the anon key", as
   }
 });
 
-test("loadApproved quietly returns [] on an error or a bad body", async () => {
+test("★★★ a fetch that failed is NULL, not an empty bakery (v565)", async () => {
+  // ⚠️⚠️ It used to return [] for every failure, and the grid printed "No reviews yet — be the first!" —
+  // ⭐ **a bakery with a page of good reviews told every visitor it had none**, in airplane mode or after
+  // one bad minute. ⭐ "I could not look" and "there are none" are different answers.
   globalThis.fetch = async () => ({ ok: false, json: async () => [] });
-  try { assert.deepEqual(await loadApproved(), []); } finally { globalThis.fetch = realFetch; }
+  try { assert.equal(await loadApproved(), null); } finally { globalThis.fetch = realFetch; }
 
   globalThis.fetch = async () => ({ ok: true, json: async () => ({ not: "an array" }) });
-  try { assert.deepEqual(await loadApproved(), []); } finally { globalThis.fetch = realFetch; }
+  try { assert.equal(await loadApproved(), null); } finally { globalThis.fetch = realFetch; }
 
   globalThis.fetch = async () => { throw new Error("offline"); };
+  try { assert.equal(await loadApproved(), null); } finally { globalThis.fetch = realFetch; }
+
+  // ⭐ AND A REAL EMPTY ANSWER IS STILL AN EMPTY LIST.
+  globalThis.fetch = async () => ({ ok: true, json: async () => [] });
   try { assert.deepEqual(await loadApproved(), []); } finally { globalThis.fetch = realFetch; }
 });
 
@@ -292,4 +299,27 @@ test("★ the homepage still reads approved pictures, and only her app may touch
   assert.ok(baker, "her app has no policy to read, copy or delete a picture — the card could not show it");
   assert.match(baker, /review-photos-pending/, "her app cannot reach the private bucket");
   assert.match(baker, /review-photos/, "her app cannot publish into the public bucket");
+});
+
+test("★★★ a review sent with NO picture is not thanked for a picture (v581)", () => {
+  // ⚠️⚠️ MEASURED FAULT: the thanks said **"your review and photo reached the baker"** whether or not a
+  // picture was sent — ⚠️ **so a customer who chose no picture read that one had, and there was nothing to
+  // moderate.** ⭐ The sentence follows what was actually sent.
+  assert.equal(thanksKeyFor("sent"), "rvThanksMain", "a picture that arrived stopped being thanked for");
+  assert.equal(thanksKeyFor("failed"), "rvThanksNoPhoto",
+    "a picture that failed is not named as failed");
+  assert.equal(thanksKeyFor("none"), "rvThanksWords",
+    "★ a review with no picture is thanked for a photo that was never sent");
+});
+
+test("★★★ the review form names WHICH answer is missing (v583)", () => {
+  // ⚠️⚠️ MEASURED: the error was one alert with nothing it belonged to. ⭐ The rule now says, field by field,
+  // what is missing — which is what puts the message on the boxes themselves.
+  assert.deepEqual(reviewProblems("", 0, ""), { name: true, stars: true, message: true });
+  assert.deepEqual(reviewProblems("Aisyah", 5, "Lovely bread"), { name: false, stars: false, message: false });
+  assert.deepEqual(reviewProblems("Aisyah", 0, "Lovely"), { name: false, stars: true, message: false });
+  assert.deepEqual(reviewProblems("Aisyah", 4, "x".repeat(401)), { name: false, stars: false, message: true });
+  // And the yes/no still agrees with the per-field answer.
+  assert.equal(reviewOk("Aisyah", 0, "Lovely"), false);
+  assert.equal(reviewOk("Aisyah", 5, "Lovely"), true);
 });

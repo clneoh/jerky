@@ -17,7 +17,7 @@
 // Pure helpers run under Node for tests; fetch/localStorage are guarded.
 
 import { login as loginSupabase, cachedToken } from "./supabase.js";
-import { removeOrders, dropStaleShelfRows, save, STOCK_PRODUCTION, bakeId } from "./state.js";
+import { removeOrders, dropStaleShelfRows, save, STOCK_PRODUCTION, bakeId, defaultState, applyRedactions, REDACTED_FIELDS } from "./state.js";
 import { mergeWeekCheck } from "./weekly.js";
 // The one answer to "is this a place" — see placeForSync below for why the courier
 // module's own rule is asked rather than a copy of it written here.
@@ -33,6 +33,9 @@ const LISTS = {
   // other, which is the whole point of keeping it. ⭐ And it is a SEPARATE record from the order, so the
   // tombstone written for the order does not touch this one.
   removedOrders: "removedOrders",
+  // ★★★ A "FORGET THIS CUSTOMER" MUST REACH THE OTHER PHONE AS ITS OWN FACT (v592). ⚠️ Held only on the
+  // order rows it is newest-wins — ⚠️ **one later Paid press on the other phone brought the name back.**
+  redactions: "redactions",
   // ⚠️ A VOID DECISION IS HERS, and it must reach the other phone — otherwise the same register reads
   // as four unexplained holes on one device and as four voided rows on the other.
   voidedReceipts: "voidedReceipts",
@@ -381,6 +384,24 @@ function recordPayload(kind, rec) {
 // had them, rule 3 must put them back up when a phone that never had them
 // happened to stamp the row newest, and rule 1 must let her EMPTY the four that
 // can be emptied without that reading as ignorance.
+// ⚠️⚠️ THE FIVE SETTINGS EVERY PHONE STARTS WITH (v576). ⭐ `deliveryDays`, `cutoff`, `defaultCapacity`,
+// `currency` and `referrals` were carried in EVERY payload, so **a brand-new phone always looked like it had an
+// opinion about them** — and it won the one settings row with its factory defaults: bake days [1,3,5], 18:00,
+// capacity 12. ⚠️ Probed: a cloud holding [2,4,6] / 17:30 / 20 was replaced by those. ⭐ They are now treated
+// as `production` is: a phone still holding the shipped numbers has NO opinion, so it neither pushes them nor
+// keeps them over the cloud's. ⚠️ The values are READ FROM `defaultState()` — one source, so a change to the
+// shipped defaults can never leave this copy behind.
+const STOCK_SETTING_KEYS = ["deliveryDays", "cutoff", "defaultCapacity", "currency", "referrals"];
+let stockSettingsCache = null;
+function stockSetting(k) {
+  if (!stockSettingsCache) {
+    const d = defaultState().settings;
+    stockSettingsCache = { deliveryDays: d.deliveryDays, cutoff: d.cutoff, defaultCapacity: d.defaultCapacity, currency: d.currency, referrals: d.referrals };
+  }
+  return stockSettingsCache[k];
+}
+const isStockSetting = (k, v) => JSON.stringify(v) === JSON.stringify(stockSetting(k));
+
 const GUARDED = ["scenario", "scenarios", "tasks", "wishList", "boardAcks", "developer", "pickupPlace",
   "categories", "payMethods", "sources", "mailingAddress", "personNames", "personCalls", "messageStyle"];
 
@@ -467,6 +488,15 @@ function planIsStock(plan) {
 // directions, which is what v182 exists to close.
 function hasOpinion(k, src) {
   if (k === "production") return !planIsStock(src && src.production);
+  // ⭐ The five a phone is born holding: present is not the same as chosen (v576).
+  // ⚠️⚠️ AND ONCE THE PHONE HAS PULLED, THEY ARE OPINIONS — EVEN THE SHIPPED VALUES (v587). ⚠️ Written purely
+  // by content, a phone that deliberately set her bake days BACK to the shipped ones had "no opinion", and the
+  // next pull put the cloud's old days back — ⚠️ **a setting she changed on purpose was undone.** ⭐ The flag is
+  // set only AFTER a successful merge, so a brand-new phone still has no opinion for its first pull (v576's
+  // fix is kept) and then owns whatever it holds.
+  if (STOCK_SETTING_KEYS.includes(k)) {
+    return has(src, k) && (!isStockSetting(k, src[k]) || cloudSeen());
+  }
   return has(src, k);
 }
 
@@ -541,7 +571,8 @@ function canonical(value) {
 // ── journal (bakeadmin.sync) ──────────────────────────────────────────────
 
 function emptyBlob() {
-  return { version: 1, pending: {}, snapshot: {}, meta: {}, lastPullAt: null, lastFail: null, lastCount: null, lastSeq: null, seqUnsupported: false };
+  return { version: 1, pending: {}, snapshot: {}, meta: {}, lastPullAt: null, lastFail: null, lastCount: null,
+    lastSeq: null, lastFullPullAt: null, seqUnsupported: false };
 }
 
 function readSync() {
@@ -568,6 +599,7 @@ function readSync() {
           // ⭐ THE "SINCE" CURSOR (v533) — the highest database number this phone has read. ⚠️ Same `!= null`
           // rule: **a cursor that came back 0 would mean "since the beginning" while looking like a cursor.**
           lastSeq: b.lastSeq != null && Number.isFinite(Number(b.lastSeq)) ? Number(b.lastSeq) : null,
+          lastFullPullAt: typeof b.lastFullPullAt === "string" ? b.lastFullPullAt : null,
           seqUnsupported: b.seqUnsupported === true,
         };
       }
@@ -600,6 +632,14 @@ function writeSync(b) {
 // this phone. ⚠️ **Neither of them writes anything, anywhere.**
 
 // How many changes are waiting to be sent. ⚠️ Read from the journal, so it counts what would be lost.
+// ★★★ AND THE WHOLE JOURNAL CAN BE FORGOTTEN (v576). ⚠️⚠️ "Delete all data" used to remove only the book: the
+// journal survived **with its `snapshot` of every record**, so the next save tombstoned them all and pushed the
+// tombstones — ⭐ **the shared book was emptied and the other phone followed.** ⭐ A deliberate reset has to
+// forget what it is resetting, or the reset becomes a deletion everywhere.
+export function clearJournal() {
+  try { localStorage.removeItem(SYNC_KEY); } catch { /* no storage */ }
+}
+
 export function pendingCount() {
   return Object.keys(readSync().pending || {}).length;
 }
@@ -692,28 +732,32 @@ export async function cloudKeys(state) {
   if (!c.on) return { ok: false, reason: "Shared data is switched off on this phone." };
   const token = cachedToken();
   if (!token) return { ok: false, reason: "This phone is not signed in to your shared data." };
-  try {
-    // ⚠️ AND `data` COMES WITH IT NOW (v471) — **the same single read answers "which records are there" and
-    // "what is IN them".** ⭐ One fetch, not two: this page already reads a register and your copies, and a
-    // third round trip for a comparison nobody could see would be a poor trade.
-    const read = await readAllRows(c.url, "select=kind,id,data,_deleted",
-      { apikey: c.anonKey, Authorization: `Bearer ${token}` });
-    if (!read.ok) {
-      return { ok: false, reason: `Your shared data could not be read (HTTP ${read.status || "?"}).` };
-    }
-    const rows = read.rows;
-    const keys = new Set();
-    const data = new Map();
-    for (const r of rows) {
-      if (!r || !r.kind) continue;
-      if (r._deleted) continue;
-      keys.add(`${r.kind}:${r.id}`);
-      data.set(`${r.kind}:${r.id}`, typeof r.data === "string" ? r.data : JSON.stringify(r.data));
-    }
-    return { ok: true, keys, data };
-  } catch {
-    return { ok: false, reason: "Your shared data could not be read — check this phone is online." };
+  // ⚠️⚠️ AND IT READS THE WHOLE BOOK, A PAGE AT A TIME (v569). ⭐ This was ONE request with `limit=5000`, and
+  // the database answers at most 1,000 rows — ⚠️ **her book was 791 rows on 17 October, so in about ten weeks
+  // the comparison would name every record past an arbitrary thousand as "on this phone and NOT in your
+  // shared data", permanently, on a page whose other line states the true count.** ⭐ It uses the SAME paged
+  // reader the sync itself uses, so the ceiling is one number in one place, and `complete: false` says the
+  // ceiling was reached rather than pretending everything was read.
+  const got = await readAllRows(c.url, "select=kind,id,data,_deleted", {
+    apikey: c.anonKey, Authorization: `Bearer ${token}`,
+  });
+  if (!got.ok) {
+    return {
+      ok: false,
+      reason: got.offline
+        ? "Your shared data could not be read — check this phone is online."
+        : `Your shared data could not be read${got.status ? ` (HTTP ${got.status})` : ""}.`,
+    };
   }
+  const keys = new Set();
+  const data = new Map();
+  for (const r of got.rows) {
+    if (!r || !r.kind) continue;
+    if (r._deleted) continue;
+    keys.add(`${r.kind}:${r.id}`);
+    data.set(`${r.kind}:${r.id}`, typeof r.data === "string" ? r.data : JSON.stringify(r.data));
+  }
+  return { ok: true, keys, data, complete: got.complete !== false, rows: got.rows.length };
 }
 
 // What THIS phone holds, as key → the exact text the app would send for it. ⭐ **Built from `recordPayload`
@@ -780,6 +824,15 @@ export function repairRecordIds(state) {
 }
 
 export function markDirty(state, nowIso = new Date().toISOString()) {
+  // ⚠️⚠️⚠️ A BOOK THAT COULD NOT BE READ NEVER SPEAKS (v595). ⚠️ `loadState` hands back the SEED when the saved
+  // copy is damaged, and the seed has cloud sharing ON — ⚠️ **so the first save queued a TOMBSTONE for every
+  // record in the journal's snapshot and a default settings row over hers: the cloud was emptied and then the
+  // other phone.** ⭐ While `unreadableSave` is set, this function writes NOTHING: a pull may still restore the
+  // book (and clears the flag), and only then do changes start travelling again.
+  if (state && state.unreadableSave) {
+    const b = readSync();
+    return { state, pending: b.pending, changed: false, held: true };
+  }
   // ⭐ REPAIR FIRST, ALWAYS — so an un-keyable record is never queued, and the sweep that drops one has
   // nothing left to drop. See `repairRecordIds` for why this is the class and not a list.
   repairRecordIds(state);
@@ -853,9 +906,26 @@ function expandOldBakeRows(rows) {
   return out;
 }
 
-function mergeCloudRows(state, rows, b, nowIso = new Date().toISOString()) {
+// ⭐ HAS THIS PHONE EVER READ THE CLOUD? (v587) — the one fact that turns "the shipped numbers" into "a choice".
+const SEEN_KEY = "bakeadmin.sync.seen";
+function cloudSeen() {
+  try { return !!localStorage.getItem(SEEN_KEY); } catch { return false; }
+}
+function markCloudSeen() {
+  try { if (!localStorage.getItem(SEEN_KEY)) localStorage.setItem(SEEN_KEY, new Date().toISOString()); } catch { /* full phone — the merge still worked */ }
+}
+
+// ⚠️⚠️ AND "HAS THIS PHONE READ THE CLOUD" IS FORGOTTEN WITH THE BOOK (v598). ⚠️ Delete-all cleared the state
+// and the journal but NOT this marker, so the fresh book's settings counted as a deliberate answer and the next
+// sign-in PUSHED factory settings over hers — ⚠️ **while the dialog promised the shared data was untouched.**
+export function forgetSeen() {
+  try { localStorage.removeItem(SEEN_KEY); } catch { /* nothing to do */ }
+}
+
+function mergeCloudRows(state, rows, b, nowIso = new Date().toISOString(), { forceCloud = false } = {}) {
   rows = expandOldBakeRows(rows);
   let changed = false;
+  let applied = 0;
 
   for (const row of rows || []) {
     if (!row || typeof row.kind !== "string" || typeof row.id !== "string") continue;
@@ -872,7 +942,11 @@ function mergeCloudRows(state, rows, b, nowIso = new Date().toISOString()) {
       try { payload = JSON.parse(row.data); } catch { continue; }
       if (!payload || typeof payload !== "object") continue;
 
-      if (localNewerOrSame || cloudAt <= localAt) {
+      // ⚠️⚠️ A DAMAGED BOOK TAKES THE CLOUD'S SETTINGS ROW (v599). ⚠️ The forced read covered records and not
+      // this branch, and `bakeadmin.sync.seen` still made this phone's factory answers look like an opinion —
+      // ⚠️ **so a healed phone kept the stock delivery days, cut-off and capacity and then pushed them over
+      // hers.** ⭐ `forceCloud` skips rule 2 here; an unsent settings change is re-applied below.
+      if (!forceCloud && (localNewerOrSame || cloudAt <= localAt)) {
         // Rule 2: local wins, so this phone's own answers stand — but the push
         // that follows REPLACES the row wholesale, and a key this phone has no
         // opinion about must not be deleted by a payload that simply omits it.
@@ -889,12 +963,25 @@ function mergeCloudRows(state, rows, b, nowIso = new Date().toISOString()) {
           ? pending.data
           : recordPayload("settings", state.settings);
         let next = null;
-        for (const k of GUARDED_ALL) {
+        // ⚠️ AND THE FIVE EVERY PHONE IS BORN HOLDING ARE ADOPTED HERE TOO (v576) — from the cloud INTO this
+        // phone, never republished by this loop: rule 3's "put it back up" is for keys the cloud LOST, and a
+        // settings row written before these existed is not a loss.
+        for (const k of [...GUARDED_ALL, ...STOCK_SETTING_KEYS]) {
           if (hasOpinion(k, phoneOwn) || !hasOpinion(k, payload)) continue;
           if (emptiedObject(payload[k])) continue; // an emptied board is an answer, not content
           next = next || { ...state.settings };
           next[k] = payload[k];
           if (pending && pending.data && typeof pending.data === "object") pending.data[k] = payload[k];
+        }
+        // ⚠️⚠️ AND THE WEEK CHECK IS A UNION EVEN WHEN THIS PHONE WINS THE ROW (v587). ⚠️ The cloud's ticks were
+        // only merged when the CLOUD won, and when this phone won the push REPLACED the row with its own ticks —
+        // ⚠️ **so the other phone's ticks vanished from the cloud and Home's to-do disagreed between phones.**
+        // ⭐ A tick is an acknowledgement: one phone's must never erase the other's.
+        if (payload.weekCheck && typeof payload.weekCheck === "object") {
+          const union = mergeWeekCheck((state.settings && state.settings.weekCheck) || {}, payload.weekCheck);
+          next = next || { ...state.settings };
+          next.weekCheck = union;
+          if (pending && pending.data && typeof pending.data === "object") pending.data.weekCheck = union;
         }
         if (next) {
           state.settings = next;
@@ -944,10 +1031,14 @@ function mergeCloudRows(state, rows, b, nowIso = new Date().toISOString()) {
           postageModeSet: true,
         };
       }
+      // ⚠️ AND A SETTINGS CHANGE THAT NEVER REACHED THE CLOUD SURVIVES THE HEAL (v599) — it is re-applied on
+      // top of the cloud's row and stays pending, so the flush still sends it.
+      const resend = forceCloud && pending && !pending._deleted && pending.data && typeof pending.data === "object";
+      if (resend) state.settings = { ...state.settings, ...pending.data };
       const own = recordPayload("settings", state.settings);
       b.meta[key] = cloudAt;
-      b.snapshot[key] = canonical(own);
-      delete b.pending[key];
+      b.snapshot[key] = canonical(resend ? payload : own);
+      if (!resend) delete b.pending[key];
       changed = true;
 
       // Rule 3: the cloud row says nothing about a guarded key this phone holds
@@ -975,7 +1066,11 @@ function mergeCloudRows(state, rows, b, nowIso = new Date().toISOString()) {
     if (row._deleted) {
       // A pending local edit newer than this delete keeps the record alive —
       // it stays pending and resurrects the row on the next flush.
-      if (localNewerOrSame) continue;
+      // ⚠️⚠️ AND SO DOES A RECORD THIS PHONE HAS ALREADY SYNCED MORE RECENTLY (v587). ⚠️ The live-row branch
+      // below already refuses a stale cloud row (`cloudAt <= localAt`), and this one did not — ⚠️ **so an OLD
+      // tombstone that arrived late deleted a NEWER edit this phone had already pushed, and nothing put the
+      // record back.** ⭐ A delete is a fact with a timestamp like any other; an older one loses.
+      if (localNewerOrSame || cloudAt <= localAt) continue;
       // ⚠️⚠️ AN ORDER DELETED ON THE OTHER PHONE GOES ON THIS PHONE'S SHELF (v444). **This is the path
       // that made her loss permanent** — a tombstone is a removal nobody here made, it takes the whole
       // order away in one line, and until v444 there was nothing left on either phone or in any copy to
@@ -1001,20 +1096,53 @@ function mergeCloudRows(state, rows, b, nowIso = new Date().toISOString()) {
     // Local wins (or the row is stale) whether or not the record still exists:
     // a newer local timestamp also means the record was deleted locally, so a
     // stale cloud row must not resurrect it.
-    if (localNewerOrSame || cloudAt <= localAt) continue;
+    // ⚠️⚠️ EXCEPT WHEN THIS PHONE COULD NOT READ ITS BOOK (v598). ⚠️ After a damaged save the local lists hold the
+    // SEED, while `b.meta` still holds the timestamps of everything this phone itself pushed — ⚠️ **so every
+    // cloud row was skipped as "not newer", the book stayed empty, and clearing the hold let the next save
+    // tombstone it all.** ⭐ A local UNSENT change still wins; anything else is taken from the cloud.
+    // ⚠️⚠️ AN UNSENT EDIT SURVIVES A DAMAGED BOOK (v599). ⚠️ `localNewerOrSame` skipped the cloud row because
+    // the queued edit is newer, but the damaged state held no copy of the record — ⚠️ **so the forced read
+    // restored nothing, the hold cleared, and the next save tombstoned the order, deleting her offline edit
+    // from the cloud and the other phone.** ⭐ With no readable book the unsent edit rides ON TOP of the cloud
+    // row instead of replacing it; a queued DELETE still wins and is left alone.
+    const restorePending = forceCloud && pending && !pending._deleted
+      && pending.data && typeof pending.data === "object" ? pending.data : null;
+    if ((localNewerOrSame && !restorePending) || (!forceCloud && cloudAt <= localAt)) continue;
 
     if (idx >= 0) {
-      list[idx] = payload;
+      // ⚠️⚠️ MERGED IN PLACE, NEVER SWAPPED (v589). ⚠️ `list[idx] = payload` replaced the object, while an
+      // open edit card still held the OLD one — ⚠️ **she typed a new name, pressed Update, read "Product
+      // updated", and the change existed nowhere**: `Object.assign` landed on an object the list no longer
+      // contained. ⭐ The record's own object keeps its identity; keys the cloud dropped are removed, so the
+      // merged record is exactly the payload.
+      const target = list[idx];
+      if (target && typeof target === "object" && payload && typeof payload === "object") {
+        for (const k of Object.keys(target)) if (!(k in payload)) delete target[k];
+        // ⚠️⚠️ A FORGOTTEN CUSTOMER STAYS FORGOTTEN UNDER A NEWER EDIT (v592). ⚠️ The redaction is applied
+        // after the merge as well, but the payload must not put the name back for even one repaint — and an
+        // order row merged this way is in memory the instant this line runs. ⭐ Personal fields are dropped
+        // from the incoming copy when the local row is already redacted and the cloud does not out-rank it.
+        if (target.redactedAt && String(payload.redactedAt || "") < String(target.redactedAt)) {
+          for (const k of REDACTED_FIELDS) delete payload[k];
+        }
+        Object.assign(target, payload);
+      } else {
+        list[idx] = payload;
+      }
     } else {
       list.push(payload);
+    }
+    if (restorePending) {
+      const rec = idx >= 0 ? list[idx] : list[list.length - 1];
+      if (rec && typeof rec === "object") Object.assign(rec, restorePending);
     }
     changed = true;
     b.meta[key] = cloudAt;
     b.snapshot[key] = canonical(payload);
-    delete b.pending[key];
+    if (!restorePending) delete b.pending[key];
   }
 
-  return { changed };
+  return { changed, applied };
 }
 
 // Testable wrapper: merge cloud rows into state and persist the journal.
@@ -1029,15 +1157,19 @@ export function mergeRows(state, rows) {
   // ⚠️ **AND IF ANYTHING WAS DROPPED, THE STATE IS SAVED — which queues the removal so it goes UP**, or the
   // shared data would hand the same stale row back on every pull, for ever.
   const dropped = dropStaleShelfRows(state);
+  // ⚠️⚠️ AND A REDACTION THAT ARRIVED IN THIS PULL IS APPLIED NOW (v592). ⚠️ Without it the receipt proves
+  // the person was forgotten while the order row still carries their name on this phone — the merge turns a
+  // redacted row's fields into "absent", and the redaction record is what removes them.
+  const redacted = applyRedactions(state);
   // ★ AND A PULL THAT PUT RECORDS BACK HAS REPAIRED THE BOOK (v548). ⚠️ The "this phone could not read its
   // saved copy" note exists for the case where a damaged save came up empty and the cloud could NOT put it
   // back — ⭐ so the moment a pull actually restores something, the note clears. **It appears exactly when
   // the cloud did not save her, which is the only case that matters.**
   const healed = (changed || dropped > 0) && !!state.unreadableSave;
   if (healed) state.unreadableSave = null;
-  if (dropped || healed) save(state);
+  if (dropped || healed || redacted) save(state);
   writeSync(b);
-  return { state, changed: changed || dropped > 0 };
+  return { state, changed: changed || dropped > 0 || redacted > 0 };
 }
 
 // ── pull ──────────────────────────────────────────────────────────────────
@@ -1098,7 +1230,21 @@ export async function pull(state) {
   // EVER.** So the cursor is a number the database stamps itself, strictly higher on every write.
   // ⚠️ `lastSeq != null` FIRST — **`Number(null)` IS 0, and a cursor of 0 is a "since the beginning" read
   // dressed as a normal one** (the v419 lesson, for the third time today).
-  const useCursor = !b.seqUnsupported && b.lastSeq != null && Number.isFinite(Number(b.lastSeq));
+  // ★★★ AND EVERY SO OFTEN IT READS THE WHOLE BOOK ANYWAY (v557). ⚠️⚠️ **THE CURSOR CAN SKIP A RECORD.**
+  // `seq` is stamped by a trigger BEFORE its transaction commits, so a batch that took numbers 101-120 and
+  // commits late can land BEHIND a row numbered 121 that committed first — ⭐ **and the reader, having seen
+  // 121, never asks for anything at or below it again.** ⭐ The comment further down claimed a concurrent
+  // write "always takes a HIGHER number", and that is true of the NUMBERS and false of the COMMIT ORDER.
+  // ⭐ A full read every so often is the safety net: it ignores the cursor entirely, so anything skipped is
+  // picked up within this interval instead of never.
+  const FULL_PULL_EVERY_MS = 15 * 60 * 1000;
+  const lastFullAt = Date.parse(String(b.lastFullPullAt || ""));
+  const dueForFull = !(Number.isFinite(lastFullAt) && Date.now() - lastFullAt < FULL_PULL_EVERY_MS);
+  // ⚠️⚠️ A DAMAGED SAVE FORCES A FULL READ (v595). ⭐ A cursor read returns only what CHANGED — merging that
+  // over an empty book would leave the rest missing, and the save that follows would tombstone every record
+  // it did not see. ⭐ After a damaged save the whole book is read before anything is written again.
+  const useCursor = !b.seqUnsupported && b.lastSeq != null && Number.isFinite(Number(b.lastSeq)) && !dueForFull
+    && !(state && state.unreadableSave);
   const select = "select=kind,id,data,updated_at,_deleted,seq";
   let read = await readAllRows(
     c.url, useCursor ? `${select}&seq=gt.${encodeURIComponent(String(b.lastSeq))}` : select,
@@ -1146,12 +1292,23 @@ export async function pull(state) {
   for (const k of Object.keys(fresh.snapshot)) b.snapshot[k] = fresh.snapshot[k];
 
   const first = !b.lastPullAt;
-  const { changed } = mergeCloudRows(state, rows, b);
+  // ⚠️⚠️ AND A COMPLETE READ IS WHAT CLEARS "THIS PHONE COULD NOT READ ITS SAVED COPY" (v595). ⭐ Only a FULL
+  // read can account for the whole book; a partial one would clear the flag and let the next save speak for
+  // records it never saw.
+  const wasUnreadable = !!(state && state.unreadableSave);
+  const { changed } = mergeCloudRows(state, rows, b, new Date().toISOString(), { forceCloud: wasUnreadable });
+  if (wasUnreadable && read.complete) state.unreadableSave = null;
+  // ⚠️⚠️ AND A REDACTION THAT ARRIVED IN THIS READ IS APPLIED NOW (v592). ⚠️ `mergeRows` carries it for the
+  // other callers; a PULL goes straight to `mergeCloudRows`, so the same rule is applied at the one seam
+  // every read passes through.
+  const redacted = applyRedactions(state);
   b.lastPullAt = new Date().toISOString();
   // ⚠️⚠️ THE CURSOR ADVANCES ONLY ON A COMPLETE READ. ⭐ **A half-read book must not be remembered as "seen"**
-  // — the next read would start after records this one never received. ⭐ And a record written WHILE the read
-  // is running always takes a HIGHER number than anything already read, so it cannot slip behind the cursor:
-  // the next beat asks for it by name.
+  // — the next read would start after records this one never received.
+  // ⚠️⚠️ AND IT DOES **NOT** FOLLOW FROM THE NUMBER ORDER THAT NOTHING IS SKIPPED (v557). A record written
+  // during the read takes a higher NUMBER, but a batch that took its numbers first can COMMIT after it —
+  // and then the cursor is already past it. ⭐ That is what the periodic full read above is for; it is the
+  // part that makes "never read again" impossible.
   if (read.complete && !b.seqUnsupported) {
     const top = rows.reduce((m, r) => (Number.isFinite(Number(r && r.seq)) && Number(r.seq) > m ? Number(r.seq) : m),
       b.lastSeq != null && Number.isFinite(Number(b.lastSeq)) ? Number(b.lastSeq) : 0);
@@ -1161,14 +1318,17 @@ export async function pull(state) {
   // cursor read fetches just the changed rows, so taking its length would make her count collapse to "3
   // records" the first time nothing had changed. ⭐ **A number that describes a different thing than it says
   // is worse than no number.**
-  if (!useCursor) b.lastCount = rows.length;
+  if (!useCursor) {
+    b.lastCount = rows.length;
+    b.lastFullPullAt = new Date().toISOString();   // ⭐ the safety net ran (v557)
+  }
   writeSync(b);
 
   // On the first pull (or when rows changed), save so the save-hook queues any
   // records that only exist on this phone — that's the one-time migration that
   // uploads existing local data on first sign-in.
-  if (changed || first) save(state);
-  return { ok: true, changed: changed || first };
+  if (changed || first || redacted || wasUnreadable) save(state);
+  return { ok: true, changed: changed || first || redacted > 0 || wasUnreadable };
 }
 
 // ⭐ THE SIZE OF HER SHARED DATA, AS THE LAST READ FOUND IT — or null when this phone has never read it.
@@ -1204,6 +1364,11 @@ export function lastCloudCount() {
 export async function flush(state) {
   const c = cloudCfg(state);
   if (!c.on) return { ok: false, pushed: 0, reason: "Shared data is off" };
+  // ⚠️⚠️ AND IT NEVER PUSHES FROM A BOOK IT COULD NOT READ (v595) — see `markDirty`. ⭐ Reading is allowed; a
+  // read can restore her book. Writing is not.
+  if (state && state.unreadableSave) {
+    return { ok: false, pushed: 0, reason: "This phone could not read its saved copy — nothing was sent." };
+  }
 
   const b = readSync();
   const pending = Object.values(b.pending);
@@ -1367,6 +1532,9 @@ export async function refresh(state) {
     // save, so a plain "Sync now" / boot refresh would push nothing for those.
     markDirty(state);
     const pullRes = await pull(state);
+    // ⚠️ AFTER THE PULL, NEVER BEFORE (v587): the merge above must judge a brand-new phone as having no
+    // opinion, or its factory values would be pushed over hers — the fault v576 closed.
+    if (pullRes.ok) markCloudSeen();
     // Only push after a successful pull: a failed pull means we might be
     // offline or have a stale local view — pushing would risk clobbering.
     const flushRes = pullRes.ok ? await flush(state) : { ok: true, pushed: 0 };
@@ -1417,9 +1585,12 @@ export async function signIn(state, url, anonKey, email, password) {
 // Debounced refresh so a burst of order entry batches into one sync, ~1.5s
 // after the last save. Wired from app.js's save hook.
 let refreshTimer = null;
-export function scheduleRefresh(state) {
+// ⚠️ THE 1.5-SECOND BURST GUARD, WITH ITS REFRESH INJECTABLE (v584). ⚠️ It had no test at all: ⚠️ **a debounce
+// that fired twice, or never, would have been found by her rather than here.** ⭐ The second argument is for
+// tests only; every caller passes one argument and gets the real refresh.
+export function scheduleRefresh(state, run = refresh) {
   if (refreshTimer) clearTimeout(refreshTimer);
-  refreshTimer = setTimeout(() => { refresh(state); }, 1500);
+  refreshTimer = setTimeout(() => { run(state); }, 1500);
 }
 
 // True while the page is on screen and worth refreshing. A hidden tab (switched

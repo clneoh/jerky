@@ -9,8 +9,8 @@ function createEl(tag) {
     scrollTop: 0, _listeners: {},
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     appendChild(c) { if (c != null) this.children.push(c); return c; },
-    append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
-    replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) this.children.push(c); },
+    append(...cs) { for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
+    replaceChildren(...cs) { this.children = []; for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener() {},
     setAttribute(k, v) { this.attrs[k] = String(v); },
@@ -135,9 +135,16 @@ test("resolveDates uses the published dates, including one outside the weekday p
   assert.deepEqual(keys, [...keys].sort(), "published dates stay sorted ascending");
 });
 
-test("resolveDates falls back to the generated list when nothing is published", () => {
+test("★★★ resolveDates falls back ONLY when nothing could be read; an empty published list is an answer (v581)", () => {
   const gen = upcomingDates(CONFIG);
   const today = dateKey(new Date());
+  // ⚠️⚠️ THESE TWO ASSERTIONS USED TO PIN THE FAULT. ⭐ An empty answer from a successful read, and a list
+  // of dates that have all passed, both mean the shop has nothing open — ⚠️ **the fallback used to put
+  // Mon/Wed/Fri back on sale after she had deleted every bake day.**
+  // ⚠️ AN EMPTY DATE TABLE IS NOT "NO BAKE DAYS" (v581): it is a publish that has not run, or one that
+  // failed, while her days are still hers — ⭐ empty the calendar on that and the shop blocks a sale.
+  // ⭐ Deleting her bake days reaches the shop as `deliveryDays: []`, which `mergeStorefront` now adopts,
+  // so the generated list is already empty in the case that matters.
   assert.deepEqual(resolveDates(gen, [], today), gen);
   assert.deepEqual(resolveDates(gen, null, today), gen);
   assert.deepEqual(resolveDates(gen, [{ date: "2020-01-01", slots_left: 0 }], today), gen);

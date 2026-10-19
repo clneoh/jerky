@@ -147,12 +147,30 @@ function paint(host, info, onUpdate) {
   if (!info) {
     host.hidden = true;
     host.replaceChildren();
+    reserveSpace(host);
     return;
   }
   const kids = [el("p", { class: "update-bar-msg" }, el("b", {}, info.lead), info.text)];
   if (info.label) kids.push(button(info.label, onUpdate, "small primary"));
   host.replaceChildren(el("div", { class: "update-bar-inner" }, ...kids));
   host.hidden = false;
+  reserveSpace(host);
+}
+
+// ★★★ AND THE BAR RESERVES ITS OWN HEIGHT (v555).
+// ⚠️⚠️ It is FIXED to the bottom, and the page kept a bottom padding that knew nothing about it — so while
+// the amber strip was up, **the last ~50px of every long screen sat permanently underneath it**, at
+// maximum scroll: the last row of Orders, the last field of a form. ⭐ The shop fixed exactly this (v504)
+// by measuring the strip; the backoffice never did. ⭐ Measured here rather than guessed, because the strip
+// is one line in English and two in a language that wraps.
+function reserveSpace(host) {
+  try {
+    const h = host.hidden ? 0 : Number(host.offsetHeight) || 0;
+    const root = document.documentElement;
+    if (root && root.style && typeof root.style.setProperty === "function") {
+      root.style.setProperty("--update-bar-h", `${h}px`);
+    }
+  } catch { /* a document that cannot measure: the padding falls back to 0 */ }
 }
 
 // Watch from now on: once at the start, and again every time the app comes back

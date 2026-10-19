@@ -117,6 +117,68 @@ export function stockOf(state, ingredient) {
   return Math.max(0, Number(ingredient && ingredient.onHand) || 0);
 }
 
+// ★★★ WHAT A CARD'S ROWS DO NOT EXPLAIN (v563).
+//
+// ⚠️⚠️ HER OWN CHECK ASKED THIS AND THE APP HAD NO ANSWER. "Check my system" found eight cards whose
+// rows do not add up to the amount at the top, and the only advice on screen was about two phones
+// doing one stocktake — ⭐ **which is TRUE of one of them (strong flour, rows +14 kg under a 10 kg
+// shelf) and FALSE of the other seven, whose rows add up to LESS than the shelf** because the amount
+// was on the shelf **before this card kept any rows at all**. ⚠️ And **no press in the app could clear
+// any of them**: a stocktake sets the same amount and writes a zero row, which changes the sum not at all.
+//
+// ⭐ The gap is what one line would have to say for the card to explain its own figure:
+//   · positive — the history is SHORT of the shelf (an opening amount was never written down);
+//   · negative — the history OVER-COUNTS it (two phones writing one absolute stocktake).
+export function cardGap(ingredient) {
+  const log = stockLogOf(ingredient);
+  const sum = round2(log.reduce((acc, e) => acc + (Number(e && e.delta) || 0), 0));
+  return round2((Number(ingredient && ingredient.onHand) || 0) - sum);
+}
+
+// Write that one line. ⚠️ **THE SHELF DOES NOT MOVE** — `onHand` is not touched, because the amount at
+// the top is the figure her shelves agree with; it is the HISTORY that is incomplete. ⭐ The sentence
+// says which of the two it is, so the row is honest about what it is: an opening balance she never
+// wrote down, or a correction of a history that counted a movement twice.
+export function closeCardGap(ingredient) {
+  // ⚠️⚠️ A CARD AT ITS CAP HAS ALREADY LOST ROWS, SO ITS "GAP" IS TRUNCATION, NOT AN OPENING BALANCE
+  // (v583). ⚠️ Writing an "opening balance" line there would name a cause nobody found — and drop one more
+  // real row to make room for it. ⭐ It writes nothing; the card itself now says its history is short.
+  if (stockLogOf(ingredient).length >= STOCK_LOG_CAP) return 0;
+  const gap = cardGap(ingredient);
+  if (!gap) return 0;
+  logStock(ingredient, {
+    delta: gap,
+    why: "opening",
+    keepZero: true,
+    what: gap > 0
+      ? "Opening balance — the amount this card already held before it kept a history"
+      : "History correction — a movement counted twice; the shelf is unchanged",
+  });
+  return gap;
+}
+
+// Every card that does not add up, in one pass — what the "Check my system" press calls.
+// ⚠️ A CARD AT ITS CAP IS SKIPPED, NOT "FIXED": its oldest rows are already gone, so writing another
+// row would drop one more and the sum would still be meaningless. The check skips the same cards for
+// the same reason, and both say so.
+export function reconcileCards(state) {
+  const done = [];
+  const skipped = [];
+  for (const ing of (Array.isArray(state && state.ingredients) ? state.ingredients : [])) {
+    if (!ing) continue;
+    // ⚠️ A CARD WITH NO HISTORY IS NOT ONE THE CHECK JUDGED (v568) — `health.js` skips it for the same reason:
+    // there is no history to add up, so writing an "opening" line to it would report a fault nobody found and
+    // push a card at 49 rows to the cap, where the check flips to SKIPPED.
+    if (!stockLogOf(ing).length) continue;
+    // ⚠️⚠️ AND NOT THE ONE THAT WOULD LAND ON THE CAP (v573): a card at 49 rows goes to 50, where the check
+    // can no longer judge it — ⭐ **the press said "1 card put back in step" and the line turned SKIPPED.**
+    if (stockLogOf(ing).length >= STOCK_LOG_CAP - 1) { skipped.push(String(ing.name || "an ingredient")); continue; }
+    const gap = closeCardGap(ing);
+    if (gap) done.push({ name: String(ing.name || "an ingredient"), gap });
+  }
+  return { done, skipped };
+}
+
 // ★★ WHAT A ROW WOULD DO IF IT WERE REMOVED, WITHOUT DOING IT (v390).
 //
 // Her words: __"certain listed i might want to delete after testing"__. A stock card line IS a
@@ -144,19 +206,75 @@ export function stockRowUndo(ingredient, entry) {
   // never said**, which is the class of fault this whole week has been about.
   // ⭐ **The refusal names the way through** (her rule): a stocktake sets the real amount, which is the honest
   // tool when the shelf and the journal disagree.
+  // ⚠️⚠️ A REPAIR LINE IS NOT A MOVEMENT, SO IT CANNOT BE UNDONE AS ONE (v568). ⭐ `closeCardGap` writes the
+  // line that makes a card add up and **does not touch the shelf** — ⚠️ **so removing it the ordinary way
+  // would move the shelf by an amount that was never there**: measured, strong flour 10 kg → 14 kg, and sea
+  // salt refused outright. ⭐ The row is REFUSED with the reason; the way to change the card is the check.
+  if (String(entry.why || "") === "opening") return { was, now: was, moved: 0, blocked: 0, repair: true };
+  // ⚠️⚠️ AND A BAKE'S GIVE-BACK IS NOT A MOVEMENT OF ITS OWN (v572). ⭐ A correction row (a POSITIVE `produced`
+  // row) is half of one arithmetic: the day's `applied` and the shelf. ⚠️ Removing it puts stock back out and
+  // leaves `applied` untouched, ⚠️ **so the next correction gives back a figure the shelf never lost** — measured
+  // as 9,000 where 10,000 belonged. ⭐ The way to change a day's bake is the baked box, not the ✕.
+  if (String(entry.why || "") === "produced" && Number(entry.delta) > 0) {
+    return { was, now: was, moved: 0, blocked: 0, correction: true };
+  }
+  // ⚠️⚠️ AND AN "UN-BOUGHT" ROW IS HALF OF A REVERSED PURCHASE (v592). ⚠️ The ✕ undid the stock half but left
+  // the purchase order marked as still to buy — ⚠️ **so the next Buy added the packs again and wrote a second
+  // expense: measured 0 → 8 kg → undo → ✕ → Buy = 16 kg.** ⭐ Undo the purchase (Purchase order history), which
+  // reverses both halves.
+  if (String(entry.why || "") === "unbought") {
+    return { was, now: was, moved: 0, blocked: 0, unbought: true };
+  }
+  // ⚠️⚠️ AND A "BOUGHT" ROW BELONGS TO ITS PURCHASE (v595). ⚠️ Removing it took the stock off but left the
+  // purchase marked Bought and its expense on the books — ⚠️ **a later Undo of that purchase then reversed the
+  // same packs twice, writing off stock she already had (measured 5 kg → 0).** ⭐ Undo the purchase instead.
+  if (String(entry.why || "") === "bought") {
+    return { was, now: was, moved: 0, blocked: 0, bought: true };
+  }
   const raw = round2(was - (Number(entry.delta) || 0));
   if (raw < 0) return { was, now: was, moved: 0, blocked: round2(-raw) };
   return { was, now: raw, moved: round2(raw - was), blocked: 0 };
 }
 
 // Take that line off the card and put its movement back, in one step.
-export function undoStockRow(ingredient, entry) {
+export function undoStockRow(ingredient, entry, state = null) {
   const plan = stockRowUndo(ingredient, entry);
   if (!plan) return null;
   // ⚠️ A REFUSAL CHANGES NOTHING AT ALL — the row stays on the card and the shelf does not move (v546).
-  if (plan.blocked) return plan;
+  if (plan.blocked || plan.repair || plan.correction || plan.unbought || plan.bought) return plan;
   ingredient.onHand = plan.now;
   stockLogOf(ingredient).splice(stockLogOf(ingredient).indexOf(entry), 1);
+  // ⚠️⚠️ AND THE BAKE ROW FORGETS IT TOO (v570). ⭐ Taking a `produced` row off the card puts the shelf back —
+  // so if the bake row kept saying "this day took 1,000 g", a later correction would give that 1,000 g back
+  // AGAIN. ⭐ Two records of one movement, and this is where they are kept in step.
+  const day = String(entry.ref || "");
+  const pid = String(entry.productId || "");
+  // ⚠️⚠️ AND THE SIGN MATTERS (v572). ⭐ Removing a TAKE (delta negative) gives stock back, so the memory goes
+  // DOWN; removing a CORRECTION (delta positive) takes it away again, so the memory goes UP. ⚠️ Measured with
+  // the absolute value: ✕ on a correction lowered the memory a second time, and the next correction gave back
+  // stock that had already been accounted for.
+  const signed = Number(entry.delta) || 0;
+  if (state && entry.why === "produced" && day && pid && signed !== 0 && Array.isArray(state.bakedDays)) {
+    const row = state.bakedDays.find((r) => r && r.id === bakeId(day, pid));
+    const item = row && row.items && row.items[pid];
+    if (item && item.took && typeof item.took[ingredient.id] === "number") {
+      item.took[ingredient.id] = round2(Math.max(0, item.took[ingredient.id] + signed));
+      // ⚠️⚠️ AND WHEN THAT WAS THE LAST THING THE BAKE TOOK, THE BAKE ROW IS EMPTY (v592). ⚠️ `applied` and
+      // `total` were left saying "10 baked" while NO ingredient had come off — ⚠️ **re-saving 10 was a no-op
+      // and clearing to 0 left the shelf high; the screen kept claiming a bake the shelf knew nothing about.**
+      // ⭐ A row with nothing taken is a row of nothing, so it goes the same way `setBakedTotal` removes one.
+      const anyLeft = Object.values(item.took).some((v) => Number(v) > 0);
+      if (!anyLeft) {
+        item.applied = 0;
+        item.total = 0;
+        delete row.items[pid];
+        if (!Object.keys(row.items).length) {
+          const i = state.bakedDays.findIndex((r) => r === row);
+          if (i >= 0) state.bakedDays.splice(i, 1);
+        }
+      }
+    }
+  }
   return plan;
 }
 
@@ -260,15 +378,49 @@ function orderConsumption(state, order) {
 //
 // ⚠️ A DELTA OF ZERO IS REFUSED, because `logStock` refuses a movement of nothing — a row saying a
 // shelf moved by 0 is a row that makes the journal harder to read, not easier.
-export function applyBake(state, product, dayIso, delta) {
+// ⚠️⚠️ `took` IS WHAT THIS DAY'S BAKE ACTUALLY TOOK OFF EACH INGREDIENT (v570). ⭐ The correction's bound
+// used to be the day's `produced` ROWS — and the journal keeps only the newest 50 per ingredient, ⚠️ **so on a
+// busy flour those rows fall off inside two months, and a correction then gave nothing back, wrote no row, and
+// still recorded itself as applied.** ⭐ The figure is kept on the BAKE ROW now, which is not capped, and the
+// journal remains the fallback for rows written before this.
+// What a day's bake took off ONE ingredient: the row's own figure when it has one, otherwise the day's
+// journal rows — and the answer is written ONTO the row so the next call cannot disagree with it.
+function journalTake(ing, day, pid) {
+  return round2(stockLogOf(ing)
+    .filter((e) => e && e.why === "produced" && String(e.ref || "") === day && Number(e.delta) < 0
+      && (!e.productId || String(e.productId) === pid))
+    .reduce((s, e) => s - (Number(e.delta) || 0), 0));
+}
+
+function rememberTook(took, ing, ingredientId, day, pid) {
+  if (!took) return null;
+  if (typeof took[ingredientId] === "number") return round2(took[ingredientId]);
+  const fromJournal = journalTake(ing, day, pid);
+  took[ingredientId] = fromJournal;
+  return fromJournal;
+}
+
+export function applyBake(state, product, dayIso, delta, took = null, appliedBefore = 0) {
   const n = Number(delta) || 0;
   if (!n) return;
   const amounts = productConsumption(state, product, Math.abs(n));
   if (!amounts) return;
+  // ⚠️⚠️ A CORRECTION IS MEASURED AGAINST WHAT THE BAKE **TOOK**, NOT AGAINST TODAY'S RECIPE (v576).
+  // ⭐ The recipe can change between baking and correcting. ⚠️ **Measured:** 800 g on the shelf, bake 5 pans ×
+  // 100 g (took 500, shelf 300); the recipe is then changed to 20 g/pan and the bake cleared → the shelf rose
+  // to **400, not 800**; with the flour line removed from the recipe it did not move at all. ⭐ So a correction
+  // gives back the SHARE of what was taken — `|delta| / pans applied` — and an ingredient the recipe no longer
+  // names is still visited from the memory.
+  const targets = new Map(amounts);
+  if (n < 0 && took) {
+    for (const id of Object.keys(took)) {
+      if (!targets.has(id) && byId(state.ingredients || [], id)) targets.set(id, 0);
+    }
+  }
   const pans = Math.abs(n);
   const name = String((product && product.name) || "baked goods");
   const what = n > 0 ? `Baked extra — ${pans} × ${name}` : `Extra bake corrected — ${pans} × ${name}`;
-  for (const [ingredientId, base] of amounts) {
+  for (const [ingredientId, base] of targets) {
     const ing = byId(state.ingredients || [], ingredientId);
     if (!ing) continue;
     const before = Number(ing.onHand) || 0;
@@ -296,21 +448,46 @@ export function applyBake(state, product, dayIso, delta) {
       // own kitchen: when a thing stops being per-day and becomes per-product, every per-day filter must
       // be re-read. ⚠️ Rows stored before v548 carry no product id and are still counted, or an old
       // correction would suddenly refuse to give anything back.
-      const taken = stockLogOf(ing)
-        .filter((e) => e && e.why === "produced" && String(e.ref || "") === day && Number(e.delta) < 0
-          && (!e.productId || String(e.productId) === pid))
-        .reduce((s, e) => s - (Number(e.delta) || 0), 0);
-      give = Math.min(base, round2(taken));
+      // ⚠️⚠️ THE BAKE ROW'S OWN FIGURE, SEEDED FROM THE JOURNAL THE FIRST TIME IT IS TOUCHED (v572).
+      // ⭐ A record written before v570 has no `took`; reading the journal ONLY for this call left the row
+      // without it, so the next add wrote a number that permanently shadowed the journal — ⚠️ **measured:
+      // 10 pans → correct to 6 → back to 10 → clear, and 1,500 g stayed off the shelf with no bake row left
+      // to explain it.** ⭐ The journal's figure is COPIED ONTO THE ROW here, and every later call reads it.
+      const remembered = rememberTook(took, ing, ingredientId, day, pid);
+      // ⚠️ A caller with no memory at all (a direct `applyBake`, or a row this build has never touched) still
+      // gets the journal's answer — the rule before v570, kept for those two callers (v572).
+      const available = remembered != null ? Math.max(0, remembered) : (!took ? journalTake(ing, day, pid) : 0);
+      // ⭐ The share of the day's take this correction undoes. With the recipe unchanged it is exactly what
+      // the recipe says; with a changed recipe it is the only honest answer, because the shelf moved by the
+      // OLD recipe. ⚠️ With nothing recorded as applied, fall back to the old recipe-bounded figure.
+      const share = Number(appliedBefore) > 0 ? (Number(n) < 0 ? Math.abs(Number(n)) : 0) / Number(appliedBefore) : 1;
+      give = appliedBefore > 0
+        ? Math.min(round2(available * Math.min(1, share)), round2(available))
+        : Math.min(base, round2(available));
       if (!(give > 0)) continue; // nothing was taken that day — nothing to give back, and no row
+      if (remembered != null && took) took[ingredientId] = round2(Math.max(0, remembered - give));
     }
     // ⚠️ `Math.max(0, …)` mirrors `consumeOrder`: stock never goes below zero, so a bake against an empty
     // shelf moves nothing — and the row records the movement that HAPPENED, never the recipe's figure,
     // or the journal stops summing to the number it explains.
     ing.onHand = round2(Math.max(0, before + (n > 0 ? -base : give)));
+    // ⭐ AND WHAT THIS BAKE TOOK IS KEPT ON THE BAKE ROW (v570) — the figure a later correction is bounded by.
+    if (n > 0 && took) {
+      // ⚠️ Seed the OLD take before adding to it, or an add on a pre-v570 row shadows the journal (v572).
+      rememberTook(took, ing, ingredientId, String(dayIso || ""), pid);
+      took[ingredientId] = round2((Number(took[ingredientId]) || 0) + Math.max(0, before - ing.onHand));
+    }
     logStock(ing, {
       delta: round2((Number(ing.onHand) || 0) - before),
       why: "produced",
-      what,
+      // ⚠️⚠️ AND WHEN THE GIVE-BACK IS CAPPED, THE ROW SAYS SO (v560). ⭐ Her own card showed
+      // **"Extra bake corrected — 10 × Focaccia"** against **+2 kg**: the label named the size of the
+      // correction while the change was only what that day's bake had actually taken off. ⭐ **A row whose
+      // two numbers describe different things is the fault this app keeps meeting** — so the capped row
+      // stops quoting the pans and says what came back.
+      what: (n < 0 && give < base)
+        ? `Extra bake correction — ${name}, only what this day's bake took`
+        : what,
       ref: String(dayIso || ""),
       productId: pid,
     });
@@ -383,7 +560,11 @@ export function setBakedTotal(state, product, dayIso, total) {
   // that double-counted every order made after the bake.**
   const wanted = Math.max(0, Number(total) || 0);
   const delta = wanted - (Number(entry.applied) || 0);
-  applyBake(state, product, day, delta);   // ⭐ a delta of 0 is refused inside, so nothing is journalled
+  // ⭐ The bake row carries what each ingredient's bake actually took, so a correction does not depend on a
+  // journal that keeps only its newest rows (v570).
+  if (!entry.took || typeof entry.took !== "object") entry.took = {};
+  // ⚠️ `entry.applied` BEFORE the change is what the correction is measured against (v576).
+  applyBake(state, product, day, delta, entry.took, Number(entry.applied) || 0);   // ⭐ a delta of 0 is refused inside
   entry.total = Number(total) || 0;
   entry.applied = wanted;
 

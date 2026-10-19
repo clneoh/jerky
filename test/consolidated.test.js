@@ -484,6 +484,20 @@ test("★★ a number whose order is GONE gets its own line, in its own place in
   assert.match(sheet.note, /1 number on this page belongs to an order that has since been removed/);
 });
 
+test("★★★ a period whose ONLY row is a void still says what it is (v592)", () => {
+  // ⚠️⚠️ MEASURED: with no sales, the page said "Nothing was sold in this period" and then LISTED a receipt
+  // number with no explanation and no total — ⚠️ **the sentence that explains a void lived only in the other
+  // branch of the page.** ⭐ One sentence, both branches.
+  const st = state();
+  st.orders = [];
+  const sheet = consolidatedSheet(st, { kind: "month", anchor: D(8), register: [reg(1, "AAAA01")] });
+  const rows = sheet.lines.filter((l) => !l.head);
+  assert.equal(rows.length, 1, "the void number was dropped from the page");
+  assert.match(sheet.empty, /Nothing was sold in this period/);
+  assert.match(sheet.note, /belongs to an order that has since been removed/,
+    "★ the page lists a receipt number with no word saying what it is");
+});
+
 test("★ a number whose order still exists is NOT called void — even outside this period", () => {
   // ⚠️ "REMOVED" IS JUDGED AGAINST **EVERY** ORDER SHE HAS. An order that merely falls outside the
   // window she is looking at is elsewhere, not gone — and calling it removed would put a false statement

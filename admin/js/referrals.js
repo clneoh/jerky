@@ -179,8 +179,17 @@ export function referralFlag(state, group) {
   if (!via) return "none";
   const me = waNumber(first.whatsapp);
   if (me && me === via) return "self";
-  if (!me) return "none";
-  return isNewCustomer(state, group) ? "new" : "existing";
+  const ownIds = new Set(orders.map((o) => o.id));
+  for (const o of state.orders || []) {
+    if (ownIds.has(o.id)) continue;
+    // ⚠️⚠️ A SALE REFUNDED IN FULL DID NOT HAPPEN (v551). ⭐ A customer whose only order was refunded was
+    // read as "existing", so their next referred order said **"already ordered before — not a new friend,
+    // no coupon"** — a coupon they had earned, refused by a sale she gave back.
+    if (o.refundedFull) continue;
+    if (first.groupId && o.groupId === first.groupId) continue;
+    if (me && waNumber(o.whatsapp) === me) return "existing";
+  }
+  return me ? "new" : "none";
 }
 
 // The credit rows for one holder (by WhatsApp digits), most useful first: valid
@@ -247,7 +256,8 @@ export function validCredits(state, whatsapp, today = todayISO()) {
 // repair and nothing about the friend's coupon is lost.
 export function couponDeclined(state, id) {
   const want = String(id || "");
-  return !!want && (state.declinedCoupons || []).some((x) => String(x) === want);
+  // ⚠️ A RECORD IS AN OBJECT NOW (v595) — the old lists held raw ids, and those still read.
+  return !!want && (state.declinedCoupons || []).some((x) => String((x && x.id) || x) === want);
 }
 
 export function couponOn(state, orders) {
@@ -292,7 +302,12 @@ export function couponOnAny(state, orders) {
     && (c.role === "friendOff"
       // THE FRIEND'S, come off the first order it names — and `orderCode` IS that order, so
       // matching on it is exact, exactly as it has been since v322.
-      ? wore(c.orderCode)
+      // ⚠️⚠️ AND IT ALSO COUNTS ON THE ORDER SHE PRESSED APPLY ON (v550). ⭐ A friend's coupon is left
+      // UNUSED when the first order carried a code (the code wins) — and it was still matched only
+      // against the order it was BORN on, so **the customer's next order could not use it at all:**
+      // pressing Apply marked it spent and took RM0 off. ⭐ **The referrer's reward has read `appliedTo`
+      // since v336; the friend's never did** — one rule applied to one of two kinds of coupon.
+      ? (wore(c.orderCode) || (!!c.usedAt && !!c.appliedTo && wore(c.appliedTo)))
       // ★★ THE REFERRER'S REWARD, WHICH IS A DIFFERENT KIND OF THING (v336). Hers is earned on
       // the FRIEND's order and spent on one of HER OWN, later — so **its `orderCode` names the
       // order that earned it and must NOT be matched against this one.** What says it belongs
@@ -334,6 +349,13 @@ export function giveCredits(state, group, scheme = schemeOf(state), today = toda
   if ((state.credits || []).some((c) => c.orderCode === code)) {
     return { created: false, reason: "already given" };
   }
+  // ★★★ AND THE TWO CREDITS' IDS ARE DERIVED FROM WHAT THEY ARE (v551). ⚠️⚠️ A RANDOM ID made two phones
+  // two records: both held the order before either synced, both passed the check above, and the ledger
+  // ended with **two rewards and two coupons for one referral** — the referrer could spend RM6 of RM3.
+  // ⭐ **v519's rule: an id derived from the record's CONTENT is the same id on every phone.** ⚠️ An order
+  // with no hex in its id reads "??????", and two of those would collide, so that one keeps a random id.
+  const derived = String(code || "").trim().toUpperCase();
+  const idFor = (role) => (derived && derived !== "??????" ? `crd_${role}_${derived}` : newId("crd"));
   const exp = expiryDate(scheme.validDays, today);
   const earnedAt = first.createdAt || new Date().toISOString();
   const referrerNameStr = referrerName(state, referrer) || `${referrer} (new)`;
@@ -341,7 +363,7 @@ export function giveCredits(state, group, scheme = schemeOf(state), today = toda
   const rows = [];
   if (Number(scheme.referrerRM) > 0) {
     rows.push({
-      id: newId("crd"),
+      id: idFor("reward"),
       holder: referrer,
       holderName: referrerNameStr,
       amountRM: scheme.referrerRM,
@@ -367,7 +389,7 @@ export function giveCredits(state, group, scheme = schemeOf(state), today = toda
     // courier.js would make a cycle, and whether a code is ON the order is all this needs.
     const codeWins = !!String(first.promo || "").trim();
     rows.push({
-      id: newId("crd"),
+      id: idFor("friendOff"),
       holder: friend,
       holderName: friendName,
       amountRM: scheme.friendRM,
@@ -549,6 +571,9 @@ function broughtGroups(state, digits, theirCodes) {
   for (const group of groupOrders((state && state.orders) || [])) {
     const first = (group.orders || [])[0];
     if (!first) continue;
+    // ⚠️ A REFUNDED-IN-FULL CART IS NOT ONE SHE BROUGHT IN (v551) — the advocate's "brought in" count,
+    // and the reward it can earn, must not include a sale that was given back.
+    if (first.refundedFull) continue;
     const byCode = theirCodes.size > 0 && theirCodes.has(normCode(first.promo));
     // `referralFlag` is the SAME rule the Give-credit button reads, so a cart
     // that only counts as "existing" there cannot count as a new customer here.

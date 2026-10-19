@@ -301,7 +301,9 @@ test("booking posts the wrapped order to /v3/orders", async () => {
 test("a refused booking comes back as a sentence, and never as a thrown error", async () => {
   // A refusal is ORDINARY here. The price died, the wallet is empty, the number is
   // wrong — all of those are answers, and she has to be able to read them.
-  const s = stubFetch(jsonReply({ errors: [{ id: "ERR_QUOTATION_EXPIRED" }] }, 400));
+  // ⚠️ The vendor's own id for a price that is wrong or expired (v566) — the old spelling was
+  // never in its table, so the sentence this test guards could not fire in real life.
+  const s = stubFetch(jsonReply({ errors: [{ id: "ERR_INVALID_QUOTATION_ID" }] }, 400));
   try {
     const out = await placeOrder(cfg(), {
       quotationId: "q-1",
@@ -640,7 +642,7 @@ test("the driver is a SECOND call, and its refusal never fails the check", async
   const asked = [];
   const s1 = stubFetch((url) => {
     asked.push(String(url));
-    if (String(url).includes("/v3/drivers/")) {
+    if (String(url).includes("/v3/orders/o1/drivers/")) {
       return jsonReply({ data: { driverId: "d1", name: "Ah Meng", plateNumber: "PMM 1234", phone: "0123456789" } });
     }
     return jsonReply({ data: { orderId: "o1", status: "ON_GOING", driverId: "d1" } });
@@ -650,7 +652,8 @@ test("the driver is a SECOND call, and its refusal never fails the check", async
     assert.equal(out.ok, true);
     const withDriver = await orderWithDriver(cfg(), out.data);
     assert.deepEqual(withDriver.driver, { driverId: "d1", name: "Ah Meng", plateNumber: "PMM 1234", phone: "0123456789" });
-    assert.equal(asked.filter((u) => u.includes("/v3/drivers/")).length, 1, "one driver call, and only one");
+    assert.equal(asked.filter((u) => u.includes("/v3/orders/o1/drivers/d1")).length, 1,
+      "★ the driver is asked for through the ORDER, on the path Lalamove documents — **the old /v3/drivers/{id} does not exist, so the name, plate and number never arrived**");
   } finally { s1.restore(); }
 
   // No driver matched yet: no second call is made at all, because there is no id to ask
@@ -664,7 +667,7 @@ test("the driver is a SECOND call, and its refusal never fails the check", async
     const out = await orderDetail(cfg(), "o1");
     const same = await orderWithDriver(cfg(), out.data);
     assert.deepEqual(same, out.data, "the order comes back exactly as it was");
-    assert.equal(none.filter((u) => u.includes("/v3/drivers/")).length, 0, "nothing was asked of the driver endpoint");
+    assert.equal(none.filter((u) => u.includes("/drivers/")).length, 0, "nothing was asked of the driver endpoint");
   } finally { s2.restore(); }
 
   // AND THE ONE THAT MATTERS. The driver's endpoint answers nothing until an hour before
@@ -672,7 +675,7 @@ test("the driver is a SECOND call, and its refusal never fails the check", async
   // says nothing about the trip, which is perfectly healthy — so it must not reach her as
   // an error, and the order must come back whole.
   const s3 = stubFetch((url) => {
-    if (String(url).includes("/v3/drivers/")) {
+    if (String(url).includes("/v3/orders/o1/drivers/")) {
       return jsonReply({ message: "driver not found", errors: [{ code: "ERR_DRIVER_NOT_FOUND" }] }, 404);
     }
     return jsonReply({ data: { orderId: "o1", status: "ON_GOING", driverId: "d1" } });

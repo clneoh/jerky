@@ -7,6 +7,7 @@ import { CONFIG } from "./config.js";
 import { poolCaps, poolGroups, clampPool, groupFor, poolPieces, closedReason, cancelDaysFor, strictestCancelDays, nextOrderable } from "./pool.js";
 import { rollingWeeks, weekIndex, windowBounds, WINDOW_WEEKS, occColour, occDays, occStrength, occForDate, occSingleDay } from "./calendar.js";
 import { normRules } from "../availability.js";
+import { cutoffText } from "../home-facts.js";
 import { isThumb, lineNoteOf, LINE_NOTE_MAX } from "../storefront-fields.js";
 import { isLang, loadLang, pick, rememberLang, nameFor, descFor, unitFor, policyFor, applyTo } from "../i18n.js";
 import { STORE } from "../store-lang.js";
@@ -37,7 +38,7 @@ import { ENGINE_VERSION } from "../admin/js/version.js";
 // cache.** ⚠️ And it must be kept in step with `admin/js/version.js` by hand, which is a second place for
 // one fact: ⭐ **that is accepted here ONLY because a test fails the moment they disagree** (see
 // `store-build-notice.test.js`), so a forgotten bump is a red suite rather than a shop that lies.
-export const SHOP_BUILD = "549";
+export const SHOP_BUILD = "599";
 // "Is this page the newest one?" — the comparison and the probe's address, kept on their own so a
 // test can pin them (this file calls `render()` at the top level and cannot be imported at all).
 import { BUILD_TRIED_KEY, VERSION_URL, newerBuild } from "./build.js";
@@ -306,6 +307,22 @@ export function waNumber(n) {
   return digits.startsWith("0") ? `60${digits.slice(1)}` : digits;
 }
 
+// ★★★ A NUMBER NOBODY CAN ANSWER IS NOT A NUMBER (v565).
+//
+// ⚠️⚠️ THE FAULT: the box accepted ANY digit string, so a customer could order with **"1"** as their
+// WhatsApp number. ⭐ The order then goes out with a number the bakery cannot confirm on, the payment QR
+// never reaches them, **and the tracking card — which since v558 needs the phone it was ordered with —
+// can never be opened by the customer at all.** ⚠️ One digit is not an opinion about how to spell a
+// number; it is a typo, and the shop should say so at the box rather than take the order.
+//
+// ⭐ The bounds are E.164's own: at least 9 digits (a Malaysian mobile normalises to 11) and at most 15.
+// ⚠️ This is the same KIND of check the name and the delivery address already get — it answers at the
+// box, in the customer's language, and the Place order button is never disabled.
+export function waPlausible(n) {
+  const digits = waNumber(n);
+  return digits.length >= 9 && digits.length <= 15;
+}
+
 // The same number, written the way a person reads it: +60 16-960 1268 (v348).
 // Used by the shop's privacy notice, which has to print contact details rather
 // than only build a link. The Malaysian mobile grouping — country code, then the
@@ -338,7 +355,12 @@ function revealCalendar() {
 // stamped with who referred it. The shop never reads order history or discounts —
 // the stamp just tells the bakery who to thank/credit.
 export function parseVia(search) {
-  return waNumber(new URLSearchParams(String(search || "")).get("via"));
+  const n = waNumber(new URLSearchParams(String(search || "")).get("via"));
+  // ★★★ A TRUNCATED LINK IS NOT A REFERRAL (v565). ⚠️ `/store/?via=123` used to show **"You were
+  // referred — you have a welcome discount on your first order"** and stamp `referredBy: "123"` on the
+  // order. ⭐ A promise of a discount the customer was never given is the one thing the shop must not
+  // say by accident, so an implausible number is treated as no referral at all.
+  return waPlausible(n) ? n : "";
 }
 
 // ★★ THE FRIEND'S NUMBER COMES OFF THE ADDRESS ONCE THE ORDER IS PLACED (v325).
@@ -633,26 +655,26 @@ export function isOpen(cfg, d, now = new Date()) {
 // ⭐ Two truths, and the heading follows them:
 //   • a day she does not bake has no bake to have closed → he is in time for the next one;
 //   • a day she does bake is open only until its own cut-off (the day before).
-export function todayStillOpen(cfg, now = new Date()) {
+export function todayStillOpen(cfg, now = new Date(), bakesTodayOverride) {
+  // ⚠️⚠️ HER REAL DATES OUTRANK THE WEEKDAY PATTERN HERE TOO (v596). ⚠️ An extra Thursday she added had the
+  // calendar offering it while this said "today's bake has closed" — and removing a date said it on a day she
+  // was not baking. ⭐ The caller that knows the published rows passes the answer in.
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const bakesToday = Array.isArray(cfg && cfg.deliveryDays) && cfg.deliveryDays.includes(start.getDay());
+  const weekdayBakes = Array.isArray(cfg && cfg.deliveryDays) && cfg.deliveryDays.includes(start.getDay());
+  const bakesToday = bakesTodayOverride !== undefined
+    // ⚠️⚠️ WHEN SHE HAS PUBLISHED DAYS, THOSE ARE THE ANSWER (v599). ⚠️ v598 OR-ed the weekday pattern in,
+    // so a date she had DELETED still read "You're in time" because it was a Wednesday — ⚠️ **the page
+    // offered a bake she had taken off.** ⭐ The pattern is the fallback only when there are no rows at all
+    // (the caller passes `undefined` then), which is the case the fallback is for.
+    ? !!bakesTodayOverride
+    : weekdayBakes;
   return !bakesToday || isOpen(cfg, start, now);
 }
 
-// ★★ "6PM", NOT "18:00" (v405). ⚠️ A stranger reads a clock the way they speak. 18:00 is the form the
-// baker's admin stores and it is right THERE; on the customer's page it is a small puzzle, and the
-// whole finding of this version is that small puzzles are where a nervous customer goes wrong.
-// ⚠️ ONLY THE DISPLAY CHANGES — `cfg.cutoff` stays "18:00" everywhere it is compared.
-export function cutoffText(cutoff) {
-  const parts = String(cutoff || "").split(":");
-  const hh = Number(parts[0]);
-  const mm = Number(parts[1]);
-  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return String(cutoff || "");
-  const h12 = hh % 12 === 0 ? 12 : hh % 12;
-  const ampm = hh < 12 ? "am" : "pm";
-  // ⚠️ ON THE HOUR LOSES THE ":00" — "6pm" is how a person says it, and "6:00pm" is how a form does.
-  return mm === 0 ? `${h12}${ampm}` : `${h12}:${String(mm).padStart(2, "0")}${ampm}`;
-}
+// ⭐ THE CLOCK FORMATTER MOVED TO `home-facts.js` (v581) and is re-exported here, so the homepage and the
+// shop read ONE copy. ⚠️ Two copies would have been two ways to say one time — the fault this screen has
+// already been taught twice.
+export { cutoffText };
 
 // ★★ THE NEXT DAY SHE CAN ACTUALLY HAVE BREAD (v405). ⚠️ `upcomingDates` already starts at TOMORROW and
 // lists only delivery days, and `isOpen` already knows the cut-off — so this is the two of them, in
@@ -679,11 +701,15 @@ function dayBefore(d) {
 // one he is looking at; the heading tells him, and the green edge says it before he reads.
 //   • nothing open for today  → "Today's bake has closed" / the next day he can have it / the deadline
 //   • still time to order     → "You're in time"        / the same two lines
-function paintDayAnswer(cfg, cutoffSay) {
+function paintDayAnswer(cfg, cutoffSay, nextDay, todayBakes) {
   const box = document.getElementById("day-answer");
   if (!box) return;
 
-  const next = nextOpenDay(cfg);
+  // ⚠️⚠️ THE BOX FOLLOWS HER REAL DAYS, NOT THE WEEKDAY PATTERN (v590). ⚠️ It was drawn once, from
+  // `nextOpenDay` (the weekday rule), and never repainted — ⚠️ **so a day that had closed, sold out or been
+  // removed stayed named, with a deadline already in the past.** ⭐ `rerender` passes the same real list the
+  // calendar is drawn from; `undefined` keeps the older behaviour for the first static paint.
+  const next = nextDay !== undefined ? nextDay : nextOpenDay(cfg);
   const lede = document.getElementById("steps-lede");
   if (lede) {
     lede.hidden = false;
@@ -700,7 +726,7 @@ function paintDayAnswer(cfg, cutoffSay) {
   // false on every day of the year: the heading read "Today's bake has closed" on a Sunday the bakery
   // never bakes, and **"You're in time" could never appear at all.** ⭐ A day she does not bake has no
   // bake to have closed; and a day she does bake is open until its own cut-off.
-  const todayOpen = todayStillOpen(cfg);
+  const todayOpen = todayStillOpen(cfg, new Date(), todayBakes);
   box.hidden = false;
   box.classList.toggle("ok", todayOpen);
   document.getElementById("answer-kicker").textContent = t(todayOpen ? "ansInTime" : "ansClosed");
@@ -776,6 +802,11 @@ export function resolveDates(generated, dayRows, today = dateKey(new Date())) {
     .map((r) => r && r.date)
     .filter((d) => d && d >= today)
     .sort();
+  // ⚠️ NO DATE ROWS IS NOT "NO BAKE DAYS" (v581). ⚠️ This table is written by a PUBLISH, and a publish
+  // that failed (or has not run since the phone changed) leaves it empty while her bake days are still
+  // hers — ⭐ **emptying the calendar on that would be a rule that blocks a sale.** ⭐ Deleting her bake
+  // days is said in the SETTINGS list instead (`deliveryDays: []`), and `mergeStorefront` now adopts that
+  // empty list, so `generated` is already empty in exactly the case that matters.
   if (!published.length) return generated;
   return published.map((d) => new Date(`${d}T00:00:00`));
 }
@@ -792,9 +823,25 @@ export function daySpecs(dates, availMap = {}) {
   });
 }
 
+// ⭐ The first day a customer can actually have bread on, from the REAL list the calendar draws
+// (v590). `dates` has already been through the cut-off (`isOpen`); this only drops a day the live
+// availability says is full. ⚠️ The answer box used to ask the weekday RULE instead and never asked again.
+export function firstOpenSpec(dates, availMap = {}) {
+  return (dates || []).find((d) => {
+    const left = availMap && availMap[dateKey(d)];
+    return !(left != null && left <= 0);
+  }) || null;
+}
+
 export function buildMessage(cfg, order) {
+  // ⚠️⚠️ AN ITEM'S OWN NOTE GOES WITH THE ITEM (v592). ⚠️ The offline fallback dropped it: a customer who
+  // wrote "no nuts" on a line sent a message with no such words, while the cloud order kept them.
   const lines = order.lines
-    .map((l) => `• ${l.name} ×${l.qty} — RM${(l.qty * l.price).toFixed(2)}`)
+    .map((l) => {
+      const base = `• ${l.name} ×${l.qty} — RM${(l.qty * l.price).toFixed(2)}`;
+      const note = String(l.note || "").trim();
+      return note ? `${base}\n   📝 ${note}` : base;
+    })
     .join("\n");
   let msg = `New order · ${cfg.name} 🐾\n`;
   msg += `📅 ${order.date}\n`;
@@ -804,6 +851,21 @@ export function buildMessage(cfg, order) {
     const method = order.fulfillment === "courier" ? "Post (nationwide)" : "Collect (local)";
     msg += `\n📦 ${method}`;
     if (order.fulfillment === "courier" && order.address) msg += `\n📍 ${order.address}`;
+    // ⚠️⚠️ A COLLECTION ORDER THAT NAMES NO POINT IS AMBIGUOUS (v581). ⚠️ The order has carried
+    // `pointName` since the Points shipped, ⭐ but the message did not print it — ⚠️ **so a customer collect
+    // from a shop other than the kitchen produced "Self collect" and nothing to say WHICH place**, and the
+    // offline fallback (the path that sends this same message when the cloud cannot be read) lost it too.
+    if (order.fulfillment !== "courier" && String(order.pointName || "").trim()) {
+      msg += `\n📍 ${String(order.pointName).trim()}`;
+    }
+    // ⚠️⚠️ AND THE DOOR PIN THE CUSTOMER DROPPED (v592). ⚠️ A courier order pinned to a condo door sent a
+    // message with NO destination at all when the shop could not reach the cloud — the one path that must
+    // carry the whole order. ⭐ The point and a link to it, on its own line.
+    const lat = Number(order.place && order.place.lat);
+    const lng = Number(order.place && order.place.lng);
+    if (order.fulfillment === "courier" && Number.isFinite(lat) && Number.isFinite(lng)) {
+      msg += `\n📌 ${lat.toFixed(6)}, ${lng.toFixed(6)} — https://maps.google.com/?q=${lat},${lng}`;
+    }
   }
   if (order.customer) msg += `\n👤 ${order.customer}`;
   if (order.note) msg += `\n📝 ${order.note}`;
@@ -830,7 +892,11 @@ export function mergeStorefront(base, remote) {
   }
   if (Array.isArray(remote.deliveryDays)) {
     const days = remote.deliveryDays.map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
-    if (days.length) out.deliveryDays = days;
+    // ⚠️⚠️ AN EMPTY LIST IS AN ANSWER (v581). ⚠️ She publishes this list EVERY time, so "no bake days" reaches
+    // the shop as `[]` — ⚠️ **and it used to be ignored, so deleting her last bake day left the local
+    // fallback (Mon/Wed/Fri) on sale.** ⭐ Adopted when it is genuinely empty, or when anything survived the
+    // check above — ⚠️ a list of rubbish is not an instruction, and still falls back as it always did.
+    if (days.length || remote.deliveryDays.length === 0) out.deliveryDays = days;
   }
   // The standard days the bakery markets around, for the bands and boxes on the
   // customer's calendar and the bubble that names one when it is tapped. The app
@@ -1023,7 +1089,10 @@ export function mergeStorefront(base, remote) {
         if (sortSet && Number.isFinite(sort)) out.sort = sort;
         return out;
       });
-    if (products.length) out.products = products;
+    // ⚠️⚠️ AND AN EMPTY MENU IS AN ANSWER TOO (v581): deleting her last product used to leave the fallback
+    // (RM16 Focaccia) on sale — ⭐ **the shop showing more than she has published.** ⭐ Adopted when it is
+    // genuinely empty or when anything survived the checks above; rubbish still falls back.
+    if (products.length || remote.products.length === 0) out.products = products;
   }
   // The category headings, in the baker's order, each naming the products shown
   // under it — depth-first, `depth` being the indent. Re-validated here on the
@@ -1417,6 +1486,13 @@ function renderFeedback(cfg) {
   // key. Shift+Enter is not a second line — she asked for one line.
   box.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
+    // ⚠️⚠️ ENTER IS ALSO HOW A CHINESE KEYBOARD ACCEPTS A CHARACTER (v555). ⭐ With a pinyin or IME
+    // keyboard, typing 我想 means typing "wo xiang" and pressing Enter to take the candidate — and this
+    // handler sent the ROMANISED HALF-WORD and thanked them for it, while the sentence they were writing
+    // was gone. ⭐ The shop offers 中文, so this was the box's least usable language.
+    // ⚠️ `isComposing` is the browser's own answer, and `keyCode === 229` is the older one several Android
+    // keyboards still send. Neither is a send.
+    if (e.isComposing || e.keyCode === 229) return;
     e.preventDefault();
     return send(); // returned so a test can await the send this key started
   });
@@ -1975,9 +2051,11 @@ function clearFieldMarks() {
   let prodAvail = null;  // { 'YYYY-MM-DD': { product: slots_left } } — for the item stamps
   let dayRows = null;    // published delivery-date rows — the real dates win
   let dates = upcomingDates(CONFIG);
-  // A product's date rules (closes X days before delivery / a from–to window)
-  // compare each delivery date to today, so its reference is fixed at load.
-  const todayKey = dateKey(new Date());
+  // A product's date rules (closes X days before delivery / a from–to window) compare each delivery date to
+  // today. ⚠️⚠️ AND "TODAY" IS RE-READ ON EVERY REPAINT (v595): ⚠️ it was fixed at load while the page redraws
+  // at midnight — ⚠️ **a close-days rule kept counting from yesterday, and bread needing four days' notice was
+  // sold at 00:10.** ⭐ `rerender` sets it before resolving the dates.
+  let todayKey = dateKey(new Date());
 
   // ── Promo code ────────────────────────────────────────────────────────────
   // The standing offer line above the menu, and the code box beside the referral
@@ -2193,7 +2271,11 @@ function clearFieldMarks() {
       // behind the lit one, so a screen reader would otherwise take all of them in turn.
       s.setAttribute("aria-hidden", k === i ? "false" : "true");
     });
-    dots.forEach((d, k) => d.classList.toggle("is-on", k === i));
+    dots.forEach((d, k) => {
+      d.classList.toggle("is-on", k === i);
+      // ⚠️ AND WHICH OFFER IS SHOWING IS SAID (v598) — the review dots have done this since v597.
+      if (d.setAttribute) d.setAttribute("aria-pressed", k === i ? "true" : "false");
+    });
   }
 
   // Stand the turning down. There is no fade to undo any more — the move is a CSS transition
@@ -2620,13 +2702,13 @@ function clearFieldMarks() {
           catch { /* a box with no text range, or a test shim */ }
         }
       };
-      const dec = el("button", { class: "step-btn", onclick: () => {
+      const dec = el("button", { class: "step-btn", "aria-label": t("qtyLess"), onclick: () => {
         const q = Math.max(0, (cart.get(p.name) || 0) - 1);
         if (q === 0) cart.delete(p.name); else cart.set(p.name, q);
         qtyBox.value = String(q);
         redraw();
       } }, "−");
-      const inc = el("button", { class: "step-btn", onclick: () => {
+      const inc = el("button", { class: "step-btn", "aria-label": t("qtyMore"), onclick: () => {
         // ★★★ STEP 1 BEFORE STEP 2 IS ALLOWED (v453) — HER OWN MODEL, WHICH I BUILT THE WRONG SHAPE OF
         // FIRST TIME. Her words: __"complet step1 before step2 is allow, and so forth"__ — then, asked how
         // a locked step should read: __"dont allow and a message inform about why"__.
@@ -2770,7 +2852,11 @@ function clearFieldMarks() {
     // Every product marked off today leaves nothing at all — say so rather than
     // showing a blank space where the menu should be.
     if (!live.length) {
-      menu.replaceChildren(el("p", { class: "card-sub" }, t("noMenuToday")));
+      // ⚠️⚠️ WHEN THERE IS NO MENU AT ALL, "PICK ANOTHER DAY" IS WRONG ADVICE (v598). ⚠️ An emptied published
+      // product list is adopted since v581, so every visitor was told to pick another bake day — ⚠️ **no day
+      // would help.** ⭐ Two sentences: a day that is full, and a menu that is empty.
+      menu.replaceChildren(el("p", { class: "card-sub" },
+        (CONFIG.products || []).length ? t("noMenuToday") : t("noMenu")));
       return;
     }
     // A shop with no categories is drawn exactly as it always was: one plain
@@ -2978,6 +3064,11 @@ function clearFieldMarks() {
   // cleared by the very next paint, so a live refresh never animates.
   let calSlide = 0;
 
+  // ⚠️⚠️ THE DAY THE CUSTOMER TAPPED, SO FOCUS CAN GO BACK TO IT (v593). ⚠️ The tap rebuilds the whole grid,
+  // and `replaceChildren` removes the focused cell — ⚠️ **focus fell to the body and the next Tab started at the
+  // top of the page.** ⭐ The rebuilt cell with the same date takes the keyboard.
+  let focusIso = null;
+
   // The marked day whose name is showing, as a YYYY-MM-DD key, or null. A tap sets
   // it; any tap elsewhere clears it. It is read while the grid is rebuilt, so the
   // bubble survives the rerender the tap itself triggers.
@@ -3061,10 +3152,13 @@ function clearFieldMarks() {
     if (!selected) selected = open.length ? dateKey(open[0].date) : null;
 
     if (!specs.length) {
+      // ⚠️ AND A STALE DAY IS NOT FOCUSED LATER (v597) — the key is cleared wherever the grid cannot draw it.
+      focusIso = null;
       dateWrap.replaceChildren(el("p", { class: "muted" }, t("noDates")));
       return;
     }
     if (!open.length) {
+      focusIso = null;   // ⚠️ the same rule as the branch above (v598)
       dateWrap.replaceChildren(el("p", { class: "muted" }, t("noOpenDates")));
       return;
     }
@@ -3148,9 +3242,16 @@ function clearFieldMarks() {
       // A day she delivers with room left is tapped to choose it; a marked day is
       // tapped to read its name; a day the grid cannot take an order for is tapped
       // to be told why — and the one day can be more than one of those.
+      // ⚠️⚠️ EVERY DAY WAS A BUTTON WHOSE ONLY NAME WAS ITS NUMBER (v583) — ⚠️ **"12", with no month, no
+      // weekday and no word for whether it was chosen.** ⭐ The name is the date a person says, and the
+      // chosen day says so in `aria-pressed`.
+      const dayName = fmtDay(new Date(`${iso}T00:00:00`));
       if (open || named || askable || closed) {
         return el("button", {
           class: cls + (open || askable || closed ? " tappable" : "") + (named ? " tippable" : ""),
+          "aria-label": full ? `${dayName}, ${t("soldOut")}` : dayName,
+          "aria-pressed": isSel ? "true" : "false",
+          dataset: { iso },
           onclick: () => {
             if (named) tipIso = iso;
             if (open) { selected = iso; dayPicked = true; } // their own tap (v434)
@@ -3159,6 +3260,7 @@ function clearFieldMarks() {
             // both, because a day she posts is not askable.
             missIso = askable || closed ? iso : null;
             missClosed = closed;
+            focusIso = iso;
             // Rebuild the grid + menu together so the chosen day and the quantities
             // the customer chose are re-checked against this day's availability.
             rerender();
@@ -3209,6 +3311,17 @@ function clearFieldMarks() {
         // The answer to a tap the grid could not act on, last because it is the
         // reply to whatever the customer just did.
         missNote(specs)));
+    // ⚠️⚠️ AND THE DAY THE CUSTOMER TAPPED TAKES THE KEYBOARD BACK (v593). ⚠️ `replaceChildren` removed the
+    // cell that had focus — ⚠️ **it fell to the body and the next Tab started at the top of the shop.** ⭐ The
+    // rebuilt cell for the same date is focused, without scrolling.
+    if (focusIso) {
+      const want = focusIso;
+      focusIso = null;
+      const node = dateWrap.querySelector && dateWrap.querySelector(`[data-iso="${want}"]`);
+      if (node && typeof node.focus === "function") {
+        try { node.focus({ preventScroll: true }); } catch { node.focus(); }
+      }
+    }
   };
 
   // "Sun, 20 Sep is not a posting day — please pick a green day." for a day she
@@ -3452,6 +3565,7 @@ function clearFieldMarks() {
   // exactly the kind of half-covered thing that is hard to notice.
   let drawnDay = "";
   const rerender = () => {
+    todayKey = dateKey(new Date());
     dates = resolveDates(upcomingDates(CONFIG), dayRows, dateKey(new Date()))
       .filter((d) => isOpen(CONFIG, d));
     // Fix the cart first so the calendar/menu repaint with honest quantities: an
@@ -3459,6 +3573,13 @@ function clearFieldMarks() {
     // asked for) since the last refresh or since they picked this day.
     reconcileCart();
     buildCalendar();
+    // ⚠️⚠️ AND THE ANSWER BOX IS REPAINTED FROM THE SAME LIST (v590) — after `buildCalendar`, because that is
+    // where `dates` and `avail` have just settled. ⭐ A day that has closed, sold out or been removed can no
+    // longer go on being named under a deadline that already passed.
+    paintDayAnswer(CONFIG, cutoffText(CONFIG.cutoff), firstOpenSpec(dates, avail),
+      Array.isArray(dayRows) && dayRows.length
+        ? dayRows.some((r) => r && r.date === todayKey)
+        : undefined);
     renderMenu();
     // ⚠️ LAST, and here rather than anywhere else, because EVERYTHING funnels through `rerender`: the day
     // tapped, the menu rebuilt, the 30-second refresh, the availability arriving. One call site covers
@@ -3745,7 +3866,9 @@ function clearFieldMarks() {
     for (const [n, q] of cart) {
       const p = CONFIG.products.find((x) => x.name === n);
       if (!p) continue;
-      const line = { name: n, qty: q, price: p.price };
+      // ⚠️ THE PRICE IS A MONEY AMOUNT, SO IT IS KEPT TO THE CENT (v577) — a 3-decimal product price shown
+      // as "RM0.01" and stored as 0.005 made one sale carry two different totals on paper.
+      const line = { name: n, qty: q, price: Math.round(Number(p.price) * 100) / 100 };
       // The customer's own words for this item (v236), when they wrote any. The
       // key is written only when there IS something to send, so an order with no
       // notes posts byte-for-byte the payload this page has always posted — the
@@ -3792,9 +3915,14 @@ function clearFieldMarks() {
       refuseAtFirstMissing();
       return;
     }
-    // ⚠️ UNREACHABLE IN PRACTICE — a bake day is chosen FOR him on load (v434) — and kept anyway so that a
-    // day ever going missing cannot turn into a crash on `new Date("T00:00:00")` further down.
-    if (!selected) return;
+    // ⚠️⚠️ NO DAY TO ORDER FOR MUST BE SAID, NOT SWALLOWED (v592). ⚠️ With every upcoming day full or removed,
+    // `selected` is null — and this was a SILENT return: ⚠️ **a customer with a full basket pressed Place
+    // order and nothing at all happened — no message, no scroll, no order.** ⭐ The day step refuses, in the
+    // all-days-full words.
+    if (!selected) {
+      sayStepFirst("needDayTitle", "needDayBody", "step1", t("noOpenDates"));
+      return;
+    }
     // ★ AND HIS NAME IS ASKED FOR BEFORE HIS NUMBER, because the page asks them in that order (v452). It is
     // REQUIRED — she decided it: without it an order has no name on it, and she confirms every order by hand.
     const nameInput = document.getElementById("name-input");
@@ -3819,6 +3947,14 @@ function clearFieldMarks() {
     if (!whatsapp) {
       clearFieldMarks();
       markField(waInput, "confirmAddWaTitle", "confirmAddWaBody");
+      return;
+    }
+    // ⚠️⚠️ AND A NUMBER THAT CANNOT BE ANSWERED IS REFUSED AT THE SAME BOX (v565). ⭐ Her rule that the
+    // press is never disabled holds — it answers, in the same red edge and the same blink, because a
+    // one-digit number is a typo the customer can fix in a second, and the order is useless without it.
+    if (!waPlausible(whatsapp)) {
+      clearFieldMarks();
+      markField(waInput, "confirmAddWaShape");
       return;
     }
     // Posting is the default way to receive an order, so a full postal address
@@ -4223,7 +4359,8 @@ function journeyEl(row) {
     if (i === PAID_AT) return paidDone;          // Paid: after the Paid button
     return true;                                 // Preparing/Packed/Delivered: on selection
   });
-  const root = el("div", { class: "tj", "aria-label": "Order status journey" });
+  // ⚠️ English only until v565 — the dictionary carries it in all three languages now.
+  const root = el("div", { class: "tj", role: "group", "aria-label": t("journeyAria") });
   let live = false; // the first step still to do is the one that flashes
   JOURNEY.forEach(([id, labelKey], i) => {
     const skipped = i === PAID_AT && paidSkipped;
@@ -4299,6 +4436,91 @@ const TRIP_WORDS = {
 // removed rather than left unreachable: a helper that would compute a wrong figure is a
 // trap for whoever wires it up next.
 
+// One row of the customer's money block (v277): the words on the left, the figure flush
+// right, so the figures form a single column the eye can add up the way it does on a
+// receipt. Her report, 2 Oct 2026: "the format still not as clear as a receipt, the
+// money have to align up ... line up in one column".
+//
+// The row is CUT OUT OF THE TRANSLATED SENTENCE rather than built from a second set of
+// label strings. Every money label in store-lang.js already writes its figure as %1 (and
+// a promo's code as %1 with its money as %2), so splitting on the placeholder means a
+// translation edited in one place cannot leave this card reading a different word from
+// the message. The punctuation that joined the two halves is dropped — a receipt has no
+// colon — and a `-` written in front of the figure stays with the figure, because the
+// sign belongs to the money and not to the words.
+function moneyRow(tpl, figures, cls) {
+  const n = figures.length;
+  const cut = tpl.indexOf(`%${n}`);
+  let label = cut === -1 ? tpl : tpl.slice(0, cut);
+  // Anything written AFTER the figure is a rider on it, not part of the label — the COD
+  // charge is the only one, and it has to say where the money goes.
+  const tail = (cut === -1 ? "" : tpl.slice(cut + 2)).trim().replace(/^[-–—]\s*/, "");
+  // Any placeholder before the figure belongs to the WORDS — a promo's code.
+  for (let i = 1; i < n; i++) label = label.split(`%${i}`).join(String(figures[i - 1]));
+  const sign = /[-–—]\s*$/.test(label) ? "-" : "";
+  label = label.replace(/[\s:：\-–—]+$/, "");
+  return el("p", { class: `money-row${cls ? ` ${cls}` : ""}` },
+    el("span", { class: "money-label" }, tail ? `${label} — ${tail}` : label),
+    el("span", { class: "money-val" }, sign + String(figures[n - 1])));
+}
+
+// The money, as the same lines the customer's WhatsApp message carries (v199, 25 Sep
+// 2026): what they ordered, its subtotal, the courier's charge when there is one, and the
+// total — so the card and the message cannot be read side by side and disagree.
+//
+// The subtotal has to be worked out here rather than read, because only the total is
+// published as a figure the card can print: a charge the CUSTOMER bears is inside that
+// total UNLESS the courier collects it at the door, so the goods are the total less that
+// part. `courier_fee` is the whole charge either way, which is why the COD flag decides
+// whether it comes off.
+//
+// A total that cannot be read as a number falls back to the single line this card has
+// always drawn.
+function moneyEls(row) {
+  const read = readMoney(row && row.total);
+  const items = String((row && row.items) || "");
+  if (!read) return [el("p", {}, `${items} — ${String((row && row.total) || "")}`)];
+  const fee = Number(row && row.courier_fee) || 0;
+  const inside = fee > 0 && !(row && row.courier_cod) ? fee : 0;
+  // The code, and what it took off. Published as an amount rather than worked out here,
+  // because a code she has since deleted is no longer in the published list and would
+  // leave the card unable to price an order it is showing (v272).
+  const off = Number(row && row.promo_rm) || 0;
+  const code = String((row && row.promo_code) || "").trim();
+  const rows = [
+    // The subtotal is the total less the charge inside it, and ADD BACK the discount —
+    // the published total is already net of the promo, so without this the goods would
+    // be printed RM10 short of what they cost.
+    moneyRow(t("itemsTotal"), [moneyText(read.sym, read.n - inside + off)]),
+  ];
+  if (fee > 0) {
+    rows.push(moneyRow(t(row.courier_cod ? "courierCod" : "courierCharge"),
+      [moneyText(read.sym, fee)], "track-fee"));
+  }
+  if (off > 0) {
+    // ★ A DISCOUNT WITH NO CODE IS THE BRING-A-FRIEND ONE (v323). The app refuses to let a
+    // promo code be labelled without a name, so `off > 0 && !code` can only be the friend's
+    // first-order discount — and it gets its own words rather than printing "Promo : -RM3".
+    // Until this the card showed the LOWER TOTAL with nothing saying why, which is the one
+    // thing this app never lets a figure do.
+    rows.push(code
+      ? moneyRow(t("promoLine"), [code, moneyText(read.sym, off)], "track-promo")
+      // ⚠️⚠️ AND WHICH ONE IT WAS (v571). ⭐ A referrer spending the reward they EARNED was told it was a
+      // coupon somebody sent them — the figures were right and the words were about a different person.
+      // ⚠️ A card published before this carries no role and reads exactly as it did.
+      : moneyRow(t(String(row.promo_role || "") === "reward" ? "promoReward" : "promoFriend"),
+          [moneyText(read.sym, off)], "track-promo"));
+  }
+  rows.push(moneyRow(t("trkTotal"), [moneyText(read.sym, read.n)], "track-total"));
+  return [
+    // The goods themselves, under the label the message uses, so the list above a stack
+    // of figures is unmistakably what those figures are about.
+    el("p", {}, sub(t("trkItems"), items)),
+    // The workings are muted and the total is not: the same reading order the message
+    // gives with a blank line and bold, done here the way a page does it.
+    el("div", { class: "money" }, ...rows),
+  ].filter(Boolean);
+}
 
 function tripEls(row) {
   const out = [];
@@ -4342,6 +4564,7 @@ function paintTrack() {
   if (kind !== "row") {
     const text = kind === "enter" ? t("trackEnter")
       : kind === "looking" ? t("trackLooking")
+      : kind === "needPhone" ? t("trackNeedPhone")
       : kind === "notfound" ? sub(t("trackNotFound"), code)
       : t("trackUnavailable");
     box.replaceChildren(el("p", { class: "track-note" }, text));
@@ -4420,11 +4643,21 @@ function paintTrack() {
   box.replaceChildren(...kids.filter(Boolean));
 }
 
-export async function trackOrder(code) {
+export async function trackOrder(code, phone = "") {
   if (!document.getElementById("track-result")) return;
   const clean = String(code || "").trim().replace(/^#/, "").toUpperCase();
   if (!clean) {
     lastTrack = { kind: "enter", code: "" };
+    return paintTrack();
+  }
+  // ★★★ AND THE PHONE THE ORDER WAS PLACED WITH (v558) — the SECOND key.
+  // ⚠️⚠️ A six-character code is about 16.7 million values and this lookup is open to anyone. At a few
+  // hundred orders a stranger making requests could reach a real order and read **that customer's name,
+  // delivery address and driver's phone.** ⭐ The phone is not published anywhere public, so a guess must
+  // now know BOTH. ⭐ Digits only, so 012-345 6789 and 60123456789 are the same number.
+  const digits = String(phone || "").replace(/[^0-9]/g, "");
+  if (!digits) {
+    lastTrack = { kind: "needPhone", code: clean };
     return paintTrack();
   }
   const sb = CONFIG.supabase;
@@ -4463,10 +4696,18 @@ export async function trackOrder(code) {
     const res = await fetch(`${base}/rest/v1/rpc/track_order`, {
       method: "POST",
       headers: { apikey: sb.anonKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ p_code: clean }),
+      body: JSON.stringify({ p_code: clean, p_phone: digits }),
       cache: "no-store",
     });
-    const rows = res.ok ? await res.json() : null;
+    // ⚠️⚠️ A FAILED LOOK-UP IS NOT "NO SUCH ORDER" (v595). ⚠️ A 404 (SQL not run), a 500 or a 429 all read as
+    // "We couldn't find order #X with that phone number" — ⚠️ **the customer was blamed and retried for ever.** ⭐
+    // The shop says the service is unavailable, as it already does when the request throws.
+    if (!res.ok) {
+      lastTrack = { kind: "unavailable", code: clean };
+      paintTrack();
+      return;
+    }
+    const rows = await res.json().catch(() => null);
     const row = Array.isArray(rows) && rows[0];
     lastTrack = row ? { kind: "row", code: clean, row } : { kind: "notfound", code: clean };
     paintTrack();
@@ -4553,7 +4794,14 @@ function renderPointList(wrap, total = 0) {
   // ⚠️ AND THE CARD'S OWN FOLD IS NOT DECIDED HERE (v412) — `refreshPointList` owns it, because it
   // is about the METHOD and this function is about the places. Two places deciding one thing is how
   // they come to disagree.
-  if (!points.length) { list.replaceChildren(); return; }
+  if (!points.length) {
+    // ⚠️⚠️ NO POINTS MEANS NO CHOSEN POINT (v596). ⚠️ This returned before the "a choice no longer open falls
+    // away" rule, so a customer kept "Sg Ara" after she deleted her last Point and the order still named it.
+    wrap._pointId = "";
+    wrap._pointName = "";
+    list.replaceChildren();
+    return;
+  }
   // The Point she marked as the kitchen, if she has one. ⚠️ Read from the published list rather
   // than assumed: an older storefront payload predates the flag and simply has no marked kitchen,
   // which is exactly the fallback case below.
@@ -4570,7 +4818,11 @@ function renderPointList(wrap, total = 0) {
       // from v410 unnoticed — **a wrong class with no styling is a wrong class nobody sees.** A row
       // is a row because it HAS an id.
       if (!b || !b.classList || !b.dataset || b.dataset.pointId === undefined) continue;
-      b.classList.toggle("active", b.dataset.pointId === id);
+      const on = b.dataset.pointId === id;
+      b.classList.toggle("active", on);
+      // ⚠️⚠️ THE CHOSEN PLACE WAS SAID BY COLOUR ALONE (v583). ⭐ `aria-pressed` is the same fact in words,
+      // so a screen reader says which place is chosen.
+      b.setAttribute("aria-pressed", on ? "true" : "false");
     }
     // ★★ AND THE INSTRUCTION GOES THE MOMENT HE PICKS ONE — HERE, not only in the repaint (v415).
     // ⚠️⚠️ THIS IS THE ONLY PLACE THAT KNOWS A PLACE WAS JUST CHOSEN, and `refreshPointList` does NOT
@@ -4633,6 +4885,7 @@ function renderPointList(wrap, total = 0) {
     const closed = short || off;
     const b = el("button", {
       class: `point-opt${closed ? (off ? " off" : " short") : ""}`, type: "button", "data-point-id": id,
+      "aria-pressed": "false",
       onclick: () => {
         if (closed) { flashRow(b); return; }
         // ★★ THE PLACE TRAVELS WITH THE CHANGE (v436). ⚠️ It used to be chosen FIRST and the way
@@ -4867,27 +5120,51 @@ function askSwitch({ title, body, yes, no }, onGo) {
   bEl.textContent = body;
   keep.textContent = no;
   go.textContent = yes;
+  // ⚠️⚠️ THE QUESTION HOLDS THE KEYBOARD AND HANDS IT BACK (v591). ⚠️ The card claims `aria-modal` but Tab
+  // walked into the shop behind it and focus never returned to the control that asked — ⚠️ **a keyboard
+  // customer was left at the top of the page after answering.** ⭐ The safe answer takes focus first, Tab
+  // cycles the two answers, and the opener gets the keyboard back.
+  const opener = (typeof document !== "undefined" && document.activeElement) || null;
   scrim.hidden = false;
+  try { keep.focus({ preventScroll: true }); } catch { /* no focus in a shim */ }
 
-  const close = () => {
+  const restore = () => {
+    try { if (opener && opener.focus && opener.isConnected !== false) opener.focus({ preventScroll: true }); } catch { /* gone */ }
+  };
+  const close = ({ hand = true } = {}) => {
     scrim.hidden = true;
     scrim.removeEventListener("click", onScrim);
     document.removeEventListener("keydown", onKey);
     keep.removeEventListener("click", onKeep);
     go.removeEventListener("click", onGoPress);
+    if (hand) restore();
   };
   // ⚠️ "AWAY" IS THE DARK AREA ITSELF — a press on the CARD must not close it, or a customer
   // aiming at a button would dismiss the question with a near miss.
   function onScrim(e) { if (e.target === scrim) close(); }
-  function onKey(e) { if (e.key === "Escape") close(); }
+  function onKey(e) {
+    if (e.key === "Escape") { e.preventDefault(); close(); return; }
+    if (e.key !== "Tab") return;
+    e.preventDefault();
+    const list = [keep, go];
+    const i = list.indexOf(document.activeElement);
+    const at = e.shiftKey
+      ? (i <= 0 ? list.length - 1 : i - 1)
+      : (i === list.length - 1 || i < 0 ? 0 : i + 1);
+    try { list[at].focus({ preventScroll: true }); } catch { /* no focus in a shim */ }
+  }
   function onKeep() { close(); }
-  function onGoPress() { close(); onGo(); }
+  // ⚠️⚠️ THE ACTION RUNS BEFORE FOCUS IS HANDED BACK (v598). ⚠️ `close()` focused the Place row, then the
+  // change rebuilt the list and removed it — ⚠️ **focus fell to the body mid-checkout.** ⭐ Close, act, restore.
+  function onGoPress() { close({ hand: false }); try { onGo(); } finally { restore(); } }
 
   scrim.addEventListener("click", onScrim);
   document.addEventListener("keydown", onKey);
   keep.addEventListener("click", onKeep);
   go.addEventListener("click", onGoPress);
-  if (go.focus) go.focus();
+  // ⚠️⚠️ THE SAFE ANSWER KEEPS THE KEYBOARD (v595). ⚠️ This line focused the DESTRUCTIVE "Change" button,
+  // overriding the safe focus above — ⚠️ **Enter/Space straight after the question cleared the customer's
+  // address and place.** ⭐ The keep button was focused on open; nothing else takes it.
 }
 
 // Wire the Self collect / Courier picker. The choice is stored on the wrapper node so the
@@ -4918,8 +5195,11 @@ function wireFulfillment() {
     // decision and the thing it decides. See .seg-opt in app.css.
     for (const b of buttons) {
       const card = b.closest ? b.closest(".seg-opt") : null;
-      if (card) card.classList.toggle("active", b.dataset.fulfillment === value);
-      else b.classList.toggle("active", b.dataset.fulfillment === value);
+      const on = b.dataset.fulfillment === value;
+      if (card) card.classList.toggle("active", on);
+      else b.classList.toggle("active", on);
+      // ⚠️ AND THE CHOSEN WAY IS SAID IN WORDS TOO (v583) — colour alone tells a screen reader nothing.
+      if (b.setAttribute) b.setAttribute("aria-pressed", on ? "true" : "false");
     }
     refreshPointList();
   };
@@ -5500,11 +5780,14 @@ function revealTrack() {
 
 function wireTrack() {
   const input = document.getElementById("track-input");
+  const phoneInput = document.getElementById("track-phone");
   const btn = document.getElementById("track-btn");
   if (!input || !btn) return;
-  const go = () => trackOrder(input.value);
+  const go = () => trackOrder(input.value, phoneInput ? phoneInput.value : "");
   btn.addEventListener("click", go);
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+  // ⚠️ Enter in the phone box looks the order up too — the customer's hands are already there.
+  if (phoneInput) phoneInput.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
   // The confirmation link opens this page as /store/?track=CODE — prefill and
   // look the order up right away so the customer sees their status instantly.
   if (typeof location !== "undefined" && location.search) {
@@ -5512,7 +5795,12 @@ function wireTrack() {
     const code = params.get("track");
     if (code) {
       input.value = code.replace(/^#/, "").toUpperCase();
-      trackOrder(code);
+      // ⚠️⚠️ THE LINK NO LONGER OPENS THE ORDER ON THE CODE ALONE (v558). ⭐ It fills the number in and puts
+      // the cursor in the phone box: the customer still has ONE more thing to type, and that one thing is
+      // what keeps a stranger from reading their address. ⚠️ The link still does its job — it lands them on
+      // the card with half the answer already written.
+      trackOrder(code, phoneInput ? phoneInput.value : "");
+      if (phoneInput) phoneInput.focus();
       revealTrack(); // the link she tapped IS the card she should land on
       // ★★ AND THE CODE COMES OFF THE ADDRESS BAR (v324). Her report: __"when a customer track
       // his order, his store version became associated with that order code."__
@@ -5574,7 +5862,12 @@ export function setLang(next) {
 // a real browser reaches this block (Node tests have no documentElement).
 if (typeof document !== "undefined" && document.documentElement) {
   const pills = Array.from(document.querySelectorAll("#lang-switch .lang-pill"));
-  paintPillsHook = (l) => pills.forEach((b) => b.classList.toggle("is-on", b.dataset.lang === l));
+  // ⭐ AND THE CHOSEN LANGUAGE WITH IT (v588) — the same fact in words, not only in colour.
+  paintPillsHook = (l) => pills.forEach((b) => {
+    const on = b.dataset.lang === l;
+    b.classList.toggle("is-on", on);
+    if (b.setAttribute) b.setAttribute("aria-pressed", String(on));
+  });
   applyTo(document, STORE, loadLang());
   paintPillsHook(loadLang());
   pills.forEach((b) => b.addEventListener("click", () => {
@@ -5640,8 +5933,38 @@ if (typeof document !== "undefined" && document.documentElement) {
   // back — so if this press did nothing, the remembered flag is what turns the second sight of this
   // notice into the honest "close the page completely and open it again" instead of **the same
   // button quietly doing nothing a second time.**
+  // ⚠️⚠️ RELOAD STARTS THE PAGE AGAIN: the bake day, the basket and every box are gone. ⭐ Measured: a
+  // customer who had picked a day, added a loaf and typed his name, number and address lost all of it to
+  // one tap of the amber strip — **nothing asked, and nothing was recoverable.** ⚠️ The strip is offered
+  // while he is mid-order by design, so the warning is not a nicety.
+  // ⭐ ONE press warns and says what will go; a SECOND press updates, so the offer still works and nobody
+  // is trapped. ⭐ Only when there is something to lose — an empty page reloads on the first press.
+  let buildWarned = false;
+  function orderInProgress() {
+    const typed = ["name-input", "whatsapp-input", "address-input", "note-input"].some((id) => {
+      const n = typeof document !== "undefined" ? document.getElementById(id) : null;
+      return !!(n && String(n.value || "").trim());
+    });
+    if (typed) return true;
+    const count = typeof document !== "undefined" ? document.getElementById("bar-count") : null;
+    const n = Number(String((count && count.textContent) || "").replace(/[^\d]+/g, ""));
+    return Number.isFinite(n) && n > 0;
+  }
+  function warnBuildOnce(btn) {
+    if (buildWarned || !orderInProgress()) return false;
+    buildWarned = true;
+    showConfirm([
+      el("p", { class: "confirm-title" }, t("buildWarnTitle")),
+      el("p", { class: "confirm-body" }, t("buildWarnBody")),
+    ], "warn");
+    try { btn.textContent = t("buildAnyway"); } catch { /* a read-only button: the press still warned */ }
+    return true;
+  }
+
   const buildBtn = document.getElementById("build-reload");
+  // ★★★ AND IT WARNS BEFORE IT THROWS AN ORDER AWAY (v555) — see `warnBuildOnce` below.
   if (buildBtn) buildBtn.addEventListener("click", () => {
+    if (warnBuildOnce(buildBtn)) return;
     rememberBuildTried();
     paintBuildNotice();
     if (typeof location !== "undefined" && typeof location.reload === "function") location.reload();

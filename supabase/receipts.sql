@@ -41,6 +41,24 @@ create table if not exists receipt_numbers (
 -- exactly what the old boolean meant, so a refund made before v370 still lands right.
 alter table receipt_numbers add column if not exists refunded_amount numeric;
 
+-- ★★★ WHAT THE ORDER WAS WORTH, STORED WHEN THE NUMBER IS DRAWN (v585). ⚠️⚠️ `refund_receipt` refused only
+-- zero and negatives — ⚠️ **any signed-in client could write a refund of RM 999,999**, and nothing in this
+-- table knew what the sale had been. ⭐ The bill is written here, at the one moment the app knows it (the
+-- money was just recorded), so the refund has a real ceiling. ⚠️ A row drawn before this carries NULL and
+-- falls back to the flat ceiling below — old receipts cannot gain a bill they never had.
+alter table receipt_numbers add column if not exists bill_rm numeric;
+-- ⚠️⚠️ AND THE BILL ITSELF IS BOUNDED (v587). ⚠️ It is written from what the CALLER says the order was worth,
+-- and it is the ceiling a refund is measured against — ⚠️ **so a caller claiming a bill of RM 999,999 made the
+-- RM 999,999 refund this file exists to refuse pass.** ⭐ A check constraint is the one door every path must
+-- walk through, and RM 20,000 is far above anything this bakery sells.
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'receipt_numbers_bill_rm_sane') then
+    alter table receipt_numbers add constraint receipt_numbers_bill_rm_sane
+      check (bill_rm is null or (bill_rm > 0 and bill_rm <= 20000));
+  end if;
+end $$;
+
 -- ⚠️ THE SEQUENCE IS THE COUNTER, AND IT IS THE DATABASE'S. `nextval` is atomic, so
 -- two phones claiming at the same instant cannot draw the same number, and no
 -- number is ever handed out twice.
@@ -55,8 +73,11 @@ create sequence if not exists receipt_number_seq start 1;
 -- takes the grant with it, which is why the grant at the foot of this file is repeated after
 -- every create rather than assumed.
 drop function if exists public.claim_receipt_number(text);
+-- ⚠️ AND THE TWO-ARGUMENT SIGNATURE A PREVIOUS RUN OF THIS FILE MAY HAVE MADE (v585) — the same lesson
+-- as `refund_receipt`: drop every shape before creating, or the file fails on its second run.
+drop function if exists public.claim_receipt_number(text, numeric);
 
-create function public.claim_receipt_number(p_order_code text)
+create function public.claim_receipt_number(p_order_code text, p_bill numeric default null)
 returns table (number bigint, refunded_at timestamptz, refunded_amount numeric)
 language plpgsql
 security definer
@@ -93,8 +114,9 @@ begin
   if v_num is null then
     -- The insert is now the only writer for this code, so it always lands. `on conflict`
     -- stays as the belt-and-braces guard it always was — it should now never fire.
-    insert into receipt_numbers (order_code, number)
-      values (v_code, nextval('receipt_number_seq'))
+    insert into receipt_numbers (order_code, number, bill_rm)
+      values (v_code, nextval('receipt_number_seq'),
+        case when p_bill is not null and p_bill > 0 and p_bill <= 20000 then p_bill end)
       on conflict (order_code) do nothing
       returning receipt_numbers.number into v_num;
 
@@ -102,6 +124,12 @@ begin
       select r.number, r.refunded_at, r.refunded_amount into v_num, v_ref, v_amt
         from receipt_numbers r where r.order_code = v_code;
     end if;
+  end if;
+
+  -- ⭐ A LATER CLAIM MAY FILL A BILL AN EARLIER ONE DID NOT KNOW. ⚠️ It is never overwritten: the first
+  -- recorded bill is the sale's, and a later one would be a figure the sale has since moved away from.
+  if p_bill is not null and p_bill > 0 and p_bill <= 20000 then
+    update receipt_numbers set bill_rm = p_bill where order_code = v_code and bill_rm is null;
   end if;
 
   if v_num is null then
@@ -124,6 +152,13 @@ $$;
 -- ⚠️ THE OLD ONE-ARGUMENT FUNCTION IS DROPPED FIRST. A two-argument version with a default would
 -- otherwise leave BOTH callable, and Postgres would refuse to choose between them.
 drop function if exists public.refund_receipt(text);
+-- ⚠️⚠️ AND THE TWO-ARGUMENT ONE A PREVIOUS RUN CREATED (v557). ⭐ The line above only removes the OLD
+-- one-argument function — so on a file that had already been run since v370, `create function` collided
+-- with the (text, numeric) version that was there, and Supabase answered: ⚠️
+--   ERROR: 42723: function "refund_receipt" already exists with same argument types
+-- ⭐ Both signatures are dropped now, so this file is safe to run again — which is what every step in
+-- this folder claims, and what this one did not do.
+drop function if exists public.refund_receipt(text, numeric);
 
 create function public.refund_receipt(p_order_code text, p_amount numeric default null)
 returns bigint
@@ -136,6 +171,25 @@ declare
   v_num  bigint;
 begin
   if v_code = '' then
+    return null;
+  end if;
+  -- ⚠️⚠️ A REFUND AMOUNT IS CHECKED HERE TOO, NOT ONLY IN THE APP (v557). ⭐ The refund dialog clamps to
+  -- the customer's bill, but the FUNCTION trusted whatever it was handed — so any signed-in client could
+  -- write `refunded_amount = 999999`, the register would print "refunded RM 999,999.00", and her other
+  -- phone would adopt that figure as the size of the refund.
+  -- ⚠️ Zero or negative is not a refund: nothing is written, and the null answer tells the caller so.
+  -- ⚠️ The true ceiling is the order's own bill, which this table does not hold — the app enforces that,
+  -- and this function cannot see it. What it can refuse, it refuses.
+  if p_amount is not null and p_amount <= 0 then
+    return null;
+  end if;
+  -- ★★★ AND AN UPPER BOUND (v585). ⚠️⚠️ The app clamps to the customer's bill; this function did not — ⚠️ **any
+  -- signed-in client could write a refund of RM 999,999, and the register would print it as the size of
+  -- the refund.** ⭐ The ceiling is the bill stored when the number was drawn; a receipt drawn before that
+  -- column existed, or claimed without one, falls back to the SAME RM 20,000 the column itself may not exceed
+  -- (v587) — ⚠️ so the ceiling cannot be RAISED by a caller, and 999,999 is still "no".
+  if p_amount is not null
+     and p_amount > coalesce((select r.bill_rm from receipt_numbers r where r.order_code = v_code), 20000) then
     return null;
   end if;
   update receipt_numbers
@@ -184,13 +238,28 @@ $$;
 -- ⚠️ THE BACKOFFICE ONLY, AND ONLY SIGNED IN. These are the bakery's own books: the
 -- public shop must never be able to draw a receipt number, or anyone who read the
 -- shop's page could burn through the sequence.
-revoke all on function public.claim_receipt_number(text) from public;
+-- ⚠️⚠️ THE CLAIM NOW TAKES TWO ARGUMENTS (v585), AND THESE LINES MUST NAME THAT EXACTLY. ⚠️ Naming the old
+-- one-argument signature made the whole file fail with **`ERROR: 42883: function public.claim_receipt_number(text)
+-- does not exist`** — the one-argument function had already been dropped at the top of the file, and the revoke
+-- had nothing to act on. ⭐ A grant or a revoke that names a signature nobody created is not a no-op: it is an
+-- error, and it stops the file before the lines below it.
+revoke all on function public.claim_receipt_number(text, numeric) from public;
 revoke all on function public.refund_receipt(text, numeric) from public;
 revoke all on function public.unrefund_receipt(text) from public;
+-- ⚠️⚠️ AND FROM `anon` ITSELF, WHICH `revoke ... from public` DOES NOT DO (v564). ⭐ Supabase's default
+-- privileges grant EXECUTE on every new function in `public` DIRECTLY to `anon`, `authenticated` and
+-- `service_role` — so taking it away from PUBLIC leaves anon's own grant in place, and these three
+-- SECURITY DEFINER functions have no check of their own to fall back on. ⚠️ Anyone holding the public
+-- anon key (it ships in the shop, by design) could then draw receipt numbers, mark an order refunded, or
+-- read a code's refund state. ⭐ If anon never had the grant, these lines do nothing; if it did, they
+-- close it. Either way the answer is the same three words.
+revoke all on function public.claim_receipt_number(text, numeric) from anon;
+revoke all on function public.refund_receipt(text, numeric) from anon;
+revoke all on function public.unrefund_receipt(text) from anon;
 -- ⚠️ THE GRANT MUST MATCH THE SIGNATURE EXACTLY, and v370 changed two of them: `claim` returns a
 -- wider row and `refund` takes an amount. A grant that names the OLD signature silently grants
 -- nothing, and the function is then callable by nobody.
-grant execute on function public.claim_receipt_number(text) to authenticated;
+grant execute on function public.claim_receipt_number(text, numeric) to authenticated;
 grant execute on function public.refund_receipt(text, numeric) to authenticated;
 grant execute on function public.unrefund_receipt(text) to authenticated;
 

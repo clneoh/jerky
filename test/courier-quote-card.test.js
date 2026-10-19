@@ -27,6 +27,7 @@
 
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 // ── the stand-in screen ───────────────────────────────────────────────────
 //
@@ -58,8 +59,8 @@ function createEl(tag) {
       return n;
     },
     append(...cs) {
-      for (const c of cs) if (c != null) {
-        const n = toNode(c);
+      for (const c of cs) {
+        const n = toNode(c == null ? { nodeType: 3, text: "null" } : c);
         this.children.push(n);
         if (n.nodeType === 1) n.parentNode = this;
       }
@@ -67,8 +68,8 @@ function createEl(tag) {
     replaceChildren(...cs) {
       for (const old of this.children) if (old && old.nodeType === 1) old.parentNode = null;
       this.children = [];
-      for (const c of cs) if (c != null) {
-        const n = toNode(c);
+      for (const c of cs) {
+        const n = toNode(c == null ? { nodeType: 3, text: "null" } : c);
         this.children.push(n);
         if (n.nodeType === 1) n.parentNode = this;
       }
@@ -653,4 +654,17 @@ test("★ the price is asked for the order's OWN day and pickup time — this ha
     lalamove.vehicles = realVehicles;
     lalamove.quote = realQuote;
   }
+});
+
+test("★★★ the price is never asked for a 10:00 pickup nobody set (v583)", () => {
+  // ⚠️⚠️ MEASURED: with no Pickup time on the order, the quote fell back to `settings.courier.dispatch`
+  // (10:00) — a key no screen has written since that box was taken away — ⚠️ **while the note promised the
+  // price was for the order's own Pickup time.** ⭐ Source-level, and named as such: the quote form is not
+  // driven by this file, and the rule is that the dead fallback must not come back.
+  const src = readFileSync(new URL("../admin/js/views/courier_quote.js", import.meta.url), "utf8");
+  // ⚠️ The CODE expression, not the word: the comment above `whenTime` names the dead key on purpose.
+  assert.doesNotMatch(src, /courier\s*\|\|\s*\{\}\)\s*\.dispatch/,
+    "★ the quote is pricing a 10:00 collection she never asked for");
+  assert.match(src, /no pickup time — the courier prices it as soon as possible/,
+    "★ the card does not say the pickup time is missing");
 });

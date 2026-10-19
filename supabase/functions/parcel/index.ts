@@ -40,7 +40,7 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import {
-  ACTION, EASYPARCEL_KEY, bodyFor, bookRequest, hostFor, notSetUpReason, orderRow, rateRow,
+  ACTION, EASYPARCEL_KEY, bodyFor, bookRequest, bookableCourierName, hostFor, notSetUpReason, orderRow, rateRow,
   RATE_EXCLUDE, readBalance, readOrder, readRates, readTracking, reasonIn, stateCode,
   type Box, type Party,
 } from "./easyparcel.ts";
@@ -84,6 +84,14 @@ async function ask(cfg: Config, action: string, params: Record<string, unknown>)
       signal: controller.signal,
     });
     const text = await res.text();
+    // ⚠️⚠️ A GATEWAY 5xx IS NOT A BUSINESS ANSWER (v595). ⚠️ Its JSON error body was read as "no order", a plain
+    // refusal under a booking that may already be accepted and charged. ⭐ 5xx = UNKNOWN; a 4xx body is a real
+    // answer and is read below.
+    if (res.status >= 500) {
+      console.error("[parcel] HTTP", res.status, "from", action);
+      return { ok: false, unknown: true,
+        reason: `EasyParcel answered HTTP ${res.status} — whether the booking was accepted is unknown.` };
+    }
     let parsed: unknown = null;
     try { parsed = JSON.parse(text); } catch { parsed = null; }
     if (parsed === null) {
@@ -91,15 +99,32 @@ async function ask(cfg: Config, action: string, params: Record<string, unknown>)
       // would give "Unexpected token <" as her reason, which is true and useless — so the
       // failure is named for what it is.
       console.error("[parcel] non-JSON reply from", action, res.status, text.slice(0, 200));
-      return { ok: false, reason: `EasyParcel answered with something that was not readable (HTTP ${res.status}).` };
+      // ⚠️⚠️ AN UNREADABLE REPLY TO A BOOKING IS UNKNOWN, NOT REFUSED (v589). ⚠️ Their host answers a
+      // fault with an HTML page AFTER it may already have accepted the order and charged the wallet — and
+      // this was reported as a plain failure, so the app's Book press stayed live under a parcel that may
+      // already exist. ⭐ The flag is what removes the press; the words alone never did.
+      return {
+        ok: false,
+        // Any status: a page that cannot be read says nothing about whether the order was accepted.
+        unknown: true,
+        reason: `EasyParcel answered with something that was not readable (HTTP ${res.status}).`,
+      };
     }
     return parsed as Record<string, unknown>;
   } catch (err) {
     if (err && (err.name === "AbortError" || err.code === 20)) {
-      return { ok: false, reason: "EasyParcel did not answer in time. Check your signal and try again." };
+      // ⚠️⚠️ A TIMED-OUT CALL HAS AN UNKNOWN OUTCOME, AND FOR A BOOKING THAT MEANS MONEY (v561).
+      // ⭐ Their host accepts the order and charges the wallet, then sits before answering — so "did not
+      // answer in time, try again" invited a SECOND booking and a SECOND charge. ⭐ `unknown` is the fact
+      // the button needs: it did not fail, it did not happen, nobody knows.
+      return { ok: false, unknown: true, reason: "EasyParcel did not answer in time. Check your signal and try again." };
     }
     console.error("[parcel] fetch failed:", err && (err.message || err));
-    return { ok: false, reason: "Couldn't reach EasyParcel." };
+    // ⚠️⚠️ AND A CONNECTION THAT DROPS AFTER THE REQUEST LEFT IS UNKNOWN TOO (v587). ⚠️ Only the timeout
+    // carried the flag, so a reset mid-book was reported as a plain refusal — ⚠️ **the Book press stayed live
+    // under a parcel that may already be booked and charged.** ⭐ Whether a failed send reached them is not
+    // knowable here, and for a booking that is exactly the unknown case.
+    return { ok: false, unknown: true, reason: "Couldn't reach EasyParcel." };
   } finally {
     clearTimeout(timer);
   }
@@ -180,6 +205,9 @@ Deno.serve(async (req) => {
   // time of packing the box.
   if (action === "balance") {
     const out = await ask(cfg, ACTION.balance, {});
+    // ⚠️⚠️ A SERVICE FAULT IS NOT "YOU HAVE NO MONEY" (v598). ⚠️ `readBalance` replaced a 5xx/timeout with "did
+    // not send a balance", which reads as a business answer. ⭐ Its own reason is passed through.
+    if (out.ok === false) return json({ ok: false, ...(out.unknown ? { unknown: true } : {}), reason: out.reason });
     return json(readBalance(out));
   }
 
@@ -201,6 +229,8 @@ Deno.serve(async (req) => {
       // with every price, which is a reply too big to send to a phone and of no use to her.
       exclude_fields: RATE_EXCLUDE,
     });
+    // ⚠️ AND THE SAME FOR A PRICE: a 503 is not "no courier offered a price" (v598).
+    if (out.ok === false) return json({ ok: false, ...(out.unknown ? { unknown: true } : {}), reason: out.reason });
     return json(readRates(out));
   }
 
@@ -208,11 +238,24 @@ Deno.serve(async (req) => {
   // ⚠️ THIS TAKES THE MONEY. It is the V3 endpoint, which creates the order AND pays for it
   // in one call, so there is no half-state where a draft exists that nobody paid for.
   if (action === "book") {
-    const courier = String(args.courier || "").trim();
+    // ⚠️⚠️ THE NAME SENT HERE MUST BE ONE THEIR BOOKING LIST CARRIES (v562). ⭐ The RATE reply calls the
+    // same courier "POSLAJU NATIONAL COURIER" while the BOOKING call documents "Poslaju", and their
+    // courier array is a FALLBACK ORDER — so an unmatched name can book a different courier at a
+    // different price. ⭐ `courierId` joins the two replies; a name match is the fallback.
+    const said = String(args.courier || "").trim();
+    const courier = bookableCourierName(said, args.courierId);
     const box = checkedBox(args.box);
     const pick = checkedParty(args.pick);
     const send = checkedParty(args.send);
-    if (!courier) return json({ ok: false, reason: "Choose which courier to book first." });
+    if (!said) return json({ ok: false, reason: "Choose which courier to book first." });
+    if (!courier) {
+      return json({
+        ok: false,
+        reason: `EasyParcel's booking list has no entry for "${said}", so this app cannot book it without `
+          + "guessing which courier and which price you would be charged. Book that one on easyparcel.com.my, "
+          + "and its consignment number can be typed into the tracking box here.",
+      });
+    }
     if (!box) return json({ ok: false, reason: "A parcel needs a weight before it can be booked." });
     if (!pick || !send) return json({ ok: false, reason: "The sender's and receiver's details both have to be finished before a parcel can be booked." });
     const order = orderRow({
@@ -225,7 +268,21 @@ Deno.serve(async (req) => {
       collectDate: String(args.collectDate || ""),
     });
     const out = await ask(cfg, ACTION.book, bookRequest({ courier, dropoff: !!args.dropoff, orders: [order] }));
-    return json(readOrder(out));
+    // ⚠️⚠️ AND WHEN THE CALL TIMED OUT, SAY THAT THE OUTCOME IS UNKNOWN — NEVER "TRY AGAIN" (v561).
+    // ⭐ This single call both creates the order and pays for it, so a lost reply can mean a parcel that is
+    // already booked and charged. ⭐ The app must not offer a second Book until she has looked.
+    if (out.unknown) {
+      return json({
+        ok: false,
+        unknown: true,
+        reason: "EasyParcel did not answer in time, so this app cannot tell whether the parcel was booked "
+          + "and charged. Open EasyParcel and look for it before booking again — a second Book may charge "
+          + "you twice.",
+      });
+    }
+    const bookedOut = readOrder(out);
+    // ⚠️ AND AN UNKNOWN OUTCOME KEEPS ITS FLAG THROUGH THIS DOOR (v598).
+    return json(bookedOut.ok ? bookedOut : { ...bookedOut, ...(bookedOut.unknown ? { unknown: true } : {}) });
   }
 
   // ── where it is ────────────────────────────────────────────────────────────
@@ -242,6 +299,14 @@ Deno.serve(async (req) => {
     const orderNo = String(args.orderNumber || "").trim();
     if (!orderNo) return json({ ok: false, reason: "There is no EasyParcel order number on that order yet." });
     const out = await ask(cfg, ACTION.orderStatus, { bulk: [{ order_no: orderNo }] });
+    // ⚠️⚠️ A CHECK THAT COULD NOT BE MADE MUST NOT REPORT SUCCESS (v587). ⚠️ `reasonIn` answers "" for a
+    // timed-out reply, so this branch fell through to `ok: true` with an empty status — ⚠️ **the one call whose
+    // job is to check a lost booking without rebooking said it had succeeded and carried no order.**
+    if (out.unknown) {
+      return json({ ok: false, unknown: true,
+        reason: "EasyParcel did not answer, so this app cannot tell whether the parcel was booked. Look in "
+          + "EasyParcel before booking again — a second Book may charge you twice." });
+    }
     const why = reasonIn(out, "EasyParcel could not look that order up.");
     if (why) return json({ ok: false, reason: why });
     return json({ ok: true, status: out });

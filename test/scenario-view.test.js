@@ -41,7 +41,7 @@ function createEl(tag) {
     // "did anything redraw?" passes without being able to fail.
     get firstChild() { return this.children[0] || null; },
     appendChild(c) { if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parent = this; } return c; },
-    append(...cs) { for (const c of cs) if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parent = this; } },
+    append(...cs) { for (const c of cs) { const n = c == null ? { nodeType: 3, text: "null" } : c; this.children.push(n); if (n.nodeType === 1) n.parent = this; } },
     // Faithful on purpose: the real `replaceChildren` does NOT skip a null the way
     // `el()` skips a null child — it converts every argument with String(), so a null
     // reaches the screen as the word "null". A shim that quietly dropped one would make

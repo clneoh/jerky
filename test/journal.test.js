@@ -21,10 +21,10 @@ function domShim() {
       _classes: new Set(), style: {}, value: "", checked: false, selected: false,
       disabled: false, hidden: false, _listeners: {}, parentNode: null,
       appendChild(c) { if (c != null) { this.children.push(c); c.parentNode = this; } return c; },
-      append(...cs) { for (const c of cs) if (c != null) { this.children.push(c); c.parentNode = this; } },
+      append(...cs) { for (const c of cs) { const n = c == null ? { nodeType: 3, text: "null" } : c; this.children.push(n); if (n.nodeType === 1) n.parentNode = this; } },
       replaceChildren(...cs) {
         this.children = [];
-        for (const c of cs) if (c != null) { this.children.push(c); c.parentNode = this; }
+        for (const c of cs) { const n = c == null ? { nodeType: 3, text: "null" } : c; this.children.push(n); if (n.nodeType === 1) n.parentNode = this; }
       },
       remove() {
         const p = this.parentNode;

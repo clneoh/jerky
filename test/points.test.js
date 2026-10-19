@@ -25,7 +25,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  DEFAULT_FEE_RM, addPoint, blankPoint, deletePoint, fulfillmentText, normalizePoint, collectionWindowText, orderPointName, pointAddressFor, pointById, pointPhoneText, pointPlace, pointPlaceText, pointMinOrder, pointProblem, pointShortfall, pointWindow, pointWindowText, pointsOf, activePoints, publishPoints, setPointPaused, setPointPlace, updatePoint, markKitchen, kitchenPoint, kitchenExempt,
+  DEFAULT_FEE_RM, addPoint, blankPoint, deletePoint, fulfillmentText, normalizePoint, collectionWindowText, orderPointName, ordersAtPoint, pointAddressFor, pointById, pointPhoneText, pointPlace, pointPlaceText, pointMinOrder, pointProblem, pointShortfall, pointWindow, pointWindowText, pointsOf, activePoints, publishPoints, setPointPaused, setPointPlace, updatePoint, markKitchen, kitchenPoint, kitchenExempt,
 } from "../admin/js/points.js";
 import { pointChoices } from "../admin/js/pointAreas.js";
 
@@ -35,6 +35,23 @@ function state(extra = {}) {
 
 const FEE = { name: "Farlim, Air Itam", address: "Lebuhraya Thean Teik, 11500 Air Itam",
   receiver: "Aunty Lim", phone: "012-345 6789", feeRM: 0.5 };
+
+// ── ★★★ AN ORDER IS NOT A ROW (v550) ─────────────────────────────────────────
+test("★★★ one customer with two items is ONE order collected at the Point", () => {
+  // ⚠️⚠️ THE FAULT: the Point's card counted ROWS. ⭐ A single customer with a two-item basket read
+  // **"2 orders"** on the card and **"2 orders have collected there"** on the delete warning. ⭐ Every item
+  // is its own row; the rest of the app groups rows into orders to count them.
+  const p = { id: "pt1", name: "Farlim" };
+  const orders = [
+    { id: "a1", groupId: "grp1", pointId: "pt1" },
+    { id: "a2", groupId: "grp1", pointId: "pt1" },
+    { id: "b1", groupId: "grp2", pointId: "pt1" },
+    { id: "c1", groupId: "grp3", pointId: "pt2" },
+  ];
+  assert.equal(ordersAtPoint(p, orders), 2,
+    "★ the Point counted ITEMS — **one customer with two items is one order collected, not two**");
+  assert.equal(ordersAtPoint(p, []), 0, "a Point with nothing collected reads nothing");
+});
 
 // ── the shape ────────────────────────────────────────────────────────────────
 

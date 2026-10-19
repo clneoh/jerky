@@ -6,7 +6,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addDays, todayISO, longDate, weekdayName } from "../admin/js/dates.js";
+import { addDays, todayISO, longDate, shortDate, weekdayName } from "../admin/js/dates.js";
 import { ordersFingerprint } from "../admin/js/bom.js";
 
 // --- DOM shim (po.test.js plus a getElementById registry so confirmDialog works) ---
@@ -17,8 +17,8 @@ function createEl(tag) {
     scrollTop: 0, hidden: false, _listeners: {},
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     appendChild(c) { if (c != null) this.children.push(c); return c; },
-    append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
-    replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) this.children.push(c); },
+    append(...cs) { for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
+    replaceChildren(...cs) { this.children = []; for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener() {},
     setAttribute(k, v) { this.attrs[k] = String(v); },
@@ -923,4 +923,17 @@ test("⚠️ the words are a PAIR: Buy and Not buying are the two answers to one
   const labels = walk(head).filter((n) => n.tagName === "BUTTON").map((b) => textOf(b).trim());
   assert.deepEqual(labels, ["Buy", "Not buying"],
     "⚠️ the two answers to 'did you buy at this shop' are not named as a pair");
+});
+
+
+// ⚠️⚠️ A MALFORMED DATE PRINTS NOTHING, NEVER "undefined, NaN undefined" (v596).
+test("★★★ a malformed date formatter answers an empty string, not NaN (v596)", () => {
+  for (const bad of ["18/09/2026", "2026-13-45", "", null, "abc", "2026-09",
+    "2026-02-31", "2026-04-31", "2026-02-29"]) {
+    assert.equal(longDate(bad), "", `longDate(${JSON.stringify(bad)}) printed something`);
+    assert.equal(shortDate(bad), "", `shortDate(${JSON.stringify(bad)}) printed something`);
+    assert.equal(weekdayName(bad), "", `weekdayName(${JSON.stringify(bad)}) printed something`);
+  }
+  assert.equal(longDate("2026-10-19"), "19 Oct 2026");
+  assert.equal(longDate("2024-02-29"), "29 Feb 2024", "a real leap day is still a date");
 });

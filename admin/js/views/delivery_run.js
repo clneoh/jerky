@@ -130,6 +130,14 @@ export function renderDeliveryRun(root, state, params) {
   let priced = null;    // { trip, quotes, failed, codes, stops }
   let compare = {};     // vehicle key -> { state, amounts, reason, done, total }
   let busy = false;
+  // ⚠️⚠️ A BOOKING WHOSE REPLY WAS LOST (v587) — the same fact the single-trip card keeps as `bookUnknown`.
+  // ⚠️ Without it a timed-out run read as an ordinary refusal, ⚠️ **the Book press came straight back, and the
+  // one press that books a second, charged trip was on screen.**
+  // ⚠️⚠️ AND IT STAYS TRUE ACROSS A REOPEN (v598). ⚠️ This was memory-only, so leaving the screen and coming
+  // back brought every Book press back under a trip whose outcome nobody knows — ⚠️ **a second charged trip.**
+  // ⭐ The order card's stamp (`courierUnknownAt`) is read when the run opens.
+  let bookUnknown = (state.orders || []).some((o) => o && o.courierUnknownAt
+    && (o.deliveryDateId === dayId || o.deliveryDate === dayId));
   const clocks = [];
   // ★★ WHOSE ORDER IS UNFOLDED (v342). Her ask: *"clicking a button inside the red ribbon, drop down its
   // full detail, as what is shown in edit order, get a delivery price."* It holds the STOP's row key, so
@@ -767,6 +775,11 @@ export function renderDeliveryRun(root, state, params) {
   // point is a new one she has just chosen and which therefore carries no old stamp at all.
   function keepPin(order, place, fromCustomer = false, road = "") {
     setDropPlace(state, order, place, fromCustomer ? "customer" : "hand", road);
+    // ★★★ A DOOR IS PART OF WHAT WAS PRICED (v551). ⚠️⚠️ `stale()` compared only WHICH rows were ticked,
+    // so switching a customer's door after pricing left the price standing — the row named the new door
+    // while **the trip was bought for the old one.** ⭐ Ticking a row, changing the day and changing the
+    // time all throw the price away; a door is the same kind of change.
+    priceAgain();
     save(state);
     maybeSync(state);
     paintList();
@@ -1131,7 +1144,7 @@ export function renderDeliveryRun(root, state, params) {
       // so the adapter's expiry sentence would only say it a third time. See paintPrices.
       whyRows.set(q, dead ? "" : whyBook);
       const why = liveJobProblem(tickedOrders()) || (stale() ? "moved" : "");
-      bookBtn.disabled = dead || !!whyBook || !!why || busy;
+      bookBtn.disabled = dead || !!whyBook || !!why || busy || bookUnknown;
       bookBtn.textContent = dead ? "Expired" : "Book this run";
       cmpBtn.disabled = dead || !!whyBook || !!why || busy;
     };
@@ -1270,6 +1283,18 @@ export function renderDeliveryRun(root, state, params) {
     const load = loadOf(state, groups);
     const cur = state.settings.currency;
     const amounts = runChargeAmounts(who, q.amount, originals, groups.length);
+    // ⚠️⚠️ A SHARED DOORSTEP CANNOT CARRY A PER-CUSTOMER PRICE (v551). ⭐ The courier is asked for ONE
+    // separate price per STOP, and a Self collection Point carrying two customers is ONE stop — so those
+    // prices cannot be matched to the customers one each. ⚠️ Booked anyway, **no charges were written at
+    // all** while the confirmation promised "each customer is charged what their own doorstep costs on its
+    // own". ⭐ Stopping here says so BEFORE a real vehicle is on a real road.
+    if (who === "customer" && amounts.length !== groups.length) {
+      statusLine.textContent = "This run has one doorstep carrying more than one customer — a collection Point — "
+        + "so the courier's separate prices cannot be given to them one each. Nothing was booked. "
+        + "Either choose that you paid it, or tick one customer at a time.";
+      paintPrices();
+      return;
+    }
     const answers = pay && amounts.length ? pay.read(amounts[0]) : null;
     const w = windowNow();
     const when = w ? ` Customers will be told ${fmtWindow(w)}.` : "";
@@ -1292,7 +1317,7 @@ export function renderDeliveryRun(root, state, params) {
         // booked, because a throw on the way back cannot tell her which side of it we are on.
         await guarded({
           hold: (v) => { busy = v; },
-          work: () => bookRunNow(q, groups, amounts, w),
+          work: () => bookRunNow(q, groups, amounts, w, who),
           said: (s) => { statusLine.textContent = s; paintPrices(); },
           trouble: `The booking could not be finished — check the run in ${courier.label} before pressing again, in case it went through`,
         });
@@ -1301,7 +1326,20 @@ export function renderDeliveryRun(root, state, params) {
     );
   }
 
-  async function bookRunNow(q, groups, amounts, w) {
+  async function bookRunNow(q, groups, amounts, w, who) {
+    // ★★★ ONE PAYER, CHOSEN ONCE (v550).
+    // ⚠️⚠️ `who` was read BEFORE the courier was asked, and the amounts were worked out for THAT payer. The
+    // booking then re-read the live box, so **switching it while "1 of 3" was on screen booked the old
+    // prices under the new payer** — her books got a different figure from the one she was shown. ⭐ And
+    // with NO payer chosen, writing the charge DELETED one that was already there (a fee of 0 removes the
+    // row), which is a record that existed before she pressed anything.
+    const whoNow = pay && pay.payer ? pay.payer() : who;
+    if (whoNow !== who) {
+      busy = false;
+      statusLine.textContent = "The payer changed while the courier was being asked, so nothing was booked. Price the run again with the payer you want.";
+      paintPrices();
+      return;
+    }
     busy = true;
     paintPrices();
     const holder = courierByKey(courier.key) || courier;
@@ -1309,7 +1347,23 @@ export function renderDeliveryRun(root, state, params) {
     if (!root.isConnected) return;
     if (!out.ok) {
       busy = false;
-      statusLine.textContent = out.reason;
+      if (out.unknown) {
+        // ⚠️⚠️ AND THE FACT IS WRITTEN DOWN, NOT ONLY REMEMBERED (v599). ⚠️ `bookUnknown` is memory — ⚠️ **leaving
+        // the screen and coming back brought every Book press back under a trip that may already be charged.**
+        // ⭐ The same stamp the single-trip card uses, on every order this run would have booked.
+        bookUnknown = true;
+        const at = new Date().toISOString();
+        for (const stop of (priced && Array.isArray(priced.stops) ? priced.stops : [])) {
+          const id = String((stop && (stop.id || stop.orderId)) || "");
+          if (!id) continue;
+          const o = (state.orders || []).find((x) => x && String(x.id) === id);
+          if (o) o.courierUnknownAt = at;
+        }
+        save(state);
+      }
+      statusLine.textContent = out.unknown
+        ? `${out.reason} ⚠️ Look in your courier app before asking for this run again — a second booking may be charged twice.`
+        : out.reason;
       paintPrices();
       return;
     }
@@ -1340,7 +1394,15 @@ export function renderDeliveryRun(root, state, params) {
     // is the one runChargeAmounts chose: the customer's OWN doorstep cost when they bear
     // it, so the saving from going together stays with her, or their apportioned part of
     // the run's fee when she bears it — which sums to exactly what she was charged.
-    if (pay) groups.forEach((g, i) => writeCourierCharge(state, g.orders, g, pay.read(amounts[i])));
+    if (pay) groups.forEach((g, i) => {
+      const a = pay.read(amounts[i]);
+      // ⚠️⚠️ NO PAYER MEANS NO DECISION — LEAVE THIS ORDER'S CHARGE EXACTLY AS IT WAS (v550). ⭐ Writing a
+      // charge with no payer is not "nothing": a fee of 0 **removes** the order's charge AND its
+      // Delivery & fuel row, so booking a run with the box left on "Not recorded" quietly deleted a
+      // record that was there before she pressed anything.
+      if (!a || !String(a.who || "")) return;
+      writeCourierCharge(state, g.orders, g, a);
+    });
     busy = false;
     save(state);
     maybeSync(state);

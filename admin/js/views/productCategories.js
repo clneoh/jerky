@@ -153,13 +153,17 @@ function openEditCategoryPopup(state, cat, root) {
         button("Update category", () => {
           const { error, values } = editor.collect();
           if (error) return toast(error);
+          // ⚠️⚠️ ONLY A CHANGED PARENT RE-SORTS IT (v555). ⭐ The comment above has always said this is for
+          // landing under a DIFFERENT parent — but the line ran on every edit, so **changing only the
+          // Chinese name moved the category to the end of its own group**, and the shop's headings
+          // reordered behind her back. ⭐ The old parent is read BEFORE the record is written.
+          const parentChanged = String(cat.parentId || "") !== String(values.parentId || "");
           Object.assign(cat, values);
-          // Landing under a different parent puts it last among its new
-          // brothers: where it sat among the old ones says nothing about where
-          // it belongs among these.
-          const brothers = childrenOf(state.productCategories, values.parentId)
-            .filter((c) => c.id !== cat.id);
-          cat.sort = brothers.length;
+          if (parentChanged) {
+            const brothers = childrenOf(state.productCategories, values.parentId)
+              .filter((c) => c.id !== cat.id);
+            cat.sort = brothers.length;
+          }
           toast("Category updated");
           save(state);
           maybeSyncStorefront(state); // a renamed or re-parented heading reaches the shop
@@ -218,7 +222,14 @@ function moveTo(list, id, toIndex) {
   const at = Math.max(0, Math.min(Number(toIndex) || 0, siblings.length));
   const ordered = [...siblings.slice(0, at), cat, ...siblings.slice(at)];
   const rank = new Map(ordered.map((c, i) => [c.id, i]));
-  return (list || []).map((c) => (c && rank.has(c.id) ? { ...c, sort: rank.get(c.id) } : c));
+  // ⚠️⚠️ THE RECORDS KEEP THEIR IDENTITY (v555). ⭐ Cloning them left each row's Edit button pointing at the
+  // OLD object, so **a drag followed by an edit said "Category updated" and changed nothing** — the edit
+  // went into a record the list no longer held. ⭐ The order is still written onto the records; it is
+  // written onto the SAME objects the rows are holding.
+  for (const c of (list || [])) {
+    if (c && rank.has(c.id)) c.sort = rank.get(c.id);
+  }
+  return list;
 }
 
 function deleteCategory(state, cat, root) {

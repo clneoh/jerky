@@ -236,3 +236,4 @@ test("autoTranslateProduct leaves a box alone when the API returns nothing (retr
 test("translateAllowed is false under node --test, so auto-translate is a no-op in tests", () => {
   assert.equal(translateAllowed(), false);
 });
+

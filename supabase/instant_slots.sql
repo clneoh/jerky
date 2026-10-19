@@ -1,6 +1,9 @@
 -- Instant "N left" — lower the storefront counts the moment an order lands.
 -- Run this once in the Supabase SQL editor (Dashboard → SQL → New query → Run).
--- Safe to re-run: the function is replaced and the trigger recreated.
+-- ⚠️⚠️ NOT SAFE TO RE-RUN ONCE shared_pool_slots.sql IS INSTALLED (v557). ⭐ Both files define the SAME
+-- function and trigger, and running this older one afterwards silently reverts the pool-aware version:
+-- a value pack stops lowering its base product, and a day's count is wrong until a phone recalculates.
+-- ⭐ The guard below refuses, rather than replacing a newer rule with an older one.
 --
 -- Why: normally the "Only N left / Sold out" numbers are recalculated by the
 -- backoffice app, so they only stay fresh while one of the phones is awake.
@@ -20,6 +23,19 @@
 -- moments in between, and the app's full recalc always wins when it runs.
 -- Best-effort by design: if anything about an order can't be read, the order
 -- is still saved and the counts are simply left for the next app recalc.
+
+-- ⚠️⚠️ AND HERE IS THAT GUARD. It reads the INSTALLED function — not this file — so it answers the only
+-- question that matters: would running this file undo something newer?
+do $$
+begin
+  if exists (
+    select 1 from pg_proc
+    where proname = 'decrement_slots_on_order' and prosrc like '%pool_base%'
+  ) then
+    raise exception 'This file is retired: shared_pool_slots.sql is already installed, and running this '
+      'older version would revert it. Nothing has been changed.';
+  end if;
+end $$;
 
 create or replace function public.decrement_slots_on_order()
 returns trigger
@@ -56,6 +72,27 @@ begin
       return new;
     end if;
 
+    -- ⚠️⚠️ A HUNDRED LINES OF A HUNDRED IS STILL AN ABSURD ORDER (v596). ⭐ The whole order's count is summed
+    -- first; above a generous day (200) the order moves NO count at all.
+    declare
+      total_wanted integer := 0;
+      t_line       jsonb;
+      t_qty        integer;
+    begin
+      for t_line in select * from jsonb_array_elements(j->'lines') loop
+        if jsonb_typeof(t_line->'qty') = 'number' and (t_line->>'qty') ~ '^[0-9]+$' then
+          t_qty := (t_line->>'qty')::integer;
+        else
+          t_qty := 0;
+        end if;
+        if t_qty between 1 and 100 then total_wanted := total_wanted + t_qty; end if;
+      end loop;
+      if total_wanted > 200 then
+        raise notice 'order % asks for % units — the counts are ignored', new.id, total_wanted;
+        return new;
+      end if;
+    end;
+
     for line in select * from jsonb_array_elements(j->'lines') loop
       -- Only whole positive quantities against a real product name count.
       lname := coalesce(btrim(line->>'name'), '');
@@ -65,7 +102,11 @@ begin
       else
         lqty := 0;
       end if;
-      if lqty < 1 or lname = '' then
+      -- ⚠️⚠️ AN ABSURD LINE DOES NOT MOVE THE COUNTS (v565). ⭐ The public order form takes any
+      -- non-negative integer, so a scripted POST with qty 1000000000 zeroed a whole bake day
+      -- for everyone. ⭐ A real line is a few dozen pans; above a hundred the line is not an order and
+      -- the counts ignore it. ⚠️ The ORDER still saves — this is a count, not a gate.
+      if lqty < 1 or lqty > 100 or lname = '' then
         continue;
       end if;
       day_qty := day_qty + lqty;

@@ -466,7 +466,9 @@ function pastSection(state, past) {
     type: "button",
     onclick: () => { list.hidden = !list.hidden; },
   }, `Past dates (${past.length})`);
-  for (const d of past.slice(0, 8)) {
+  // ⚠️⚠️ THE FIRST EIGHT ONLY, AND NOTHING SAID HOW MANY WERE LEFT (v583). ⚠️ **A list she opened to find a
+  // day quietly stopped at eight.** ⭐ The section is folded until she opens it, so it draws every past date.
+  for (const d of past) {
     const cap = capacityStatus(state, d.id);
     list.appendChild(el("div", {
       class: "card tappable",

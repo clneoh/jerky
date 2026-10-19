@@ -86,19 +86,52 @@ export async function callCourier(state, { action, provider = "", payload = {}, 
       const said = body && typeof body === "object" ? (body.reason || body.error) : "";
       // The function's own contract: 401 and 500 are SETUP problems, never a business failure.
       const setup = res.status === 401 || res.status === 500;
-      return { ok: false, setup, reason: String(said || `The courier service answered with an error (HTTP ${res.status}).`) };
+      // ⚠️⚠️ AND A GATEWAY ERROR AFTER A BOOKING IS AN UNKNOWN, NOT A REFUSAL (v568). ⭐ The function answers
+      // its own business refusals with HTTP 200 and `{ok:false}` — so a 5xx/502/504 here came from in FRONT of
+      // it (or from it dying mid-call), ⚠️ **and the order may already exist and already be charged.** ⭐ A 401
+      // is the one safe one: the session was refused before anything was asked of the courier.
+      const unknown = action === "book" && res.status !== 401;
+      return {
+        ok: false,
+        setup,
+        ...(unknown ? { unknown: true } : {}),
+        reason: unknown
+          ? "The courier service failed while booking, so this app cannot tell whether the trip was booked and charged. Open your courier account and look for it before booking again — a second Book may charge you twice."
+          : String(said || `The courier service answered with an error (HTTP ${res.status}).`),
+      };
     }
     if (!body || typeof body !== "object") {
-      return { ok: false, reason: "The courier service answered with something that could not be read." };
+      return {
+        ok: false,
+        ...(action === "book" ? { unknown: true } : {}),
+        reason: action === "book"
+          ? "The courier service answered with something this app could not read, so it cannot tell whether the trip was booked and charged. Open your courier account and look for it before booking again — a second Book may charge you twice."
+          : "The courier service answered with something that could not be read.",
+      };
     }
     return body;
   } catch (err) {
+    // ⚠️⚠️ A BOOKING THAT LOST ITS REPLY HAS AN UNKNOWN OUTCOME (v566). ⭐ Placing a Lalamove order spends
+    // money and puts a real vehicle on a real road, and the function has no timeout of its own — ⭐ **so a
+    // 25-second abort can leave a trip that is already booked and already charged**, while this line said
+    // "check your signal and try again", the one instruction that books a second one. ⚠️ The screen takes
+    // the Book press away on `unknown`, and the way back is to look in the courier's own app.
+    const unknown = action === "book";
     if (err && (err.name === "AbortError" || err.code === 20)) {
-      return { ok: false, reason: "The courier service did not answer in time. Check your signal and try again." };
+      return {
+        ok: false,
+        ...(unknown ? { unknown: true } : {}),
+        reason: unknown
+          ? "The courier did not answer in time, so this app cannot tell whether the trip was booked and charged. Open your courier account and look for it before booking again — a second Book may charge you twice."
+          : "The courier service did not answer in time. Check your signal and try again.",
+      };
     }
     return {
       ok: false,
-      reason: err && err.message ? `Couldn't reach the courier service — ${err.message}` : "Couldn't reach the courier service.",
+      ...(unknown ? { unknown: true } : {}),
+      reason: unknown
+        ? "The connection dropped while booking, so this app cannot tell whether the trip was booked and charged. Open your courier account and look for it before booking again — a second Book may charge you twice."
+        : (err && err.message ? `Couldn't reach the courier service — ${err.message}` : "Couldn't reach the courier service."),
     };
   } finally {
     clearTimeout(timer);

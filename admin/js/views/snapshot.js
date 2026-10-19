@@ -16,8 +16,10 @@ import * as backups from "../backups.js";
 const RO = { style: "font-size:12px;line-height:1.45;color:var(--amber);" +
   "background:var(--amber-bg);border-radius:9px;padding:7px 10px;margin:0 0 10px" };
 
-export function openSnapshotView(state, row) {
-  backups.getBackup(state, row && row.id).then((g) => {
+// ⚠️ THE COPY IS FETCHED THROUGH A PARAMETER (v584) so the screen's three answers — shown, not loadable,
+// not readable — can be driven by a test. It had NO test at all before this.
+export function openSnapshotView(state, row, getRow = backups.getBackup) {
+  getRow(state, row && row.id).then((g) => {
     if (!g || !g.ok) {
       toast(String((g && g.reason) || "Couldn't load that copy"));
       return;

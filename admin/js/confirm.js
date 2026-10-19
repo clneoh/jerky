@@ -20,7 +20,7 @@ import { fulfillmentText, pointAddressFor } from "./points.js";
 import { dayLine, vanLine } from "./courier_job.js";
 // The one place the opening line is worded, so the confirmation cannot lean over
 // while the three later messages do not (2 Oct 2026).
-import { greeting } from "./messages.js";
+import { greeting, hello } from "./messages.js";
 
 // Returns { recipient, message }, or null when the group has no orders.
 // `trackUrl` is the storefront track link (with ?track=CODE) for the message.
@@ -66,15 +66,25 @@ export function buildConfirmation(state, group, trackUrl) {
   // PLACE — which lives on her Point, not on the order.
   const deliveryAddr = courier ? String(first.address || "").trim() : "";
   const collectAddr = courier ? "" : pointAddressFor(state, first);
+  // ⚠️ AND A COLLECTION AT THE KITCHEN NEEDS A DOOR TOO (v569): the first line of her mailing address is
+  // exactly the street a customer needs, and it is already typed once for the labels.
+  // ⚠️⚠️ ONLY WHEN NO POINT WAS CHOSEN (v572). ⭐ This tested `!collectAddr`, which is also true for a NAMED
+  // Point that has no address on file — ⚠️ **so the message said "Self collect at Farlim" and then gave the
+  // KITCHEN's street**, and a customer drives to the wrong place. ⭐ The kitchen is the answer only when there
+  // is no Point at all.
+  const kitchenAddr = (!courier && !String(first.pointId || "").trim())
+    ? String(((state.settings || {}).mailingAddress || "")).split("\n").map((l) => l.trim()).filter(Boolean)[0] || ""
+    : "";
   const address = deliveryAddr ? `\nAddress: ${deliveryAddr}`
-    : collectAddr ? `\nWhere: ${collectAddr}` : "";
+    : collectAddr ? `\nWhere: ${collectAddr}`
+    : kitchenAddr ? `\nWhere: ${kitchenAddr}` : "";
 
 
   const sf = (state.settings && state.settings.storefront) || {};
   const bakery = sf.name || "";
   const qr = String(sf.tngQr || "").trim();
 
-  let msg = `${greeting(state, `Hi ${first.customerName || ""}! Your order from ${bakery} is confirmed.`)}\n`;
+  let msg = `${greeting(state, `${hello(first.customerName)} Your order from ${bakery} is confirmed.`)}\n`;
   msg += `Order #${orderCode(first)}\n`;
   msg += `${day.label}: ${date} - ${fulfillment}${address}\n`;
   msg += `Items: ${items}\n`;

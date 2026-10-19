@@ -185,11 +185,38 @@ test("pruneIds keeps newest 7 daily / 4 weekly / 3 monthly, never manual", () =>
   assert.equal(expected.size, 0);
 });
 
+test("★★★ a copy posted AFTER the list was read counts against the keep (v583)", () => {
+  // ⚠️⚠️ MEASURED: the rows are read BEFORE the new copy is written, so keeping 7 of them left **8** on the
+  // server — ⚠️ **one more than the card says it keeps.** ⭐ The copy about to be posted takes a slot.
+  const rows = [];
+  let n = 0;
+  const add = (kind, day) => rows.push({ id: ++n, kind, created_at: new Date(2026, 0, day).toISOString() });
+  for (let i = 1; i <= 10; i++) add("daily", i);
+  for (let i = 0; i < 6; i++) add("weekly", 1 + i);
+  const kill = backups.pruneIds(rows, { daily: 1, weekly: 1 });
+  // 10 dailies: 6 kept + 1 about to be written = 7. 6 weeklies: 3 + 1 = 4.
+  assert.deepEqual(kill.slice().sort((a, b) => a - b), [1, 2, 3, 4, 11, 12, 13]);
+});
+
 // ── naming / download envelope / restore merge ────────────────────────────
 
 test("backupFileName is date + kind with the brand prefix", () => {
   assert.equal(backups.backupFileName("2026-09-08", "daily"), "furkidz-backup-2026-09-08-daily.json");
   assert.equal(backups.backupFileName("2026-09-08", "manual"), "furkidz-backup-2026-09-08-manual.json");
+});
+
+test("★★★ an import refuses what it cannot read, and a NEWER format above all (v591)", () => {
+  // ⚠️⚠️ THE FORMAT GUARD COULD BE CHANGED TO `> 999` AND EVERY TEST STAYED GREEN. ⚠️ **A backup written by a
+  // future version would then be imported over her book.** ⭐ Each refusal, driven through the real parser.
+  assert.throws(() => parseImport("{oops"), /valid JSON/, "⚠️ invalid JSON was accepted");
+  assert.throws(() => parseImport(JSON.stringify({ app: "something-else", formatVersion: 1, data: {} })),
+    /Not a Munchies Furkidz backup/, "⚠️ another app's file was accepted");
+  assert.throws(() => parseImport(JSON.stringify({ app: "furkidz", formatVersion: 2, data: {} })),
+    /newer version/, "★ a NEWER format was imported over her book");
+  assert.throws(() => parseImport(JSON.stringify({ app: "furkidz", formatVersion: 1 })),
+    /no data inside/, "⚠️ a file with no data was accepted");
+  // And the file this app writes today still reads.
+  assert.ok(parseImport(JSON.stringify({ app: "furkidz", formatVersion: 1, data: {} })));
 });
 
 test("exportEnvelope wraps a copy so a downloaded file re-imports via parseImport", () => {
@@ -318,7 +345,7 @@ test("maybeAutoBackup posts each due kind and sets the day guard", async () => {
   }
 });
 
-test("maybeAutoBackup prunes the oldest daily once 8 dailies exist", async () => {
+test("★★★ maybeAutoBackup prunes down to SEVEN dailies INCLUDING the one it writes (v583)", async () => {
   const ls = installStorage();
   seedToken(ls.store);
   const state = cloudState();
@@ -341,8 +368,11 @@ test("maybeAutoBackup prunes the oldest daily once 8 dailies exist", async () =>
   try {
     const r = await backups.maybeAutoBackup(state);
     assert.equal(r.ok, true);
+    // ⚠️⚠️ EIGHT ON THE SERVER, ONE ABOUT TO BE WRITTEN, SEVEN KEPT: ⚠️ the old rule kept seven of the EIGHT
+    // already there and then added another — **8 on a card that says 7.** ⭐ Two go.
     assert.equal(deletes.length, 1);
-    assert.ok(deletes[0].includes("id=in.(100)"), `expected oldest daily 100 pruned, got ${deletes[0]}`);
+    assert.ok(deletes[0].includes("id=in.(101,100)") && deletes[0].includes("100"),
+      `expected dailies 100 and 101 pruned, got ${deletes[0]}`);
   } finally {
     restoreFetch();
     ls.restore();
@@ -807,5 +837,38 @@ test("★★★ putBackOrders ADDS only the unexplained orders — nothing is re
     // nothing else in the phone's state was touched
     assert.deepEqual(written.products, state.products);
     assert.deepEqual(written.removedOrders, state.removedOrders);
+  } finally { restoreFetch(); ls.restore(); }
+});
+
+
+test("★★★ a sync finishing is not called offline (v587)", () => {
+  // ⚠️⚠️ MEASURED: the 30-second beat can be mid-pull when she presses Restore, and `refresh` answers
+  // **"Sync already running"** — ⚠️ **which the restore reported as "You need to be online", the one
+  // instruction that cannot help on a phone that is plainly online.**
+  assert.match(backups.freshenRefusal({ ok: false, reason: "Sync already running" }, "restore a backup"),
+    /A sync is finishing .* press restore a backup again/i);
+  assert.match(backups.freshenRefusal({ ok: false, reason: "Shared data is off" }, "restore a backup"),
+    /You need to be online to restore a backup/);
+});
+
+test("★★★ the backup list is not cut off at sixty (v587)", async () => {
+  // ⚠️⚠️ MEASURED: manual copies are never pruned, so past sixty the OLDEST one existed in the cloud with no
+  // Restore, Download or Delete anywhere in the app. ⭐ The list pages until the cloud has no more.
+  const ls = installStorage();
+  seedToken(ls.store);
+  const seen = [];
+  const restoreFetch = installFetch(async (url) => {
+    seen.push(String(url));
+    const offset = Number((String(url).match(/[?&]offset=(\d+)/) || [])[1] || 0);
+    const n = offset === 0 ? 100 : 5;
+    return { ok: true, json: async () => Array.from({ length: n }, (_, i) => ({
+      id: `b${offset + i}`, kind: "manual", label: `copy ${offset + i}`,
+      created_at: new Date(Date.now() - (offset + i) * 1000).toISOString(), summary: {},
+    })) };
+  });
+  try {
+    const r = await backups.listBackups(cloudState());
+    assert.equal(r.rows.length, 105, `★ the list stopped at ${r.rows.length} of 105 copies`);
+    assert.equal(seen.length, 2, "it asked twice — once for each page");
   } finally { restoreFetch(); ls.restore(); }
 });

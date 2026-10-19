@@ -83,8 +83,8 @@ function createEl(tag) {
       return n;
     },
     append(...cs) {
-      for (const c of cs) if (c != null) {
-        const n = toNode(c);
+      for (const c of cs) {
+        const n = toNode(c == null ? { nodeType: 3, text: "null" } : c);
         this.children.push(n);
         if (n.nodeType === 1) n.parentNode = this;
       }
@@ -92,8 +92,8 @@ function createEl(tag) {
     replaceChildren(...cs) {
       for (const old of this.children) if (old && old.nodeType === 1) old.parentNode = null;
       this.children = [];
-      for (const c of cs) if (c != null) {
-        const n = toNode(c);
+      for (const c of cs) {
+        const n = toNode(c == null ? { nodeType: 3, text: "null" } : c);
         this.children.push(n);
         if (n.nodeType === 1) n.parentNode = this;
       }

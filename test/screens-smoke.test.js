@@ -77,10 +77,10 @@ function createEl(tag) {
     textContent: "", innerHTML: "", _listeners: {},
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     appendChild(c) { if (c != null) this.children.push(c); return c; },
-    append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
+    append(...cs) { for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
     prepend(...cs) { this.children.unshift(...cs.filter((c) => c != null)); },
     insertBefore(c) { this.children.push(c); return c; },
-    replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) this.children.push(c); },
+    replaceChildren(...cs) { this.children = []; for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
     removeChild(c) { this.children = this.children.filter((x) => x !== c); return c; },
     remove() {}, replaceWith() {},
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
@@ -324,13 +324,44 @@ test("★★★ every bake-day box is labelled, including Sunday", () => {
     `★ a box has no name on it — **she can tick a day the screen never named** (${JSON.stringify(labels)})`);
 });
 
+// ── ★★★ MORE COUNTS ORDERS, NOT ROWS (v552) ────────────────────────────────
+//
+// ⚠️⚠️ A two-item shop cart is TWO rows and ONE order. ⭐ Every other surface says one — the Orders badge,
+// Home's "N new orders", the Orders screen itself — and More said two, so it disagreed with all three
+// about the same cart.
+test("★★★ More's header counts ORDERS, not the rows they are stored as", () => {
+  const st = defaultState();
+  st.orders = [
+    { id: "a11111", groupId: "grp111", deliveryDateId: "", qty: 1, status: "new" },
+    { id: "a22222", groupId: "grp111", deliveryDateId: "", qty: 1, status: "new" },
+  ];
+  const root = createEl("div");
+  modules.renderMore(root, st, new URLSearchParams());
+  const words = [];
+  (function walk(n) {
+    if (!n || typeof n !== "object") return;
+    if (n.nodeType === 3) { words.push(String(n.text || "")); return; }
+    for (const c of n.children || []) walk(c);
+  })(root);
+  const said = words.join(" ");
+  assert.ok(/\b1 order\b/.test(said) && !/\b2 orders\b/.test(said),
+    `★ one cart of two items was counted as two orders — **every other screen calls it one** (said: ${said.slice(0, 200)})`);
+});
+
 // ── ★★ THE ROUTE TABLE IS THE INVITATION LIST, NOT THIS FILE ────────────────
 test("★★ every route in the app is covered by this smoke pass", async () => {
   const src = await (await import("node:fs/promises")).readFile(
     new URL("../admin/js/app.js", import.meta.url), "utf8");
   const routed = [...src.matchAll(/"(\/[a-z0-9-]*)":\s*\{\s*title:\s*"[^"]*",\s*tab:\s*"[^"]*",\s*render:\s*(\w+)/g)]
     .map((m) => m[2]);
-  assert.ok(routed.length >= 20, `only ${routed.length} routes were found — the pattern has drifted`);
+  // ⚠️⚠️ AND THE READER MUST HAVE FOUND **EVERY** ROUTE (v557). ⭐ A `>= 20` floor has ten routes of slack,
+  // so a route written in a shape this regex cannot parse — a comma inside the title, say — was simply
+  // OMITTED from `routed`, `missing` stayed empty, and **this pass stayed green while that screen was never
+  // built.** ⭐ The keys are counted structurally, then the reader is held to that count.
+  const routeKeys = (src.match(/\n\s*"\/[a-z0-9-]*":\s*\{/g) || []).length;
+  assert.equal(routed.length, routeKeys,
+    `the route reader found ${routed.length} of ${routeKeys} routes — **a route it cannot parse is never built, `
+    + "and this pass stays green about it**");
   const covered = new Set(SCREENS.map(([, , fn]) => fn));
   const missing = routed.filter((fn) => !covered.has(fn));
   assert.deepEqual(missing, [],

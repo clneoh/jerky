@@ -15,13 +15,14 @@
 // WHOLE order, stamped on every one of its rows so a row read alone knows them — so anything that sums
 // rows counts them once per item. That is the v370 trap, and it is why every loop below walks groups.
 
-import { groupOrders, orderCode, orderLineName, orderLinePrice, round2, waNumber } from "./state.js";
+import { groupOrders, orderCode, codeFromId, orderLineName, orderLinePrice, round2, waNumber } from "./state.js";
 import { addDays, longDate } from "./dates.js";
 import { customerTotal } from "./courier.js";
 import { isCollected, isRefunded, refundOf } from "./money.js";
 import { orderDay, monthSpan } from "./profit.js";
 import { weekStartISO } from "./weekly.js";
 import { customerList, keyOf } from "./customers.js";
+import { bakeryName } from "./journal.js";
 import { receiptNoOf, receiptNoOfGroup } from "./receipts.js";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June",
@@ -100,7 +101,13 @@ function itemsLine(state, group) {
 
 // What one order is on this document: the invoice's own figure, less what went back.
 export function orderInvoice(state, group) {
-  return round2(Math.max(0, customerTotal(state, group).total - refundOf(state, group)));
+  const first = (group && group.orders && group.orders[0]) || {};
+  const total = customerTotal(state, group).total;
+  // ⚠️⚠️ AN EDIT'S REFUND IS ALREADY IN THE LINES (v595). ⚠️ Subtracting it again drove the remaining sale to
+  // zero — ⚠️ **the September filing page dropped a RM15 order as "refunded in full", while the order's own
+  // invoice still totalled RM15.** ⭐ The current total IS the sale; only an ordinary refund comes off.
+  if (first.refundFromEdit && Number(first.paidWasRM) > 0) return round2(Math.max(0, total));
+  return round2(Math.max(0, total - refundOf(state, group)));
 }
 
 // The whole document, as the object `journalSheet` wants.
@@ -116,7 +123,12 @@ export function consolidatedSheet(state, { kind = "month", anchor = "", customer
   for (const g of groupOrders(state.orders || [])) {
     const first = (g.orders || [])[0];
     if (!first) continue;
-    if (customerKey && keyOf(first) !== customerKey) continue;
+    // ⚠️⚠️ A FORGOTTEN CUSTOMER KEEPS THEIR HISTORY UNDER A DIFFERENT KEY (v550). ⭐ `profiles.js` clears
+    // the name and number and leaves a random `redactedKey` so their sales stay together — but this filter
+    // asked `keyOf`, which no longer answers for them, so **their own statement said "this customer has
+    // nothing in this period" while the ALL page showed the same order.** ⭐ `customers.js` already reads
+    // `redactedKey || keyOf(o)`; this is the same rule.
+    if (customerKey && (first.redactedKey || keyOf(first)) !== customerKey) continue;
     mine.push(g);
   }
 
@@ -170,7 +182,12 @@ export function consolidatedSheet(state, { kind = "month", anchor = "", customer
     const name = row && row.name && row.name !== "(no name)" ? row.name : "";
     // ⚠️ THE SAME LABEL RULE THE CUSTOMER BOOK USES, including the one the grouping needed: a walk-in
     // with no name and no number has no person to name, and says so once rather than being blank.
-    const customer = name || waNumber(first.whatsapp) || "No name";
+    // ⚠️ "Details removed" IS NOT "(no name)" (v583). ⚠️ The customer book already says which of the two a
+    // row is, and this page said **"No name"** for a person whose details she had deliberately removed —
+    // ⚠️ **a filing document contradicting the privacy decision it was written under.**
+    const customer = first.redactedKey
+      ? "Details removed"
+      : (name || waNumber(first.whatsapp) || "No name");
     return {
       date: orderDay(state, first),
       code: orderCode(first),
@@ -218,13 +235,21 @@ export function consolidatedSheet(state, { kind = "month", anchor = "", customer
   //
   // ⚠️ AND A VOID LINE CARRIES NO AMOUNT AT ALL — not zero. The money for it never existed, and printing
   // "RM 0.00" beside it would put a figure in a filed document that nobody ever paid.
-  const have = new Set((state.orders || []).map((o) => orderCode(o)));
+  // ⚠️⚠️ BOTH NUMBERS AN ORDER HAS EVER WORN (v550). ⭐ An order regrouped before v441 changed its number, so
+  // a receipt claimed while it was one row holds the OLD one — and this set held only today's, so the
+  // consolidated invoice called a live order **"order removed"** and printed its invoice number twice.
+  // ⭐ The register screen already matches `codeFromId` too (v445); this is the same rule.
+  const have = new Set((state.orders || []).flatMap((o) => [orderCode(o), codeFromId(o)]));
   const through = (iso) => localDay(iso);
   if (Array.isArray(register)) {
     for (const r of register) {
       const code = String((r && r.order_code) || "").trim().toUpperCase();
       const no = receiptNoOf({ receiptNo: r && r.number });
       if (!code || !no || have.has(code)) continue;
+      // ⚠️ AND A VOID NUMBER IS NOT THIS CUSTOMER'S (v583). ⚠️ A number whose order is gone belongs to
+      // nobody, so a page narrowed to ONE person listed it among their invoices — ⚠️ **a receipt they never
+      // held, on their own statement.**
+      if (customerKey) continue;
       const day = through(r.issued_at);
       if (kind !== "all" && (day < span.from || day > span.to)) continue;
       filing.push({
@@ -289,29 +314,41 @@ export function consolidatedSheet(state, { kind = "month", anchor = "", customer
   }
 
   const said = [];
+  // ⚠️⚠️ A PERIOD WHOSE ONLY ROWS ARE VOIDS SAID "NOTHING WAS SOLD" AND LISTED THEM ANYWAY (v592). ⚠️ The
+  // explanation of a void lived only in the other branch — ⚠️ **so the paper showed a receipt number with no
+  // word saying what it was.** ⭐ One sentence, called from both branches.
+  const voidsWords = (n) => `${n} number${n === 1 ? " on this page belongs" : "s on this page belong"} to an order that has since been removed — the number was issued when the money was recorded and is never given back, so it stays spent. Your Receipt register holds every number ever issued.`;
+  const voidsIn = (rows) => rows.filter((r) => r.void).length;
   if (!keep.length) {
     said.push(customerKey
       ? `This customer has nothing${kind === "all" ? " yet" : " in this period"}.`
       : kind === "all" ? "Nothing has been sold yet." : "Nothing was sold in this period.");
+    const voids = voidsIn(filing);
+    if (voids) said.push(voidsWords(voids));
   } else {
-    said.push(`Every order is listed on the day it is FOR — the delivery date. In invoice-number order.`);
+    // ⚠️⚠️ THE SENTENCE NAMED A SORT THE PAGE MIGHT NOT BE IN (v583): press a column and it still said
+    // **"In invoice-number order"**. ⭐ It names the order the rows are actually in.
+    const SORT_WORDS = { invoice: "invoice number", date: "date", order: "order number",
+      what: "what was bought", customer: "customer" };
+    said.push(`Every order is listed on the day it is FOR — the delivery date. `
+      + (sort && by !== "invoice"
+        ? `Sorted by ${SORT_WORDS[by] || "the column you picked"}.`
+        : "In invoice-number order."));
     if (owed > 0) said.push(`Still to collect from these orders: ${cur} ${owed.toFixed(2)}.`);
     else said.push("Every order in this period has been paid.");
     // ★★ "none yet" IS ABOUT THE NUMBER, NOT ABOUT THE MONEY — and the page has to say so, or a paid
     // order with no serial reads as an unpaid one. **Her own screen showed four "none yet" rows with only
     // one of them still to collect**, which is exactly how that misreading starts.
-    const voids = filing.filter((r) => r.void).length;
-    if (voids) {
-      said.push(`${voids} number${voids === 1 ? " on this page belongs" : "s on this page belong"} to an order that has since been removed — the number was issued when the money was recorded and is never given back, so it stays spent. More → Money → Receipt register shows every number ever issued.`);
-    }
+    const voids = voidsIn(filing);
+    if (voids) said.push(voidsWords(voids));
     // ⚠️ AND WHEN THE REGISTER COULD NOT BE READ, THE PAGE SAYS SO. It cannot know whether a number
     // is missing without asking, and a filing page that is quietly short is worse than one that
     // admits it could not check — the same rule the Receipt register screen follows (v366).
     if (register === null) {
-      said.push("The receipt register could not be read, so any number belonging to an order that has been removed is NOT shown here. Open this page again with the internet on.");
+      said.push("The receipt register could not be read, so any number belonging to an order that has been removed is NOT shown here. This page needs the internet to show them.");
     }
     if (unnumberedPaid) {
-      said.push(`${unnumberedPaid} of these ${unnumberedPaid === 1 ? "has" : "have"} no invoice number yet but ${unnumberedPaid === 1 ? "is" : "are"} already PAID — they came before the numbering started. Open each order's Invoice and it takes the next number.`);
+      said.push(`${unnumberedPaid} of these ${unnumberedPaid === 1 ? "has" : "have"} no invoice number yet but ${unnumberedPaid === 1 ? "is" : "are"} already PAID — they came before the numbering started. It takes the next number when the invoice is opened.`);
     }
   }
   if (refundedOut) {
@@ -334,6 +371,11 @@ export function consolidatedSheet(state, { kind = "month", anchor = "", customer
     // the shared text AND in the PDF — so the document number is on every copy of it or on none.
     ref,
     title: "Consolidated invoice",
+    // ⚠️⚠️ THE DOCUMENT HAD NO SELLER ON IT (v572). ⭐ The single-order invoice prints her bakery name and
+    // address; this one printed neither, so a filed page said "Consolidated invoice" and nothing about whose
+    // it was. ⭐ Both come from the same settings the invoice uses.
+    bakery: bakeryName(state),
+    from: String((state.settings && state.settings.mailingAddress) || ""),
     subtitle: [
       ref,
       kind === "all" ? "" : span.label,
@@ -350,7 +392,9 @@ export function consolidatedSheet(state, { kind = "month", anchor = "", customer
       ? `This customer has nothing${kind === "all" ? " yet" : " in this period"}.`
       : kind === "all"
         ? "Nothing has been sold yet."
-        : "Nothing was sold in this period. Pick another period.",
+        // ⚠️ "Pick another period" was instruction on PAPER (v599) — the journal's empty line prints. ⭐ The
+        // fact alone is what a reader needs.
+        : "Nothing was sold in this period.",
     note: said.join(" "),
   };
 }

@@ -108,7 +108,9 @@ export function normaliseVehicles(raw) {
   for (const s of list) {
     const key = String((s && s.key) || "").trim();
     if (!key || seen.has(key)) continue;
-    seen.set(key, { key, name: serviceLabel(key, s && s.name) });
+    // ⚠️⚠️ THE CITIES REPLY CARRIES `description`, NOT `name` (v566) — see the server's own note. ⭐ The
+    // vendor's words are used when present; `serviceLabel` is the fallback table, not the source.
+    seen.set(key, { key, name: serviceLabel(key, (s && (s.description || s.name))) });
   }
   return sortServices([...seen.values()]);
 }
@@ -582,6 +584,10 @@ export const lalamove = {
       // her a booking was recorded when nothing was.
       return {
         ok: false,
+        // ⚠️⚠️ THE FLAG, NOT ONLY THE SENTENCE (v598). ⚠️ The screens remove the Book press on `unknown` only
+        // — ⚠️ **the words said "check before booking again" while the press stayed live for a second, charged
+        // trip.** ⭐ A reply with no trip number is an UNKNOWN outcome.
+        unknown: true,
         reason: `${LALAMOVE_LABEL} took the booking but did not send back a trip number, so nothing has been recorded here. Check the trip in ${LALAMOVE_LABEL}'s own app before booking again.`,
       };
     }

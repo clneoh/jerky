@@ -66,3 +66,26 @@ test("★★★ sync_cursor.sql exists, is NOT EMPTY, and creates what the pull 
   assert.match(sql, /add column if not exists/i, "the column is not guarded, so a second run fails");
   assert.match(sql, /drop trigger if exists/i, "the trigger is not replaced, so a second run fails");
 });
+
+test("★★★ incoming_cleanup.sql can no longer DELETE a waiting order (v585)", () => {
+  const raw = step("incoming_cleanup.sql");
+  assert.ok(raw !== null, "the cleanup file is gone — say so in the changelog rather than dropping it silently");
+  // ⚠️⚠️ MEASURED FAULT: the file deleted every queued order older than an hour, ⚠️ **and that queue is the
+  // only copy of an order until a phone imports it — both phones off overnight, and a re-run destroyed real
+  // orders.** ⭐ "Run once" was a comment, not a guard.
+  const sql = raw.split("\n").filter((l) => !/^\s*--/.test(l)).join("\n");
+  assert.doesNotMatch(sql, /\bdelete\s+from\s+incoming_orders/i,
+    "★ an executable sweep of the queue is back — **the only copy of a waiting order can be deleted by re-running a file that says it is safe**");
+  // And it still TELLS her something: a select, so running it is useful and harmless.
+  assert.match(sql, /select[\s\S]*from\s+incoming_orders/i,
+    "the file neither cleans nor reports — it should show her what is waiting");
+});
+
+test("★★ an anonymous order row may not be a megabyte (v585)", () => {
+  // ⚠️ The shop has no login, so every row in incoming_orders was written by a stranger. ⚠️ **Unlimited fake
+  // orders are accepted by design — the SHAPE is not.** ⭐ A real cart is a few hundred characters.
+  const sql = step("storefront.sql");
+  assert.ok(sql !== null, "storefront.sql is missing");
+  assert.match(sql, /constraint incoming_orders_data_size check \(octet_length\(data\) <= \d+\)/i,
+    "★ an anonymous insert can carry a payload of any size again");
+});

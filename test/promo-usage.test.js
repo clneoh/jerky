@@ -53,6 +53,21 @@ test("a code's orders are counted, and an order without the code is not the code
   assert.equal(u.given, 20, "and RM10 came off each of them");
 });
 
+test("★★★ a sale refunded in full does not spend the code's quota", () => {
+  // ⚠️⚠️ THE FAULT (v551): every cart carrying the code was counted, refunded or not — so a customer
+  // refunded in full still used one of the code's orders, and a third customer was refused "fully claimed".
+  const st = state([
+    order({ id: "a", promo: "FRESH10" }),
+    order({ id: "b", promo: "FRESH10", createdAt: "2026-10-01T00:00:00.000Z",
+      refundedAt: "2026-10-02T00:00:00.000Z", refundAmountRM: 18, refundedFull: true }),
+  ]);
+  const u = usageOf(st, code());
+  assert.equal(u.used, 1,
+    "★ a refunded sale still counted against the code's quota — **the customer paid, got it back, and the "
+    + "code was spent anyway**");
+  assert.equal(u.given, 10, "and the code is not credited with money that was returned");
+});
+
 test("one CART is one order, however many items it holds", () => {
   // The shop posts a basket as one cart; the app splits it into a row per item,
   // all sharing a groupId and all stamped with the same code. Counting rows

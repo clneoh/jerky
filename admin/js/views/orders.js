@@ -2,7 +2,7 @@
 
 import { addDays, deliveryStatus, fmtPlaced, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
 import { capacityStatus, costOf, dayCapacityParts, dayRuleRows, orderedOnDay, parseDayDelta, productRemaining, saveDayAdjustments } from "../bom.js";
-import { dayMoney, groupValue, isCollected, isRefunded, orderNet } from "../money.js";
+import { dayMoney, groupValue, isCollected, isRefunded, moneyBetween, orderNet, orderTakings, refundsBetween } from "../money.js";
 import { el, button, select, fillMeter, emptyState, confirmDialog, toast, showPopup } from "../ui.js";
 import { dateField } from "../datepicker.js";
 import { DOW, WINDOW_WEEKS, deliveryWindow, occColour, occForDate, rollingWeeks,
@@ -20,17 +20,17 @@ import { orderedProducts } from "../productCategories.js";
 import { strictestCancelDays } from "../../../store/pool.js";
 import { buildConfirmation } from "../confirm.js";
 import { buildPaymentReminder, buildPickupReminder, buildShippedMessage } from "../messages.js";
-import { claimReceipt, maybePublishTracking, maybeSync, publishTracking, refundReceipt, stuckOrders, unrefundReceipt } from "../supabase.js";
-import { receiptLine, receiptNoOf, receiptNoOfGroup, receiptStatus } from "../receipts.js";
+import { claimReceipt, incomingCapReached, maybePublishTracking, maybeSync, publishTracking, refundReceipt, stuckOrders, unrefundReceipt } from "../supabase.js";
+import { receiptLineOfGroup, receiptNoOf, receiptNoOfGroup, receiptStatusOfGroup } from "../receipts.js";
 import { couponDeclined, couponOnAny } from "../referrals.js";
-import { writeCourierCharge, courierFeeOf, courierPayerOf, courierCodOf, customerCourierFee, isCourierOrder, codeMissed, codeNotApplied, couponAgainst, customerTotal, receiptNote, receiptRows, promoOn, promoValue, refundableCharge } from "../courier.js";
+import { writeCourierCharge, courierFeeOf, courierPayerOf, courierCodOf, customerCourierFee, isCourierOrder, codeMissed, codeNotApplied, couponAgainst, customerTotal, receiptNote, receiptRows, promoOn, promoValue, promoOnBasket, refundableCharge, paymentShift } from "../courier.js";
 import { isCash, isTng, methodLabel, methodRank, methodsOf } from "../accounts.js";
 // ★ HER OWN EDITOR AND ITS ＋ CHIP (v478). The payment sheet adds an account ON THE SPOT with the
 // same form the money lists use, rather than a second way to write `state.settings.payMethods`.
 import { entryForm, newEntryChip } from "./accountsEditor.js";
 import { schemeOf, referralFlag, giveCredits, validCredits, markOneUsed, referrerName, couponOn } from "../referrals.js";
 import { bakedOf, setBakedTotal } from "../stock.js";
-import { customerList, keyOf } from "../customers.js";
+import { customerList, keyOf, orderDateOf } from "../customers.js";
 import { strictNumber } from "../courier_place.js";
 import { courierDayOf, fmtStamp, jobOf } from "../courier_job.js";
 // The app's ONE time window (v304): how it is read, packed, checked and said. The van's window on an
@@ -139,7 +139,7 @@ function statusFlowEl() {
     if (i) kids.push(el("span", { class: "flow-arrow", "aria-hidden": "true" }, "→"));
     kids.push(el("span", { class: "flow-step" }, label));
   });
-  return el("div", { class: "status-flow", "aria-label": "Order status flow" }, ...kids);
+  return el("div", { class: "status-flow", role: "group", "aria-label": "Order status flow" }, ...kids);
 }
 
 // How far an order has actually travelled, as a prefix of done steps. New is
@@ -191,7 +191,7 @@ export function journeyMarks(order) {
 // done. An order at the last stage shows the whole line green, matching what the
 // customer sees.
 function orderJourneyEl(order) {
-  const root = el("div", { class: "oj", "aria-label": "Order status journey" });
+  const root = el("div", { class: "oj", role: "group", "aria-label": "Order status journey" });
   const marks = journeyMarks(order);
   STATUSES.forEach(([, label], i) => {
     const state = marks[i];
@@ -395,15 +395,17 @@ export function packingLabelData(state, group, style = "full") {
     const recipientAddress = address
       ? address.split(/\n+/).map((s) => s.trim()).filter(Boolean) : [];
     const rows = [];
-    rows.push(["mail-sec", "FROM"]);
-    if (senderLines.length) {
-      for (const ln of senderLines) rows.push(["mail-line", ln]);
-    } else {
-      rows.push(["mail-line", "Set your business address in Settings → Mailing labels"]);
-    }
-    rows.push(["mail-sec", "TO"]);
-    if (customer) rows.push(["mail-name", customer]);
+    // ⚠️⚠️ A "FROM" HEADING WITH NOTHING UNDER IT (v592). ⚠️ With no mailing address the parcel printed a bare
+    // FROM on its outside — ⚠️ **an incomplete sender block a courier has to interpret.** ⭐ No lines, no heading.
+    if (senderLines.length) rows.push(["mail-sec", "FROM"]);
+    // ⚠️⚠️ AN INSTRUCTION TO HER WAS PRINTED ON THE PARCEL (v583). ⚠️ With no mailing address the FROM block
+    // read **"Set your bakery address in Settings → Mailing labels"** — ⚠️ **on the outside of a parcel a
+    // courier is carrying.** ⭐ The sheet says nothing it cannot say; the preview tells her what is missing.
+    for (const ln of senderLines) rows.push(["mail-line", ln]);
+    // ⚠️ AND NO "TO" HEADING WITH NOTHING UNDER IT (v596) — a bare TO on the outside of a parcel.
     const phone = String(first.whatsapp || "").trim();
+    if (customer || phone || recipientAddress.length) rows.push(["mail-sec", "TO"]);
+    if (customer) rows.push(["mail-name", customer]);
     if (phone) rows.push(["mail-line", phone]);
     for (const ln of recipientAddress) rows.push(["mail-line", ln]);
     rows.push(["mail-sec", "ORDER"]);
@@ -687,6 +689,8 @@ export function deliveryCal({ state, days, getActiveId, view, onPick, noteMisses
         return el("button", {
           class: `${cls} ${tip ? "tippable" : "tappable"}`,
           dataset: { date: iso },
+          // ⚠️ A MARKED DAY THAT IS NOT A DELIVERY DAY SAYS ITS DATE TOO (v598).
+          "aria-label": longDate(iso),
           onclick: () => {
             nameDay(state.occasions, iso, past); // names a marked day, exactly as everywhere else
             if (askable) missedIso = iso;
@@ -712,6 +716,9 @@ export function deliveryCal({ state, days, getActiveId, view, onPick, noteMisses
       return el("button", {
         class: `${cls} tappable`,
         dataset: { date: iso },
+        // ⚠️ THE DAY'S DATE, ITS CAPACITY AND WHETHER IT IS THE ONE SHOWING (v597).
+        "aria-label": longDate(iso) + (full ? ", full" : "") + `, ${cap.total}/${cap.capacity}`,
+        "aria-pressed": dateId === active ? "true" : "false",
         // Naming the day comes BEFORE opening it, as it always has; the repaint
         // before handing over is what takes the "not a delivery day" answer away,
         // so the grid never relies on the caller to tidy up after it.
@@ -774,6 +781,11 @@ function stuckOrdersEl() {
       one ? " and could not be read — " : " and could not be read:"),
     ...stuck.slice(0, 3).map((s) => el("p", {}, `· ${s.reason}`)),
     stuck.length > 3 ? el("p", {}, `· and ${stuck.length - 3} more`) : null,
+    // ⚠️⚠️ AND THE WINDOW SAYS IT IS A WINDOW (v582). ⚠️ The queue is read 200 rows at a time, so a real
+    // order can be BEHIND the rows listed above — ⭐ it must not wait invisibly.
+    incomingCapReached()
+      ? el("p", {}, "This phone reads the 200 newest waiting orders at a time, and there may be more behind these. As the ones above come in, the next are read.")
+      : null,
     el("p", {}, "Nothing is lost: it stays in the queue and is tried again every 30 seconds. Add what it names under Products and it will come in on its own."));
 }
 
@@ -1691,8 +1703,10 @@ function couponControlEls(state, first, group, repaint) {
 
   const put = (on) => {
     const id = String(hit.id);
-    state.declinedCoupons = (state.declinedCoupons || []).filter((x) => String(x) !== id);
-    if (on) state.declinedCoupons.push(id);
+    // ⚠️⚠️ ONE RECORD PER DECLINED CODE (v595) — a raw id string cannot be keyed by sync, so a decline on one
+    // phone never reached the other and the two showed different Totals.
+    state.declinedCoupons = (state.declinedCoupons || []).filter((x) => String((x && x.id) || x) !== id);
+    if (on) state.declinedCoupons.push({ id, at: new Date().toISOString() });
     save(state);
     maybeSync(state);
     repaint();
@@ -1813,12 +1827,28 @@ function lineCostControls(line, on, recipeCost, cur) {
 // until the day has an order, and a day where nobody has paid yet shows only the
 // "to collect" count.
 function moneyLine(state, dateId) {
-  const m = dayMoney(state, dateId);
-  if (!m.count) return null;
   const cur = state.settings.currency || "RM";
+  const rec0 = byId(state.deliveryDates, dateId);
+  if (!rec0) return null;
+  // ⚠️⚠️ THE DAY'S MONEY IS COUNTED BY THE DAY IT LANDED (v597). ⚠️ This line used `dayMoney`, which groups by
+  // DELIVERY day, while the Money screen credits a sale to the day it was PAID — ⚠️ **an order delivered on the
+  // 18th but paid on the 16th read RM15 here and RM0 on Money for the same date, the line she reconciles her
+  // tin against.** ⭐ One rule on both screens: `moneyBetween` for the money, `dayMoney` only for what is owed.
+  const m = moneyBetween(state, rec0.date, rec0.date);
+  const owed = dayMoney(state, dateId);
+  if (!m.count && !owed.count) return null;
+  // ⚠️⚠️ THE DAY'S PURSE LINE IS NET OF REFUNDS (v590). ⚠️ `tally` keeps a refunded sale's takings (v578:
+  // the refund is money OUT on the day it went back) — but this line subtracted nothing, so ⚠️ **a day with
+  // two RM15 sales and one RM15 refunded read "Cash RM30" while her tin held RM15**, on the very line she
+  // checks her purse against at the end of a run. ⭐ Each refund is taken off the account it came back from,
+  // and the total is named so the arithmetic is visible.
+  const refunds = refundsBetween(state, rec0.date, rec0.date);
+  const back = refunds || { cash: 0, tng: 0, total: 0, byMethod: new Map() };
   const bits = [];
-  if (m.cash) bits.push(`Cash ${fmtRM(m.cash, cur)}`);
-  if (m.tng) bits.push(`TNG ${fmtRM(m.tng, cur)}`);
+  const netCash = round2(m.cash - (back.cash || 0));
+  const netTng = round2(m.tng - (back.tng || 0));
+  if (netCash) bits.push(`Cash ${fmtRM(netCash, cur)}`);
+  if (netTng) bits.push(`TNG ${fmtRM(netTng, cur)}`);
   // ⚠️⚠️ AND EVERY OTHER ACCOUNT THAT TOOK MONEY TODAY IS NAMED (v478). Before this the line read
   // cash and TNG only — so once a customer's bank transfer could be recorded (this version), that
   // money would be counted in her takings, counted in "what should be in your purse and on your
@@ -1827,13 +1857,18 @@ function moneyLine(state, dateId) {
   //
   // ⚠️ IN HER LIST'S ORDER, by `methodRank` — the same sort `otherMethods` uses on the Money screen,
   // so the day's line and the money card read her accounts in the same order.
-  for (const [label, amount] of [...(m.byMethod || new Map())]
-    .filter(([label, amount]) => amount && !isCash(label) && !isTng(label))
-    .sort((a, b) => methodRank(state, a[0]) - methodRank(state, b[0]))) {
-    bits.push(`${label} ${fmtRM(amount, cur)}`);
+  // Every label that saw money EITHER way, so a refund from an account with no sale that day still shows.
+  const labels = new Set([...(m.byMethod || new Map()).keys(), ...(back.byMethod || new Map()).keys()]);
+  for (const label of [...labels]
+    .filter((l) => !isCash(l) && !isTng(l))
+    .sort((a, b) => methodRank(state, a) - methodRank(state, b))) {
+    // A refund is keyed to the account it came back from; `tally` keys takings the same way.
+    const net = round2(((m.byMethod || new Map()).get(label) || 0) - ((back.byMethod || new Map()).get(label) || 0));
+    if (net) bits.push(`${label} ${fmtRM(net, cur)}`);
   }
   if (m.unmarked) bits.push(`${fmtRM(m.unmarked, cur)} paid, no method`);
-  if (m.toCollectCount) bits.push(`${m.toCollectCount} to collect`);
+  if (back.total) bits.push(`${fmtRM(back.total, cur)} refunded`);
+  if (owed.toCollectCount) bits.push(`${owed.toCollectCount} to collect`);
   return bits.length ? el("p", { class: "card-sub money-line" }, bits.join(" · ")) : null;
 }
 
@@ -2120,6 +2155,9 @@ function orderForm(state, dateId, root, selectDate) {
           it.price = priceForProduct(state, it.productId);
           renderRows();
         }, "Product…");
+    // ⚠️⚠️ A NAMED BOX, NOT "Items" (v597). ⚠️ With no own label, `nameFields` gave this picker the row's group
+    // label — ⚠️ **a screen reader said "Items, pop-up button".**
+    prodSel.setAttribute("aria-label", "Product");
       // ★★★ THE QTY CAN BE TYPED, NOT ONLY PRESSED (v458). Her words: __"for qty field i should be allow
       // to key in qty also instead of just press the + & -"__ — ⭐ **because twenty loaves is twenty
       // presses.**
@@ -2151,7 +2189,7 @@ function orderForm(state, dateId, root, selectDate) {
       // never decide what she may write down from a phone call — the standing rule
       // that no setting may block or hide a sale she takes by hand.
       const lineNoteBox = it.productId
-        ? el("input", { class: "input line-note", type: "text",
+        ? el("input", { class: "input line-note", type: "text", "aria-label": "Note for this item",
             maxlength: String(LINE_NOTE_MAX),
             placeholder: "Note for this item (optional) — e.g. no nuts",
             value: it.note || "",
@@ -2165,9 +2203,9 @@ function orderForm(state, dateId, root, selectDate) {
         prodSel,
         el("div", { class: "add-item-ctl" },
           el("div", { class: "stepper" },
-            el("button", { onclick: () => { it.qty = Math.max(1, it.qty - 1); qtyBox.value = String(it.qty); paintTotal(); } }, "−"),
+            el("button", { "aria-label": "One less", onclick: () => { it.qty = Math.max(1, it.qty - 1); qtyBox.value = String(it.qty); paintTotal(); } }, "−"),
             qtyBox,
-            el("button", { onclick: () => { it.qty = it.qty + 1; qtyBox.value = String(it.qty); paintTotal(); } }, "＋")),
+            el("button", { "aria-label": "One more", onclick: () => { it.qty = it.qty + 1; qtyBox.value = String(it.qty); paintTotal(); } }, "＋")),
           linePriceBox(it, paintTotal),
           el("button", { class: "inbox-del", "aria-label": "Remove item",
             onclick: () => { items.splice(i, 1); renderRows(); } }, "✕")),
@@ -2686,7 +2724,8 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     // The code, valued against the DRAFT's own basket and the charge this form is
     // currently showing — not against the saved order, so the figure moves with the
     // lines as she types them, exactly as the items total above it does.
-    const promo = promoValue(state, first.promo, itemsTotal, courierCharge);
+    // ⚠️ A DELETED CODE'S FROZEN DISCOUNT STILL APPLIES HERE (v590) — `promoOnBasket`, not `promoValue`.
+    const promo = promoOnBasket(state, group.orders, itemsTotal, courierCharge);
     const off = promo.money;
     // The same question the message answers, asked of the DRAFT's basket rather than the
     // saved order's, so this card explains a code that gave nothing exactly as the
@@ -2718,10 +2757,36 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     // does not change, and nothing used to say so** — the difference left her books in silence.
     // ⭐ And her rule for taking something away is the one she gave me for bake days and delivery:
     // **it asks first.**
+    // ⚠️⚠️ THE COMPARISON IS GOODS AGAINST GOODS (v589). ⚠️ `paidWas` is `orderNet` — the customer's money
+    // for the bread, with the courier charge kept out because it was never her takings — while `nowTotal`
+    // included the charge. ⚠️ **So editing ANY paid order with a customer-borne courier charge falsely asked
+    // "has the extra RM8 been paid too?", and "Not yet" un-paid the order.** ⭐ `draftNow` is the goods-only
+    // figure; the receipt above still shows the whole total.
+    // ⚠️⚠️ AND THE DRAFT IS THE WHOLE ORDER'S WORTH (v598). ⚠️ It was the day's slice, while `paidWas` is the
+    // whole sale — ⚠️ **on a split order the two figures were of different things.** ⭐ The other days' rows
+    // ride along untouched; only this day's lines are the draft.
+    // ⚠️⚠️ AND THE DRAFT CARRIES NO FROZEN SALE (v599). ⚠️ `{ ...first }` copied `paidWasRM`, so `orderTakings`
+    // answered the OLD figure and the draft was never the edited worth — ⚠️ **RM32 paid, edited down to RM16, the
+    // dialog still said it "now comes to RM32", so an edit-up asked for the wrong extra and an edit-down asked the
+    // opposite question.** ⭐ The draft is a WORTH, which has no payment in it; every row is stripped, including
+    // the other days' (the family is read through its first row).
+    const stripFreeze = (o) => { const { paidWasRM: _p, ...rest } = o; return rest; };
+    const _others = familyOfOrder(state, group.orders)
+      .filter((o) => !group.orders.some((g) => g.id === o.id)).map(stripFreeze);
+    const _draftRows = priced.map((l) => ({
+      ...stripFreeze(first), id: l.id, productId: l.productId, qty: l.qty, unitPrice: l.price,
+    }));
+    draftNow = orderTakings(state, { orders: [..._others, ..._draftRows] });
+    // ⚠️ AND WHAT THE ORDER WAS WORTH BEFORE THIS EDIT (v599) — the extra is measured against the BILL, not
+    // against the money still held after a refund. ⭐ See the refreeze note below.
+    const billBefore = round2(customerTotal(state, { orders: familyOfOrder(state, group.orders) }).total);
+    const extraPaid = round2(draftNow - billBefore);
+    // ⚠️⚠️ AND THE HINT SPEAKS THE SAME FIGURE THE QUESTION WILL (v595). ⚠️ It compared the goods-only paid
+    // amount with `nowTotal` INCLUDING the courier charge — ⚠️ **RM7 in the hint and RM15 in the question, two
+    // money figures on one flow.** ⭐ One draft figure, goods only.
     const paidWas = isCollected(group) ? orderNet(state, group) : 0;
-    const nowTotal = Math.max(0, itemsTotal + here - off - coupon.amount);
+    const nowTotal = draftNow;
     const short = round2(paidWas - nowTotal);
-    draftNow = nowTotal;
     paidShortEl.replaceChildren(...(paidWas > 0 && short > 0
       ? [el("p", { class: "hint paid-short" },
           `⚠️ THE MONEY IS IN — this order was paid ${fmtRM(paidWas, cfgCur)}. As it stands it comes to `
@@ -2751,6 +2816,9 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
         line.cost = rc > 0 ? rc : null;
         refresh();
       }, "Product…");
+    // ⚠️⚠️ A NAMED BOX, NOT "Items" (v597). ⚠️ With no own label, `nameFields` gave this picker the row's group
+    // label — ⚠️ **a screen reader said "Items, pop-up button".**
+    prodSel.setAttribute("aria-label", "Product");
     // ★★★ AND THE SAME HERE (v458) — one qty behaves the same wherever it appears, which is this app's
     // rule for two rows that look alike. ⚠️ **A box she can type into on the New-order card and only
     // press here would be the "dead control" fault in a new suit.**
@@ -2775,7 +2843,7 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     // editable here even after she turns the switch off, and she must be able to add
     // one she took over the phone whatever the shop asks.
     const lineNoteBox = line.productId
-      ? el("input", { class: "input line-note", type: "text",
+      ? el("input", { class: "input line-note", type: "text", "aria-label": "Note for this item",
           maxlength: String(LINE_NOTE_MAX),
           placeholder: "Note for this item (optional) — e.g. no nuts",
           value: line.lineNote || "",
@@ -2791,9 +2859,9 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       prodSel,
       el("div", { class: "add-item-ctl" },
         el("div", { class: "stepper" },
-          el("button", { onclick: () => { line.qty = Math.max(1, line.qty - 1); qtyBox.value = String(line.qty); paintTotal(); } }, "−"),
+          el("button", { "aria-label": "One less", onclick: () => { line.qty = Math.max(1, line.qty - 1); qtyBox.value = String(line.qty); paintTotal(); } }, "−"),
           qtyBox,
-          el("button", { onclick: () => { line.qty = line.qty + 1; qtyBox.value = String(line.qty); paintTotal(); } }, "＋")),
+          el("button", { "aria-label": "One more", onclick: () => { line.qty = line.qty + 1; qtyBox.value = String(line.qty); paintTotal(); } }, "＋")),
         linePriceBox(line, paintTotal),
         el("button", { class: "inbox-del", "aria-label": "Remove item",
           onclick: () => { lines.splice(i, 1); refresh(); } }, "✕")),
@@ -2818,9 +2886,53 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
   // **taking something away asks first.** ⚠️ The money leaves her accounts the moment this saves,
   // and nothing in her hand moves — so the question says the figure, and says what to do next.
   const saveEdits = () => {
-    const paidWas = isCollected(group) ? orderNet(state, group) : 0;
+    // ⚠️⚠️ AN EDIT'S OWN REFUND IS ALREADY IN THE LINES (v595). ⚠️ `orderNet` then reads frozen − refund = 0,
+    // so a later edit UP asked nothing and the extra was silently accepted. ⭐ The baseline is what the order
+    // is worth now; an ordinary refund still comes off, because it did not change the lines.
+    // ⚠️⚠️ THE WHOLE SALE, NOT THE DAY'S SLICE (v598). ⚠️ `orderNet(group)` on a split order was that day's
+    // part, and freezing it onto every row dropped the other day's takings — ⚠️ **RM45 paid on two bake days
+    // read RM30, and RM15 vanished from Money, Profit and the customer's lifetime spend.** ⭐ Held money is
+    // what orderNet answers: the frozen amount (or the current worth) less every refund given.
+    const family = familyOfOrder(state, group.orders);
+    const wasEditedRefund = !!(first && first.paidWasRM && Number(first.paidWasRM) > 0);
+    const paidWas = isCollected(group) ? orderNet(state, { orders: family }) : 0;
+    // ⚠️ AND THE SALE AS IT WAS PAID IS CAPTURED BEFORE ANY EDIT RUNS (v595). ⚠️ It used to be read inside the
+    // refund card's callback, which fires AFTER `applyEdits()` — ⚠️ **so `paidWasRM` froze the EDITED amount
+    // (RM15) and a past month was rewritten**, the exact fault v589 meant to end.
+    const freezeAt = wasEditedRefund ? Number(first.paidWasRM) : orderTakings(state, { orders: family });
     const short = round2(paidWas - draftNow);
+    // ⚠️⚠️ AND THE OTHER DIRECTION: THE ORDER CAN NOW COME TO MORE (v577). ⭐ Only the shortfall was asked
+    // about, so an order edited UP while it was paid **counted the whole new total as money received** —
+    // ⚠️ measured: RM16 paid by Cash, a second RM16 loaf added, and Money showed RM32 of takings while the row
+    // still said Paid · Cash with no Pay press left. ⭐ The question is the honest one, and both answers are
+    // real: the extra was paid too, or it was not and the order goes back to being unpaid.
+    const shift = paymentShift(paidWas, draftNow);
+    const extra = shift.amount;
+    // ⚠️ AND THE EXTRA IS MEASURED AGAINST THE BILL, NOT AGAINST THE MONEY STILL HELD (v599) — a refund in
+    // the middle must not make the customer pay for money that was never theirs again.
+    const extraPaid = round2(draftNow - round2(customerTotal(state, { orders: family }).total));
+    // ⚠️⚠️ A SALE THAT ALREADY HAS MONEY BACK ON IT IS FROZEN TOO (v599). ⚠️ Only an *edit* refund stamped the
+    // freeze, so an ordinary refund followed by an edit-up re-priced the sale and subtracted the refund twice —
+    // ⚠️ **RM32 paid, RM20 refunded, edited up, and the books read RM12 against RM28 in her hand.**
+    const hadMoney = wasEditedRefund || (isCollected(group) && Number(first && first.refundAmountRM) > 0);
+    if (shift.dir === "extra") {
+      return confirmDialog(
+        `THE MONEY IS IN — this order was paid ${fmtRM(paidWas, cfgCur)} and now comes to `
+        + `${fmtRM(draftNow, cfgCur)}. Has the extra ${fmtRM(extra, cfgCur)} been paid too?`,
+        // ⚠️⚠️ AND PAYING THE EXTRA ADDS IT TO THE MONEY RECEIVED (v598/v599). ⚠️ `orderTakings` answers the
+        // frozen amount, so the extra was never counted anywhere — ⚠️ **RM30 paid, edited to RM15 with a RM15
+        // refund, then edited back and paid again still read RM15.** ⭐ It is ADDED, not substituted: refunds
+        // accumulate against the same sale, and replacing the freeze with the new worth subtracted them again
+        // (RM32 paid, RM16 refunded, edited back to RM32 read RM16 of RM32 held).
+        () => applyEdits(hadMoney ? { refreezeBy: extraPaid } : {}),
+        {
+          yesLabel: "Yes, paid too",
+          noLabel: "Not yet",
+          onNo: () => applyEdits({ markUnpaid: true }),
+        });
+    }
     if (paidWas > 0 && draftNow != null && short > 0) {
+      // ⚠️ AN EARLIER REFUND IS ADDED TO, NEVER ERASED (v598 — the writer accumulates; see `refundOrder`).
       return confirmDialog(
         `THE MONEY IS IN — this order was paid ${fmtRM(paidWas, cfgCur)} and now comes to `
         + `${fmtRM(draftNow, cfgCur)}. Saving takes ${fmtRM(short, cfgCur)} out of your accounts — `
@@ -2837,7 +2949,13 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
             // as the app having made its mind up for her.
             `THE MONEY IS IN. ${fmtRM(short, cfgCur)} less was paid than this order now `
             + `comes to — so the customer is owed that difference back. Refund it?`,
-            () => refundOrder(state, group, first, { root, dateId, fromEdit: true }),
+            // ⚠️⚠️ AND IT OPENS WITH THE FIGURE ALREADY IN (v577) — the dialog just named RM5 and the card
+            // opened at 0, so she retyped the number it had told her. §3·9.
+            () => refundOrder(state, group, first, {
+              root, dateId, fromEdit: true, amount: short,
+              // ⚠️ THE SALE AS IT WAS PAID, captured BEFORE the edit (v595) — see `freezeAt` above.
+              paidWas: freezeAt,
+            }),
             { yesLabel: `Refund ${fmtRM(short, cfgCur)}` });
         },
         { yesLabel: "Save it" });
@@ -2845,7 +2963,7 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     applyEdits();
   };
 
-  const applyEdits = () => {
+  const applyEdits = ({ markUnpaid = false, refreezeBy = 0 } = {}) => {
     const chosen = lines.filter((l) => l.productId);
     if (!chosen.length) return toast("Choose a product");
     const destId = draft.deliveryDateId || curId;
@@ -2915,6 +3033,30 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       orderDate: draft.orderDate,
       deliveryDateId: destId,
     }, close, root, liveIds);
+    // ⚠️⚠️ AND "NOT YET" MEANS THE MONEY IS NOT IN (v577). ⭐ The Pay press returns and Money stops counting
+    // the sale — the honest answer, and the only one that keeps her accounts true when she adds bread to an
+    // order the customer has not paid the extra for.
+    // ⚠️ AND THE FROZEN SALE FOLLOWS A PAYMENT FOR THE EXTRA (v598/v599) — by ADDITION.
+    if (refreezeBy != null && Number(refreezeBy) > 0) {
+      const base = Number(first && first.paidWasRM) || Number(refreezeBy);
+      for (const o of familyOfOrder(state, group.orders)) {
+        o.paidWasRM = round2((Number(o.paidWasRM) || base) + Number(refreezeBy));
+      }
+      save(state);
+      maybeSync(state);
+    }
+    if (markUnpaid) {
+      // ⚠️⚠️ THE WHOLE ORDER, NOT THE DAY'S SLICE (v589). ⚠️ Every book reads the order through its FIRST
+      // row, so clearing only the rows on the day she edited left a two-bake-day order reading PAID — ⚠️
+      // **her "Not yet" was silently ignored from the second day, and dropped the whole sale from the
+      // first.** ⭐ The same `familyOfOrder` the Pay press uses.
+      for (const o of familyOfOrder(state, group.orders)) {
+        o.paidReceived = false;
+        delete o.paidMethod;
+      }
+      save(state);
+      maybeSync(state);
+    }
   };
 
   // Where the price section draws the door block (v201). Under the address row rather than
@@ -3158,7 +3300,7 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root,
         // typed is what this order is sold at. A blank box leaves the line following
         // the product, as an unpriced line always has.
         const typed = l.price == null ? NaN : Number(l.price);
-        if (Number.isFinite(typed) && typed >= 0) o.unitPrice = typed;
+        if (Number.isFinite(typed) && typed >= 0) o.unitPrice = round2(typed);
         else delete o.unitPrice;
         // ★★ THE COST BOX HAS THE LAST WORD THE SAME WAY (v380). What she typed is
         // what this line cost her; a blank box DELETES the frozen cost, so the line
@@ -3212,7 +3354,7 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root,
           createdAt: new Date().toISOString(),
         };
         stampOrderLine(row, byId(state.products, row.productId), recipeCostFor(state, row.productId));
-        if (Number.isFinite(Number(l.price))) row.unitPrice = Number(l.price);
+        if (Number.isFinite(Number(l.price))) row.unitPrice = round2(Number(l.price));
         // The cost box's answer for a line added HERE (v380), on the same rule the
         // kept rows above use — including a typed zero, which is hers to state.
         if (l.cost != null && Number.isFinite(Number(l.cost)) && Number(l.cost) >= 0) {
@@ -3309,7 +3451,7 @@ function addNew(state, date, productId, qty, price, customerName, whatsapp, fulf
     // ★ WHERE IT COLLECTS FROM (v303), through the one function that owns the rule, so the
     // Point's name is frozen onto the order exactly as the shop's own path freezes it.
     setOrderPoint(state, row, pointId);
-    if (Number.isFinite(Number(price))) row.unitPrice = Number(price); // the typed price wins
+    if (Number.isFinite(Number(price))) row.unitPrice = round2(Number(price)); // the typed price wins, to the cent
     // The customer's words for THIS item (v236). Written only when there are
     // words, so a line nobody noted carries no key at all and an order she takes
     // with no notes is byte-for-byte the order this app has always written —
@@ -3395,7 +3537,7 @@ function addGroupNew(state, date, items, customerName, whatsapp, fulfillment, ad
       // See addNew — on EVERY row, because a row she edits or re-splits later must not be
       // the one that forgot where it was going.
       setOrderPoint(state, row, pointId);
-      if (Number.isFinite(Number(it.price))) row.unitPrice = Number(it.price);
+      if (Number.isFinite(Number(it.price))) row.unitPrice = round2(Number(it.price));
       // Per ROW, from that row's own item — a group of three items may have a note
       // on one of them and none on the others, so this can never be a value shared
       // across the group (v236).
@@ -3954,12 +4096,25 @@ function parcelApiBlock({ state, group, draft, refresh }) {
   const book = (rate) => {
     const cost = Number(rate.priceRM) || 0;
     confirmDialog(
-      `Book this parcel with ${rate.courierName} for RM${cost.toFixed(2)}?`,
+      // ⚠️ A QUOTE IS A QUOTE (v562). EasyParcel's booking call takes the COURIER and picks that
+      // courier's service itself — the exact row she picked cannot be named in it — so the price on
+      // screen is what it quoted and the amount it charged is read back from its own reply.
+      `Book this parcel with ${rate.courierName} for RM${cost.toFixed(2)}? EasyParcel picks that courier's service; the amount it actually charges is shown the moment it answers.`,
       async () => {
         draft.parcelSaid = "Booking…";
         refresh();
-        const out = await parcelBook(state, { ...payload(), courier: rate.courierName, dropoff: !!rate.dropoff });
-        if (!out.ok) { draft.parcelSaid = out.reason; refresh(); return; }
+        const out = await parcelBook(state, {
+          ...payload(), courier: rate.courierName, courierId: rate.courierId, dropoff: !!rate.dropoff,
+        });
+        if (!out.ok) {
+          draft.parcelSaid = out.reason;
+          // ⚠️⚠️ AN UNKNOWN OUTCOME TAKES THE BOOK PRESS AWAY (v561). ⭐ The server cannot tell whether the
+          // parcel was booked and charged; leaving "Book it" under a sentence saying so is how she charges
+          // herself twice. ⭐ Pricing again is free — that is the way back, and it makes her read first.
+          if (out.unknown) draft.parcelRate = null;
+          refresh();
+          return;
+        }
         const done = (out.booked || [])[0];
         if (!done) {
           // ⚠️ A REFUSAL IS ITS OWN SENTENCE. "Insufficient Credit" is a wallet problem she can
@@ -3982,7 +4137,19 @@ function parcelApiBlock({ state, group, draft, refresh }) {
         // chose. She can pick it in the box above in one press if she wants it named.
         save(state);
         maybeSync(state);
-        draft.parcelSaid = `Booked with ${rate.courierName} — RM${cost.toFixed(2)} paid from your EasyParcel credit. Consignment number ${done.awb}, and it is in the tracking box above.`;
+        // ⚠️ THE AMOUNT ON THIS LINE IS THE ONE THAT WAS TAKEN, NOT THE ONE THAT WAS QUOTED (v562).
+        // ⭐ EasyParcel answers with the price it charged; quoting the rate row back at her would be a
+        // receipt that describes a different transaction. ⚠️ When it did not send a figure, the message
+        // says so rather than repeating the quote as if it were the bill.
+        const paid = Number(done.priceRM) || 0;
+        const who = done.courierName || rate.courierName;
+        const charged = paid > 0
+          ? `RM${paid.toFixed(2)} paid from your EasyParcel credit`
+          : "EasyParcel did not say what it charged — that figure is on your EasyParcel account";
+        const differs = paid > 0 && Math.abs(paid - cost) >= 0.01
+          ? ` You were quoted RM${cost.toFixed(2)}; EasyParcel booked ${who}'s own service, which came to RM${paid.toFixed(2)}.`
+          : "";
+        draft.parcelSaid = `Booked with ${who} — ${charged}.${differs} Consignment number ${done.awb}, and it is in the tracking box above.`;
         draft.parcelRates = null;
         draft.parcelRate = null;
         toast(`Parcel booked — ${done.awb}`);
@@ -4069,29 +4236,49 @@ async function openInvoice(state, group) {
     }
   }
 
+  // ⚠️⚠️ ONE SALE, ONE INVOICE — EVEN WHEN ITS LINES SIT ON TWO BAKE DAYS (v587). ⚠️ The sheet was built from
+  // `group.orders`, the day's slice, ⚠️ **so one sale produced ONE INVOICE PER DAY, each wearing the same
+  // serial but carrying only that day's lines and total — and the paper opened from the other day printed a
+  // full sale with NO refund sentence, because the refund is stamped on the day it was given.** ⭐ The invoice
+  // is the whole order, which is what the consolidated page and every money book already read.
+  const whole = { ...group, orders: familyOfOrder(state, group.orders) };
   const cur = invoiceCurrency(state);
-  const sheet = invoiceSheet(state, group, {
+  const sheet = invoiceSheet(state, whole, {
     bakery: bakeryName(state),
     from: String((state.settings && state.settings.mailingAddress) || ""),
     // The serial, and the order code beside it — the first proves the sequence, the second
     // finds the order. Empty on an order that has no number yet, so the paper says why
     // rather than inventing one.
-    receipt: receiptLine(first, invoiceNo(group)),
-    receiptStatus: receiptStatus(first),
+    // ⚠️ the SECOND argument is the ORDER CODE, not the invoice number — with the invoice now numbered by
+    // the serial, passing `invoiceNo(group)` printed "Receipt #000007 · Order #000007" (v577, seen live).
+    receipt: receiptLineOfGroup(whole.orders, orderCode(first)),
+    receiptStatus: receiptStatusOfGroup(whole.orders, cur),
   });
 
-  showPopup(`Invoice #${invoiceNo(group)}`, (refresh, close) => el("div", {},
+  showPopup(`Invoice #${invoiceNo(whole)}`, (refresh, close) => el("div", {},
     // `journalBodyEl` deliberately does not draw a sheet's subtitle — every other journal
     // leans on the section wording above its card — so the person this invoice is for, and
     // the day the order was placed, are said here on the screen, while the sheet keeps the
     // date for the paper and the PDF.
+    // ⚠️⚠️ AND NEVER A RAW TIMESTAMP THROUGH `longDate` (v577). `createdAt` is an ISO timestamp, and
+    // `longDate` appends `T00:00:00` to what it is given — ⚠️ **measured: an order with no `orderDate`
+    // printed "NaN NaN NaN"** right above its own invoice. `orderDateOf` answers in her clock, or "".
     el("p", { class: "card-sub", style: "margin:0 0 10px" },
-      `${String(first.customerName || "").trim() || "No name"} · placed ${longDate(first.orderDate || first.createdAt)}`),
+      [`${String(first.customerName || "").trim() || "No name"}`,
+        orderDateOf(first) ? `placed ${longDate(orderDateOf(first))}` : ""].filter(Boolean).join(" · ")),
     // ★ THE RECEIPT'S SERIAL ON SCREEN TOO (v360), so what she reads here is what the paper
     // says. ⚠️ AND WHEN THERE IS NO NUMBER IT SAYS WHY — never a blank, and never a made-up
     // zero, which would be the app inventing a receipt the books do not have.
     el("p", { class: "card-sub", style: "margin:0 0 10px" },
-      receiptLine(first, invoiceNo(group)) || receiptStatus(first)),
+      receiptLineOfGroup(whole.orders, orderCode(first)) || receiptStatusOfGroup(whole.orders, cur)),
+    // ⚠️⚠️ THE SCREEN STILL GIVES THE WAY OUT (v599). ⚠️ v598 rightly took "reopen the app" off the
+    // CUSTOMER'S paper, but the screen lost every hint too — ⚠️ **she was left with a number that never
+    // arrived and nothing to do about it.** ⭐ `no-print`: the paper keeps the fact, the screen keeps the fix.
+    !receiptLineOfGroup(whole.orders, orderCode(first)) && first.paidReceived
+      ? el("p", { class: "card-sub no-print", style: "margin:0 0 10px" },
+          "Your records could not be reached to draw the number. Close this and open the invoice "
+          + "again once the phone is back online — the number is drawn then, and this page will show it.")
+      : null,
     journalBodyEl(sheet, cur),
     el("div", { class: "popup-actions" }, ...journalButtons(sheet, cur))));
 }
@@ -4181,7 +4368,7 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
         // free-delivery code on a changed fee read "Total RM20.00" here while the saved order, its
         // message and its invoice all said RM16.00. ⚠️ The Edit popup already re-values per keystroke;
         // this one captured it once.
-        const off = promo.money > 0 ? promoValue(state, first.promo, itemsTotal, theirs).money : 0;
+        const off = promo.money > 0 ? promoOnBasket(state, group.orders, itemsTotal, theirs).money : 0;
         // And the same discount here (v330) — the two cards list one order's money, so a
         // discount named on one and missing from the other is the fault this pairing exists
         // to prevent. Read off the SAVED order, which is what this box is for.
@@ -4464,15 +4651,31 @@ function labelSheetEl(state, group, style) {
 // (async browsers) and by a fallback timer, so a leftover class can never blank
 // a later PO print.
 function printActiveLabel() {
+  // ⚠️ A PHONE THAT CANNOT PRINT SAYS SO (v592) — before the class is added, so no trace is left.
+  if (!(typeof window !== "undefined" && typeof window.print === "function")) {
+    toast("This phone can't print — use Share instead.");
+    return;
+  }
   document.body.classList.add("label-print");
+  // ⚠️⚠️ THE PAPER IS 100 × 150 mm, AND IT IS SET ONLY FOR THIS PRINT (v575). ⭐ `@page` cannot be scoped by a
+  // body class — it applies to the whole document — so a fixed rule in the stylesheet would force the receipt,
+  // the journal and the purchase order onto label stock too. ⚠️ The size is injected here for the instant of
+  // printing and removed with the class. ⭐ Measured need: her label printer takes 100 × 150 mm (4 × 6 in).
+  const page = el("style", { id: "label-page-size" }, "@page { size: 100mm 150mm; margin: 0; }");
+  // ⚠️ A stand-in document (the test shims) may have no <head>; the real browser always does. ⚠️ The print then
+  // uses the printer's own paper setting, exactly as it did before this version — no worse than before.
+  const host = document.head || document.documentElement || document.body;
+  if (host && typeof host.appendChild === "function") host.appendChild(page);
   const done = () => {
     document.body.classList.remove("label-print");
+    const st = document.getElementById("label-page-size");
+    if (st) st.remove();
     window.removeEventListener("afterprint", done);
     clearTimeout(timer);
   };
-  const timer = setTimeout(done, 2000);
+  const timer = setTimeout(done, 10000);
   window.addEventListener("afterprint", done);
-  window.print();
+  try { window.print(); } catch { done(); toast("This phone couldn't print — use Share instead."); }
 }
 
 // "Print label": pick one of the preset styles, preview it live, then print.
@@ -4494,11 +4697,23 @@ function openLabelPrint(state, group) {
       pills.replaceChildren(...styles.map(([v, label]) => {
         const pill = el("button", {
           class: "style-pill" + (v === style ? " active" : ""),
+          // ⚠️ The chosen style was said by colour alone (v566); `aria-pressed` is the same fact in words.
+          "aria-pressed": String(v === style),
           onclick: () => { style = v; paint(); },
         }, label);
         return pill;
       }));
-      sheetWrap.replaceChildren(labelSheetEl(state, group, style));
+      // ⚠️ AND THE PREVIEW SAYS WHAT THE PARCEL CANNOT (v583): a Mailing label with no mailing address prints
+      // without a FROM block, so she is told here rather than discovering it on the box.
+      const missingFrom = style === "mailing"
+        && !String((state.settings && state.settings.mailingAddress) || "").trim();
+      const kids = [
+        labelSheetEl(state, group, style),
+        missingFrom ? el("p", { class: "warn", style: "margin:8px 0 0" },
+          "Your mailing address is not set, so this label prints without a FROM block. "
+          + "Add it in Settings → Mailing labels, or choose Full.") : null,
+      ].filter((x) => x != null);
+      sheetWrap.replaceChildren(...kids);
     };
     paint();
     return el("div", { class: "label-print-body" },
@@ -5258,7 +5473,11 @@ function openPayPicker(state, group, root, dateId) {
 // never published to them (`supabase.js`).
 function markPaid(state, group, root, dateId, method) {
   const at = new Date().toISOString();
-  for (const o of group.orders) {
+  // ⚠️⚠️ THE WHOLE ORDER, NOT THE DAY'S SLICE (v587). ⚠️ `group.orders` is only the rows on the bake day
+  // she is looking at, while every book reads the order through its FIRST row (`isCollected`,
+  // `money.js`) — ⚠️ **so paying a two-day order from the second day's row left it reading STILL OWED.**
+  // ⭐ `familyOfOrder` is the helper v432 added for exactly this, and the status change already uses it.
+  for (const o of familyOfOrder(state, group.orders)) {
     o.paidReceived = true;
     // ⚠️ ANY LABEL FROM HER OWN LIST, not one of two words. `methodLabel` (accounts.js) reads every
     // spelling back the same way, and the money books key every figure on this string — so a new
@@ -5317,15 +5536,32 @@ function firstOf(group) {
 // sequence that the numbering exists to prevent.
 // ⚠️ `fromEdit` (v549): this refund ANSWERS an edit that already lowered the order's takings. See the
 // note in `money.js refundOf` — the money must not be counted twice.
-function refundOrder(state, group, first, { root, dateId, fromEdit = false } = {}) {
+export function refundOrder(state, group, first, { root, dateId, fromEdit = false, amount = null, paidWas = null } = {}) {
+  // Exported so a test can open the card and read the figure in its box — the fault this replaces was
+  // pinned by grepping the source, which passed while the line sat inside the wrong handler (v589).
   const cur = (state.settings && state.settings.currency) || "RM";
   // ⚠️⚠️ THE CAP IS WHAT THE CUSTOMER ACTUALLY PAID — never the goods' face price. A coupon or a
   // promo code means they handed over less than the bread was priced at, and handing back the
   // discount as cash would be paying out money she never received (v370).
-  const bill = customerTotal(state, group);
-  const cap = round2(bill.total);
+  // ⚠️⚠️ THE WHOLE SALE, ON THE CARD THAT GIVES IT BACK (v598). ⚠️ The write covers the whole family, but the
+  // bill, the cap and the ticked lines came from the day's slice — ⚠️ **a split order paid RM45 could only refund
+  // RM30 and the rest was unreachable.** ⭐ One list, the same rows the writer changes.
+  const family = familyOfOrder(state, group.orders);
+  const bill = customerTotal(state, { orders: family });
+  // ⚠️ AND MONEY ALREADY GIVEN BACK IS NOT REFUNDABLE AGAIN (v598): refunds accumulate now, so the cap is the
+  // bill less what has already gone back.
+  const priorRefund = round2(Number(first && first.refundAmountRM) || 0);
+  // ⚠️⚠️ THE CAP IS THE MONEY SHE STILL HOLDS, NOT THE EDITED BILL (v599). ⚠️ On an edit-down the bill has
+  // already been lowered before this card opens, so `bill.total - priorRefund` was SMALLER than the refund the
+  // app itself had just promised — ⚠️ **RM48 paid, edited to RM16, the dialog said "Refund RM32", the box showed
+  // 32 and "up to RM16.00", and the press was refused: the books kept RM16 against RM48 of cash.** ⭐ The frozen
+  // sale is what came in; the cap is that less everything already given back.
+  // ⚠️ The edit flow hands over the sale AS IT WAS PAID (captured before the edit lowered the bill), which is
+  // the money she is actually holding; an ordinary Refund press prices it from the order itself.
+  const held = Number(paidWas) > 0 ? round2(Number(paidWas)) : orderTakings(state, { orders: family });
+  const cap = round2(Math.max(0, (held > 0 ? held : bill.total) - priorRefund));
 
-  const lines = group.orders.map((o) => ({
+  const lines = family.map((o) => ({
     id: o.id, qty: Number(o.qty) || 0, price: orderLinePrice(state, o), name: orderLineName(state, o),
   }));
   // ⚠️⚠️ ONLY THE CHARGE SHE ACTUALLY RECEIVED IS REFUNDABLE (v549). ⭐ A cash-on-delivery fee is paid to
@@ -5333,6 +5569,13 @@ function refundOrder(state, group, first, { root, dateId, fromEdit = false } = {
   // the bill. ⚠️ Offering it made the box read **"Ticked so far RM24.00"** beside **"up to RM16.00"**, and
   // then refuse her own press. ⭐ `bill.courier` is the same figure the invoice prints.
   const charge = refundableCharge(state, group);
+  // ⚠️⚠️ THE TICKER IS PRICED THE WAY THE BILL WAS (v590). ⚠️ It summed FACE prices while the cap was the
+  // DISCOUNTED bill — a RM15 loaf with a RM3 friend's coupon showed "Ticked so far RM15.00" beside "up to
+  // RM12.00", and then refused her own press. ⭐ Each line's share is scaled by the same discount the bill
+  // carries, so the ticks can never total more than the customer paid.
+  const face = round2(lines.reduce((s, l) => s + (l.price == null ? 0 : l.price * l.qty), 0) + charge);
+  const scale = face > cap && face > 0 ? cap / face : 1;
+  const share = (v) => round2((Number(v) || 0) * scale);
 
   const ticks = new Map();
   let courierWanted = false;
@@ -5340,9 +5583,11 @@ function refundOrder(state, group, first, { root, dateId, fromEdit = false } = {
   let boxEl = null;
   let sumEl = null;
 
-  const tickedTotal = () => round2(
-    lines.reduce((s, l) => s + (ticks.get(l.id) || 0) * (l.price == null ? 0 : l.price), 0)
-    + (courierWanted ? charge : 0));
+  // ⚠️ AND IT NEVER TICKS A SEN OVER THE CAP (v597): each line is scaled and rounded on its own, so three
+  // lines of RM1 on a RM2 cap could total RM2.01 and the app then refused its own figure. ⭐ The cap wins.
+  const tickedTotal = () => Math.min(cap, round2(
+    lines.reduce((s, l) => s + share((ticks.get(l.id) || 0) * (l.price == null ? 0 : l.price)), 0)
+    + (courierWanted ? share(charge) : 0)));
 
   // The box follows the ticks until she types in it, and after that it is hers — which is the whole
   // of what she picked: tick what came back to get the number right, then change it if she wants.
@@ -5351,7 +5596,7 @@ function refundOrder(state, group, first, { root, dateId, fromEdit = false } = {
       const on = ticks.has(r.line.id);
       const q = ticks.get(r.line.id) || 0;
       r.box.checked = on;
-      r.amt.textContent = fmtRM(q * (r.line.price == null ? 0 : r.line.price), cur);
+      r.amt.textContent = fmtRM(share(q * (r.line.price == null ? 0 : r.line.price)), cur);
       // ⚠️⚠️ AND THIS BOX IS DELIBERATELY LEFT EXACTLY AS IT WAS (v458). I changed it — holding the value
       // back while she typed — **and then looked at what that would do, and put it back.**
       // ⭐ A refund line clamps to what was sold, and this box is rewritten from that clamped figure on
@@ -5364,7 +5609,7 @@ function refundOrder(state, group, first, { root, dateId, fromEdit = false } = {
     }
     if (courierUI) {
       courierUI.box.checked = courierWanted;
-      courierUI.amt.textContent = fmtRM(courierWanted ? charge : 0, cur);
+      courierUI.amt.textContent = fmtRM(courierWanted ? share(charge) : 0, cur);
     }
     const total = tickedTotal();
     if (sumEl) sumEl.textContent = fmtRM(total, cur);
@@ -5378,7 +5623,10 @@ function refundOrder(state, group, first, { root, dateId, fromEdit = false } = {
     const rows = lines.map((line) => {
       const amt = el("span", { class: "refund-amt" }, "");
       const qtyBox = line.qty > 1
+        // ⚠️ EACH BOX NAMES ITS OWN LINE (v599): every row's box read the same "How many came back", so a
+        // screen reader on the second loaf could not tell her which box she was in.
         ? el("input", { class: "input refund-qty", type: "number", inputmode: "numeric",
+            "aria-label": `How many came back — ${line.name || "this item"}`,
             min: "1", max: String(line.qty),
             oninput: () => {
               const v = Math.max(1, Math.min(line.qty, parseInt(qtyBox.value, 10) || 1));
@@ -5441,15 +5689,40 @@ function refundOrder(state, group, first, { root, dateId, fromEdit = false } = {
           const at = new Date().toISOString();
           const items = [...ticks.entries()].map(([id, qty]) => ({ id, qty }));
           const why = note.value.trim();
-          for (const o of group.orders) {
+          // ⚠️⚠️ AND THE REFUND, ON EVERY ROW OF THE SALE (v587). ⚠️ On a slice it landed on one day's rows
+          // only, while `refundOf` reads the first row — ⚠️ **so the refund never left any account and Profit
+          // kept the sale, yet the register was still marked.** ⭐ The invoice's refund sentence reads the same
+          // rows, so one writer fixes both.
+          for (const o of familyOfOrder(state, group.orders)) {
             o.refundedAt = at;
-            o.refundAmountRM = value;
+            // ⚠️⚠️ A SECOND REFUND IS ADDED, NOT OVERWRITTEN (v598). ⚠️ One amount/date per order meant a later
+            // refund erased the earlier one from Money, Profit and the register. ⭐ The total returned is the
+            // sum; the day shown is the latest money that moved.
+            o.refundAmountRM = round2((Number(o.refundAmountRM) || 0) + value);
             // ⚠️⚠️ AND WHETHER THIS REFUND IS ANSWERING AN EDIT (v549). ⭐ A refund recorded from the
             // ordinary Refund press is money going back on top of what the order is worth; **a refund
             // recorded right after an edit-down is the SAME money the edit has already taken off** — so
             // the flag is what stops it being counted twice. ⭐ Cleared by any ordinary refund, because a
             // later real refund is a real one.
             if (fromEdit) o.refundFromEdit = true; else delete o.refundFromEdit;
+            // ⚠️⚠️ AN ORDINARY REFUND FREEZES THE SALE TOO (v599). ⚠️ Only an edit refund used to stamp
+            // `paidWasRM`, so a later edit re-priced the whole sale and subtracted this refund a second
+            // time. ⭐ The money received at this moment is what the books must keep.
+            if (!fromEdit && !(Number(o.paidWasRM) > 0)) {
+              const was = orderTakings(state, { orders: family });
+              if (was > 0) for (const f of family) f.paidWasRM = was;
+            }
+            // ⚠️⚠️ THE SALE AMOUNT IS FROZEN WHEN AN EDIT ANSWERS IT (v589). ⭐ Without it the edit rewrote
+            // the PAST month's takings (September's RM30 became RM15) while the refund month showed nothing
+            // leaving — ⚠️ **her October tin never moved, which is exactly what v578 was written to stop.**
+            // ⭐ The amount she actually received stays with its sale; the refund goes out in its own month.
+            if (fromEdit && Number(paidWas) > 0) o.paidWasRM = round2(Number(paidWas));
+            // An ordinary refund leaves any frozen sale alone: the sale amount was already received.
+            // ★★★ AND WHETHER THIS UNDID THE WHOLE SALE (v551). ⭐ The box's own cap IS the bill, so
+            // "everything went back" is known HERE and nowhere else — and the two books that must not
+            // count a refunded sale (the referral ledger and a promo code's quota) cannot work it out
+            // for themselves without a cycle. ⭐ **A fact is written where it is known.**
+            if (!fromEdit && value >= cap) o.refundedFull = true; else delete o.refundedFull;
             if (items.length) o.refundItems = items; else delete o.refundItems;
             if (why) o.refundNote = why; else delete o.refundNote;
           }
@@ -5464,7 +5737,7 @@ function refundOrder(state, group, first, { root, dateId, fromEdit = false } = {
           // the moment she confirms, whatever the register says. But a register that was never told
           // would print an UNMARKED receipt for a refunded sale, and that disagreement is hers to
           // know about: it is said on her screen rather than carried in silence.
-          const marked = await refundReceipt(state, first, value);
+          const marked = await refundReceipt(state, first, round2((Number(first && first.refundAmountRM) || 0)));
           save(state);
           close();
           toast(marked
@@ -5472,6 +5745,12 @@ function refundOrder(state, group, first, { root, dateId, fromEdit = false } = {
             : `${fmtRM(value, cur)} refunded and off your takings — but the receipt could NOT be marked in the register. Run supabase/receipts.sql, then open this order's Invoice.`);
           renderAll(root, state, new URLSearchParams({ date: dateId }));
         }, "primary")));
+    // ★★★ THE FIGURE THE QUESTION NAMED, ALREADY IN THE BOX (v589 — misplaced at v577 AND at v587).
+    // ⚠️ Both earlier versions wrote it inside a field's handler: first the quantity box (v577), then the
+    // quantity box's KEYSTROKE handler again (v587). ⚠️ **Neither runs when the card opens, so it still
+    // started at 0 and the next press still said "Type how much to give back".** ⭐ Here, once, after the
+    // box exists and before the first paint; `typed` keeps the ticks from overwriting it.
+    if (amount != null && boxEl) { typed = true; boxEl.value = String(round2(Number(amount) || 0)); }
     sync();
     return body;
   });
@@ -5497,11 +5776,22 @@ function undoRefundOrder(state, group, first, { root, dateId } = {}) {
     // would leave an order that reads as paid and still carries the money it gave back — and
     // `refundOf` answers an amount before it looks at the mark, so the books would keep counting a
     // refund she has just undone.
-    for (const o of group.orders) {
+    // ⚠️ AND THE UNDO, ON EVERY ROW (v587) — or the other day keeps the refund the register has just cleared.
+    for (const o of familyOfOrder(state, group.orders)) {
       delete o.refundedAt;
       delete o.refundAmountRM;
       delete o.refundItems;
       delete o.refundNote;
+      // ⚠️⚠️ AND THE TWO FLAGS THE REFUND SET (v577). ⭐ `refundedFull` is what the referral ledger and a
+      // promo code's quota read to stop counting a refunded sale (`refunds.js` / `promo-usage.js`), so leaving
+      // it behind makes the sale **both refunded and not**: ⚠️ **measured — a fully refunded referred first
+      // order offered the customer a SECOND new-friend coupon, and the code's usage stayed one short, while
+      // Money and Profit counted the sale again.** ⚠️ `refundFromEdit` rides with it: it marks a refund that
+      // answered an edit, and an undone refund is not answering anything.
+      delete o.refundedFull;
+      delete o.refundFromEdit;
+      // ⚠️ AND THE FROZEN SALE STAYS (v598): the money she keeps is what she was paid; deleting it re-priced
+      // an edited sale from the edited lines and the RM15 she still holds vanished from every book.
     }
     anchorRowId = first.id;
     save(state);
@@ -5552,7 +5842,10 @@ function removedOrdersEl(state, root) {
       el("p", { class: "card-sub", style: "margin:0 0 6px" },
         // ⚠️ THE WINDOW COMES FROM THE CONSTANT (v530) — a second copy of the number here is a screen that
         // can say "48 hours" while the app keeps them for a month.
-        `Kept for ${removedKeepWords()} so a mistake can be put right. Nothing here is lost.`),
+        `Kept for ${removedKeepWords()} so a mistake can be put right. Nothing here is lost.`
+        + (state.removedTrim && Number(state.removedTrim.total) > 0
+          ? ` ⚠️ This list keeps its newest 200 rows; ${Number(state.removedTrim.total)} of the oldest have been cleared from it.`
+          : "")),
       el("div", { class: "btn-row", style: "margin:0" },
         button(open ? "Hide them" : "Show them", () => { open = !open; paint(); }, "ghost small")),
       ...(open ? rows : []));

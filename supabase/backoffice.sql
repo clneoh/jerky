@@ -22,5 +22,10 @@ create table if not exists bakery (
   primary key (kind, id)
 );
 alter table bakery enable row level security;
+-- ⚠️⚠️ AND THE POLICIES ARE REPLACED, NOT RE-ADDED (v557). ⭐ A `create policy` on a name that already
+-- exists is an error, so this file — which every step in this folder says is safe to run again — stopped
+-- at its second line on any re-run. ⭐ The drops make that true.
+drop policy if exists "baker read" on bakery;
+drop policy if exists "baker write" on bakery;
 create policy "baker read"  on bakery for select to authenticated using (true);
 create policy "baker write" on bakery for all    to authenticated using (true) with check (true);

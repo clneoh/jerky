@@ -19,8 +19,8 @@ function createEl(tag) {
       contains() { return false; },
     },
     appendChild(c) { if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parent = this; } return c; },
-    append(...cs) { for (const c of cs) if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parent = this; } },
-    replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parent = this; } },
+    append(...cs) { for (const c of cs) { const n = c == null ? { nodeType: 3, text: "null" } : c; this.children.push(n); if (n.nodeType === 1) n.parent = this; } },
+    replaceChildren(...cs) { this.children = []; for (const c of cs) { const n = c == null ? { nodeType: 3, text: "null" } : c; this.children.push(n); if (n.nodeType === 1) n.parent = this; } },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener(t, f) { this._listeners[t] = (this._listeners[t] || []).filter((x) => x !== f); },
     // Walk up the parent chain, so a tap can be judged as inside or outside a
@@ -98,7 +98,7 @@ class MockDate extends RealDate {
 }
 globalThis.Date = MockDate;
 
-import { renderProducts } from "../admin/js/views/products.js";
+import { removeDay, renderProducts } from "../admin/js/views/products.js";
 
 // A state with just enough to render the editor: a count unit to pick, and no
 // products yet (the always-visible New product card).
@@ -250,6 +250,28 @@ test("an older product's from–to window opens in the card as one mark, and a s
   assert.deepEqual(saved.sellRules, [{ days: [], from: "2026-12-01", to: "2026-12-24" }]);
   assert.equal(saved.validFrom, undefined, "the old pair is dropped — its period survives as a mark");
   assert.equal(saved.validTo, undefined);
+});
+
+test("★★★ removing one day from an OPEN mark keeps the side that has no end (v580)", () => {
+  // ⚠️⚠️ MEASURED: a mark "until 31 Oct" minus 31 Oct left NO rule at all — ⚠️ **so the product went on
+  // selling every day from November** — and a mark "Mondays from 1 Oct" minus its first Monday put **every
+  // later Monday off sale.** ⭐ A blank end means "no end", so both halves exist unless the day sits exactly
+  // on that end.
+  assert.deepEqual(removeDay([{ days: [], from: "", to: "2026-10-31" }], "2026-10-31"),
+    [{ days: [], from: "", to: "2026-10-30" }],
+    "★ removing the last day of a mark that runs from the beginning deleted the whole mark");
+  assert.deepEqual(removeDay([{ days: [], from: "2026-10-01", to: "" }], "2026-10-20"),
+    [{ days: [], from: "2026-10-01", to: "2026-10-19" },
+      { days: [], from: "2026-10-21", to: "" }],
+    "★ removing a day from a mark with no end dropped every day after it");
+  assert.deepEqual(removeDay([{ days: [1], from: "2026-10-05", to: "" }], "2026-10-05"),
+    [{ days: [1], from: "2026-10-06", to: "" }],
+    "★ removing the first Monday of an open Monday mark put every later Monday off sale");
+  // And the two ends that ARE set still split the mark in the middle, as they always did.
+  assert.deepEqual(removeDay([{ days: [], from: "2026-10-01", to: "2026-10-31" }], "2026-10-15"),
+    [{ days: [], from: "2026-10-01", to: "2026-10-14" },
+      { days: [], from: "2026-10-16", to: "2026-10-31" }],
+    "a mark with both ends stopped splitting around the day");
 });
 
 test("a backwards pair is swapped rather than refused — a drag may go either way", () => {
@@ -1778,4 +1800,35 @@ test("editing a saved product reopens with its own category already ticked", () 
 
   assert.deepEqual(state.products[0].categories, ["cat_drink", "cat_food"],
     "the heading it already had stays first — ticking another does not displace it");
+});
+
+test("★★★ a half-typed New product survives pressing Hide on ANOTHER product", () => {
+  // ⚠️⚠️ Pressing Hide, Publish or Delete on another product redraws this whole screen, and the ＋ New
+  // product card was built afresh — ⭐ **so the name, the recipe and every box she had filled in were gone,
+  // with no warning.** ⭐ A row action puts the card already on the page back instead of building a new
+  // one, so what she typed and the handlers holding it both stay hers.
+  const st = freshState();
+  st.products = [{ id: "p1", name: "Focaccia", active: true, unit: "loaf", uomId: "u_loaf", price: 16, recipe: [] }];
+  const root = render(st);
+  const f = formHandles(root);
+  f.name.value = "Half typed";
+  const hide = walk(root).find((n) => n.tagName === "BUTTON"
+    && (n.children || []).some((c) => c.text === "Hide"));
+  assert.ok(hide, "precondition: the product row offers Hide");
+  fire(hide);
+  // ⚠️ RE-READ THE CARD FROM THE SCREEN, not the handle from before the press — the old node still holds
+  // her words whatever happened, and an assertion on it would pass with the card rebuilt and empty.
+  assert.equal(formHandles(root).name.value, "Half typed",
+    "★ the New product card was rebuilt by another row's press and wiped what she had typed");
+});
+
+test("★★★ and ADDING a product still starts the next one on a clean card", () => {
+  const st = freshState();
+  const root = render(st);
+  const f = formHandles(root);
+  f.name.value = "Focaccia";
+  f.unit.value = "u_loaf";        // the card will not add a product without its selling unit
+  fire(f.add);
+  const g = formHandles(root);
+  assert.equal(g.name.value, "", "★ the card kept the product she just added — the next one starts dirty");
 });

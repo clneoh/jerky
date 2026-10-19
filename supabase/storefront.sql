@@ -41,6 +41,17 @@ create table if not exists incoming_orders (
   created_at timestamptz not null default now()
 );
 
+-- ⚠️⚠️ AN ANONYMOUS INSERT IS UNLIMITED AND UNSHAPED BY DESIGN — ⚠️ **the shop has no login, so anything that
+-- reaches this table was put there by a stranger.** ⭐ The honest limit that can be set HERE is the SHAPE: a
+-- real cart is a few hundred characters, so a row may not be a megabyte. ⚠️ It does not stop a script posting
+-- many small fake orders — nothing in this table can, and that cost is accepted and stated.
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'incoming_orders_data_size') then
+    alter table incoming_orders add constraint incoming_orders_data_size check (octet_length(data) <= 20000) not valid;
+  end if;
+end $$;
+
 alter table incoming_orders enable row level security;
 drop policy if exists "customer place order" on incoming_orders;
 create policy "customer place order" on incoming_orders

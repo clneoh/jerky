@@ -119,11 +119,18 @@ export function renderProduction(root, state) {
   return teardown;
 }
 
-// What a field writes. A cleared box is mid-typing, not a request for zero pans, so
-// the last good number is held rather than a 0 the whole screen would have to explain.
-function writeField(plan, state, key, raw) {
+// ⚠️⚠️ ZERO IS A REAL ANSWER FOR THE TIMETABLE, AND THE BOX REFUSED IT (v583). ⚠️ "Minutes earlier that are
+// still fine: 0", "no cooling wait", "the day starts at midnight" — ⚠️ **the plan clamps every one of those
+// at 0 and says so in its own comment, while this box quietly threw the 0 away.** ⭐ A count still needs at
+// least one; a duration may be none.
+const ZERO_OK = new Set([...TIME_FIELDS.map((f) => f.key), "rhythmMin"]);
+
+// What a field writes. A cleared box is mid-typing, and a count of zero pans is not a request — the last
+// good number is held rather than a 0 the whole screen would have to explain. ⚠️ A TIME may be zero.
+export function writeField(plan, state, key, raw) {
   const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return;
+  if (!Number.isFinite(n) || n < 0) return;
+  if (n === 0 && !ZERO_OK.has(key)) return;
   plan[key] = n;
   save(state);
 }
@@ -298,7 +305,7 @@ function foldCard(title, flag, answers, ...bodyKids) {
 function fieldRow(f, plan, onEdit) {
   const input = el("input", {
     class: "input", type: "number", inputmode: "decimal",
-    min: "1", step: String(f.step || 1),
+    min: ZERO_OK.has(f.key) ? "0" : "1", step: String(f.step || 1),
     value: plan[f.key] == null ? "" : String(plan[f.key]),
   });
   // One field is a time of day, and asking her to work out that 480 means 8:00 am every

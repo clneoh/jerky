@@ -6,17 +6,21 @@
 // answer to the number: "for the invoice, i think we can use the order code as invoice
 // number".
 //
-// What this file is for, in one sentence: THE NUMBER IS THE ORDER'S OWN CODE AND MAKING
-// AN INVOICE WRITES NOTHING, WHILE THE MONEY IS READ AND NEVER RE-ADDED. The code is
-// unique by construction, so there is no counter to share between two phones and nothing
-// to store; the money is `customerTotal` because that is the one function the
-// confirmation message, the tracking card and the order row already read — an invoice
-// that worked the sum out itself is an invoice that could disagree with all three.
+// What this file is for, in one sentence: THE NUMBER IS THE REGISTER'S SERIAL ONCE THE
+// SALE HAS ONE (the order's own code until then), MAKING AN INVOICE WRITES NOTHING, AND
+// THE MONEY IS READ AND NEVER RE-ADDED. ⚠️⚠️ v577: the consolidated filing page numbered
+// by the serial while this document numbered by the code — **one sale, two invoice
+// numbers, on two papers.** ⭐ The serial is the legal number and wins; the code is the
+// honest fallback, unique by construction, so there is no counter to share between two
+// phones. The money is `customerTotal` because that is the one function the confirmation
+// message, the tracking card and the order row already read — an invoice that worked the
+// sum out itself is an invoice that could disagree with all three.
 //
 // Run with: node --test test/
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   invoiceCurrency, invoiceLineAmount, invoiceLineName, invoiceNo, invoiceSheet,
 } from "../admin/js/invoice.js";
@@ -44,6 +48,29 @@ const line = (over = {}) => ({
   unitPrice: 15, status: "ready", ...over,
 });
 
+test("★★★ an order with no date prints NO date, never NaN (v592)", () => {
+  // ⚠️⚠️ MEASURED: `longDate("")` is "NaN undefined NaN", and the invoice passed `orderDateOf` straight into
+  // it — ⚠️ **an imported or hand-edited row with no date printed that under the title**, while the screen
+  // showed nothing.
+  const st = state();
+  const g = group([line({ orderDate: "", createdAt: "", deliveryDate: "" })]);
+  const inv = invoiceSheet(st, g);
+  assert.equal(inv.subtitle, "", "★ an undated order printed a subtitle");
+  assert.equal(journalSheet(inv).subtitle, "", "and the sheet the PDF reads carries it too");
+});
+
+test("★★★ the printed lines add up to the printed Total, even at half a cent a loaf", () => {
+  // ⚠️⚠️ MEASURED (v551): two lines sold at RM0.005 each printed as "RM 0.01" and "RM 0.01" — a reader's
+  // sum of RM0.02 — under **Total RM0.01**, because each line was rounded for printing while the Total was
+  // worked out on the unrounded figures. ⭐ **An invoice whose lines do not add up to its own Total is not
+  // an invoice** — this file's own rule, broken by rounding rather than by arithmetic.
+  const { st, g } = cart([{ unitPrice: 0.005, qty: 1 }, { unitPrice: 0.005, qty: 1 }]);
+  const inv = invoiceSheet(st, g);
+  const sum = inv.lines.reduce((s, l) => s + (l.dir === "out" ? -l.amount : l.amount), 0);
+  assert.equal(Math.round(sum * 100), Math.round(inv.totals[0].amount * 100),
+    "★ the invoice's lines do not add up to the Total printed under them");
+});
+
 // A cart that really lives in `state.orders`, because that is where the money and the
 // order's own identity are read from.
 function cart(rows = [{}], st = state()) {
@@ -60,7 +87,7 @@ const mkCode = (over = {}) => ({
 
 // ── the number is the order's own code ───────────────────────────────────────
 
-test("the invoice number IS the order code, and it is the same one every time", () => {
+test("with no serial yet, the invoice number IS the order code, and the same one every time", () => {
   // Her words: "for the invoice, i think we can use the order code as invoice number".
   // The code is the last six hex of the order's own id, so it is unique by
   // construction — there is no counter for two phones to share and disagree about, and
@@ -73,6 +100,62 @@ test("the invoice number IS the order code, and it is the same one every time", 
   // A reprint reads the same number because the number was never stored to be re-given.
   assert.equal(invoiceNo(g), invoiceNo(group(st.orders)), "the same order, the same number");
 });
+
+test("★★★ once a receipt number is issued, the invoice carries THAT number — the one the register shows", () => {
+  // ⚠️⚠️ THE FAULT (v577): `consolidated.js`'s Invoice column read the receipt serial while this
+  // document read the order code, so **one sale was quoted as two different invoices** — and the code can
+  // collide (~3% by 1,000 orders), which is exactly what a serial exists to prevent.
+  const { st, g } = cart([{ receiptNo: 3 }]);
+  assert.equal(invoiceNo(g), "000003",
+    "★ the invoice does not carry the receipt serial, so it disagrees with the filing page about one sale");
+  assert.equal(journalSheet(invoiceSheet(st, g)).title, "Invoice #000003",
+    "★ the printed title and the number do not agree");
+});
+
+test("the serial is found on ANY row of the sale, not only the first", () => {
+  // The stamp is copied to every row, but a group handed over as a slice may start at any of them.
+  const { st, g } = cart([{ id: "oa" }, { id: "ob", receiptNo: 7 }]);
+  assert.equal(invoiceNo(g), "000007",
+    "★ a numbered sale whose first row carries no stamp prints as unnumbered — the v445 fault again");
+});
+
+test("★★★ a refunded sale's invoice SAYS SO, with the money and the day, and its Total stays the sale", () => {
+  // ⚠️⚠️ THE FAULT (v577): the caller always passes a serial, so the one place the refund wording could
+  // appear was blank — **a refunded order's invoice read exactly like an unreformed one.** ⚠️ And the
+  // refund must NOT be subtracted from the Total: the invoice states what was sold and owed, the lines
+  // above the Total are the sale's, and money going back is a later event with its own date.
+  const { st, g } = cart([{ receiptNo: 3, paidReceived: true, refundedAt: "2026-10-03T14:22:00.000Z",
+    refundAmountRM: 5 }]);
+  const inv = invoiceSheet(st, g);
+  assert.match(inv.note, /RM 5\.00 returned on 3 Oct 2026/,
+    "★ a refunded sale's invoice never mentions the refund");
+  assert.equal(Math.round(inv.totals[0].amount * 100), 3000,
+    "★ the refund was taken off the Total — the invoice no longer adds up to its own lines");
+});
+
+test("a refund that undid the whole sale says 'in full'; an order with no refund says nothing", () => {
+  const full = cart([{ refundedAt: "2026-10-03T09:00:00.000Z", refundAmountRM: 30, refundedFull: true }]);
+  assert.match(invoiceSheet(full.st, full.g).note, /Refunded in full: RM 30\.00 returned on 3 Oct 2026/,
+    "★ a full refund is not named as one — she cannot tell it from a part refund on the paper");
+  const plain = cart([{}]);
+  assert.equal(invoiceSheet(plain.st, plain.g).note, "",
+    "★ an unrefunded invoice gained a refund sentence");
+});
+
+test("the receipt line beside the serial names the ORDER CODE, not the invoice number (v577)", () => {
+  // ⚠️⚠️ SEEN LIVE: with the invoice numbered by the serial, the caller passed `invoiceNo(group)` where the
+  // ORDER CODE belongs — ⚠️ **the paper read "Receipt #000003 · Order #000003"**, one number wearing two hats.
+  // ⭐ A source check is weaker than a driven one and is named as one: what it can hold is the call itself,
+  // which no pure test reaches.
+  const SRC = readFileSync(new URL("../admin/js/views/orders.js", import.meta.url), "utf8");
+  assert.doesNotMatch(SRC, /receiptLineOfGroup\(group\.orders, invoiceNo\(group\)\)/,
+    "★ the serial is passed as the order code — the receipt line prints one number twice");
+  assert.match(SRC, /receiptLineOfGroup\(whole\.orders, orderCode\(first\)\)/,
+    "★ the invoice's receipt line no longer names the order's own code beside the serial");
+});
+
+// ⚠️ The refund card's opening figure is DRIVEN in order-stage-whole-order.test.js (v589). The source
+// grep that lived here passed while the line sat inside the quantity box's keystroke handler — twice.
 
 test("two orders are two invoices, and neither is numbered by the other", () => {
   const st = state();

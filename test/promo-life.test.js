@@ -150,7 +150,7 @@ function createEl(tag) {
     disabled: false, hidden: false, scrollTop: 0, parent: null, _listeners: {},
     get parentNode() { return this.parent; },
     appendChild(c) { if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parent = this; } return c; },
-    append(...cs) { for (const c of cs) if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parent = this; } },
+    append(...cs) { for (const c of cs) { const n = c == null ? { nodeType: 3, text: "null" } : c; this.children.push(n); if (n.nodeType === 1) n.parent = this; } },
     replaceChildren(...cs) {
       this.children = [];
       for (const c of cs) {

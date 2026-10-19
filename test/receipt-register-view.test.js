@@ -17,13 +17,18 @@ function createEl(tag) {
     tagName: String(tag || "").toUpperCase(), nodeType: 1, children: [], attrs: {}, dataset: {},
     className: "", style: {}, value: "", checked: false, disabled: false, hidden: false,
     scrollTop: 0, _listeners: {},
+    // ⚠️ SHIM, NOT A STUB (v582): the print class is the whole mechanism under test, so a classList
+    // that forgot every add would prove nothing about it. `className` follows, as the real DOM's does.
     classList: {
-      add() {}, remove() {}, toggle() {},
-      contains() { return false; },
+      add(...cs) { for (const c of cs) { node._cls.add(String(c)); } node.className = [...node._cls].join(" "); },
+      remove(...cs) { for (const c of cs) { node._cls.delete(String(c)); } node.className = [...node._cls].join(" "); },
+      toggle(c, on) { if (on === undefined ? !node._cls.has(c) : on) this.add(c); else this.remove(c); },
+      contains(c) { return node._cls.has(String(c)); },
     },
+    _cls: new Set(),
     appendChild(c) { if (c != null) this.children.push(c); return c; },
-    append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
-    replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) this.children.push(c); },
+    append(...cs) { for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
+    replaceChildren(...cs) { this.children = []; for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener() {},
     setAttribute(k, v) { this.attrs[k] = String(v); },
@@ -40,15 +45,26 @@ function createEl(tag) {
   return node;
 }
 
+// ⚠️ A REGISTRY, NOT `null` (v591): the void press opens a real pop-up, and a shim that answers null to
+// every id makes `showPopup` return a no-op — so the press could only ever be grepped, never driven.
+const layers = {};
 globalThis.document = {
   createElement: createEl,
   createTextNode: (s) => ({ nodeType: 3, text: String(s) }),
-  getElementById: () => null,
+  getElementById: (id) => (layers[id] ||= createEl("div")),
   querySelector: () => null,
   querySelectorAll: () => [],
   body: createEl("body"),
 };
-globalThis.window = {};
+// ⚠️ A PRINT SPY, because the press must be provable as a PRINT and the class has to be able to come off
+// on `afterprint` — the mechanism the v582 fix is built on.
+const printed = [];
+globalThis.window = {
+  _listeners: {},
+  addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
+  removeEventListener(t, f) { this._listeners[t] = (this._listeners[t] || []).filter((x) => x !== f); },
+  print() { printed.push(true); },
+};
 // ⚠️ The view navigates with `location.hash` directly (the choice history.js documents), so the
 // address has to exist for a press to be provable at all.
 globalThis.location = { hash: "" };
@@ -294,6 +310,40 @@ test("★★ a voided row still SHOWS, still wears its number, and offers the wa
   assert.match(said, /Uncle Tan/, "the void mark disturbed a receipt that is perfectly fine");
 });
 
+test("★★★ marking a receipt void writes a record that can TRAVEL (v591)", async () => {
+  // ⚠️⚠️ THE PRESS WAS NEVER MADE BY ANY TEST. ⚠️ The v518 fault — a void record written WITHOUT an `id` —
+  // could be put back and every test stayed green, because nothing pressed "Mark it void". ⚠️ **A record that
+  // cannot be keyed is silently dropped by sync, so the other phone shows the same alarming row for ever.**
+  const st = state();
+  st.voidedReceipts = [];
+  // The save the press makes schedules a sync, and a sync reads the book's lists — empty here, but PRESENT.
+  Object.assign(st, { deliveryDates: [], products: [], ingredients: [], purchaseOrders: [], uoms: [], customers: [] });
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    const body = u.includes("receipt_numbers") ? [row(5, "DEAD01")] : [];
+    return { ok: true, json: async () => body };
+  };
+  const root = createEl("div");
+  renderReceiptRegister(root, st);
+  await settle();
+
+  const mark = all(root).find((n) => n.tagName === "BUTTON" && /mark as void/i.test(txt(n)));
+  assert.ok(mark, "the unaccounted receipt did not offer its mark, so this proves nothing");
+  mark._listeners.click[0]();
+
+  const popup = layers["popup-layer"];
+  assert.ok(popup && popup.children.length, "the void question never opened");
+  const go = all(popup).find((n) => n.tagName === "BUTTON" && /mark it void/i.test(txt(n)));
+  assert.ok(go, "the question drew no mark press");
+  go._listeners.click[0]();
+  for (let i = 0; i < 4; i++) await settle();
+
+  assert.equal(st.voidedReceipts.length, 1, "the mark was not recorded");
+  assert.ok(String(st.voidedReceipts[0].id || "").trim(),
+    "★ the void record has NO id — **sync drops it and the other phone shows this receipt as a hole for ever**");
+  assert.equal(Math.floor(Number(st.voidedReceipts[0].no)), 5, "and it names the receipt it explains");
+});
+
 test("the screen offers no press that could change a number", async () => {
   // ⚠️ A REGISTER YOU CAN EDIT IS NOT A REGISTER. The one guarantee this run exists for is
   // that no number is ever re-used or removed — including by her, by accident.
@@ -304,7 +354,9 @@ test("the screen offers no press that could change a number", async () => {
   await settle();
 
   const presses = all(root).filter((n) => n.tagName === "BUTTON").map((n) => txt(n).trim());
-  assert.deepEqual(presses, ["Read again"],
+  // ⚠️ "Print this page" IS ALLOWED AND IS THE ONLY ADDITION (v572): it writes nothing, and the page it
+  // prints is the evidence itself. ⭐ Anything else — an edit, a void, a delete — is what this forbids.
+  assert.deepEqual(presses.filter((p) => p !== "Print this page"), ["Read again"],
     `the register offers a press beyond re-reading it: ${JSON.stringify(presses)}`);
   // ⚠️⚠️ AND THE LINKS ARE COUNTED TOO (v381). This assertion used to look at BUTTONS alone,
   // which made it blind the moment the order numbers became anchors — a control that could
@@ -320,4 +372,35 @@ test("the screen offers no press that could change a number", async () => {
     `the register carries a link that is not an order door: ${JSON.stringify(links.map((a) => a.attrs.href))}`);
   assert.equal(links.every((a) => /^#\/orders\?order=/.test(String(a.attrs.href))), true,
     "an order number links somewhere other than the order it names");
+});
+
+test("★★★ the register keeps its print class until after the print, and its screen instruction stays off the paper (v582)", async () => {
+  // ⚠️⚠️ THE FAULT: the class came off in a `finally` straight after `window.print()` — ⚠️ **on a browser
+  // that returns before it renders the sheet, the register printed BLANK.** ⭐ And "Press an Order number
+  // to open that order" was printed on the paper, where it means nothing.
+  const st = state();
+  globalThis.fetch = async () => ({ ok: true, json: async () => [row(1, "C2FDA5")] });
+  const root = createEl("div");
+  renderReceiptRegister(root, st);
+  await settle();
+
+  const press = all(root).find((n) => n.tagName === "BUTTON" && txt(n).trim() === "Print this page");
+  assert.ok(press, "the register has no print press at all");
+  press._listeners.click.forEach((f) => f());
+  assert.equal(printed.length, 1, "the press did not ask the browser to print");
+  assert.equal(document.body.classList.contains("receipt-print"), true,
+    "★ the class was already gone when print() returned — the register prints blank");
+  assert.equal((window._listeners.afterprint || []).length, 1,
+    "★ nothing listens for afterprint, so the class can only be removed too early");
+
+  window._listeners.afterprint.forEach((f) => f());
+  assert.equal(document.body.classList.contains("receipt-print"), false,
+    "the print class was left behind on the app after printing");
+
+  // ⭐ And the screen-only instruction wears no-print, so the paper never says it.
+  const instruction = all(root).find((n) => n.tagName === "P"
+    && /Press an Order number to open that order/.test(n.textContent || ""));
+  assert.ok(instruction, "the screen lost its instruction about the order numbers");
+  assert.match(String(instruction.className), /no-print/,
+    "★ an instruction for the screen is printed on the paper");
 });

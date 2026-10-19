@@ -36,13 +36,40 @@ function allSources(dir = JS_DIR, out = []) {
   return out;
 }
 
+// ★★★ THE CODE, NOT THE PROSE (v584) — see test/imports-resolve.test.js for the same lesson.
+function liveSource(src) {
+  const out = [];
+  let inBlock = false;
+  for (const line of String(src || "").split("\n")) {
+    const t = line.trim();
+    if (inBlock) { if (t.includes("*/")) inBlock = false; out.push(""); continue; }
+    if (t.startsWith("/*")) { if (!t.includes("*/")) inBlock = true; out.push(""); continue; }
+    if (t.startsWith("//") || t.startsWith("*")) { out.push(""); continue; }
+    out.push(line.replace(/\/\*.*?\*\//g, "").replace(/\s\/\/\s.*$/, ""));
+  }
+  return out.join("\n");
+}
+
+// ⚠️⚠️ EVERY WAY A LIST IS EMPTIED, NOT ONE SPELLING (v584). ⚠️ This grep only knew `state.orders =` —
+// ⚠️ **so `.length = 0`, `.splice()`, `.pop()`, `.shift()` and `delete state.orders` all passed it** — precisely
+// the removal somebody adds later, which is the fault this guard exists for. ⭐ Pushing and mapping stay allowed.
+// ⚠️ AND THE BRACKET SPELLING (v588): `state["orders"] = []` is the same emptying as `state.orders = []`, and
+// the first guard read only the dot form.
+const ORDER_FIELD = String.raw`state\s*(?:\.\s*orders|\[\s*["']orders["']\s*\])`;
+const DROPS_ORDERS = new RegExp(
+  `${ORDER_FIELD}\\s*=(?!=)`
+  + `|${ORDER_FIELD}\\s*\\.\\s*(?:splice|pop|shift)\\s*\\(`
+  + `|delete\\s+${ORDER_FIELD}\\b`
+  + `|${ORDER_FIELD}\\s*\\.\\s*length\\s*=`,
+);
+
 test("★★ no file may drop rows from state.orders except the one door (v444)", () => {
   // ⚠️ THE GUARD IS A GREP ON PURPOSE. A behaviour test can only cover the removals that exist today —
   // this covers the one somebody adds next year, which is how the fault got in. ⭐ Everything else in the
   // app may still build, map and normalise a list of orders (`normalize` and the two id-repair passes in
-  // state.js all do); what is forbidden is REASSIGNING the live list anywhere but the door.
+  // state.js all do); what is forbidden is EMPTYING the live list anywhere but the door.
   const offenders = allSources()
-    .filter((f) => !f.endsWith("/state.js") && /state\.orders\s*=/.test(readFileSync(f, "utf8")))
+    .filter((f) => !f.endsWith("/state.js") && DROPS_ORDERS.test(liveSource(readFileSync(f, "utf8"))))
     .map((f) => f.slice(f.indexOf("/admin/js/") + 1));
   assert.deepEqual(offenders, [],
     `★ a file drops rows from state.orders outside the one door: ${offenders.join(", ")}`);

@@ -2,7 +2,7 @@
 
 import { byId, loadState, save, setSaveHook, stampOrderLine, updateOrderBadge, ensureSupabase } from "./state.js";
 import { costOf } from "./bom.js";
-import { el, button } from "./ui.js";
+import { el, button, nameFields } from "./ui.js";
 import * as sync from "./sync.js";
 import { maybeAutoBackup } from "./backups.js";
 import { cachedToken, maybeSync, pullIncoming, refreshStorefront } from "./supabase.js";
@@ -222,7 +222,14 @@ function render() {
   document.getElementById("view-sub").textContent = "";
 
   for (const tab of document.querySelectorAll(".tabbar .tab")) {
-    tab.classList.toggle("active", tab.dataset.tab === route.tab);
+    const on = tab.dataset.tab === route.tab;
+    tab.classList.toggle("active", on);
+    // ⚠️⚠️ AND THE CURRENT TAB IS SAID, NOT ONLY COLOURED (v593). ⚠️ A screen reader heard "Home, Orders,
+    // Products…" with nothing naming the screen she was on. ⭐ `aria-current="page"` is the standard word.
+    if (typeof tab.setAttribute === "function") {
+      if (on) tab.setAttribute("aria-current", "page");
+      else if (typeof tab.removeAttribute === "function") tab.removeAttribute("aria-current");
+    }
   }
 
   // ★★★★ AND THE PAGE DOES NOT JUMP WHEN IT REPAINTS (v520).
@@ -247,13 +254,36 @@ function render() {
   // **only when the page has actually been dropped** — if something moved it, that is the answer, and the
   // `!scroller.scrollTop` test is what asks that without guessing who moved it.
   const scroller = document.scrollingElement || document.documentElement || null;
-  const keepY = path === lastRenderedPath && scroller ? scroller.scrollTop : 0;
+  // ★★★ A NAVIGATION IS THE WHOLE ADDRESS, NOT THE PATH (v552).
+  // ⚠️⚠️ Two faults came from comparing `path` alone. ⭐ **The query is part of where she is:** the History
+  // list and a saved list are both `/history`, and the day chips are all `/orders` — so **moving between
+  // them kept the previous screen's scroll**, opening a detail already scrolled past its own heading.
+  // ⭐ And ⚠️⚠️ **a card left open stayed open across a navigation**: answering it then painted the old
+  // screen over the new one, with the topbar and the highlighted tab still naming the screen she had left.
+  // ⭐ One notion, used twice: the address is what changed, and a change means the top of the page and no
+  // card from the last one. ⚠️ A repaint of the SAME address (the 30-second sync) keeps both.
+  const addrNow = (() => {
+    try { return String(location.hash || "").replace(/^#/, "") || path; } catch { return path; }
+  })();
+  const navigating = addrNow !== lastRenderedPath;
+  if (navigating) {
+    for (const id of ["popup-layer", "confirm-layer"]) {
+      const layer = document.getElementById(id);
+      if (layer) { layer.hidden = true; layer.replaceChildren(); }
+    }
+  }
+  const keepY = !navigating && scroller ? scroller.scrollTop : 0;
 
   viewEl.replaceChildren();
   updateOrderBadge(state);
   try {
     const ret = route.render(viewEl, state, params);
     if (typeof ret === "function") cleanup = ret;
+    // ⚠️⚠️ AND EVERY BOX ON THE NEW SCREEN IS NAMED BY THE LABEL BESIDE IT (v566) — see `nameFields`. ⭐ The
+    // words were already drawn; this attaches them, so a screen reader says "Capacity per day" instead of
+    // "edit text". ⚠️ Run after the view, never inside it, so one screen's fields cannot be named from
+    // another's markup.
+    try { nameFields(viewEl); } catch { /* an unnamed box is not a dead screen */ }
   } catch (err) {
     // The view is already cleared above — without this guard a render crash
     // would show a blank page. Surface the error so the baker can report it.
@@ -266,11 +296,15 @@ function render() {
         String((err && err.message) || err)),
       button("Try again", render, "primary")));
   }
-  viewEl.focus({ preventScroll: true });
+  // ⚠️⚠️ AND IT IS NOT RE-FOCUSED BY A TIMER (v566). ⭐ This ran on EVERY render, including the 30-second
+  // sync repaint — ⭐ **so a keyboard user reading the list was silently moved to the page container every
+  // half-minute, with no ring to show it.** ⭐ A NAVIGATION may start at the top of the new screen; a
+  // repaint of the screen she is on must not take her place.
+  if (navigating) viewEl.focus({ preventScroll: true });
   // ⚠️ PUT BACK BEFORE THE BROWSER PAINTS — nothing runs in between, so she never sees the top, and the
   // restore itself cannot move a box whose own scroll a view is still measuring.
   if (keepY > 0 && scroller && !scroller.scrollTop) scroller.scrollTop = keepY;
-  lastRenderedPath = path;
+  lastRenderedPath = addrNow;
   // ★★★ WHICH DAY THIS SCREEN WAS DRAWN FOR (v513) — see `dayMoved` beside `onSyncChanged`. ⭐ Written
   // HERE and nowhere else, so it can never claim a repaint that did not happen: ⚠️ the day check above
   // leaves it alone when it could not repaint (mid-edit, locked), so the next look tries again.
@@ -463,8 +497,16 @@ function passLock() {
   // no lock screen is shown — the lock is meant to start from the NEXT open.
   if (!lockedNow()) { unlocked = true; return Promise.resolve(true); }
   return new Promise((resolve) => {
-    const layer = document.getElementById("lock-layer");
-    if (!layer) { unlocked = true; return resolve(true); } // can't lock without the layer
+    // ⚠️⚠️ A MISSING LAYER IS A BROKEN PAGE, NOT AN OPEN DOOR (v589). ⚠️ The old line unlocked the app
+    // when `#lock-layer` was absent — ⭐ **so one typo in admin/index.html disabled the PIN**, and no test
+    // read that file. ⭐ The layer is BUILT when it is missing, and the lock is drawn into it.
+    let layer = document.getElementById("lock-layer");
+    if (!layer) {
+      layer = document.createElement("div");
+      layer.id = "lock-layer";
+      layer.className = "lock-layer";
+      (document.body || document.documentElement).appendChild(layer);
+    }
     renderLock(layer, state, { onUnlocked: () => { unlocked = true; resolve(true); } });
   });
 }
@@ -532,6 +574,6 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
 }
 
 // Expose save/state to views that import from app.js without a cycle.
-export { state, save };
+export { state, save, dayMoved };
 
 boot();

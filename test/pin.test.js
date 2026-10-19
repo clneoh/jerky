@@ -41,3 +41,16 @@ test("lockEnabled requires both the toggle AND a stored hash", () => {
   assert.equal(lockEnabled({ lock: { enabled: true, pinHash: HASH_1234 } }), true);
   assert.equal(lockEnabled(null), false);
 });
+
+test("★★★ a wrong password costs a wait after three tries — and never traps her", async () => {
+  // ⚠️⚠️ There was no pause at all: four digits, tried as fast as a thumb can tap, on an app that ships
+  // with a published default. ⭐ Three are free (a thumb mistypes); after that the wait doubles, capped.
+  const { wrongPauseMs } = await import("../admin/js/views/lock.js");
+  assert.equal(wrongPauseMs(0), 0);
+  assert.equal(wrongPauseMs(1), 0, "the first try is free");
+  assert.equal(wrongPauseMs(2), 0, "and so are two more — a thumb on a phone mistypes");
+  assert.equal(wrongPauseMs(3), 1000, "★ the third wrong try cost nothing — **a four-digit code can be tried at thumb speed**");
+  assert.equal(wrongPauseMs(4), 2000);
+  assert.equal(wrongPauseMs(5), 4000);
+  assert.equal(wrongPauseMs(20), 30000, "and it never grows past half a minute — a lockout is not the job");
+});

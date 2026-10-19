@@ -28,8 +28,8 @@ function createEl(tag) {
     hidden: false, scrollTop: 0, _listeners: {},
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     appendChild(c) { if (c != null) this.children.push(c); return c; },
-    append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
-    replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) this.children.push(c); },
+    append(...cs) { for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
+    replaceChildren(...cs) { this.children = []; for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener() {},
     setAttribute(k, v) { this.attrs[k] = String(v); },
@@ -421,6 +421,19 @@ test("Generate adds the next dates on her own delivery days, and shows that mont
   fire(generateButton(root));
   redraw(root, state);
   assert.equal(state.deliveryDates.length, before + 12, "another six, on the same pattern");
+});
+
+test("★ Home's folded past-date group draws every day, not the first eight (v583)", () => {
+  // ⚠️⚠️ MEASURED: Home stopped at eight past dates and said nothing about the rest — ⚠️ **a list she opened
+  // to find a day quietly ended at eight.** ⚠️ Source-level, and named as such: Home's own harness is not in
+  // this file, and the rule is a slice that must not come back.
+  // ⚠️ ANY cut, not one spelling (v588): the first guard knew only `past.slice(0, 8)`, so `splice`, `slice(0, 10)`
+  // or a length test all passed it — and the list she opened would end where the code decided.
+  const src = readFileSync(new URL("../admin/js/views/dashboard.js", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /\bpast\s*\.\s*(?:slice|splice)\s*\(/,
+    "★ Home cuts the past dates again — **the list she opens ends where the code decided**");
+  assert.doesNotMatch(src, /\bpast\s*\.\s*length\s*[<>]/,
+    "★ Home limits the past dates by length again");
 });
 
 test("the past dates are one folded group, holding every one of them", () => {

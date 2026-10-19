@@ -84,14 +84,28 @@ export function removeProfile(state, rowKey) {
 // coupon that is already coming off an order would RAISE that order's Total, which is the fault v367
 // was built to prevent.
 export function forgetCustomer(state, rowKey) {
-  const rows = (state.orders || []).filter((o) => o && keyOf(o) === rowKey);
+  // ⚠️⚠️ AND THE REMOVED SHELF (v595). ⚠️ It held the same person's cancelled orders, so their name, number and
+  // address stayed in the Removed list and "Put it back" restored the whole order. ⭐ Both lists are hers.
+  const live = (state.orders || []).filter((o) => o && keyOf(o) === rowKey);
+  const shelf = (state.removedOrders || []).filter((o) => o && keyOf(o) === rowKey);
+  const rows = [...live, ...shelf];
   const first = rows[0] || {};
   const name = String(first.customerName || "").trim();
   const who = waNumber(first.whatsapp);
   const key = newId("red");
   const at = new Date().toISOString();
 
+  // ⚠️ THE PROFILE'S OWN KEY GOES WITH THE REDACTION (v599) — a name-only customer has no phone, so the
+  // profile filter had nothing to match and a newer profile row from the other phone brought them back.
+  const prof = (state.customers || []).find((p) => p
+    && (p.key === rowKey || (keyOf({ whatsapp: p.whatsapp, customerName: p.name }) || p.key) === rowKey));
+  const profileKey = String((prof && prof.key) || rowKey || "");
+
   // 1 — the sales record stays; the person on it does not.
+  // ⚠️⚠️ AND EACH ROW GETS A SYNCED REDACTION OF ITS OWN (v592). ⚠️ The cleared fields alone lose to a newer
+  // order row on the next merge — ⚠️ **one Paid press on the other phone put the name, number and address back
+  // on both.** ⭐ One record per order id, applied on every load and pull (state.js `applyRedactions`).
+  if (!Array.isArray(state.redactions)) state.redactions = [];
   for (const o of rows) {
     o.redactedAt = at;
     o.redactedKey = key;
@@ -102,15 +116,22 @@ export function forgetCustomer(state, rowKey) {
     delete o.note;
     delete o.lineNote;
     delete o.refundNote;
+    state.redactions = state.redactions.filter((r) => !(r && r.id === o.id));
+    state.redactions.push({ id: o.id, at, key, ...(who ? { who } : {}), ...(profileKey ? { profileKey } : {}) });
   }
 
   // 2 — their own record, their coupons, their hand-outs.
   removeProfile(state, rowKey);
   const keep = appliedCreditIds(state);
   const before = (state.credits || []).length;
-  state.credits = (state.credits || []).filter((c) => !(c && waNumber(c.holder) === who && !keep.has(c.id)));
-  const credits = before - state.credits.length;
-  state.rewards = (state.rewards || []).filter((r) => !(r && waNumber(r.holder) === who));
+  // ⚠️⚠️ ONLY A NAMED PHONE CAN BE MATCHED (v598). ⚠️ On an already-redacted row the key falls back to the order
+  // id and `who` is EMPTY — and an empty holder matches every credit and reward with no holder, ⚠️ **so pressing
+  // Forget a second time deleted unrelated people's hand-outs.** ⭐ No phone, nothing to clear here.
+  if (who) {
+    state.credits = (state.credits || []).filter((c) => !(c && waNumber(c.holder) === who && !keep.has(c.id)));
+    state.rewards = (state.rewards || []).filter((r) => !(r && waNumber(r.holder) === who));
+  }
+  const credits = before - (state.credits || []).length;
 
   // 3 — ⚠️ AND THEIR NAME OFF OTHER PEOPLE'S RECORDS. A referrer's reward reads "Brought <them> as a
   // new customer" and a friend's coupon reads "First order — via <them>'s link", so clearing only

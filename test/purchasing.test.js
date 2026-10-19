@@ -181,6 +181,22 @@ function priced() {
   return [st, priceItems(st, [bomItem({ ingredientId: "ing_f", totalQty: 6800, unit: "g" })])[0]];
 }
 
+test("★★★ float noise does not buy an extra pack (v595)", () => {
+  // ⚠️⚠️ MEASURED after v590 stopped rounding recipe quantities: 0.1 kg + 0.2 kg = 0.30000000000000004 kg =
+  // 300.00000000000006 g, so a 300 g pack read as SHORT and a second pack was bought. ⭐ The need is snapped
+  // to a millionth of a base unit before the ceil.
+  const st = makeState([ingredient({
+    supplierPrices: [{ supplierId: "s_mydin", qty: 300, uomId: "g", price: 9 }],
+  })]);
+  const need = (0.1 + 0.2) * 1000;        // 300.00000000000006 g
+  const buy = priceItems(st, [bomItem({ ingredientId: "ing_f", totalQty: need, unit: "g" })])[0];
+  assert.equal(buy.packs, 1, "★ 300.00000000000006 g bought TWO 300 g packs");
+  // And a shelf holding exactly one pack is not short.
+  st.ingredients[0].onHand = 300;
+  const covered = priceItems(st, [bomItem({ ingredientId: "ing_f", totalQty: need, unit: "g" })])[0];
+  assert.equal(covered.covered, true, "★ a shelf holding exactly 300 g was treated as short");
+});
+
 test("amendItem re-prices a line from the shelf and everything derived follows it", () => {
   const [st, it] = priced();
   const at = amendItem(st, it, { packs: 3, packPrice: 27.5 });
@@ -217,6 +233,16 @@ test("amendItem on a loose line counts cooking units, not packs", () => {
   assert.equal(at.addBase, 9000, "9,000 g goes on the shelf");
   assert.equal(at.estCost, 63, "9,000 g × RM 0.007");
   assert.equal(at.buyText, "9000g");
+});
+
+test("★★★ a loose line amended in kilograms is LABELLED kilograms (v592)", () => {
+  // ⚠️⚠️ MEASURED: the amended count is in the COOKING unit, but `buyText` was stamped with the RECIPE LINE's
+  // unit — ⚠️ **flour cooking in kg, amended to 2 kg, saved and printed as "2g" on the shopping list.**
+  const st = makeState([ingredient({ uomId: "kg", unit: "kg", costPerUnit: 0.006, supplierPrices: [] })]);
+  const it = priceItems(st, [bomItem({ totalQty: 500, unit: "g", costPerUnit: 0.006 })])[0];
+  assert.equal(it.openUnit, "kg", "precondition: the amount to buy is counted in the cooking unit");
+  const at = amendItem(st, it, { packs: 2, packPrice: 12 });
+  assert.equal(at.buyText, "2kg", "★ 2 kg was printed as 2g — **the right number under the wrong unit**");
 });
 
 test("amendItem refuses a garbage number rather than poisoning the line", () => {

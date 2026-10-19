@@ -6,6 +6,7 @@ import {
   addWish, removeWish, renameWish, toggleWish, wishList,
 } from "../wishlist.js";
 import { developerEmails, developerName, buildWishMail, sendWishMail, devWaHref } from "../devmail.js";
+import { groupOrders } from "../state.js";
 import { pendingReviewCount } from "../supabase.js";
 
 // ── ★ THE MENU IS GROUPED BY THE WORK, NOT BY THE SCREEN (v312) ────────────
@@ -103,11 +104,17 @@ const MENU_GROUPS = [
 
 export function renderMore(root, state) {
   let dead = false; // set once this view unmounts, so async fills never paint
+  // ⚠️⚠️ AND IT SAID "1 orders" (v552). ⭐ One product and one cart is the ordinary state of a new shop, so
+  // the header opened on broken English — the same `n === 1` the rest of the app already applies.
+  const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   const stats = [
-    `${state.products.filter((p) => p.active !== false).length} products`,
-    `${state.ingredients.filter((x) => x.active !== false).length} ingredients`,
-    `${state.orders.length} orders`,
-    `${state.purchaseOrders.length} purchase orders`,
+    count(state.products.filter((p) => p.active !== false).length, "product", "products"),
+    count(state.ingredients.filter((x) => x.active !== false).length, "ingredient", "ingredients"),
+    // ⚠️⚠️ AN ORDER IS NOT A ROW (v552). ⭐ A two-item shop cart is TWO rows and ONE order — and every
+    // other surface already says so: the Orders tab's badge, Home's "N new orders to confirm", and the
+    // Orders screen itself. ⭐ This line counted rows, so More disagreed with all three about one cart.
+    count(groupOrders(state.orders).length, "order", "orders"),
+    count(state.purchaseOrders.length, "purchase order", "purchase orders"),
   ].join(" · ");
 
   const wish = wishCard(state);

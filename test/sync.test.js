@@ -889,6 +889,224 @@ test("flush: keeps pending when the push fails, and no-ops when empty", async ()
   } finally { restore(); }
 });
 
+test("★★★ an OLDER tombstone cannot delete a newer, already-synced record (v587)", async () => {
+  // ⚠️⚠️ MEASURED: the tombstone branch spared only a PENDING edit, while the live-row branch also refuses a
+  // stale cloud row (`cloudAt <= localAt`) — ⚠️ **so a delete stamped 09:00 that arrived late removed a record
+  // this phone had edited and synced at 10:00, and nothing put it back.**
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    st.orders = [{ id: "o1", qty: 2 }];
+    seedToken(store);
+    seedJournal(store, { meta: { "orders:o1": "2026-02-02T00:00:00.000Z" } });
+    const restoreFetch = installFetch(async () => ({
+      ok: true, json: async () => [cloudRow("orders", "o1", {}, "2026-02-01T00:00:00.000Z", true)],
+    }));
+    try {
+      await sync.pull(st);
+      assert.equal(st.orders.length, 1,
+        "★ a late, older tombstone deleted a newer record — **her edit is gone and the cloud never gets it back**");
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});
+
+test("★★★ a cloud row merged under an open card keeps the record's OBJECT (v589)", async () => {
+  // ⚠️⚠️ MEASURED: `list[idx] = payload` swapped the object, while an open edit card still held the OLD one —
+  // ⚠️ **she typed a new name, pressed Update, read "Product updated", and the change existed nowhere**:
+  // `Object.assign` landed on an object the list no longer contained. ⭐ The record keeps its identity and is
+  // merged in place.
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    const open = { id: "prd_a", name: "Focaccia", price: 16 };
+    st.products = [open];
+    seedToken(store);
+    seedJournal(store, { meta: { "products:prd_a": "2026-02-01T00:00:00.000Z" } });
+    const restoreFetch = installFetch(async () => ({
+      ok: true, json: async () => [cloudRow("products", "prd_a",
+        { id: "prd_a", name: "Focaccia (new)", price: 18 }, "2026-02-02T00:00:00.000Z")],
+    }));
+    try {
+      await sync.pull(st);
+      assert.equal(st.products[0], open,
+        "★ the record was swapped for a new object — **an open edit card writes into a detached copy**");
+      assert.equal(open.name, "Focaccia (new)", "the record itself must carry the cloud's values");
+      assert.equal(open.price, 18, "and every field, not only the name");
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});
+
+test("★★★ a book that could not be read writes NOTHING — no tombstones, no rows (v595)", async () => {
+  // ⚠️⚠️ THE WORST PATH IN THE APP: `loadState` hands back the SEED when the saved copy is damaged, and the seed
+  // has sharing ON — ⚠️ **so the first save queued a tombstone for every record in the journal's snapshot and a
+  // default settings row over hers: the cloud was emptied, then the other phone.** ⭐ While `unreadableSave` is
+  // set, `markDirty` and `flush` write nothing; a complete pull may still restore the book.
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    st.unreadableSave = { kept: "bakeadmin.v1.unreadable", at: "2026-10-19T00:00:00.000Z" };
+    seedJournal(store, { snapshot: { "orders:o1": '{"id":"o1"}', "products:p1": '{"id":"p1"}' } });
+    const before = store.get("bakeadmin.sync");
+    const out = sync.markDirty(st);
+    assert.equal(out.held, true, "markDirty did not hold the writes");
+    assert.equal(out.changed, false, "markDirty reported a change from a book it could not read");
+    assert.equal(store.get("bakeadmin.sync"), before,
+      "★ the journal changed — **a tombstone was queued for a record this phone could not see**");
+    // And nothing can be SENT either.
+    const f = await sync.flush(st);
+    assert.equal(f.ok, false);
+    assert.equal(f.pushed, 0, "★ a damaged book pushed to the shared cloud");
+  } finally { restore(); }
+});
+
+test("★★★ a damaged book is RESTORED by a full read, and only then released (v598)", async () => {
+  // ⚠️⚠️ MEASURED: the v595 hold released on any COMPLETE read — ⚠️ **but the merge skipped every row this phone
+  // itself had pushed (its timestamp equalled `b.meta`), so the book stayed the seed and the next save
+  // tombstoned everything.** ⭐ A damaged book forces the cloud's rows to win, and the hold is released only
+  // after they are applied.
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    st.unreadableSave = { kept: "bakeadmin.v1.unreadable", at: "2026-10-19T00:00:00.000Z" };
+    // The seed book is empty; the journal remembers what this phone had synced, timestamps included.
+    st.orders = []; st.products = [];
+    seedToken(store);
+    seedJournal(store, {
+      meta: { "orders:o1": "2026-10-02T00:00:00.000Z", "products:p1": "2026-10-02T00:00:00.000Z" },
+      snapshot: { "orders:o1": '{"id":"o1"}', "products:p1": '{"id":"p1"}' },
+      lastSeq: 10, lastPullAt: "2026-10-19T00:00:00.000Z",
+    });
+    const urls = [];
+    const restoreFetch = installFetch(async (url) => {
+      urls.push(String(url));
+      return { ok: true, json: async () => [
+        { ...cloudRow("orders", "o1", { id: "o1", qty: 2 }, "2026-10-02T00:00:00.000Z"), seq: 9 },
+        { ...cloudRow("products", "p1", { id: "p1", name: "Focaccia" }, "2026-10-02T00:00:00.000Z"), seq: 9 },
+      ] };
+    });
+    try {
+      await sync.pull(st);
+      assert.equal(urls.some((u) => u.includes("seq=gt.")), false,
+        "★ a damaged book was read with the cursor — **the rest of the book was never asked for**");
+      assert.equal(st.orders.length, 1, "★ the cloud order was skipped as 'not newer' — the book stayed empty");
+      assert.equal(st.products.length, 1, "and the product");
+      assert.equal(st.unreadableSave, null, "the hold did not release after the book was restored");
+      // And the save that follows queues no tombstone for what it now holds.
+      st.unreadableSave = null;
+      const out = sync.markDirty(st);
+      const tombstones = Object.values(out.pending || {}).filter((r) => r && r._deleted).map((r) => `${r.kind}:${r.id}`);
+      assert.deepEqual(tombstones, [], `★ a surviving record was queued as deleted: ${tombstones.join(", ")}`);
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});
+
+test("★★★ a forgotten customer cannot come back on a newer row (v592)", async () => {
+  // ⚠️⚠️ MEASURED: the cleared fields lived only on the order rows, and the merge is newest-wins — ⚠️ **one
+  // Paid press on the other phone (which still held the row) put the name, number and address straight back
+  // on both.** ⭐ The redaction rides as its own record AND the merge refuses to restore what it erased.
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    st.redactions = [{ id: "o1", at: "2026-10-01T00:00:00.000Z", key: "red1" }];
+    st.orders = [{ id: "o1", qty: 1, redactedAt: "2026-10-01T00:00:00.000Z", redactedKey: "red1" }];
+    seedToken(store);
+    seedJournal(store, { meta: { "orders:o1": "2026-09-01T00:00:00.000Z" } });
+    const restoreFetch = installFetch(async () => ({
+      ok: true, json: async () => [cloudRow("orders", "o1",
+        { id: "o1", qty: 2, customerName: "Ain", whatsapp: "60123456789", address: "12 Jalan Bunga" },
+        "2026-10-02T00:00:00.000Z")],
+    }));
+    try {
+      await sync.pull(st);
+      assert.equal(st.orders[0].qty, 2, "the newer edit itself must still arrive");
+      assert.equal(st.orders[0].customerName, undefined,
+        "★ the forgotten name came back with the newer row");
+      assert.equal(st.orders[0].whatsapp, undefined, "and the number");
+      assert.equal(st.orders[0].address, undefined, "and the address");
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});
+
+test("★★★ a redaction arriving from the other phone clears the row here (v592)", async () => {
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    st.redactions = [];
+    st.orders = [{ id: "o1", qty: 1, customerName: "Ain", whatsapp: "60123456789", address: "12 Jalan Bunga" }];
+    seedToken(store);
+    const restoreFetch = installFetch(async () => ({
+      ok: true, json: async () => [cloudRow("redactions", "o1",
+        { id: "o1", at: "2026-10-02T00:00:00.000Z", key: "red9" }, "2026-10-02T00:00:00.000Z")],
+    }));
+    try {
+      const r = await sync.pull(st);
+      assert.ok(r.changed, "the pull did not report that it forgot a customer");
+      assert.equal(st.orders[0].customerName, undefined,
+        "★ the other phone's redaction did not reach this order — **the name is still on this phone**");
+      assert.equal(st.orders[0].redactedAt, "2026-10-02T00:00:00.000Z");
+      assert.equal(st.orders[0].redactedKey, "red9");
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});
+
+test("★★★ a setting she deliberately put BACK to the shipped value is not undone (v587)", async () => {
+  // ⚠️⚠️ MEASURED: the five "birth" settings were judged by CONTENT, so a phone that set her bake days back to
+  // Mon/Wed/Fri had "no opinion" — ⚠️ **and the next pull restored the cloud's old days over her choice.** ⭐ Once
+  // a phone has read the cloud, what it holds is a choice, shipped values included.
+  const pullWith = async (seen) => {
+    const { store, restore } = installStorage();
+    try {
+      const st = cloudOn(baseState());            // her hand-set values: the SHIPPED [1,3,5] / 18:00
+      seedToken(store);
+      if (seen) store.set("bakeadmin.sync.seen", "2026-01-01T00:00:00.000Z");
+      seedJournal(store, { meta: { "settings:default": "2026-02-02T00:00:00.000Z" } });
+      const restoreFetch = installFetch(async () => ({
+        ok: true,
+        json: async () => [cloudRow("settings", "default",
+          { deliveryDays: [2, 4, 6], cutoff: "17:30", defaultCapacity: 20, currency: "RM" },
+          "2026-02-01T00:00:00.000Z")],
+      }));
+      try { await sync.pull(st); return st; } finally { restoreFetch(); }
+    } finally { restore(); }
+  };
+  const chosen = await pullWith(true);
+  assert.deepEqual(chosen.settings.deliveryDays, [1, 3, 5],
+    "★ a deliberate reset to the shipped bake days was overwritten by the cloud");
+  assert.equal(chosen.settings.cutoff, "18:00", "and the cut-off with it");
+  // ⚠️ AND THE NEW-PHONE CASE IS UNCHANGED: a phone that has never read the cloud still adopts it (v576).
+  const fresh = await pullWith(false);
+  assert.deepEqual(fresh.settings.deliveryDays, [2, 4, 6],
+    "a brand-new phone stopped adopting her settings — the v576 fault is back");
+});
+
+test("★★★ the weekly ticks UNION even when this phone wins the row (v587)", async () => {
+  // ⚠️⚠️ MEASURED: the union ran only when the CLOUD won, and when this phone won the push REPLACED the cloud's
+  // row with its own ticks — ⚠️ **so the other phone's ticks vanished and Home's to-do disagreed between phones.**
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    st.settings.weekCheck = { week: "2026-W42", done: { mine: true } };
+    seedToken(store);
+    seedJournal(store, {
+      pending: { "settings:default": { kind: "settings", id: "default", _deleted: false,
+        updated_at: "2026-02-02T00:00:00.000Z", data: { weekCheck: { week: "2026-W42", done: { mine: true } } } } },
+      meta: { "settings:default": "2026-02-02T00:00:00.000Z" },
+    });
+    const restoreFetch = installFetch(async () => ({
+      ok: true, json: async () => [cloudRow("settings", "default",
+        { weekCheck: { week: "2026-W42", done: { theirs: true } } }, "2026-02-01T00:00:00.000Z")],
+    }));
+    try {
+      await sync.pull(st);
+      assert.deepEqual(st.settings.weekCheck.done, { mine: true, theirs: true },
+        "★ the other phone's tick was lost — **Home's to-do now disagrees between her phones**");
+      const b = JSON.parse(store.get("bakeadmin.sync"));
+      assert.deepEqual(b.pending["settings:default"].data.weekCheck.done, { mine: true, theirs: true },
+        "★ the push about to go out would erase the other phone's tick from the cloud");
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});
+
 // ── pull ──────────────────────────────────────────────────────────────────
 
 test("pull: merges cloud rows, persists lastPullAt, reports changed", async () => {
@@ -2883,7 +3101,9 @@ test("★★★ without the database step the pull still works, in full, and sto
   try {
     seedToken(store);
     const st = cloudOn(baseState());
-    setJournal(store, { lastSeq: 500, seqUnsupported: false });
+    // ⚠️ A FULL READ IS DUE EVERY FIFTEEN MINUTES (v557) — say the last one was just now, so this test
+    // is about the missing column rather than about the safety net.
+    setJournal(store, { lastSeq: 500, seqUnsupported: false, lastFullPullAt: new Date().toISOString() });
     const urls = [];
     const restoreFetch = installFetch(async (url) => {
       urls.push(url);
@@ -2901,6 +3121,245 @@ test("★★★ without the database step the pull still works, in full, and sto
       await sync.pull(st);
       assert.equal(urls.length, 1, "★ it retried the missing column after already learning it was missing");
       assert.ok(!urls[0].includes("seq=gt."), urls[0]);
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});
+
+
+test("★★★ the cursor is not trusted for ever — a FULL read every fifteen minutes", async () => {
+  // ⚠️⚠️ `seq` is stamped by a trigger BEFORE its transaction commits, so a batch that took 101-120 and
+  // committed late can land BEHIND a 121 that committed first — ⭐ **and a reader that has seen 121 never
+  // asks for anything at or below it again.** The old comment claimed a concurrent write "always takes a
+  // higher number", which is true of the NUMBER and false of the COMMIT ORDER. ⭐ The periodic full read
+  // is what makes "never read again" impossible.
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    seedToken(store);
+    store.set("bakeadmin.sync", JSON.stringify({
+      version: 1, pending: {}, snapshot: {}, meta: {}, lastPullAt: null, lastSeq: 100,
+      lastFullPullAt: new Date(Date.now() - 20 * 60 * 1000).toISOString(),   // 20 minutes ago
+    }));
+    const urls = [];
+    const restoreFetch = installFetch(async (url) => { urls.push(String(url)); return { ok: true, json: async () => [] }; });
+    try {
+      await sync.pull(st);
+      assert.equal(urls.some((u) => /seq=gt\./.test(u)), false,
+        "★ a cursor read was used after the safety interval had passed — **a record skipped by a late commit "
+        + "would never be read again**");
+      const b = JSON.parse(store.get("bakeadmin.sync"));
+      assert.ok(Date.parse(String(b.lastFullPullAt)) > Date.now() - 60_000,
+        "the full read was not recorded, so the next pull would immediately do another");
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});
+
+test("★★ and inside the interval it still asks only for what changed", async () => {
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    seedToken(store);
+    store.set("bakeadmin.sync", JSON.stringify({
+      version: 1, pending: {}, snapshot: {}, meta: {}, lastPullAt: null, lastSeq: 100,
+      lastFullPullAt: new Date().toISOString(),
+    }));
+    const urls = [];
+    const restoreFetch = installFetch(async (url) => { urls.push(String(url)); return { ok: true, json: async () => [] }; });
+    try {
+      await sync.pull(st);
+      assert.ok(urls.some((u) => /seq=gt\.100/.test(u)),
+        "★ the cursor was abandoned inside the interval — every pull is now a full read");
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});
+
+// ── ★★★ the check's own read must page too (v569) ─────────────────────────
+//
+// ⚠️⚠️ THE FAULT: "Check my system" compared the phone against `limit=5000` in ONE request, and the database
+// answers at most 1,000 rows. ⭐ **Her book was 791 rows on 17 October** — so in about ten weeks every record
+// past an arbitrary thousand would be named as "on this phone and NOT in your shared data", permanently, on a
+// page whose other line states the true count.
+test("★★★ cloudKeys reads EVERY page, and says when it could not", async () => {
+  const h = installStorage();
+  const asked = [];
+  const restoreFetch = installFetch(async (url) => {
+    asked.push(String(url));
+    const offset = Number(/offset=(\d+)/.exec(String(url))?.[1] || 0);
+    const n = offset === 0 ? 1000 : 3;           // a full first page, then a short second
+    const rows = Array.from({ length: n }, (_, i) => cloudRow("orders", `o${offset + i}`, { qty: 1 }, "2026-10-18T00:00:00Z"));
+    return { ok: true, status: 200, json: async () => rows };
+  });
+  try {
+    seedToken(h.store);
+    const st = cloudOn(baseState());
+    const out = await sync.cloudKeys(st);
+    assert.equal(out.ok, true);
+    assert.equal(out.complete, true, "★ a complete read was reported as incomplete");
+    assert.equal(out.keys.size, 1003, "★ the second page was never read — **the rest of the book is invisible**");
+    assert.equal(asked.length, 2, "★ it asked once and stopped — the 1,000-row cap is back");
+    assert.match(asked[1], /offset=1000/, "★ the second page did not continue where the first ended");
+    assert.match(asked[0], /order=/, "★ a paged read without a stable order can repeat a row and skip another");
+  } finally {
+    restoreFetch();
+    h.restore();
+  }
+});
+
+// ── ★★★ a NEW PHONE must not overwrite her settings (v576) ─────────────────
+test("★★★ a phone still on the shipped defaults adopts the cloud's settings, and never pushes its own", () => {
+  // ⚠️⚠️ HER REAL RISK: a brand-new (or re-set-up) phone queues its own `settings` BEFORE it pulls, and it wins
+  // the one settings row — so `deliveryDays`, `cutoff`, `defaultCapacity`, `currency` and `referrals` were
+  // overwritten with factory defaults. ⚠️ Probed before the fix: a cloud holding [2,4,6] / 17:30 / 20 was
+  // replaced by [1,3,5] / 18:00 / 12.
+  const { store, restore } = installStorage();
+  try {
+    const d = sync.defaultStateForTest ? null : null; void d;
+    const st = cloudOn(baseState());
+    // The phone is exactly as it was set up: the shipped numbers, nothing chosen.
+    st.settings.deliveryDays = [1, 3, 5];
+    st.settings.cutoff = "18:00";
+    st.settings.defaultCapacity = 12;
+    st.settings.currency = "RM";
+    st.settings.referrals = { ...st.settings.referrals, enabled: true, friendRM: 5, referrerRM: 5, validDays: 90 };
+    // …no: that is an opinion. Put it back to the shipped shape for this test.
+    st.settings.referrals = { enabled: false, friendRM: 3, referrerRM: 3, validDays: 90 };
+    // ⭐ The real sequence this protects: a fresh phone queues its settings BEFORE it pulls.
+    seedJournal(store, {
+      pending: {
+        "settings:default": {
+          kind: "settings", id: "default", updated_at: "2026-09-25T00:00:00.000Z", _deleted: false,
+          data: { deliveryDays: [1, 3, 5], cutoff: "18:00", defaultCapacity: 12, currency: "RM",
+            referrals: { enabled: false, friendRM: 3, referrerRM: 3, validDays: 90 } },
+        },
+      },
+      // ⚠️ THE PHONE IS NEWER — that is the fault: it stamped its factory settings "now" before pulling, so
+      // the LOCAL-WINS branch runs. (With the cloud newer, the cloud simply wins and the guard is never asked.)
+      meta: { "settings:default": "2026-09-25T00:00:00.000Z" },
+    });
+
+    sync.mergeRows(st, [cloudRow("settings", "default", {
+      deliveryDays: [2, 4, 6], cutoff: "17:30", defaultCapacity: 20, currency: "RM",
+      referrals: { enabled: false, friendRM: 5, referrerRM: 5, validDays: 90 },
+    }, "2026-09-20T00:00:00.000Z")]);
+
+    assert.deepEqual(st.settings.deliveryDays, [2, 4, 6],
+      "★ the phone kept its factory bake days over hers — **a new phone has just changed when she bakes**");
+    assert.equal(st.settings.cutoff, "17:30", "★ her cut-off was overwritten by the default 18:00");
+    assert.equal(st.settings.defaultCapacity, 20, "★ her capacity was overwritten by the default 12");
+    assert.equal(st.settings.referrals.friendRM, 5, "★ her scheme numbers were overwritten by the defaults");
+
+    // ⭐ And nothing is left queued that would put the factory numbers back. (A merge where the cloud is
+    // newer may DROP the phone's queued settings row — that is the cloud winning, which is the point — so the
+    // assertion is about what any remaining row CARRIES, not that a row exists.)
+    const p = queuedSettings(store);
+    if (p) {
+      assert.deepEqual(p.data.deliveryDays, [2, 4, 6],
+        "★★ the queued publish carries the factory bake days — **it would overwrite her other phone**");
+    }
+  } finally { restore(); }
+});
+
+test("★★★ clearing this phone's data forgets the journal, so no tombstone is ever pushed (v576)", () => {
+  // ⚠️⚠️ THE FAULT: "Delete all data" removed only `bakeadmin.v1`. The journal survived with its `snapshot` of
+  // every record, so the next save wrote a deletion for all of them and pushed the tombstones — ⭐ **the shared
+  // book was emptied and the other phone followed.** ⭐ A deliberate reset has to forget what it resets.
+  const { store, restore } = installStorage();
+  try {
+    seedJournal(store, { pending: { "orders:o1": { kind: "orders", id: "o1", data: {}, _deleted: false } },
+      snapshot: { "orders:o1": "{}" }, meta: { "orders:o1": "2026-09-01T00:00:00.000Z" } });
+    sync.clearJournal();
+    assert.equal(store.has("bakeadmin.sync"), false,
+      "★ the journal survived the reset — **its snapshot would tombstone every record on the next save**");
+    assert.equal(sync.pendingCount(), 0);
+  } finally { restore(); }
+});
+
+test("★★★ a burst of refreshes is ONE refresh, 1.5 s after the last (v584)", (t) => {
+  // ⚠️⚠️ THIS HAD NO TEST AT ALL. ⚠️ A debounce that fired twice (a clobbering repaint) or never (a phone that
+  // stops seeing her other phone's changes) would have been found by her.
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const calls = [];
+  const run = (st) => calls.push(st && st.id);
+  const st = { id: "s" };
+  sync.scheduleRefresh(st, run);
+  t.mock.timers.tick(1000);
+  sync.scheduleRefresh(st, run);   // another change inside the window
+  t.mock.timers.tick(1000);
+  sync.scheduleRefresh(st, run);   // and another
+  t.mock.timers.tick(1499);
+  assert.equal(calls.length, 0, "★ the burst fired before it had settled — a repaint mid-edit");
+  t.mock.timers.tick(1);
+  assert.deepEqual(calls, ["s"], "★ the burst produced more than one refresh");
+  t.mock.timers.tick(10000);
+  assert.equal(calls.length, 1, "★ the refresh repeated itself after the burst");
+});
+
+// ── v599: the damaged book must not eat what never reached the cloud ──────
+
+test("★★★ an offline edit survives a damaged book (v599)", async () => {
+  // ⚠️⚠️ MEASURED: the queued edit made `localNewerOrSame` true, so the full read SKIPPED the cloud row —
+  // ⚠️ **the book stayed empty, the hold cleared, and the next save wrote a tombstone over the pending edit:
+  // the order and her change left the cloud and the other phone.** ⭐ With no readable book the unsent edit
+  // rides on top of the cloud's row and stays queued.
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    st.unreadableSave = { kept: "bakeadmin.v1.unreadable", at: "2026-10-19T00:00:00.000Z" };
+    st.orders = [];
+    seedToken(store);
+    seedJournal(store, {
+      meta: { "orders:o1": "2026-10-02T00:00:00.000Z" },
+      snapshot: { "orders:o1": '{"id":"o1","qty":1}' },
+      pending: { "orders:o1": { kind: "orders", id: "o1", updated_at: "2026-10-03T00:00:00.000Z",
+        data: { id: "o1", qty: 5 }, _deleted: false } },
+    });
+    const restoreFetch = installFetch(async () => ({
+      ok: true, json: async () => [
+        { ...cloudRow("orders", "o1", { id: "o1", qty: 1 }, "2026-10-02T00:00:00.000Z"), seq: 9 },
+      ],
+    }));
+    try {
+      await sync.pull(st);
+      assert.equal(st.orders.length, 1,
+        "★ the cloud row was skipped as 'not newer' — **the book stayed empty and the record was lost**");
+      assert.equal(st.orders[0].qty, 5,
+        "★ her unsent edit was dropped instead of laid over the restored record");
+      const j = JSON.parse(store.get("bakeadmin.sync"));
+      assert.ok(j.pending["orders:o1"],
+        "★ the unsent edit was cleared — **the next save tombstones the order from the cloud**");
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});
+
+test("★★★ a damaged book takes the cloud's settings, not its factory ones (v599)", async () => {
+  // ⚠️⚠️ MEASURED: the settings branch ignored `forceCloud`, and `bakeadmin.sync.seen` made the seed's
+  // shipped values look like a deliberate answer — ⚠️ **the healed phone kept Mon/Wed/Fri, 6:00PM and 12, then
+  // pushed them over the shared row.** ⭐ The settings row is forced too.
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    st.unreadableSave = { kept: "bakeadmin.v1.unreadable", at: "2026-10-19T00:00:00.000Z" };
+    seedToken(store);
+    seedJournal(store, {
+      meta: { "settings:default": "2026-10-19T00:00:01.000Z" },
+      snapshot: { "settings:default": JSON.stringify(st.settings) },
+    });
+    const restoreFetch = installFetch(async () => ({
+      ok: true, json: async () => [
+        {
+          ...cloudRow("settings", "default", {
+            defaultCapacity: 20, deliveryDays: [2, 4, 6], cutoff: "17:30", currency: "RM",
+          }, "2026-10-19T00:00:00.000Z"),
+          seq: 9,
+        },
+      ],
+    }));
+    try {
+      await sync.pull(st);
+      assert.deepEqual(st.settings.deliveryDays, [2, 4, 6],
+        "★ the healed phone kept its factory bake days — **and will push them over hers**");
+      assert.equal(st.settings.cutoff, "17:30", "and its factory cut-off");
+      assert.equal(st.settings.defaultCapacity, 20, "and its factory capacity");
     } finally { restoreFetch(); }
   } finally { restore(); }
 });

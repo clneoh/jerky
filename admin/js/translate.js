@@ -199,7 +199,12 @@ export async function autoTranslateProduct(p, fetcher) {
     }
     const src = srcTextOf(p, variant);
     const t = await translateTo(fetcher, src, LANG_OF[variant]);
-    if (t) {
+    // ⚠️⚠️ HER OWN WORDS WIN, EVEN WHEN THEY ARRIVE MID-FLIGHT (v552). ⭐ The plan is snapshotted once and
+    // the calls are awaited one by one, so **typing her own 中文 while they were running was overwritten by
+    // the machine's answer a second later — and the box stopped being marked as hers**, so the next pass
+    // treated it as machine text too. ⭐ The override is re-checked HERE, immediately before the write,
+    // which is the only moment that can answer "is this still mine to change".
+    if (t && !isOverridden(p, variant)) {
       p[variant] = t;
       markAuto(p, variant, src);
       changed.push(variant);

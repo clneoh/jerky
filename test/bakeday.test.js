@@ -58,6 +58,19 @@ test("the chain sums to 254, and 239 of them are before the oven", () => {
   near(stepOf(r, "mix").latestStart, r.readyAtMin - 239, "which is the number the whole plan hangs on");
 });
 
+test("★★★ a step that falls before midnight reads the PREVIOUS day's clock, not 12:00 am", () => {
+  // ⚠️⚠️ MEASURED (v550): pans at the oven at 3:20 am means the mix goes in 239 minutes earlier — **11:21 pm
+  // the night before** — and the card said **"12:00 am"**, telling her to mix 39 minutes LATE. ⭐ That is the
+  // over-fermented dough the whole timetable exists to prevent. ⭐ `Math.max(0, …)` clamped a negative
+  // minute to zero instead of wrapping it round midnight.
+  const r = planBackwards({ ...DEFAULT_PLAN, readyAtMin: 200 });
+  const mix = stepOf(r, "mix");
+  assert.ok(mix.latestStart < 0, "precondition: this plan really does start before midnight");
+  assert.equal(mix.clock, "11:21 pm",
+    "★ a start before midnight was printed as 12:00 am — **the timetable told her to mix at midnight, 39 "
+    + "minutes after the dough should have gone in**");
+});
+
 test("her hands carry 46 minutes of a six-pan batch, and the proofer asks for none of them", () => {
   const r = planBackwards(DEFAULT_PLAN);
   near(r.handWork, 46, "twenty mixing, three folding, fifteen oiling, six dimpling, two swapping");

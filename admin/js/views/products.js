@@ -16,7 +16,7 @@ import { translateAllowed, autoTranslateProduct, translateTo, LANG_OF, SRC_OF } 
 import { dateField } from "../datepicker.js";
 import { DOW, addMonth, monthLabel, monthWeeks } from "../calendar.js";
 import { boxClass, nameDay, occBox, occPapers, tipEl } from "../occgrid.js";
-import { todayISO } from "../dates.js";
+import { longDate, todayISO } from "../dates.js";
 // The sell-day rules themselves — one shared copy, the same file the shop reads,
 // so the day she marks here and the day a customer may order can never drift.
 import { availRules, dayOfWeek, monthBounds, normRules, ruleLabel, ruleOpen, rulesOpen, rulesSummary } from "../../../availability.js";
@@ -61,12 +61,24 @@ export function renderProducts(root, state) {
   return () => openCards.clear();
 }
 
-function renderAll(root, state) {
+// ★ THE NEW PRODUCT CARD THAT IS ON THE SCREEN (v556) — see `renderAll`'s keepForm.
+let liveNewCard = null;
+
+function renderAll(root, state, { keepForm = false } = {}) {
   const live = state.products.filter(isLive);
   const drafts = state.products.filter(isDraft);
   const hidden = state.products.filter(isHidden);
 
-  const form = newProductCard(state, root);
+  // ★★★ A ROW ACTION MUST NOT WIPE THE NEW-PRODUCT CARD (v556).
+  // ⚠️⚠️ Pressing Hide, Publish or Delete on ANOTHER product redraws this whole screen — and the ＋ New
+  // product card was built afresh, ⭐ **so a half-typed name, recipe and every box she had filled in were
+  // gone, with no warning.** ⭐ The card already on the page is put back instead of a new one: its values
+  // and its handlers stay hers. ⚠️ Adding a product still builds a fresh card, because the next one starts
+  // clean — that caller does not ask to keep it.
+  // ⚠️ BY REFERENCE, not by a selector: the cards are built here and this is the one on the page, and a
+  // query would make the behaviour depend on whether a given DOM can match a class.
+  const kept = keepForm && liveNewCard ? liveNewCard : null;
+  const form = kept || newProductCard(state, root);
   // The page scroll is read and put back around the swap below, the way the
   // Categories screen does it: publishing a product or hiding one redraws this
   // whole screen, and without this the list she was looking at jumps back to
@@ -240,7 +252,14 @@ function tidyRules(list) {
 // goes; any other mark covering it is split into the part before and the part
 // after, so the day itself stops selling while the rest of the mark is untouched.
 // (Splitting is why a mark is stored as a span rather than as "the month".)
-function removeDay(list, iso) {
+//
+// ⚠️⚠️ AN OPEN END IS AN END, AND IT WAS TREATED AS NO MARK AT ALL (v580). ⭐ Both parts used to be
+// written only when the mark had THAT end set, so removing any day from a mark still running ("Mondays
+// from 1 Oct", or "until 31 Oct") wrote the part BEFORE the day and silently dropped the part AFTER it —
+// ⚠️ **measured: one day removed from an open mark put every later day back on sale; removing the first
+// Monday of "Mondays from 1 Oct" put EVERY later Monday off sale.** ⭐ A missing `to` means "no end", so
+// the after-part always exists; likewise a missing `from` means "from the beginning".
+export function removeDay(list, iso) {
   const out = [];
   for (const r of list) {
     if (!ruleOpen(r, iso)) { out.push(r); continue; }
@@ -249,8 +268,13 @@ function removeDay(list, iso) {
       out.push({ days: r.days, from: shiftKey(iso, 1), to: "" });
       continue;
     }
-    if (r.from && iso > r.from) out.push({ days: r.days, from: r.from, to: shiftKey(iso, -1) });
-    if (r.to && iso < r.to) out.push({ days: r.days, from: shiftKey(iso, 1), to: r.to });
+    // ⚠️ BOTH SIDES ARE JUDGED THE SAME WAY: a blank `from` means "from the beginning", so there IS a
+    // part before the day; a blank `to` means "no end", so there IS a part after it. ⭐ Only a day that
+    // sits exactly ON an end loses that side.
+    const hasBefore = !r.from || iso > r.from;
+    const hasAfter = !r.to || iso < r.to;
+    if (hasBefore) out.push({ days: r.days, from: r.from || "", to: shiftKey(iso, -1) });
+    if (hasAfter) out.push({ days: r.days, from: shiftKey(iso, 1), to: r.to || "" });
   }
   return out;
 }
@@ -462,8 +486,13 @@ function availabilityCard(state, product) {
       if (past) { cells.push(el("span", { class: cls }, dayNum)); continue; }
       // Tapping a marked day names it as well as marking it — a holiday is the one
       // thing that decides a sell day for her, so it has to be readable here too.
-      const cell = el("button", { class: `${cls} tappable`, type: "button", dataset: { date: d } },
-        dayNum, tipEl(state.occasions, d, past));
+      // ⚠️ THE OCCASION IS PART OF THE DAY'S NAME (v599). ⚠️ The label overrode the children, so a day marked
+      // "Deepavali" was read as a bare date — the one fact that decides whether the product sells.
+      const tip = tipEl(state.occasions, d, past);
+      const tipText = tip ? String(tip.textContent || "").trim() : "";
+      const cell = el("button", { class: `${cls} tappable`, type: "button", dataset: { date: d },
+        "aria-label": tipText ? `${longDate(d)}, ${tipText}` : longDate(d) },
+        dayNum, tip);
       byDate.set(d, cell);
       cells.push(cell);
     }
@@ -494,7 +523,14 @@ function availabilityCard(state, product) {
     // own key — `sel` alone could be pointing at a different row afterwards.
     const setEnd = (end, iso) => {
       const want = normRules([{ ...r, [end]: iso }])[0];
-      if (!want) return; // an end-only mark with that end cleared says nothing
+      if (!want) {
+        // ⚠️⚠️ A PRESS THAT DOES NOTHING MUST SAY WHY (v555). ⭐ A mark with only ONE end — a single day —
+        // cannot lose it: cleared, it would say "every day, for ever". ⭐ It returned in silence, so "Clear
+        // end" was a dead button that left the mark exactly where it was. ⭐ The way to take a day off is
+        // the ✕ beside its row, and that is what it now says.
+        toast("This mark is a single day, so there is no end to clear — take it off with the ✕ beside it.");
+        return;
+      }
       rules = tidyRules([...rules.slice(0, sel), want, ...rules.slice(sel + 1)]);
       sel = rules.findIndex((x) => keyOf(x) === keyOf(want));
       paint();
@@ -571,7 +607,7 @@ function buildEditor(state, product) {
   const unitChoices = productUnitOptions(state, product);
   const unit = select(unitChoices.options, unitChoices.value, null, "Pick a unit…");
   const price = el("input", { class: "input", type: "number", inputmode: "decimal", step: "0.01",
-    placeholder: "sell price (RM, optional)", value: product?.price ?? "" });
+    placeholder: "sell price (RM — needed to sell on the shop)", value: product?.price ?? "" });
   const limit = el("input", { class: "input", type: "number", inputmode: "numeric", min: "1",
     placeholder: "e.g. 12", "data-suggest": "12", value: product?.limit ?? "",
     title: "Max pouches of this product per batch/posting day. Limits are added together for the day's availability (e.g. 12 chicken + 12 duck = 24). Leave blank for no limit." });
@@ -626,6 +662,11 @@ function buildEditor(state, product) {
   // again on both sides of the publish (storefront-fields.js) so a malformed one
   // is dropped rather than shipped.
   let thumb = String(product?.thumb || "");
+  // ⚠️⚠️ A PICTURE SHE HAS JUST CHOSEN IS NOT SAVED YET (v553). ⭐ Reading a 12-megapixel photo takes a
+  // moment, and Save reads `thumb` — so **pressing Update before it finished wrote the OLD picture while
+  // the screen said "Product updated", and the one she picked was gone.** ⭐ This holds the press for
+  // that moment, and says why.
+  let thumbPending = false;
   const thumbFile = el("input", { type: "file", accept: "image/*", style: "display:none" });
   const thumbPreview = el("div", { class: "thumb-preview" });
   const drawThumb = () => {
@@ -641,7 +682,9 @@ function buildEditor(state, product) {
   thumbFile.addEventListener("change", () => {
     const f = thumbFile.files && thumbFile.files[0];
     if (!f) return;
+    thumbPending = true;
     readPhoto(f, (dataUrl) => {
+      thumbPending = false;
       if (dataUrl) { thumb = dataUrl; drawThumb(); toast("Photo added"); }
       else toast("That file couldn't be read as a photo");
     }, 360);
@@ -990,6 +1033,10 @@ function buildEditor(state, product) {
   // Reads the form; returns { error } or { values, tr } ready to save.
   function collect() {
     const pname = name.value.trim();
+    // ⚠️ THE PICTURE COMES FIRST, because saving without it loses it silently (v553).
+    if (thumbPending) {
+      return { error: "The picture is still being prepared — give it a second, then press Update again." };
+    }
     if (!pname) return { error: "Product needs a name" };
     const unitVal = unit.value.trim();
     if (!unitVal) {
@@ -1011,7 +1058,14 @@ function buildEditor(state, product) {
     }
     const cycle = validateRecipeNoCycle(state, { id: product && product.id, name: pname, recipe });
     if (cycle) return { error: cycle };
-    const limitVal = limit.value === "" ? undefined : Math.max(1, Number(limit.value));
+    // ⚠️⚠️ ZERO IS NOT A LIMIT OF ONE (v555). ⭐ The box says "Leave blank for no limit" — so a typed 0
+    // meant "no limit" to her and was silently saved as **1 a day**, which the row then read back as
+    // "1/day". ⭐ Asked for a number that cannot mean what she typed, the app says so instead of choosing.
+    const limitRaw = limit.value === "" ? null : Number(limit.value);
+    if (limitRaw != null && !(Number.isFinite(limitRaw) && limitRaw >= 1)) {
+      return { error: "A daily limit is 1 or more — leave the box blank for no limit." };
+    }
+    const limitVal = limitRaw == null ? undefined : Math.floor(limitRaw);
     let closeVal;
     if (closeDays.value !== "") {
       const raw = Number(closeDays.value);
@@ -1125,7 +1179,7 @@ function setProductState(state, p, target, root) {
     save(state);
     maybeSyncStorefront(state);
     toast(wasDraft ? `"${p.name}" is on the shop now` : `"${p.name}" back on the menu`);
-    renderAll(root, state);
+    renderAll(root, state, { keepForm: true });
     if (wasDraft) kickoffAutoTranslate(state, p);
   } else {
     p.active = false;
@@ -1133,7 +1187,7 @@ function setProductState(state, p, target, root) {
     save(state);
     maybeSyncStorefront(state);
     toast(`"${p.name}" hidden — history kept`);
-    renderAll(root, state);
+    renderAll(root, state, { keepForm: true });
   }
 }
 
@@ -1231,7 +1285,8 @@ function newProductCard(state, root) {
   // has to re-register for the outside tap that folds it.
   if (newFormOpen) { controller.open = true; controller.close = shut; openCards.add(controller); }
 
-  const card = el("div", { class: "card" }, head, body);
+  const card = el("div", { class: "card new-prod-card" }, head, body);
+  liveNewCard = card;
   controller.card = card;
   editor.renderRecipeLines();
   return card;
@@ -1253,11 +1308,16 @@ function openEditProductPopup(state, product, root) {
           Object.assign(product, values);
           for (const k of drop || []) delete product[k];
           applyTrMeta(product, tr);
-          toast("Product updated");
+          // ⚠️⚠️ A LIVE PRODUCT WITH NO PRICE IS NOT ON THE SHOP (v589). ⭐ It used to be published as
+          // RM0.00 and sold for nothing; the publish now leaves it out, and this says so instead of
+          // "Product updated" — a change that looks saved but does not reach customers must say why.
+          toast(isLive(product) && !(Number(product.price) > 0)
+            ? "Saved — not on the shop until it has a price"
+            : "Product updated");
           save(state);
           if (wasLive) maybeSyncStorefront(state); // live text changed → shop gets it
           close();
-          renderAll(root, state);
+          renderAll(root, state, { keepForm: true });
           kickoffAutoTranslate(state, product); // fill / refresh translations online
         }, "primary")));
     editor.renderRecipeLines();
@@ -1541,6 +1601,6 @@ function deleteProduct(state, p, usedBy, usedInSets, root) {
     }
     save(state);
     maybeSyncStorefront(state); // keep the storefront menu in sync
-    renderAll(root, state);
+    renderAll(root, state, { keepForm: true });
   }, protect ? { yesLabel: "Hide it" } : { danger: true, yesLabel: "Delete" });
 }

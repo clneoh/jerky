@@ -21,10 +21,10 @@ function createEl(tag) {
     _listeners: {},
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     appendChild(c) { if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parent = this; } return c; },
-    append(...cs) { for (const c of cs) if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parent = this; } },
+    append(...cs) { for (const c of cs) { const n = c == null ? { nodeType: 3, text: "null" } : c; this.children.push(n); if (n.nodeType === 1) n.parent = this; } },
     replaceChildren(...cs) {
       this.children = [];
-      for (const c of cs) if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parent = this; }
+      for (const c of cs) { const n = c == null ? { nodeType: 3, text: "null" } : c; this.children.push(n); if (n.nodeType === 1) n.parent = this; }
     },
     // A real node walks up its own ancestors, so the shim keeps a parent link and
     // walks the same way. The drag handle asks whether a press landed on a button
@@ -47,6 +47,9 @@ function createEl(tag) {
     setAttribute(k, v) { this.attrs[k] = String(v); },
     getAttribute(k) { return this.attrs[k]; },
     getBoundingClientRect() { return { left: 0, top: 0, right: 600, bottom: 400, width: 600, height: 400 }; },
+    // ⚠️ A REAL FOCUS MOVES THE DOCUMENT'S activeElement (v591) — without this a test could not tell
+    // whether a dialog took the keyboard or handed it back.
+    focus() { if (globalThis.document) globalThis.document.activeElement = this; },
   };
 }
 // By id, and the SAME node every time — a real getElementById does not hand back
@@ -61,7 +64,7 @@ globalThis.document = {
   body: createEl("body"),
 };
 
-import { select, showPopup, el } from "../admin/js/ui.js";
+import { select, showPopup, confirmDialog, nameFields, printPage, button, modeButton, el } from "../admin/js/ui.js";
 
 const STATUSES = [
   { value: "new", label: "New" },
@@ -415,4 +418,98 @@ test("the pin picker's list floats, so no control above it can be pushed off the
   const shared = blocks.filter((b) => b.sel === ".sugg-panel").map((b) => b.body).join("\n");
   assert.doesNotMatch(shared, /position:\s*(absolute|fixed)/,
     ".sugg-panel is positioned, so the customer suggester in the order forms floats too — and that one is clipped by the pop-up body it lives in");
+});
+
+// ── ★★★ a dialog holds the keyboard and hands it back (v591) ──────────────────
+// ⚠️⚠️ MEASURED: both dialog styles claimed `aria-modal` but trapped nothing — ⚠️ **Tab walked out of the
+// card into the page behind it**, Escape (whose listener is on the card/layer) then did nothing, and closing
+// left focus on `<body>`. ⭐ These are driven, not grepped.
+test("★★★ a confirmation traps Tab and gives focus back to the press that opened it (v591)", () => {
+  const opener = createEl("button");
+  document.activeElement = opener;
+  confirmDialog("Take this away?", () => {});
+  const layer = document.getElementById("confirm-layer");
+  const card = layer.children[0];
+  assert.equal(document.activeElement, card, "the question did not take the keyboard");
+
+  const tab = { key: "Tab", shiftKey: false, prevented: false, preventDefault() { this.prevented = true; } };
+  card._listeners.keydown[0](tab);
+  assert.equal(tab.prevented, true,
+    "★ Tab was not held inside the question — **focus walks into the page behind it**");
+
+  const esc = { key: "Escape", prevented: false, preventDefault() { this.prevented = true; } };
+  card._listeners.keydown[0](esc);
+  assert.equal(layer.hidden, true, "Escape did not close the question");
+  assert.equal(document.activeElement, opener,
+    "★ closing the question left focus on nothing — a keyboard user restarts at the top of the page");
+});
+
+test("★★★ a pop-up card traps Tab and restores focus too (v591)", () => {
+  const opener = createEl("button");
+  document.activeElement = opener;
+  showPopup("A card", () => el("p", {}, "hello"));
+  const layer = document.getElementById("popup-layer");
+  const card = layer.children[0];
+  assert.equal(document.activeElement, card, "the card did not take the keyboard");
+
+  const tab = { key: "Tab", shiftKey: false, prevented: false, preventDefault() { this.prevented = true; } };
+  // ⚠️ The LAST listener is this card's — earlier tests have opened cards on the same shared layer.
+  const onKey = layer._listeners.keydown[layer._listeners.keydown.length - 1];
+  onKey(tab);
+  assert.equal(tab.prevented, true, "★ Tab was not held inside the card");
+
+  const esc = { key: "Escape", prevented: false, preventDefault() { this.prevented = true; } };
+  onKey(esc);
+  assert.equal(layer.hidden, true);
+  assert.equal(document.activeElement, opener, "★ closing the card did not give the keyboard back");
+});
+
+
+// ── ★★★ a Print press that cannot print says so (v592) ───────────────────────
+// ⚠️⚠️ MEASURED: the purchase order and expense history called `window.print()` bare — ⚠️ **on a browser
+// without printing the press threw, and with it silently did nothing.** ⭐ One guard, the journal's sentence.
+test("★★★ a Print press that cannot print says so instead of failing silently (v592)", () => {
+  const realWin = globalThis.window;
+  const realST = globalThis.setTimeout;
+  globalThis.setTimeout = () => 0;           // the toast's own 2.2 s timer must not hold the suite
+  try {
+    globalThis.window = {};
+    const before = document.body.children.length;
+    assert.equal(printPage(), false, "a phone without printing claimed it printed");
+    const made = document.body.children.slice(before);
+    assert.ok(made.some((n) => /can't print/.test(String(n.textContent))),
+      "★ the press failed silently — a dead Print button reads as a broken screen");
+  } finally { globalThis.window = realWin; globalThis.setTimeout = realST; }
+
+  let printed = 0;
+  globalThis.window = { print() { printed += 1; } };
+  try {
+    assert.equal(printPage(), true);
+    assert.equal(printed, 1, "a phone that CAN print did not");
+  } finally { globalThis.window = realWin; }
+});
+
+
+// ── ★★★ a glyph is not a name (v593) ──────────────────────────────────────────
+test("★★★ a glyph press is named in words, and a named press is left alone (v593)", () => {
+  // ⚠️⚠️ MEASURED: "‹", "›" and "✕" were announced by their CHARACTER names — voice control could not say
+  // "next month" or "remove this line".
+  assert.equal(button("‹", () => {}).getAttribute("aria-label"), "Previous");
+  assert.equal(button("›", () => {}).getAttribute("aria-label"), "Next");
+  assert.equal(button("✕", () => {}).getAttribute("aria-label"), "Remove");
+  assert.ok(!button("Save", () => {}).getAttribute("aria-label"),
+    "a press with its own words was given a second name");
+});
+
+
+// ── ★★★ a chosen pill says it is pressed (v594) ───────────────────────────────
+test("★★★ a chosen pill says it is pressed, not only coloured (v594)", () => {
+  // ⚠️⚠️ MEASURED: Money, Profit, Deliveries and the account editor marked the chosen option with a class and
+  // nothing else — a screen reader heard a row of buttons with no way to tell which was in force.
+  const on = modeButton("Cash", true, () => {});
+  const off = modeButton("TNG", false, () => {});
+  assert.equal(on.getAttribute("aria-pressed"), "true");
+  assert.equal(off.getAttribute("aria-pressed"), "false");
+  assert.match(String(on.className), /cal-mode-on/);
+  assert.equal(/cal-mode-on/.test(String(off.className)), false);
 });

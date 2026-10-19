@@ -57,19 +57,37 @@ export async function callParcel(state, { action, payload = {}, timeoutMs = 3500
     try { body = await res.json(); } catch { body = null; }
     if (!res.ok) {
       const said = body && typeof body === "object" ? (body.reason || body.error) : "";
-      return { ok: false, reason: String(said || `The parcel service answered with an error (HTTP ${res.status}).`) };
+      // ⚠️⚠️ AND A PLATFORM 5xx IS UNKNOWN (v595): the function may have booked and charged before its answer
+      // was lost, so the Book press must lock exactly as it does on a timeout.
+      return { ok: false, ...(res.status >= 500 ? { unknown: true } : {}),
+        reason: String(said || `The parcel service answered with an error (HTTP ${res.status}).`) };
     }
     if (!body || typeof body !== "object") {
       return { ok: false, reason: "The parcel service answered with something that could not be read." };
     }
     return body;
   } catch (err) {
+    // ⚠️⚠️ A BOOKING THAT LOST ITS REPLY HAS AN UNKNOWN OUTCOME (v561). ⭐ Booking both creates the parcel
+    // and takes the money in one call, so a timeout here — or even a dropped connection — can mean a parcel
+    // that is already booked and charged. ⭐ "Check your signal and try again" is the one instruction that
+    // cannot be given: it invites a SECOND booking and a SECOND charge. ⚠️ The screen takes the Book press
+    // away on `unknown`, and the way back is to price again.
+    const unknown = action === "book";
     if (err && (err.name === "AbortError" || err.code === 20)) {
-      return { ok: false, reason: "The parcel service did not answer in time. Check your signal and try again." };
+      return {
+        ok: false,
+        ...(unknown ? { unknown: true } : {}),
+        reason: unknown
+          ? "The parcel service did not answer in time, so this app cannot tell whether the parcel was booked and charged. Open EasyParcel and look before booking again — a second Book may charge you twice."
+          : "The parcel service did not answer in time. Check your signal and try again.",
+      };
     }
     return {
       ok: false,
-      reason: err && err.message ? `Couldn't reach the parcel service — ${err.message}` : "Couldn't reach the parcel service.",
+      ...(unknown ? { unknown: true } : {}),
+      reason: unknown
+        ? "The connection dropped while booking, so this app cannot tell whether the parcel was booked and charged. Open EasyParcel and look before booking again — a second Book may charge you twice."
+        : (err && err.message ? `Couldn't reach the parcel service — ${err.message}` : "Couldn't reach the parcel service."),
     };
   } finally {
     clearTimeout(timer);

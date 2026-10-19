@@ -21,12 +21,14 @@
 // ⚠️ AND IT NEVER NAMES A CAUSE. It reports what it found and what it means. What removed an order is not
 // knowable from the data that is left — which is the whole reason v444 keeps a copy of it.
 
-import { byId, codeFromId, groupOrders, orderCode, orderLinePrice, removedKeepWords, storedBytes, PHONE_STORE_LIMIT, PHONE_STORE_ALERT } from "./state.js";
+import { byId, codeFromId, groupOrders, orderCode, orderLinePrice, removedKeepWords, storedBytes, duplicateOrderCodes, duplicateIngredientPlan, ingredientNameKey, round2, PHONE_STORE_LIMIT, PHONE_STORE_ALERT, phoneUsage } from "./state.js";
 import { isCollected } from "./money.js";
 import { receiptNoOfGroup } from "./receipts.js";
 import { listFields, PULL_CEILING } from "./sync.js";
 import { unaccountedOrders } from "./backups.js";
 import { dayMonth } from "./dates.js";
+import { fmtStockAmount } from "./purchasing.js";
+import { STOCK_LOG_CAP } from "./stock.js";
 
 // The order-level facts every row of ONE order must agree on. ⚠️ DELIBERATELY NOT THE PER-LINE ONES —
 // `qty`, `unitPrice`, `unitCost` and `lineNote` are each row's own business, and a check that flagged
@@ -76,14 +78,22 @@ export function localChecks(state) {
       : pass("both", "Nothing is on the orders list and the Removed list at once"));
   }
 
-  // ── 3 · every order sits on a real bake day ─────────────────────────────
+  // ── 3 · every order can still be FOUND ─────────────────────────────────
+  //
+  // ⚠️⚠️ THIS USED TO FAIL EVERY ORDER ON A DAY SHE HAD DELETED (v572). ⭐ The app's own Delete button removes
+  // a bake day and **keeps its orders on purpose**, and the Orders list draws exactly those with "its bake day
+  // was removed — tap to put it on one". ⚠️ **So the check cried wolf on a normal tidy-up, for ever**, and its
+  // sentence said the orders were "invisible" — which was not true of the app it was describing.
+  // ⭐ A FAULT IS AN ORDER THAT CANNOT BE FOUND AT ALL: no bake day, and no day recorded on the order either.
   {
-    const bad = orders.filter((o) => o && !(o.deliveryDateId && byId(days, o.deliveryDateId)));
-    out.push(bad.length
-      ? fail("day", "Every order sits on a real delivery date", bad.map((o) => `#${codeOf(o)}`),
-        "These orders are not on any delivery date you have, so no Orders screen can show them — they are in your data and invisible.",
-        "Open the Removed list, or find each order by its number in the Orders search box, and set its delivery date.")
-      : pass("day", "Every order sits on a real delivery date"));
+    const lost = orders.filter((o) => o
+      && !(o.deliveryDateId && byId(days, o.deliveryDateId))
+      && !String(o.deliveryDate || "").trim());
+    out.push(lost.length
+      ? fail("day", "Every order can still be found", lost.map((o) => `#${codeOf(o)}`),
+        "These orders are on no delivery date and carry no day of their own, so nothing can place them — not the Orders list, not the calendar, not a search by day.",
+        "Find each order by its number in the Orders search box and set its delivery date.")
+      : pass("day", "Every order can still be found"));
   }
 
   // ── 4 · every line of one order agrees about the order ──────────────────
@@ -156,17 +166,49 @@ export function localChecks(state) {
     const by = new Map();
     for (const i of (Array.isArray(state && state.ingredients) ? state.ingredients : [])) {
       if (!i) continue;
-      const k = String(i.name || "").trim().toLowerCase();
+      // ⚠️⚠️ A HIDDEN CARD IS NOT A LIVE DUPLICATE (v564). ⭐ Hiding one of a pair is the resolution the
+      // check itself recommends, so counting hidden records made the press unable to clear the line —
+      // **it hid the spare and the check stayed red.** ⭐ The dangerous half of the old v544 case — a
+      // recipe pointing at a HIDDEN ingredient, which is used on every bake and never topped up — is its
+      // own check, and stays.
+      if (i.active === false) continue;
+      // ⚠️ The SAME key the Add warning uses (v568) — it collapses runs of spaces too, so the two cannot
+      // disagree about which cards share a name.
+      const k = ingredientNameKey(i.name);
       if (!k) continue;
       by.set(k, (by.get(k) || []).concat(i));
     }
+    // ⚠️⚠️ AND EACH RECORD IS SHOWN WITH ITS OWN AMOUNT AND WHETHER A RECIPE USES IT (v564). ⭐ Her report,
+    // 18 Oct 2026: __"for strong flour, on hand show 0, but open up the stock card says on hand 6kgs"__ —
+    // and __"the yeast might have the same problem too"__. ⭐ **"Strong flour ×2" is true and useless**: it
+    // does not say WHICH of the two cards she is looking at, or which one to keep. ⭐ The two facts that
+    // answer that are the amount on each record and whether a recipe points at it.
+    const usedBy = (id) => (Array.isArray(state && state.products) ? state.products : [])
+      .filter((p) => p && (Array.isArray(p.recipe) ? p.recipe : []).some((l) => l && String(l.ingredientId || "") === String(id)))
+      .length;
     const dupes = [...by.values()].filter((a) => a.length > 1)
-      .map((a) => `${String(a[0].name || "(ingredient)")} ×${a.length}`);
-    out.push(dupes.length
-      ? fail("dupeIngredient", "No two ingredients share a name", dupes,
-        "Two or more ingredients carry the same name. Their stock is separate, so a stock card can show one amount and the list another — and a recipe takes from whichever one it points at. Neither is wrong; they are simply two records with one name.",
-        "Open each one, see which your recipes use, and hide or delete the other. Then set the stock on the one that is left, so the number means something.")
-      : pass("dupeIngredient", "No two ingredients share a name"));
+      .map((a) => `${String(a[0].name || "(ingredient)")} ×${a.length} — `
+        + a.map((x) => {
+          const n = Math.max(0, Number(x.onHand) || 0);
+          const uses = usedBy(x.id);
+          return `${fmtStockAmount(state, x, n)}${uses ? `, used in ${uses} recipe${uses === 1 ? "" : "s"}` : ", no recipe uses this one"}`;
+        }).join(" · "));
+    if (dupes.length) {
+      const repairOk = duplicateIngredientPlan(state).length > 0;
+      const entry = fail("dupeIngredient", "No two ingredients share a name", dupes,
+        "Two or more ingredients carry the same name. Their stock is separate, so a stock card can show one amount and the list another — and a recipe takes from whichever one it points at. Neither is wrong; they are simply two records with one name. Each one below carries its own amount, and says whether a recipe uses it.",
+        // ⚠️⚠️ AND THE SENTENCE MUST NOT NAME A BUTTON THE SCREEN DID NOT DRAW (v572). ⭐ The press is offered
+        // only when HER RECIPES settle the pair — exactly one of two is used. ⚠️ For two unused cards, two used
+        // ones, or three sharing a name, it is not there, and "press the button below" pointed at nothing.
+        repairOk
+          ? "The one with no recipe behind it is the spare: press the button below to hide it (hiding keeps its stock card, and Unhide brings it back). Then set the stock on the one that is left, so the number means something."
+          : "Open each card and see which one your recipes use, then hide or delete the other — Unhide brings a hidden card back. Then set the stock on the one that is left, so the number means something.");
+      // ⭐ AND THE PRESS, when her own recipes decide it without ambiguity (v564).
+      if (repairOk) entry.repair = "dupeIngredient";
+      out.push(entry);
+    } else {
+      out.push(pass("dupeIngredient", "No two ingredients share a name"));
+    }
   }
 
   // ── 9 · no recipe points at an ingredient you have HIDDEN (v544) ────────
@@ -212,7 +254,10 @@ export function localChecks(state) {
   // ⭐ It is a PASS showing the number until the phone is nearly full, and only then a FAIL — **a red X a year
   // early is the warning she learns to ignore.**
   {
-    const used = storedBytes(state);
+    // ⚠️⚠️ EVERY KEY, NOT ONLY THE BOOK (v569) — see `phoneUsage`. ⭐ The old measure read one of the three
+    // files the app keeps, so the warning could not fire before saving began to fail.
+    const usage = phoneUsage(state);
+    const used = usage ? usage.total : null;
     if (used == null) {
       out.push(skipped("room", "There is room on this phone for your data",
         "This phone's storage could not be measured, so nobody can say how much room is left."));
@@ -220,17 +265,87 @@ export function localChecks(state) {
       const pct = Math.round((used / PHONE_STORE_LIMIT) * 100);
       const mb = (n) => `${(n / (1024 * 1024)).toFixed(2)} MB`;
       const size = `${mb(used)} of about ${mb(PHONE_STORE_LIMIT)} (${pct}%)`;
+      // ⭐ WHAT THE THREE FILES COST, said plainly — so a number that looks too big has somewhere to point.
+      const parts = usage.parts || {};
+      const book = parts["bakeadmin.v1"] || 0;
+      const rest = used - book;
       if (used >= PHONE_STORE_LIMIT * PHONE_STORE_ALERT) {
-        out.push(fail("room", "There is room on this phone for your data", [size],
-          `What this phone stores is ${size} full. When a browser's storage fills up, SAVING STOPS — and until v534 that happened silently, so a change could be lost while the screen still looked normal.`,
-          "This needs doing before the phone fills: the oldest cloud copies can be deleted, and a device with more room can take over. Nothing is lost — your shared data and your saved copies still hold everything."));
+        out.push(fail("room", "There is room on this phone for your data",
+          [size, `Your book is ${mb(book)} of that; the app's own working copies make up the other ${mb(Math.max(0, rest))}`],
+          `What this phone stores is ${size} full. When a browser's storage fills up, SAVING STOPS — and until v534 that happened silently, so a change could be lost while the screen still looked normal. ⚠️ And since v569 this measures EVERY copy the app keeps, not only your book — the working copies behind the sync count too.`,
+          "⚠️ Deleting cloud copies does NOT free this phone — they live in the cloud. What frees it is room elsewhere on the phone (other apps or photos), or letting a device with more room take over. Nothing is at risk: your shared data and your saved copies still hold everything."));
       } else {
         out.push({ ...pass("room", "There is room on this phone for your data"), detail: [size] });
       }
     }
   }
 
-  // ── 11 · this phone could read its own saved copy (v548) ────────────────
+  // ── 10b · the stock card adds up to the shelf (v560) ───────────────────
+  //
+  // ⚠️⚠️ HER OWN CARD ASKED THE QUESTION. The strong-flour card showed **eight rows summing to +14 kg under
+  // an "On hand" of 10 kg**, with two identical "0 g to 10 kg" stocktakes and two identical "Baked extra —
+  // 2 ×" rows at the same minute. ⭐ **The amount at the top is right; the history over-counts.**
+  // ⭐ THE MECHANISM, REPRODUCED: a stocktake sets an ABSOLUTE amount. Two phones holding the shelf at 0
+  // each set 10 kg, so each writes "+10 kg" — the shelf merges to one 10 kg, the journal keeps both rows.
+  // ⚠️ **Nothing looked at the relationship between the two, and it is the one invariant a stock card has:
+  // every row is one movement, so the rows must add up to the amount at the top.**
+  // ⚠️ A log that has hit its cap cannot add up by construction — those are SKIPPED and said so, never
+  // passed, and never called a fault.
+  {
+    const bad = [];
+    const capped = [];
+    for (const ing of (Array.isArray(state && state.ingredients) ? state.ingredients : [])) {
+      if (!ing) continue;
+      const log = Array.isArray(ing.stockLog) ? ing.stockLog : [];
+      if (!log.length) continue;
+      // ⚠️ A log that has hit its cap has lost its oldest rows, so its sum cannot match by construction —
+      // it cannot be JUDGED, which is not the same as being right.
+      if (log.length >= STOCK_LOG_CAP) { capped.push(String(ing.name || "an ingredient")); continue; }
+      const sum = round2(log.reduce((acc, e) => acc + (Number(e && e.delta) || 0), 0));
+      const on = round2(Number(ing.onHand) || 0);
+      if (Math.abs(sum - on) > 0.01) {
+        bad.push(`${ing.name} — on hand ${fmtStockAmount(state, ing, on)}, the rows add to ${fmtStockAmount(state, ing, sum)}`);
+      }
+    }
+    if (bad.length) {
+      // ⚠️⚠️ TWO REASONS, AND THE FIRST SENTENCE ONLY DESCRIBED ONE (v563). Her eight cards were
+      // **one** over-count (strong flour, rows +14 kg under a 10 kg shelf — two phones writing one
+      // absolute stocktake) and **seven** whose rows add up to LESS than the shelf, because the amount
+      // was on the shelf before the card kept any rows. ⭐ The same check, two opposite stories, and the
+      // old text told all eight the over-count one.
+      const why = "Every row on a stock card is one movement of your shelf, so the rows must add up to the amount at the top. On these they do not, and there are two reasons. A stocktake sets an AMOUNT rather than adding one, so when the same stocktake was recorded on two phones each phone writes its own row while the shelf takes the amount once — the history then counts MORE than the shelf. Or an amount was already on the shelf from before this card began keeping a history — the history then counts LESS than the shelf. Either way, the amount at the top is the one to trust: it is the history that is incomplete.";
+      const fix = "Do NOT remove rows with the ✕ — the rows are what explain your shelf, and taking one off moves it. Press the button below instead: it writes the one line each card is missing, so the history adds up to the amount at the top. ⭐ Your shelf does not move — nothing is added to it and nothing is taken away.";
+      const entry = fail("stockAddsUp", "The stock card adds up to the shelf", bad, why, fix);
+      // ⭐ AND THE PRESS THAT CLEARS IT. Without one this check could never go green on her own book:
+      // a stocktake writes the same amount and changes the sum not at all.
+      entry.repair = "stockCards";
+      out.push(entry);
+    } else if (capped.length) {
+      // ⭐ A real mismatch outranks this, so it is asked first; with none, part of her book still could not
+      // be judged, and the rule this page is built on is that "I could not look" is never a pass.
+      out.push(skipped("stockAddsUp", "The stock card adds up to the shelf",
+        `Too many movements on ${capped.join(", ")} to add up — a stock card keeps its newest ${STOCK_LOG_CAP}.`));
+    } else {
+      out.push(pass("stockAddsUp", "The stock card adds up to the shelf"));
+    }
+  }
+
+  // ── 11 · no two orders wear the same number (v554) ─────────────────────
+  //
+  // ⚠️⚠️ THE CODE IS SIX HEX CHARACTERS of the order's own id — about **3% by 1,000 orders** — and the
+  // shared data keys BOTH the tracking card and the receipt register by it. ⭐ **Two orders on one code
+  // share one tracking card and one receipt number: two customers reading each other's bread.** ⚠️ It
+  // cannot be lengthened without moving every code already given out (v441's fault), so this FINDS it.
+  {
+    const dup = duplicateOrderCodes(orders);
+    out.push(dup.length
+      ? fail("dupCode", "No two orders wear the same order number", dup.map((d) => `#${d.code}`),
+        "Two or more orders carry the same order number. That number is what a customer quotes, what their tracking card answers to, and what the receipt register keys its serials by — so those orders would share one card and one receipt number between them.",
+        "Do not delete either order — each one is a real sale. This one needs the helper: send the numbers above, and a new number can be given to ONE of them without moving the other.")
+      : pass("dupCode", "No two orders wear the same order number"));
+  }
+
+  // ── 12 · this phone could read its own saved copy (v548) ────────────────
   //
   // ⚠️⚠️ THE FAULT THIS ANSWERS. A damaged stored book used to make the app come up EMPTY and say nothing —
   // the only trace was a `console.warn`, and the next save wrote the empty book over the only local copy.
@@ -239,11 +354,17 @@ export function localChecks(state) {
   // ⚠️ **so it appears exactly when the cloud did NOT save her**, which is the only case that matters.
   {
     const bad = state && state.unreadableSave;
+    const copyGone = !!(bad && bad.removedAt);
     out.push(bad
       ? fail("readable", "This phone could read its saved copy",
-        [`${dayMonth(String(bad.at || "").slice(0, 10))} · ${Number(bad.chars) || 0} characters kept`],
+        [copyGone
+          ? `${dayMonth(String(bad.at || "").slice(0, 10))} · the kept copy has since been deleted`
+          : `${dayMonth(String(bad.at || "").slice(0, 10))} · ${Number(bad.chars) || 0} characters kept`],
         "On that opening, this phone's stored book was damaged and could not be read. A copy of the damaged text was kept on this phone, and the app came up with an empty book. Anything that had already reached your shared data is safe; anything that lived only on this phone is in that kept copy.",
-        "Do not clear the app or the browser data. Let your shared data finish a sync (More → Settings) — if it is intact, the book refills and this note clears itself. If it does not refill, restore your newest backup instead.")
+        "Do not clear the app or the browser data. Let your shared data finish a sync (More → Settings) — if it is intact, the book refills and this note clears itself. If it does not refill, restore your newest backup instead."
+        + (copyGone
+          ? " ⭐ The kept copy was deleted, so this phone has no second chance from it — a sync or a restore is the way back."
+          : " ⭐ And once you no longer need that kept text, it can be deleted from More → Settings → Backup & safety, which frees the room it takes."))
       : pass("readable", "This phone could read its saved copy"));
   }
 
@@ -385,7 +506,15 @@ export function copyChecks(copies, now = new Date()) {
     .filter(Boolean)
     .sort()
     .pop() || "";
-  const ageDays = newest ? Math.floor((now.getTime() - new Date(newest).getTime()) / 86400000) : Infinity;
+  // ⚠️⚠️ AN UNREADABLE DATE IS NOT A RECENT COPY (v572). ⭐ `NaN > 3` is false, so a copy whose own date
+  // could not be parsed reported **PASS** — ⚠️ the one direction this page must never fail in. ⭐ It says it
+  // could not measure the age instead.
+  const newestAt = newest ? new Date(newest).getTime() : NaN;
+  if (!Number.isFinite(newestAt)) {
+    return [skipped("copies", "Your saved copies are recent and readable",
+      "Your saved copies were listed, but the newest one's own date could not be read — so its age cannot be measured.")];
+  }
+  const ageDays = Math.floor((now.getTime() - newestAt) / 86400000);
   // ⚠️ THREE DAYS, because a copy is written on the days she OPENS the app: a bakery that has not opened
   // it in three days has no recent copy, and the day it matters is the day it is missing.
   return [ageDays > 3
@@ -443,7 +572,13 @@ export function backupChecks(state, copy, when = "") {
       // ⚠️ AND IT NAMES BOTH INNOCENT CASES (v527). It named one, and the one it named was not hers: **the
       // copy looks back about a week, and the Removed list remembers 48 hours** — so the whole band in
       // between is an order she took off deliberately, with nothing left to explain it.
-      `The copy saved on ${when || "an earlier day"} holds ${missing.length === 1 ? "an order" : "orders"} that this phone no longer has — and ${missing.length === 1 ? "it is" : "they are"} not on the Removed list either, so the app has no record of taking ${missing.length === 1 ? "it" : "them"} off. TWO innocent cases look exactly the same, so check the dates before worrying: a removal made before the Removed list existed, and — because the Removed list keeps a row for only ${removedKeepWords()} — an order you took off yourself longer ago than that, which this copy is old enough to remember.`,
+      // ⚠️⚠️ AND A THIRD INNOCENT CASE, WHICH HER OWN SCREEN FOUND (v550): **an order removed on her OTHER
+      // phone while THIS phone had never received it.** ⭐ The shelf row is written on the phone that HELD the
+      // order — this one has nothing to record, because it never had anything to take off — and the copy was
+      // made when the order was still there. ⭐ **Measured in the code: `mergeCloudRows` writes no shelf row
+      // for a tombstone whose order this phone does not have**, so a second phone makes this check cry wolf
+      // about an order it never held.
+      `The copy saved on ${when || "an earlier day"} holds ${missing.length === 1 ? "an order" : "orders"} that this phone no longer has — and ${missing.length === 1 ? "it is" : "they are"} not on the Removed list either, so the app has no record of taking ${missing.length === 1 ? "it" : "them"} off. THREE innocent cases look exactly the same, so check the dates before worrying: a removal made before the Removed list existed; an order you took off yourself longer ago than the ${removedKeepWords()} the Removed list keeps, which this copy is old enough to remember; and an order removed on your OTHER phone that this phone had never received — this phone has nothing to record for that, because it never had anything to take off.`,
       // ⚠️⚠️ AND THE WAY OUT NO LONGER OFFERS A REWIND (v532). ⭐ **"Put that copy back" meant Restore, which
       // takes the WHOLE app back to the day of the copy — here, in the shared data and on her other phone.**
       // ⭐ **It is the right tool for "put everything back", and the wrong one for one missing order** — and
@@ -466,7 +601,7 @@ export function saveCheck(saveFail) {
   const when = String(saveFail.at || "").slice(0, 10);
   return [fail("saved", TITLE, [saveFail.name || "Save failed"],
     `This phone could not store your last change${when ? ` (${when})` : ""}: ${saveFail.reason}. The change was still sent to your shared data, so it is not lost — but THIS phone could not keep its own copy of it, and on a reload this phone will take the shared data's version back down.`,
-    "This happens when the browser's storage for the app is full. The oldest cloud copies can be deleted to free room, and nothing is lost — your shared data and the remaining copies still hold everything.")];
+    "This happens when the browser's storage for the app is full. ⚠️ Deleting cloud copies does not free this phone — what frees it is room elsewhere on the phone, or a device with more room taking over. Nothing is lost: your shared data and your saved copies still hold everything.")];
 }
 
 // ── the check that asks whether this phone's records REACHED the other one ───
@@ -480,14 +615,29 @@ export function saveCheck(saveFail) {
 // the one question her report is about: is what is on this phone actually IN the shared data?**
 // ⚠️ And the journal records a change as handed over when it is QUEUED, not when it leaves — so a change
 // whose queue was lost would sit here for ever with nothing to say so. **This is what says so.**
-export function reachedCloudCheck(state, cloud, local) {
+export function reachedCloudCheck(state, cloud, local, queued = null) {
   const TITLE = "Everything on this phone has reached your shared data";
   if (!cloud || !cloud.ok) {
     return [skipped("reached", TITLE,
       (cloud && cloud.reason) || "Your shared data could not be read — sign in and run this again.")];
   }
+  // ⚠️⚠️ A PARTIAL READ MUST NEVER NAME A RECORD AS MISSING (v569). ⭐ `cloudKeys` now pages, and it says
+  // `complete: false` when the ceiling was reached — ⚠️ **comparing a partial cloud against a full phone
+  // would report every record as "not in your shared data", which is a permanent false red X.**
+  if (cloud.complete === false) {
+    return [skipped("reached", TITLE,
+      "Your shared data holds more records than this phone can read in one go, so this could not be checked. Nothing is known to be wrong — the check simply could not look at all of it.")];
+  }
+  // ⚠️⚠️ AND A CHECK WITH NOTHING ON ONE SIDE MUST NOT PASS (v572) — `local` absent answered "everything
+  // reached the cloud", which is this module's own forbidden direction.
+  if (!Array.isArray(local)) {
+    return [skipped("reached", TITLE, "What this phone holds could not be listed, so nothing could be compared.")];
+  }
   const held = cloud.keys instanceof Set ? cloud.keys : new Set(Array.isArray(cloud.keys) ? cloud.keys : []);
-  const missing = (Array.isArray(local) ? local : []).filter((k) => !held.has(k));
+  // ⚠️⚠️ A CHANGE THAT HAS NOT BEEN SENT YET IS NOT A LOSS (v573). ⭐ `waiting` reports it once; this check
+  // reported the same record a second time as "not in your shared data" the instant it was edited.
+  const wait = queued instanceof Set ? queued : new Set();
+  const missing = local.filter((k) => !held.has(k) && !wait.has(k));
   // ⭐ NAMED THE WAY SHE CAN LOOK THEM UP — an order by its number, a bake day by its date.
   const nameOf = (key) => {
     const at = String(key).indexOf(":");
@@ -521,20 +671,30 @@ export function reachedCloudCheck(state, cloud, local) {
 // stays in the shared data until the tombstone lands** — so **anything on this phone's own Removed list is
 // excluded**, the same carve-out the receipt check makes. ⭐ A warning that fires on a deliberate removal is
 // one she learns to ignore.
-export function cloudOnlyCheck(state, cloud, local) {
+export function cloudOnlyCheck(state, cloud, local, queued = null) {
   const TITLE = "Nothing is sitting in your shared data that is not on this phone";
   if (!cloud || !cloud.ok) {
     return [skipped("cloudOnly", TITLE,
       (cloud && cloud.reason) || "Your shared data could not be read — sign in and run this again.")];
   }
+  // ⚠️⚠️ A PARTIAL READ MUST NEVER NAME A RECORD AS MISSING (v569). ⭐ `cloudKeys` now pages, and it says
+  // `complete: false` when the ceiling was reached — ⚠️ **comparing a partial cloud against a full phone
+  // would report every record as "not in your shared data", which is a permanent false red X.**
+  if (cloud.complete === false) {
+    return [skipped("cloudOnly", TITLE,
+      "Your shared data holds more records than this phone can read in one go, so this could not be checked. Nothing is known to be wrong — the check simply could not look at all of it.")];
+  }
   const held = cloud.keys instanceof Set ? cloud.keys : new Set(Array.isArray(cloud.keys) ? cloud.keys : []);
   const here = new Set(Array.isArray(local) ? local : []);
+  // ⚠️⚠️ AND A DELETION STILL IN THE QUEUE IS STILL IN THE CLOUD — BY DESIGN (v573). ⭐ Without this, removing
+  // an order raised a red X until the tombstone landed, then cleared itself.
+  const wait = queued instanceof Set ? queued : new Set();
   // ⚠️ THE SHELF IS THE EXPLANATION FOR A RECORD THAT IS NOT IN THE LIVE LIST, so it is allowed for.
   const shelf = new Set();
   for (const r of (state && state.removedOrders) || []) {
     if (r && r.id) { shelf.add(`orders:${r.id}`); shelf.add(`orders:${codeOf(r)}`); }
   }
-  const extra = [...held].filter((k) => !here.has(k) && !shelf.has(k));
+  const extra = [...held].filter((k) => !here.has(k) && !shelf.has(k) && !wait.has(k));
   const nameOf = (key) => {
     const at = String(key).indexOf(":");
     const kind = String(key).slice(0, at);
@@ -569,6 +729,13 @@ export function contentCheck(state, cloud, payloads, pending) {
     return [skipped("content", TITLE,
       (cloud && cloud.reason) || "Your shared data could not be read — sign in and run this again.")];
   }
+  // ⚠️⚠️ A PARTIAL READ MUST NEVER NAME A RECORD AS MISSING (v569). ⭐ `cloudKeys` now pages, and it says
+  // `complete: false` when the ceiling was reached — ⚠️ **comparing a partial cloud against a full phone
+  // would report every record as "not in your shared data", which is a permanent false red X.**
+  if (cloud.complete === false) {
+    return [skipped("content", TITLE,
+      "Your shared data holds more records than this phone can read in one go, so this could not be checked. Nothing is known to be wrong — the check simply could not look at all of it.")];
+  }
   const queued = pending instanceof Set ? pending : new Set(Array.isArray(pending) ? pending : []);
   const nameOf = (key) => {
     const at = String(key).indexOf(":");
@@ -596,7 +763,7 @@ export function contentCheck(state, cloud, payloads, pending) {
   return [differing.length
     ? fail("content", TITLE, differing.map(nameOf),
       `${differing.length} record${differing.length === 1 ? " is" : "s are"} on this phone AND in your shared data, but ${differing.length === 1 ? "holds" : "hold"} different facts — so this phone and your other one would show the same record differently. Nothing is missing; the two copies simply disagree.`,
-      "Open each of these on this phone and press Save. That writes this phone's copy up to your shared data, and your other device then picks it up. If the other device is showing the RIGHT version, save it THERE instead.")
+      "Open each of these on this phone and press Save. That writes this phone's copy up to your shared data, and your other device then picks it up. If the other device is showing the RIGHT version, save it THERE instead. ⚠️ And on a phone that has just been set up, let its first sync finish before saving anything — until it has, this phone's copy is the one that is behind.")
     : pass("content", TITLE)];
 }
 
@@ -730,14 +897,29 @@ export function recordCountCheck(count) {
 
 // ⚠️ `register`, `copies` and `copy` absent = SKIPPED, and a skipped check is counted ON ITS OWN, never
 // folded into the passes. The headline the screen draws is built from these three numbers and nothing else.
+// ⚠️⚠️ A CARD THAT HOLDS STOCK MUST NEVER BE THE ONE THAT IS HIDDEN SILENTLY (v580). ⭐ The duplicate plan
+// picks the card to hide by which one a RECIPE uses — and the measured case was one "Salt" used by a recipe
+// with **0 on hand** beside an unused one with **6 kg**: the press hid the 6 kg card, ⚠️ **so that stock left
+// every list and the confirmation named no amount.** ⭐ The stock is real; moving or counting it is a decision
+// she makes on the stock cards, so the press names it and stops rather than taking it away.
+export function hideSparesBlocked(state, plan) {
+  const stocked = (Array.isArray(plan) ? plan : [])
+    .filter((p) => p && p.hide && (Number(p.hide.onHand) || 0) > 0);
+  if (!stocked.length) return "";
+  return stocked.map((p) => `${String(p.hide.name || "").trim()} (the spare) holds `
+    + `${fmtStockAmount(state, p.hide, Number(p.hide.onHand) || 0)} — hiding it would take that stock off `
+    + `every list. Count ${String(p.keep.name || "").trim()}, the card your recipes use, up to that amount, and this one down to 0 `
+    + `on their stock cards — then hide it.`).join(" ");
+}
+
 export function runHealthChecks(state, extra = {}) {
   const results = [
     ...localChecks(state),
     ...registerChecks(state, extra.register, state && state.voidedReceipts),
     ...copyChecks(extra.copies),
     ...backupChecks(state, extra.copy, extra.copyWhen),
-    ...reachedCloudCheck(state, extra.cloud, extra.local),
-    ...cloudOnlyCheck(state, extra.cloud, extra.local),
+    ...reachedCloudCheck(state, extra.cloud, extra.local, extra.queued),
+    ...cloudOnlyCheck(state, extra.cloud, extra.local, extra.queued),
     ...contentCheck(state, extra.cloud, extra.payloads, extra.queued),
     ...recordsCheck(extra.count, extra.ceiling),
     ...saveCheck(extra.saveFail),

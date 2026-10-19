@@ -757,6 +757,68 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## v549 → v599 — five more sweeps, and the last one found faults in the fixes before it (19 Oct 2026)
+
+**Fifty bakery versions (v550–v599). 180 merged files + 27 new, +13,185 / −1,247 in the bakery's own
+range. ⚠️ SQL and Edge Functions this time — see the deploy order below.**
+
+**The shape of it:** an audit of what v542–v549 left, then a check of that check, five times. **Two
+sweeps found faults created by the sweep before them**, which is why the last is a freeze rather than
+a finish.
+
+**Security (v558, v583, v585, v586, v589).** `track_order` now takes a **phone** as well as the code;
+the SQL refuses a code-only read, so six characters no longer open a customer's name, address or
+driver's phone. The backoffice publishes the phone onto every old card with one press. Two trigger
+functions lose their default PUBLIC EXECUTE (`supabase/advisor_fixes.sql`), and `incoming_orders.data`
+gains a size check.
+
+**Money (v578, v579, v587).** A refund is money out in the month it went back, not the month of the
+sale; one sale draws one invoice number even when its lines sit on two days; paying a pocket back is a
+debt settled, not a withdrawal.
+
+**Paper (v572, v575, v582, v588, v598).** Labels print at **100 × 150 mm**; an invoice names the
+customer; and no instruction addressed to her prints on a customer's or a shop's sheet (the invoice's
+"open this app again", the PO's unit warning) — both are `no-print` on screen instead.
+
+**The shop (v565, v581, v588, v592, v593, v596–v599).** A number that cannot be answered is refused at
+the box; the tapped day keeps the keyboard; a refused promo is re-judged; the homepage reads its
+**cut-off and posting days from settings** and prices the product she picks (`homeProductId`); and the
+after-order reset returns the page to the state a new visitor sees — **which for munchies is
+`apply("courier")`, its own model, not the bakery's `apply("")`.**
+
+**Stock and trips (v560, v563, v566, v568, v570).** Check my system names a stock card whose rows do
+not add up to the shelf (the two "+10" rows of 17 Oct are explained by one action recorded on two
+phones); eight stuck stock cards can be repaired; a trip cannot be booked twice; a booking that may
+have gone through says "unknown" rather than "failed".
+
+**The guards (v584, v591, v600-adjacent).** Several tests could not fail — they checked that a screen
+*called* a helper, not that the helper worked. `test/v587`–`v599-repairs.test.js`, `i18n-keys`,
+`imports-resolve`, `field-names`, `store-contrast` and `units` are the replacement guards.
+
+### Deploy order — SQL first, then the functions, then the push
+
+1. `supabase/tracking.sql` — **required before the build**: the shop now sends a phone and the old
+   function has no second parameter. This file drops both signatures and recreates the two-argument one.
+2. `supabase/receipts.sql` — `bill_rm`, and `claim_receipt_number` / `refund_receipt` are dropped and
+   recreated (a changed signature cannot be `create or replace`d).
+3. `supabase/shared_pool_slots.sql` — the slot counts count a pack's pieces once. **`instant_slots.sql`
+   is RETIRED: it raises "This file is retired … nothing has been changed" by design, because running
+   it would revert the pool version already installed. Do not run it.**
+4. `supabase/advisor_fixes.sql` — the revokes (a new file; idempotent).
+5. Redeploy all five functions from the repo folder:
+   `supabase functions deploy <courier|parcel|shop-geocode|shop-feedback|wish-mail> --project-ref
+   ircwozniiyywsowamixy`. **`shop-feedback` gains `limit.ts`**, which the CLI uploads only because
+   `index.ts` reaches it.
+
+**Jerky-only resolutions kept:** `TREAT_COUNT` and its seed; the postage settings (`postageRM`,
+`postageSet`, `postageMode`, `postageModeSet`) kept alongside the new `homeProductId`; `bookedUnitsOnDate`
+kept as the date-string entry point and now **counting a pack's pieces and honouring the off-sale/hidden
+rule** — `totalUnitsOnDate` and `poolRemaining` both widen an id back to its DATE (two calendar records
+can share one day, jerky's own fix); the shop's `apply("courier")`, "Post (nationwide)" / "Collect (local)",
+`clockWords`, `dayAsk`/`postsOn`/`missNote`/`calMiss`/`calClose`; `buildMessage`'s point and pin lines.
+**Localized:** `trackNotFound` (phone), `buildWarnBody`, `noMenu`, `confirmAddWaShape`, `trkItems` /
+`itemsTotal` / `trkTotal`, the receipt's "your receipt register" with the operating instruction dropped.
+
 ## v541 → v549 — the full detail audit, twenty-two faults fixed (18 Oct 2026)
 
 **Eight bakery versions (v542–v549). 35 files; no SQL, no Edge Function, no CSS.** Suite **3536 → 3574**.

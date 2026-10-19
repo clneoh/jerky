@@ -238,6 +238,44 @@ test("a long journal becomes more than one page, and the head comes with it", ()
   for (const i of [0, 39, 79]) assert.ok(text.includes(`(row ${i}) Tj`), `row ${i} made it`);
 });
 
+test("★★★ the customer's address breaks at its own lines and inside the column (v588)", () => {
+  // ⚠️⚠️ MEASURED: `to` is a name plus an address whose line breaks are still in it, and the page drew it as
+  // ONE unwrapped string — ⚠️ **a three-line address ran past the column and its breaks printed as bytes.**
+  const s = journalSheet({
+    title: "Invoice", bakery: "Jien Luv 2 Bake",
+    to: "Aisyah binti Abdullah\nNo 12, Jalan Bukit Jambul Indah, Taman Sri Nibong, Sungai Nibong, 11900 Bayan Lepas, Pulau Pinang, Malaysia.",
+    lines: [], totals: [],
+  });
+  const drawn = [...latin1(journalPdf(s)).matchAll(/\(([^)]*)\) Tj/g)].map((m) => m[1]);
+  assert.ok(drawn.includes("Aisyah binti Abdullah"), "the name is a line of its own");
+  assert.ok(drawn.includes("Malaysia."),
+    "★ the tail of the address is not on the page as its own line — **the rest ran past the margin**");
+  assert.equal(drawn.some((x) => x.includes("Aisyah") && x.includes("Jalan")), false,
+    "★ the name and the address were drawn as one string");
+  assert.equal(drawn.some((x) => x.includes("\n")), false,
+    "★ an address's line break printed as a raw byte");
+});
+
+test("★★★ a long title, subtitle, receipt note and empty sentence stay on the page (v590)", () => {
+  // ⚠️⚠️ MEASURED: the empty-state sentence of a fresh stock card (319 characters) was drawn as ONE `Tj`
+  // **2,128 pt wide on a 482 pt column** — only its first ~85 characters reached the paper, and a 45 mm tail
+  // of a business-length subtitle was cut at the edge. ⭐ Every header line now breaks inside the margin.
+  const empty = "A stock card with nothing in it yet. ".repeat(8);
+  const subtitle = "Consolidated invoice for Aisyah binti Abdullah — 12 Jalan Bukit Jambul Indah, "
+    + "Taman Sri Nibong, Sungai Nibong, 11900 Bayan Lepas, Pulau Pinang";
+  const note = "No receipt number yet — the number could not be drawn, so this sale has no serial on the "
+    + "paper or in the register until it is claimed online.";
+  const s = journalSheet({ title: "Stock card", bakery: "Jien Luv 2 Bake", empty, subtitle, receiptNote: note,
+    lines: [], totals: [] });
+  const drawn = [...latin1(journalPdf(s)).matchAll(/\(([^)]*)\) Tj/g)].map((m) => m[1]);
+  assert.equal(drawn.some((x) => x.length > 200), false,
+    "★ a three-hundred-character sentence was drawn as ONE line — **most of it is off the paper**");
+  for (const tail of ["yet.", "Pinang", "online."]) {
+    assert.ok(drawn.some((x) => x.endsWith(tail)),
+      `★ the end of the text ("${tail}") never reaches the page`);
+  }
+});
+
 test("an empty journal is still a document she can send", () => {
   const s = journalSheet({ title: "Sales journal", lines: [], totals: [],
     empty: "Nothing was sold in September 2026." });
@@ -266,4 +304,19 @@ test("the sheet is drawn inside the page, in A4", () => {
     assert.ok(x >= 0 && x <= A4.w, `x ${x} is on the page`);
     assert.ok(y >= 0 && y <= A4.h, `y ${y} is on the page`);
   }
+});
+
+test("★★★ a document with 中文 is NOT turned into a PDF full of ????? (v573)", async () => {
+  // ⚠️⚠️ THE FAULT: the file is WinAnsi, so every character outside it became "?" — ⭐ **a Chinese customer's
+  // name arrived in the WhatsApp PDF as "?????" while the screen and the paper print were right.** ⭐ The app
+  // now declines to make that file, shares the text instead, and says which way through there is.
+  const { canDrawAll } = await import("../admin/js/pdf.js");
+  assert.equal(canDrawAll("Aunty Bee · RM 32.00"), true);
+  assert.equal(canDrawAll("陈阿姨 · RM 32.00"), false,
+    "★ a Chinese name was reported as printable — **the PDF would carry ????? instead of her name**");
+  assert.equal(canDrawAll("中文"), false);
+  // ⭐ A question mark she actually typed is not the same as one the encoder would invent.
+  assert.equal(canDrawAll("Is this right?"), true);
+  // ⚠️ And the em dash / arrow the journals already sanitize are handled, not refused.
+  assert.equal(canDrawAll("A — B → C"), true);
 });

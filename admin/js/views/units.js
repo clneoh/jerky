@@ -36,22 +36,42 @@ function buildUnitEditor(state, uom) {
     class: "input", type: "number", inputmode: "decimal", min: "0.0001", step: "any",
     value: uom?.toBase ?? 1,
   });
-  familySel.addEventListener("change", () => {
+  // ⚠️⚠️ A COUNT UNIT IS PIECES, AND THE BOX SHOWING A FACTOR IT IGNORED WAS A LIE (v583). ⚠️ Typing 12
+  // for "dozen" and pressing Add saved **1** — the number stayed on screen and was never used. ⭐ The box
+  // is not drawn for a count unit at all, so there is nothing to type into that cannot be kept.
+  const syncFactor = () => {
+    const count = familySel.value === "count";
     factorLabel.textContent = factorCaption(familySel.value);
-    if (familySel.value === "count") factor.value = "1";
-  });
+    factor.hidden = count;
+    if (count) factor.value = "1";
+  };
+  familySel.addEventListener("change", syncFactor);
+  syncFactor();
 
   function collect() {
     const n = name.value.trim();
     if (!n) return { error: "Unit needs a name (e.g. kg)" };
     const family = familySel.value;
-    const toBase = family === "count" ? 1 : Math.max(Number(factor.value) || 0, 0.0001);
+    const f = unitFactor(family, factor.value, n);
+    if (f.error) return { error: f.error };
     if (state.uoms.some((u) => u !== uom && u.name.toLowerCase() === n.toLowerCase())) {
       return { error: `A unit called "${n}" already exists` };
     }
-    return { values: { name: n, family, toBase } };
+    return { values: { name: n, family, toBase: f.toBase } };
   }
   return { name, familySel, factorLabel, factor, collect };
+}
+
+// ⚠️⚠️ A CLEARED FACTOR USED TO BECOME 0.0001, SILENTLY (v583) — ⚠️ **a unit that then rescaled every
+// stock figure and recipe cost using it, by a factor of ten thousand.** ⭐ A factor is asked for, refused
+// when it is missing or zero, and a count unit is 1:1 by definition.
+export function unitFactor(family, raw, name = "") {
+  if (family === "count") return { toBase: 1 };
+  const n = Number(raw);
+  if (!String(raw ?? "").trim() || !Number.isFinite(n) || n <= 0) {
+    return { error: `Type how many base ${BASE_NAME[family] || "units"} are in one ${name || "unit"} — a unit cannot be zero` };
+  }
+  return { toBase: n };
 }
 
 function factorCaption(family) {
@@ -146,8 +166,16 @@ function deleteUnit(state, uom, root) {
     // unit was deleted, or it re-seeds the unit and pushes it straight back.
     const gone = Array.isArray(state.uomsRemoved) ? state.uomsRemoved : (state.uomsRemoved = []);
     const name = String(uom.name || "").trim().toLowerCase();
-    if (name && !gone.some((r) => String((r && r.id) || r).toLowerCase() === name)) {
-      gone.push({ id: name, at: new Date().toISOString() });
+    // ⚠️⚠️ A RENAMED SEEDED UNIT IS STILL THAT SEEDED UNIT (v598). ⚠️ Only the CURRENT name was recorded, so
+    // "dozen" renamed to "doz" and then deleted came back on the next load as "dozen" — ⚠️ **the seed matched its
+    // own id and its own name, while the tombstone named something else.** ⭐ Both names are recorded.
+    const names = [name];
+    const seed = /^uom_(.+)$/.exec(String(uom.id || ""));
+    if (seed) names.push(String(seed[1] || "").toLowerCase());
+    for (const n of names) {
+      if (!n) continue;
+      if (gone.some((r) => String((r && r.id) || r).toLowerCase() === n)) continue;
+      gone.push({ id: n, at: new Date().toISOString() });
     }
     toast("Unit deleted");
     save(state);

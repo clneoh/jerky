@@ -48,11 +48,11 @@ function createEl(tag) {
       this.children.push(c);
       return c;
     },
-    append(...cs) { for (const c of cs.flat()) if (c != null) this.appendChild(c); },
+    append(...cs) { for (const c of cs.flat()) this.appendChild(c == null ? { nodeType: 3, text: "null" } : c); },
     replaceChildren(...cs) {
       for (const c of this.children || []) c.parentElement = null;
       this.children = [];
-      for (const c of cs.flat()) if (c != null) this.appendChild(c);
+      for (const c of cs.flat()) this.appendChild(c == null ? { nodeType: 3, text: "null" } : c);
     },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener() {},
@@ -400,6 +400,41 @@ function areaState({ areas = [], points = [] } = {}) {
   st.pointAreas = areas;
   return st;
 }
+
+test("★★★ a product with no price is not published as RM0.00 (v589)", () => {
+  // ⚠️⚠️ MEASURED: `Number(p.price) || 0` turned a cleared price into a FREE loaf — the shop drew RM0.00 and
+  // accepted the order, while the homepage's own reader refused zero and kept its typed figure. ⭐ Only a
+  // priced product reaches the shop; the Products screen says which one is waiting for a price.
+  const st = liveState([]);
+  st.products = [
+    { id: "p1", name: "Focaccia", price: 16, active: true, unit: "loaf" },
+    { id: "p2", name: "Sandwich", price: 0, active: true, unit: "piece" },
+    { id: "p3", name: "No price at all", active: true, unit: "piece" },
+  ];
+  const out = storefrontPayload(st);
+  assert.deepEqual(out.products.map((p) => p.name), ["Focaccia"],
+    "★ an unpriced product was published — **the shop sells it for RM0.00**");
+  assert.equal(out.products[0].price, 16);
+});
+
+test("★★★ the payload names the product she picked for the homepage card (v593)", () => {
+  const st = liveState([]);
+  st.products = [
+    { id: "p1", name: "Focaccia 9x12 ~ 850g", price: 16, active: true, unit: "loaf" },
+    { id: "p2", name: "4 × Focaccia Box", price: 60, active: true, unit: "set" },
+  ];
+  st.settings.storefront = { ...(st.settings.storefront || {}), homeProductId: "p1" };
+  assert.equal(storefrontPayload(st).homeProduct, "Focaccia 9x12 ~ 850g",
+    "★ the homepage is not told which product its card belongs to");
+  // ⚠️ Nothing picked publishes nothing, so the homepage keeps its old rule.
+  st.settings.storefront = { ...(st.settings.storefront || {}), homeProductId: "" };
+  assert.equal("homeProduct" in storefrontPayload(st), true);
+  assert.equal(storefrontPayload(st).homeProduct, "");
+  // ⚠️ And an unpriced pick publishes nothing — it is not on the shop at all.
+  st.settings.storefront = { ...(st.settings.storefront || {}), homeProductId: "p1" };
+  st.products[0].price = 0;
+  assert.equal(storefrontPayload(st).homeProduct, "");
+});
 
 test("★★ the published payload carries the AREAS, and the Points in the order the shop draws them", () => {
   const st = areaState({

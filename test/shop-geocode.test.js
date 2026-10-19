@@ -259,8 +259,16 @@ test("with a key set, BOTH sides ask Google FIRST, and it is the only ask when i
     const q = sent[0].url;
     assert.match(q, /components=country:MY/);
     assert.match(q, /language=en/);
-    assert.match(q, /key=test-key/);
     assert.match(q, /address=12%20Jalan%20Bunga/);
+    // ⚠️⚠️ AND THE KEY IS NOT IN THE ADDRESS (v561). It used to be `&key=...`, and Deno's request
+    // errors EMBED THE URL — so a Google that could not be reached wrote the key into the function's
+    // own log. ⭐ Google accepts `X-Goog-Api-Key`, so it travels in a header, on BOTH sides' ask.
+    assert.doesNotMatch(q, /key=/,
+      "★ the key is back in the URL — **an unreachable Google puts it into the function's log**, which "
+      + "is why it moved to a header");
+    assert.deepEqual(sent.map((s) => s.headers["X-Goog-Api-Key"]), ["test-key", "test-key"],
+      "★ the key is not on the header of BOTH sides' ask, so one of the two lookups sends none — "
+      + "**Google answers REQUEST_DENIED and the good answer is never asked for**");
   });
 });
 
@@ -561,4 +569,15 @@ test("a window that has closed is not a record of anything", () => {
   assert.equal(hits.size, 1, "a window still open is left alone");
   sweep(hits, T + 1000);
   assert.equal(hits.size, 0, "a window past its reset is dropped rather than kept forever");
+});
+
+test("★★★ the lookup keys its limit on the LAST forwarded address (v585)", () => {
+  // ⚠️⚠️ MEASURED FAULT: `callerOf` took the FIRST entry — ⚠️ **the one the caller writes.** ⚠️ **A script
+  // rotating it bought unlimited lookups against her 300-a-day Google quota.** ⭐ A source check, and named as
+  // such: the function runs on Deno, so its request handling cannot be imported here.
+  const src = readFileSync(new URL("../supabase/functions/shop-geocode/index.ts", import.meta.url), "utf8");
+  assert.match(src, /parts\[parts\.length - 1\]/,
+    "★ the geocode limit keys on the caller's own header, not the address the proxy saw");
+  assert.doesNotMatch(src, /split\(","\)\[0\]/,
+    "★ the first entry of x-forwarded-for is being used again");
 });

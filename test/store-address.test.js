@@ -27,7 +27,7 @@ function createEl(tag) {
     hidden: false, scrollTop: 0, _listeners: {},
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     appendChild(c) { if (c != null) this.children.push(c); return c; },
-    append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
+    append(...cs) { for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
     // What the browser does: variadic, and every argument that is not already a node is
     // converted with String() — so a null becomes a text node reading "null". Nothing in
     // THIS file depends on that (test/store.test.js holds the receipt's own assertion for

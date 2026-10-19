@@ -28,8 +28,8 @@ function createEl(tag) {
     _listeners: {}, placeholder: "",
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     appendChild(c) { if (c != null) this.children.push(c); return c; },
-    append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
-    replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) this.children.push(c); },
+    append(...cs) { for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
+    replaceChildren(...cs) { this.children = []; for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener() {},
     setAttribute(k, v) { this.attrs[k] = String(v); if (k === "hidden") this.hidden = true; },
@@ -251,6 +251,30 @@ test("a code on the order wins, and the friend's coupon is NOT spent", () => {
   assert.equal(friend.usedAt, null, "but NOT spent — a code paid for this order, not the coupon");
 });
 
+test("★★★ a friend's coupon a code left unused CAN be spent on their next order", () => {
+  // ⚠️⚠️ THE FAULT (v550): the coupon survived the first order (a code won, so it was not spent) — and it
+  // was still matched only against the order it was BORN on, so **their next order could not use it:**
+  // pressing Apply marked it spent and took RM0 off. ⭐ **The referrer's reward has read `appliedTo` since
+  // v336; the friend's never did.**
+  const first = { ...P22, credits: [], orders: orderFor({ referredBy: "60199999999", promo: "FRESH10" }) };
+  const made = giveCredits(first, { orders: first.orders }, first.settings.referrals);
+  const friend = made.rows.find((c) => c.role === "friendOff");
+  assert.equal(friend.usedAt, null, "precondition: the code won, so the coupon was left unspent");
+
+  // …their NEXT order, with no code, and she presses Apply on it.
+  const next = [{ id: "orddef456", groupId: "ordgdef456", deliveryDateId: "d18", deliveryDate: "2026-09-18",
+    fulfillment: "collect", whatsapp: "60123456789", productId: "p1", qty: 2,
+    productName: "Focaccia", unitPrice: 15, status: "new" }];
+  friend.usedAt = "2026-09-20T00:00:00.000Z";
+  friend.appliedTo = orderCode(next[0]);
+  const st = { ...P22, orders: next, credits: [friend] };
+  const parts = customerTotal(st, { orders: next });
+  assert.equal(parts.coupon, 3,
+    "★ the coupon was spent on this order and took nothing off — **the customer was promised RM3 and got "
+    + "nothing, and the coupon is gone**");
+  assert.equal(parts.total, 27, "and the total she asks for is the lower figure");
+});
+
 test("with no code, the friend's coupon is spent the moment it is made", () => {
   const st = { ...P22, credits: [], orders: orderFor({ referredBy: "60199999999" }) };
   const r = giveCredits(st, { orders: st.orders }, st.settings.referrals);
@@ -310,6 +334,35 @@ test("the customer's tracking card carries the discount, with no code on it", ()
   assert.equal(row.promo_rm, 3, "the card is told the RM3 came off");
   assert.equal(row.promo_code, null,
     "and carries NO code — which is exactly what tells the shop to use the bring-a-friend words");
+});
+
+test("★★★ the card is told WHICH kind of friend discount it is (v571)", () => {
+  // ⚠️⚠️ ONE SENTENCE FOR TWO PEOPLE. The card said "Bring-a-friend you were sent" for both — ⭐ so a
+  // customer spending the reward they EARNED was shown somebody else's coupon's words. ⭐ The role rides
+  // the published row, and a card with no role reads exactly as it always did.
+  const sent = { ...P22, credits: [], orders: orderFor() };
+  sent.credits = [friendCoupon({ orderCode: orderCode(sent.orders[0]) })];
+  assert.equal(trackingSnapshot(sent, { orders: sent.orders }).promo_role, "friendOff",
+    "★ the friend's own discount is published with no role, so the card cannot tell it from a reward");
+
+  const earned = { ...P22, credits: [], orders: orderFor() };
+  // ⚠️ A reward is earned on the FRIEND's order and spent on one of HER OWN — so what makes it count here
+  // is that she pressed Apply on this order (`appliedTo`), not the code it was born on.
+  earned.credits = [friendCoupon({ role: "reward", orderCode: "ZZZZZZ",
+    usedAt: "2026-09-10T00:00:00.000Z", appliedTo: orderCode(earned.orders[0]) })];
+  assert.equal(trackingSnapshot(earned, { orders: earned.orders }).promo_role, "reward",
+    "★ a REFERRER'S REWARD is published as if somebody sent it to them");
+
+  // ⚠️ And a code is not a friend discount at all: its own line names it, so the role stays empty.
+  const coded = { ...P22, credits: [], orders: orderFor({ promo: "FRESH10" }) };
+  coded.promoCodes = [{
+    id: "c1", code: "FRESH10", state: "live", vis: "public", frozen: false,
+    who: { type: "all" }, when: { from: "", to: "" }, basket: { type: "none", amount: 0 },
+    gives: { type: "rm", value: 10, cap: 0 }, often: { type: "unlimited", n: 0, maxRM: 0 },
+    beside: { type: "anything" }, say: "", sayZh: "", sayMs: "", used: 0, given: 0,
+  }];
+  assert.equal(trackingSnapshot(coded, { orders: coded.orders }).promo_role, "",
+    "a CODE was published with a friend role — the card would draw the friend's words over a code's line");
 });
 
 test("a code still publishes as a code, not as the friend's discount", () => {

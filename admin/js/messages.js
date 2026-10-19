@@ -23,6 +23,15 @@ import { courierDayOf, dayLine, promisedWindowSuffix, trackingLine, vanLine } fr
 // sends byte for byte what it sent before this existed. The marks go TIGHT against
 // the words: a space inside the pair leaves the underscores showing as literal
 // characters on some phones.
+// ⚠️⚠️ "Hi !" IS NOT A GREETING (v553). ⭐ An order with a number but NO NAME is ordinary — the baker's
+// own New-order form does not require one, and the shop's does not either for a walk-in she adds herself
+// — and every message she sent opened on **"Hi ! Your order…"**. ⭐ One reading, in one place, so the
+// confirmation, the reminder, the shipped message and the ready message cannot word it differently.
+export function hello(name) {
+  const n = String(name || "").trim();
+  return n ? `Hi ${n}!` : "Hi!";
+}
+
 export function greeting(state, line) {
   const style = (state && state.settings && state.settings.messageStyle) || "plain";
   return style === "greeting" ? `_${line}_` : line;
@@ -88,7 +97,7 @@ export function buildPaymentReminder(state, group, trackUrl) {
   if (!b || !b.recipient) return null;
   // Mirrors the confirmation's layout (greeting, then the order code on its own
   // line) so every WhatsApp message leads with the same scannable #CODE.
-  let msg = `${greeting(state, `Hi ${b.first.customerName || ""}! A friendly reminder from ${b.bakery} about your order.`)}\n`;
+  let msg = `${greeting(state, `${hello(b.first.customerName)} A friendly reminder from ${b.bakery} about your order.`)}\n`;
   msg += `Order #${orderCode(b.first)}\n`;
   msg += `${b.day.label}: ${b.date} - ${b.fulfillment}\n`;
   msg += vanLine(b.day, b.first);
@@ -115,7 +124,7 @@ export function buildPaymentReminder(state, group, trackUrl) {
 export function buildShippedMessage(state, group, trackUrl) {
   const b = basics(state, group, trackUrl);
   if (!b || !b.recipient) return null;
-  let msg = `${greeting(state, `Hi ${b.first.customerName || ""}! Your order from ${b.bakery} is on its way.`)}\n`;
+  let msg = `${greeting(state, `${hello(b.first.customerName)} Your order from ${b.bakery} is on its way.`)}\n`;
   msg += `Order #${orderCode(b.first)}\n`;
   msg += `${b.day.label}: ${b.date} - ${b.fulfillment}\n`;
   msg += vanLine(b.day, b.first);
@@ -142,7 +151,7 @@ export function buildShippedMessage(state, group, trackUrl) {
 export function buildPickupReminder(state, group, trackUrl) {
   const b = basics(state, group, trackUrl);
   if (!b || !b.recipient) return null;
-  let msg = `${greeting(state, `Hi ${b.first.customerName || ""}! Good news from ${b.bakery} - your order is ready.`)}\n`;
+  let msg = `${greeting(state, `${hello(b.first.customerName)} Good news from ${b.bakery} - your order is ready.`)}\n`;
   msg += `Order #${orderCode(b.first)}\n`;
   // ★ AND WHERE TO COLLECT IT (v304). This line said "ready for collection" and named no place at
   // all, so a customer collecting at a Point was told their order was ready and never where to

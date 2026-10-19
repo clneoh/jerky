@@ -1,11 +1,11 @@
 // views/settings.js — defaults, export/import backup, clear data.
 
-import { el, button, confirmDialog, toast } from "../ui.js";
-import { LS_KEY, newId, save } from "../state.js";
+import { el, button, confirmDialog, toast, select } from "../ui.js";
+import { LS_KEY, newId, save, unreadableCopy, dropUnreadableCopy } from "../state.js";
 import { hashPin, isPin, hasStoredPin } from "../pin.js";
 import { parseImport } from "../validate.js";
 import { generateUpcomingDates, todayISO } from "../dates.js";
-import { syncAvailability, cachedToken, signOut, syncStorefront, maybeSync, maybeSyncStorefront } from "../supabase.js";
+import { syncAvailability, cachedToken, signOut, syncStorefront, maybeSync, maybeSyncStorefront, republishEveryCard } from "../supabase.js";
 import * as backups from "../backups.js";
 import * as sync from "../sync.js";
 import { refreshShareWarn } from "../sharewarn.js";
@@ -16,6 +16,7 @@ import * as place from "../courier_place.js";
 import { callCourier } from "../couriers/api.js";
 import { activeCourier, courierLabel } from "../couriers.js";
 import { CONFIG } from "../../../store/config.js";
+import { isPoolablePack } from "../bom.js";
 
 export function renderSettings(root, state) {
   // ⚠️⚠️ INDEXED BY THE SAME NUMBER AS A CHECKBOX, and 0 IS SUNDAY (v548). The list used to start with
@@ -130,6 +131,28 @@ export function renderSettings(root, state) {
     placeholder: "https://…/tng-qr.png",
     onchange: () => { sf.tngQr = sfTngQr.value.trim(); save(state); maybeSyncStorefront(state); } });
 
+  // ⚠️⚠️ WHICH PRODUCT THE HOMEPAGE CARD PRICES (v593 — her answer: "pick it in Settings"). ⚠️ The card took
+  // the first published name containing "focaccia", ⚠️ **so a "4 × Focaccia Box" filed first could put RM60
+  // on the loaf's card.** ⭐ She names the product once; the homepage follows it by its published name.
+  const homeChoices = [
+    { value: "", label: "Follow the first focaccia (default)" },
+    // ⚠️⚠️ ONLY A FOCACCIA — THE CARD IS THE FOCACCIA CARD (v596). ⚠️ The choice offered every product, so
+    // picking a "4 × Focaccia Box" put RM60 under a card headed FOCACCIA 12"×9". ⭐ The list is the products
+    // whose name is a focaccia; the card's own name and size are typed on the homepage and do not move.
+    ...(state.products || [])
+      .filter((p) => p && p.active !== false && p.draft !== true && String(p.name || "").trim()
+        && /focaccia/i.test(String(p.name))
+        // ⚠️ AND NOT A VALUE PACK (v598) — "4 × Focaccia Box" contains the word and was offered, putting RM60
+        // under a card headed FOCACCIA. A pack is not a loaf.
+        && isPoolablePack(state, p) === null)
+      .map((p) => ({ value: p.id,
+        label: Number(p.price) > 0 ? `${p.name} — RM${Number(p.price)}` : `${p.name} — no price yet` })),
+  ];
+  const sfHome = select(homeChoices, String(sf.homeProductId || ""), () => {
+    sf.homeProductId = sfHome.value;
+    save(state); maybeSyncStorefront(state); toast("Saved");
+  });
+
   // Policies shown on the shop (cancellation / refunds). Written once in English;
   // the 中文 and Bahasa Malaysia boxes are machine-filled from it, and typing in
   // one makes that language hers (never overwritten again). Blank hides the
@@ -241,6 +264,11 @@ export function renderSettings(root, state) {
       el("div", {}, el("label", {}, "Instagram handle"), sfInsta),
       el("div", {}, el("label", {}, "Facebook page"), sfFacebook)),
     el("div", { class: "field", style: "margin-top:10px" },
+      el("label", {}, "Homepage price product"),
+      sfHome,
+      el("p", { class: "card-sub", style: "margin:4px 0 0" },
+        "The price on the homepage card is this focaccia's, as you publish it. Only focaccia products are offered — the card's name and size are typed on the homepage itself.")),
+    el("div", { class: "field", style: "margin-top:10px" },
       el("label", {}, "TNG QR code (image URL)"),
       sfTngQr,
       el("p", { class: "card-sub", style: "margin:4px 0 0" },
@@ -346,6 +374,9 @@ export function renderSettings(root, state) {
   function renderDevEmails() {
     devEmailBox.replaceChildren(...dev.emails.map((email, i) => {
       const inp = el("input", { class: "input", type: "email", inputmode: "email",
+        // ⚠️ This one sits in a repeater with no label beside it (v566): a placeholder is not a name, and
+        // the numbering matters the moment there are two.
+        "aria-label": `Developer email address ${i + 1}`,
         placeholder: "dev@example.com", value: email,
         onchange: () => {
           const v = inp.value.trim();
@@ -505,6 +536,25 @@ export function renderSettings(root, state) {
       }, "soft")
     : button("Sign in", () => location.reload(), "soft");
 
+  const trackStatus = el("p", { class: "card-sub", style: "margin:8px 0 0" });
+  const trackBtn = button("Refresh every tracking card", () => {
+    confirmDialog(
+      "Republish every order's tracking card? Each card is written to the cloud once, so the older ones "
+      + "carry the phone number customers now track with. It changes nothing in your orders.",
+      async () => {
+        if (trackBtn.disabled) return;
+        trackBtn.disabled = true;
+        const { ok, bad } = await republishEveryCard(state, {
+          onProgress: (done, total) => { trackStatus.textContent = `Refreshing… ${done} of ${total}`; },
+        });
+        trackBtn.disabled = false;
+        trackStatus.textContent = bad
+          ? `${ok} cards refreshed, ${bad} could not be. Check you are online and signed in, then press again.`
+          : `All ${ok} card${ok === 1 ? "" : "s"} refreshed. Customers now track with their order number and their phone.`;
+        toast(bad ? `${bad} cards could not be refreshed` : "Tracking cards refreshed");
+      }, { yesLabel: "Refresh them" });
+  }, "soft");
+
   const sharedCard = el("div", { class: "card" },
     el("h3", { style: "margin:0 0 4px" }, "Shared data (cloud)"),
     el("p", { class: "card-sub", style: "margin:0 0 10px" },
@@ -516,7 +566,15 @@ export function renderSettings(root, state) {
       cldSignBtn),
     el("p", { class: "card-sub", style: "margin:8px 0 0" },
       signedIn ? `Signed in with ${sb.email || "your Supabase login"}.` : "Not signed in."),
-    cldStatus);
+    cldStatus,
+    // ★★★ AND ONE PRESS THAT PUTS THE PHONE ON EVERY OLD CARD (v559).
+    // ⚠️⚠️ Since v558 a customer tracks with their order number AND the phone they ordered with — but a
+    // card keeps no phone until it is rewritten, and **an order that is finished and never touched again
+    // would keep none for good.** ⭐ This writes every card once, so the old ones are covered instead of
+    // waiting for a status change that may never come. ⚠️ It writes each card to the cloud and changes
+    // NOTHING in her orders.
+    trackBtn,
+    trackStatus);
 
   const bkZone = el("div", { style: "margin-top:14px;border-top:1px solid var(--line);padding-top:4px" });
   const backupCard = el("div", { class: "card" },
@@ -574,14 +632,30 @@ export function renderSettings(root, state) {
       // set up from a file, and refusing that would break the very case Import exists for.** ⚠️ But when the
       // cloud IS ready and the copy fails, nothing is imported — the same discipline as Restore.
       const cloudReady = backups.ready(state);
+      // ⚠️⚠️ AND WHEN THERE IS NO CLOUD TO PUT THE COPY IN, SAY WHAT THAT MEANS (v576). ⭐ The sentence about
+      // the safety copy simply vanished, leaving a one-way door with no warning at all: no copy, no "cannot be
+      // undone", nothing. ⭐ An import with shared data off is how a new phone is set up, so it is allowed —
+      // it just has to be honest about it.
       confirmDialog(`Replace ALL current data with this backup? (${counts})`
-          + (cloudReady ? " A \"Before import\" copy is saved first, so you can undo this." : ""),
+          + (cloudReady
+            ? " A \"Before import\" copy is saved first, so you can undo this."
+            : " ⚠️ Shared data is off, so no \"Before import\" copy can be saved — this cannot be undone."),
         async () => {
           if (cloudReady) {
             const safe = await backups.saveSafetyCopy(state, `Before import · ${backups.localWhen()}`);
             if (!safe.ok) return toast(`Couldn't save a "before" copy first: ${safe.reason}. Nothing was imported.`);
           }
-          localStorage.setItem(LS_KEY, JSON.stringify(data));
+          // ⚠️⚠️ AND A WRITE THAT FAILS MUST SAY SO (v570). ⭐ This call had no guard at all: on a large book
+          // the browser refuses the write, the error went nowhere, the page did not reload, and **the import
+          // looked like it had simply done nothing** — while the "Before import" copy had already been saved.
+          try {
+            localStorage.setItem(LS_KEY, JSON.stringify(data));
+          } catch (err) {
+            const full = err && (err.name === "QuotaExceededError" || err.code === 22);
+            return toast(full
+              ? "This phone has no room for that file — nothing was imported. Deleting a cloud copy does NOT free this phone; free space elsewhere on it, then try again."
+              : `The file could not be saved on this phone (${(err && err.message) || "unknown reason"}). Nothing was imported.`);
+          }
           // ⚠️⚠️ AND THE READ CURSOR IS FORGOTTEN: the whole book has just jumped, so `lastSeq` no longer
           // describes it — **and a read that asked "after that number" would never see the older records again.**
           sync.forgetCursor();
@@ -590,15 +664,36 @@ export function renderSettings(root, state) {
     }).catch(() => toast("Couldn't read that file"));
   }
 
+  // ★★★ "DELETE ALL DATA" NOW CLEARS THIS PHONE AND NOTHING ELSE (v576).
+  //
+  // ⚠️⚠️ WHAT IT DID: it removed `bakeadmin.v1` and left the sync journal, whose `snapshot` still held every
+  // record — ⚠️ **so the next save wrote a deletion for all of them, pushed the tombstones, and emptied the
+  // shared book and the other phone.** ⭐ And it re-seeded a fresh state, which turned the app password back to
+  // the shipped 8899 and dropped the shared-data sign-in, with nothing said.
+  // ⭐ Now: a "Before delete" copy when the cloud is ready, the journal forgotten, the sign-in cleared, and the
+  // dialog says exactly what happens — ⭐ **this phone only; your shared data still holds your book.**
   function clearAll() {
-    confirmDialog("Delete ALL data (products, ingredients, orders, history)? This cannot be undone.",
-      () => {
-        confirmDialog("Really sure? Export a backup first if you're not.",
-          () => {
-            localStorage.removeItem(LS_KEY);
-            location.reload();
-          }, { danger: true, yesLabel: "Delete everything" });
-      }, { danger: true, yesLabel: "Continue" });
+    const cloudReady = backups.ready(state);
+    confirmDialog("Clear this phone's copy of everything — products, ingredients, orders, history? "
+      + "⚠️ Your SHARED DATA still holds your book, and it comes back when this phone signs in again. "
+      + "This phone is signed out and its app password goes back to the default, so you will be asked for it. "
+      + (cloudReady ? "A \"Before delete\" copy is saved first." : "No cloud copy can be saved while shared data is off."),
+      async () => {
+        if (cloudReady) {
+          const safe = await backups.saveSafetyCopy(state, `Before delete · ${backups.localWhen()}`);
+          if (!safe.ok) return toast(`Couldn't save a "before" copy: ${safe.reason}. Nothing was deleted.`);
+        }
+        try {
+          localStorage.removeItem(LS_KEY);
+          sync.clearJournal();
+          // ⚠️ AND THE "SEEN" MARKER (v598) — see `forgetSeen` in sync.js.
+          sync.forgetSeen();
+        } catch (err) {
+          return toast(`This phone's data could not be cleared (${(err && err.message) || "unknown reason"}).`);
+        }
+        signOut();
+        location.reload();
+      }, { danger: true, yesLabel: "Clear this phone" });
   }
 
   // ── Cloud copies (Backup & safety card) ─────────────────────────────────
@@ -680,17 +775,42 @@ export function renderSettings(root, state) {
       }, { danger: true, yesLabel: "Delete" });
   }
 
+  // ⚠️⚠️ THE KEPT COPY OF A DAMAGED BOOK, AND ITS OWN PRESS (v574). ⭐ Since v548 a phone that could not read
+  // its saved book keeps that text — ⭐ **but nothing could ever remove it, so it counted toward the phone's
+  // storage for ever.** ⚠️ AND IT IS A LOCAL COPY, NOT A CLOUD ONE: it is offered whether or not this phone is
+  // signed in, because a phone that is not sharing can still be the one that could not read its book.
+  function keptCopyKids() {
+    const kept = unreadableCopy();
+    if (!kept) return [];
+    const kb = Math.max(1, Math.round(kept.bytes / 1024));
+    return [
+      el("p", { class: "card-sub", style: "margin:12px 0 0" },
+        `⚠️ This phone also keeps about ${kb} KB of text from a saved book it could not read. That copy is the only remnant of whatever was on the phone at that moment.`),
+      el("div", { class: "btn-row", style: "margin-top:6px" },
+        button("Delete the kept copy", () => {
+          confirmDialog(
+            `Delete the kept copy (about ${kb} KB)? It is the only remnant of whatever was on this phone when its saved book could not be read — if that was the only place it existed, it is gone for good. Your orders, your shared data and your cloud copies are not touched.`,
+            () => {
+              const gone = dropUnreadableCopy(state);
+              toast(gone ? "The kept copy is deleted" : "There was nothing left to delete");
+              fillBackups();
+            },
+            { danger: true, yesLabel: "Delete it" });
+        }, "ghost small")),
+    ];
+  }
+
   async function fillBackups() {
     const show = (...nodes) => { if (!dead) bkZone.replaceChildren(...nodes); };
     const line = (text) => el("p", { class: "card-sub", style: "margin:8px 0 0" }, text);
     if (!backups.ready(state)) {
-      show(line("Cloud copies turn on with Shared data — when it's on and you're signed in, opening the app saves a Daily copy on its own. You can still Export a file anytime."));
+      show(line("Cloud copies turn on with Shared data — when it's on and you're signed in, opening the app saves a Daily copy on its own. You can still Export a file anytime."), ...keptCopyKids());
       return;
     }
     const list = await backups.listBackups(state);
     if (dead) return;
     if (!list.ok) {
-      show(line(String(list.reason || "Cloud copies couldn't load. Check you're online and try again.")));
+      show(line(String(list.reason || "Cloud copies couldn't load. Check you're online and try again.")), ...keptCopyKids());
       return;
     }
     const rows = list.rows;
@@ -711,11 +831,7 @@ export function renderSettings(root, state) {
       fillBackups();
     }, "soft");
     const kids = [line(status), el("div", { class: "btn-row", style: "margin-top:8px" }, btn)];
-    if (rows.length) {
-      kids.push(el("p", { class: "card-sub", style: "margin:12px 0 4px" }, "Recent copies (newest first)"));
-      kids.push(...rows.map(rowEl));
-    }
-    show(...kids);
+    show(...kids, ...keptCopyKids());
   }
 
   fillBackups();
@@ -750,7 +866,12 @@ function loadSample(state) {
       { id: newId("ord"), deliveryDateId: deliveryDates[0].id, productId: products[2].id, qty: 2,
         customerName: "Mr Lim", note: "", createdAt: new Date().toISOString() });
   }
-  Object.assign(state, { ingredients, products, deliveryDates, orders, purchaseOrders: [] });
+  // ⚠️⚠️ IT ADDS, IT DOES NOT REPLACE (v598). ⚠️ The press assigned over `deliveryDates` and cleared
+  // `purchaseOrders`, so bake days she had already added vanished with no confirmation. ⭐ Empty lists only.
+  if (!(state.ingredients || []).length) state.ingredients = ingredients;
+  if (!(state.products || []).length) state.products = products;
+  if (!(state.deliveryDates || []).length) state.deliveryDates = deliveryDates;
+  if (!(state.orders || []).length) state.orders.push(...orders);
   save(state);
   toast("Sample data loaded");
   renderSettings(document.getElementById("view"), state);

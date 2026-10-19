@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateUpcomingDates } from "../admin/js/dates.js";
-import { computeSlots, computeProductSlots, syncAvailability, login, syncStorefront, pullIncoming, publishTracking, maybePublishTracking, forgetPublishedCards, trackingSnapshot, refreshStorefront, pendingReviewCount, fetchPromoVisits, importable, stuckOrders, forgetStuckOrders, whyUnimportable, isPendingPhoto, reviewPhotoKey, publishReviewWithPhoto, takeDownReviewWithPhoto, deletePublicReviewPhoto, pendingPhotoUrl } from "../admin/js/supabase.js";
+import { computeSlots, computeProductSlots, syncAvailability, login, syncStorefront, pullIncoming, publishTracking, maybePublishTracking, forgetPublishedCards, trackingSnapshot, refreshStorefront, pendingReviewCount, fetchPromoVisits, importable, stuckOrders, forgetStuckOrders, incomingCapReached, whyUnimportable, isPendingPhoto, reviewPhotoKey, publishReviewWithPhoto, takeDownReviewWithPhoto, deletePublicReviewPhoto, pendingPhotoUrl, fetchReviews } from "../admin/js/supabase.js";
 import { groupOrders, orderCode } from "../admin/js/state.js";
 
 const realFetch = globalThis.fetch;
@@ -293,12 +293,17 @@ test("syncAvailability pushes value-pack rows as a separate uniform batch (no PG
     assert.ok(r.ok);
     assert.equal(r.pushedProducts, 30); // 2 bases + 1 pack × 10 dates
     const upserts = calls.filter((c) => c.url.includes("on_conflict=date,product"));
-    assert.equal(upserts.length, 2, "plain rows and value-pack rows are two separate upserts");
-    const [plain, pack] = upserts;
+    // ⚠️ v598: a THIRD batch clears old pool columns from products that stopped being packs.
+    assert.equal(upserts.length, 3, "plain rows, the clearing batch, and the value-pack rows");
+    const [plain, cleared, pack] = upserts;
     const plainBody = JSON.parse(plain.opts.body);
+    const clearedBody = JSON.parse(cleared.opts.body);
     const packBody = JSON.parse(pack.opts.body);
     assert.equal(plainBody.length, 20);
     assert.equal(packBody.length, 10);
+    assert.equal(clearedBody.length, 20, "every plain row is cleared of pool columns");
+    assert.ok(clearedBody.every((row) => row.pool_base === null && row.pool_qty === null),
+      "★ a product that stopped being a pack keeps its old pool_base");
     assert.ok(plainBody.every((row) => !("pool_base" in row)), "plain batch never carries pool keys");
     assert.ok(packBody.every((row) => "pool_base" in row && "pool_qty" in row), "pack batch carries pool keys");
     const keyShape = (rows) => new Set(rows.map((row) => Object.keys(row).sort().join(",")));
@@ -634,6 +639,83 @@ test("pullIncoming imports storefront orders, marks and deletes the rows", async
   }
 });
 
+test("★★★ an imported order is SAVED before its cloud row is deleted (v589)", async () => {
+  // ⚠️⚠️ MEASURED: the claim was flipped and the queue row DELETEd while the order lived only in memory,
+  // with one save after the whole loop — ⚠️ **a phone that locked mid-loop lost every order imported so
+  // far, and nothing retried them: the queue only reads status=new.** ⭐ Each row is durable before its
+  // source is removed.
+  const store = new Map();
+  const events = [];
+  globalThis.localStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => {
+      store.set(k, String(v));
+      if (k === "bakeadmin.v1") events.push({ t: "save", orders: (JSON.parse(String(v)).orders || []).length });
+    },
+    removeItem: (k) => { store.delete(k); },
+  };
+  const state = makeState();
+  state.products = [{ id: "prd_1", name: "Focaccia", active: true }];
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
+  const row = { id: "abc-999", data: JSON.stringify({
+    customer: "Ain", date: "2026-09-04", total: 15, lines: [{ name: "Focaccia", qty: 1, price: 15 }],
+  }) };
+  globalThis.fetch = async (url, opts) => {
+    const method = (opts && opts.method) || "GET";
+    if (method === "DELETE" && String(url).includes("incoming_orders")) events.push({ t: "delete" });
+    if (String(url).includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    if (String(url).includes("/rest/v1/incoming_orders") && method === "GET") return { ok: true, json: async () => [row] };
+    if (String(url).includes("/rest/v1/incoming_orders") && method === "PATCH") return { ok: true, json: async () => [row] };
+    return { ok: true, text: async () => "" };
+  };
+  try {
+    await pullIncoming(state);
+    const saved = events.findIndex((e) => e.t === "save" && e.orders === 1);
+    const deleted = events.findIndex((e) => e.t === "delete");
+    assert.ok(deleted >= 0, "the row was never cleaned up, so this proves nothing");
+    assert.ok(saved >= 0, "★ the imported order was never written to the phone");
+    assert.ok(saved < deleted,
+      "★ the cloud row was deleted before the order was saved — **an interruption loses it and nothing retries**");
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realLocalStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = realLocalStorage;
+  }
+});
+
+test("★★★ fifty unimportable rows no longer hide a REAL order behind them", async () => {
+  // ⚠️⚠️ THE FAULT (v551): one read of the first 50, with no order at all, and a row that cannot be
+  // imported is deliberately left `new` so it keeps retrying. ⭐ **So fifty such rows filled the ceiling for
+  // ever, and a real customer's order behind them was never even READ** — while the screen said "nothing
+  // is lost, it is tried again every 30 seconds".
+  storageShim(new Map());
+  const state = makeState();
+  state.products = [{ id: "prd_1", name: "Focaccia", active: true }];
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
+  const stuckRow = (i) => ({ id: `stuck-${i}`,
+    data: JSON.stringify({ customer: "X", date: "2026-09-04", total: 1,
+      lines: [{ name: "A product she paused", qty: 1, price: 1 }] }) });
+  const good = { id: "good-1",
+    data: JSON.stringify({ customer: "Ain", date: "2026-09-04", total: 15,
+      lines: [{ name: "Focaccia", qty: 1, price: 15 }] }) };
+  globalThis.fetch = async (url, opts) => {
+    if (String(url).includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    if (opts && opts.method === "PATCH") return { ok: true, json: async () => [{}] };
+    if (opts && opts.method === "DELETE") return { ok: true, json: async () => [] };
+    const offset = Number((String(url).match(/[?&]offset=(\d+)/) || [])[1] || 0);
+    return { ok: true, json: async () => (offset === 0 ? Array.from({ length: 50 }, (_, i) => stuckRow(i)) : [good]) };
+  };
+  try {
+    const r = await pullIncoming(state);
+    assert.equal(r.ok, true);
+    assert.ok(r.imported.includes("good-1"),
+      "★ a real order behind fifty unimportable rows was never imported — **the queue could only ever see "
+      + "the same fifty**");
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realLocalStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = realLocalStorage;
+  }
+});
+
 // ── ★★ v364: AN ORDER THE INTAKE COULD NOT READ MUST NOT BE INVISIBLE ───────
 const intakeState = () => {
   const st = makeState();
@@ -677,6 +759,34 @@ test("★ an order the intake could not read is REMEMBERED, and a later good rea
     globalThis.fetch = intakeFetch([]);
     await pullIncoming(st);
     assert.equal(stuckOrders().length, 0, "and it clears when the queue is clear");
+  } finally { globalThis.fetch = realFetch; forgetStuckOrders(); }
+});
+
+test("★★★ a queue read that hit its 200-row ceiling says so (v582)", async () => {
+  // ⚠️⚠️ 200 unimportable rows fill the window newest-first, ⚠️ **so a real customer's order behind them was
+  // never read — and nothing said the window had a ceiling at all.**
+  forgetStuckOrders();
+  const st = intakeState();
+  const realFetch = globalThis.fetch;
+  const stuckRow = (i) => ({ id: `stuck-${i}`,
+    data: JSON.stringify({ customer: "X", date: "2026-10-09", lines: [{ name: "Not a product", qty: 1 }] }) });
+  try {
+    // Every page full: 4 × 50.
+    globalThis.fetch = async (url, opts) => {
+      if (String(url).includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+      if (opts && (opts.method === "PATCH" || opts.method === "DELETE")) return { ok: true, json: async () => [{}] };
+      const offset = Number((String(url).match(/[?&]offset=(\d+)/) || [])[1] || 0);
+      return { ok: true, json: async () => Array.from({ length: 50 }, (_, i) => stuckRow(offset + i)) };
+    };
+    const r = await pullIncoming(st);
+    assert.equal(r.capped, true, "★ the read hit its ceiling and did not say so");
+    assert.equal(incomingCapReached(), true, "★ the screen has no way to know the window was full");
+
+    // A queue that fits is not reported as capped, and the flag clears.
+    globalThis.fetch = intakeFetch([stuckRow(0)]);
+    const r2 = await pullIncoming(st);
+    assert.equal(r2.capped, false, "★ a queue that fits is reported as capped");
+    assert.equal(incomingCapReached(), false, "★ a warning that cannot clear is worse than none");
   } finally { globalThis.fetch = realFetch; forgetStuckOrders(); }
 });
 
@@ -1419,7 +1529,7 @@ test("publishTracking is a silent no-op when tracking is unconfigured", async ()
 test("refreshStorefront adopts the latest published storefront into the phone's state", async () => {
   storageShim(new Map());
   const state = makeState();
-  state.settings.supabase = { url: "https://x.supabase.co", anonKey: "anon" };
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon" };
   state.settings.storefront = { name: "", whatsapp: "", tagline: "", instagram: "", facebook: "", tngQr: "", products: [] };
   const remote = {
     name: "Munchies Furkidz", whatsapp: "60111223344", tagline: "Jerky & treats",
@@ -1446,10 +1556,28 @@ test("refreshStorefront adopts the latest published storefront into the phone's 
   }
 });
 
+test("★★★ with live availability OFF the storefront read makes no call at all (v588)", async () => {
+  // ⚠️⚠️ MEASURED: the URL and anon key ship in code, and this read did not look at `enabled` — ⚠️ **a phone
+  // where Enable live availability was off still asked Supabase for the published row at every boot.**
+  // ⭐ Tested here because it is a function-level fact; app.test.js counts the same call at boot.
+  storageShim(new Map());
+  const state = makeState();
+  state.settings.supabase = { enabled: false, url: "https://x.supabase.co", anonKey: "anon" };
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return { ok: true, json: async () => [] }; };
+  try {
+    assert.equal(await refreshStorefront(state), false, "nothing adopted");
+    assert.equal(calls, 0, "★ a phone with live availability off called Supabase");
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realLocalStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = realLocalStorage;
+  }
+});
+
 test("refreshStorefront keeps the local copy when the published row is missing or nameless", async () => {
   storageShim(new Map());
   const state = makeState();
-  state.settings.supabase = { url: "https://x.supabase.co", anonKey: "anon" };
+  state.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon" };
   state.settings.storefront = { name: "Local", whatsapp: "60111111111", tagline: "", instagram: "", facebook: "", tngQr: "", products: [] };
   let calls = 0;
   globalThis.fetch = async () => { calls++; return { ok: true, json: async () => [] }; };
@@ -2310,4 +2438,67 @@ test("⚠️ a picture that can be neither signed nor read SAYS SO rather than s
     assert.equal(r.ok, false);
     assert.ok(r.reason && r.reason.length > 4, "no reason was given for a picture that cannot be shown");
   } finally { globalThis.fetch = realFetch; }
+});
+
+test("★★★ a reply this app cannot read is NOT an empty list of reviews", async () => {
+  // ⚠️⚠️ A 200 whose body is a proxy or a captive-portal page parsed to nothing, and the app reported
+  // `ok: true` with no reviews — ⭐ **so the screen said there are none, which is the opposite of "I could
+  // not ask".** ⭐ The same rule the register keeps.
+  const st = makeState();
+  st.settings.supabase = { enabled: true, url: "https://x.supabase.co", anonKey: "anon", email: "a@b.c", password: "pw" };
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    return { ok: true, json: async () => ({ not: "an array" }) };
+  };
+  try {
+    const r = await fetchReviews(st);
+    assert.equal(r.ok, false,
+      "★ an unreadable reply was reported as a successful read with no reviews — **the screen says there "
+      + "are none when nobody could look**");
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test("★★★ the label-open counts are read in PAGES — past 1,000 rows they do not stop", async () => {
+  // ⚠️⚠️ One row per code per DAY: forty codes over a month is 1,200 rows, and one unpaged read is capped
+  // at 1,000 — ⭐ **so "Opened N times" and the 28-day strip undercounted, with nothing saying so.**
+  const st = visitsState();
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("/auth/v1/token")) return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
+    const offset = Number((String(url).match(/[?&]offset=(\d+)/) || [])[1] || 0);
+    const n = offset === 0 ? 1000 : 2;          // a full page, then the last one
+    return { ok: true, json: async () => Array.from({ length: n }, (_, i) => ({ code: "FRESH10", day: `2026-10-${String((offset + i) % 28 + 1).padStart(2, "0")}`, n: 1 })) };
+  };
+  try {
+    const out = await fetchPromoVisits(st, [{ code: "FRESH10" }]);
+    assert.equal(out.ok, true);
+    assert.equal(out.byCode.get("FRESH10").total, 1002,
+      "★ the counts stopped at the server's ceiling — **every label's open count is short, and the strip "
+      + "under-reports the days**");
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test("★★★ the refresh press writes EVERY order's card once, and counts the ones that failed", async () => {
+  // ⚠️⚠️ Since v558 a customer tracks with their order number AND their phone, but a card keeps no phone
+  // until it is rewritten — **an order finished and never touched again would keep none for good.** ⭐ This
+  // is the sweep that covers them, and it must not stop at the first card that fails.
+  const { republishEveryCard } = await import("../admin/js/supabase.js");
+  const st = {
+    orders: [
+      { id: "a11111", groupId: "g1", qty: 1 },
+      { id: "a22222", groupId: "g1", qty: 1 },   // the same order, a second item
+      { id: "b11111", groupId: "g2", qty: 1 },
+      { id: "c11111", groupId: "g3", qty: 1 },
+    ],
+  };
+  const seen = [];
+  const progress = [];
+  const res = await republishEveryCard(st, {
+    onProgress: (done, total) => progress.push(`${done}/${total}`),
+    // the third group fails, the way an offline card would
+    publish: async (_state, g) => { seen.push(g.orders[0].groupId); return g.orders[0].groupId !== "g3"; },
+  });
+  assert.deepEqual(seen, ["g1", "g2", "g3"],
+    "★ the sweep skipped an order or wrote one twice — **a two-item order is ONE card**");
+  assert.deepEqual(res, { ok: 2, bad: 1, total: 3 });
+  assert.deepEqual(progress, ["1/3", "2/3", "3/3"], "the line she reads never moved, or moved wrongly");
 });

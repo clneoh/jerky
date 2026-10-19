@@ -12,7 +12,7 @@
 // words it was written with, so a rename that only changed the list would split her
 // history in two: some rows under "Packaging", the rest under "Packing". Deleting is
 // the opposite case and deliberately leaves them alone — see accounts.js.
-import { el, button, toast, confirmDialog, showPopup } from "../ui.js";
+import { el, button, toast, confirmDialog, showPopup, modeButton } from "../ui.js";
 import { save } from "../state.js";
 import { maybeSync } from "../supabase.js";
 import { categoriesOf, isLockedAccount, methodLabel, methodsOf, sourcesOf } from "../accounts.js";
@@ -188,10 +188,15 @@ export function entryForm(state, { kind, current = "", onDone }) {
     "aria-label": "Name" });
   let cls = existing && existing.cls ? existing.cls : "expense";
   const clsPills = el("div", { class: "cal-modes" },
-    ...CLASS_CHOICES.map(([id, text]) => button(text, () => {
+    ...CLASS_CHOICES.map(([id, text]) => modeButton(text, id === cls, () => {
       cls = id;
-      for (const b of clsPills.children) b.classList.toggle("cal-mode-on", b.textContent === text);
-    }, `ghost small${id === cls ? " cal-mode-on" : ""}`)));
+      for (const b of clsPills.children) {
+        const on = b.textContent === text;
+        b.classList.toggle("cal-mode-on", on);
+        // ⚠️ AND THE STATE IS SAID, HERE TOO (v594) — the colour is not a name.
+        if (typeof b.setAttribute === "function") b.setAttribute("aria-pressed", on ? "true" : "false");
+      }
+    })));
 
   const commit = () => {
     const label = name.value.trim();

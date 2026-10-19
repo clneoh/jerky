@@ -155,7 +155,14 @@ export function moveInTail(products, id, toIndex, current) {
   const at = Math.max(0, Math.min(Number(toIndex) || 0, ordered.length));
   ordered.splice(at, 0, id);
   const rank = new Map(ordered.map((pid, i) => [pid, i]));
-  return (products || []).map((p) => (p && rank.has(p.id) ? { ...p, sort: rank.get(p.id) } : p));
+  // ⚠️⚠️ THE RECORDS KEEP THEIR IDENTITY (v555). ⭐ This CLONED every moved record, and the screen's Edit
+  // buttons still closed over the OLD objects — so **dragging a row and then editing it reported "updated"
+  // and threw the edit away**: it was written into a record nothing pointed at any more. ⭐ The order is
+  // still written in full onto the products; it is written onto the SAME objects the rows are holding.
+  for (const p of (products || [])) {
+    if (p && rank.has(p.id)) p.sort = rank.get(p.id);
+  }
+  return products;
 }
 
 // The index a drop lands at, counted in the FULL order rather than in the list

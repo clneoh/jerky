@@ -7,7 +7,7 @@
 // "No supplier price" header when real suppliers are present, so the buyer can
 // see at a glance which lines are firm pack deals and which are estimates.
 
-import { el, button, fmtQty, copyText } from "../ui.js";
+import { el, button, fmtQty, copyText, toast } from "../ui.js";
 import { fmtRM, round2, waNumber } from "../state.js";
 import { groupItemsBySupplier, buildSupplierOrderText } from "../purchasing.js";
 
@@ -84,6 +84,13 @@ function printOneShop(row) {
   // ⚠️ NO SECTION, NO PRINT. Falling back to printing the whole card would be the opposite of what the
   // press says it does.
   if (!body || typeof document === "undefined" || !document.body) return;
+  // ⚠️⚠️ AND A PHONE THAT CANNOT PRINT SAYS SO (v596) — before the classes go on, so nothing is left scoped.
+  // ⚠️ Without it the press did nothing silently and the body stayed marked for ten seconds, scoping the NEXT
+  // PO print to an empty shop.
+  if (!(typeof window !== "undefined" && typeof window.print === "function")) {
+    toast("This phone can't print — use Share instead.");
+    return;
+  }
   document.body.classList.add("po-shop-print");
   body.classList.add("print-shop");
   const done = () => {
@@ -92,9 +99,9 @@ function printOneShop(row) {
     if (typeof window !== "undefined" && window.removeEventListener) window.removeEventListener("afterprint", done);
     clearTimeout(timer);
   };
-  const timer = setTimeout(done, 2000);
+  const timer = setTimeout(done, 10000);
   if (typeof window !== "undefined" && window.addEventListener) window.addEventListener("afterprint", done);
-  if (typeof window !== "undefined" && typeof window.print === "function") window.print();
+  try { window.print(); } catch { done(); toast("This phone couldn't print — use Share instead."); }
 }
 
 function groupHeaderRow(g, { interactive, dateTitle, currency, shopActions = null }) {
@@ -144,12 +151,15 @@ function groupHeaderRow(g, { interactive, dateTitle, currency, shopActions = nul
 }
 
 function rowFor(state, it, currency) {
+  // ⚠️⚠️ THE ONE FIGURE HERE NOT PASSED THROUGH THE FORMATTER (v598) — a 0.1 kg line × 3 loaves printed
+  // "0.30000000000000004kg" on screen and on paper. ⭐ Same formatter as everywhere else.
   const breakdown = (it.lines || []).map((l) =>
-    `${l.dateLabel ? l.dateLabel + ": " : ""}${l.productName} ×${l.orderQty} = ${l.orderQty * l.perUnitQty}${it.unit}`).join(" · ");
+    `${l.dateLabel ? l.dateLabel + ": " : ""}${l.productName} ×${l.orderQty} = ${fmtQty(l.orderQty * l.perUnitQty, it.unit)}`).join(" · ");
 
   const first = el("td", {},
     it.ingredientName,
-    it.unitsOk === false ? el("div", { class: "warn", style: "margin:4px 0 0" }, "⚠ check units") : null,
+    // ⚠️ An instruction to HER, not to the shop reading the sheet (v598).
+    it.unitsOk === false ? el("div", { class: "warn no-print", style: "margin:4px 0 0" }, "⚠ check units") : null,
     it.haveText ? el("div", { class: "po-have" }, it.haveText) : null,
     it.reserveText ? el("div", { class: "po-reserve" }, it.reserveText) : null,
     breakdown ? el("div", { class: "po-breakdown" }, breakdown) : null);

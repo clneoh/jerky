@@ -30,9 +30,9 @@ const en = {
   // browser for the page again, and a browser still holding the old script serves it straight
   // back. After one try this page stops offering a press that has already been shown not to
   // work and says what actually does.
-  buildStale: "A newer version of this page is ready.",
-  buildStuck: "A newer version is ready. Close this page completely, then open it again.",
-  buildReload: "Reload",
+  buildWarnTitle: "Your order is not saved yet.",
+  buildWarnBody: "Reloading starts this page again — the posting day, the basket and anything you have typed will be gone. Press Reload again if you want to update now.",
+  buildAnyway: "Reload anyway",
 
   // Promo codes (v269). The offer is composed in store/app.js out of the engine's
   // PARTS — kind and value — so a percentage, an amount and free delivery each
@@ -269,8 +269,12 @@ const en = {
   addNoteLink: "＋ Add a note",
   lineNotePh: "e.g. no nuts, write “Happy Birthday”",
   sTrack: "Track your order",
-  trackHint: "Placed an order? Enter the order number from your confirmation (it starts with <strong>#</strong>, e.g. #A3F9C2).",
+  trackHint: "Placed an order? Enter the order number from your confirmation (it starts with <strong>#</strong>, e.g. #A3F9C2) and the phone number you ordered with.",
   trackPh: "e.g. A3F9C2",
+  trackNoLabel: "Order number",
+  trackPhonePh: "phone you ordered with",
+  trackPhoneLabel: "Phone you ordered with",
+  trackNeedPhone: "Enter the phone number this order was placed with, and we will find it.",
   trackBtn: "Track",
   sPolicies: "Policies",
 
@@ -279,8 +283,12 @@ const en = {
   placeOrder: "Place order",
   sending: "Sending…",
   soldOut: "Sold out",
+  qtyLess: "One less",
+  qtyMore: "One more",
   onlyLeft: "Only %1 left",
   qtyAria: "How many",
+  langAria: "Language",
+  journeyAria: "Order status journey",
   noDates: "No upcoming posting days right now — check back soon.",
   noOpenDates: "All upcoming posting days are full right now — check back soon.",
   calChosen: "Your posting day: %1",
@@ -331,6 +339,7 @@ const en = {
   // Shown where the menu would be when every product is marked off today's
   // delivery date — an empty space reads like a broken page.
   noMenuToday: "Nothing is on the menu for this day. Please pick another posting day.",
+  noMenu: "The menu is empty right now — please check back soon.",
   // The last heading on the menu, over the products the baker has not filed
   // under any category. Nothing is ever hidden for want of filing, so the
   // heading is plainly a place rather than a warning.
@@ -353,6 +362,7 @@ const en = {
 
   confirmAddWaTitle: "Please add your WhatsApp number.",
   confirmAddWaBody: "We use it to confirm your order and send your payment QR.",
+  confirmAddWaShape: "That does not look like a complete phone number — please check it, and add the country code if you are outside Malaysia.",
   // ⚠️ A RIDER NEEDS A DOOR (v548) — see the gate in store/app.js.
   // ★★ THE FIRST THING STILL OUTSTANDING, IN HIS OWN ORDER (v452). Her words: __"if the previous step not
   // completed user should be inform accordingly"__ ⚠️ **A dead button says nothing at all on a phone** — it
@@ -390,7 +400,10 @@ const en = {
   trackEnter: "Enter your order number to track it.",
   trackUnavailable: "Tracking isn't available right now.",
   trackLooking: "Looking up your order…",
-  trackNotFound: "We couldn't find order #%1. Check the number in your confirmation message — it's the 6 characters after the #.",
+  // ⚠️⚠️ THE SENTENCE NAMED ONLY THE CODE (v569). Since v558 the lookup needs the order number AND the phone
+  // it was placed with, so a customer with the right code and a mistyped number was told to re-check the one
+  // thing that was already right — and could loop for ever. ⭐ Both are named now.
+  trackNotFound: "We couldn't find order #%1 with that phone number. Check both: the order number is the 6 characters after the # in your confirmation message, and the phone number is the WhatsApp number you ordered with.",
   orderCode: "Order #%1",
   forCustomer: "For %1",
   trkNew: "New",
@@ -399,6 +412,9 @@ const en = {
   trkBaking: "Preparing",
   trkReady: "Packed",
   trkFinal: "Collected / Posted",
+  trkItems: "Items: %1",
+  itemsTotal: "Items total: %1",
+  trkTotal: "Total: %1",
   trackingNo: "Tracking number: %1",
   // The same slot when a booked courier trip handed back a share link rather than a
   // number. The value is the link itself and is rendered tappable, so there is no %1.
@@ -428,6 +444,9 @@ const en = {
   // line needs its own words. Matched to the WhatsApp confirmation, which names it the
   // same way (v323).
   promoFriend: "Bring-a-friend you were sent: -%1",
+  // ⚠️ THE OTHER HALF OF THE SAME LINE (v571): a referrer spending what they EARNED was told it was a
+  // coupon somebody sent them.
+  promoReward: "Bring-a-friend reward: -%1",
   // The booked trip, as the courier's own reply last said. %1 is one of a handful of
   // NEUTRAL phase words below rather than the courier's own vocabulary — the backoffice
   // publishes the phase, this page owns the words, so no company's status list is
@@ -480,9 +499,9 @@ const zh = {
   // ⚠️ 第二句存在，是因为第一句不一定管用：按"重新载入"是请浏览器再抓一次这个页面，而浏览器
   // 如果还留着旧的程序，就会原封不动地送回来。试过一次之后，这一页就不再提供那个已经证明没用的
   // 按钮，而是直接说真正有效的办法。
-  buildStale: "这个页面有新版本了。",
-  buildStuck: "有新版本了。请把这个页面完全关掉，再重新打开。",
-  buildReload: "重新载入",
+  buildWarnTitle: "你的订单还没有保存。",
+  buildWarnBody: "重新载入会让这一页从头开始 — 发货日、购物车和已经填写的内容都会消失。如果想现在更新，请再按一次载入。",
+  buildAnyway: "仍然载入",
 
   promoLabel: "有优惠码吗？",
   promoPh: "例如 FRESH10",
@@ -586,8 +605,12 @@ const zh = {
   addNoteLink: "＋ 添加备注",
   lineNotePh: "例如：不要坚果、写上「生日快乐」",
   sTrack: "查询订单",
-  trackHint: "已经下单了？请输入确认讯息里的订单编号（以 <strong>#</strong> 开头，例如 #A3F9C2）。",
+  trackHint: "已经下单了？请输入确认讯息里的订单编号（以 <strong>#</strong> 开头，例如 #A3F9C2），以及下单时使用的电话号码。",
   trackPh: "例如：A3F9C2",
+  trackNoLabel: "订单编号",
+  trackPhonePh: "下单时使用的电话号码",
+  trackPhoneLabel: "下单时使用的电话号码",
+  trackNeedPhone: "请输入这单使用的电话号码，我们就能找到它。",
   trackBtn: "查询",
   sPolicies: "条规",
 
@@ -596,8 +619,12 @@ const zh = {
   placeOrder: "提交订单",
   sending: "正在发送…",
   soldOut: "已售完",
+  qtyLess: "少一个",
+  qtyMore: "多一个",
   onlyLeft: "仅剩 %1 份",
   qtyAria: "数量",
+  langAria: "语言",
+  journeyAria: "订单进度",
   noDates: "目前没有可预订的发货日 — 请稍后再来。",
   noOpenDates: "近期发货日均已满 — 请稍后再来。",
   calChosen: "你的发货日：%1",
@@ -622,6 +649,7 @@ const zh = {
   nextAvailableLeft: "下次可预订：%1 · 剩 %2 份",
   sentenceEnd: "。",
   noMenuToday: "这一天没有商品在菜单上，请另选一个发货日。",
+  noMenu: "菜单暂时是空的 — 请稍后再来。",
   moreItems: "更多商品",
   fixSoldOut: "%1 刚刚售完 — 已从你的订单中移除。",
   fixGone: "%1 已不在菜单上 — 已从你的订单中移除。",
@@ -636,6 +664,7 @@ const zh = {
 
   confirmAddWaTitle: "请填写您的 WhatsApp 号码。",
   confirmAddWaBody: "我们会用它确认订单并发送付款二维码。",
+  confirmAddWaShape: "这个号码看起来不完整，请检查一下；马来西亚以外的号码请加上国家代码。",
   needItemTitle: "订单还是空的。",
   needItemBody: "请先从上面的菜单选一样，然后就可以下单了。",
   needDayTitle: "请先选择发货日。",
@@ -664,7 +693,7 @@ const zh = {
   trackEnter: "请输入订单编号查询。",
   trackUnavailable: "现在暂时无法查询。",
   trackLooking: "正在查询您的订单…",
-  trackNotFound: "找不到订单 #%1。请检查确认讯息中的编号 — 即 # 号后的 6 个字符。",
+  trackNotFound: "找不到订单 #%1 与这个电话号码。请检查两项：订单号是确认讯息中 # 号后的 6 个字符，电话号码是您下单时使用的 WhatsApp 号码。",
   orderCode: "订单 #%1",
   forCustomer: "顾客：%1",
   trkNew: "新订单",
@@ -673,6 +702,9 @@ const zh = {
   trkBaking: "准备中",
   trkReady: "已打包",
   trkFinal: "已取货 / 已寄出",
+  trkItems: "商品：%1",
+  itemsTotal: "商品小计：%1",
+  trkTotal: "总计：%1",
   trackingNo: "快递单号：%1",
   trackDelivery: "查询您的订单：",
   courierCharge: "快递费：%1",
@@ -680,6 +712,7 @@ const zh = {
   postageQuoted: "邮费：另行报价 — 我们会把准确金额发给你",
   promoLine: "优惠码 %1：-%2",
   promoFriend: "朋友推荐优惠：-%1",
+  promoReward: "带朋友奖励：-%1",
   tripStatus: "配送：%1",
   tripFinding: "正在寻找司机",
   tripOnTheWay: "司机在路上",
@@ -722,9 +755,9 @@ const ms = {
   // pelayar mengambil halaman itu sekali lagi, dan pelayar yang masih memegang skrip lama akan
   // memberikannya semula. Selepas satu percubaan, halaman ini berhenti menawarkan butang yang
   // sudah terbukti tidak berkesan dan memberitahu apa yang benar-benar berkesan.
-  buildStale: "Versi baharu halaman ini sudah sedia.",
-  buildStuck: "Versi baharu sudah sedia. Tutup halaman ini sepenuhnya, kemudian buka semula.",
-  buildReload: "Muat semula",
+  buildWarnTitle: "Order anda belum disimpan.",
+  buildWarnBody: "Memuat semula akan memulakan halaman ini semula — hari pos, troli dan apa yang anda taip akan hilang. Tekan Muat semula sekali lagi jika mahu dikemas kini sekarang.",
+  buildAnyway: "Muat semula juga",
 
   promoLabel: "Ada kod?",
   promoPh: "cth. FRESH10",
@@ -739,7 +772,7 @@ const ms = {
   promoPaused: "Kod itu dihentikan sementara — ia tidak tersedia buat masa ini.",
   promoEnded: "Kod itu tamat pada %1 — ia tidak lagi tersedia.",
   promoNotYet: "Kod itu belum bermula — ia bermula pada %1.",
-  promoClaimed: "Kod itu telah habis diambil — semuanya telah disertakan.",
+  promoClaimed: "Kod itu telah habis diambil — tiada lagi yang tinggal.",
   promoClash: "Kod itu tidak boleh digunakan bersama diskaun sambutan yang anda sudah ada — hubungi kami dan kami akan uruskannya.",
   promoSmall: "Belum cukup lagi — tambah %1 lagi untuk menggunakannya.",
   promoNo: "Kod itu tidak boleh digunakan buat masa ini — hubungi kami dan kami akan uruskannya.",
@@ -820,8 +853,12 @@ const ms = {
   addNoteLink: "＋ Tambah nota",
   lineNotePh: "cth. tanpa kacang, tulis “Selamat Hari Jadi”",
   sTrack: "Semak order anda",
-  trackHint: "Sudah menempah? Masukkan nombor order dari mesej pengesahan (bermula dengan <strong>#</strong>, cth. #A3F9C2).",
+  trackHint: "Sudah menempah? Masukkan nombor order dari mesej pengesahan (bermula dengan <strong>#</strong>, cth. #A3F9C2) dan nombor telefon yang anda guna semasa order.",
   trackPh: "cth. A3F9C2",
+  trackNoLabel: "Nombor order",
+  trackPhonePh: "nombor telefon semasa order",
+  trackPhoneLabel: "Nombor telefon yang digunakan untuk order",
+  trackNeedPhone: "Masukkan nombor telefon yang digunakan semasa order ini, dan kami akan mencarinya.",
   trackBtn: "Semak",
   sPolicies: "Polisi",
 
@@ -830,8 +867,12 @@ const ms = {
   placeOrder: "Hantar order",
   sending: "Sedang dihantar…",
   soldOut: "Habis",
+  qtyLess: "Kurang satu",
+  qtyMore: "Tambah satu",
   onlyLeft: "Tinggal %1 sahaja",
   qtyAria: "Berapa banyak",
+  langAria: "Bahasa",
+  journeyAria: "Perjalanan status order",
   noDates: "Tiada tarikh pos buat masa ini — sila datang lagi nanti.",
   noOpenDates: "Semua hari pos akan datang penuh buat masa ini — sila datang lagi nanti.",
   calChosen: "Hari pos anda: %1",
@@ -855,6 +896,7 @@ const ms = {
   nextAvailableLeft: "Seterusnya tersedia: %1 · tinggal %2",
   sentenceEnd: ".",
   noMenuToday: "Tiada apa-apa pada menu untuk hari ini. Sila pilih hari pos yang lain.",
+  noMenu: "Menu sedang kosong — sila semak semula nanti.",
   moreItems: "Lebih banyak item",
   fixSoldOut: "%1 baru habis — kami keluarkan dari order anda.",
   fixGone: "%1 tiada lagi dalam menu — kami keluarkan dari order anda.",
@@ -871,6 +913,7 @@ const ms = {
   confirmAddrTitle: "Sila masukkan alamat pos anda.",
   confirmAddrBody: "Kami hantar ke seluruh negara — snek anda tidak dapat dihantar tanpa alamat lengkap (jalan, kawasan, bandar & poskod).",
   confirmAddWaBody: "Kami guna untuk sahkan tempahan dan hantar QR pembayaran anda.",
+  confirmAddWaShape: "Nombor ini nampak tidak lengkap — sila semak, dan sertakan kod negara jika anda di luar Malaysia.",
   needItemTitle: "Order masih kosong.",
   needItemBody: "Pilih sesuatu dari menu di atas dahulu — kemudian anda boleh buat order.",
   needDayTitle: "Pilih hari pos anda dahulu.",
@@ -902,7 +945,7 @@ const ms = {
   trackEnter: "Masukkan nombor order anda untuk disemak.",
   trackUnavailable: "Semakan tidak tersedia buat masa ini.",
   trackLooking: "Sedang cari order anda…",
-  trackNotFound: "Kami tidak dapat mencari order #%1. Sila semak nombor dalam mesej pengesahan anda — iaitu 6 aksara selepas #.",
+  trackNotFound: "Kami tidak dapat mencari order #%1 dengan nombor telefon itu. Sila semak kedua-duanya: nombor order ialah 6 aksara selepas # dalam mesej pengesahan anda, dan nombor telefon ialah nombor WhatsApp yang anda gunakan untuk membuat order.",
   orderCode: "Order #%1",
   forCustomer: "Untuk %1",
   trkNew: "Baharu",
@@ -911,6 +954,9 @@ const ms = {
   trkBaking: "Sedang disediakan",
   trkReady: "Dibungkus",
   trkFinal: "Sudah diambil / Sudah dipos",
+  trkItems: "Barang: %1",
+  itemsTotal: "Jumlah barang: %1",
+  trkTotal: "Jumlah keseluruhan: %1",
   trackingNo: "Nombor penjejakan: %1",
   trackDelivery: "Jejak order anda:",
   courierCharge: "Caj kurier: %1",
@@ -918,6 +964,7 @@ const ms = {
   postageQuoted: "Pos: disebut berasingan — kami akan beritahu jumlah tepat kepada anda",
   promoLine: "Kod %1: -%2",
   promoFriend: "Diskaun bawa rakan yang dihantar kepada anda: -%1",
+  promoReward: "Ganjaran bawa kawan: -%1",
   tripStatus: "Penghantaran: %1",
   tripFinding: "Sedang mencari driver",
   // ⚠️ THE FIFTH DRIVER STRING, AND THE ONE HER DECISION MISSED (17 Oct 2026). ⭐ **Her rule was the WORD —

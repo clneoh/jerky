@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 
 import { priceItems, baseFactorOf } from "../admin/js/purchasing.js";
 import { explodePicks } from "../admin/js/bom.js";
-import { productConsumption, setBakedTotal } from "../admin/js/stock.js";
+import { productConsumption, setBakedTotal, undoStockRow } from "../admin/js/stock.js";
 import { defaultState, loadState, normalize } from "../admin/js/state.js";
 
 const base = () => {
@@ -109,10 +109,11 @@ test("★★★ and a bake row she DELETED leaves nothing to correct — no stoc
     recipe: [{ ingredientId: "i1", qty: 250, unit: "g" }] }];
   setBakedTotal(st, st.products[0], "2026-10-17", 4);
   assert.equal(st.ingredients[0].onHand, 4000, "precondition");
-  // she deletes the row by hand — the shelf goes back, and the journal is emptied
-  st.ingredients[0].onHand = 5000;
-  st.ingredients[0].stockLog = [];
-  setBakedTotal(st, st.products[0], "2026-10-17", 0);   // now "correct" the bake she already undid by hand
+  // ⚠️ She deletes the row with the ✕ — the shelf goes back, and the bake row must FORGET what it took
+  // (v570), or the correction below would give it back a second time.
+  undoStockRow(st.ingredients[0], st.ingredients[0].stockLog[0], st);
+  assert.equal(st.ingredients[0].onHand, 5000, "precondition: the ✕ put the shelf back");
+  setBakedTotal(st, st.products[0], "2026-10-17", 0);   // now "correct" the bake she already undid
   assert.equal(st.ingredients[0].onHand, 5000,
     "★ correcting a bake whose row was deleted ADDED stock — **there was nothing left to give back**");
 });
@@ -202,4 +203,21 @@ test("★★★ a list holding BOTH shapes collapses to ONE row per product — 
   // ⭐ AND THE ROW SHE HAS BEEN USING WINS, because `applied` on it is what her shelf agrees with.
   assert.equal(out.bakedDays.find((r) => r.id === "bake_2026-10-16_p1").items.p1.total, 9,
     "★ the split-from-old copy overwrote the record she had been correcting");
+});
+
+test("★★★ a correction that could only give PART back says so — no pan count over a smaller number", () => {
+  // ⚠️⚠️ Her own card: **"Extra bake corrected — 10 × Focaccia"** against **+2 kg**. ⭐ The label named the
+  // size of the correction while the change was only what that day's bake had actually taken off — **two
+  // numbers on one row describing different things.**
+  const st = base();
+  st.ingredients = [{ id: "i1", name: "Flour", unit: "g", uomId: "g", onHand: 1000, stockLog: [] }];
+  st.products = [{ id: "p1", name: "Focaccia", active: true, unit: "pc",
+    recipe: [{ ingredientId: "i1", qty: 250, unit: "g" }] }];
+  setBakedTotal(st, st.products[0], "2026-10-17", 10);   // needs 2,500 g, the shelf holds 1,000
+  setBakedTotal(st, st.products[0], "2026-10-17", 0);     // …so the correction can only give 1,000 back
+  const row = st.ingredients[0].stockLog[0];
+  assert.equal(row.delta, 1000, "precondition: the shelf only had 1,000 to give back");
+  assert.match(String(row.what), /only what this day's bake took/,
+    "★ the row quotes a pan count beside a change it does not describe — **the reader is asked to believe "
+    + "two numbers that mean different things**");
 });

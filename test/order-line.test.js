@@ -63,6 +63,17 @@ test("stampOrderLine accepts a storefront line (its own name/price) and ignores 
   assert.deepEqual(untouched, { productName: "keep me" });
 });
 
+test("★★★ the frozen price is money, so it is kept to the cent (v577)", () => {
+  // ⚠️⚠️ MEASURED: two lines frozen at RM0.005 each printed "RM 0.01" and "RM 0.01" — the invoice added
+  // its printed lines and demanded RM0.02, while the confirmation and the tracking card rounded the sum
+  // and said RM0.01. ⚠️ **One sale, two totals, both on paper.** The half-cent came from a 3-decimal
+  // product price shown rounded and stored unrounded. ⭐ Rounded where it is FROZEN, so every surface
+  // reads one number and no stored line is rewritten.
+  const o = {};
+  stampOrderLine(o, { name: "Sample", price: 0.005 });
+  assert.equal(o.unitPrice, 0.01, "★ a half-cent price is frozen unrounded, so the paper can disagree with itself");
+});
+
 test("stampOrderLine leaves a blank name or an absent price off rather than writing a guess", () => {
   const o = {};
   stampOrderLine(o, { name: "   ", price: null });
@@ -172,6 +183,12 @@ test("the customer's tracking page shows what they bought, at the price they pai
   const snap = trackingSnapshot(state, { orders: [o] });
   assert.equal(snap.items, "Rosemary Focaccia ×2");
   assert.equal(snap.total, "RM 30.00");
+  // ★★★ AND THE PHONE THE ORDER WAS PLACED WITH IS PUBLISHED WITH THE CARD (v558). ⭐ It is the SECOND key
+  // on the customer's way in — without it on the row, the lookup has nothing to match and the card is
+  // unreachable for a customer who knows their own number. ⭐ Digits only, so one number has one spelling.
+  assert.equal(snap.whatsapp, "60123456789",
+    "★ the tracking card was published WITHOUT the customer's phone — **the second key is missing, so the "
+    + "lookup can only fall back to the code alone**");
 });
 
 test("★ what a loaf cost HER never reaches the customer's card", () => {

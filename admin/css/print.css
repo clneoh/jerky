@@ -3,6 +3,9 @@
 @media print {
   body { background: #fff; }
   .topbar, .tabbar, .toast, .confirm-layer, .btn, .no-print { display: none !important; }
+  /* ⚠️⚠️ THE TWO STRIPS ARE ON EVERY SCREEN AND WERE ON EVERY SHEET (v588): the sticky "Not sharing now" warning
+     and the amber "New version ready" bar printed on a purchase order, a register and a label. */
+  #share-warn, #update-bar { display: none !important; }
   .view { padding: 0; max-width: none; }
 
   .card { box-shadow: none; border: 1px solid #ccc; page-break-inside: avoid; }
@@ -40,15 +43,22 @@
   body.label-print .label-styles,
   body.label-print .popup-actions { display: none !important; }
   body.label-print .popup-body { overflow: visible; padding: 0; }
+  /* ⚠️⚠️ AND THE PREVIEW'S OWN WARNING IS NOT PART OF A LABEL (v588). ⚠️ The "mailing address is not set" line put
+     at v583 lives in this wrapper, which the label print never hid — ⚠️ **so it printed on the parcel.** */
+  body.label-print .label-preview-wrap .warn { display: none !important; }
   body.label-print .label-preview-wrap { padding: 0; }
   body.label-print .label-sheet {
-    max-width: 90mm;
-    margin: 0 auto;
-    border: 1px solid #999;
+    /* ⚠️⚠️ THE PAPER IS 100 mm WIDE AND THE SHEET IS 100 mm WIDE (v575). ⭐ It was 90 mm on a page of no fixed
+       size, and the mailing style 110 mm — ⚠️ **which is 10 mm wider than the label she has bought**, so it
+       would either shrink to fit or push a margin onto the next label. ⭐ One width, the paper's own. */
+    width: 100mm;
+    max-width: 100mm;
+    margin: 0;
+    border: none;
     border-radius: 0;
     page-break-inside: avoid;
   }
-  body.label-print .label-sheet.style-mailing { max-width: 110mm; }
+  body.label-print .label-sheet.style-mailing { max-width: 100mm; }
 }
 
 /* ★★ Printing ONE SHOP's list (v387). Her words: __"now the PO, lump together all supplier in one po
@@ -121,5 +131,26 @@
     margin: 10px 0 0;
     border-top: 1px solid #ccc;
     padding-top: 4px;
+  }
+}
+
+
+/* ── the receipt register (v572) ─────────────────────────────────────────────────────────────
+   ⚠️⚠️ "KEEP THIS PAGE" AND A BLANK SHEET. Every card but the purchase order is hidden in print, so printing
+   the register produced nothing — and it is the only record that says which receipt numbers were never
+   issued. ⭐ Scoped to the body class the screen adds for the instant of printing, exactly as the labels do. */
+@media print {
+  body.receipt-print .view > .card:not(.receipt-card),
+  body.receipt-print .page-head,
+  body.receipt-print .tabbar,
+  body.receipt-print .topbar { display: none !important; }
+  body.receipt-print .view > .card.receipt-card { display: block !important; border: none; box-shadow: none; }
+  /* ⚠️ AND A LONG LINE WRAPS ON PAPER INSTEAD OF ENDING IN "…" — the PDF already wrapped it, so the same
+     document said different things on paper and in the file. */
+  body.receipt-print .journal-cols .j-col,
+  body.journal-print .journal-cols .j-col {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
   }
 }

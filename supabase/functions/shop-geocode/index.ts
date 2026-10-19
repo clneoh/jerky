@@ -90,11 +90,13 @@ const hits: Hits = new Map();
 // under this and never notices.
 const MAX_ADDRESS = 200;
 
-// The caller's address, as the edge runtime saw it. x-forwarded-for is a chain when
-// anything proxies in front, and the first entry is the one that arrived at the edge.
+// ⚠️⚠️ THE LAST ADDRESS IN THE CHAIN, NOT THE FIRST (v585). ⚠️ A standard proxy APPENDS what it saw, so the
+// FIRST entry is the caller's own text — ⚠️ **rotating it bought unlimited Google lookups against her 300-a-day
+// quota.** ⭐ The last is the one the nearest proxy observed. ⚠️ A single-value header is unchanged.
 function callerOf(req: Request): string {
   const fwd = req.headers.get("x-forwarded-for") || "";
-  return fwd.split(",")[0].trim();
+  const parts = fwd.split(",").map((s) => s.trim()).filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : "";
 }
 
 Deno.serve(async (req) => {

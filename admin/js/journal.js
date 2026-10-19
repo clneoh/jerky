@@ -17,7 +17,7 @@
 import { el, button, copyText, toast } from "./ui.js";
 import { fmtRM } from "./state.js";
 import { longDate, todayISO } from "./dates.js";
-import { A4, makePdf, textWidth, wrapText } from "./pdf.js";
+import { A4, canDrawAll, makePdf, textWidth, wrapText } from "./pdf.js";
 
 // The rule a plain-text journal draws between its head, its rows and its totals. A fixed
 // width deliberately: a rule that stretched with the longest row would drift line to line
@@ -65,12 +65,15 @@ export function bakeryName(state) {
 // wearing a statement class (a subtotal row) or being a heading with no money of its own;
 // `totals` are the closing figures, drawn after a rule of their own.
 export function journalSheet({
-  title, subtitle = "", lines = [], totals = [], empty = "", note = "",
+  title, subtitle = "", to = "", lines = [], totals = [], empty = "", note = "",
   where = "", bakery = "", from = "", printed = "", receipt = "", receiptNote = "",
 } = {}) {
   return {
     title: String(title || "Journal"),
     subtitle: String(subtitle || ""),
+    // ⭐ WHO THE DOCUMENT IS FOR (v572). ⚠️ An invoice's paper carried the order code and no customer at all —
+    // a stack of them could only be matched by number. ⚠️ The screen had always said it; the paper did not.
+    to: String(to || ""),
     // ★ THE RECEIPT'S SERIAL, AND WHAT TO SAY WHEN THERE IS NONE (v360). An invoice carries
     // it under its title; every other journal passes nothing, so this stays empty and draws
     // nothing. `receiptNote` is the sentence for an order that has no number YET — it is
@@ -156,6 +159,13 @@ export function buildJournalText(sheet, cur = "RM") {
   // still says who it is from and where to find them.
   out.push(...fromLines(s.from, s.bakery));
   if (s.subtitle) out.push(s.subtitle);
+  if (s.to) out.push(s.to);
+  // ⚠️⚠️ THE RECEIPT SERIAL TRAVELLED NOWHERE (v577). The screen and the paper draw it; the text that goes
+  // into WhatsApp and the PDF did not — ⭐ **so the number that proves the receipt sequence was missing from
+  // exactly the copies the customer keeps.** ⚠️ A file that would misspell a name is refused (v573), and that
+  // gate reads THIS text — so the serial is now covered by it too.
+  if (s.receipt) out.push(s.receipt);
+  else if (s.receiptNote) out.push(s.receiptNote);
 
   if (!s.lines.length) {
     out.push("", s.empty);
@@ -259,6 +269,7 @@ export function journalSheetEl(sheet, cur = "RM") {
       ...fromLines(s.from, s.bakery).map((line) => el("p", { class: "js-from" }, line)),
       el("h2", { class: "js-title" }, s.title),
       s.subtitle ? el("p", { class: "js-sub" }, s.subtitle) : null,
+      s.to ? el("p", { class: "js-sub js-to" }, s.to) : null,
       // The serial, printed under the title on the paper and nowhere else, so a second
       // number cannot be mistaken for the document's own heading.
       s.receipt ? el("p", { class: "js-receipt" }, s.receipt) : null,
@@ -319,27 +330,57 @@ function sheetPages(s, cur) {
     op: "rule", x1: PDF_MARGIN, y1: y, x2: PDF_RIGHT, y2: y,
     width: width == null ? 0.6 : width, color: color || RULE_INK });
 
+  // ⚠️⚠️ ONE WRAPPED LINE, DRAWN AT THE COLUMN (v590). ⚠️ The title, subtitle, empty-state sentence and
+  // receipt note were each drawn as ONE `Tj`: ⚠️ **measured, a 319-character empty-state sentence was 2,128 pt
+  // wide on a 482 pt column — only its first ~85 characters ever reached the paper.** ⭐ Every one of these now
+  // breaks inside the margin, exactly as the customer address has since v588.
+  const drawWrapped = (text, { font = "F1", size = 10, color = null, lead = PDF_LEAD } = {}) => {
+    const chunks = wrapText(String(text), PDF_RIGHT - PDF_MARGIN, { font, size });
+    if (!chunks.length) { y -= lead; return; }
+    for (const chunk of chunks) {
+      put(chunk, PDF_MARGIN, color ? { font, size, color } : { font, size });
+      y -= lead;
+    }
+  };
+
   const startPage = (continued) => {
     ops = [];
     pages.push({ w: A4.w, h: A4.h, ops });
     y = A4.h - PDF_MARGIN;
     if (continued) {
-      put(`${s.title} (continued)`, PDF_MARGIN, { font: "F2", size: 11, color: MUTED });
-      y -= 22;
+      drawWrapped(`${s.title} (continued)`, { font: "F2", size: 11, color: MUTED, lead: 14 });
+      // ⚠️⚠️ AND THE DOCUMENT'S OWN REFERENCE COMES WITH IT (v597) — a second page used to carry the title
+      // but not the period/customer line the subtitle holds.
+      if (s.subtitle) drawWrapped(s.subtitle, { size: 9, color: MUTED, lead: 12 });
+      y -= 8;
       rule(0.5);
       y -= 16;
       return;
     }
-    if (s.bakery) { put(s.bakery, PDF_MARGIN, { font: "F2", size: 9, color: MUTED }); y -= 16; }
+    if (s.bakery) drawWrapped(s.bakery, { font: "F2", size: 9, color: MUTED, lead: 16 });
     // The letterhead, on the same muted small face as the name above it — it is an
     // address, not a heading, and the title below has to stay the loudest thing here.
+    // ⚠️⚠️ THE LETTERHEAD WRAPS TOO (v596) — a long mailing address ran off the file.
     for (const line of fromLines(s.from, s.bakery)) {
-      put(line, PDF_MARGIN, { size: 8.5, color: MUTED });
-      y -= 11.5;
+      drawWrapped(line, { size: 8.5, color: MUTED, lead: 11.5 });
     }
-    put(s.title, PDF_MARGIN, { font: "F2", size: 18 });
-    y -= 24;
-    if (s.subtitle) { put(s.subtitle, PDF_MARGIN, { size: 10, color: MUTED }); y -= 15; }
+    drawWrapped(s.title, { font: "F2", size: 18, lead: 22 });
+    y -= 2;
+    if (s.subtitle) drawWrapped(s.subtitle, { size: 10, color: MUTED, lead: 15 });
+    // ⚠️⚠️ THE CUSTOMER LINE RAN OFF THE PAGE (v588 — the audit's §8·1, never fixed until now). ⚠️ `to` is
+    // the name plus an address whose line breaks are still in it; the PDF drew it as ONE unwrapped string, so
+    // ⚠️ **a three-line address ran past the column and its breaks printed as raw bytes.** ⭐ Each of its own
+    // lines is wrapped to the column, so the address breaks where it means to and never past the margin.
+    if (s.to) {
+      for (const raw of String(s.to).split("\n")) {
+        const chunks = wrapText(raw.trim(), PDF_RIGHT - PDF_MARGIN, { size: 10 });
+        if (!chunks.length) { y -= 15; continue; }
+        for (const chunk of chunks) { put(chunk, PDF_MARGIN, { size: 10, color: MUTED }); y -= 15; }
+      }
+    }
+    // The serial beside the order code, on the PDF and the shared text as on the screen (v577).
+    if (s.receipt) { drawWrapped(s.receipt, { size: 9, color: MUTED, lead: 13 }); }
+    else if (s.receiptNote) { drawWrapped(s.receiptNote, { size: 9, color: MUTED, lead: 13 }); }
     y -= 3;
     rule(0.8);
     y -= 17;
@@ -378,16 +419,15 @@ function sheetPages(s, cur) {
   startPage(false);
 
   if (!s.lines.length) {
-    put(s.empty, PDF_MARGIN, { size: 10, color: MUTED });
-    y -= PDF_LEAD;
+    drawWrapped(s.empty, { size: 10, color: MUTED });
   } else {
     s.lines.forEach((l, i) => {
       // ⚠️ A COLUMN HEADER NAMES ITS COLUMNS ON THE PAPER TOO (v390) — smaller and muted, so it reads
       // as a label over the rows rather than as a section of its own.
       if (l.head) {
         need(16);
-        put(l.what, PDF_MARGIN, { size: 9, color: MUTED });
-        y -= 12;
+        // ⚠️ AND A LONG COLUMN HEADER WRAPS (v596).
+        drawWrapped(l.what, { size: 9, color: MUTED, lead: 12 });
         return;
       }
       if (l.heading) {
@@ -469,6 +509,8 @@ export function journalPdfName(sheet) {
 // API at all, which is the honest answer rather than a broken object.
 function journalFile(s, cur) {
   if (typeof File !== "function" || typeof Blob !== "function") return null;
+  // ⚠️⚠️ A FILE THAT WOULD MISSPELL HER CUSTOMER'S NAME IS NOT MADE (v573) — see `canDrawAll`.
+  if (!canDrawAll(buildJournalText(s, cur))) return null;
   try {
     return new File([journalPdf(s, cur)], journalPdfName(s), { type: "application/pdf" });
   } catch (err) {
@@ -479,6 +521,8 @@ function journalFile(s, cur) {
 // The last resort on a phone with no share sheet: the document is saved to the phone instead,
 // so she still ends up with the PDF she asked for rather than a block of text she did not.
 function saveJournalPdf(s, cur) {
+  // ⚠️ The same rule for the save-to-phone path (v573).
+  if (!canDrawAll(buildJournalText(s, cur))) return false;
   if (typeof document === "undefined" || typeof URL === "undefined"
     || typeof URL.createObjectURL !== "function") return false;
   let url = "";
@@ -532,9 +576,9 @@ export function printJournal(sheet, cur = "RM") {
     if (typeof window !== "undefined") window.removeEventListener("afterprint", done);
     clearTimeout(timer);
   };
-  const timer = setTimeout(done, 2000);
+  const timer = setTimeout(done, 10000);
   if (typeof window !== "undefined") window.addEventListener("afterprint", done);
-  window.print();
+  try { window.print(); } catch { done(); toast("This phone couldn't print — use Share instead."); }
 }
 
 // Share one sheet. The journal goes as a PDF FILE, because that is the one form WhatsApp
@@ -557,6 +601,9 @@ export async function shareJournal(sheet, cur = "RM") {
   const file = journalFile(s, cur);
 
   const cancelled = (err) => !!(err && err.name === "AbortError");
+  // ⚠️⚠️ AND IF THE PDF WOULD MISSPELL IT, SAY SO RATHER THAN SENDING "?????" (v573).
+  const canPdf = canDrawAll(text);
+  const whyNoPdf = "This one has 中文 (or another character the app's PDF cannot draw) in it, so no PDF was made — it would arrive as ?????. The text went instead; to send a PDF, press Print and choose Save as PDF.";
 
   if (nav && typeof nav.share === "function") {
     // `canShare` is what the phone answers with, and it is asked rather than assumed: a phone
@@ -577,6 +624,7 @@ export async function shareJournal(sheet, cur = "RM") {
     }
     try {
       await nav.share({ title: s.title, text });
+      if (!canPdf) toast(whyNoPdf);
       return;
     } catch (err) {
       if (cancelled(err)) return;
@@ -587,6 +635,7 @@ export async function shareJournal(sheet, cur = "RM") {
     toast("Saved as a PDF — send it from WhatsApp");
     return;
   }
+  if (!canPdf) { copyText(text, whyNoPdf); return; }
   copyText(text, "Journal copied — paste it into WhatsApp or an email");
 }
 

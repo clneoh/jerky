@@ -11,7 +11,7 @@ import {
   costOf,
   effectiveUnitCost,
   recipeLineCosts,
-  isPoolablePack,
+  isPoolablePack, unitsOfOrder, totalUnitsOnDate, capacityStatus,
   poolRemaining,
   productRemaining,
   validateRecipeNoCycle,
@@ -100,7 +100,9 @@ test("BOM explosion mixes a set with singles into one shopping list", () => {
     { id: "ord_3", deliveryDateId: "del_a", productId: "prd_s", qty: 1 }, // unrelated product
   ];
   const bom = explodeBom(st, "del_a");
-  assert.equal(bom.totalUnits, 4, "each order line counts once, set or single");
+  // ⚠️ v597: a set counts its PIECES toward the day, the same rule the calendar and the shop use — one
+  // family set is four pieces, so 2 + 4 + 1.
+  assert.equal(bom.totalUnits, 7, "a set's pieces are not counted toward the day");
   const flour = bom.items.find((i) => i.ingredientId === "ing_f");
   assert.equal(flour.totalQty, 2 * 500 + 1 * 2000 + 1 * 250); // 3250
   const setLine = bom.items.find((i) => i.ingredientId === "ing_f").lines
@@ -275,6 +277,35 @@ test("costOf, recipeLineCosts and the BOM all use the pack-derived rate", () => 
   assert.equal(salt.estCost, 0.08, "10 g × RM 0.008, rounded to cents");
 });
 
+test("★★★ an EMPTY recipe says so instead of adding nothing to the list (v582)", () => {
+  // ⚠️⚠️ `[]` passed the "no recipe array" check, counted its units, and exploded to no lines — ⚠️ **so a
+  // shopping list could be saved with nothing on it and the app called it a list.**
+  const st = fixtureState();
+  st.products.push({ id: "prd_empty", name: "Empty loaf", unit: "loaf", active: true, recipe: [] });
+  st.orders = [{ id: "ord_e", deliveryDateId: "del_a", productId: "prd_empty", qty: 3 }];
+  const bom = explodeBom(st, "del_a");
+  assert.equal(bom.items.length, 0);
+  assert.ok(bom.warnings.some((w) => /Empty loaf has an empty recipe/.test(w)),
+    "★ an empty-recipe product silently contributed nothing, with no line saying why");
+});
+
+test("★★★ a 4-pack counts FOUR toward the day's capacity (v587)", () => {
+  // ⚠️⚠️ MEASURED: the day counted a pack as ONE row-unit, ⚠️ **so with a limit of 12 and two 4-packs ordered
+  // the card read "2/12 … can still take 10" while the shop had 4 left.** ⭐ The picker was aligned at v580;
+  // this is the same piece counted for the day's own figure.
+  const st = fixtureState();
+  st.deliveryDates = [{ id: "del_a", date: "2026-09-02" }];
+  st.orders = [
+    { id: "o1", deliveryDateId: "del_a", productId: "prd_p", qty: 2 },   // two 4-packs = 8 pieces
+    { id: "o2", deliveryDateId: "del_a", productId: "prd_f", qty: 1 },   // one single
+  ];
+  assert.equal(unitsOfOrder(st, st.orders[0]), 8, "★ a pack is being counted as one piece");
+  assert.equal(totalUnitsOnDate(st, "del_a"), 9);
+  const cap = capacityStatus(st, "del_a");
+  assert.equal(cap.total, 9, "★ the day's booked figure disagrees with the pool the shop enforces");
+  assert.equal(cap.remaining, 3);
+});
+
 test("isPoolablePack: only a single-line, own-cap-less, active-limited base counts", () => {
   const st = fixtureState();
   const family = st.products.find((p) => p.id === "prd_p");
@@ -306,7 +337,10 @@ test("isPoolablePack: only a single-line, own-cap-less, active-limited base coun
   assert.equal(isPoolablePack(st2, { id: "prd_y", name: "Y", recipe: [{ productId: "prd_gone", qty: 1, unit: "" }] }), null, "missing base");
 });
 
-test("poolRemaining counts set sales into the base pool; productRemaining only sees singles", () => {
+test("★★★ productRemaining IS the pool count — a set sale is counted in both (v580)", () => {
+  // ⚠️⚠️ THIS TEST USED TO PIN THE OPPOSITE, and the contradiction it recorded was the fault: the shop
+  // published 4 left while the backoffice picker said 12, ⚠️ **so she sold from a figure the customer's
+  // own page had already beaten.** ⭐ One pool count, used by both.
   const st = fixtureState();
   st.orders = [
     { id: "ord_1", deliveryDateId: "del_a", productId: "prd_f", qty: 2 }, // singles
@@ -316,7 +350,11 @@ test("poolRemaining counts set sales into the base pool; productRemaining only s
   assert.deepEqual(pool, { limit: 12, booked: 6, remaining: 6 }, "2 singles + 4 from the set");
 
   const own = productRemaining(st, "del_a", "prd_f");
-  assert.deepEqual(own, { limit: 12, booked: 2, remaining: 10 }, "old per-product count sees only singles");
+  assert.deepEqual(own, pool, "★ the picker's count and the shop's count disagree about the same day");
+
+  // And the order being edited does not count against itself.
+  assert.deepEqual(productRemaining(st, "del_a", "prd_f", "ord_2"),
+    { limit: 12, booked: 2, remaining: 10 }, "★ the order being edited was counted against its own limit");
 
   // a pack itself has no limit → null from both helpers
   assert.equal(poolRemaining(st, "del_a", "prd_p"), null);
@@ -395,6 +433,41 @@ test("productRemaining uses the day's adjusted limit with unchanged bookings", (
   assert.deepEqual(productRemaining(st, "del_a", "prd_f"), { limit: 0, booked: 2, remaining: -2 });
 });
 
+test("★★★ a pack OF A PACK counts all its pieces toward the day AND the pool (v590)", () => {
+  // ⚠️⚠️ MEASURED: the Party Box is 2 × Family = 8 loaves. ⚠️ `unitsOfOrder` read one level (the Family's
+  // 4) and isPoolablePack stopped there, so **two boxes read 2 of 12 on her screen while consuming 16
+  // pieces from the shop's pool** — and the shop published no cap for the box at all.
+  const st = fixtureState();
+  st.orders = [
+    { id: "o1", deliveryDateId: "del_a", productId: "prd_p", qty: 12 },     // 48 pieces, one family level
+    { id: "o2", deliveryDateId: "del_a", productId: "prd_c", qty: 2 },      // 16 pieces, two levels
+  ];
+  assert.equal(unitsOfOrder(st, st.orders[1]), 16,
+    "★ two Party Boxes counted as two units — **the shop sells eight loaves short**");
+  assert.equal(totalUnitsOnDate(st, "del_a"), 64, "and the day counts every piece from both lines");
+  const cap = capacityStatus(st, "del_a");
+  assert.equal(cap.total, 64);
+  assert.equal(cap.remaining, 12 - 64, "the day is short by what was really baked, not by the box count");
+  // The shop's own pool reads the same pieces through `baseUnitsOf` (it always has).
+  const pool = poolRemaining(st, "del_a", "prd_f");
+  assert.equal(pool.booked, 64, "the pool and the day must not disagree about the same boxes");
+});
+
+test("★★★ a hand order for a product NOT on sale does not eat the day's shop capacity (v590)", () => {
+  // ⚠️⚠️ MEASURED: 9 focaccia (limit 12) plus one hand-entered order for a Saturday-only loaf qty 8 on a
+  // Monday read 17/12 — ⚠️ **the shop published slots_left: 0 and sold out with 3 focaccia unsold.**
+  const st = fixtureState();
+  st.products.find((p) => p.id === "prd_s").sellRules = [{ days: [6] }]; // Saturdays only
+  st.orders = [
+    ...Array.from({ length: 9 }, (_, i) => ({ id: `f${i}`, deliveryDateId: "del_a", productId: "prd_f", qty: 1 })),
+    { id: "s1", deliveryDateId: "del_a", productId: "prd_s", qty: 8 },
+  ];
+  const cap = capacityStatus(st, "del_a");
+  assert.equal(cap.total, 9, "★ the off-sale loaf's hand order consumed the shop's capacity");
+  assert.equal(cap.capacity, 12);
+  assert.equal(cap.remaining, 3, "★ the shop sold out with three focaccia unsold");
+});
+
 test("poolRemaining uses the base's adjusted limit for that date", () => {
   const st = fixtureState();
   st.deliveryDates[0].dayAdj = { prd_f: -3 };
@@ -464,11 +537,13 @@ test("dayRuleRows lists active limited products (menu order) and finds poolable 
   const { rows, packs } = dayRuleRows(st, "2026-09-07");
   assert.deepEqual(rows.map((r) => [r.productId, r.name, r.usual, r.delta]),
     [["prd_f", "Focaccia", 12, 3]]);
-  assert.deepEqual(packs, ["Family (4 pcs)"], "a poolable pack whose base is listed");
+  // ⚠️ v590: a pack OF A PACK reaches the same base through every level — the Party Box is 2 × Family
+  // = 8 pieces, and it belongs in this list as much as the Family does.
+  assert.deepEqual(packs, ["Family (4 pcs)", "Party Box"], "every poolable pack whose base is listed");
 
   const empty = dayRuleRows(st, "2026-10-01"); // a date with no adjustments yet
   assert.deepEqual(empty.rows.map((r) => [r.productId, r.delta]), [["prd_f", 0]]);
-  assert.deepEqual(empty.packs, ["Family (4 pcs)"]);
+  assert.deepEqual(empty.packs, ["Family (4 pcs)", "Party Box"]);
 });
 
 test("parseDayDelta: blank is no change, signed whole numbers only", () => {
@@ -619,7 +694,9 @@ test("dayChangeInfo explodes an added family pack into its component's leaf ingr
   const st = fixtureState();
   st.orders = [{ id: "ord_p1", deliveryDateId: "del_a", productId: "prd_p", qty: 1 }];
   const info = dayChangeInfo(st, "2026-09-07", "");
-  assert.equal(info.totalUnits, 1);
+  // ⚠️ v590: a family set IS four pieces of its base, so it takes four of the day's units — the same rule
+  // the shop's pool has always used, and the one v587 gave a direct pack.
+  assert.equal(info.totalUnits, 4);
   const flour = info.items.find((i) => i.ingredientId === "ing_f");
   assert.equal(flour.totalQty, 2000, "one family set = 4 × 500 g flour");
 });
@@ -742,4 +819,26 @@ test("restockOnlyItems returns only the low actives not already listed, in name 
   const rows = restockOnlyItems(st, ["ing_s"]);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].ingredientId, "ing_f");
+});
+
+test("★★★ a MIXED pack counts every loaf it holds toward the day (v599)", () => {
+  // ⚠️⚠️ MEASURED: `terminalPackOf` answers null for a recipe with more than one line, so `unitsOfOrder`
+  // counted a mixed hamper as ONE while `poolRemaining` counted its pieces — ⚠️ **the day's bar read one short
+  // for every hamper sold, and the shop's slots were published against the wrong total.**
+  const st = fixtureState();
+  st.products.push(
+    { id: "prd_b", name: "Bun", unit: "piece", limit: 6, active: true, price: 4, recipe: [
+      { ingredientId: "ing_f", qty: 80, unit: "g" },
+    ] },
+    { id: "prd_m", name: "Mix Box", unit: "set", active: true, price: 42, recipe: [
+      { productId: "prd_f", qty: 2, unit: "loaf" },
+      { productId: "prd_b", qty: 3, unit: "piece" },
+    ] },
+  );
+  st.orders = [{ id: "o1", deliveryDateId: "del_a", productId: "prd_m", qty: 2 }];
+  assert.equal(unitsOfOrder(st, st.orders[0]), 10,
+    "★ a mixed hamper counted as one unit — **2 boxes read 2 while the shop's pool counted 10**");
+  assert.equal(totalUnitsOnDate(st, "del_a"), 10, "and the day is short by the same amount");
+  assert.equal(poolRemaining(st, "del_a", "prd_f").booked, 4, "the focaccia pool sees its 2 × 2 loaves");
+  assert.equal(poolRemaining(st, "del_a", "prd_b").booked, 6, "the bun pool sees its own 2 × 3");
 });

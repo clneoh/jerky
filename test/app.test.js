@@ -8,12 +8,34 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const realLocalStorage = globalThis.localStorage;
+
+const allNodes = (node, out = []) => {
+  for (const c of (node && node.children) || []) { out.push(c); allNodes(c, out); }
+  return out;
+};
+
+// ⚠️⚠️ COMMENTS STRIPPED BEFORE ANY SOURCE CHECK (v591). ⚠️ The day-rollover guard matched the EXACT text
+// `document.addEventListener("visibilitychange", … checkDay())` — ⚠️ **so commenting the real registration
+// out while leaving the same words in the comment kept every test green**, and a phone put down overnight
+// would again keep yesterday's date. ⭐ Same reader as order-removal-guard.test.js.
+function liveSource(src) {
+  const out = [];
+  let inBlock = false;
+  for (const line of String(src || "").split("\n")) {
+    const t = line.trim();
+    if (inBlock) { if (t.includes("*/")) inBlock = false; out.push(""); continue; }
+    if (t.startsWith("/*")) { if (!t.includes("*/")) inBlock = true; out.push(""); continue; }
+    if (t.startsWith("//") || t.startsWith("*")) { out.push(""); continue; }
+    out.push(line.replace(/\/\*.*?\*\//g, "").replace(/\s\/\/\s.*$/, ""));
+  }
+  return out.join("\n");
+}
 const HASH_1234 = "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4";
 
 function createEl(tag) {
-  return {
+  const node = {
     tagName: String(tag || "").toUpperCase(), nodeType: 1, children: [], attrs: {}, dataset: {},
-    className: "", style: {}, textContent: "", value: "", checked: false, disabled: false,
+    className: "", style: {}, value: "", checked: false, disabled: false,
     hidden: false, scrollTop: 0, _listeners: {},
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     // ★★★ AND IT PARENTS WHAT IT IS GIVEN (v520). ⚠️⚠️ IT DID NOT, so `parentElement` was **always null**
@@ -21,10 +43,10 @@ function createEl(tag) {
     // scrolling page from one outside it, and **a test about the page's own scroll could not be written.**
     // ⭐ The real DOM sets it, and the shop's own shim has set it since v459 for exactly this reason.
     appendChild(c) { if (c != null) { c.parentElement = this; this.children.push(c); } return c; },
-    append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
+    append(...cs) { for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
     replaceChildren(...cs) {
       this.children = [];
-      for (const c of cs) if (c != null) this.children.push(c);
+      for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c);
       // ★★★ AND EMPTYING THE VIEW DROPS THE PAGE'S SCROLL, WHICH IS WHAT A BROWSER DOES (v520).
       // ⚠️⚠️ WITHOUT THIS THE SHIM CANNOT SEE THE FAULT AT ALL: it has no layout, so the window's scroll
       // simply stays where it was and **a test asserting "she kept her place" passes whether the app puts
@@ -40,10 +62,19 @@ function createEl(tag) {
     removeEventListener() {},
     setAttribute(k, v) { this.attrs[k] = String(v); },
     getAttribute(k) { return this.attrs[k]; },
+    removeAttribute(k) { delete this.attrs[k]; },
     querySelector() { return null; },
     querySelectorAll() { return []; },
     focus() {},
   };
+  // ⚠️ A REAL NODE'S TEXT INCLUDES ITS CHILDREN (v591). ⚠️ `textContent` was a plain property while `el()`
+  // appends the label as a CHILD — ⚠️ **so a button's own words read as undefined**, and no test could find
+  // "Use without cloud sync" to press it. ⭐ Fold the children, as the other view shims do.
+  Object.defineProperty(node, "textContent", {
+    get() { return this.children.map((c) => (c && c.nodeType === 3 ? c.text : (c && c.textContent) || "")).join(""); },
+    set(v) { this.children = v === "" ? [] : [{ nodeType: 3, text: String(v) }]; },
+  });
+  return node;
 }
 
 // ui.el() puts text in nodeType-3 children (never innerHTML), so walking the
@@ -140,7 +171,16 @@ function restore() {
 }
 
 // Keep real fetch (Node's) from hitting the network if a scenario logs in.
+// ★★★ AND EVERY REQUEST IS COUNTED (v584). ⚠️⚠️ This stub answered every URL and nothing recorded what was
+// asked — ⚠️ **so a fetch added at module scope, or a sync that ran with sharing off, left the "no sync calls"
+// test green.** ⭐ The list is read by the boot tests below.
+let fetched = [];
+// ⚠️⚠️ EVERY table the app has ever called (v588). The first list named six and left out `bakery` — the sync's
+// OWN table — so a boot that synced with sharing off passed the "no sync calls" test. `rpc/` is included for the
+// same reason: a receipt claim or tracking call is a sync call too.
+const SYNC_END = /rest\/v1\/(?:bakery|orders|settings|incoming_orders|backup_snapshots|product_availability|availability|order_tracking|reviews|storefront_config|promo_visits|promo_visit_days|receipt_numbers|rpc\/)/;
 globalThis.fetch = async (url) => {
+  fetched.push(String(url));
   if (String(url).includes("/auth/v1/token")) {
     return { ok: true, json: async () => ({ access_token: "tok", expires_in: 3600 }) };
   }
@@ -151,8 +191,12 @@ test("cloud off: app boots straight to the dashboard, no gate, no sync calls", a
   freshDOM();
   installStorage({ "bakeadmin.v1": stateJSON() });
   try {
+    fetched = [];
     await import("../admin/js/app.js?case=off");
 
+    const syncCalls = fetched.filter((u) => SYNC_END.test(u));
+    assert.deepEqual(syncCalls, [],
+      "★ a phone with sharing and live availability OFF called a sync endpoint — **the no-sync-calls this test names was never counted**");
     const view = document.getElementById("view");
     assert.ok(view.children.length > 0, "dashboard rendered into #view");
     assert.equal(document.getElementById("view-title-text").textContent, "Munchies Furkidz");
@@ -207,6 +251,34 @@ test("cloud on without a session: the sign-in gate owns the screen", async () =>
     assert.equal(document.getElementById("view-title-text").textContent, "Sign in");
     const view = document.getElementById("view");
     assert.ok(view.children.length > 0, "login card rendered");
+  } finally { restore(); }
+});
+
+test("★★★ 'Use without cloud sync' really enters the app (v591)", async () => {
+  // ⚠️⚠️ THE BUTTON WAS NEVER PRESSED BY ANY TEST. ⚠️ Deleting `render()` from its handler left the sign-in
+  // card up while claiming to be inside the app — ⚠️ **and the suite stayed green.** ⭐ It is one of the two
+  // ways in, and the only one a phone without the cloud uses.
+  freshDOM();
+  installStorage({
+    "bakeadmin.v1": stateJSON({
+      settings: {
+        supabase: { url: "https://x.supabase.co", anonKey: "anon" },
+        cloud: { enabled: true },
+      },
+    }),
+  });
+  try {
+    await import("../admin/js/app.js?case=offlinebtn");
+    const view = document.getElementById("view");
+    assert.equal(document.getElementById("view-title-text").textContent, "Sign in", "precondition: the gate is up");
+    const press = allNodes(view).find((n) => n.tagName === "BUTTON"
+      && String(n.textContent).includes("Use without cloud sync"));
+    assert.ok(press, "the sign-in card drew no 'Use without cloud sync' press");
+    press._listeners.click.forEach((f) => f());
+    assert.equal(document.getElementById("tabbar").hidden, false, "the app's tab bar never appeared");
+    assert.ok(view.children.length > 0, "★ the sign-in card is still the screen — **the press entered nothing**");
+    assert.notEqual(document.getElementById("view-title-text").textContent, "Sign in",
+      "★ the title still says Sign in after entering without the cloud");
   } finally { restore(); }
 });
 
@@ -282,6 +354,69 @@ test("app password lock: the lock layer owns the screen until the PIN is correct
     assert.equal(layer.hidden, true, "lock layer dismissed");
     assert.ok(view.children.length > 0, "dashboard rendered after unlock");
     assert.equal(document.getElementById("view-title-text").textContent, "Munchies Furkidz");
+  } finally { restore(); }
+});
+
+test("★★★ three wrong PINs really pause the screen (v591)", async () => {
+  // ⚠️⚠️ THE PAUSE WAS ONLY TESTED AS A PURE FUNCTION. ⚠️ Changing `if (wait > 0)` to `if (false)` left the
+  // whole suite green — ⚠️ **the delay on an app that ships with a published default PIN could be removed
+  // in silence.** ⭐ This presses the real button three times and reads the real box.
+  freshDOM();
+  installStorage({
+    "bakeadmin.v1": stateJSON({
+      settings: {
+        defaultCapacity: 12, deliveryDays: [1, 3, 5], cutoff: "18:00", currency: "RM",
+        supabase: { enabled: false, url: "", anonKey: "", email: "", password: "" },
+        cloud: { enabled: false },
+        lock: { enabled: true, pinHash: HASH_1234 },
+      },
+    }),
+  });
+  // ⚠️ The pause is a real 1-second timer; capture it rather than hold the suite open.
+  const realST = globalThis.setTimeout;
+  let waited = null;
+  globalThis.setTimeout = (fn, ms) => { waited = { fn, ms }; return 0; };
+  try {
+    await import("../admin/js/app.js?case=lockpause");
+    const layer = document.getElementById("lock-layer");
+    for (let i = 0; i < 3; i += 1) {
+      layer._pin.value = "9999";
+      await layer._btn._listeners.click[0]();
+    }
+    assert.ok(waited && waited.ms > 0,
+      "★ three wrong PINs did not pause the screen — **a published default PIN can be guessed as fast as a thumb taps**");
+    assert.equal(layer._pin.disabled, true, "★ the PIN box stayed live during the pause");
+    assert.equal(layer._btn.disabled, true, "★ the Unlock press stayed live during the pause");
+    assert.match(String(layer._err.textContent), /try again in \d+s/,
+      "the pause is silent — she is not told to wait");
+  } finally { globalThis.setTimeout = realST; restore(); }
+});
+
+test("★★★ a missing #lock-layer locks the app instead of opening it (v589)", async () => {
+  // ⚠️⚠️ MEASURED: `passLock` answered "unlocked" whenever the element was absent — ⚠️ **one typo in
+  // admin/index.html disabled the PIN, and no test read that file.** ⭐ The shim creates any id on demand,
+  // so it could never reproduce this; here the lookup itself is made to fail.
+  freshDOM();
+  installStorage({
+    "bakeadmin.v1": stateJSON({
+      settings: {
+        defaultCapacity: 12, deliveryDays: [1, 3, 5], cutoff: "18:00", currency: "RM",
+        supabase: { enabled: false, url: "", anonKey: "", email: "", password: "" },
+        cloud: { enabled: false },
+        lock: { enabled: true, pinHash: HASH_1234 },
+      },
+    }),
+  });
+  const realGet = document.getElementById;
+  document.getElementById = (id) => (id === "lock-layer" ? null : realGet(id));
+  try {
+    await import("../admin/js/app.js?case=lockmissing");
+    const made = document.body.children.find((c) => c && c.id === "lock-layer");
+    assert.ok(made, "the app did not build a lock layer, so it cannot be locked");
+    assert.equal(made.hidden, false,
+      "★ with no #lock-layer the app opened itself — **the PIN was bypassed by a missing element**");
+    assert.ok(made.children.length > 0, "the lock screen was not drawn into the built layer");
+    assert.equal(realGet("view").children.length, 0, "the dashboard painted behind the missing lock");
   } finally { restore(); }
 });
 
@@ -477,12 +612,27 @@ test("★★ a phone that is BEHIND reloads itself before the lock, so one PIN g
     "the lock was drawn before the reload, which is the whole thing this is meant to avoid");
   assert.equal(r.sess.get("bakeadmin.updateTried"), "999",
     "the build it tried was not recorded, so the next boot would reload again for ever");
+  // ⚠️⚠️ AND WHAT IT ACTUALLY ASKED (v584). ⚠️ The stub answered the version module to ANY URL, and nothing
+  // counted the asks — ⚠️ **so a fetch added at module scope, or a check pointed at the wrong address, stayed
+  // green.** ⭐ It asks for exactly one thing: this site's own version.js.
+  const versionAsks = r.asked.filter((u) => u.includes("version.js"));
+  assert.ok(versionAsks.length >= 1, "the boot never asked for the version file at all");
+  for (const u of versionAsks) {
+    assert.match(u, /\/admin\/js\/version\.js\?probe=\d+$/,
+      `★ the update check asked for "${u}", which is not this site's version file`);
+  }
   restore();
 });
 
 test("★ and a phone that is CURRENT boots straight to the lock, with no reload", async () => {
   const r = await bootWith({ deployedVersion: "382" });
   assert.equal(r.reloads, 0, "a current phone flashed a reload for nothing");
+  const versionAsks = r.asked.filter((u) => u.includes("version.js"));
+  assert.ok(versionAsks.length >= 1, "a current phone never asked for the version file");
+  for (const u of versionAsks) {
+    assert.match(u, /\/admin\/js\/version\.js\?probe=\d+$/,
+      `★ an update request went to "${u}", which is not the version file`);
+  }
   restore();
 });
 
@@ -523,7 +673,7 @@ test("★★★ the day is re-checked whenever the page is come back to — and 
   // ⭐ The app drew its date when the SCREEN was drawn and never looked at the clock again, so an app
   // left open overnight kept yesterday's date. ⭐ MEASURED on the real app: the clock said Sat 17 Oct,
   // the hero still said Fri 16 Oct, and picking the phone up changed nothing.
-  const SRC = readFileSync(new URL("../admin/js/app.js", import.meta.url), "utf8");
+  const SRC = liveSource(readFileSync(new URL("../admin/js/app.js", import.meta.url), "utf8"));
 
   assert.match(SRC, /function dayMoved\(\)/,
     "the day-rollover check is gone — **the app's date goes stale again for anyone who leaves it open "
@@ -581,6 +731,33 @@ test("★★★ the day is re-checked whenever the page is come back to — and 
     "the shop asks the question and then does not act on it, which is worse than not asking");
 });
 
+test("★★★ and the day check DOES the thing: a moved day redraws, the same day does not (v584)", async () => {
+  // ⚠️⚠️ THE SOURCE ASSERTIONS ABOVE PIN THE WIRING; THIS ONE PINS THE BEHAVIOUR. ⚠️ Without it, the whole
+  // of `dayMoved` could return `false` for ever and every spelling above would still match.
+  freshDOM();
+  installStorage({ "bakeadmin.v1": stateJSON() });
+  const RealDate = globalThis.Date;
+  try {
+    const app = await import("../admin/js/app.js?case=daymove");
+    assert.equal(app.dayMoved(), false, "the screen was not drawn for today");
+
+    // Move the clock one day on, without a reload.
+    const shift = 24 * 60 * 60 * 1000;
+    const base = RealDate.now();
+    class Ahead extends RealDate {
+      constructor(...a) { if (a.length) super(...a); else super(base + shift); }
+      static now() { return base + shift; }
+    }
+    globalThis.Date = Ahead;
+    assert.equal(app.dayMoved(), true,
+      "★ the day moved and the screen did NOT redraw — **her report: the app date not updated until I reload**");
+    assert.equal(app.dayMoved(), false, "the same day was redrawn twice");
+  } finally {
+    globalThis.Date = RealDate;
+    restore();
+  }
+});
+
 // ── v520: a repaint must not move her ────────────────────────────────────────
 
 test("★★★ a repaint keeps her place — the page does not jump to the top (v520)", async () => {
@@ -617,5 +794,41 @@ test("★★★ a repaint keeps her place — the page does not jump to the top 
     // says a thing is watched when it is not.
     // ⭐ That half is MEASURED ON THE REAL APP instead: scrolled to 400 on the Orders screen, the sync's
     // repaint left it at 400, and a NAVIGATION to another screen behaved exactly as it did before.
+  } finally { restore(); }
+});
+
+test("★★★ a NAVIGATION closes a card she left open, and opens at the top", async () => {
+  // ⚠️⚠️ TWO FAULTS FROM ONE MISTAKE (v552): the app compared the PATH and not the whole address. ⭐ **A
+  // card left open stayed open across a navigation** — answering it painted the old screen over the new
+  // one, under a topbar that still named the screen she had left. ⭐ And **the History list and a saved
+  // list are both `/history`**, so moving between them kept the old screen's scroll.
+  freshDOM();
+  installStorage({ "bakeadmin.v1": stateJSON() });
+  try {
+    await import("../admin/js/app.js?case=nav");
+    const listeners = window._listeners.hashchange || [];
+    assert.ok(listeners.length, "the app does not listen for a route change — this test cannot drive one");
+    const popup = document.getElementById("popup-layer");
+    const scroller = document.scrollingElement;
+
+    // A card is open, and she is partway down the screen.
+    popup.hidden = false;
+    scroller.scrollTop = 400;
+
+    // She navigates to another address.
+    location.hash = "#/more";
+    listeners.forEach((f) => f());
+    assert.equal(popup.hidden, true,
+      "★ a card she opened on the old screen is still open over the new one — **answering it would paint "
+      + "the old screen under a topbar that names the new one**");
+    assert.equal(scroller.scrollTop, 0, "★ the new screen opened at the old screen's scroll");
+
+    // ⭐ AND A REPAINT OF THE SAME ADDRESS KEEPS BOTH — the 30-second sync must not shut her card.
+    popup.hidden = false;
+    scroller.scrollTop = 250;
+    listeners.forEach((f) => f());
+    assert.equal(popup.hidden, false,
+      "★ a sync repaint closed a card she was working in — the same address is not a navigation");
+    assert.equal(scroller.scrollTop, 250, "★ a sync repaint dropped her to the top");
   } finally { restore(); }
 });

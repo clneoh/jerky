@@ -12,12 +12,14 @@
 // could not look must never be counted as fine. See the long note in `health.js`; the same rule the receipt
 // register follows for an unreadable run.
 
-import { el, button } from "../ui.js";
-import { runHealthChecks } from "../health.js";
-import { pullReceiptRegister } from "../supabase.js";
+import { el, button, confirmDialog, toast } from "../ui.js";
+import { hideSparesBlocked, runHealthChecks } from "../health.js";
+import { pullReceiptRegister, maybeSync } from "../supabase.js";
 import * as backups from "../backups.js";
 import * as sync from "../sync.js";
-import { saveFailure } from "../state.js";
+import { save, saveFailure, duplicateIngredientPlan } from "../state.js";
+import { fmtStockAmount } from "../purchasing.js";
+import { STOCK_LOG_CAP, reconcileCards } from "../stock.js";
 
 const MARK = { pass: "✓", fail: "✗", skipped: "—" };
 
@@ -77,6 +79,17 @@ export function renderHealth(root, state) {
         r.count ? el("span", { class: "hc-count" }, `${r.count}`) : null),
       r.status === "pass" ? null : el("p", { class: "hc-why" }, r.why),
       r.status === "fail" && r.fix ? el("p", { class: "hc-fix" }, r.fix) : null,
+      // ⭐ THE PRESS THAT CLEARS IT (v563). ⚠️ A check she can only read is a check she cannot fix, and
+      // this one had NO route at all: a stocktake writes the same amount and changes the sum by nothing.
+      r.status === "fail" && r.repair === "stockCards"
+        ? el("div", { class: "btn-row", style: "margin:8px 0 0" },
+            button("Put the missing line on each card", () => repairCards(), "primary"))
+        : null,
+      // ⭐ AND THE DUPLICATED INGREDIENTS (v564) — hiding the spare, never deleting it.
+      r.status === "fail" && r.repair === "dupeIngredient"
+        ? el("div", { class: "btn-row", style: "margin:8px 0 0" },
+            button("Hide the spare cards", () => hideSpares(), "primary"))
+        : null,
       // ⚠️ THE THINGS THEMSELVES, NAMED. A count she cannot look up is a number she cannot act on — every
       // failing check carries the rows it is about, by order number, so each one can be found.
       r.detail && r.detail.length
@@ -86,6 +99,60 @@ export function renderHealth(root, state) {
     list.replaceChildren(
       el("h3", { style: "margin:0 0 8px" }, "What each check found"),
       ...rows);
+  }
+
+  // ★★★ PUT THE MISSING LINE ON EVERY CARD THAT DOES NOT ADD UP (v563).
+  // ⚠️ THE CONFIRM NAMES WHAT IT DOES AND WHAT IT DOES NOT DO, because it writes to every stock card at
+  // once: one row each, the shelf untouched, nothing removed. ⭐ Her shelf (the amount at the top) is the
+  // figure her kitchen agrees with; it is the RECORD that was incomplete.
+  function repairCards() {
+    confirmDialog(
+      "This writes one line on each stock card whose rows do not add up to the amount at the top — "
+      + "either the opening amount it never recorded, or a correction where a movement was counted twice. "
+      + "Your shelf does not move: nothing is added and nothing is taken away, and no row is removed.",
+      () => {
+        const out = reconcileCards(state);
+        if (out.done.length) {
+          save(state);
+          maybeSync(state);
+          // ⚠️ AND A CARD IT SKIPPED IS NAMED (v587) — a "done" count beside a silent skip is half a sentence.
+          toast(`${out.done.length} card${out.done.length === 1 ? "" : "s"} put back in step`
+            + (out.skipped.length ? ` · ${out.skipped.length} at its ${STOCK_LOG_CAP}-row limit could not be: ${out.skipped.join(", ")}` : ""));
+        } else if (out.skipped.length) {
+          // ⚠️⚠️ "EVERY CARD ALREADY ADDS UP" WAS A LIE HERE (v587). ⚠️ A card at 49 rows is JUDGED by the
+          // check and SKIPPED by this press (one more row would take it to the cap, where nothing can judge
+          // it) — ⚠️ **so the line stayed red while the press told her every card was fine.**
+          toast(`Nothing could be put in step here: ${out.skipped.join(", ")} ${out.skipped.length === 1 ? "is" : "are"} at the ${STOCK_LOG_CAP}-row limit — the card's history is too long for a repair line to explain it`);
+        } else {
+          toast("Every card already adds up");
+        }
+        run(true);
+      },
+      { yesLabel: "Put the lines on" });
+  }
+
+  // ★★ HIDE THE SPARE OF A DUPLICATED PAIR (v564). ⚠️ HIDING, NEVER DELETING — a hidden ingredient keeps
+  // its stock card, its name and a way back (v544's Unhide), and her base rule is that anything a
+  // transaction has used cannot be deleted. ⭐ The pair is only offered when HER OWN RECIPES settle it:
+  // one is used, the other is not.
+  function hideSpares() {
+    const plan = duplicateIngredientPlan(state);
+    if (!plan.length) return toast("Nothing to hide — the pairs are not decided by your recipes");
+    // ⚠️⚠️ A CARD THAT HOLDS STOCK IS NOT HIDDEN (v580): the amount is named, and the press stops.
+    const blocked = hideSparesBlocked(state, plan);
+    if (blocked) return confirmDialog(blocked, () => {}, { yesLabel: "Got it" });
+    const names = plan.map((p) => `${p.hide.name} (holds ${fmtStockAmount(state, p.hide, Number(p.hide.onHand) || 0)})`
+      + ` — ${p.keep.name} is used in your recipes, the other is not`).join(". ");
+    confirmDialog(
+      `Hide ${plan.length === 1 ? "this card" : `these ${plan.length} cards`}? ${names}. Hiding keeps the stock card and its history, takes the card off your list, and can be undone with Unhide. Nothing is deleted.`,
+      () => {
+        for (const p of plan) p.hide.active = false;
+        save(state);
+        maybeSync(state);
+        toast(`${plan.length} card${plan.length === 1 ? "" : "s"} hidden`);
+        run(true);
+      },
+      { yesLabel: "Hide them" });
   }
 
   async function run(again) {
@@ -131,7 +198,9 @@ export function renderHealth(root, state) {
     // page, so this is the number that says whether everything can reach a phone at all.
     const records = await sync.cloudRowCount(state).catch(() => null);
     if (dead) return;
-    const res = runHealthChecks(state, {
+    let res;
+    try {
+      res = runHealthChecks(state, {
       register, copies, copy, copyWhen,
       cloud, local: sync.localKeys(state), waiting: sync.pendingCount(),
       records,
@@ -146,8 +215,21 @@ export function renderHealth(root, state) {
       // ⭐ AND THE DEEPEST PAIR (v471): what this phone holds, and what it has queued — the same single
       // read of the shared data answers both, so this costs no extra round trip.
       payloads: sync.localPayloads(state), queued: sync.pendingKeys(),
-    });
-    run.busy = false;
+      });
+    } catch (err) {
+      // ⚠️⚠️ ONE MALFORMED RECORD MUST NOT TAKE THE PAGE DOWN (v572). ⭐ A null in a list made a check throw,
+      // there was no guard, and `run.busy` was never cleared — ⭐ **the screen stayed on "Reading your
+      // records…" for ever and the Run button answered nothing.** ⭐ It says what happened and stays usable.
+      res = null;
+      if (!dead) {
+        list.replaceChildren(el("p", { class: "card-sub" },
+          "The check could not finish: one of your records is in a shape it cannot read. Nothing has been "
+          + `changed. The message is: ${String((err && err.message) || err)}`));
+      }
+    } finally {
+      run.busy = false;
+    }
+    if (!res) return;
     paint(res);
     paintList(res);
   }

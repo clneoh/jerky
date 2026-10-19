@@ -19,8 +19,8 @@ function createEl(tag) {
     _listeners: {},
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     appendChild(c) { if (c != null) this.children.push(c); return c; },
-    append(...cs) { for (const c of cs) if (c != null) this.children.push(c); },
-    replaceChildren(...cs) { this.children = []; for (const c of cs) if (c != null) this.children.push(c); },
+    append(...cs) { for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
+    replaceChildren(...cs) { this.children = []; for (const c of cs) this.children.push(c == null ? { nodeType: 3, text: "null" } : c); },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener() {},
     setAttribute(k, v) { this.attrs[k] = String(v); },
@@ -88,19 +88,22 @@ test("a date field offers every day of the month, with a Today shortcut", () => 
   assert.equal(label(w), "1 Sep 2026");
 });
 
-test("a date field's arrows reach a year either way from today", () => {
+test("a date field's arrows reach TWO years either way from today (v570)", () => {
+  // ⚠️ Twelve months meant a receipt or an expense from thirteen months ago could not be entered at all, and
+  // opening an existing older date clamped the grid to today-12. ⭐ Two years either way covers every date
+  // her own book holds and still stops somewhere sensible.
   const w = dateField("2026-09-10", () => {});
   toggle(w);
   const [prev, next] = arrows(w);
   assert.equal(prev.disabled, false, "September 2026 is not the earliest month offered");
   assert.equal(next.disabled, false);
 
-  for (let i = 0; i < 12; i++) next._listeners.click[0]();
-  assert.equal(title(w), "September 2027", "twelve months forward");
+  for (let i = 0; i < 24; i++) next._listeners.click[0]();
+  assert.equal(title(w), "September 2028", "twenty-four months forward");
   // Each repaint builds fresh arrows, so the ones to read are the new ones.
   assert.equal(arrows(w)[1].disabled, true, "and that is as far as it goes");
-  for (let i = 0; i < 24; i++) arrows(w)[0]._listeners.click[0]();
-  assert.equal(title(w), "September 2025", "twelve months back from today");
+  for (let i = 0; i < 48; i++) arrows(w)[0]._listeners.click[0]();
+  assert.equal(title(w), "September 2024", "twenty-four months back from today");
   assert.equal(arrows(w)[0].disabled, true);
 });
 
