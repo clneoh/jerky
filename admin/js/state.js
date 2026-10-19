@@ -760,6 +760,8 @@ function normalize(s) {
   out.deliveryDates = split.deliveryDates;
   out.orders = split.orders;
   out.removedOrders = split.removedOrders;
+  // ⚠️ AND A HALF-WRITTEN PAYMENT IS SETTLED ON LOAD, the same way a stale shelf row is (v600).
+  equalisePaidLines(out);
   ensureCountUnits(out);
   ensurePlanningUnits(out);
   backfillUnitRefs(out);
@@ -1293,6 +1295,32 @@ export function dropStaleShelfRows(state) {
   const kept = shelf.filter((r) => !(r && r.id && live.has(r.id)));
   state.removedOrders = kept;
   return shelf.length - kept.length;
+}
+
+// ★★★ A PAYMENT WRITTEN ON ONE LINE IS A PAYMENT ON THE WHOLE SALE (v600).
+// ⚠️⚠️ MEASURED ON HER BOOK, 19 Oct: order AC8542 read `paidReceived: true` on one line and `null` on the
+// other, so Check my system's "every line agrees" line could never clear — **and the Pay press is only
+// offered when the FIRST line is unpaid, so there was no button that would write it.** ⭐ **Every money
+// book reads an order through its first row** (`isCollected`, `money.js`), which means the sale was already
+// being counted as paid; the other row was simply a half-written press from before the family-wide stamp
+// existed. ⭐ So the repair follows the readers: **when the first row says paid, every row of that sale is
+// paid, and the method and day come with it.** ⚠️ **It only ever moves a row the other way when the row the
+// books read says the money is IN — an unpaid order is never marked paid by this.**
+export function equalisePaidLines(state) {
+  let fixed = 0;
+  for (const g of groupOrders((state && state.orders) || [])) {
+    if (g.orders.length < 2) continue;
+    const first = g.orders[0];
+    if (!first || first.paidReceived !== true) continue;
+    for (const o of g.orders) {
+      if (o === first || o.paidReceived === true) continue;
+      o.paidReceived = true;
+      if (first.paidMethod != null && o.paidMethod == null) o.paidMethod = first.paidMethod;
+      if (first.paidAt != null && o.paidAt == null) o.paidAt = first.paidAt;
+      fixed++;
+    }
+  }
+  return fixed;
 }
 
 // Put one back exactly as it was — the same id, its group, its day, its price. ⚠️ The `removedAt` mark is

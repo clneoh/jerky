@@ -23,7 +23,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { defaultState, loadState, normalize, removeOrders, removedKeepWords, restoreRemovedOrder, dropStaleShelfRows, REMOVED_KEEP_HOURS } from "../admin/js/state.js";
+import { defaultState, loadState, normalize, removeOrders, removedKeepWords, restoreRemovedOrder, dropStaleShelfRows, equalisePaidLines, REMOVED_KEEP_HOURS } from "../admin/js/state.js";
 
 const JS_DIR = new URL("../admin/js/", import.meta.url).pathname;
 
@@ -307,4 +307,30 @@ test("★ and the invariant holds on LOAD as well as on a merge", () => {
   });
   assert.deepEqual(old.removedOrders.map((r) => r.id), ["o9"],
     "★ loading a state with a stale shelf row left it in place");
+});
+
+test("★★★ a payment written on ONE line is written on every line of that sale (v600)", () => {
+  // ⚠️⚠️ HER ORDER AC8542, 19 Oct: `paidReceived: true` on one line, `null` on the other. ⭐ The Pay press
+  // is offered only when the FIRST line is unpaid, so there was no button that would write it — and every
+  // money book reads the order through that first row, which already said paid.
+  const paid = { id: "o1", groupId: "g1", paidReceived: true, paidMethod: "TNG", paidAt: "2026-10-12T08:16:00.000Z" };
+  const half = { id: "o2", groupId: "g1", paidReceived: null };
+  const st = { orders: [paid, half] };
+  assert.equal(equalisePaidLines(st), 1, "★ the half-written line was left alone");
+  assert.equal(half.paidReceived, true, "★ the sale still reads paid on one line and not the other");
+  assert.equal(half.paidMethod, "TNG", "the account did not follow the payment");
+  assert.equal(half.paidAt, "2026-10-12T08:16:00.000Z", "the day the money landed did not follow");
+  assert.equal(equalisePaidLines(st), 0, "a second pass must find nothing — it is a repair, not a rewrite");
+});
+
+test("★★⚠️ and an UNPAID order is NEVER marked paid by the repair", () => {
+  // ⚠️ The half that matters: the repair only moves a row the other way when the row every book reads says
+  // the money is IN. A sale she has not been paid for must stay unpaid, whatever its other lines say.
+  const first = { id: "o1", groupId: "g9", paidReceived: false };
+  const other = { id: "o2", groupId: "g9", paidReceived: true };
+  const st = { orders: [first, other] };
+  assert.equal(equalisePaidLines(st), 0, "★ an unpaid order was marked paid");
+  assert.equal(other.paidReceived, true, "⚠️ and the repair must not clear a line either — it repairs ONE way only");
+  // A single row is not a group, and a row with no group is its own sale.
+  assert.equal(equalisePaidLines({ orders: [{ id: "solo", paidReceived: true }] }), 0);
 });

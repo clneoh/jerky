@@ -3403,3 +3403,31 @@ test("★★★ a stale shelf row that comes down in a PULL is dropped, and its 
     } finally { restoreFetch(); stateMod.setSaveHook(null); }
   } finally { restore(); }
 });
+
+test("★★★ a half-written payment that comes down in a PULL is settled on every line (v600)", async () => {
+  // ⚠️⚠️ HER ORDER AC8542: one line paid, one line `null` — and **no Pay press**, because that press is
+  // only offered when the FIRST line is unpaid. ⭐ The pull repairs it now, the same seam that drops a stale
+  // shelf row, so the check's "lines disagree" line clears without a press she cannot make.
+  const { store, restore } = installStorage();
+  try {
+    seedToken(store);
+    seedJournal(store, {});
+    const st = cloudOn(baseState());
+    st.orders = [];
+    const a = { id: "o1", groupId: "g1", productId: "p1", qty: 1, paidReceived: true, paidMethod: "TNG" };
+    const b = { id: "o2", groupId: "g1", productId: "p1", qty: 1, paidReceived: null };
+    const restoreFetch = installFetch(async () => ({ ok: true, json: async () => ([
+      cloudRow("orders", "o1", a, "2026-10-12T08:16:00.000Z"),
+      cloudRow("orders", "o2", b, "2026-10-12T08:16:00.000Z"),
+    ]) }));
+    stateMod.setSaveHook((s) => sync.markDirty(s));
+    try {
+      await sync.pull(st);
+      assert.deepEqual(st.orders.map((o) => o.paidReceived), [true, true],
+        "★ the sale still reads paid on one line and not the other — **and there is no Pay press to fix it**");
+      const j = JSON.parse(store.get("bakeadmin.sync"));
+      assert.ok(j.pending["orders:o2"],
+        "★ the repaired line was not queued — the other phone keeps its half-written copy");
+    } finally { restoreFetch(); stateMod.setSaveHook(null); }
+  } finally { restore(); }
+});

@@ -17,7 +17,7 @@
 // Pure helpers run under Node for tests; fetch/localStorage are guarded.
 
 import { login as loginSupabase, cachedToken } from "./supabase.js";
-import { removeOrders, dropStaleShelfRows, save, STOCK_PRODUCTION, bakeId, defaultState, applyRedactions, REDACTED_FIELDS } from "./state.js";
+import { removeOrders, dropStaleShelfRows, equalisePaidLines, save, STOCK_PRODUCTION, bakeId, defaultState, applyRedactions, REDACTED_FIELDS } from "./state.js";
 import { mergeWeekCheck } from "./weekly.js";
 // The one answer to "is this a place" — see placeForSync below for why the courier
 // module's own rule is asked rather than a copy of it written here.
@@ -1156,7 +1156,7 @@ export function mergeRows(state, rows) {
   // and this carries it on a merge.
   // ⚠️ **AND IF ANYTHING WAS DROPPED, THE STATE IS SAVED — which queues the removal so it goes UP**, or the
   // shared data would hand the same stale row back on every pull, for ever.
-  const dropped = dropStaleShelfRows(state);
+  const dropped = dropStaleShelfRows(state) + equalisePaidLines(state);
   // ⚠️⚠️ AND A REDACTION THAT ARRIVED IN THIS PULL IS APPLIED NOW (v592). ⚠️ Without it the receipt proves
   // the person was forgotten while the order row still carries their name on this phone — the merge turns a
   // redacted row's fields into "absent", and the redaction record is what removes them.
@@ -1309,7 +1309,7 @@ export async function pull(state) {
   // run**, and a shelf copy of an order that is ALSO live — two records wearing one id. ⚠️ **Measured on
   // her book, 19 Oct: two orders whose every line sat in `orders` and `removedOrders` in the cloud.**
   // ⭐ Dropping it queues its removal, so it goes UP and stops coming back.
-  const dropped = dropStaleShelfRows(state);
+  const dropped = dropStaleShelfRows(state) + equalisePaidLines(state);
   b.lastPullAt = new Date().toISOString();
   // ⚠️⚠️ THE CURSOR ADVANCES ONLY ON A COMPLETE READ. ⭐ **A half-read book must not be remembered as "seen"**
   // — the next read would start after records this one never received.

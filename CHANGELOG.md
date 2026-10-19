@@ -1,8 +1,37 @@
-# Munchies Furkidz — change history (v54 → v600)
+# Munchies Furkidz — change history (v54 → v601)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**19 Oct 2026 — engine v601: THE ORDER THAT COULD NOT BE FIXED BY ANY PRESS NOW REPAIRS ITSELF (nothing
+to run, no SQL, no upload).**
+
+**The order AC8542 is why this exists. Its payment had been written on one of its two lines and not the
+other, so your check said the lines disagree — and there was no button to press: the Pay press is only
+offered while the FIRST line is unpaid, and this order already read as paid.**
+
+**1. Why that line could not be cleared by hand.** **Every money book in the app reads an order through
+its first line** — that is how "has it been paid" is answered everywhere. **So the sale was already being
+counted as paid, while the second line kept a half-written copy** from before the app learned to write a
+payment onto every line of a sale. **No press would rewrite it, because the app believed the order was
+finished.**
+
+**2. So the app settles it itself.** **When the first line says the money is in, every line of that sale
+now says so too — and the account and the day the money landed come with it.** **It happens when the app
+opens and on every sync, so it needs no press at all.** ⚠️ **And it only ever works that way round: an
+unpaid order is never marked paid by this.** **Nothing on your books moves — the sale was already counted
+as paid through that first line.**
+
+**3. Its receipt number is the one press left, and the app has always had it.** **Open the order and press
+Invoice** — the number is drawn and stamped then, and it is the **same #000003 your register already
+holds**, never a new one.
+
+**4. And the check's advice is corrected.** **It used to say "press Save" for a payment line, which
+writes the day, the address and the rest but not the payment.** **A way out that sends you to the wrong
+button leaves the same red X after a correct action, so it names the right press now.**
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **19 Oct 2026 — engine v600: A REMOVED ORDER THAT IS BACK IN THE LIST NOW CLEARS ITSELF, WITHOUT
 WAITING FOR THE APP TO BE REOPENED (nothing to run, no SQL, no upload).**
@@ -26,10 +55,7 @@ right there in your list.**
 and fails by name if the stale row survives or its removal is not queued. **Watched failing before it
 was kept.**
 
-**⚠️ ONE THING TO KNOW ABOUT YOUR TWO REMAINING LINES:** the order **AC8542** (Lucy, 12 Oct) still shows
-its lines disagreeing and its receipt number missing. **That one is a press, not this fix** — open it,
-press Save, then Paid again. **It should stick now that a stale copy no longer comes back behind it.**
-**Nothing to run, no SQL, nothing to upload.**
+**⚠️ ONE THING THIS DID NOT FIX, AND v601 DOES.** **Its first advice for the order AC8542 was "press Save, then Paid again" — and that was wrong:** the Pay press is not offered on an order that already reads paid. **v601 repairs that line by itself; the entry above says how.**
 
 **19 Oct 2026 — engine v550 to v599: FIVE MORE SWEEPS THROUGH THE WHOLE APP, AND
 THE LAST OF THEM FOUND FAULTS IN THE FIXES BEFORE IT (one database step to run first, and the

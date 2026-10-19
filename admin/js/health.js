@@ -112,7 +112,13 @@ export function localChecks(state) {
     out.push(bad.length
       ? fail("agree", "Every line of one order agrees about the order", bad,
         "One order's lines disagree about something that belongs to the whole order — the money, the status, the day or the address. That is the shape of every fault this app has had on this screen.",
-        "Open each of these orders and press Save. That writes one answer onto every line.")
+        // ⚠️⚠️ THE WAY OUT NAMES THE PRESS THAT ACTUALLY WRITES IT (v600). ⚠️ **`paidReceived` is written by
+        // the PAID press, not by Save** — `markPaid` stamps the payment onto every row of the whole sale,
+        // while the edit popup's Save carries the day, the address and the rest. ⭐ A way out that sent her to
+        // the wrong press would leave the same red X after a correct action, which is the worst kind of
+        // false alarm. **Save still settles the others, so it stays named for them.**
+        "Open each of these and press Paid again — that writes the payment onto every line of the sale, and "
+        + "it also draws the receipt's number. For a disagreeing status, day or address, press Save.")
       : pass("agree", "Every line of one order agrees about the order"));
   }
 

@@ -757,7 +757,7 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
-## v600 — a stale Removed row is dropped by the pull, not only by a reload (19 Oct 2026)
+## v600–v601 — a stale Removed row is dropped by the pull, and a half-written payment repairs itself (19 Oct 2026)
 
 **Her "Check my system" named two orders on the live list AND the Removed list. The query she ran showed
 the same ids in `orders` and `removedOrders` in the shared data — not a phone-side tidiness problem.**
@@ -771,9 +771,18 @@ the thirty-second pull handed the stale rows back after every open and the check
 `changed` — the same two lines `mergeRows` has used since v474. Dropping queues the tombstone, so the
 removal travels and the shared data stops handing the row back.
 
-**Guard:** `test/sync.test.js` — "a stale shelf row that comes down in a PULL is dropped, and its removal
-is queued (v600)". It wires the save hook by hand (app.js wires it in the real app); **watched failing
-before it was kept.** Suite 3871 → 3872. **No SQL, no upload.**
+**v601 (a second commit — v600 was pushed before this half landed):** her order `AC8542` had `paidReceived` on one line and `null` on the
+other. **The Pay press is only offered while the FIRST line is unpaid**, so there was no button that
+would write it — and every money book reads the order through that first line, which already said
+paid. **`equalisePaidLines(state)` repairs it at the same three seams** (load, `mergeRows`, `pull`):
+when the first row says paid, every row of that sale is paid and the method and day follow. ⚠️ **It
+never works the other way — an unpaid order is never marked paid.** Its receipt number is still the
+Invoice press's second chance.
+
+**Guards:** `test/sync.test.js` (two — the pull drops the stale row and queues it; the pull settles the
+half-written payment) and two unit tests in `test/order-removal-guard.test.js`. Both pull tests wire
+the save hook by hand (app.js wires it in the real app); **each was watched failing before it was
+kept.** Suite 3871 → 3875. **No SQL, no upload.**
 
 ## v549 → v599 — five more sweeps, and the last one found faults in the fixes before it (19 Oct 2026)
 
