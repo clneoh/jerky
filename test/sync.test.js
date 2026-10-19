@@ -3363,3 +3363,43 @@ test("★★★ a damaged book takes the cloud's settings, not its factory ones 
     } finally { restoreFetch(); }
   } finally { restore(); }
 });
+
+test("★★★ a stale shelf row that comes down in a PULL is dropped, and its removal is queued (v600)", async () => {
+  // ⚠️⚠️ MEASURED ON HER BOOK, 19 Oct: two whole orders sat in `orders` AND in `removedOrders` in the
+  // shared data. ⭐ `mergeRows` carried the invariant since v474 — **but `pull` goes straight to
+  // `mergeCloudRows` and never applied it**, so every thirty seconds the shared data handed the stale row
+  // back and Check my system reported the same order on both lists, on every run.
+  const { store, restore } = installStorage();
+  try {
+    seedToken(store);
+    seedJournal(store, {});
+    const st = cloudOn(baseState());
+    st.deliveryDates = [{ id: "d1", date: "2026-10-16" }];
+    st.orders = [];
+    st.removedOrders = [];
+    const line = { id: "o1", productId: "p1", qty: 1, deliveryDateId: "d1" };
+    const shelf = { ...line, removedAt: "2026-10-16T14:01:07.692Z" };
+    const restoreFetch = installFetch(async () => ({ ok: true, json: async () => ([
+      cloudRow("deliveryDates", "d1", st.deliveryDates[0], "2026-10-16T13:00:00.000Z"),
+      cloudRow("orders", "o1", line, "2026-10-16T14:01:07.692Z"),
+      cloudRow("removedOrders", "o1", shelf, "2026-10-16T14:01:07.692Z"),
+    ]) }));
+    // ⚠️ The save hook is wired by app.js in the real app; here it is wired by hand so the QUEUE can be
+    // read. Without it `save` writes the state and queues nothing, and this test would pass on a fix that
+    // only tidied the screen.
+    stateMod.setSaveHook((s) => sync.markDirty(s));
+    try {
+      await sync.pull(st);
+      assert.deepEqual(st.orders.map((o) => o.id), ["o1"],
+        "⚠️ the ORDER must survive — only the stale shelf row goes");
+      assert.deepEqual(st.removedOrders.map((r) => r.id), [],
+        "★ the stale shelf row came down in the pull and was left in place — **the check then reports the "
+        + "order on both lists on every run**");
+      const b = JSON.parse(store.get("bakeadmin.sync"));
+      assert.ok(b.pending["removedOrders:o1"],
+        "★ the dropped row was not queued — **the shared data hands it back on the next pull**");
+      assert.equal(b.pending["removedOrders:o1"]._deleted, true,
+        "the queue must carry a TOMBSTONE, not an empty row");
+    } finally { restoreFetch(); stateMod.setSaveHook(null); }
+  } finally { restore(); }
+});

@@ -1,8 +1,35 @@
-# Munchies Furkidz — change history (v54 → v599)
+# Munchies Furkidz — change history (v54 → v600)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**19 Oct 2026 — engine v600: A REMOVED ORDER THAT IS BACK IN THE LIST NOW CLEARS ITSELF, WITHOUT
+WAITING FOR THE APP TO BE REOPENED (nothing to run, no SQL, no upload).**
+
+**Your "Check my system" page found this one, and the numbers it gave me named it exactly: two orders
+sitting on the live list AND on the Removed list at the same time, in your shared data itself.**
+
+**1. What it was.** **The app has always cleared that overlap when it opens** — an order in the list
+cannot be on the shelf as well, so the shelf row is stale and is dropped. **But the sync pulls every
+thirty seconds, and the pull was the one path that did not do the clearing.** **So the shared data
+handed the same stale rows back a few seconds after every open**, and the check reported them again on
+every run. **It also meant two records wearing one order's id**, which is why saving and re-opening an
+order did not settle it: a stale copy kept coming back.
+
+**2. The fix is one rule applied where the data actually arrives.** **The pull drops a stale shelf row
+the moment it comes down, exactly as the app already did on opening — and queues its removal, so the
+shared data stops handing it back.** **Nothing is lost: the row is only dropped when the order itself is
+right there in your list.**
+
+**3. And a guard now holds it.** **A test builds the exact shape your book held**, runs a pull over it,
+and fails by name if the stale row survives or its removal is not queued. **Watched failing before it
+was kept.**
+
+**⚠️ ONE THING TO KNOW ABOUT YOUR TWO REMAINING LINES:** the order **AC8542** (Lucy, 12 Oct) still shows
+its lines disagreeing and its receipt number missing. **That one is a press, not this fix** — open it,
+press Save, then Paid again. **It should stick now that a stale copy no longer comes back behind it.**
+**Nothing to run, no SQL, nothing to upload.**
 
 **19 Oct 2026 — engine v550 to v599: FIVE MORE SWEEPS THROUGH THE WHOLE APP, AND
 THE LAST OF THEM FOUND FAULTS IN THE FIXES BEFORE IT (one database step to run first, and the

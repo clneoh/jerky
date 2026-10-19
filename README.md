@@ -757,6 +757,24 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
+## v600 — a stale Removed row is dropped by the pull, not only by a reload (19 Oct 2026)
+
+**Her "Check my system" named two orders on the live list AND the Removed list. The query she ran showed
+the same ids in `orders` and `removedOrders` in the shared data — not a phone-side tidiness problem.**
+
+⚠️ **The invariant existed but on the wrong paths.** `normalize` applies `dropStaleShelfRows` on load,
+and `mergeRows` applies it after a merge (v474) — **but `pull()` goes straight to `mergeCloudRows`**, so
+the thirty-second pull handed the stale rows back after every open and the check went red on every run.
+⭐ It also left **two records wearing one order id**, which is why Save + Paid on `AC8542` did not settle.
+
+**Fix:** `const dropped = dropStaleShelfRows(state)` in `pull()`, folded into `save()` and the returned
+`changed` — the same two lines `mergeRows` has used since v474. Dropping queues the tombstone, so the
+removal travels and the shared data stops handing the row back.
+
+**Guard:** `test/sync.test.js` — "a stale shelf row that comes down in a PULL is dropped, and its removal
+is queued (v600)". It wires the save hook by hand (app.js wires it in the real app); **watched failing
+before it was kept.** Suite 3871 → 3872. **No SQL, no upload.**
+
 ## v549 → v599 — five more sweeps, and the last one found faults in the fixes before it (19 Oct 2026)
 
 **Fifty bakery versions (v550–v599). 180 merged files + 27 new, +13,185 / −1,247 in the bakery's own
