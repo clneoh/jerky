@@ -1,8 +1,28 @@
-# Munchies Furkidz — change history (v54 → v603)
+# Munchies Furkidz — change history (v54 → v604)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**19 Oct 2026 — engine v604: A RECEIPT NUMBER CAN NO LONGER BE TAKEN BACK BY YOUR OTHER PHONE (nothing to
+run, no SQL, no upload).**
+
+**The second sweep found why AC8542's number vanished twice — and it was not a press.**
+
+**1. A record travels whole.** **When a newer version of an order arrives from your other phone, every field
+that version does not carry is removed from this phone's copy.** ⭐ **So a phone that had never learned the
+receipt number could wipe it simply by saving that order** — both of AC8542's rows arrived together, with
+one timestamp and no number, which is exactly that.
+
+**2. The rule that fixes it is the app's own.** **A receipt is money recorded, and a receipt is never
+rewritten** — so **a number this phone is holding is carried onto the incoming copy.** ⚠️ **It only ever
+fills a gap:** a version that carries its own number still wins, and this can never invent one.
+
+**3. And it proves itself.** **Two tests drive a pull: one where the newer copy has no number (the number
+is kept), one where it has its own (the cloud wins).** **The first was watched failing before it was
+kept.**
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **19 Oct 2026 — engine v603: THE EDIT CARD NOW SHOWS THE WHOLE ORDER, INCLUDING THE LINES ON ANOTHER
 POSTING DAY (nothing to run, no SQL, no upload).**

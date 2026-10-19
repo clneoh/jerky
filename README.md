@@ -828,7 +828,7 @@ have gone through says "unknown" rather than "failed".
 *called* a helper, not that the helper worked. `test/v587`–`v599-repairs.test.js`, `i18n-keys`,
 `imports-resolve`, `field-names`, `store-contrast` and `units` are the replacement guards.
 
-## v603 — the Edit card shows the whole sale (19 Oct 2026)
+## v603–v604 — the Edit card shows the whole sale, and a receipt number survives the other phone (19 Oct 2026)
 
 **Found by the sweep for the same class as v600–v602.** The Edit pop-up built its lines from
 `group.orders` — **the day's slice** — while its Save writes order-level fields onto every row of the
@@ -840,6 +840,12 @@ the other day's line really removes it (to the Removed list, as any removal). **
 change with it:** `_others` (the family rows added to the draft's worth) is now *family minus the draft's
 own ids*; counting the old rows as well **double-counted them** (RM64 for an RM32 sale) and the "money is
 in" question never appeared — **caught by `test/order-stage-whole-order.test.js`'s existing v598 test.**
+
+**And the second sweep finding, shipped as v604 (v603 was pushed first):** `mergeCloudRows` deletes every key the incoming row
+lacks, so **a newer copy from a phone that never learned a receipt number wiped it** (measured twice on
+`AC8542`). ⭐ **A receipt is never rewritten**, so a local `receiptNo` is now carried onto the incoming
+copy — **fill-only: a cloud row with its own number still wins.** Two tests in `test/sync.test.js`, the
+first watched failing.
 
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.

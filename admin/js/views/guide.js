@@ -67,11 +67,11 @@ export function renderGuide(root, state) {
 
     el("h2", { class: "section" }, "Newest in the engine"),
     el("div", { class: "card" },
-      el("p", { class: "card-title" }, "The Edit card shows the whole order, including lines on another posting day (Engine v603, 19 October 2026)"),
+      el("p", { class: "card-title" }, "The Edit card shows the whole order, and a receipt number survives your other phone (Engine v603–v604, 19 October 2026)"),
       el("p", { class: "card-sub" },
         `**A sale whose lines sit on two posting days used to have a hidden half.** **The Edit card listed only the day you opened it from, while its Save wrote the address, the note, the day and the tracking number onto EVERY line of the sale** — **so the other day's lines were changed without ever being on screen**, which is exactly the "these lines disagree" state your check reports.`),
       el("p", { class: "hint" },
-        `**The card lists every line of the order now, whichever day it sits on**, and **Save settles them all together** — the whole order moves as one, as the manual already promised. **A line you take off from the other day is really taken off**, and goes to the Removed list like any other. **Nothing to run, no SQL, nothing to upload.**`)),
+        `**The card lists every line of the order now, whichever day it sits on**, and **Save settles them all together** — the whole order moves as one, as the manual already promised. **A line you take off from the other day is really taken off**, and goes to the Removed list like any other. **And a receipt number can no longer be taken back by your other phone:** a record travels whole, so a phone that never learned the number could wipe it by saving the order — **the number this phone holds is carried forward now, and only ever fills a gap.** **Nothing to run, no SQL, nothing to upload.**`)),
     el("div", { class: "card" },
       el("p", { class: "card-title" }, "A removed order that is back in your list now clears itself (Engine v600–v602, 19 October 2026)"),
       el("p", { class: "card-sub" },
