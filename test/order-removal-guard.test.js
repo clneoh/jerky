@@ -23,7 +23,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { defaultState, loadState, normalize, removeOrders, removedKeepWords, restoreRemovedOrder, dropStaleShelfRows, equalisePaidLines, REMOVED_KEEP_HOURS } from "../admin/js/state.js";
+import { defaultState, loadState, normalize, removeOrders, removedKeepWords, restoreRemovedOrder, dropStaleShelfRows, equaliseOrderLines, REMOVED_KEEP_HOURS } from "../admin/js/state.js";
 
 const JS_DIR = new URL("../admin/js/", import.meta.url).pathname;
 
@@ -316,11 +316,11 @@ test("★★★ a payment written on ONE line is written on every line of that s
   const paid = { id: "o1", groupId: "g1", paidReceived: true, paidMethod: "TNG", paidAt: "2026-10-12T08:16:00.000Z" };
   const half = { id: "o2", groupId: "g1", paidReceived: null };
   const st = { orders: [paid, half] };
-  assert.equal(equalisePaidLines(st), 1, "★ the half-written line was left alone");
+  assert.equal(equaliseOrderLines(st), 1, "★ the half-written line was left alone");
   assert.equal(half.paidReceived, true, "★ the sale still reads paid on one line and not the other");
   assert.equal(half.paidMethod, "TNG", "the account did not follow the payment");
   assert.equal(half.paidAt, "2026-10-12T08:16:00.000Z", "the day the money landed did not follow");
-  assert.equal(equalisePaidLines(st), 0, "a second pass must find nothing — it is a repair, not a rewrite");
+  assert.equal(equaliseOrderLines(st), 0, "a second pass must find nothing — it is a repair, not a rewrite");
 });
 
 test("★★⚠️ and an UNPAID order is NEVER marked paid by the repair", () => {
@@ -329,8 +329,37 @@ test("★★⚠️ and an UNPAID order is NEVER marked paid by the repair", () =
   const first = { id: "o1", groupId: "g9", paidReceived: false };
   const other = { id: "o2", groupId: "g9", paidReceived: true };
   const st = { orders: [first, other] };
-  assert.equal(equalisePaidLines(st), 0, "★ an unpaid order was marked paid");
+  assert.equal(equaliseOrderLines(st), 0, "★ an unpaid order was marked paid");
   assert.equal(other.paidReceived, true, "⚠️ and the repair must not clear a line either — it repairs ONE way only");
   // A single row is not a group, and a row with no group is its own sale.
-  assert.equal(equalisePaidLines({ orders: [{ id: "solo", paidReceived: true }] }), 0);
+  assert.equal(equaliseOrderLines({ orders: [{ id: "solo", paidReceived: true }] }), 0);
+});
+
+test("★★★ a STAMP on the first line fills the others — and never overwrites one that is already there (v601)", () => {
+  // ⚠️⚠️ HER ORDER AC8542, second round: once the payment was repaired, the check named `promo` — a code
+  // on one line and nothing on the other. ⭐ **No press applies a promo to an existing order**, and
+  // `promoOn` reads `first.promo`, so the sale was already being priced by that first line.
+  const first = { id: "o1", groupId: "g1", paidReceived: true, promo: "FRESH10", receiptNo: 3 };
+  const blank = { id: "o2", groupId: "g1" };
+  const st = { orders: [first, blank] };
+  equaliseOrderLines(st);
+  assert.equal(blank.promo, "FRESH10", "★ the code on the first line did not reach the other line");
+  assert.equal(blank.receiptNo, 3, "★ the receipt number on the first line did not reach the other line");
+
+  // ⚠️ AND A LINE WITH ITS OWN ANSWER IS NOT TOUCHED. Filling a blank is a repair; overwriting a value the
+  // app genuinely disagrees about would hide the fault the check exists to show.
+  const own = { id: "o3", groupId: "g2", paidReceived: true, promo: "FRESH10" };
+  const different = { id: "o4", groupId: "g2", promo: "OTHER" };
+  const st2 = { orders: [own, different] };
+  equaliseOrderLines(st2);
+  assert.equal(different.promo, "OTHER", "★ a value the app disagrees about was overwritten — **the fault "
+    + "the check names would vanish from the screen instead of being fixed**");
+
+  // And the first row having nothing is never a reason to copy a later row's answer UP: that would change
+  // the price the customer was quoted.
+  const noCode = { id: "o5", groupId: "g3" };
+  const late = { id: "o6", groupId: "g3", promo: "LATE" };
+  const st3 = { orders: [noCode, late] };
+  equaliseOrderLines(st3);
+  assert.equal(noCode.promo, undefined, "★ a later line's code was copied UP onto the priced row");
 });

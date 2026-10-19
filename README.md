@@ -757,7 +757,7 @@ paragraph still prints its own markers, and also requires the real emphasis to b
 only counted asterisks would pass on an empty screen). **Bitten:** with `boldify(root)` commented out it
 fails with *"no paragraph on the Guide may print its own \*\* markers"*.
 
-## v600–v601 — a stale Removed row is dropped by the pull, and a half-written payment repairs itself (19 Oct 2026)
+## v600–v602 — a stale Removed row is dropped by the pull, and a half-written stamp repairs itself (19 Oct 2026)
 
 **Her "Check my system" named two orders on the live list AND the Removed list. The query she ran showed
 the same ids in `orders` and `removedOrders` in the shared data — not a phone-side tidiness problem.**
@@ -771,13 +771,14 @@ the thirty-second pull handed the stale rows back after every open and the check
 `changed` — the same two lines `mergeRows` has used since v474. Dropping queues the tombstone, so the
 removal travels and the shared data stops handing the row back.
 
-**v601 (a second commit — v600 was pushed before this half landed):** her order `AC8542` had `paidReceived` on one line and `null` on the
+**v601–v602 (two further commits — each half landed after the last was pushed):** her order `AC8542` had `paidReceived` on one line and `null` on the
 other. **The Pay press is only offered while the FIRST line is unpaid**, so there was no button that
 would write it — and every money book reads the order through that first line, which already said
-paid. **`equalisePaidLines(state)` repairs it at the same three seams** (load, `mergeRows`, `pull`):
+paid. **`equaliseOrderLines(state)` repairs it at the same three seams** (v601 for the payment, v602 for a stamp) (load, `mergeRows`, `pull`):
 when the first row says paid, every row of that sale is paid and the method and day follow. ⚠️ **It
-never works the other way — an unpaid order is never marked paid.** Its receipt number is still the
-Invoice press's second chance.
+never works the other way — an unpaid order is never marked paid.** **A STAMP (`promo`, `receiptNo`) is
+filled where a line has none and never overwritten where it has its own** — so a real disagreement still
+shows on the check (v602: the check named `promo` on AC8542 once the payment was settled). Its receipt number is also still the Invoice press's second chance.
 
 **Guards:** `test/sync.test.js` (two — the pull drops the stale row and queues it; the pull settles the
 half-written payment) and two unit tests in `test/order-removal-guard.test.js`. Both pull tests wire

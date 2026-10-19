@@ -761,7 +761,7 @@ function normalize(s) {
   out.orders = split.orders;
   out.removedOrders = split.removedOrders;
   // ⚠️ AND A HALF-WRITTEN PAYMENT IS SETTLED ON LOAD, the same way a stale shelf row is (v600).
-  equalisePaidLines(out);
+  equaliseOrderLines(out);
   ensureCountUnits(out);
   ensurePlanningUnits(out);
   backfillUnitRefs(out);
@@ -1297,27 +1297,38 @@ export function dropStaleShelfRows(state) {
   return shelf.length - kept.length;
 }
 
-// ★★★ A PAYMENT WRITTEN ON ONE LINE IS A PAYMENT ON THE WHOLE SALE (v600).
-// ⚠️⚠️ MEASURED ON HER BOOK, 19 Oct: order AC8542 read `paidReceived: true` on one line and `null` on the
-// other, so Check my system's "every line agrees" line could never clear — **and the Pay press is only
-// offered when the FIRST line is unpaid, so there was no button that would write it.** ⭐ **Every money
-// book reads an order through its first row** (`isCollected`, `money.js`), which means the sale was already
-// being counted as paid; the other row was simply a half-written press from before the family-wide stamp
-// existed. ⭐ So the repair follows the readers: **when the first row says paid, every row of that sale is
-// paid, and the method and day come with it.** ⚠️ **It only ever moves a row the other way when the row the
-// books read says the money is IN — an unpaid order is never marked paid by this.**
-export function equalisePaidLines(state) {
+// ★★★ A STAMP WRITTEN ON ONE LINE BELONGS TO THE WHOLE SALE (v600/v601).
+// ⚠️⚠️ MEASURED ON HER BOOK, 19 Oct: order AC8542 read `paidReceived: true` on one line and `null` on
+// the other — and then, once that was repaired, `promo` on one line and nothing on the other. ⭐ **The Pay
+// press is only offered while the FIRST line is unpaid, and a promo is never re-applied by hand at all**,
+// so neither could be cleared by a press. ⚠️ **And every reader in the app goes through the first row**
+// (`isCollected`, `promoOn` → `first.promo`, `receiptNoOfGroup` → any row), which means the sale was
+// ALREADY being read the way the first row says: the other rows were half-written copies from before the
+// stamps were written across a whole sale.
+// ⭐ TWO RULES, and neither invents an answer:
+//   · the MONEY follows the first row — if it says paid, every line of the sale is paid, with the account
+//     and the day it landed. ⚠️ It never runs the other way: an unpaid order is never marked paid.
+//   · a STAMP is FILLED where a line has none (`promo`, `receiptNo`) and never overwritten where it has
+//     its own — so a value the app really disagreed about still shows on the check, which is honest.
+export function equaliseOrderLines(state) {
   let fixed = 0;
   for (const g of groupOrders((state && state.orders) || [])) {
     if (g.orders.length < 2) continue;
     const first = g.orders[0];
-    if (!first || first.paidReceived !== true) continue;
+    if (!first) continue;
     for (const o of g.orders) {
-      if (o === first || o.paidReceived === true) continue;
-      o.paidReceived = true;
-      if (first.paidMethod != null && o.paidMethod == null) o.paidMethod = first.paidMethod;
-      if (first.paidAt != null && o.paidAt == null) o.paidAt = first.paidAt;
-      fixed++;
+      if (o === first) continue;
+      if (first.paidReceived === true && o.paidReceived !== true) {
+        o.paidReceived = true;
+        if (first.paidMethod != null && o.paidMethod == null) o.paidMethod = first.paidMethod;
+        if (first.paidAt != null && o.paidAt == null) o.paidAt = first.paidAt;
+        fixed++;
+      }
+      for (const k of ["promo", "receiptNo"]) {
+        const v = first[k];
+        if (v == null || v === "") continue;
+        if (o[k] == null || o[k] === "") { o[k] = v; fixed++; }
+      }
     }
   }
   return fixed;

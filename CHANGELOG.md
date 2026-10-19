@@ -1,8 +1,32 @@
-# Munchies Furkidz — change history (v54 → v601)
+# Munchies Furkidz — change history (v54 → v602)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**19 Oct 2026 — engine v602: A PROMO CODE OR RECEIPT NUMBER ON ONE LINE IS NOW FILLED ONTO THE LINES
+THAT HAVE NONE (nothing to run, no SQL, no upload).**
+
+**v601 settled AC8542's payment line, and the check then named a second field on the same order: `promo`
+— a discount code on one line and nothing on the other.** **No press re-applies a promo to an order that
+already exists**, so that line could not be cleared by hand either — the same shape as the payment, one
+field over.**
+
+**1. The rule is the one the app already reads by.** **`promoOn` prices the sale from its FIRST line**, so
+the discount was already being applied; the other line simply never got the stamp. **So the repair now
+fills a stamp as well as a payment:** **where the first line carries a promo code or a receipt number and
+another line has none, the other line gets it.**
+
+**2. ⚠️ And it never overwrites an answer a line already carries.** **That is the half that keeps the
+check honest:** a genuine disagreement stays visible instead of being papered over. **The same rule holds
+the other way too** — a code that only appears on a LATER line is never copied up onto the first, because
+the first line is the one that prices the sale, and copying it up would change what the customer was
+quoted.
+
+**3. And it runs where the data arrives** — when the app opens, after a merge, and on every sync — so
+there is no press to find for either field.
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **19 Oct 2026 — engine v601: THE ORDER THAT COULD NOT BE FIXED BY ANY PRESS NOW REPAIRS ITSELF (nothing
 to run, no SQL, no upload).**
