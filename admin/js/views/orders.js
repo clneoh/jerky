@@ -2527,7 +2527,13 @@ function openEditPopup(state, group, dateId, root) {
   // change it (16 Sep 2026). orderLinePrice gives the frozen price when there is one
   // and the product's own price when there is not — the same number the confirmation
   // would quote, so the box always opens on the truth.
-  const lines = group.orders.map((o) => ({
+  // ⚠️⚠️ THE WHOLE SALE, NOT THE DAY THIS ROW SITS ON (v603). ⚠️ A sale whose lines sit on two posting
+  // days opened showing only the day it was opened from — **while its Save writes the address, the note,
+  // the day and the tracking number onto every row of the group.** ⭐ So the other day's lines were changed
+  // without ever being on screen, which is exactly the "lines disagree" state the check names.
+  // ⭐ **What she edits is what she sees:** the pop-up lists every line of the sale, and Save settles them
+  // all together — the manual's promise that "the whole order moves as one".
+  const lines = familyOfOrder(state, group.orders).map((o) => ({
     id: o.id, productId: o.productId || "", qty: o.qty,
     price: orderLinePrice(state, o),
     // This line's COST (v380) — the frozen one when the order carries it, and
@@ -2771,8 +2777,13 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     // opposite question.** ⭐ The draft is a WORTH, which has no payment in it; every row is stripped, including
     // the other days' (the family is read through its first row).
     const stripFreeze = (o) => { const { paidWasRM: _p, ...rest } = o; return rest; };
+    // ⚠️⚠️ "THE OTHERS" MEANS THE ROWS THE DRAFT IS NOT ALREADY HOLDING (v603). ⚠️ This listed every family
+    // row that was not on THIS day — which was right while the pop-up showed one day. **Now that `lines` is
+    // the whole sale, those rows are in `_draftRows` too, and counting them here as well doubled them** (a
+    // two-day sale read RM64 instead of RM32, and the "money is in" question never appeared).
+    const _draftIds = new Set(lines.map((l) => l.id).filter(Boolean));
     const _others = familyOfOrder(state, group.orders)
-      .filter((o) => !group.orders.some((g) => g.id === o.id)).map(stripFreeze);
+      .filter((o) => !_draftIds.has(o.id)).map(stripFreeze);
     const _draftRows = priced.map((l) => ({
       ...stripFreeze(first), id: l.id, productId: l.productId, qty: l.qty, unitPrice: l.price,
     }));
@@ -3236,7 +3247,9 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root,
     // **every id-less order in the whole book** out with it, on every day, for every customer,
     // from an edit that never named them. ⭐ **Deleting what cannot be named is not a deletion, it
     // is a sweep**, and it is silent.
-    const dropIds = new Set(group.orders.filter((o) => o.id && !liveIds.has(o.id)).map((o) => o.id));
+    // ⚠️ AND A LINE TAKEN OFF FROM THE OTHER DAY IS DROPPED TOO (v603) — `lines` is the whole sale now,
+    // so a missing id can be a row that is not on this day.
+    const dropIds = new Set(familyOfOrder(state, group.orders).filter((o) => o.id && !liveIds.has(o.id)).map((o) => o.id));
     // ⚠️ `dropIds` can no longer contain `undefined`, so a row with no id cannot match this filter.
     // ★ AND IT GOES ON THE SHELF RATHER THAN INTO NOTHING (v444) — see `removeOrders`. ⚠️ The word here
     // is not a cause: this is a line that left with no ✕ pressed on it, and that is what it says, so a

@@ -828,6 +828,22 @@ have gone through says "unknown" rather than "failed".
 *called* a helper, not that the helper worked. `test/v587`–`v599-repairs.test.js`, `i18n-keys`,
 `imports-resolve`, `field-names`, `store-contrast` and `units` are the replacement guards.
 
+## v603 — the Edit card shows the whole sale (19 Oct 2026)
+
+**Found by the sweep for the same class as v600–v602.** The Edit pop-up built its lines from
+`group.orders` — **the day's slice** — while its Save writes order-level fields onto every row of the
+sale (`Object.assign(o, fields)` inside the per-line loop). ⭐ **So a sale spanning two posting days had
+its other day rewritten without ever being on screen**, which is the state `agree` reports.
+
+**Fix:** `lines` is `familyOfOrder(state, group.orders)`, and `dropIds` scans the family too — so a ✕ on
+the other day's line really removes it (to the Removed list, as any removal). **The pairing that had to
+change with it:** `_others` (the family rows added to the draft's worth) is now *family minus the draft's
+own ids*; counting the old rows as well **double-counted them** (RM64 for an RM32 sale) and the "money is
+in" question never appeared — **caught by `test/order-stage-whole-order.test.js`'s existing v598 test.**
+
+**Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
+day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
+
 ### Deploy order — SQL first, then the functions, then the push
 
 1. `supabase/tracking.sql` — **required before the build**: the shop now sends a phone and the old

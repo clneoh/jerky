@@ -573,3 +573,31 @@ test("★★★ an edit back up ADDS the extra to the frozen sale (v599)", async
   assert.equal(money.orderNet(st, { orders: st.orders }), 32,
     "★ net money kept is not what she holds");
 });
+
+test("★★★ the edit pop-up shows the WHOLE sale, so every line it changes is on screen (v603)", () => {
+  // ⚠️⚠️ THE FAULT: the pop-up's Save writes the address, the note, the day and the tracking number onto
+  // EVERY row of the sale — while the pop-up itself listed only the rows on the day it was opened from.
+  // ⭐ **So the other day's lines were rewritten without ever being on screen**, which is exactly the
+  // "one order's lines disagree" state Check my system reports.
+  const st = state({ orders: [
+    row({ id: "ord_aaaaaaaaaaaa", qty: 2 }),
+    row({ id: "ord_bbbbbbbbbbbb", deliveryDateId: DAY_B.id, deliveryDate: DAY_B.date, qty: 1 }),
+  ] });
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: DAY_A.id }));
+  press(root, "Edit");
+  const popup = doc.getElementById("popup-layer");
+  const qtys = all(popup).filter((n) => n.tagName === "INPUT" && n.attrs
+    && n.attrs.type === "number" && n.attrs.step === "1");
+  assert.equal(qtys.length, 2,
+    "★ the pop-up showed only this day's line — **the other day's line is written by Save without ever "
+    + "being on screen**");
+
+  // ⚠️ AND THE SECOND LINE IS EDITABLE — the half that matters. A list that shows it but cannot change it
+  // would be a display fix with the fault intact.
+  qtys[1].value = "3";
+  qtys[1]._listeners.input[0].call(qtys[1]);
+  press(popup, "Save changes");
+  assert.equal(st.orders.find((o) => o.id === "ord_bbbbbbbbbbbb").qty, 3,
+    "★ the other day's line could not be changed — it was not really on the draft");
+});

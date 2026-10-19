@@ -1,8 +1,31 @@
-# Munchies Furkidz — change history (v54 → v602)
+# Munchies Furkidz — change history (v54 → v603)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**19 Oct 2026 — engine v603: THE EDIT CARD NOW SHOWS THE WHOLE ORDER, INCLUDING THE LINES ON ANOTHER
+POSTING DAY (nothing to run, no SQL, no upload).**
+
+**A sale whose lines sit on two posting days had a hidden half: the Edit card listed only the day you
+opened it from, while its Save wrote the address, the note, the day and the tracking number onto EVERY
+line of the sale.** **So the other day's lines were changed without ever being on screen — which is
+exactly the "these lines disagree" state your check reports.**
+
+**1. What changed.** **The Edit card lists every line of the order**, whichever day it sits on, so what you
+edit is what you see. **Save settles them all together** — the promise the manual already made: the whole
+order moves as one.
+
+**2. And a line taken off from the other day is really taken off.** **Its ✕ removes that line, and it goes
+to the Removed list like any other removal** — before this, a line that was not on the screen could
+neither be seen nor removed.
+
+**3. One arithmetic pairing went with it.** **The card works out the order's worth from what it is
+holding** — and the other day's lines had been added separately. **Once they were on the card they were
+being counted twice** (a two-day sale read RM64 instead of RM32 and the "the money is in" question never
+appeared). **Caught by the test for that question, not by reading it.**
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **19 Oct 2026 — engine v602: A PROMO CODE OR RECEIPT NUMBER ON ONE LINE IS NOW FILLED ONTO THE LINES
 THAT HAVE NONE (nothing to run, no SQL, no upload).**
