@@ -850,6 +850,24 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
+## v605 — the check watches refunds too (19 Oct 2026)
+
+**Second sweep finding, shipped on its own.** A refund is stamped on the order (`refundedAt`,
+`refundAmountRM`) and **subject to the same whole-record wipe as the receipt number** — a newer copy from a
+phone that never learned the refund removes it, and Money/Profit then read the money as still held. **The
+register survives that wipe, and nothing on Check my system was watching.**
+
+**New check:** `refundChecks`-side, id `refunded` — *"Every refund in your register is marked on its
+order"*. It reads the **register**, not the order, which is what makes it honest: `unrefund_receipt` clears
+`refunded_at` in the register, so **an undone refund can never be reported as a fault**. An order this
+phone does not hold is left to `hasOrder` (the line above). Way out = **Invoice**, which copies the refund
+and its amount back from the register (the same second chance as the number).
+
+**Guards:** two tests in `test/health.test.js` — the fault is named once with its code, an order carrying
+its mark passes, a register row with no refund passes, and a receipt for an order this phone lacks is not
+blamed here. **Watched failing** (the check forced to pass) before it was kept. Check count 24 → 25;
+`registerChecks` 2 → 3. Suite **3882**.
+
 ### Deploy order — SQL first, then the functions, then the push
 
 1. `supabase/tracking.sql` — **required before the build**: the shop now sends a phone and the old

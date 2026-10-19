@@ -1,8 +1,30 @@
-# Munchies Furkidz — change history (v54 → v604)
+# Munchies Furkidz — change history (v54 → v605)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**19 Oct 2026 — engine v605: YOUR CHECK NOW WATCHES YOUR REFUNDS TOO (nothing to run, no SQL, no
+upload).**
+
+**The second sweep found that a rollback of an order can erase a refund mark — the same wipe that took
+AC8542's receipt number — and nothing on Check my system was watching for it. There is a line for the
+number; there was none for the money that went back.**
+
+**1. The new line.** **"Every refund in your register is marked on its order."** **Your receipt register is
+the record that survives a rollback, so it is what this reads.** ⚠️ **It cannot cry wolf on a refund you
+took back**, because taking one back clears the mark in the register itself — so an undone refund never
+reaches this line at all.
+
+**2. The way out is the press you already know.** **Open the order and press Invoice** — the refund and its
+amount are copied back from your register onto the order, the same second chance that puts a receipt
+number back. **If you took the refund back, the register will already say so and the line clears by
+itself.**
+
+**3. And it does not blame you for a receipt whose order is not on this phone.** **That is the line above
+it's business** — this one only speaks about refunds it can see the order for.
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **19 Oct 2026 — engine v604: A RECEIPT NUMBER CAN NO LONGER BE TAKEN BACK BY YOUR OTHER PHONE (nothing to
 run, no SQL, no upload).**

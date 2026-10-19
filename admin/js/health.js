@@ -503,6 +503,35 @@ export function registerChecks(state, register, voided) {
         + "your register already holds, never a new one.")
           : pass("carried", "Every receipt's number is on the order it names");
       })(),
+      // ── 9b · every refund in the register is marked on its order (v605) ────
+      (() => {
+        // ⚠️⚠️ THE SAME WIPE THAT TOOK A RECEIPT NUMBER TAKES A REFUND, AND NOTHING WAS WATCHING FOR IT
+        // (v605). ⭐ A record travels whole: a newer copy of an order that never learned about a refund
+        // removes the mark here — ⚠️ **and the books then read that money as still in her hand.** The
+        // register is the record that survives, exactly as it is for the number above.
+        // ⚠️ IT CANNOT CRY WOLF ON AN UNDONE REFUND: `unrefund_receipt` clears `refunded_at` in the register
+        // itself, so a refund she took back never reaches this loop at all. **That is the whole reason this
+        // reads the register rather than the order.**
+        const wrong = [];
+        for (const r of register) {
+          if (!String((r && r.refunded_at) || "").trim()) continue;
+          const code = String((r && r.order_code) || "").trim().toUpperCase();
+          const g = groups.get(code);
+          // No order on this phone is the line above's business, not this one's.
+          if (!g) continue;
+          if (!g.orders.some((o) => o && o.refundedAt)) {
+            wrong.push(`#${code} · refund #${String(Math.floor(Number(r && r.number))).padStart(6, "0")}`);
+          }
+        }
+        return wrong.length
+          ? fail("refunded", "Every refund in your register is marked on its order", wrong,
+            "Your register recorded money going back to a customer, and the order is not carrying that mark — so Money and Profit can read the sale as if you still held it.",
+            // ⚠️ AND THE WAY OUT IS THE SAME PRESS THAT PUTS A RECEIPT NUMBER BACK: claiming the receipt
+            // copies the refund and its amount off the register onto the order. ⚠️ The second half is for
+            // the honest other case — a refund she took back that the register has not caught up with.
+            "Open the order and press Invoice — the refund and its amount are copied back from your register onto the order. If you took this refund back, the register will already say so and this line clears by itself.")
+          : pass("refunded", "Every refund in your register is marked on its order");
+      })(),
     ];
   }
 }

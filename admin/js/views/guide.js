@@ -67,6 +67,12 @@ export function renderGuide(root, state) {
 
     el("h2", { class: "section" }, "Newest in the engine"),
     el("div", { class: "card" },
+      el("p", { class: "card-title" }, "Your check now watches your refunds too (Engine v605, 19 October 2026)"),
+      el("p", { class: "card-sub" },
+        `**A refund is written on its order, and the same rollback that took AC8542's receipt number can take the refund with it** — **and Money and Profit then read that money as still in your hand.** **Your register survives a rollback, so the check reads the register.**`),
+      el("p", { class: "hint" },
+        `**New line: "Every refund in your register is marked on its order."** ⚠️ **It cannot cry wolf on a refund you took back**, because taking one back clears the mark in the register itself. **The way out is Invoice** — the refund and its amount are copied back from the register onto the order, the same second chance that puts a receipt number back. **Nothing to run, no SQL, nothing to upload.**`)),
+    el("div", { class: "card" },
       el("p", { class: "card-title" }, "The Edit card shows the whole order, and a receipt number survives your other phone (Engine v603–v604, 19 October 2026)"),
       el("p", { class: "card-sub" },
         `**A sale whose lines sit on two posting days used to have a hidden half.** **The Edit card listed only the day you opened it from, while its Save wrote the address, the note, the day and the tracking number onto EVERY line of the sale** — **so the other day's lines were changed without ever being on screen**, which is exactly the "these lines disagree" state your check reports.`),
