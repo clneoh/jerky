@@ -3364,79 +3364,41 @@ test("★★★ a damaged book takes the cloud's settings, not its factory ones 
   } finally { restore(); }
 });
 
-test("★★★ a stale shelf row that comes down in a PULL is dropped, and its removal is queued (v600)", async () => {
-  // ⚠️⚠️ MEASURED ON HER BOOK, 19 Oct: two whole orders sat in `orders` AND in `removedOrders` in the
-  // shared data. ⭐ `mergeRows` carried the invariant since v474 — **but `pull` goes straight to
-  // `mergeCloudRows` and never applied it**, so every thirty seconds the shared data handed the stale row
-  // back and Check my system reported the same order on both lists, on every run.
+// ── v600: the thirty-second pull applies the Removed-shelf rule ───────────
+
+test("★★★ a pull drops a stale Removed row AND queues the removal (v600)", async () => {
+  // ⚠️⚠️ MEASURED: `mergeRows` dropped a Removed row for an order that is back on the live list, but `pull()`
+  // went straight to `mergeCloudRows` — ⚠️ **so every thirty-second read handed the stale row back: the order
+  // sat on both lists, Check my system named it on every run, and two records wore one id.** ⭐ The assertion
+  // is the TOMBSTONE, not only the tidied screen: without it the cloud returns the row on the next pull.
   const { store, restore } = installStorage();
   try {
-    seedToken(store);
-    seedJournal(store, {});
     const st = cloudOn(baseState());
-    st.deliveryDates = [{ id: "d1", date: "2026-10-16" }];
-    st.orders = [];
-    st.removedOrders = [];
-    const line = { id: "o1", productId: "p1", qty: 1, deliveryDateId: "d1" };
-    const shelf = { ...line, removedAt: "2026-10-16T14:01:07.692Z" };
-    const restoreFetch = installFetch(async () => ({ ok: true, json: async () => ([
-      cloudRow("deliveryDates", "d1", st.deliveryDates[0], "2026-10-16T13:00:00.000Z"),
-      cloudRow("orders", "o1", line, "2026-10-16T14:01:07.692Z"),
-      cloudRow("removedOrders", "o1", shelf, "2026-10-16T14:01:07.692Z"),
-    ]) }));
-    // ⚠️ The save hook is wired by app.js in the real app; here it is wired by hand so the QUEUE can be
-    // read. Without it `save` writes the state and queues nothing, and this test would pass on a fix that
-    // only tidied the screen.
-    stateMod.setSaveHook((s) => sync.markDirty(s));
+    st.orders = [{ id: "o1", qty: 2 }];
+    st.removedOrders = [{ id: "o1", qty: 1, removedAt: "2026-10-01T00:00:00.000Z" }];
+    seedToken(store);
+    seedJournal(store, {
+      snapshot: { "orders:o1": '{"id":"o1","qty":2}', "removedOrders:o1": '{"id":"o1","qty":1}' },
+    });
+    const restoreFetch = installFetch(async () => ({ ok: true, json: async () => [] }));
     try {
       await sync.pull(st);
-      assert.deepEqual(st.orders.map((o) => o.id), ["o1"],
-        "⚠️ the ORDER must survive — only the stale shelf row goes");
-      assert.deepEqual(st.removedOrders.map((r) => r.id), [],
-        "★ the stale shelf row came down in the pull and was left in place — **the check then reports the "
-        + "order on both lists on every run**");
-      const b = JSON.parse(store.get("bakeadmin.sync"));
-      assert.ok(b.pending["removedOrders:o1"],
-        "★ the dropped row was not queued — **the shared data hands it back on the next pull**");
-      assert.equal(b.pending["removedOrders:o1"]._deleted, true,
-        "the queue must carry a TOMBSTONE, not an empty row");
-    } finally { restoreFetch(); stateMod.setSaveHook(null); }
+      assert.deepEqual(st.removedOrders, [],
+        "★ the stale Removed row survived the pull — **it sits on both lists again**");
+      const out = sync.markDirty(st, "2026-10-20T00:00:00.000Z");
+      assert.equal(out.pending["removedOrders:o1"] && out.pending["removedOrders:o1"]._deleted, true,
+        "★ the stale row was removed from the screen but NOT queued for removal — **the cloud hands it back**");
+    } finally { restoreFetch(); }
   } finally { restore(); }
 });
 
-test("★★★ a half-written payment that comes down in a PULL is settled on every line (v600)", async () => {
-  // ⚠️⚠️ HER ORDER AC8542: one line paid, one line `null` — and **no Pay press**, because that press is
-  // only offered when the FIRST line is unpaid. ⭐ The pull repairs it now, the same seam that drops a stale
-  // shelf row, so the check's "lines disagree" line clears without a press she cannot make.
-  const { store, restore } = installStorage();
-  try {
-    seedToken(store);
-    seedJournal(store, {});
-    const st = cloudOn(baseState());
-    st.orders = [];
-    const a = { id: "o1", groupId: "g1", productId: "p1", qty: 1, paidReceived: true, paidMethod: "TNG" };
-    const b = { id: "o2", groupId: "g1", productId: "p1", qty: 1, paidReceived: null };
-    const restoreFetch = installFetch(async () => ({ ok: true, json: async () => ([
-      cloudRow("orders", "o1", a, "2026-10-12T08:16:00.000Z"),
-      cloudRow("orders", "o2", b, "2026-10-12T08:16:00.000Z"),
-    ]) }));
-    stateMod.setSaveHook((s) => sync.markDirty(s));
-    try {
-      await sync.pull(st);
-      assert.deepEqual(st.orders.map((o) => o.paidReceived), [true, true],
-        "★ the sale still reads paid on one line and not the other — **and there is no Pay press to fix it**");
-      const j = JSON.parse(store.get("bakeadmin.sync"));
-      assert.ok(j.pending["orders:o2"],
-        "★ the repaired line was not queued — the other phone keeps its half-written copy");
-    } finally { restoreFetch(); stateMod.setSaveHook(null); }
-  } finally { restore(); }
-});
+// ── v602: a receipt number is never taken back by a sync ─────────────────
 
-test("★★★ a receipt number is never taken back by a sync (v603)", async () => {
-  // ⚠️⚠️ MEASURED ON HER BOOK, 19 Oct: order AC8542's number was stamped, then both of its rows came down
+test("★★★ a receipt number is never taken back by a sync (v602)", async () => {
+  // ⚠️⚠️ MEASURED on munchies' book, 19 Oct: an order's number was stamped, then both of its rows came down
   // from the other phone WITHOUT it — **a phone holding an older copy had saved the order, and its copy
-  // replaced the row whole** (`mergeCloudRows` deletes every key the incoming row lacks). ⭐ A receipt is
-  // money recorded, and the app already promises one is never rewritten — so the number is carried.
+  // replaced the row whole** (`mergeCloudRows` deletes every key the incoming row lacks). ⭐ A receipt is money
+  // recorded, and the app already promises one is never rewritten — so the number is carried.
   const { store, restore } = installStorage();
   try {
     seedToken(store);
@@ -3444,7 +3406,6 @@ test("★★★ a receipt number is never taken back by a sync (v603)", async ()
     const st = cloudOn(baseState());
     st.orders = [{ id: "o1", productId: "p1", qty: 1, paidReceived: true, receiptNo: 3 }];
     const restoreFetch = installFetch(async () => ({ ok: true, json: async () => ([
-      // The other phone's copy: newer, and it never learned the number.
       cloudRow("orders", "o1", { id: "o1", productId: "p1", qty: 2, paidReceived: true }, "2099-01-01T00:00:00.000Z"),
     ]) }));
     try {
@@ -3457,7 +3418,7 @@ test("★★★ a receipt number is never taken back by a sync (v603)", async ()
   } finally { restore(); }
 });
 
-test("★★⚠️ and a cloud row that DOES carry a number still wins, so the rule only ever adds (v603)", async () => {
+test("★★⚠️ and a cloud row that DOES carry a number still wins (v602)", async () => {
   const { store, restore } = installStorage();
   try {
     seedToken(store);
@@ -3471,8 +3432,7 @@ test("★★⚠️ and a cloud row that DOES carry a number still wins, so the r
     try {
       await sync.pull(st);
       assert.equal(st.orders[0].receiptNo, 7,
-        "★ the repair kept a local number over one the cloud had — **it must only fill a gap, never "
-        + "overrule the shared record**");
+        "★ the repair kept a local number over one the cloud had — **it must only fill a gap**");
     } finally { restoreFetch(); }
   } finally { restore(); }
 });

@@ -850,6 +850,35 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
+## v606–v609 — sell on any day, and the day it makes is private (20 Oct 2026)
+
+**Bakery range `a0186d0..c08a081` (v600–v609), 7 commits, 19 files, +691/−51. No SQL, no functions, no CSS.**
+⚠️ **v601–v604 in the bakery are jerky's own fixes ported back** (Edit card whole sale, receipt number
+survives the merge, check names the right press, the refund line) — so the two apps are level again.
+
+**What is new:**
+- **v605 → v607:** a "Sell one now" press on the day card, then **removed** — the ＋ New order card is
+  already on every bake day and makes the identical sale. It survives only on a day with no card at all.
+- **v606:** **a hand sale on any day.** A day the shop does not offer answers a tap with **"sell now"**,
+  which records the sale on the day it happened and opens the order card there. The day it creates is
+  **`recordOnly`** — a SALE-ONLY day: in her backoffice, orders and books, **never on the shop**.
+- **v608:** **a private sale's day is not announced anywhere** — not the Orders calendar, the Delivery
+  Dates screen, Home's upcoming deliveries or the purchase order, and it no longer labels itself. ⭐
+  `bakeDays(state)` is the one filter every bake-day surface asks.
+- **v609:** a non-bake day reads as **two freedoms first** — say what you baked, or sell now; neither is
+  official and nothing is announced — **with More → Delivery Dates as the optional third.**
+
+**Merge notes.** 20 conflict hunks across 9 files; **most were our own fixes coming back** (theirs renamed
+`sameValue` → `sameLineFact`, split `equalised` from `dropped` in both sync seams). ⭐ **The merge produced a
+duplicate `equaliseOrderLines` declaration in `state.js` and a duplicate call in `mergeRows`** — both caught
+by the parse/suite step, not by a conflict. **Localised:** the `cal-miss` sentence now reads
+*"…is not a delivery date … or add it in More → Delivery Dates"* (theirs said "bake day" / "More → Bake
+days"), and one check's way-out said "bake day" too. **A stale test fixture fixed:** `test/stock.test.js`
+pinned 19/20 Oct literally, so on the 20th the "real day" fell out of the published list — the dates are
+relative now.
+
+**Suite 3882 → 3896.**
+
 ## v605 — the check watches refunds too (19 Oct 2026)
 
 **Second sweep finding, shipped on its own.** A refund is stamped on the order (`refundedAt`,

@@ -33,6 +33,13 @@ import { STOCK_LOG_CAP } from "./stock.js";
 // The order-level facts every row of ONE order must agree on. ⚠️ DELIBERATELY NOT THE PER-LINE ONES —
 // `qty`, `unitPrice`, `unitCost` and `lineNote` are each row's own business, and a check that flagged
 // them would cry wolf on every ordinary multi-item order.
+// ⚠️⚠️ AN EMPTY VALUE AND A MISSING ONE ARE THE SAME FACT (v600). ⚠️ `promo: ""` on one line and no `promo`
+// on the other both mean NO CODE, but `JSON.stringify` called them a disagreement for ever — ⚠️ **a check she
+// could never clear, which is how a warning stops being read.** ⭐ `false` and `0` stay distinct: a line that
+// says NOT PAID must still disagree with an empty one.
+const sameLineFact = (a, b) => JSON.stringify(a === undefined || a === null || a === "" ? "" : a)
+  === JSON.stringify(b === undefined || b === null || b === "" ? "" : b);
+
 const ORDER_LEVEL = [
   "status", "paidReceived", "paidMethod", "customerName", "whatsapp", "fulfillment", "address",
   "pointId", "note", "trackingNo", "courierDay", "deliveryWindow", "pickupTime", "orderDate",
@@ -98,20 +105,12 @@ export function localChecks(state) {
 
   // ── 4 · every line of one order agrees about the order ──────────────────
   {
-    // ★★★⚠️ "NOTHING" HAS THREE SPELLINGS, AND THEY ARE THE SAME ANSWER (v602).
-    // ⚠️⚠️ MEASURED ON HER BOOK, 19 Oct: `promo` was `""` on one line of an order and `null` on the other —
-    // ⭐ **both mean "no code on this sale", yet `JSON.stringify("") !== JSON.stringify(null)` reported them
-    // as disagreeing for ever.** ⚠️ **A check that reports a difference of SPELLING teaches her to ignore
-    // the line, which is the failure this page exists to avoid.** ⚠️ `false` and `0` are ANSWERS and stay
-    // distinct — only absent, null and empty string are one fact.
-    const sameValue = (a, b) => JSON.stringify(a == null || a === "" ? "" : a)
-      === JSON.stringify(b == null || b === "" ? "" : b);
     const groups = groupOrders(orders).filter((g) => g.orders.length > 1);
     const bad = [];
     for (const g of groups) {
       const first = g.orders[0];
       for (const field of ORDER_LEVEL) {
-        if (g.orders.some((o) => !sameValue(o[field], first[field]))) {
+        if (g.orders.some((o) => !sameLineFact(o[field], first[field]))) {
           bad.push(`#${orderCode(first)} · ${field}`);
           break;
         }
@@ -120,13 +119,13 @@ export function localChecks(state) {
     out.push(bad.length
       ? fail("agree", "Every line of one order agrees about the order", bad,
         "One order's lines disagree about something that belongs to the whole order — the money, the status, the day or the address. That is the shape of every fault this app has had on this screen.",
-        // ⚠️⚠️ THE WAY OUT NAMES THE PRESS THAT ACTUALLY WRITES IT (v600). ⚠️ **`paidReceived` is written by
-        // the PAID press, not by Save** — `markPaid` stamps the payment onto every row of the whole sale,
-        // while the edit popup's Save carries the day, the address and the rest. ⭐ A way out that sent her to
-        // the wrong press would leave the same red X after a correct action, which is the worst kind of
-        // false alarm. **Save still settles the others, so it stays named for them.**
-        "Open each of these and press Paid again — that writes the payment onto every line of the sale, and "
-        + "it also draws the receipt's number. For a disagreeing status, day or address, press Save.")
+        // ⚠️⚠️ THE WAY OUT NAMES THE PRESS THAT ACTUALLY WRITES EACH FACT (v602). ⚠️ "Press Save" was wrong
+        // for the money: `paidReceived` is written by the Paid press, and after the self-repair the payment
+        // usually settles by itself when the order opens. ⭐ A way out that sends her to the wrong press
+        // leaves the same red mark after a correct action, which is the worst kind of false alarm.
+        "Open each of these orders. The payment settles itself as the order opens — press Paid again if it "
+        + "is still offered. Press Save for a status, delivery date or address that disagrees, and press Invoice "
+        + "to draw a missing receipt number. A promo code that only one line carries needs the helper.")
       : pass("agree", "Every line of one order agrees about the order"));
   }
 
@@ -396,6 +395,7 @@ export function registerChecks(state, register, voided) {
     return [
       skipped("hasOrder", "Every receipt has an order behind it", "Your receipts could not be read from the cloud — sign in to shared data and run this again."),
       skipped("carried", "Every receipt's number is on the order it names", "Your receipts could not be read from the cloud — sign in to shared data and run this again."),
+      skipped("refunded", "Every refund in your register is marked on its order", "Your receipts could not be read from the cloud — sign in to shared data and run this again."),
     ];
   }
 
@@ -503,15 +503,14 @@ export function registerChecks(state, register, voided) {
         + "your register already holds, never a new one.")
           : pass("carried", "Every receipt's number is on the order it names");
       })(),
-      // ── 9b · every refund in the register is marked on its order (v605) ────
+      // ── 9b · every refund in the register is marked on its order (v604) ────
       (() => {
-        // ⚠️⚠️ THE SAME WIPE THAT TOOK A RECEIPT NUMBER TAKES A REFUND, AND NOTHING WAS WATCHING FOR IT
-        // (v605). ⭐ A record travels whole: a newer copy of an order that never learned about a refund
-        // removes the mark here — ⚠️ **and the books then read that money as still in her hand.** The
-        // register is the record that survives, exactly as it is for the number above.
+        // ⚠️⚠️ THE SAME WIPE THAT TAKES A RECEIPT NUMBER TAKES A REFUND, AND NOTHING WAS WATCHING FOR IT.
+        // ⭐ A record travels whole: a newer copy of an order that never learned about a refund removes the
+        // mark here — ⚠️ **and Money and Profit then read that money as still in her hand.** ⭐ The register
+        // is the record that survives, exactly as it is for the number above.
         // ⚠️ IT CANNOT CRY WOLF ON AN UNDONE REFUND: `unrefund_receipt` clears `refunded_at` in the register
-        // itself, so a refund she took back never reaches this loop at all. **That is the whole reason this
-        // reads the register rather than the order.**
+        // itself, so a refund she took back never reaches this loop.
         const wrong = [];
         for (const r of register) {
           if (!String((r && r.refunded_at) || "").trim()) continue;
@@ -526,9 +525,6 @@ export function registerChecks(state, register, voided) {
         return wrong.length
           ? fail("refunded", "Every refund in your register is marked on its order", wrong,
             "Your register recorded money going back to a customer, and the order is not carrying that mark — so Money and Profit can read the sale as if you still held it.",
-            // ⚠️ AND THE WAY OUT IS THE SAME PRESS THAT PUTS A RECEIPT NUMBER BACK: claiming the receipt
-            // copies the refund and its amount off the register onto the order. ⚠️ The second half is for
-            // the honest other case — a refund she took back that the register has not caught up with.
             "Open the order and press Invoice — the refund and its amount are copied back from your register onto the order. If you took this refund back, the register will already say so and this line clears by itself.")
           : pass("refunded", "Every refund in your register is marked on its order");
       })(),

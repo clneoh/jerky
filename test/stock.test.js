@@ -548,18 +548,23 @@ test("★★★ recording production NEVER makes the day a bake day (v514)", () 
   const st = baseState([flour(1000)], [bread()]);
   st.settings = { defaultCapacity: 12 };
   st.orders = [];
-  st.deliveryDates = [{ id: "del", date: "2026-10-19", notes: "" }];
+  // ⚠️ THE DATES ARE RELATIVE, NOT FIXED (20 Oct 2026). ⚠️ It used to name 19 and 20 October; the
+  // publisher drops a day before today, so on 20 October the open day fell out of the list and the test's
+  // own precondition failed — **a fixture that expires is a test that stops watching.**
+  const day = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+  const opened = day(0), unopened = day(1);
+  st.deliveryDates = [{ id: "del", date: opened, notes: "" }];
 
   const before = JSON.stringify(st.deliveryDates);
-  setBakedTotal(st, st.products[0], "2026-10-20", 3, 0);   // a day with no row at all
+  setBakedTotal(st, st.products[0], unopened, 3, 0);   // a day with no row at all
 
   assert.equal(JSON.stringify(st.deliveryDates), before,
     "★ recording production added or changed a delivery date — **the shop would offer a day she never "
     + "opened for orders**");
   const published = computeSlots(st, 20).map((r) => r.date);
-  assert.equal(published.includes("2026-10-20"), false,
+  assert.equal(published.includes(unopened), false,
     "★ the day she recorded production on is being PUBLISHED to the storefront");
-  assert.equal(published.includes("2026-10-19"), true,
+  assert.equal(published.includes(opened), true,
     "…and the bake day she really opened is not being published, so this test is watching the wrong end");
 });
 

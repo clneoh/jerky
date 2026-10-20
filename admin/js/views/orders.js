@@ -15,7 +15,7 @@ import { availSummary, sellOpen } from "../../../availability.js";
 // same pair the shop applies, from the one module both sides read, so a note can
 // never be longer on this side than the box that collected it allowed.
 import { lineNoteOf, LINE_NOTE_MAX } from "../../../storefront-fields.js";
-import { byId, fmtRM, groupOrders, moveOrderGroup, newId, orderCode, orderLineName, orderLinePrice, removeOrders, removedKeepWords, restoreRemovedOrder, round2, save, stampOrderLine, updateOrderBadge, waNumber } from "../state.js";
+import { bakeDays, byId, fmtRM, groupOrders, moveOrderGroup, newId, orderCode, orderLineName, orderLinePrice, removeOrders, removedKeepWords, restoreRemovedOrder, round2, save, stampOrderLine, updateOrderBadge, waNumber } from "../state.js";
 import { orderedProducts } from "../productCategories.js";
 import { strictestCancelDays } from "../../../store/pool.js";
 import { buildConfirmation } from "../confirm.js";
@@ -89,6 +89,8 @@ let ordersDayById = new Map();
 // rebuilt whenever anything around it changes — including when a day is tapped in
 // its own calendar — and folding under her finger at that moment would be mad.
 let newFormOpen = false;
+// ⚠️ WHICH DAY "SELL NOW" ASKED FOR (v606) — the screen renders, then opens that day's sale card once.
+let pendingSellDay = "";
 // THE WHOLE DRAFT of the ＋ New order card, held out here for the same reason as the fold
 // above: the card is rebuilt whenever anything around it changes, and that includes
 // tapping a day in the card's OWN calendar (onPick is selectDate, which redraws the
@@ -604,7 +606,7 @@ export function matchingGroups(state, query) {
 // of (15 Sep 2026: she tapped a marked 16 Sep, read "Malaysia Day", and had no way
 // of knowing why no order could go on it). The state is this calendar's own, in
 // its closure: nothing outside the grid answers for it.
-export function deliveryCal({ state, days, getActiveId, view, onPick, noteMisses = false }) {
+export function deliveryCal({ state, days, getActiveId, view, onPick, noteMisses = false, onSellDay = null }) {
   const list = (days || []).filter((d) => d && d.id && d.date);
   const today = todayISO();
   let missedIso = null; // the day she asked about and the bakery does not deliver
@@ -628,10 +630,21 @@ export function deliveryCal({ state, days, getActiveId, view, onPick, noteMisses
     // opened has no day card below, so this line is the only place she can reach it from.** ⭐ It opens the
     // SAME popup, and on a day with no delivery date **it offers only the production half** — there is no
     // capacity to adjust on a day nobody can order from.
+    // ⚠️⚠️ AND A HAND SALE IS A THIRD DOOR (v606). Her words: __"i want to sell any day just like bake."__
+    // ⭐ "nothing can be ordered on it" was true of the SHOP and false of her counter — ⚠️ **a loaf sold
+    // from yesterday's bake still needs an order.** ⭐ The day it creates is a SALE-ONLY day: in her
+    // backoffice and her books, never on the shop's calendar.
+    // ⚠️⚠️ TWO FREEDOMS, AND ONE OPTIONAL OFFICIAL DOOR (v609). Her words: __"there should be freedom to sell and
+    // bake if the baker decide to, but not an official one. And no announcement."__ ⭐ So the two private acts
+    // come FIRST and say they change nothing official; ⚠️ **"Add it in More → Delivery Dates" is the optional third,
+    // not the opening instruction.**
     return el("p", { class: "cal-miss" },
-      `${shortDate(missedIso)} is not a delivery day — nothing can be ordered on it. Add it in More → Delivery Dates, or `,
+      // ⚠️ MUNCHIES' OWN DAY WORD AND SCREEN NAME (v609) — "delivery date", and More → Delivery Dates.
+      `${shortDate(missedIso)} is not a delivery date — nothing can be ordered on it. `,
       button("say what you baked", () => openBakedPopup(state, missedIso, paint), "ghost small"),
-      ".");
+      onSellDay ? " or " : "",
+      onSellDay ? button("sell now", () => onSellDay(missedIso), "ghost small") : null,
+      " — neither makes it an official delivery date, and nothing is announced — or add it in More → Delivery Dates.");
   }
 
   function paint() {
@@ -846,6 +859,12 @@ function renderAll(root, state, params) {
     view: ordersCalView,
     onPick: (id, iso) => selectDate(id, iso),
     noteMisses: true,
+    // ⭐ "sell now" on a day the shop does not offer (v606) — it makes the day, then lands on it.
+    onSellDay: (iso) => {
+      const rec = saleDayFor(state, iso);
+      pendingSellDay = rec.id;
+      renderAll(root, state, new URLSearchParams({ date: rec.id }));
+    },
   });
   const content = el("div", {});
 
@@ -1287,17 +1306,27 @@ function dateContent(state, date, root, selectDate) {
   // tapped); here the day is already the one on screen, so the name just sits
   // next to it. Nothing is drawn on an unmarked day.
   const occ = occForDate(state.occasions, date.date);
+  // ⚠️ v605 PUT "SELL ONE NOW" HERE AND v607 TAKES IT BACK OUT. ⚠️ The ＋ New order card is already on this
+  // screen and makes the identical sale, so the button was a third control saying what the card says —
+  // ⭐ **"sell now" remains where it is needed: on a day that has no card at all (v606).** `sellNow` is
+  // still the opener that day uses to land on its card.
+  let sellNow = null;
   const header = el("div", { class: "card" },
     el("div", { class: "card-row" },
       el("div", {},
         el("p", { class: "card-title" }, dateLabel),
         el("p", { class: "card-sub" },
-          st.past ? "Past delivery"
-            : st.closed ? `Orders closed at ${state.settings.cutoff} yesterday`
-              : `Open · cut-off in ${st.countdown}`),
+          // ⚠️⚠️ AND A PRIVATE SALE'S DAY SAYS NOTHING AT ALL (v608). ⚠️ "Sale day · not offered on the shop"
+          // announced a special day she did not want announced — ⚠️ **the day is only the container for the
+          // order, and it is not on any calendar.** ⭐ No sub-line, no cut-off, no label.
+          date.recordOnly ? ""
+            : st.past ? "Past delivery"
+              : st.closed ? `Orders closed at ${state.settings.cutoff} yesterday`
+                : `Open · cut-off in ${st.countdown}`),
         occ ? el("span", { class: `occ-tag occ-${occColour(occ)}`, style: "margin-top:6px" },
           occ.label) : null),
-      el("span", { class: "qty-chip" }, `${cap.total}/${cap.capacity}`)),
+      el("span", { class: "qty-chip" },
+        date.recordOnly ? `${cap.total} unit${cap.total === 1 ? "" : "s"}` : `${cap.total}/${cap.capacity}`)),
     fillMeter(cap.total, cap.capacity),
     moneyLine(state, date.id),
     cap.exceeded ? el("div", { class: "danger-banner" },
@@ -1309,7 +1338,7 @@ function dateContent(state, date, root, selectDate) {
     // that day* and *what came out of the oven* — and each keeps its own name, its own pop-up and its own
     // press. ⚠️ **The availability half is EXACTLY as it was before v514: same button, same label, same
     // condition, same pop-up.**
-    !st.past && rules.rows.length ? el("div", { class: "btn-row", style: "margin-top:10px" },
+    !date.recordOnly && !st.past && rules.rows.length ? el("div", { class: "btn-row", style: "margin-top:10px" },
       button(adjusted ? `Set day's availability · ${adjusted} adjusted` : "Set day's availability", () =>
         openDayAdjustPopup(state, date, () => renderAll(root, state, new URLSearchParams({ date: date.id }))), "soft")) : null,
     // ★★★ AND THE BAKING HAS ITS OWN DOOR (v515) — ⚠️ offered on ANY day the card is showing, past
@@ -1319,9 +1348,15 @@ function dateContent(state, date, root, selectDate) {
       ? el("div", { class: "btn-row", style: "margin-top:8px" },
         button("Baked — how many?", () =>
           openBakedPopup(state, date.date, () => renderAll(root, state, new URLSearchParams({ date: date.id }))), "ghost"))
-      : null);
+      : null,
+    null);
 
-  const form = orderForm(state, date.id, root, selectDate);
+  const form = orderForm(state, date.id, root, selectDate, (open) => { sellNow = open; });
+  // ⭐ THE PRESS THAT MADE THE DAY OPENS ITS SALE CARD ONCE (v606) — not a second press on the new screen.
+  if (pendingSellDay && pendingSellDay === date.id) {
+    pendingSellDay = "";
+    if (sellNow) sellNow();
+  }
   const list = orderList(state, date.id, root);
 
   return el("div", {}, header, form, list);
@@ -1481,7 +1516,9 @@ export function openBakedPopup(state, dayIso, refresh) {
     return toast("No products yet. Add one under More → Products first.");
   }
   const ordered = orderedOnDay(state, iso);
-  const isBakeDay = (state.deliveryDates || []).some((d) => d && d.date === iso);
+  // ⚠️ A PRIVATE SALE'S DAY IS NOT A BAKE DAY HERE EITHER (v609) — ⭐ so the popup still tells her that
+  // recording a bake on it changes nothing the shop offers.
+  const isBakeDay = bakeDays(state).some((d) => d && d.date === iso);
   // ⚠️ A day that has already gone is the ONE day a box may be filled in from the day's orders — see the box
   // below. ⭐ `todayISO()` is the same clock the calendar uses (`const today = todayISO()` in renderOrders),
   // so the grid and this pop-up can never disagree about which day has gone.
@@ -2012,7 +2049,7 @@ function courierWhenFields(box) {
     said);
 }
 
-function orderForm(state, dateId, root, selectDate) {
+function orderForm(state, dateId, root, selectDate, onReady) {
   const date = byId(state.deliveryDates, dateId);
   const products = productOptions(state, dateId);
   if (!products.length) {
@@ -2447,17 +2484,32 @@ function orderForm(state, dateId, root, selectDate) {
   const head = el("button", { class: "fold-head", type: "button" },
     el("span", {}, "＋ New order"),
     caret);
-  head.addEventListener("click", () => {
-    if (controller.open) { shutCard(); return; }
+  // ⚠️ ONE OPENER, NAMED (v605) — the second door below calls THIS, not `head.click()`, so the behaviour
+  // cannot drift between a finger and a shortcut, and a test shim without DOM click semantics can drive it.
+  const openCard = () => {
     newFormOpen = true;
     controller.open = true;
     controller.close = shutCard;
     body.hidden = false;
     caret.textContent = "▾";
     openOrderCards.add(controller);
+  };
+  head.addEventListener("click", () => {
+    if (controller.open) { shutCard(); return; }
+    openCard();
   });
   const card = el("div", { class: "card" }, head, body);
   controller.card = card;
+  // ⭐ WHAT "SELL ONE NOW" PRESSES (v605): open this card, keep the self-collect default, and put the
+  // cursor where a sale starts. ⚠️ It does NOT reset a draft she is already working on — if the card is
+  // open, the press only moves the keyboard.
+  if (typeof onReady === "function") {
+    onReady(() => {
+      if (!controller.open) openCard();
+      try { customer.focus({ preventScroll: true }); } catch { try { customer.focus(); } catch { /* a shim */ } }
+      try { if (card.scrollIntoView) card.scrollIntoView({ block: "nearest" }); } catch { /* a shim */ }
+    });
+  }
   // A rebuild while she was working in the card (a sync pull, a status change,
   // the day calendar inside it being tapped): come back open, and register the
   // new element with the outside-tap rule.
@@ -2469,11 +2521,28 @@ function orderForm(state, dateId, root, selectDate) {
   return card;
 }
 
+// ⭐⭐ THE DAY A HAND SALE SITS ON (v606). An existing day on that date is used as it is — a real bake day
+// keeps its capacity and its shop listing. Otherwise a SALE-ONLY day is made: it lives in her backoffice and
+// her books, and `nextDeliveryDates` never publishes it. ⭐ One record per date, never a second.
+function saleDayFor(state, iso) {
+  const day = String(iso || "").slice(0, 10);
+  const found = (state.deliveryDates || []).find((d) => d && d.date === day);
+  if (found) return found;
+  const rec = { id: newId("del"), date: day, notes: "", recordOnly: true };
+  if (!Array.isArray(state.deliveryDates)) state.deliveryDates = [];
+  state.deliveryDates.push(rec);
+  save(state);
+  maybeSync(state);
+  return rec;
+}
+
 // Every delivery day, soonest first — the one list behind the screen's calendar
 // and the New-order card's, so the two can never disagree about which days exist
 // or what order they come in.
 function deliveryDayList(state) {
-  return [...state.deliveryDates]
+  // ⚠️ A SALE-ONLY DAY IS NOT A DAY SHE PICKS (v608) — it is the container for one private sale, never a
+  // bake day to offer, move an order onto or add an order to.
+  return [...bakeDays(state)]
     .sort((a, b) => a.date.localeCompare(b.date))
     .map((d) => ({ id: d.id, date: d.date }));
 }
@@ -2527,12 +2596,10 @@ function openEditPopup(state, group, dateId, root) {
   // change it (16 Sep 2026). orderLinePrice gives the frozen price when there is one
   // and the product's own price when there is not — the same number the confirmation
   // would quote, so the box always opens on the truth.
-  // ⚠️⚠️ THE WHOLE SALE, NOT THE DAY THIS ROW SITS ON (v603). ⚠️ A sale whose lines sit on two posting
-  // days opened showing only the day it was opened from — **while its Save writes the address, the note,
-  // the day and the tracking number onto every row of the group.** ⭐ So the other day's lines were changed
-  // without ever being on screen, which is exactly the "lines disagree" state the check names.
-  // ⭐ **What she edits is what she sees:** the pop-up lists every line of the sale, and Save settles them
-  // all together — the manual's promise that "the whole order moves as one".
+  // ⚠️⚠️ THE WHOLE SALE, NOT THE DAY THIS CARD WAS OPENED FROM (v601). ⚠️ Save writes the address, the note,
+  // the day and the tracking number onto EVERY row of the sale, while the card listed only the rows on this
+  // day — ⚠️ **so the other day's lines were rewritten without ever being on screen**, which is exactly the
+  // "lines disagree" state Check my system names. ⭐ What she edits is what she sees.
   const lines = familyOfOrder(state, group.orders).map((o) => ({
     id: o.id, productId: o.productId || "", qty: o.qty,
     price: orderLinePrice(state, o),
@@ -2777,10 +2844,10 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     // opposite question.** ⭐ The draft is a WORTH, which has no payment in it; every row is stripped, including
     // the other days' (the family is read through its first row).
     const stripFreeze = (o) => { const { paidWasRM: _p, ...rest } = o; return rest; };
-    // ⚠️⚠️ "THE OTHERS" MEANS THE ROWS THE DRAFT IS NOT ALREADY HOLDING (v603). ⚠️ This listed every family
-    // row that was not on THIS day — which was right while the pop-up showed one day. **Now that `lines` is
-    // the whole sale, those rows are in `_draftRows` too, and counting them here as well doubled them** (a
-    // two-day sale read RM64 instead of RM32, and the "money is in" question never appeared).
+    // ⚠️⚠️ "THE OTHERS" MEANS THE ROWS THE DRAFT IS NOT ALREADY HOLDING (v601). ⚠️ This listed every family
+    // row that was not on THIS day — right while the card showed one day. ⚠️ **Now that `lines` is the whole
+    // sale, those rows are in `_draftRows` too, and counting them here as well doubled them** — a two-day
+    // sale read RM64 instead of RM32 and the "money is in" question never appeared.
     const _draftIds = new Set(lines.map((l) => l.id).filter(Boolean));
     const _others = familyOfOrder(state, group.orders)
       .filter((o) => !_draftIds.has(o.id)).map(stripFreeze);
@@ -3247,8 +3314,8 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root,
     // **every id-less order in the whole book** out with it, on every day, for every customer,
     // from an edit that never named them. ⭐ **Deleting what cannot be named is not a deletion, it
     // is a sweep**, and it is silent.
-    // ⚠️ AND A LINE TAKEN OFF FROM THE OTHER DAY IS DROPPED TOO (v603) — `lines` is the whole sale now,
-    // so a missing id can be a row that is not on this day.
+    // ⚠️ AND A LINE TAKEN OFF FROM THE OTHER DAY IS DROPPED TOO (v601) — `lines` is the whole sale now, so a
+    // missing id can be a row that is not on this day.
     const dropIds = new Set(familyOfOrder(state, group.orders).filter((o) => o.id && !liveIds.has(o.id)).map((o) => o.id));
     // ⚠️ `dropIds` can no longer contain `undefined`, so a row with no id cannot match this filter.
     // ★ AND IT GOES ON THE SHELF RATHER THAN INTO NOTHING (v444) — see `removeOrders`. ⚠️ The word here

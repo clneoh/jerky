@@ -282,7 +282,9 @@ test("★★⚠️ A CHECK THAT COULD NOT RUN IS SKIPPED — IT IS NEVER A PASS"
   assert.equal(resultOf(res, "waiting").status, "pass",
     "the waiting count is a local number and does not need the cloud to be readable");
   assert.equal(res.passedChecks, 16, "a skipped check was counted among the passes");
-  assert.equal(res.skippedChecks, 8, "the skipped checks were not counted separately");
+  assert.equal(res.skippedChecks, 9, "the skipped checks were not counted separately");
+  assert.equal(resultOf(res, "refunded").status, "skipped",
+    "★ an unreadable register was reported as a pass by the refund check");
   assert.match(String(resultOf(res, "reached").why || ""), /shared data/i,
     "the skipped check does not say why it could not look");
   // ⚠️ AND A SKIP SAYS WHY — the same discipline the register screen follows.
@@ -1080,4 +1082,61 @@ test("★★★ a change still in the queue is not reported as missing from the 
   const gone = { ...cloud, keys: new Set(["orders:ord_old", "orders:ord_zapped"]), data: new Map([["orders:ord_zapped", "{}"]]) };
   assert.equal(resultOf(runHealthChecks(st, { ...emptyExtras(), cloud: gone, local: ["orders:ord_old"], queued: new Set(["orders:ord_zapped"]) }), "cloudOnly").status,
     "pass", "★ a deletion still in the queue was reported as a record in the cloud that is not on this phone");
+});
+
+// ── v600: an empty value and a missing one are one fact ──────────────────
+
+test("★★★ the line-agreement check stops calling a missing value and an empty one different (v600)", () => {
+  // ⚠️⚠️ MEASURED: `promo: ""` on one line and no `promo` on the other both mean NO CODE, but
+  // `JSON.stringify` reported a disagreement for ever — ⚠️ **a check she could never clear, which teaches her
+  // to ignore the line.** ⭐ `false` and `0` must stay distinct: a line saying NOT PAID still disagrees.
+  const mk = (a, b) => ({
+    settings: { currency: "RM" }, products: [], deliveryDates: [], removedOrders: [],
+    orders: [
+      { id: "a", groupId: "g", qty: 1, unitPrice: 1, ...a },
+      { id: "b", groupId: "g", qty: 1, unitPrice: 1, ...b },
+    ],
+  });
+  const agree = (st) => localChecks(st).find((c) => c.id === "agree");
+  assert.equal(agree(mk({ promo: "" }, {})).status, "pass",
+    "★ an empty code and a missing code are still reported as a disagreement");
+  assert.equal(agree(mk({ promo: null }, {})).status, "pass", "null and missing are one fact too");
+  assert.equal(agree(mk({ promo: "SAVE5" }, {})).status, "fail",
+    "★ a real difference was hidden — the check no longer reports anything");
+  assert.equal(agree(mk({ paidReceived: false }, {})).status, "fail",
+    "★ false was treated as empty — a line saying NOT PAID no longer disagrees");
+});
+
+// ── v604: a refund in the register that the order is not carrying ────────
+
+test("★★★ a refund in the REGISTER that the order is not carrying is NAMED (v604)", () => {
+  // ⚠️⚠️ THE SAME WIPE THAT TOOK A RECEIPT NUMBER TAKES A REFUND. ⚠️ A record travels whole, so a newer copy
+  // of an order that never learned about a refund removes the mark — ⚠️ **and Money and Profit then read that
+  // money as still in her hand.** ⭐ The register is the record that survives, exactly as it is for the
+  // number beside it.
+  const st = healthy();
+  const refunded = [{ ...REGISTER[0], refunded_at: "2026-10-12T09:00:00.000Z", refunded_amount: 8 }];
+  const r = resultOf(runChecks(st, { register: refunded, copies: COPIES }), "refunded");
+  assert.ok(r, "★ there is no refund check at all");
+  assert.equal(r.status, "fail",
+    "★ a refund recorded in the register and missing from its order was not reported");
+  assert.deepEqual(r.detail, ["#D4E5F6 · refund #000007"], "★ the check does not name which refund");
+  assert.ok(r.fix, "★ a fault with no way out is a dead end");
+
+  const marked = healthy();
+  marked.orders = marked.orders.map((o) => ({ ...o, refundedAt: "2026-10-12T09:00:00.000Z" }));
+  assert.equal(resultOf(runChecks(marked, { register: refunded, copies: COPIES }), "refunded").status,
+    "pass", "★ an order that carries its own refund mark was reported as missing it");
+});
+
+test("★★⚠️ and a refund she TOOK BACK is never reported — the register is what speaks (v604)", () => {
+  // ⚠️ This is why the check reads the REGISTER and not the order: `unrefund_receipt` clears `refunded_at`
+  // there, so an undone refund never reaches the loop. A check that read the order would have to guess
+  // between "never knew" and "was undone".
+  const st = healthy();
+  assert.equal(resultOf(runChecks(st, { register: REGISTER, copies: COPIES }), "refunded").status,
+    "pass", "★ a register row with no refund was reported as one");
+  const elsewhere = [{ ...REGISTER[0], order_code: "ZZZZZZ", refunded_at: "2026-10-12T09:00:00.000Z" }];
+  assert.equal(resultOf(runChecks(st, { register: elsewhere, copies: COPIES }), "refunded").status,
+    "pass", "★ a receipt for an order this phone does not hold was blamed on this check");
 });

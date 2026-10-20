@@ -55,7 +55,18 @@ function createEl(tag) {
     },
     addEventListener(t, f) { (this._listeners[t] ||= []).push(f); },
     removeEventListener() {},
-    setAttribute(k, v) { this.attrs[k] = String(v); },
+    // ⚠️⚠️ A REAL DOM SETS THE PROPERTY FOR A BOOLEAN ATTRIBUTE (v605). ⚠️ `el({ hidden: true })` calls
+    // `setAttribute("hidden", true)`, and this shim stored it in `attrs` only — ⚠️ **so `body.hidden` read
+    // false and a card that was never opened looked open.** ⭐ A shim that cannot express what the view does
+    // hides the fault it is meant to catch, so the property is set here.
+    setAttribute(k, v) {
+      this.attrs[k] = String(v);
+      if (k === "hidden" || k === "disabled" || k === "checked" || k === "selected") this[k] = true;
+    },
+    removeAttribute(k) {
+      delete this.attrs[k];
+      if (k === "hidden" || k === "disabled" || k === "checked" || k === "selected") this[k] = false;
+    },
     getAttribute(k) { return this.attrs[k]; },
     querySelector: () => null,
     querySelectorAll: () => [],
@@ -574,7 +585,7 @@ test("★★★ an edit back up ADDS the extra to the frozen sale (v599)", async
     "★ net money kept is not what she holds");
 });
 
-test("★★★ the edit pop-up shows the WHOLE sale, so every line it changes is on screen (v603)", () => {
+test("★★★ the edit pop-up shows the WHOLE sale, so every line it changes is on screen (v601)", () => {
   // ⚠️⚠️ THE FAULT: the pop-up's Save writes the address, the note, the day and the tracking number onto
   // EVERY row of the sale — while the pop-up itself listed only the rows on the day it was opened from.
   // ⭐ **So the other day's lines were rewritten without ever being on screen**, which is exactly the
@@ -600,4 +611,34 @@ test("★★★ the edit pop-up shows the WHOLE sale, so every line it changes i
   press(popup, "Save changes");
   assert.equal(st.orders.find((o) => o.id === "ord_bbbbbbbbbbbb").qty, 3,
     "★ the other day's line could not be changed — it was not really on the draft");
+});
+
+test("★★★ the bake-day card has ONE sale door, and it is the New order card (v607)", () => {
+  // ⚠️ v605 added a "Sell one now" button that only opened the card already below it. ⚠️ **A third control
+  // saying what the card says** — she asked whether it was still needed, and the answer was no. ⭐ The
+  // capability must remain: the sale card is on the day, and a day with NO card keeps its own "sell now"
+  // (v606, driven in orders-cal.test.js).
+  const st = state({ orders: [] });
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: DAY_A.id }));
+  const sell = all(root).find((n) => n.tagName === "BUTTON"
+    && String((n.children[0] && n.children[0].text) || "") === "Sell one now");
+  assert.equal(sell, undefined,
+    "★ the v605 shortcut is back — a second control for the same sale");
+  const head = all(root).find((n) => n.tagName === "BUTTON"
+    && String(n.className || "").split(/\s+/).includes("fold-head")
+    && String(n.textContent).includes("New order"));
+  assert.ok(head, "★ the one sale door left is gone — a bake day can no longer take a sale");
+});
+
+test("★★★ a private sale's day is not announced as a sale day or a bake day (v608)", () => {
+  // ⚠️ Her words: __"i dont want to announce a special bake day or sale day."__ ⭐ The day is only the
+  // container for the order; the card says the date and nothing about what kind of day it is.
+  const st = state({ orders: [], deliveryDates: [{ id: DAY_A.id, date: DAY_A.date, recordOnly: true }] });
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: DAY_A.id }));
+  const words = all(root).map((n) => String(n.textContent || "")).join(" ");
+  assert.equal(/Sale day|not offered on the shop/i.test(words), false,
+    "★ the private day announced itself on screen");
+  assert.equal(/not a bake day/i.test(words), false, "★ the private day was described as a bake day");
 });

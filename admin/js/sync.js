@@ -1117,13 +1117,12 @@ function mergeCloudRows(state, rows, b, nowIso = new Date().toISOString(), { for
       // merged record is exactly the payload.
       const target = list[idx];
       if (target && typeof target === "object" && payload && typeof payload === "object") {
-        // ⚠️⚠️ A RECEIPT NUMBER IS NEVER TAKEN BACK BY A SYNC (v603). ⚠️⚠️ MEASURED ON HER BOOK, 19 Oct: an
-        // order's number was stamped, and minutes later both of its rows arrived from the other phone
-        // WITHOUT it — **a phone holding an older copy of the order had saved it, and that copy replaced the
-        // row whole.** ⭐ The wipe is one line below: every key the cloud row lacks is DELETED from the local
-        // one. ⭐ **A receipt is money recorded, and the app already promises a receipt is never rewritten** —
-        // so a number this phone is holding is carried onto the incoming copy. It can only ever ADD: a cloud
-        // row that carries one still wins, and a number is never taken away here.
+        // ⚠️⚠️ A RECEIPT NUMBER IS NEVER TAKEN BACK BY A SYNC (v602). ⚠️ MEASURED on munchies' book, 19 Oct:
+        // a number was stamped and minutes later both rows arrived from the other phone WITHOUT it —
+        // ⚠️ **a phone holding an older copy had saved the order, and that copy replaced the row whole.** The
+        // wipe is the key-deletion loop below. ⭐ A receipt is money recorded, and the app already promises a
+        // receipt is never rewritten — so a number this phone holds is carried onto the incoming copy. It can
+        // only ADD: a cloud row that carries one still wins, and a number is never taken away here.
         if (row.kind === "orders" && Number(target.receiptNo) > 0 && !(Number(payload.receiptNo) > 0)) {
           payload.receiptNo = target.receiptNo;
         }
@@ -1166,20 +1165,22 @@ export function mergeRows(state, rows) {
   // and this carries it on a merge.
   // ⚠️ **AND IF ANYTHING WAS DROPPED, THE STATE IS SAVED — which queues the removal so it goes UP**, or the
   // shared data would hand the same stale row back on every pull, for ever.
-  const dropped = dropStaleShelfRows(state) + equaliseOrderLines(state);
+  const dropped = dropStaleShelfRows(state);
   // ⚠️⚠️ AND A REDACTION THAT ARRIVED IN THIS PULL IS APPLIED NOW (v592). ⚠️ Without it the receipt proves
   // the person was forgotten while the order row still carries their name on this phone — the merge turns a
   // redacted row's fields into "absent", and the redaction record is what removes them.
   const redacted = applyRedactions(state);
+  // ⚠️ A HALF-WRITTEN ORDER IS MADE WHOLE HERE TOO (v600) — one rule, every seam.
+  const equalised = equaliseOrderLines(state);
   // ★ AND A PULL THAT PUT RECORDS BACK HAS REPAIRED THE BOOK (v548). ⚠️ The "this phone could not read its
   // saved copy" note exists for the case where a damaged save came up empty and the cloud could NOT put it
   // back — ⭐ so the moment a pull actually restores something, the note clears. **It appears exactly when
   // the cloud did not save her, which is the only case that matters.**
   const healed = (changed || dropped > 0) && !!state.unreadableSave;
   if (healed) state.unreadableSave = null;
-  if (dropped || healed || redacted) save(state);
+  if (dropped || healed || redacted || equalised > 0) save(state);
   writeSync(b);
-  return { state, changed: changed || dropped > 0 || redacted > 0 };
+  return { state, changed: changed || dropped > 0 || redacted > 0 || equalised > 0 };
 }
 
 // ── pull ──────────────────────────────────────────────────────────────────
@@ -1312,14 +1313,13 @@ export async function pull(state) {
   // other callers; a PULL goes straight to `mergeCloudRows`, so the same rule is applied at the one seam
   // every read passes through.
   const redacted = applyRedactions(state);
-  // ★★★ AND A STALE SHELF ROW THAT CAME DOWN IN THIS PULL IS DROPPED HERE (v600).
-  // ⚠️⚠️ `mergeRows` has carried this invariant since v474, but **`pull` — the path that runs every thirty
-  // seconds — goes straight to `mergeCloudRows` and never applied it.** ⭐ So the shared data handed the
-  // same stale row back on every beat: **"on the orders list and the Removed list at once" red on every
-  // run**, and a shelf copy of an order that is ALSO live — two records wearing one id. ⚠️ **Measured on
-  // her book, 19 Oct: two orders whose every line sat in `orders` and `removedOrders` in the cloud.**
-  // ⭐ Dropping it queues its removal, so it goes UP and stops coming back.
-  const dropped = dropStaleShelfRows(state) + equaliseOrderLines(state);
+  // ⚠️⚠️ AND THE THIRTY-SECOND PULL APPLIES THE REMOVED-SHELF RULE TOO (v600). ⚠️ `mergeRows` did, `pull` did
+  // not — ⚠️ **so the shared data handed a stale Removed row back on every read: the order sat on the live list
+  // AND the Removed list, Check my system named it every time, and two records wore one id.** ⭐ Dropping it here
+  // queues the removal UP, which is what stops the cloud returning it again.
+  const dropped = dropStaleShelfRows(state);
+  // ⚠️ AND A HALF-WRITTEN ORDER IS MADE WHOLE ON THE PULL TOO (v600) — see `equaliseOrderLines`.
+  const equalised = equaliseOrderLines(state);
   b.lastPullAt = new Date().toISOString();
   // ⚠️⚠️ THE CURSOR ADVANCES ONLY ON A COMPLETE READ. ⭐ **A half-read book must not be remembered as "seen"**
   // — the next read would start after records this one never received.
@@ -1345,8 +1345,8 @@ export async function pull(state) {
   // On the first pull (or when rows changed), save so the save-hook queues any
   // records that only exist on this phone — that's the one-time migration that
   // uploads existing local data on first sign-in.
-  if (changed || first || redacted || wasUnreadable || dropped > 0) save(state);
-  return { ok: true, changed: changed || first || redacted > 0 || wasUnreadable || dropped > 0 };
+  if (changed || first || redacted || dropped > 0 || equalised > 0 || wasUnreadable) save(state);
+  return { ok: true, changed: changed || first || redacted > 0 || dropped > 0 || equalised > 0 || wasUnreadable };
 }
 
 // ⭐ THE SIZE OF HER SHARED DATA, AS THE LAST READ FOUND IT — or null when this phone has never read it.

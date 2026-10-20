@@ -2502,3 +2502,15 @@ test("★★★ the refresh press writes EVERY order's card once, and counts the
   assert.deepEqual(res, { ok: 2, bad: 1, total: 3 });
   assert.deepEqual(progress, ["1/3", "2/3", "3/3"], "the line she reads never moved, or moved wrongly");
 });
+
+test("★★★ a sale-only day is never published to the shop (v606)", () => {
+  // ⚠️ A hand sale can sit on any day, but ⚠️ **publishing that day would put a day she is not baking on
+  // the customer's calendar.** ⭐ `nextDeliveryDates` skips it, so every published count follows.
+  const st = makeState();
+  const off = st.deliveryDates[0];
+  off.recordOnly = true;
+  const rows = computeSlots(st, 10);
+  assert.equal(rows.some((r) => r.date === off.date), false,
+    "★ a sale-only day was offered on the shop's calendar");
+  assert.equal(rows.length, st.deliveryDates.length - 1, "the real days stopped being published too");
+});

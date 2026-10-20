@@ -1,8 +1,41 @@
-# Munchies Furkidz — change history (v54 → v605)
+# Munchies Furkidz — change history (v54 → v609)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**20 Oct 2026 — engine v606 to v609: YOU CAN SELL ON ANY DAY, AND THE DAY IT MAKES IS PRIVATE (nothing to
+run, no SQL, no upload).**
+
+**Your words: __"i want to sell any day just like bake."__ and then __"i dont want to announce a special
+bake day or sale day."__ Both are in, and the second one shaped the first.**
+
+**1. A day the shop does not offer now answers a tap with "sell now", beside "say what you baked".**
+**It records the sale on the day it happened and opens the order card on that day, ready for a customer.**
+**Selling still goes through the one order writer** — the same card, the same receipt, the same books — **so
+a hand sale and a shop order cannot disagree.**
+
+**2. And the day it makes is PRIVATE.** **It lives in your backoffice, your orders and your books, and the
+shop never sees it** — so a hand sale cannot put a day you are not baking on a customer's calendar. **It is
+not listed on the Orders calendar, the Delivery Dates screen, Home's upcoming deliveries or the purchase
+order, and it does not label itself.** **It exists as the container for that one sale, reachable from the
+order itself.** **If you later open that date as a real day, the real day wins.**
+
+**3. A day that is not yours now reads as two freedoms first.** **"Say what you baked" or "sell now" —
+neither makes it an official day, and nothing is announced** — **or add it in More → Delivery Dates.**
+**The official route is the optional third, not the opening instruction.** ⚠️ **And "Baked" is still a
+production record, never a sale**: it moves ingredients and never puts anything on the shop.
+
+**4. One press was tried and taken back.** **A "Sell one now" button sat on the day card for a day; the
+order card is already on every one of those days and makes the identical sale**, so it was a third control
+saying what the card says. **It stays only where it is needed — on a day with no card at all.**
+
+**⚠️ AND THE TWO APPS ARE LEVEL AGAIN: v601 to v604 in the bakery are OUR OWN fixes, taken back.** **The
+Edit card showing the whole sale, a receipt number that survives the other phone, the check naming the
+right press, and the refund line on Check my system are now in both apps** — so a future sync brings them
+in identical, not as a conflict.
+
+**Nothing to run, no SQL, no upload.**
 
 **19 Oct 2026 — engine v605: YOUR CHECK NOW WATCHES YOUR REFUNDS TOO (nothing to run, no SQL, no
 upload).**

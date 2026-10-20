@@ -8,7 +8,7 @@ import { navigate } from "../app.js";
 import { dayListLabel, dayName, deliveryStatus, generateUpcomingDates, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
 import { bookedUnitsOnDate, effectiveCapacity, totalUnitsOnDate } from "../bom.js";
 import { el, button, confirmDialog, showPopup, toast, modeButton } from "../ui.js";
-import { groupOrders, newId, ordersOnDate, save } from "../state.js";
+import { groupOrders, newId, ordersOnDate, save, bakeDays } from "../state.js";
 import { needsVan, runDayOf, stopKeyOf } from "../courier_job.js";
 import { maybeSync, maybeSyncStorefront } from "../supabase.js";
 import {
@@ -39,7 +39,7 @@ function renderAll(root, state) {
     viewMonth = { year: now.getFullYear(), month: now.getMonth() };
   }
 
-  const dates = [...state.deliveryDates].sort((a, b) => a.date.localeCompare(b.date));
+  const dates = [...bakeDays(state)].sort((a, b) => a.date.localeCompare(b.date));
   const past = dates.filter((d) => d.date < today);
 
   // No list of the dates still to come: the calendar above IS the list — every
@@ -129,7 +129,7 @@ function addSelected(state) {
   const pastPicks = picks.filter((d) => d < today);
   let added = 0;
   for (const date of picks) {
-    if (state.deliveryDates.some((d) => d.date === date)) continue;
+    if (bakeDays(state).some((d) => d.date === date)) continue;
     state.deliveryDates.push({ id: newId("del"), date, notes: "" });
     added++;
   }
@@ -240,7 +240,7 @@ function pickWeekday(state, days, col, today, addedMap) {
 
 function buildAddGrid(state, weeks) {
   const today = todayISO();
-  const addedMap = new Map(state.deliveryDates.map((d) => [d.date, d]));
+  const addedMap = new Map(bakeDays(state).map((d) => [d.date, d]));
   const days = weeks.flat();
   const pickable = new Map(); // ISO date -> its cell, for the drag
   // ⚠️⚠️ `allowPast` — THIS IS THE ONLY CALLER THAT PASSES IT (v464). **Occasion mode must never let her
@@ -323,7 +323,7 @@ function attachAddDrag(grid, pickable, state) {
 // (it is the thing that fills a bare one), so by the time she had dates the button
 // was gone and every Monday had to be tapped by hand (16 Sep 2026).
 function generateDates(state) {
-  const made = generateUpcomingDates(state.settings, 6, state.deliveryDates.map((d) => d.date));
+  const made = generateUpcomingDates(state.settings, 6, bakeDays(state).map((d) => d.date));
   if (!made.length) return toast("The next dates are already on the calendar");
   for (const date of made) state.deliveryDates.push({ id: newId("del"), date, notes: "" });
   // Show the month they landed in: the next six dates can run into the month after
@@ -739,7 +739,7 @@ function occLabelPicker(state, from, to, occ = null) {
 // occasion periods are tinted. Handles pointer drags AND two-tap ranges.
 function buildOccGrid(state, weeks) {
   const today = todayISO();
-  const addedSet = new Set(state.deliveryDates.map((d) => d.date));
+  const addedSet = new Set(bakeDays(state).map((d) => d.date));
   const cells = [];
   const byDate = new Map(); // ISO date -> its cell button, for live drag paint
   for (const d of weeks.flat()) {

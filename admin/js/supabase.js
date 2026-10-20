@@ -72,6 +72,10 @@ function nextDeliveryDates(state, horizon) {
   const seen = new Map(); // date -> [ids]
   for (const d of state.deliveryDates) {
     if (!d || d.date < todayISO()) continue;
+    // ⚠️⚠️ A SALE-ONLY DAY IS NEVER OFFERED ON THE SHOP (v606). ⭐ It exists so a hand sale can sit on
+    // the day it happened; ⚠️ **publishing it would put a day she is not baking on the customer's
+    // calendar.** ⭐ Skipped here, so every published count (`computeSlots`, per-product slots) follows.
+    if (d.recordOnly) continue;
     if (seen.has(d.date)) seen.get(d.date).push(d.id);
     else seen.set(d.date, [d.id]);
   }

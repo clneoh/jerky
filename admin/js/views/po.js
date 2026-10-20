@@ -14,13 +14,13 @@
 import { longDate, todayISO, weekdayName, shortDate } from "../dates.js";
 import { explodeBomDates, explodePicks, ordersFingerprint, effectiveCapacity, dayChangeInfo, restockOnlyItems, unitsOfOrder } from "../bom.js";
 import { el, button, emptyState, toast, select, showPopup, printPage } from "../ui.js";
-import { byId, save, newId } from "../state.js";
+import { byId, save, newId , bakeDays } from "../state.js";
 import { priceItems, notPurchasedNames, fmtQtyText } from "../purchasing.js";
 import { orderedProducts } from "../productCategories.js";
 import { poTableEl, totalOf } from "./poTable.js";
 
 export function renderPO(root, state, params) {
-  const dates = [...(state.deliveryDates || [])].sort((a, b) => a.date.localeCompare(b.date));
+  const dates = [...bakeDays(state)].sort((a, b) => a.date.localeCompare(b.date));
   if (!dates.length) {
     // ⚠️⚠️ THE HAND-WRITTEN LIST MUST SURVIVE THIS BRANCH. With no dates at all the screen used to
     // stop at one sentence — and a list that **is not tied to a day** is exactly the thing she needs

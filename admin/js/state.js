@@ -773,9 +773,66 @@ function normalize(s) {
   // load, keeping the LAST occurrence: ⚠️ **the one the sync would have published is the one kept**, so
   // what she counts and what reaches her other phone are the same record.
   for (const k of ID_LISTS) out[k] = dedupeById(out[k]);
+  // ⚠️⚠️ AND A HALF-WRITTEN ORDER IS MADE WHOLE BEFORE ANY READER SEES IT (v600). ⚠️ One line said
+  // `paidReceived: true` while its sibling said `null`, and another carried `promo` while its sibling carried
+  // none — ⚠️ **the Pay press is only offered while the FIRST line is unpaid and nothing re-applies a promo, so
+  // neither could be cleared by hand.** ⭐ The repair runs at every seam a book enters by: load, merge and pull.
+  equaliseOrderLines(out);
   // ⚠️ AND A REDACTION IS APPLIED AFTER EVERY LOAD (v592) — see `applyRedactions`.
   applyRedactions(out);
   return out;
+}
+
+// ⭐⭐ THE DAYS SHE ACTUALLY BAKES (v608). A SALE-ONLY day (v606) is a container for a hand sale on a
+// private date — ⚠️ **it must never be listed as a bake day, offered for production or counted in a
+// purchase order.** ⭐ One filter, so every bake-day surface asks the same question.
+export function bakeDays(state) {
+  return (Array.isArray(state && state.deliveryDates) ? state.deliveryDates : [])
+    .filter((d) => d && !d.recordOnly);
+}
+
+// ⭐⭐ MAKE EVERY LINE OF ONE ORDER AGREE, WITHOUT EVER COPYING UP (v600).
+// ⚠️ Every money reader goes through the FIRST row (`isCollected`, `promoOn`, `money.js`), so a sibling that
+// disagrees is a half-written copy, not a second opinion. Two rules, and the direction matters:
+//   1. MONEY FOLLOWS THE FIRST ROW. When it says the money is in, every line gets the same state, account and
+//      day. A first row that does NOT say paid is left alone — and nothing is ever written UP onto it, because
+//      that row is what prices the sale.
+//   2. A STAMP IS FILLED, NEVER OVERWRITTEN. `promo` and `receiptNo` exist once per order; a line with its own
+//      value keeps it, so a genuine disagreement still shows on Check my system.
+// Returns how many rows it changed, so a caller knows whether the repair is worth saving.
+export function equaliseOrderLines(state) {
+  const orders = Array.isArray(state && state.orders) ? state.orders : [];
+  const groups = new Map();
+  for (const o of orders) {
+    if (!o || !o.id) continue;
+    const key = String(o.groupId || o.id);
+    const rows = groups.get(key);
+    if (rows) rows.push(o); else groups.set(key, [o]);
+  }
+  let changed = 0;
+  for (const rows of groups.values()) {
+    if (rows.length < 2) continue;
+    const first = rows[0];
+    const others = rows.slice(1);
+    if (first.paidReceived === true) {
+      for (const o of others) {
+        let touched = false;
+        if (o.paidReceived !== true) { o.paidReceived = true; touched = true; }
+        if (first.paidMethod != null && o.paidMethod !== first.paidMethod) { o.paidMethod = first.paidMethod; touched = true; }
+        if (first.paidAt && o.paidAt !== first.paidAt) { o.paidAt = first.paidAt; touched = true; }
+        if (touched) changed++;
+      }
+    }
+    for (const field of ["promo", "receiptNo"]) {
+      const source = rows.find((r) => r[field] !== undefined && r[field] !== null && r[field] !== "");
+      if (!source) continue;
+      for (const o of others) {
+        const mine = o[field];
+        if (mine === undefined || mine === null || mine === "") { o[field] = source[field]; changed++; }
+      }
+    }
+  }
+  return changed;
 }
 
 // The fields "Forget this customer" clears. One list, so the button and the re-application cannot drift.
@@ -1097,6 +1154,10 @@ function consolidateDeliveryDates(deliveryDates, orders, removedOrders) {
     if (!d || typeof d.date !== "string" || !d.date) continue;
     const survivor = byDate.get(d.date);
     if (survivor) {
+      // ⚠️⚠️ A REAL BAKE DAY UPGRADES A SALE-ONLY ROW (v606). ⚠️ Consolidation keeps the FIRST record per
+      // date — ⚠️ **so a sale-only row created first would swallow a real bake day added later, and the
+      // shop would never offer a day she meant to open.** ⭐ Any real row on that date clears the flag.
+      if (survivor.recordOnly && !d.recordOnly) delete survivor.recordOnly;
       if (d.id) removed.set(d.id, survivor.id);
     } else {
       byDate.set(d.date, d);
@@ -1295,43 +1356,6 @@ export function dropStaleShelfRows(state) {
   const kept = shelf.filter((r) => !(r && r.id && live.has(r.id)));
   state.removedOrders = kept;
   return shelf.length - kept.length;
-}
-
-// ★★★ A STAMP WRITTEN ON ONE LINE BELONGS TO THE WHOLE SALE (v600/v601).
-// ⚠️⚠️ MEASURED ON HER BOOK, 19 Oct: order AC8542 read `paidReceived: true` on one line and `null` on
-// the other — and then, once that was repaired, `promo` on one line and nothing on the other. ⭐ **The Pay
-// press is only offered while the FIRST line is unpaid, and a promo is never re-applied by hand at all**,
-// so neither could be cleared by a press. ⚠️ **And every reader in the app goes through the first row**
-// (`isCollected`, `promoOn` → `first.promo`, `receiptNoOfGroup` → any row), which means the sale was
-// ALREADY being read the way the first row says: the other rows were half-written copies from before the
-// stamps were written across a whole sale.
-// ⭐ TWO RULES, and neither invents an answer:
-//   · the MONEY follows the first row — if it says paid, every line of the sale is paid, with the account
-//     and the day it landed. ⚠️ It never runs the other way: an unpaid order is never marked paid.
-//   · a STAMP is FILLED where a line has none (`promo`, `receiptNo`) and never overwritten where it has
-//     its own — so a value the app really disagreed about still shows on the check, which is honest.
-export function equaliseOrderLines(state) {
-  let fixed = 0;
-  for (const g of groupOrders((state && state.orders) || [])) {
-    if (g.orders.length < 2) continue;
-    const first = g.orders[0];
-    if (!first) continue;
-    for (const o of g.orders) {
-      if (o === first) continue;
-      if (first.paidReceived === true && o.paidReceived !== true) {
-        o.paidReceived = true;
-        if (first.paidMethod != null && o.paidMethod == null) o.paidMethod = first.paidMethod;
-        if (first.paidAt != null && o.paidAt == null) o.paidAt = first.paidAt;
-        fixed++;
-      }
-      for (const k of ["promo", "receiptNo"]) {
-        const v = first[k];
-        if (v == null || v === "") continue;
-        if (o[k] == null || o[k] === "") { o[k] = v; fixed++; }
-      }
-    }
-  }
-  return fixed;
 }
 
 // Put one back exactly as it was — the same id, its group, its day, its price. ⚠️ The `removedAt` mark is

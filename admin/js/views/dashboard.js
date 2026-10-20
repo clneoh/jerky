@@ -7,7 +7,7 @@ import { capacityStatus } from "../bom.js";
 import { occColour, upcomingOccasions } from "../calendar.js";
 import { el, button, emptyState, confirmDialog } from "../ui.js";
 import { gauge } from "../gauge.js";
-import { newId, save } from "../state.js";
+import { newId, save, bakeDays } from "../state.js";
 import { localChecks } from "../health.js";
 import { pendingReviewCount } from "../supabase.js";
 import {
@@ -20,7 +20,7 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
 
 function generateWeek(state) {
   const newDates = generateUpcomingDates(state.settings, 6,
-    state.deliveryDates.map((d) => d.date));
+    bakeDays(state).map((d) => d.date));
   for (const date of newDates) {
     state.deliveryDates.push({
       id: newId("del"),
@@ -418,11 +418,11 @@ function upcomingSection(root, state, fc, total) {
 
 function renderInner(root, state) {
   const today = todayISO();
-  const upcoming = [...state.deliveryDates]
+  const upcoming = [...bakeDays(state)]
     .filter((d) => d && d.date && d.date >= today)
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  const past = [...state.deliveryDates]
+  const past = [...bakeDays(state)]
     .filter((d) => d && d.date && d.date < today)
     .sort((a, b) => b.date.localeCompare(a.date));
 
