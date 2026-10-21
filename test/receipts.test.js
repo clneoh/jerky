@@ -29,7 +29,7 @@ const { receiptNoOf, receiptLabel, receiptLine, isRefunded, receiptStatus,
   copyKnowsCode, lastSeenIn, registerRows, registerSummary, voidedIndex } = await import("../admin/js/receipts.js");
 const { claimReceipt, pullReceiptRegister, refundReceipt } = await import("../admin/js/supabase.js");
 const { journalSheet, buildJournalText } = await import("../admin/js/journal.js");
-const { orderCode } = await import("../admin/js/state.js");
+const { orderCode, codeFromId } = await import("../admin/js/state.js");
 const { customerTotal } = await import("../admin/js/courier.js");
 const { readFileSync } = await import("node:fs");
 
@@ -536,4 +536,49 @@ test("★★★ every GRANT and REVOKE names a signature this file actually CREA
   const orphan = named.filter((sig) => !created.has(sig));
   assert.deepEqual([...new Set(orphan)], [],
     "★ a grant or revoke names a signature this file never creates — **the file fails at that line with 42883**");
+});
+
+// ── v615: the repair must be able to ASK, even when the order already carries a number ──
+
+test("★★★ a repair forces the register's number over a disagreeing one (v615)", async () => {
+  // ⚠️⚠️ MEASURED ON HER PHONE: the repair said "put back" but the red line never cleared. ⚠️ The claim's
+  // ordinary shortcut answers "it already has a number" **without asking the register** — ⚠️ **so an order
+  // carrying a DIFFERENT number was reported as repaired and left untouched.** ⭐ `force` skips only the
+  // shortcut; the register still answers with the number it already issued.
+  const st = stateWith();
+  const order = { ...paidUnnumbered(), receiptNo: 99 };
+  let asked = 0;
+  globalThis.fetch = async () => {
+    asked += 1;
+    return { ok: true, json: async () => ([{ number: 7, refunded_at: null }]) };
+  };
+  assert.equal(await claimReceipt(st, order), true);
+  assert.equal(asked, 0, "precondition: without force the register is not asked");
+  assert.equal(await claimReceipt(st, order, { force: true }), true);
+  assert.equal(asked, 1, "★ the repair did not ask the register — the red line can never clear");
+  assert.equal(order.receiptNo, 7, "★ the register's own number was not put back");
+});
+
+test("★★★ a number stored under the order's OLD code is still found (v615)", async () => {
+  // ⚠️ Adding a second item gives an order a group id, so its code can move while the register keeps the
+  // number under the code it wore when the money was taken. ⭐ The claim now tries both, current first.
+  const st = stateWith();
+  const order = { id: "ord_a1b2c3d4e5f6", groupId: "ordg_123456", paidReceived: true,
+    productId: "p1", qty: 1, unitPrice: 15 };
+  st.orders = [order];
+  const current = orderCode(order);
+  const old = codeFromId(order);
+  assert.notEqual(current, old, "fixture: the two codes must differ");
+  const asked = [];
+  globalThis.fetch = async (url, opts) => {
+    const body = JSON.parse(opts.body);
+    asked.push(body.p_order_code);
+    return body.p_order_code === old
+      ? { ok: true, json: async () => ([{ number: 42, refunded_at: null }]) }
+      : { ok: true, json: async () => [] };
+  };
+  assert.equal(await claimReceipt(st, order), true,
+    "★ the old code was not tried — the issued number is unreachable");
+  assert.deepEqual(asked, [current, old], "★ the old code was not asked second");
+  assert.equal(order.receiptNo, 42);
 });

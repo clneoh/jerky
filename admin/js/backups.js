@@ -286,7 +286,11 @@ export async function putBackOrders(state, row, { dryRun = false } = {}) {
     let put = false;
     for (const o of orders) {
       if (!o || !o.id || have.has(o.id)) continue;
-      state.orders.push(JSON.parse(JSON.stringify(o)));
+      // ⭐ A PUT-BACK IS A DELIBERATE RESTORE (v616) — stamped so a stale shelf row on another device
+      // cannot immediately remove the order again.
+      const copy = JSON.parse(JSON.stringify(o));
+      copy.restoredAt = new Date().toISOString();
+      state.orders.push(copy);
       have.add(o.id);
       put = true;
     }

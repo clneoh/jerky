@@ -13,6 +13,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 const { hideSparesBlocked, runHealthChecks, localChecks, registerChecks, copyChecks, backupChecks, recordCountCheck } = await import("../admin/js/health.js");
 const sync = await import("../admin/js/sync.js");
@@ -1139,4 +1140,23 @@ test("★★⚠️ and a refund she TOOK BACK is never reported — the register
   const elsewhere = [{ ...REGISTER[0], order_code: "ZZZZZZ", refunded_at: "2026-10-12T09:00:00.000Z" }];
   assert.equal(resultOf(runChecks(st, { register: elsewhere, copies: COPIES }), "refunded").status,
     "pass", "★ a receipt for an order this phone does not hold was blamed on this check");
+});
+
+test("★★★ the missing receipt stamps come with a one-press repair, naming the orders (v613)", () => {
+  // ⚠️ Fourteen orders is not fourteen presses. ⭐ The check carries the ids of the rows to repair; the press
+  // uses the Invoice card's own claim, which returns the register's number — never a new one.
+  const st = healthy();
+  delete st.orders[0].receiptNo;
+  const r = resultOf(runChecks(st, { register: REGISTER, copies: COPIES }), "carried");
+  assert.equal(r.status, "fail", "precondition: the missing number was not reported");
+  assert.equal(r.repair, "receiptStamps", "★ no one-press repair was offered");
+  assert.deepEqual(r.repairIds, ["ord_a1b2c3d4e5f6"], "★ the repair does not name the order to fix");
+});
+
+test("★★★ the repair press claims the SAME number through the Invoice path (v613)", () => {
+  const src = readFileSync(new URL("../admin/js/views/health.js", import.meta.url), "utf8");
+  assert.match(src, /repairReceiptStamps\(r\.repairIds\)/, "★ the button does not start the repair");
+  assert.match(src, /await claimReceipt\(state, row, \{ force: true \}\)/,
+    "★ the repair does not force the register's number over a disagreeing one");
+  assert.match(src, /the same number, never a new one/i, "★ the confirmation does not say it cannot issue a number");
 });

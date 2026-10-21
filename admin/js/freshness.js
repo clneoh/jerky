@@ -113,6 +113,34 @@ export async function maybeReloadForUpdate({ running, fetchImpl } = {}) {
   return true;
 }
 
+// ⭐⭐ CLEAR THE OLD COPY AND LOAD THE NEW BUILD (v614). ⚠️ The plain reload can be answered from the ten-minute
+// cache or by a worker that has not updated; ⚠️ **and closing the app does not always end the session**, so the
+// "tried" state could repeat for ever. ⭐ This press removes the uncertainty: unregister every worker, delete
+// every cache, and reload from an address the caches have never seen. The worker re-registers and re-caches
+// the shell on the next load; offline returns once the app has opened.
+export async function forceFresh() {
+  try {
+    if (typeof navigator !== "undefined" && navigator.serviceWorker
+      && typeof navigator.serviceWorker.getRegistrations === "function") {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
+  } catch { /* no worker: nothing to unregister */ }
+  try {
+    if (typeof caches !== "undefined" && typeof caches.keys === "function") {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    }
+  } catch { /* no cache storage: nothing to clear */ }
+  try {
+    const url = new URL(location.href);
+    url.searchParams.set("fresh", String(Date.now()));
+    location.replace(url.href);
+  } catch {
+    try { location.reload(); } catch { /* nowhere to go — the strip stays, honestly */ }
+  }
+}
+
 // What, if anything, to tell her. Pure: the three cases and their wording are
 // the whole of it, so a test can pin them without a browser.
 //
@@ -129,10 +157,17 @@ export function decide({ running, deployed, tried } = {}) {
   const mine = num(running);
   if (site !== null && mine !== null && site < mine) return null; // phone is ahead — not a problem to act on
   if (tried) {
+    // ⚠️⚠️ "CLOSE THE APP COMPLETELY" WAS NOT ALWAYS TRUE (v614). ⚠️ An installed app or a restored tab keeps
+    // its session, so `sessionStorage` still says "tried" and closing changes nothing — ⚠️ **she did exactly
+    // what it said, cleared her whole browser data, and the strip still said the same thing.** ⭐ So the state
+    // now carries a press that actually clears the old copy: unregister the worker, drop the caches, reload
+    // from a fresh address.
     return {
       tone: "wait",
       lead: "Still not updated — ",
-      text: `this phone has v${running}, the site has v${deployed}. Close the app completely and open it again.`,
+      text: `this phone has v${running}, the site has v${deployed}. Force update clears the old copy and loads the new one.`,
+      label: "Force update",
+      force: true,
     };
   }
   return {
@@ -151,7 +186,7 @@ function paint(host, info, onUpdate) {
     return;
   }
   const kids = [el("p", { class: "update-bar-msg" }, el("b", {}, info.lead), info.text)];
-  if (info.label) kids.push(button(info.label, onUpdate, "small primary"));
+  if (info.label) kids.push(button(info.label, () => onUpdate(info), "small primary"));
   host.replaceChildren(el("div", { class: "update-bar-inner" }, ...kids));
   host.hidden = false;
   reserveSpace(host);
@@ -187,9 +222,10 @@ export function startFreshnessWatch({ running, fetchImpl } = {}) {
     const deployed = await deployedBuild({ fetchImpl });
     if (stopped) return;
     const tried = deployed !== null && readTried() === String(deployed);
-    paint(host, decide({ running, deployed, tried }), () => {
+    paint(host, decide({ running, deployed, tried }), (info) => {
       if (deployed === null) return;
       noteTried(String(deployed));
+      if (info && info.force) { forceFresh(); return; }
       location.reload();
     });
   };

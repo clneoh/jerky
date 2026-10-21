@@ -642,3 +642,33 @@ test("★★★ a private sale's day is not announced as a sale day or a bake da
     "★ the private day announced itself on screen");
   assert.equal(/not a bake day/i.test(words), false, "★ the private day was described as a bake day");
 });
+
+test("★★★ Share hands the label to the printer's own app as a PDF (v611)", async () => {
+  // ⚠️ Her Wi-Fi label printer speaks its own app's protocol; Android's print services cannot see it.
+  // ⭐ The app's answer is a file the phone can hand over — the sticker at its own 100 × 150 mm size.
+  const st = state({ orders: [row({ status: "baking" })] });
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: DAY_A.id }));
+  press(root, "Print label");
+  const pop = doc.getElementById("popup-layer");
+  let got = null;
+  const nav = globalThis.navigator;
+  const oldShare = nav.share;
+  const oldCan = nav.canShare;
+  nav.share = (p) => { got = p; return Promise.resolve(); };
+  nav.canShare = () => true;
+  try {
+    press(pop, "Share");
+    await new Promise((r) => setTimeout(r, 0));
+  } finally {
+    nav.share = oldShare;
+    nav.canShare = oldCan;
+  }
+  assert.ok(got && got.files && got.files.length, "★ Share did not hand a file to the phone");
+  const f = got.files[0];
+  assert.equal(f.type, "application/pdf", "★ the printer app was handed the wrong kind of file");
+  assert.match(f.name, /^Label #/, "★ the file is not named after the order");
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  assert.equal(String.fromCharCode(...bytes.slice(0, 8)), "%PDF-1.4", "★ the file is not a PDF");
+  assert.ok(bytes.length > 500, "★ the PDF is empty");
+});

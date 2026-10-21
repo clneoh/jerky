@@ -850,6 +850,46 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
+## v610–v624 — Wi-Fi label printing, the ghosts stopped, and a card that can remove (22 Oct 2026)
+
+**Bakery range `c08a081..b3ab928` (v610–v624), 14 commits, 37 files, +2048/−58.** ⚠️ **ONE SQL STEP:
+`supabase/print_jobs.sql`** (new table, idempotent, nothing existing touched). **No Edge Function, no CSS.**
+
+### Wi-Fi label printing (v610, v612, v617–v623)
+
+A phone cannot open a raw socket to a printer, so the label goes **phone → `print_jobs` (Supabase) → a
+bridge on her Mac → the printer over TCP/TSPL**. New:
+
+- **`print-bridge/`** — `bridge.mjs`, `retry.mjs`, `status.mjs`, `tspl.mjs`, an installer/uninstaller and a
+  README. **LOCALIZED on the way in:** `com.munchies.printbridge`, `~/.munchies-print.json`,
+  `~/Library/Logs/munchies-print.log`, and the install folder (`~/Downloads/jerky`) — the bakery's own
+  label and paths would have collided if both bridges ever ran on one Mac.
+- **`admin/js/print_site.js`** — the device's own printer name (Settings → *Label printer name for this
+  device*), **device-local on purpose**: two sites, one book, and each bridge prints only its site's jobs.
+- **`admin/js/label_image.js`, `label_pdf.js`, `receipt_slip.js`** — the label as an image (so a printer
+  app on a phone can take it), a long label on one sticker, and a small customer receipt.
+
+### The ghosts (v616) — a semantic change to a rule we fixed
+
+⚠️ **`dropStaleShelfRows` no longer always prefers the live order.** Her words: *"the old data keep
+comming back like ghost."* **An old copy could erase a deletion and the resurrection travelled up.** The
+two dates decide now: **a removal newer than the copy wins** (the live row is taken off and its deletion
+sent up again); a deliberate **`restoredAt`** wins the other way; **a copy with no date falls back to the
+old rule** rather than guess. It returns `dropped + revived`, so a revival still queues its tombstone.
+
+### The rest
+
+- **v613/v615:** the check's `carried` line gains a **repair press** (`f.repair = "receiptStamps"`) that
+  claims every missing number at once. ⚠️ **Their way-out text had regressed** to "press Paid again",
+  which cannot work on a paid order — **jerky kept its v601 wording (Invoice).**
+- **v614:** force update when closing the app does not update it.
+- **v624:** **an order with no bake day can be removed from its own card** — it had no row, so the ✕ was
+  unreachable. Asks first; goes to the Removed list.
+
+**Conflicts: 9 real hunks** (`changelog.pdf`'s 255 skipped as binary + `CHANGELOG.md` kept as ours).
+**Localised:** `settings.js` "your bakery's name" → "your business's name"; the bridge's identity (above).
+**Suite 3896 → 3934.**
+
 ## v606–v609 — sell on any day, and the day it makes is private (20 Oct 2026)
 
 **Bakery range `a0186d0..c08a081` (v600–v609), 7 commits, 19 files, +691/−51. No SQL, no functions, no CSS.**

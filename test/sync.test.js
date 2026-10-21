@@ -3436,3 +3436,34 @@ test("★★⚠️ and a cloud row that DOES carry a number still wins (v602)", 
     } finally { restoreFetch(); }
   } finally { restore(); }
 });
+
+// ── v616: a pull cannot bring a removed order back ─────────────────────────
+
+test("★★★ a pull cannot resurrect a removal the shelf holds (v616)", async () => {
+  // ⚠️⚠️ THE GHOST: a device still holding an old copy uploads it; the merge then keeps the live order and
+  // drops its shelf row, ⚠️ **erasing the deletion and handing the order back on every pull.** ⭐ The removal
+  // is newer than the copy, so the copy is taken off the live list and its tombstone is queued.
+  const { store, restore } = installStorage();
+  try {
+    const st = cloudOn(baseState());
+    st.orders = [];
+    st.removedOrders = [{ id: "o1", removedAt: "2026-10-21T09:00:00.000Z", customerName: "Ghost" }];
+    seedToken(store);
+    seedJournal(store, {
+      snapshot: { "orders:o1": '{"id":"o1"}', "removedOrders:o1": '{"id":"o1"}' },
+    });
+    const restoreFetch = installFetch(async () => ({ ok: true, json: async () => ([
+      { ...cloudRow("orders", "o1",
+        { id: "o1", createdAt: "2026-01-01T00:00:00.000Z", customerName: "Ghost" },
+        "2026-10-01T00:00:00.000Z"), seq: 9 },
+    ]) }));
+    try {
+      await sync.pull(st);
+      assert.equal(st.orders.length, 0, "★ the stale cloud copy resurrected a removed order");
+      assert.equal(st.removedOrders.length, 1, "★ the removal itself was erased by its own ghost");
+      const out = sync.markDirty(st, "2026-10-22T00:00:00.000Z");
+      assert.equal(out.pending["orders:o1"] && out.pending["orders:o1"]._deleted, true,
+        "★ no tombstone was queued — the cloud hands the ghost back on every pull");
+    } finally { restoreFetch(); }
+  } finally { restore(); }
+});

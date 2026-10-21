@@ -11,7 +11,8 @@ import { publishOccasions } from "./occasion_catalog.js";
 import { flattenTree, primaryCategoryId, productsInCategory } from "./productCategories.js";
 import { isThumb, lineNoteOf } from "../../storefront-fields.js";
 import { bookedUnitsOnDate, costOf, effectiveCapacity, effectiveLimit, hiddenPackBase, isPoolablePack, poolRemaining, totalUnitsOnDate } from "./bom.js";
-import { byId, fmtRM, newId, orderCode, orderLineName, round2, save, saveFailure, stampOrderLine, duplicateOrderCodes, waNumber, groupOrders, redactedPhones, discardImportedRows } from "./state.js";
+import { printSite } from "./print_site.js";
+import { byId, codeFromId, fmtRM, newId, orderCode, orderLineName, round2, save, saveFailure, stampOrderLine, duplicateOrderCodes, waNumber, groupOrders, redactedPhones, discardImportedRows } from "./state.js";
 import { phoneDigits } from "./customers.js";
 import { customerTotal } from "./courier.js";
 // ⚠️ ONE WORDING FOR HOW AN ORDER REACHES THE CUSTOMER (v569) — the messages already read these; the card
@@ -1000,7 +1001,7 @@ export function forgetPublishedCards() {
 // also what makes the deploy safe: the app works before the SQL is run and after it.
 //
 // Returns true when the order now genuinely holds a number.
-export async function claimReceipt(state, order) {
+export async function claimReceipt(state, order, { force = false } = {}) {
   if (!order) return false;
   // ⚠️⚠️ A RECEIPT IS FOR MONEY RECEIVED, AND THIS IS WHERE THAT IS ENFORCED. An order that
   // has not been paid must never draw a number: that would put a serial on a receipt the
@@ -1011,7 +1012,11 @@ export async function claimReceipt(state, order) {
   if (!order.paidReceived) return false;
   // Already numbered: nothing to ask the server for. This is the ordinary path on every
   // press after the first, and it is why a reprint costs no network at all.
-  if (Number(order.receiptNo) > 0) return true;
+  // ⚠️⚠️ EXCEPT WHEN A REPAIR ASKS (v615). ⚠️ The check names an order whose number does not match the
+  // register — and this early return made the repair press report SUCCESS without asking or changing
+  // anything, so the red line never cleared. ⭐ `force` skips the shortcut only; the register still answers
+  // with the number it already issued, and a new one is still never drawn.
+  if (Number(order.receiptNo) > 0 && !force) return true;
   const c = cfg(state);
   if (!ready(c)) return false;
   const code = String(orderCode(order) || "").trim();
@@ -1020,7 +1025,15 @@ export async function claimReceipt(state, order) {
   // serials by the code, so two orders on one code would be given **the same receipt number** — and the
   // invoice for each would print the other's serial. ⚠️ Refusing here is not silent: the invoice then says
   // the number could not be drawn, and Check my system names the two orders and the number they share.
-  if (duplicateOrderCodes(state && state.orders).some((d) => d.code === code)) return false;
+  const dup = new Set(duplicateOrderCodes(state && state.orders).map((d) => d.code));
+  if (dup.has(code)) return false;
+  // ⚠️⚠️ AND THE CODE IT WORE BEFORE IT WAS GROUPED (v615). ⚠️ Adding a second item gives an order a group id,
+  // so its code MOVES — ⚠️ **while the register keeps the number under the code it wore when the money was
+  // taken** (v441/v470). ⭐ Asking only the current code left those numbers unreachable: the check named them,
+  // the repair press could not claim them, and the count never fell. ⭐ The old code is derived from the
+  // order's own id, so it is unique to this row.
+  const old = String(codeFromId(order) || "").trim();
+  const candidates = [...new Set([code, old])].filter((c) => c && c !== "??????" && !dup.has(c));
   let token = cachedToken();
   if (!token) {
     try { token = await login(c.url, c.anonKey, c.email, c.password); }
@@ -1037,37 +1050,61 @@ export async function claimReceipt(state, order) {
   const family = [order].concat((state.orders || []).filter((o) => o && o !== order
     && (!gid || o.groupId === gid)));
   const bill = round2(customerTotal(state, { orders: family }).total);
+  for (const codeTry of candidates) {
+    try {
+      const res = await fetch(`${c.url}/rest/v1/rpc/claim_receipt_number`, {
+        method: "POST",
+        headers: {
+          apikey: c.anonKey,
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(Number.isFinite(bill) && bill > 0
+          ? { p_order_code: codeTry, p_bill: bill }
+          : { p_order_code: codeTry }),
+      });
+      if (!res || !res.ok) continue;
+      const rows = await res.json();
+      const row = Array.isArray(rows) ? rows[0] : null;
+      const n = Number(row && row.number);
+      if (!Number.isFinite(n) || n <= 0) continue;
+      order.receiptNo = n;
+      if (row.refunded_at) {
+        order.refundedAt = String(row.refunded_at);
+        const was = Number(row.refunded_amount);
+        if (Number.isFinite(was) && was > 0) order.refundAmountRM = was;
+      }
+      return true;
+    } catch { return false; } // a network failure: another code will not help
+  }
+  return false;
+}
+
+// ⭐⭐ SEND A LABEL TO THE PRINT QUEUE (v617). ⚠️ A web page cannot open a raw socket to a Wi-Fi printer, and
+// an HTTPS page cannot call a plain-HTTP device on the LAN — ⭐ so the job travels through the shared cloud
+// and the Mac's bridge prints it. The same route works on Android and iOS, with nothing to configure on the
+// phone. Returns true only when the job really landed in the queue.
+export async function sendPrintJob(state, payload, { site = printSite() } = {}) {
+  if (!payload) return false;
+  const c = cfg(state);
+  if (!ready(c)) return false;
+  let token = cachedToken();
+  if (!token) {
+    try { token = await login(c.url, c.anonKey, c.email, c.password); }
+    catch { return false; }
+  }
   try {
-    const res = await fetch(`${c.url}/rest/v1/rpc/claim_receipt_number`, {
+    const res = await fetch(`${c.url}/rest/v1/print_jobs`, {
       method: "POST",
       headers: {
         apikey: c.anonKey,
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
+        Prefer: "return=minimal",
       },
-      body: JSON.stringify(Number.isFinite(bill) && bill > 0
-        ? { p_order_code: code, p_bill: bill }
-        : { p_order_code: code }),
+      body: JSON.stringify({ site, payload }),
     });
-    if (!res || !res.ok) return false;
-    const rows = await res.json();
-    const row = Array.isArray(rows) ? rows[0] : null;
-    const n = Number(row && row.number);
-    if (!Number.isFinite(n) || n <= 0) return false;
-    order.receiptNo = n;
-    // ⚠️ A REFUND IS CARRIED BACK TOO, and it only ever ADDS a mark. The server decides
-    // whether this order has been refunded; a phone that has never seen the refund learns
-    // about it here rather than by assuming the order is clean.
-    //
-    // ★ AND IT CARRIES HOW MUCH (v370), so the second phone learns the SIZE of the refund and not
-    // merely that one happened. ⚠️ A register row written before v370 has no amount, which reads as
-    // "the whole order" — exactly what the old boolean meant, so an old refund still lands right.
-    if (row.refunded_at) {
-      order.refundedAt = String(row.refunded_at);
-      const was = Number(row.refunded_amount);
-      if (Number.isFinite(was) && was > 0) order.refundAmountRM = was;
-    }
-    return true;
+    return !!(res && res.ok);
   } catch { return false; }
 }
 

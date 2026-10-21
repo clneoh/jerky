@@ -1353,9 +1353,35 @@ export function dropStaleShelfRows(state) {
   const live = new Set((Array.isArray(state.orders) ? state.orders : [])
     .filter(Boolean).map((o) => o && o.id).filter(Boolean));
   const shelf = Array.isArray(state.removedOrders) ? state.removedOrders : [];
-  const kept = shelf.filter((r) => !(r && r.id && live.has(r.id)));
+  // ⚠️⚠️ A DELIBERATE REMOVAL IS NOT UNDONE BY AN OLDER LIVE COPY (v616). ⚠️ This used to keep the live
+  // order and drop its shelf row — ⚠️ **so a device that still held an old copy brought the order back and
+  // erased the deletion, which then travelled up to the cloud: the ghost.** ⭐ The two timestamps decide it:
+  // the shelf's `removedAt` against the order's own `restoredAt` / `updatedAt` / `createdAt`. A removal newer
+  // than the copy wins; a deliberate restore (which stamps `restoredAt`) wins the other way.
+  const orders = Array.isArray(state.orders) ? state.orders : [];
+  const kept = [];
+  let dropped = 0;
+  let revived = 0;
+  for (const r of shelf) {
+    if (!r || !r.id || !live.has(r.id)) { kept.push(r); continue; }
+    const order = orders.find((o) => o && o.id === r.id);
+    const removedAt = String(r.removedAt || "");
+    const orderAt = String((order && (order.restoredAt || order.updatedAt || order.createdAt || order.orderDate)) || "");
+    // ⚠️ ONLY WHEN THE COPY'S OWN DATE CAN PROVE IT IS OLDER (v616). ⚠️ A legacy/unknown copy with no
+    // timestamp falls back to the old rule (it is live, the shelf is stale) — losing a real order to a
+    // guess would be worse than one ghost.
+    if (removedAt && orderAt && removedAt >= orderAt) {
+      // The removal is the later decision: the live copy is the ghost. Take it off the live list; the
+      // caller's save queues its tombstone, so the cloud stops handing it back.
+      state.orders = orders.filter((o) => o !== order);
+      kept.push(r);
+      revived += 1;
+    } else {
+      dropped += 1; // the order really is live again: the shelf row has done its job
+    }
+  }
   state.removedOrders = kept;
-  return shelf.length - kept.length;
+  return dropped + revived;
 }
 
 // Put one back exactly as it was — the same id, its group, its day, its price. ⚠️ The `removedAt` mark is
@@ -1369,6 +1395,9 @@ export function restoreRemovedOrder(state, id) {
   delete back.removedWhy;
   list.splice(i, 1);
   if (!Array.isArray(state.orders)) state.orders = [];
+  // ⭐ THE RESTORE IS THE LATER DECISION (v616) — stamped so a stale shelf row on another device cannot
+  // immediately remove the order again.
+  back.restoredAt = new Date().toISOString();
   state.orders.push(back);
   return back;
 }

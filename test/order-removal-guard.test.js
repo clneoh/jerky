@@ -165,8 +165,11 @@ test("★ a removed order is KEPT, not destroyed — and put back exactly as it 
   const back = restoreRemovedOrder(st, "o1");
   assert.ok(back, "the row on the shelf could not be put back");
   assert.equal(st.removedOrders.length, 0, "the shelf kept a row it had already restored");
-  assert.deepEqual(st.orders.find((o) => o.id === "o1"), before,
-    "★ the order came back different from the one that left");
+  // ⚠️ v616 stamps the restore so a stale shelf row on another device cannot re-remove it. The stamp is the
+  // only new field; everything the order itself carried must be exactly as it left.
+  const { restoredAt, ...same } = st.orders.find((o) => o.id === "o1");
+  assert.ok(restoredAt, "★ the restore is not stamped — another device's shelf row can undo it at once");
+  assert.deepEqual(same, before, "★ the order came back different from the one that left");
   // ⚠️ AND NOTHING ELSE MOVED.
   assert.deepEqual(st.orders.map((o) => o.id).sort(), ["o1", "o2"]);
 });
@@ -362,4 +365,15 @@ test("★★★ a STAMP on the first line fills the others — and never overwri
   const st3 = { orders: [noCode, late] };
   equaliseOrderLines(st3);
   assert.equal(noCode.promo, undefined, "★ a later line's code was copied UP onto the priced row");
+});
+
+test("★★★ an order with no bake day can be removed from the card it opens (v624)", () => {
+  // ⚠️ Her words: __"the link already there just it is not able to delete"__. ⚠️ An orphan has no row on any
+  // day, so the day row's ✕ cannot be reached; the Edit card is the only door.
+  const src = readFileSync(new URL("../admin/js/views/orders.js", import.meta.url), "utf8");
+  const at = src.indexOf("Remove this order");
+  assert.ok(at > 0, "★ the orphan's card has no remove");
+  const around = src.slice(at - 700, at + 300);
+  assert.match(around, /first\.deliveryDateId && byId\(state\.deliveryDates/, "★ the remove is offered on every order, not only an orphan");
+  assert.match(around, /removeOrder\(state, group, root, dateId\)/, "★ the press does not use the shelf's own removal");
 });

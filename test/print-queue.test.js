@@ -1,0 +1,149 @@
+// test/print-queue.test.js — the Wi-Fi print queue: bitmap packing, TSPL framing, and the job insert.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { packBitmap, bytesToBase64, labelBitmap } from "../admin/js/label_image.js";
+import { tsplForBitmap } from "../print-bridge/tspl.mjs";
+
+const rgba = (pixels) => Uint8ClampedArray.from(pixels.flat());
+
+test("★★★ a dark pixel is ink and a light or transparent one is paper (v617)", () => {
+  // A 2 x 2: black at (0,0), white at (1,0), transparent at (0,1), white at (1,1).
+  const frame = rgba([
+    [0, 0, 0, 255], [255, 255, 255, 255],
+    [0, 0, 0, 0], [255, 255, 255, 255],
+  ]);
+  const out = packBitmap(frame, 2, 2);
+  assert.equal(out.widthBytes, 1, "two pixels do not pack into one byte");
+  assert.equal(out.height, 2);
+  assert.equal(out.bytes[0], 0x80, "★ the black pixel is not the top bit of the first byte");
+  assert.equal(out.bytes[1], 0x00, "★ a transparent pixel was printed as ink");
+});
+
+test("★★ a pixel in the SECOND byte lands on its top bit (v617)", () => {
+  const frame = new Uint8ClampedArray(10 * 4);
+  for (let i = 0; i < 10; i += 1) { frame[i * 4] = 255; frame[i * 4 + 1] = 255; frame[i * 4 + 2] = 255; frame[i * 4 + 3] = 255; }
+  frame[8 * 4] = 0; frame[8 * 4 + 1] = 0; frame[8 * 4 + 2] = 0; // the first pixel of the second byte, x = 8
+  const out = packBitmap(frame, 10, 1);
+  assert.equal(out.widthBytes, 2, "ten dots must span two bytes");
+  assert.equal(out.bytes[0], 0x00);
+  assert.equal(out.bytes[1], 0x80, "★ the pixel at x=8 is not bit 7 of the second byte");
+});
+
+test("★★★ the job's bytes become a real TSPL print (v617)", () => {
+  const data = Buffer.from([0xff, 0x00, 0x81]).toString("base64");
+  const out = tsplForBitmap({ widthMm: 100, heightMm: 150, widthBytes: 12, height: 7, data });
+  const text = out.toString("latin1");
+  assert.match(text, /^SIZE 100 mm,150 mm\r\n/, "★ the stock size is not declared first");
+  assert.match(text, /GAP 2 mm,0 mm\r\n/, "★ the label gap is missing — the prints will drift");
+  assert.match(text, /BITMAP 0,0,12,7,0,/, "★ the bitmap command does not match the job");
+  assert.match(text, /\r\nPRINT 1\r\n$/, "★ the job never asks the printer to print");
+  // The binary payload is carried byte-for-byte between the command and the line end.
+  const at = out.indexOf(Buffer.from([0xff, 0x00, 0x81]));
+  assert.ok(at > 0, "★ the bitmap bytes are missing from the command");
+});
+
+test("★★ a job with no bitmap is refused, not sent as a blank label (v617)", () => {
+  assert.throws(() => tsplForBitmap({ widthBytes: 0, height: 0, data: "" }), /bitmap/);
+  assert.throws(() => tsplForBitmap(null), /job/);
+});
+
+test("★★ with no canvas there is no job — never a broken one (v617)", () => {
+  assert.equal(labelBitmap([["customer", "Lucy"]]), null);
+});
+
+test("★★ the phone sends the job to the queue and reports only a real landing (v617)", async () => {
+  const store = new Map();
+  globalThis.localStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => { store.set(k, String(v)); },
+    removeItem: (k) => store.delete(k),
+  };
+  store.set("bakeadmin.supabase", JSON.stringify({ access_token: "tok", expires_at: Date.now() + 3600000 }));
+  const { sendPrintJob } = await import("../admin/js/supabase.js");
+  const state = { settings: { supabase: { enabled: true, url: "https://p.supabase.co", anonKey: "anon",
+    email: "a@b.c", password: "p" } }, orders: [] };
+  let seen = null;
+  globalThis.fetch = async (url, opts) => {
+    if (String(url).includes("/rest/v1/print_jobs")) { seen = { url: String(url), body: JSON.parse(opts.body) }; return { ok: true }; }
+    return { ok: false };
+  };
+  const job = { widthMm: 100, heightMm: 150, widthBytes: 1, height: 1, data: "gA==" };
+  assert.equal(await sendPrintJob(state, job), true);
+  assert.match(seen.url, /\/rest\/v1\/print_jobs$/, "★ the job did not go to the queue table");
+  assert.deepEqual(seen.body.payload, job, "★ the job's payload changed on the way out");
+  assert.equal(seen.body.site, "main", "★ the job does not say which printer it is for");
+  globalThis.fetch = async () => ({ ok: false });
+  assert.equal(await sendPrintJob(state, job), false, "a refused insert was reported as sent");
+});
+
+test("★★★ the bridge flips the bits for this printer, and only when asked (v618)", () => {
+  // ⚠️ Measured on her GP-1326D: the first print had a dark background and white letters — the printer reads
+  // a set bit as PAPER. ⭐ The phone's job keeps one meaning (1 = ink); the flip belongs to the bridge.
+  const data = Buffer.from([0x0f, 0xf0]).toString("base64");
+  const job = { widthMm: 100, heightMm: 150, widthBytes: 2, height: 1, data };
+  const flipped = tsplForBitmap(job, { invert: true });
+  assert.ok(flipped.includes(Buffer.from([0xf0, 0x0f])), "★ the bits print inverted again");
+  const asIs = tsplForBitmap(job);
+  assert.ok(asIs.includes(Buffer.from([0x0f, 0xf0])), "a printer that reads 1 as ink was flipped without being asked");
+});
+
+test("★★★ each device names the printer it prints to, and the name stays on that device (v619)", async () => {
+  // ⚠️ Two sites, one book: without a name every bridge would print every label, twice.
+  const store = new Map();
+  globalThis.localStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => { store.set(k, String(v)); },
+    removeItem: (k) => store.delete(k),
+  };
+  const { printSite, setPrintSite } = await import("../admin/js/print_site.js");
+  assert.equal(printSite(), "main", "a fresh device does not default to main");
+  assert.equal(setPrintSite("  second  "), "second", "the name was not trimmed");
+  assert.equal(printSite(), "second");
+  assert.equal(setPrintSite(""), "main", "clearing the name did not return to main");
+  assert.equal(store.has("bakeadmin.printSite"), false, "a cleared name was left behind");
+});
+
+test("★★★ the bridge asks only for its own site (v619)", () => {
+  const src = readFileSync(new URL("../print-bridge/bridge.mjs", import.meta.url), "utf8");
+  assert.match(src, /site=eq\.\$\{encodeURIComponent\(cfg\.site/, "★ the bridge reads every site's jobs — two sites would double-print");
+  assert.match(src, /Printer name for this site/, "the site is not part of the bridge's setup");
+});
+
+// ── v621: a sleeping printer is a wait, not a failed label ─────────────────
+
+test("★★★ a printer that is not there yet is a WAIT, not a failure (v621)", async () => {
+  // ⚠️ MEASURED: the first attempt after idle failed with EHOSTUNREACH and the next poll printed it. ⚠️ The old
+  // bridge counted that among five attempts and could abandon a label while the printer slept.
+  const { isConnectivityError } = await import("../print-bridge/retry.mjs");
+  assert.equal(isConnectivityError(Object.assign(new Error("x"), { code: "EHOSTUNREACH" })), true);
+  assert.equal(isConnectivityError(Object.assign(new Error("x"), { code: "ECONNREFUSED" })), true);
+  assert.equal(isConnectivityError(new Error("the printer did not answer in 10 seconds")), true);
+  assert.equal(isConnectivityError(new Error("the job has no bitmap data")), false,
+    "★ a broken label was treated as a printer that might come back");
+  assert.equal(isConnectivityError(null), false);
+});
+
+test("★★★ the bridge does not spend an attempt on a wait, and retries inside the job (v621)", () => {
+  const src = readFileSync(new URL("../print-bridge/bridge.mjs", import.meta.url), "utf8");
+  assert.match(src, /if \(isConnectivityError\(err\)\) \{[\s\S]{0,220}continue;/,
+    "★ a sleeping printer still counts against the five attempts");
+  assert.match(src, /async function sendWithRetry/, "the bridge does not retry within the job");
+  assert.match(src, /waitingLogged\.delete/, "the waiting note is never cleared after a print");
+});
+
+test("★★★ a queue request that never answers cannot stop the poll (v622)", () => {
+  const src = readFileSync(new URL("../print-bridge/bridge.mjs", import.meta.url), "utf8");
+  assert.match(src, /async function fetchDeadlined/, "the bridge has no deadlined request");
+  assert.match(src, /new AbortController\(\)/, "nothing aborts a hung request");
+  assert.match(src, /fetchDeadlined\(`\$\{cfg\.url\}\/rest\/v1/, "the queue read is not deadlined");
+  assert.match(src, /prints site "/, "the bridge does not say which site it prints in its log");
+});
+
+test("★★ the status command only READS the queue (v622)", () => {
+  const src = readFileSync(new URL("../print-bridge/status.mjs", import.meta.url), "utf8");
+  assert.match(src, /select=id,created_at,status,site,attempts/, "the status command does not read the queue");
+  assert.equal(/method:\s*"PATCH"/.test(src), false, "★ the status command can change a job");
+  assert.equal(/method:\s*"DELETE"/.test(src), false, "★ the status command can delete a job");
+  assert.equal(/\/rpc\//.test(src), false, "★ the status command calls a function");
+});

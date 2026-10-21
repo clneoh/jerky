@@ -1,8 +1,44 @@
-# Munchies Furkidz — change history (v54 → v609)
+# Munchies Furkidz — change history (v54 → v624)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**22 Oct 2026 — engine v610 to v624: YOUR LABEL PRINTS OVER WI-FI, AND AN OLD COPY CAN NO LONGER
+BRING A REMOVED ORDER BACK (⚠️ ONE DATABASE STEP — see the end).**
+
+**1. The label prints over Wi-Fi.** **A small bridge runs on the Mac and talks to your label printer
+directly** — the phone writes the job to your shared data and the Mac prints it, because a web page cannot
+open a raw socket to a printer. **Install it once** (`print-bridge/` in this folder, with its own README),
+**and the phone needs no printer address or certificate.** ⭐ **The same label can also be shared as an
+image**, which is how it reaches a printer app on a phone.
+
+**2. Two sites, one book.** ⭐ **Each device names its own printer** (Settings → the label printer name), so
+**the Mac at one site prints only that site's labels** and neither bridge prints the other's.
+
+**3. And it is built to lose nothing.** **A sleeping printer is a wait, not a lost label** — the job stays
+queued until it prints. **The bridge runs in the background and survives a dead connection** without
+wedging. **A very long label stays on one sticker**, and **the label prints the right way round** — it was
+mirrored. **A small customer receipt** can go to the same printer; the documents still go through the
+normal print/share route, because they are not for a sticker.
+
+**4. ⚠️ THE GHOSTS STOP.** **Your words: "the old data keep comming back like ghost."** **It was a real
+fault: an old copy of an order could erase a deletion and the resurrection then travelled to your other
+phone.** **The two dates now decide — a removal newer than the copy wins, and the old copy is taken off the
+list and its deletion sent up again.** **A deliberate restore is stamped with its own date and still wins
+the other way.** ⚠️ **A copy with no date is never guessed at**, because removing a real order on a guess
+would be worse than one ghost.
+
+**5. One press puts the missing receipt numbers back.** **The check's repair press claims every missing
+number at once from the register** — the same claim the Invoice card uses, so it can never issue a new one.
+
+**6. An order with no posting day can be removed from its own card.** **It had no row on any day, so the ✕
+could not be reached** — the card was the only door and it had no remove. **It asks first, and the order
+goes to the Removed list for 30 days.**
+
+**⚠️ THE ONE STEP: run `supabase/print_jobs.sql` in the SQL editor.** **It only creates a table; nothing
+existing is touched, and it is safe to run twice.** **The app works without it — only Wi-Fi printing does
+not** — but run it first so the first label prints.
 
 **20 Oct 2026 — engine v606 to v609: YOU CAN SELL ON ANY DAY, AND THE DAY IT MAKES IS PRIVATE (nothing to
 run, no SQL, no upload).**

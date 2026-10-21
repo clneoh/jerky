@@ -20,7 +20,7 @@ import { orderedProducts } from "../productCategories.js";
 import { strictestCancelDays } from "../../../store/pool.js";
 import { buildConfirmation } from "../confirm.js";
 import { buildPaymentReminder, buildPickupReminder, buildShippedMessage } from "../messages.js";
-import { claimReceipt, incomingCapReached, maybePublishTracking, maybeSync, publishTracking, refundReceipt, stuckOrders, unrefundReceipt } from "../supabase.js";
+import { claimReceipt, incomingCapReached, maybePublishTracking, maybeSync, publishTracking, refundReceipt, sendPrintJob, stuckOrders, unrefundReceipt } from "../supabase.js";
 import { receiptLineOfGroup, receiptNoOf, receiptNoOfGroup, receiptStatusOfGroup } from "../receipts.js";
 import { couponDeclined, couponOnAny } from "../referrals.js";
 import { writeCourierCharge, courierFeeOf, courierPayerOf, courierCodOf, customerCourierFee, isCourierOrder, codeMissed, codeNotApplied, couponAgainst, customerTotal, receiptNote, receiptRows, promoOn, promoValue, promoOnBasket, refundableCharge, paymentShift } from "../courier.js";
@@ -45,6 +45,9 @@ import { attachProfiles, customerNameMatches, customerRowName, syncContactFromOr
 // pin's lookup uses, so the Google key stays on the server and never touches this page.
 import { bakeryName, journalBodyEl, journalButtons } from "../journal.js";
 import { invoiceCurrency, invoiceNo, invoiceSheet } from "../invoice.js";
+import { labelCanPdf, labelPdf, labelPdfName } from "../label_pdf.js";
+import { labelBitmap, labelImageFile } from "../label_image.js";
+import { receiptSlipRows } from "../receipt_slip.js";
 import { orderPointName, setOrderPoint } from "../points.js";
 import { pointChoices } from "../pointAreas.js";
 // ★ THE PARCEL SEAM (v307). `parcels.js` is pure — it reads her own mailing block and the
@@ -3238,7 +3241,14 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     el("div", { class: "card-sub", style: "margin:0 0 10px" },
       "Hidden products are listed as \"(hidden)\" — you can still add or keep one."),
     button("Save changes", saveEdits, "block primary"),
-    el("div", { style: "margin-top:8px" }, button("Cancel", close, "ghost block")));
+    el("div", { style: "margin-top:8px" }, button("Cancel", close, "ghost block")),
+    // ⚠️⚠️ AN ORDER WITH NO BAKE DAY HAS NO ROW ON ANY DAY, so the ✕ that normally removes an order is
+    // unreachable — ⚠️ **her own report: "the link already there just it is not able to delete".** ⭐ The card
+    // the link opens is the only place she can remove it, and it asks first exactly as the row's ✕ does.
+    (first.deliveryDateId && byId(state.deliveryDates, first.deliveryDateId))
+      ? null
+      : el("div", { style: "margin-top:10px" },
+          button("Remove this order", () => { close(); removeOrder(state, group, root, dateId); }, "danger block")));
 }
 
 // Write the pop-up's parcel choice onto the order (v226). Kept in ONE place because
@@ -4360,7 +4370,9 @@ async function openInvoice(state, group) {
           + "again once the phone is back online — the number is drawn then, and this page will show it.")
       : null,
     journalBodyEl(sheet, cur),
-    el("div", { class: "popup-actions" }, ...journalButtons(sheet, cur))));
+    el("div", { class: "popup-actions" },
+      button("Receipt over Wi-Fi", () => { printReceiptOverWifi(state, whole); }, "soft"),
+      ...journalButtons(sheet, cur))));
 }
 
 // The two things she most often needs to change once an order is placed: its note,
@@ -4730,6 +4742,15 @@ function labelSheetEl(state, group, style) {
 // the label sheet (never the app or the popup chrome). Cleaned up on afterprint
 // (async browsers) and by a fallback timer, so a leftover class can never blank
 // a later PO print.
+// ⭐⭐ HOW MUCH A LABEL MUST SHRINK TO STAY ON ONE 100 × 150 mm LABEL (v610). ⭐ CSS has no auto-fit, so the
+// printed sheet is measured at its real width and scaled down by this factor when it would spill onto a
+// second label. ⚠️ It NEVER scales up: a short label keeps its size. 1 CSS inch = 96 px, so 150 mm = 566.93 px.
+export function labelScaleFor(heightPx, targetPx = 150 * 96 / 25.4) {
+  const h = Number(heightPx);
+  if (!Number.isFinite(h) || h <= 0 || h <= targetPx) return 1;
+  return targetPx / h;
+}
+
 function printActiveLabel() {
   // ⚠️ A PHONE THAT CANNOT PRINT SAYS SO (v592) — before the class is added, so no trace is left.
   if (!(typeof window !== "undefined" && typeof window.print === "function")) {
@@ -4746,16 +4767,151 @@ function printActiveLabel() {
   // uses the printer's own paper setting, exactly as it did before this version — no worse than before.
   const host = document.head || document.documentElement || document.body;
   if (host && typeof host.appendChild === "function") host.appendChild(page);
+  // ⚠️⚠️ A VERY LONG MAILING LABEL NO LONGER RUNS ONTO A SECOND LABEL (v610). ⚠️ The honest fix needed a real
+  // print; measured on 100 × 150 mm stock, a normal long label fits, but a 25-line one is 979 px against the
+  // sheet's 567 px. ⭐ So the sheet is measured at its real 100 mm width and scaled to fit — **nothing is
+  // clipped and nothing is lost; the whole label is on one sticker, a little smaller.**
+  const sheet = document.querySelector(".label-sheet");
+  let scaled = null;
+  if (sheet) {
+    const clone = sheet.cloneNode(true);
+    Object.assign(clone.style, { position: "fixed", left: "-10000px", top: "0",
+      width: "100mm", maxWidth: "100mm", transform: "none" });
+    document.body.appendChild(clone);
+    const scale = labelScaleFor(clone.scrollHeight);
+    clone.remove();
+    if (scale < 1) {
+      scaled = sheet;
+      sheet.style.transform = `scale(${scale})`;
+      sheet.style.transformOrigin = "top left";
+    }
+  }
   const done = () => {
     document.body.classList.remove("label-print");
     const st = document.getElementById("label-page-size");
     if (st) st.remove();
+    if (scaled) { scaled.style.transform = ""; scaled.style.transformOrigin = ""; }
     window.removeEventListener("afterprint", done);
     clearTimeout(timer);
   };
   const timer = setTimeout(done, 10000);
   window.addEventListener("afterprint", done);
   try { window.print(); } catch { done(); toast("This phone couldn't print — use Share instead."); }
+}
+
+// ⭐⭐ SHARE THE LABEL AS A FILE (v611). ⚠️ A Wi-Fi label printer that Android's print services cannot see
+// still has its own app — and a web page can hand that app a file. ⭐ The same rows the sheet draws go into a
+// 100 × 150 mm PDF, so the shared label and the printed one cannot differ.
+async function shareActiveLabel(state, group, style) {
+  const data = packingLabelData(state, group, style);
+  const rows = data.rows || [];
+  if (!labelCanPdf(rows)) {
+    toast("This label has characters the app's files cannot draw — press Print and save it as a PDF instead.");
+    return;
+  }
+  const code = group && group.orders && group.orders[0] ? orderCode(group.orders[0]) : "";
+  // ⚠️⚠️ THE IMAGE IS OFFERED FIRST (v612). ⚠️ Android only shows an app for a file type it accepts, and most
+  // label-printer apps register for `image/*`, not `application/pdf` — ⚠️ **which is why the printer's app
+  // never appeared in the share sheet.** ⭐ The PNG is the same layout the PDF draws; the PDF stays as the
+  // fallback for an app that prefers it.
+  const files = [];
+  try {
+    const png = await labelImageFile(rows, labelPdfName(`#${code}`, "png"));
+    if (png) files.push(png);
+  } catch { /* no canvas — the PDF below is the answer */ }
+  try {
+    if (typeof File === "function") {
+      files.push(new File([labelPdf(rows)], labelPdfName(`#${code}`), { type: "application/pdf" }));
+    }
+  } catch { /* no PDF either — the message below is the honest answer */ }
+
+  const nav = typeof navigator !== "undefined" ? navigator : null;
+  // ⚠️⚠️ ASK BY TRYING, NOT BY `canShare` (v615). ⚠️ A phone can answer "no" for a file type it would in
+  // fact share, and the old gate then skipped the image and offered the PDF — ⚠️ **which is why her share
+  // sheet still showed a PDF.** ⭐ The attempt itself is the test; a refusal falls through to the next file,
+  // and a cancel is a decision.
+  if (nav && typeof nav.share === "function") {
+    for (const file of files) {
+      try {
+        await nav.share({ files: [file], title: `Label #${code}` });
+        return;
+      } catch (err) {
+        if (err && err.name === "AbortError") return;
+        // refused — try the next file
+      }
+    }
+  }
+  // No share sheet, or it refused both: save a file so she still has something to open in the printer's app.
+  try {
+    const file = files[0];
+    if (file && typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
+      const url = URL.createObjectURL(file);
+      const link = el("a", { href: url, download: file.name });
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      toast("Saved a label file — open it in the printer's app");
+      return;
+    }
+  } catch { /* fall through to the message */ }
+  toast("This phone can't share a file — press Print instead.");
+}
+
+// ⭐⭐ THE SMALL CUSTOMER RECEIPT ON THE SAME PRINTER (v623) — a designed 100 × 150 mm slip, NOT the A4 invoice.
+async function printReceiptOverWifi(state, group) {
+  const rows = receiptSlipRows(state, group);
+  if (!rows.length) return toast("This order has nothing on it to print.");
+  const job = labelBitmap(rows, 203);
+  if (!job) return toast("This phone could not prepare the receipt.");
+  const sent = await sendPrintJob(state, job);
+  toast(sent
+    ? "Receipt sent to the Wi-Fi printer — it prints in a moment"
+    : "Could not send the receipt — is the bridge running and this phone signed in?");
+}
+
+// ⭐⭐ PRINT ON WI-FI (v617) — the job goes through the shared cloud to the Mac's bridge, which prints it on
+// the Wi-Fi printer. ⚠️ **No share sheet, no file, and the same press on Android and iOS.**
+async function printOverWifi(state, group, style) {
+  const data = packingLabelData(state, group, style);
+  const job = labelBitmap(data.rows, 203);
+  if (!job) return toast("This phone could not prepare the label for the printer.");
+  const sent = await sendPrintJob(state, job);
+  toast(sent
+    ? "Sent to the Wi-Fi printer — it prints in a moment"
+    : "Could not send the label — is the bridge running and this phone signed in?");
+}
+
+// ⭐ SAVE A COPY (v615) — the route that always works: save the image (or the PDF), then open it in the
+// printer's own app. ⚠️ Some printer apps never accept a share; they still import a file.
+function downloadLabelFile(file) {
+  try {
+    if (typeof URL === "undefined" || typeof URL.createObjectURL !== "function") return false;
+    const url = URL.createObjectURL(file);
+    const link = el("a", { href: url, download: file.name });
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    return true;
+  } catch { return false; }
+}
+
+async function saveActiveLabel(state, group, style) {
+  const data = packingLabelData(state, group, style);
+  const code = group && group.orders && group.orders[0] ? orderCode(group.orders[0]) : "";
+  let file = null;
+  try { file = await labelImageFile(data.rows, labelPdfName(`#${code}`, "png")); } catch { file = null; }
+  if (!file) {
+    try {
+      if (typeof File === "function") {
+        file = new File([labelPdf(data.rows)], labelPdfName(`#${code}`), { type: "application/pdf" });
+      }
+    } catch { file = null; }
+  }
+  if (!file) return toast("This phone could not make a label file — press Print instead.");
+  if (!downloadLabelFile(file)) return toast("This phone could not save the file — press Share instead.");
+  toast("Saved a label file — open it in the printer's app");
 }
 
 // "Print label": pick one of the preset styles, preview it live, then print.
@@ -4799,9 +4955,16 @@ function openLabelPrint(state, group) {
     return el("div", { class: "label-print-body" },
       pills,
       sheetWrap,
+      // ⚠️ AND HOW TO REACH A PRINTER CHROME CANNOT SEE (v611): share the file to its own app.
+      el("p", { class: "card-sub", style: "margin:10px 0 0" },
+        "If the printer has its own app, press Share and choose that app — the label goes as a "
+        + "100 × 150 mm PDF. Print is for a printer Android or the computer can already see."),
       el("div", { class: "popup-actions" },
         button("Cancel", close, "ghost"),
-        button("Print label", printActiveLabel, "primary")));
+        button("Save a copy", () => { saveActiveLabel(state, group, style); }, "ghost"),
+        button("Share", () => { shareActiveLabel(state, group, style); }, "soft"),
+        button("Print over Wi-Fi", () => { printOverWifi(state, group, style); }, "primary"),
+        button("Print label", printActiveLabel, "soft")));
   }, { wide: true });
 }
 

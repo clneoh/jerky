@@ -14,7 +14,7 @@
 
 import { el, button, confirmDialog, toast } from "../ui.js";
 import { hideSparesBlocked, runHealthChecks } from "../health.js";
-import { pullReceiptRegister, maybeSync } from "../supabase.js";
+import { claimReceipt, pullReceiptRegister, maybeSync } from "../supabase.js";
 import * as backups from "../backups.js";
 import * as sync from "../sync.js";
 import { save, saveFailure, duplicateIngredientPlan } from "../state.js";
@@ -90,6 +90,12 @@ export function renderHealth(root, state) {
         ? el("div", { class: "btn-row", style: "margin:8px 0 0" },
             button("Hide the spare cards", () => hideSpares(), "primary"))
         : null,
+      // ⭐ ONE PRESS FOR EVERY MISSING RECEIPT STAMP (v613). ⚠️ Fourteen orders is not fourteen presses.
+      r.status === "fail" && r.repair === "receiptStamps" && (r.repairIds || []).length
+        ? el("div", { class: "btn-row", style: "margin:8px 0 0" },
+            button(`Put the ${r.repairIds.length} number${r.repairIds.length === 1 ? "" : "s"} back`,
+              () => repairReceiptStamps(r.repairIds), "primary"))
+        : null,
       // ⚠️ THE THINGS THEMSELVES, NAMED. A count she cannot look up is a number she cannot act on — every
       // failing check carries the rows it is about, by order number, so each one can be found.
       r.detail && r.detail.length
@@ -99,6 +105,44 @@ export function renderHealth(root, state) {
     list.replaceChildren(
       el("h3", { style: "margin:0 0 8px" }, "What each check found"),
       ...rows);
+  }
+
+  // ⭐⭐ PUT THE REGISTER'S NUMBERS BACK ON THEIR ORDERS (v613). ⚠️ It uses the Invoice card's OWN claim, which
+  // returns the number the register already holds — ⭐ **the same number, never a new one** — and an order that
+  // already carries its number is not touched. Failures are named, never silently counted as done.
+  function repairReceiptStamps(ids) {
+    const todo = [...new Set((ids || []).map(String))];
+    if (!todo.length) return toast("Nothing to put back");
+    confirmDialog(
+      `This asks your receipt register for the number each of these ${todo.length} orders already has, and `
+      + "writes it onto the order — the same number, never a new one. Orders that already carry theirs are "
+      + "not touched.",
+      async () => {
+        let ok = 0;
+        let failed = 0;
+        let needsPaid = 0;
+        for (const id of todo) {
+          const row = (state.orders || []).find((o) => o && String(o.id) === id);
+          if (!row) { failed += 1; continue; }
+          // ⚠️ A RECEIPT IS FOR MONEY RECEIVED: an order the app does not believe is paid cannot be
+          // claimed, and the press says so instead of counting it as a failure.
+          if (!row.paidReceived) { needsPaid += 1; continue; }
+          // ⚠️ FORCED: a number that disagrees with the register must still be asked about, or the press
+          // reports success and the red line never clears (v615).
+          // eslint-disable-next-line no-await-in-loop
+          if (await claimReceipt(state, row, { force: true })) ok += 1;
+          else failed += 1;
+        }
+        if (ok) {
+          save(state);
+          maybeSync(state);
+        }
+        toast(`${ok} number${ok === 1 ? "" : "s"} put back`
+          + (needsPaid ? ` · ${needsPaid} need their payment marked first — open each and press Paid` : "")
+          + (failed ? ` · ${failed} could not be reached — run the check again` : ""));
+        run(true);
+      },
+      { yesLabel: "Put the numbers back" });
   }
 
   // ★★★ PUT THE MISSING LINE ON EVERY CARD THAT DOES NOT ADD UP (v563).

@@ -1,5 +1,6 @@
 // views/settings.js — defaults, export/import backup, clear data.
 
+import { printSite, setPrintSite } from "../print_site.js";
 import { el, button, confirmDialog, toast, select } from "../ui.js";
 import { LS_KEY, newId, save, unreadableCopy, dropUnreadableCopy } from "../state.js";
 import { hashPin, isPin, hasStoredPin } from "../pin.js";
@@ -442,9 +443,17 @@ export function renderSettings(root, state) {
       "Your own address, typed once and used in four places: the FROM block on a parcel label, the door the courier collects from, the letterhead on an invoice, and the from line on the wish-list email. One line per row — first line your business name, then the address, your phone last."),
     mailBox,
     el("p", { class: "card-sub", style: "margin:6px 0 0" },
-      "A parcel label prints FROM = this address, TO = the customer's name, phone and address, and ORDER = the code, date and items. An invoice prints it under your business's name. Saved with your settings, so it travels to your other phones — type it once."));
-
-
+      "A parcel label prints FROM = this address, TO = the customer's name, phone and address, and ORDER = the code, date and items. An invoice prints it under your business's name. Saved with your settings, so it travels to your other phones — type it once."),
+    // ⭐ WHICH PRINTER THIS DEVICE PRINTS TO (v619). ⚠️ Two sites, one book: without a name every bridge would
+    // print every label. ⭐ It is DEVICE-LOCAL — the phone at the other site names that site's printer here.
+    el("div", { class: "field", style: "margin-top:14px" },
+      el("label", {}, "Label printer name for this device"),
+      el("input", { class: "input", type: "text", value: printSite(), maxlength: "40",
+        placeholder: "main",
+        onchange: function () { const v = setPrintSite(this.value); this.value = v; toast("Saved for this device"); } }),
+      el("p", { class: "card-sub", style: "margin:4px 0 0" },
+        "This must match the name entered when the print bridge was started on this site's computer — "
+        + "\"main\" unless you chose another. It stays on this device; the orders themselves are shared.")));
 
 
 

@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { parseVersion, deployedBuild, decide, shouldReload, maybeReloadForUpdate, startFreshnessWatch } from "../admin/js/freshness.js";
+import { parseVersion, deployedBuild, decide, shouldReload, maybeReloadForUpdate, startFreshnessWatch, forceFresh } from "../admin/js/freshness.js";
 import { ENGINE_VERSION } from "../admin/js/version.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -97,8 +97,14 @@ test("decide: behind AFTER a reload stops offering it and names the next step", 
   // Offering the same tap again would be a control that does nothing.
   const info = decide({ running: "257", deployed: "258", tried: true });
   assert.equal(info.tone, "wait");
-  assert.equal(info.label, undefined);
-  assert.match(info.text, /Close the app completely/);
+  // ⚠️ v614: the old advice was "Close the app completely", and she did exactly that — including clearing
+  // her whole browser data — while the strip still said the same thing. ⭐ The state now carries a press
+  // that really clears the old copy.
+  assert.equal(info.label, "Force update");
+  assert.equal(info.force, true, "★ the still-behind state offers no way out");
+  assert.match(info.text, /Force update clears/);
+  assert.equal(/Close the app completely/.test(info.text), false,
+    "★ the strip still tells her to close the app, which is the advice that did not work");
   assert.match(info.text, /v257/);
   assert.match(info.text, /v258/);
 });
@@ -214,4 +220,41 @@ test("★★⚠️ the update strip sits ABOVE the lock screen, or the warning i
   assert.ok(bar > lock,
     `the update strip (z-index ${bar}) is BELOW the lock screen (z-index ${lock}) — the warning that `
     + "says this phone is behind would be painted under the screen the person is looking at");
+});
+
+test("★★★ Force update really clears the old copy and reloads from a fresh address (v614)", async () => {
+  // ⚠️ The plain reload can be answered from the ten-minute cache or by a worker that has not updated,
+  // and closing the app does not always end its session. ⭐ This press removes the worker, deletes every
+  // cache, and loads an address the caches have never seen.
+  const realNav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const realCaches = globalThis.caches;
+  const realLocation = globalThis.location;
+  let unregistered = 0;
+  const deleted = [];
+  let went = "";
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: { serviceWorker: { getRegistrations: async () => ([{ unregister: async () => { unregistered += 1; } }]) } },
+  });
+  globalThis.caches = { keys: async () => ["one", "two"], delete: async (k) => { deleted.push(k); return true; } };
+  globalThis.location = { href: BASE, replace: (url) => { went = url; } };
+  try {
+    await forceFresh();
+    assert.equal(unregistered, 1, "★ the old worker is still in control");
+    assert.deepEqual(deleted, ["one", "two"], "★ the old cache is still there to be served");
+    assert.match(went, /fresh=\d+/, "★ the reload reuses the same address, so the cache can answer again");
+  } finally {
+    if (realNav) Object.defineProperty(globalThis, "navigator", realNav);
+    else delete globalThis.navigator;
+    if (realCaches === undefined) delete globalThis.caches; else globalThis.caches = realCaches;
+    globalThis.location = realLocation;
+  }
+});
+
+test("★★★ the still-behind strip's press calls the force path, not another plain reload (v614)", () => {
+  const src = readFileSync(join(here, "..", "admin", "js", "freshness.js"), "utf8");
+  assert.match(src, /if \(info && info\.force\) \{ forceFresh\(\); return; \}/,
+    "★ the Force update button falls through to an ordinary reload — the cache answers it again");
+  assert.match(src, /getRegistrations\(\)/, "the worker is not unregistered");
+  assert.match(src, /caches\.keys\(\)/, "the caches are not cleared");
 });

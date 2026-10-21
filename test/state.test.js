@@ -3,7 +3,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalize, defaultState, removeOrders, loadState, save, updateOrderBadge, groupOrders, orderCode, ordersOnDate, waNumber, ensureSupabase, productUnitOptions, productUsesUnit, sameNameIngredient, duplicateIngredientPlan, equaliseOrderLines, bakeDays, BUILTIN_SUPABASE } from "../admin/js/state.js";
+import { normalize, defaultState, removeOrders, dropStaleShelfRows, loadState, save, updateOrderBadge, groupOrders, orderCode, ordersOnDate, waNumber, ensureSupabase, productUnitOptions, productUsesUnit, sameNameIngredient, duplicateIngredientPlan, equaliseOrderLines, bakeDays, BUILTIN_SUPABASE } from "../admin/js/state.js";
 import { lockEnabled } from "../admin/js/pin.js";
 import { planOf } from "../admin/js/production.js";
 import { planBackwards } from "../admin/js/bakeday.js";
@@ -974,4 +974,29 @@ test("★★★ a private sale day is never one of her bake days (v608)", () => 
   ] };
   assert.deepEqual(bakeDays(st).map((d) => d.date), ["2026-10-21"],
     "★ a private sale day was listed among her bake days");
+});
+
+// ── v616: a deliberate removal beats an older live copy ─────────────────────
+
+test("★★★ an old live copy cannot resurrect a newer removal (v616)", () => {
+  // ⚠️⚠️ MEASURED: a device still holding an old order re-uploaded it, and the shelf rule kept the LIVE
+  // copy and dropped the shelf row — ⚠️ **so the deletion was erased and the order came back on every
+  // screen: the ghost.** ⭐ The removal is the later decision and now wins.
+  const st = {
+    orders: [{ id: "o1", createdAt: "2026-01-01T00:00:00.000Z", customerName: "Old test order" }],
+    removedOrders: [{ id: "o1", removedAt: "2026-10-21T09:00:00.000Z" }],
+  };
+  dropStaleShelfRows(st);
+  assert.equal(st.orders.length, 0, "★ the old live copy survived a newer removal — the ghost is back");
+  assert.equal(st.removedOrders.length, 1, "★ the removal itself was erased by its own ghost");
+});
+
+test("★★★ and a deliberate RESTORE still wins the other way (v616)", () => {
+  const st = {
+    orders: [{ id: "o1", createdAt: "2026-01-01T00:00:00.000Z", restoredAt: "2026-10-22T09:00:00.000Z" }],
+    removedOrders: [{ id: "o1", removedAt: "2026-10-21T09:00:00.000Z" }],
+  };
+  dropStaleShelfRows(st);
+  assert.equal(st.orders.length, 1, "★ a restored order was removed again by its old shelf row");
+  assert.equal(st.removedOrders.length, 0, "the shelf row did not retire after the restore");
 });
