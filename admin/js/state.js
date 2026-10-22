@@ -1315,10 +1315,9 @@ export function removeOrders(state, ids, reason = "") {
 }
 
 // ⚠️ A SHELF THAT ONLY GROWS IS A LEAK — this keeps it to a window. ⚠️⚠️ AND THE WINDOW IS NAMED BY THE
-// CONSTANT AND NOTHING ELSE: **this comment used to say "Thirty days is long enough" while the constant said
-// 48, and that disagreement was QUOTED BACK TO HER AS EVIDENCE** — ⭐ **a comment that repeats a number is a
-// second copy of somebody's decision, and second copies drift.** ⚠️ 48 hours is HER number, from v452 —
-// __"the deleted order just need to keep for 48hrs"__ — chosen over a developer guess of thirty days.
+// CONSTANT AND NOTHING ELSE: **a comment that repeats a number is a second copy of somebody's decision, and
+// second copies drift** — this one once said 48 hours while the constant said 30 days, and that disagreement
+// was quoted back to her as evidence. ⭐ Change `REMOVED_KEEP_HOURS`; every sentence that reads it follows.
 // ⭐ `REMOVED_MAX` is a separate guard: far more rows than a bakery removes inside that window.
 function pruneRemovedOrders(state) {
   const list = Array.isArray(state.removedOrders) ? state.removedOrders : [];

@@ -1,8 +1,26 @@
-# Munchies Furkidz — change history (v54 → v624)
+# Munchies Furkidz — change history (v54 → v625)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**22 Oct 2026 — engine v625: REMOVE THE ORDERS WITH NO POSTING DAY IN ONE PRESS (nothing to run, no
+SQL, no upload).**
+
+**Your words: "now remove them" — after opening each one and finding they were old test rows.**
+
+**1. The red line now carries the press.** **"Remove the N orders with no posting day"** sits on the check
+that names them. **It asks first and names every code in the question**, so you are answering about a list
+you can read.
+
+**2. And it is the same shelf as the row's ✕.** **The orders go to the Removed list for 30 days** — **so
+nothing is destroyed, and a real sale caught among them can be put back.**
+
+**3. It removes only the orders that check names** — no posting day, and no day of their own. **A placed
+order is not touched**, and an ordinary order keeps its row's ✕. **The per-order "Remove this order" on
+each card stays**, for a sale you would rather put on a day.
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **22 Oct 2026 — engine v610 to v624: YOUR LABEL PRINTS OVER WI-FI, AND AN OLD COPY CAN NO LONGER
 BRING A REMOVED ORDER BACK (⚠️ ONE DATABASE STEP — see the end).**

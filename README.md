@@ -850,6 +850,15 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
+## v625 — the "can still be found" check can remove its own rows (22 Oct 2026)
+
+**Bakery v625, 8 files, +81/−12, no SQL.** Her words: *"now remove them"* — the named orders were old test
+rows. The red line gains **"Remove the N orders with no bake day"**: it **asks first and names every
+code**, then uses **the same shelf as the row's ✕** (Removed list, 30 days, reversible). **It removes only
+what the check names** — no bake day and no day of its own — so a placed order is untouched. The per-card
+remove from v624 stays for a sale she would rather put on a day. **Localised:** "bake day" → "delivery
+date" in both strings. Suite 3934 → 3936.
+
 ## v610–v624 — Wi-Fi label printing, the ghosts stopped, and a card that can remove (22 Oct 2026)
 
 **Bakery range `c08a081..b3ab928` (v610–v624), 14 commits, 37 files, +2048/−58.** ⚠️ **ONE SQL STEP:

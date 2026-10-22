@@ -17,7 +17,7 @@ import { hideSparesBlocked, runHealthChecks } from "../health.js";
 import { claimReceipt, pullReceiptRegister, maybeSync } from "../supabase.js";
 import * as backups from "../backups.js";
 import * as sync from "../sync.js";
-import { save, saveFailure, duplicateIngredientPlan } from "../state.js";
+import { save, saveFailure, duplicateIngredientPlan, removeOrders, updateOrderBadge, orderCode } from "../state.js";
 import { fmtStockAmount } from "../purchasing.js";
 import { STOCK_LOG_CAP, reconcileCards } from "../stock.js";
 
@@ -91,6 +91,12 @@ export function renderHealth(root, state) {
             button("Hide the spare cards", () => hideSpares(), "primary"))
         : null,
       // ⭐ ONE PRESS FOR EVERY MISSING RECEIPT STAMP (v613). ⚠️ Fourteen orders is not fourteen presses.
+      // ⭐ ONE PRESS FOR THE ORDERS THAT HAVE NO BAKE DAY (v625) — ⚠️ it names every code before acting.
+      r.status === "fail" && r.repair === "orphanOrders" && (r.repairIds || []).length
+        ? el("div", { class: "btn-row", style: "margin:8px 0 0" },
+            button(`Remove the ${r.repairIds.length} order${r.repairIds.length === 1 ? "" : "s"} with no posting day`,
+              () => removeOrphans(r.repairIds), "danger"))
+        : null,
       r.status === "fail" && r.repair === "receiptStamps" && (r.repairIds || []).length
         ? el("div", { class: "btn-row", style: "margin:8px 0 0" },
             button(`Put the ${r.repairIds.length} number${r.repairIds.length === 1 ? "" : "s"} back`,
@@ -110,6 +116,30 @@ export function renderHealth(root, state) {
   // ⭐⭐ PUT THE REGISTER'S NUMBERS BACK ON THEIR ORDERS (v613). ⚠️ It uses the Invoice card's OWN claim, which
   // returns the number the register already holds — ⭐ **the same number, never a new one** — and an order that
   // already carries its number is not touched. Failures are named, never silently counted as done.
+  // ⭐⭐ REMOVE THE ORDERS THAT HAVE NO BAKE DAY (v625). ⚠️ Her word after opening each one: they are old test
+  // rows. ⭐ The confirmation NAMES EVERY CODE before it acts, and the removal goes to the Removed list — so a
+  // real sale among them is recoverable for 30 days, not destroyed.
+  function removeOrphans(ids) {
+    const todo = [...new Set((ids || []).map(String))];
+    if (!todo.length) return toast("Nothing to remove");
+    const codes = todo.map((id) => {
+      const o = (state.orders || []).find((x) => x && String(x.id) === id);
+      return o ? `#${orderCode(o)}` : id;
+    });
+    confirmDialog(
+      `Remove ${todo.length} order${todo.length === 1 ? "" : "s"} with no posting day?\n\n${codes.join("  ")}`
+      + "\n\nThey go to the Removed list for 30 days — nothing is destroyed, and a real sale can be put back.",
+      () => {
+        const gone = removeOrders(state, todo, "removed from Check my system");
+        save(state);
+        maybeSync(state);
+        updateOrderBadge(state);
+        toast(`${gone.length} order${gone.length === 1 ? "" : "s"} moved to the Removed list`);
+        run(true);
+      },
+      { danger: true, yesLabel: "Remove them" });
+  }
+
   function repairReceiptStamps(ids) {
     const todo = [...new Set((ids || []).map(String))];
     if (!todo.length) return toast("Nothing to put back");

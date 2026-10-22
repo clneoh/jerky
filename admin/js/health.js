@@ -96,11 +96,18 @@ export function localChecks(state) {
     const lost = orders.filter((o) => o
       && !(o.deliveryDateId && byId(days, o.deliveryDateId))
       && !String(o.deliveryDate || "").trim());
-    out.push(lost.length
-      ? fail("day", "Every order can still be found", lost.map((o) => `#${codeOf(o)}`),
+    if (!lost.length) {
+      out.push(pass("day", "Every order can still be found"));
+    } else {
+      const f = fail("day", "Every order can still be found", lost.map((o) => `#${codeOf(o)}`),
         "These orders are on no delivery date and carry no day of their own, so nothing can place them — not the Orders list, not the calendar, not a search by day.",
-        "Find each order by its number in the Orders search box and set its delivery date.")
-      : pass("day", "Every order can still be found"));
+        "Find each order by its number in the Orders search box and set its delivery date — or, if they are old test rows, remove them here.");
+      // ⭐ ONE PRESS FOR ROWS THAT ARE ALL TEST ORDERS (v625) — ⚠️ it asks first and names every code, and a
+      // removal goes to the Removed list, so a real sale is recoverable for 30 days.
+      f.repair = "orphanOrders";
+      f.repairIds = lost.map((o) => o.id).filter(Boolean);
+      out.push(f);
+    }
   }
 
   // ── 4 · every line of one order agrees about the order ──────────────────

@@ -1160,3 +1160,26 @@ test("★★★ the repair press claims the SAME number through the Invoice path
     "★ the repair does not force the register's number over a disagreeing one");
   assert.match(src, /the same number, never a new one/i, "★ the confirmation does not say it cannot issue a number");
 });
+
+test("★★★ orders with no bake day come with a one-press removal, naming them (v625)", () => {
+  // ⚠️ Her words: "now remove them" — after opening each one, they are old test rows. ⭐ The check carries
+  // their ids; the press names every code, and the removal goes to the Removed list (30 days), not into nothing.
+  const st = healthy();
+  delete st.orders[0].deliveryDateId;
+  delete st.orders[0].deliveryDate;
+  const r = resultOf(runChecks(st, { register: REGISTER, copies: COPIES }), "day");
+  assert.equal(r.status, "fail", "precondition: an orphan was not reported");
+  assert.equal(r.repair, "orphanOrders", "★ no one-press removal was offered");
+  assert.deepEqual(r.repairIds, ["ord_a1b2c3d4e5f6"], "★ the removal does not name the order");
+
+  const ok = resultOf(runChecks(healthy(), { register: REGISTER, copies: COPIES }), "day");
+  assert.equal(ok.status, "pass", "a placed order was reported as lost");
+});
+
+test("★★★ the orphan removal asks first and uses the shelf's own removal (v625)", () => {
+  const src = readFileSync(new URL("../admin/js/views/health.js", import.meta.url), "utf8");
+  assert.match(src, /removeOrphans\(r\.repairIds\)/, "★ the button does not start the removal");
+  assert.match(src, /removeOrders\(state, todo, "removed from Check my system"\)/,
+    "★ the removal does not use the shelf");
+  assert.match(src, /codes\.join\("  "\)/, "★ the confirmation does not name the orders");
+});
