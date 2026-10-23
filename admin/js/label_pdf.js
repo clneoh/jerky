@@ -48,6 +48,9 @@ function layoutMm(rows, scale = 1, measure = false) {
     const sizeMm = sizePt / MM_TO_PT;
     const lead = sizeMm * 1.32;
     const wrapped = wrapText(text, INNER_PT * scale, { font, size: sizePt });
+    // ⚠️ THE CUSTOMER'S OWN WORDS ARE UNDERLINED ON THE SHEET (v244) — and the drawn label must carry the same
+    // marks, or the phone's label loses the only thing that tells a packer which item the note belongs to.
+    const marks = row[2] == null ? [] : [].concat(row[2]).map(String).filter(Boolean);
     for (const line of wrapped) {
       y += lead;
       if (!measure && y > room) break;
@@ -57,7 +60,7 @@ function layoutMm(rows, scale = 1, measure = false) {
       const x = cls.startsWith("mail-")
         ? LABEL_MARGIN_MM
         : LABEL_MARGIN_MM + Math.max(0, (inner - widthMm) / 2);
-      lines.push({ text: line, xMm: x, yMm: y, sizeMm, font, bold: font === "F2" });
+      lines.push({ text: line, xMm: x, yMm: y, sizeMm, font, bold: font === "F2", marks });
     }
     y += 0.7 * scale; // a small gap between blocks
     if (!measure && y > room) break;
@@ -86,15 +89,21 @@ export function labelLines(rows) {
 
 // The label as PDF bytes, at exactly 100 × 150 mm.
 export function labelPdf(rows) {
-  const ops = labelLines(rows).map((l) => ({
-    op: "text",
-    // PDF's origin is bottom-left, so a top-down baseline is mirrored.
-    x: l.xMm * MM_TO_PT,
-    y: (LABEL_H_MM - l.yMm) * MM_TO_PT,
-    size: l.sizeMm * MM_TO_PT,
-    font: l.font,
-    text: l.text,
-  }));
+  const ops = [];
+  for (const l of labelLines(rows)) {
+    const x = l.xMm * MM_TO_PT;
+    const y = (LABEL_H_MM - l.yMm) * MM_TO_PT;
+    ops.push({ op: "text", x, y, size: l.sizeMm * MM_TO_PT, font: l.font, text: l.text });
+    // ⚠️ AND THE UNDERLINE UNDER THE CUSTOMER'S WORDS, in the same face and size, so the paper copy carries the
+    // same mark as the screen (v626).
+    for (const mark of l.marks || []) {
+      const at = String(l.text).indexOf(mark);
+      if (at < 0) continue;
+      const before = textWidth(String(l.text).slice(0, at), { font: l.font, size: l.sizeMm * MM_TO_PT });
+      const width = textWidth(mark, { font: l.font, size: l.sizeMm * MM_TO_PT });
+      ops.push({ op: "rule", x1: x + before, y1: y - 1.2, x2: x + before + width, y2: y - 1.2, width: 0.6 });
+    }
+  }
   return makePdf([{ w: LABEL_W, h: LABEL_H, ops }]);
 }
 

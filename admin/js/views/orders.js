@@ -47,7 +47,7 @@ import { bakeryName, journalBodyEl, journalButtons } from "../journal.js";
 import { invoiceCurrency, invoiceNo, invoiceSheet } from "../invoice.js";
 import { labelCanPdf, labelPdf, labelPdfName } from "../label_pdf.js";
 import { labelBitmap, labelImageFile } from "../label_image.js";
-import { receiptSlipRows } from "../receipt_slip.js";
+import { invoiceBitmap } from "../invoice_image.js";
 import { orderPointName, setOrderPoint } from "../points.js";
 import { pointChoices } from "../pointAreas.js";
 // ★ THE PARCEL SEAM (v307). `parcels.js` is pure — it reads her own mailing block and the
@@ -4371,7 +4371,7 @@ async function openInvoice(state, group) {
       : null,
     journalBodyEl(sheet, cur),
     el("div", { class: "popup-actions" },
-      button("Receipt over Wi-Fi", () => { printReceiptOverWifi(state, whole); }, "soft"),
+      button("Invoice over Wi-Fi", () => { printInvoiceOverWifi(state, sheet); }, "primary"),
       ...journalButtons(sheet, cur))));
 }
 
@@ -4858,16 +4858,16 @@ async function shareActiveLabel(state, group, style) {
   toast("This phone can't share a file — press Print instead.");
 }
 
-// ⭐⭐ THE SMALL CUSTOMER RECEIPT ON THE SAME PRINTER (v623) — a designed 100 × 150 mm slip, NOT the A4 invoice.
-async function printReceiptOverWifi(state, group) {
-  const rows = receiptSlipRows(state, group);
-  if (!rows.length) return toast("This order has nothing on it to print.");
-  const job = labelBitmap(rows, 203);
-  if (!job) return toast("This phone could not prepare the receipt.");
+// ⭐⭐ THE INVOICE ON THE SAME PRINTER (v628) — the compact page the Windows driver prints onto a 100 × 150
+// label, drawn by the app so a phone can send it. ⚠️ It is the INVOICE, not the small customer receipt.
+async function printInvoiceOverWifi(state, sheet) {
+  const cur = (state.settings && state.settings.currency) || "RM";
+  const job = invoiceBitmap(sheet, cur, { printed: `printed ${longDate(todayISO())}` });
+  if (!job) return toast("This phone could not prepare the invoice.");
   const sent = await sendPrintJob(state, job);
   toast(sent
-    ? "Receipt sent to the Wi-Fi printer — it prints in a moment"
-    : "Could not send the receipt — is the bridge running and this phone signed in?");
+    ? "Invoice sent to the Wi-Fi printer — it prints in a moment"
+    : "Could not send the invoice — is the bridge running and this phone signed in?");
 }
 
 // ⭐⭐ PRINT ON WI-FI (v617) — the job goes through the shared cloud to the Mac's bridge, which prints it on

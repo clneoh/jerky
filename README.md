@@ -850,6 +850,23 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
+## v627–v628 — one document on the label printer: the invoice (23 Oct 2026)
+
+**Bakery v627–v628, 2 commits, 12 files, +324/−152, no SQL.** Her words: *"i dont have to have 2 docs, i
+just need one docs, that is the invoice with all info in it."*
+
+- **v628:** the invoice card gains **"Invoice over Wi-Fi"** — it draws the invoice at **100 × 150 mm**
+  (business + address, Invoice #, placed date, customer, items and amounts, code/discount, Total, receipt
+  and order numbers, COD/refund sentence, printed date) and sends it to the label printer. **The separate
+  small receipt is WITHDRAWN** — its button removed, `admin/js/receipt_slip.js` and its test deleted. The
+  A4 invoice and its print/PDF route are unchanged.
+- **v627** (which the withdrawal superseded): the receipt's two dates were each labelled — the placed date
+  and the posting day — because printing one labelled and one bare read as a contradiction.
+- **New:** `admin/js/invoice_image.js` + `test/invoice-image.test.js`. **No user-visible bakery wording**;
+  the label's business name comes from the published settings.
+
+**Suite 3936 → 3937.**
+
 ## v625 — the "can still be found" check can remove its own rows (22 Oct 2026)
 
 **Bakery v625, 8 files, +81/−12, no SQL.** Her words: *"now remove them"* — the named orders were old test

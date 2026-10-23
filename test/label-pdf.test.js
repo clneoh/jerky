@@ -71,3 +71,21 @@ test("★★★ a label too tall for the sticker is scaled in the shared layout 
   const head = lines.find((l) => l.text === "FROM");
   assert.ok(head.sizeMm < 2.8, "★ nothing shrank, so the label cannot fit one sticker");
 });
+
+// ── v626: the customer's words are underlined on the drawn label too ────────
+
+test("★★★ the note the packer must see is carried as a mark, not lost in a comment (v626)", () => {
+  const rows = [["user", "Wrong class on purpose"]];
+  void rows;
+  const lines = labelLines([["item", "Focaccia x2 - no nuts", ["no nuts"]]]);
+  const line = lines.find((l) => String(l.text).includes("no nuts"));
+  assert.ok(line, "the item line is missing");
+  assert.deepEqual(line.marks, ["no nuts"], "★ the drawn label dropped the cusomer's underlined words");
+});
+
+test("★★★ the PDF draws the underline as a rule (v626)", () => {
+  const text = asText(labelPdf([["item", "Focaccia x2 - no nuts", ["no nuts"]]]));
+  // A rule op renders as "... m ... l S" — the text op alone renders "Tj".
+  assert.match(text, /\bm\s.*\bl\s+S/, "★ the PDF label has no underline for the note");
+  assert.match(text, /\(Focaccia x2 - no nuts\)/, "the words themselves must still be there");
+});

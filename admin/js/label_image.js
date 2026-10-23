@@ -38,6 +38,26 @@ export function labelCanvas(rows, dpi = 300) {
     // ⚠️ `maxWidth` compresses a line that the canvas font makes slightly wider than the PDF's Helvetica
     // measurement — so a long address can never run off the sticker's edge.
     ctx.fillText(line.text, x, line.yMm * pxPerMm, room);
+    // ⚠️ AND THE CUSTOMER'S OWN WORDS ARE UNDERLINED HERE TOO (v626) — the Windows sheet has the line, and the
+    // phone's bitmap did not, which read as missing content. ⭐ A run split across a wrap is drawn where it
+    // matches whole; the words themselves are always printed.
+    if (line.marks && line.marks.length) {
+      const baseY = line.yMm * pxPerMm;
+      const underlineY = baseY + Math.max(2, size * 0.1);
+      ctx.strokeStyle = "#000000";
+      ctx.lineWidth = Math.max(1, size * 0.06);
+      for (const mark of line.marks) {
+        const at = line.text.indexOf(mark);
+        if (at < 0) continue;
+        const before = ctx.measureText(line.text.slice(0, at)).width;
+        const width = ctx.measureText(mark).width;
+        const sx = x + before;
+        ctx.beginPath();
+        ctx.moveTo(sx, underlineY);
+        ctx.lineTo(sx + width, underlineY);
+        ctx.stroke();
+      }
+    }
   }
   return canvas;
 }

@@ -1,8 +1,30 @@
-# Munchies Furkidz — change history (v54 → v625)
+# Munchies Furkidz — change history (v54 → v628)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**23 Oct 2026 — engine v627 to v628: ONE DOCUMENT ON THE LABEL PRINTER, AND IT IS THE INVOICE (nothing to
+run, no SQL, no upload).**
+
+**Your words: "i dont have to have 2 docs, i just need one docs, that is the invoice with all info in it."**
+
+**1. The invoice card now carries "Invoice over Wi-Fi".** **It draws the invoice at 100 by 150 mm** — the
+shop's name and address, **Invoice #**, the date the order was placed, the customer, every item with its
+amount, any code or discount, **Total**, the receipt and order numbers, a COD or refund sentence, and the
+day it was printed — **and sends it to the label printer.** **That is the same page the printer driver
+prints onto the sticker.**
+
+**2. ⚠️ AND THE SEPARATE SMALL RECEIPT IS WITHDRAWN.** **Its button is gone; one sale, one document on the
+label printer.** **The A4 invoice and its print/PDF route are unchanged** — this only replaces the small
+one.
+
+**3. One sale, one number, two names — which is by design.** **The invoice and the receipt are the same
+serial**: *Invoice #000020* and *Receipt #000020* are one payment. ⚠️ **And the two dates that used to look
+contradictory are each labelled now** — **"Ordered 16 Oct 2026"** and the posting day — **so two correct
+dates can no longer read as a mistake.**
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **22 Oct 2026 — engine v625: REMOVE THE ORDERS WITH NO POSTING DAY IN ONE PRESS (nothing to run, no
 SQL, no upload).**
