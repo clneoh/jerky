@@ -119,13 +119,30 @@ export async function maybeReloadForUpdate({ running, fetchImpl } = {}) {
 // every cache, and reload from an address the caches have never seen. The worker re-registers and re-caches
 // the shell on the next load; offline returns once the app has opened.
 export async function forceFresh() {
+  // ⚠️⚠️ UNREGISTERING THE WORKER WAS THE FAULT (v629). ⚠️ MEASURED ON HER MAC, 23 Oct: the strip said
+  // "this phone has v625, the site has v628", she pressed **Force update**, and it came back with the same
+  // sentence. ⭐ **This app's service worker is the ONE thing that forces every script to be revalidated**
+  // (`fetch(req, { cache: "no-cache" })` for code). ⚠️ **Unregistering it before the reload handed the page
+  // back to the BROWSER's own ten-minute cache**, which GitHub Pages fills with `max-age=600` — so the
+  // reload ran the same old modules, and the strip honestly said so again. ⭐ The unregister cannot fix the
+  // HTTP cache; it only removed the layer that does.
+  // ⭐ TWO STAGES, in the order that works:
+  //   1. Keep the worker, ask it for a new sw.js, clear its cache, reload — the reload goes through the
+  //      worker, which revalidates every code file.
+  //   2. If this page was ALREADY loaded from a forced address (`?fresh=`) and we are still behind, then the
+  //      worker itself is the stale thing: unregister it, clear everything, and reload from a new address.
+  let forcedBefore = false;
+  try { forcedBefore = new URL(location.href).searchParams.has("fresh"); } catch { /* no URL: stage 1 */ }
   try {
     if (typeof navigator !== "undefined" && navigator.serviceWorker
       && typeof navigator.serviceWorker.getRegistrations === "function") {
       const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map((r) => r.unregister()));
+      await Promise.all(regs.map((r) => {
+        if (forcedBefore) return typeof r.unregister === "function" ? r.unregister() : null;
+        return typeof r.update === "function" ? r.update() : null;
+      }));
     }
-  } catch { /* no worker: nothing to unregister */ }
+  } catch { /* no worker: nothing to update or unregister */ }
   try {
     if (typeof caches !== "undefined" && typeof caches.keys === "function") {
       const keys = await caches.keys();

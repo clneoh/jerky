@@ -1,8 +1,31 @@
-# Munchies Furkidz — change history (v54 → v628)
+# Munchies Furkidz — change history (v54 → v629)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**23 Oct 2026 — engine v629: "FORCE UPDATE" NOW ACTUALLY FORCES IT (nothing to run, no SQL, no upload).**
+
+**⚠️ This one is from your own screen: the strip said "this phone has v625, the site has v628", you pressed
+Force update, and it came back with the same sentence.**
+
+**1. What was wrong.** **The app's own service worker is the thing that makes the browser re-check every
+script** instead of trusting its ten-minute copy. **Force update was switching that worker off before
+reloading** — **so the reload went back to the browser's ordinary cache, was answered with the same old
+files, and the strip correctly told you so again.** **It was a press that could not do its job, and it
+looked exactly like one that had.**
+
+**2. What it does now, in two stages.** **First it keeps the worker and asks it for a new copy of itself,
+clears the app's stored copy, and reloads through it** — **so every script is fetched fresh.** **If you are
+still behind after a forced reload, then the worker itself is the stale thing: the second press clears it
+out completely and loads a brand-new address.**
+
+**3. And the test that pinned the old behaviour was the old behaviour.** **It asserted the worker was
+removed on the first press** — **so it would have kept the fault alive.** **It now pins both stages: the
+worker is updated first, and only removed when the page was already a forced one and is still behind.**
+**Watched failing before it was kept.**
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **23 Oct 2026 — engine v627 to v628: ONE DOCUMENT ON THE LABEL PRINTER, AND IT IS THE INVOICE (nothing to
 run, no SQL, no upload).**

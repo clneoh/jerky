@@ -222,27 +222,48 @@ test("★★⚠️ the update strip sits ABOVE the lock screen, or the warning i
     + "says this phone is behind would be painted under the screen the person is looking at");
 });
 
-test("★★★ Force update really clears the old copy and reloads from a fresh address (v614)", async () => {
-  // ⚠️ The plain reload can be answered from the ten-minute cache or by a worker that has not updated,
-  // and closing the app does not always end its session. ⭐ This press removes the worker, deletes every
-  // cache, and loads an address the caches have never seen.
+test("★★★ Force update revalidates through the worker first, and only drops it as a last resort (v629)", async () => {
+  // ⚠️⚠️ MEASURED ON HER MAC, 23 Oct: v614's press UNREGISTERED the worker and reloaded — and the strip came
+  // back with the same sentence. ⭐ **This app's worker is the one thing that forces every script to be
+  // revalidated (`cache: "no-cache"` for code); unregistering it handed the reload to the BROWSER's own
+  // ten-minute cache**, which GitHub Pages fills — so the same old modules ran again. ⭐ **The unregister
+  // cannot fix the HTTP cache; it only removes the layer that does.** Two stages now.
   const realNav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
   const realCaches = globalThis.caches;
   const realLocation = globalThis.location;
-  let unregistered = 0;
+  let updated = 0, unregistered = 0;
   const deleted = [];
-  let went = "";
-  Object.defineProperty(globalThis, "navigator", {
-    configurable: true,
-    value: { serviceWorker: { getRegistrations: async () => ([{ unregister: async () => { unregistered += 1; } }]) } },
-  });
-  globalThis.caches = { keys: async () => ["one", "two"], delete: async (k) => { deleted.push(k); return true; } };
-  globalThis.location = { href: BASE, replace: (url) => { went = url; } };
+  const went = [];
+  const stub = () => {
+    updated = 0; unregistered = 0; deleted.length = 0; went.length = 0;
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { serviceWorker: { getRegistrations: async () => ([{
+        update: async () => { updated += 1; },
+        unregister: async () => { unregistered += 1; },
+      }]) } },
+    });
+    globalThis.caches = { keys: async () => ["one", "two"], delete: async (k) => { deleted.push(k); return true; } };
+  };
   try {
+    // ── stage 1: an ordinary address keeps the worker and asks it for a new one
+    stub();
+    globalThis.location = { href: BASE, replace: (url) => { went.push(url); } };
     await forceFresh();
-    assert.equal(unregistered, 1, "★ the old worker is still in control");
+    assert.equal(updated, 1, "★ the worker was not asked to update — **the reload then runs old code**");
+    assert.equal(unregistered, 0, "★ the worker was dropped on the FIRST press — **that is what handed the "
+      + "reload back to the browser's ten-minute cache on 23 October**");
     assert.deepEqual(deleted, ["one", "two"], "★ the old cache is still there to be served");
-    assert.match(went, /fresh=\d+/, "★ the reload reuses the same address, so the cache can answer again");
+    assert.match(went[0], /fresh=\d+/, "★ the reload reuses the same address, so the cache can answer again");
+
+    // ── stage 2: this page was ALREADY a forced address and we are still behind — now the worker goes
+    stub();
+    globalThis.location = { href: `${BASE}admin/?fresh=1792752300453`, replace: (url) => { went.push(url); } };
+    await forceFresh();
+    assert.equal(unregistered, 1, "★ still behind after a forced load, and the worker was kept again — "
+      + "**the last resort never runs**");
+    assert.deepEqual(deleted, ["one", "two"], "★ the old cache survived the last resort");
+    assert.match(went[0], /fresh=\d+/, "★ the last resort did not load a new address");
   } finally {
     if (realNav) Object.defineProperty(globalThis, "navigator", realNav);
     else delete globalThis.navigator;

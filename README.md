@@ -850,6 +850,23 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
+## v629 — Force update actually forces it (23 Oct 2026)
+
+**Found on her Mac, 23 Oct:** the strip read *"this phone has v625, the site has v628"*, she pressed **Force
+update**, and the same sentence came back.
+
+⚠️ **`forceFresh()` unregistered the service worker before reloading.** **This app's worker is the one layer
+that forces every script to be revalidated** (`fetch(req, { cache: "no-cache" })` for code); unregistering it
+handed the reload to the **browser's own ten-minute cache**, which GitHub Pages fills — so the same old
+modules ran. ⭐ **The unregister cannot fix the HTTP cache; it only removed the layer that does.**
+
+**Fix — two stages:** from an ordinary address, `reg.update()` + clear Cache Storage + reload **through the
+worker**; from a page that was already loaded via `?fresh=` and is still behind, unregister + clear + reload
+from a new address.
+
+**Guard:** `test/freshness.test.js`'s v614 test **asserted the old behaviour** — it would have kept the fault
+alive. Rewritten to pin both stages; **watched failing** on the old code. Suite 3937 → 3938.
+
 ## v627–v628 — one document on the label printer: the invoice (23 Oct 2026)
 
 **Bakery v627–v628, 2 commits, 12 files, +324/−152, no SQL.** Her words: *"i dont have to have 2 docs, i
