@@ -1,8 +1,26 @@
-# Munchies Furkidz — change history (v54 → v648)
+# Munchies Furkidz — change history (v54 → v649)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**26 Oct 2026 — engine v649: EVERY STOP ON THE DELIVERY RUN NAMES ITS ORDER (nothing to run, no SQL,
+no upload).**
+
+**Your words: "the delivery run shown a delivery on 30 sept, which order does not exist … there is no way
+for me to know which order it belongs to, there is no link up and no order number".**
+
+**1. The run was right and could not prove it.** **A day on that screen exists only because an order points
+at it** — the van day you type on an order wins over its posting day — **so that 30 Sep was a real order
+carrying that day; the screen simply had no way to say which.**
+
+**2. Every doorstep stop now wears its order code — `#D4E5F6` — and it is a link:** **press it and that
+order opens.** **A Self collection Point carries several customers' orders, so it keeps none.**
+
+**3. And the row wraps instead of crushing the name** — **measured while adding the code: at phone width the
+name column collapsed to nothing and "Mei Ling" broke to one letter per line.**
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **26 Oct 2026 — engine v630 to v648: A NEW FACE FOR YOUR SHOP, AND A CUSTOMER CAN ASK TO BE TOLD
 (⚠️ ONE DATABASE STEP — see the end).**

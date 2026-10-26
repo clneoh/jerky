@@ -39,7 +39,7 @@
 import {
   pickupPlace, doorSpotOf, dropAddress, validPlace, strictNumber,
 } from "./courier_place.js";
-import { byId, waNumber, orderLineName, orderDone } from "./state.js";
+import { byId, waNumber, orderLineName, orderDone, orderCode } from "./state.js";
 import { collectionWindowText, pointById } from "./points.js";
 // The window's own reading - see time_window.js for why it is a leaf of its own (v304).
 import { fmtWindow, validWindow } from "./time_window.js";
@@ -843,4 +843,15 @@ export function fmtAgo(iso, now = Date.now()) {
   if (h < 24) return `${h} hr ago`;
   const d = Math.floor(h / 24);
   return d === 1 ? "yesterday" : `${d} days ago`;
+}
+
+// ★★ WHICH ORDER A STOP IS (v649). ⚠️⚠️ Her report: __"the delivery run shown a delivery on 30 sept, which
+// order does not exist … there is no way for me to know which order it belongs to, there is no link up and no
+// order number"__. ⭐ **A stop that cannot be traced back to its order is a stop she cannot trust.** ⚠️ A POINT
+// carries several customers' orders and so has no single code; a doorstep is one order family and has one.
+export function stopOrderCode(r) {
+  const g = r && r.groups && r.groups[0];
+  const first = g && g.orders && g.orders[0];
+  if (!first || (r && r.pointId)) return "";
+  return String(orderCode(first) || "").trim();
 }

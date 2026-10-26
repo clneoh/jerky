@@ -54,7 +54,7 @@ import { button, confirmDialog, el, emptyState, guarded, saidOf, select, toast }
 import { shortDate } from "../dates.js";
 import { routeById, routesOf, routesOfPoint } from "../deliveryRoutes.js";
 import { openRoutePicker } from "./deliveryRoutes.js";
-import { byId, groupOrders, save } from "../state.js";
+import { byId, groupOrders, save, orderCode, orderHref } from "../state.js";
 import { maybePublishTracking, maybeSync } from "../supabase.js";
 import { runChargeAmounts, splitEven, writeCourierCharge } from "../courier.js";
 import { activeCourier, courierByKey } from "../couriers.js";
@@ -75,7 +75,7 @@ import { parcelOf } from "../parcel.js";
 import {
   courierDayOf, pickupTimeOf, runDayOf,
   fmtDistanceKm, fmtQuote, fmtQuoteLeft, liveJobOf, liveJobProblem, loadOf,
-  needsVan, quoteExpired, runLimitProblem, savingOf, scheduleAtUTC, stampTrip, stopKeyOf,
+  needsVan, quoteExpired, runLimitProblem, savingOf, scheduleAtUTC, stampTrip, stopKeyOf, stopOrderCode,
   tripCalledOff, tripOf, tripProblem,
 } from "../courier_job.js";
 import { fmtWindow, windowAt, windowProblem } from "../time_window.js";
@@ -483,6 +483,12 @@ export function renderDeliveryRun(root, state, params) {
               alsoOn.length ? `also on ${alsoOn.join(", ")}` : "", what].filter(Boolean).join(" · ")))),
         // A Point is pinned on its own card, where the pin belongs to the PLACE — not from
         // here, where the press would look like it pinned this run's version of it.
+        // ★ THE ORDER THIS STOP BELONGS TO (v649) — outside the tick's label, so a press opens the order
+        // rather than ticking the customer.
+        (!isPoint && stopOrderCode(r))
+          ? el("a", { class: "ghost small order-code", href: orderHref(stopOrderCode(r)), style: "align-self:center" },
+            `#${stopOrderCode(r)}`)
+          : null,
         isPoint
           ? (place ? null : button("Pin the Point", () => openPointPinPicker(state, point, () => { paintList(); paintLoad(); }), "ghost small"))
           : (place ? null : button("Put it on the map", () => pinDoorstep(first), "ghost small")),

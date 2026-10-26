@@ -850,6 +850,14 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
+## v649 — every stop on the delivery run names its order (26 Oct 2026)
+
+**Bakery v649, 8 files, +61/−7, no SQL.** Her words: *"the delivery run shown a delivery on 30 sept … no
+link up and no order number."* **The run was right:** a day exists there only because an order points at
+it (the van day wins over the posting day). **Every doorstep stop now wears its order code `#…` as a link
+that opens the order**; a Self collection Point carries several customers so it keeps none. **And the row
+wraps** — measured: the name column collapsed to 0 px at phone width. Suite 3991 → 3992.
+
 ## v630–v648 — a new face for the shop, and a customer can ask to be told (26 Oct 2026)
 
 **Bakery range `24374b6..5d83c93` (v630–v648), 18 commits, 42 files, +2994/−176.** ⚠️ **ONE SQL STEP:

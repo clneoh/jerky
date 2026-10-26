@@ -5260,13 +5260,23 @@ tr.po-covered td { color: var(--muted); }
   align-items: center;
   gap: 10px;
   border-top: 1px solid var(--line);
+  /* ⚠️⚠️ THE ROW WRAPS INSTEAD OF CRUSHING THE NAME (v649). ⭐ MEASURED at phone width: with the code and the
+     presses beside it, the customer's name column collapsed to **0 pixels** and "Mei Ling" broke to one letter
+     per line. ⭐ **A name on a run is the row** — a control that does not fit belongs on the next line, not on
+     top of it. */
+  flex-wrap: wrap;
 }
 /* The padding lives on the LABEL and not on the row, so the whole line is the tick's hit
    area. On the row it drew a 49-pixel line whose live 32 pixels were the label: a thumb
    landing in the 9-pixel band at either end hit the row and ticked nobody, which is the
    one thing the comment above promises cannot happen. Measured at 375 pixels wide. */
-.run-who { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; padding: 8px 0; cursor: pointer; }
+.run-who { display: flex; align-items: center; gap: 10px; flex: 1 1 240px; min-width: 0; padding: 8px 0; cursor: pointer; }
 .run-tick { width: 20px; height: 20px; flex: 0 0 auto; accent-color: var(--brown-dark); }
+/* ★ THE ORDER CODE ON A RUN ROW (v649). ⚠️ MEASURED at phone width: without this the code took width from the
+   customer's name and "Mei Ling" broke to one letter per line. ⭐ The name is the row; the code is a label
+   beside it, and it never wins that contest. */
+.run-row > a.order-code { flex: 0 0 auto; white-space: nowrap; color: var(--brown-dark);
+  font-weight: 700; text-decoration: underline; }
 .run-words { display: flex; flex-direction: column; min-width: 0; }
 .run-name { font-weight: 600; }
 .run-sub { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }

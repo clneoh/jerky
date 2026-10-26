@@ -30,7 +30,7 @@ const {
   orderDay, fmtQuote, fmtQuoteLeft, quoteExpired,
   isLink, trackingLine, jobOf, liveJobOf, liveJobProblem, fmtStamp, fmtAgo,
   freeCancelOf, freeCancelLine, needsVan, stopKeyOf, promisedWindowSuffix, windowSuffix,
-  courierDeliveryText, courierDayOf, pickupTimeOf,
+  courierDeliveryText, courierDayOf, pickupTimeOf, stopOrderCode,
 } = await import("../admin/js/courier_job.js");
 const { setPickupPlace, setDropPlace } = await import("../admin/js/courier_place.js");
 
@@ -904,4 +904,21 @@ test("a pickup time does not disturb the window when there IS one (v341)", () =>
   };
   assert.equal(promisedWindowSuffix(st, both), ", 2-5 pm", "the customer's window is unchanged");
   assert.equal(courierDeliveryText(both), "Thu, 8 Oct, 2-5 pm", "and it rides with the van's day");
+});
+
+test("★★★ every stop names the ORDER it came from (v649)", async () => {
+  // ⚠️⚠️ Her report: __"the delivery run shown a delivery on 30 sept, which order does not exist … there is no
+  // way for me to know which order it belongs to, there is no link up and no order number"__. ⭐ The run is the
+  // screen that shows a wrong van day, and it was the one screen that could not say WHICH order carried it.
+  const { orderCode } = await import("../admin/js/state.js");
+  const order = { id: "ord_a1b2c3d4e5f6", groupId: "ord_a1b2c3d4e5f6", customerName: "Mei" };
+  const row = { pointId: "", groups: [{ orders: [order] }] };
+  // ⭐ the stop must wear the SAME code the order itself wears — not a second reading of it
+  assert.equal(stopOrderCode(row), orderCode(order),
+    "★ a doorstep stop names a different order than the one it holds, or none at all");
+  // ⚠️ a Point carries several customers' orders: it has no single code, and must not claim one
+  assert.equal(stopOrderCode({ pointId: "pt_1", groups: [{ orders: [{ id: "ord_a1b2c3d4e5f6", groupId: "g1" }] }] }), "");
+  // and nothing at all is not a crash
+  assert.equal(stopOrderCode(null), "");
+  assert.equal(stopOrderCode({ groups: [] }), "");
 });
