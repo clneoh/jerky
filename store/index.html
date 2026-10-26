@@ -5,11 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#c4552f">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <!-- ★★★ AND THE SHOP IS DELIBERATELY FINDABLE TOO (v538) — it states it rather than being left to
-       chance. ⚠️ **indexed is not the same as ready:** Google captures this page as it stands the first
-       time it crawls, so what it lists is whatever the shop says today.
-       ⚠️ **TO HIDE THE SHOP INSTEAD**, change this one line to content="noindex, nofollow" — and allow a
-       couple of weeks, because a page is not un-indexed instantly. -->
+  <!-- ★★★ THE SHOP IS DELIBERATELY FINDABLE TOO (v538). ⚠️ Her words: __"i want to be ready for business in no
+       time"__ — so the shop states it rather than being left to chance. ⭐ And the honest note for whoever reads
+       this next: **indexed is not the same as ready.** Google captures this page as it stands the first time it
+       crawls, so what it lists is whatever the shop says today.
+       ⚠️ **TO HIDE THE SHOP INSTEAD**, change this one line to content="noindex, nofollow" — and allow a couple
+       of weeks, because a page is not un-indexed instantly. -->
+  <!-- ★★ THE TRIAL IS THE SHOP NOW (v634). ⚠️ It was `noindex, nofollow` while it shared the shop's place in
+       search with /store/; the moment it BECAME the shop, it had to be findable again — ⭐ **an unindexed shop
+       is a shop a customer cannot search for.** -->
+  <!-- ★★ THE TRIAL IS THE SHOP AGAIN (v640). ⚠️ It was `noindex, nofollow` while it shared the shop's place
+       in search; the moment it BECAME the shop it had to be findable — ⭐ an unindexed shop is a shop a
+       customer cannot search for. -->
   <meta name="robots" content="index, follow">
   <title>Order · Munchies Furkidz</title>
   <!-- The chalk hand used by the bakery's own sentence in the shelf strip (v274).
@@ -41,12 +48,13 @@
     <button type="button" class="build-btn" id="build-reload" data-i18n="buildReload">Reload</button>
   </div>
 
-  <div class="store-banner">
-    <!-- OWNER: banner at the top of the store. Swap store/banner.jpg to change it. -->
-    <img src="banner.jpg" alt="Munchies Furkidz relaunch banner">
-  </div>
-
-  <header class="hero">
+  <header class="hero hero-photo">
+    <!-- ★★ ONE PHOTO, ONE LINE, ONE PRESS (v631_2). ⚠️ The photo is an <img>, never a CSS background.
+         OWNER: any PORTRAIT photo here — one of images/ is the simplest swap (this one is 3:4). -->
+    <img class="hero-photo-img" src="../images/chicken-jerky.jpg" alt="" width="1000" height="1333"
+         fetchpriority="high" decoding="async">
+    <span class="hero-veil" aria-hidden="true"></span>
+    <div class="hero-inner">
     <div class="hero-top">
       <p id="eyebrow" class="hero-eyebrow"></p>
       <nav id="lang-switch" class="lang-switch" aria-label="Language" data-i18n-aria="langAria">
@@ -64,9 +72,18 @@
          item on the top row: that row's eyebrow already wraps to two lines on a
          phone and the language pills need the whole right half. -->
     <a id="home-link" class="hero-home" href="/" data-i18n="homeLink">🏠 Our homepage</a>
+    <!-- ⭐ THE ONE PRESS ON THE FIRST SCREEN. It goes to step 1 rather than opening a cart: the customer's next
+         question is "when can I have it", not "what is this site". -->
+    <a class="hero-cta" href="#step1" data-i18n="sPickDay">Pick a posting day</a>
+    </div>
   </header>
 
   <main class="view">
+    <!-- ★★ THE FOUR STEPS AS A BAR (v633_2). ⚠️ Its labels are READ FROM THE STEP HEADINGS by `paintStepBar`,
+         never typed again here — so the bar and the step under it cannot name the same thing differently, and
+         the three languages arrive with the headings. ⚠️ `aria-hidden`: the numbered headings below are the
+         real, readable content; this is the same four facts drawn as a line. -->
+    <nav id="stepbar" class="stepbar" aria-hidden="true"></nav>
     <!-- The code the shop is running today, at the top of the page and under the
          shop name (v269). A statement, never a control: it names the code so the
          customer can type it, and the bakery still takes the money off by hand in
@@ -124,6 +141,20 @@
     <!-- ★★ THE THREE STEPS (v405). Her words: __"first you might mention that it is a 3 step ordering
          process, name the 1st by 1 in a circle, big one"__. ⚠️ The lede promises it ENDS, which is the
          part a nervous customer wants; the circles say which one they are on. -->
+    <!-- ★★ "GOOD TO KNOW" (v636_2) — the layer of reassurance the plan calls for, at the one moment a
+         customer starts to wonder how this works: after the day is offered, before the items.
+         ⚠️ It reuses the privacy sheet's own shape (a link, a panel, a press to open, a press away to close),
+         because a second way of showing a panel on this page is a second thing to keep working. -->
+    <p class="facts-line"><button id="facts-open" class="privacy-link" type="button" aria-expanded="false"
+        aria-controls="facts-sheet" data-i18n="factsLink">Good to know</button></p>
+    <div class="facts-sheet" id="facts-sheet" hidden>
+      <p class="privacy-sheet-head" data-i18n="factsHead">Before you order</p>
+      <!-- ★★ THE BULLETS ARE DRAWN FROM HER OWN WORDS WHEN SHE HAS WRITTEN THEM (v641). The <li>s are built by
+           `paintFacts()` in app.js from Settings → Storefront → Good to know; blank falls back to the shop's own
+           wording stored in store-lang.js, so the panel is never empty. ⚠️ The WhatsApp line is always last and
+           is NOT hers to type — it carries whatever number she publishes. -->
+      <ul class="privacy-sheet-list" id="facts-list"></ul>
+    </div>
     <p class="steps-lede" id="steps-lede"></p>
 
     <div class="step-head" id="step1"><span class="step-num">1</span>
@@ -143,6 +174,9 @@
          can no longer be torn out of the page** — which is what let v493 retire the re-hanging machinery
          v460 needed. -->
     <p class="step-note" id="step-note" role="status" hidden></p>
+    <!-- ★★ "YOUR LAST ORDER" (v638) — the regular's way back in. ⚠️ Filled from the customer's own phone at
+         boot; empty (and so invisible) for anyone who has not ordered here before. -->
+    <div id="again-slot"></div>
     <div class="step-head" id="step2"><span class="step-num">2</span>
       <h2 class="section" data-i18n="sWhat">What would you like?</h2></div>
     <div id="menu-note" class="menu-note" role="status" hidden></div>

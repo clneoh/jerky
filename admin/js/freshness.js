@@ -113,30 +113,46 @@ export async function maybeReloadForUpdate({ running, fetchImpl } = {}) {
   return true;
 }
 
-// ⭐⭐ CLEAR THE OLD COPY AND LOAD THE NEW BUILD (v614). ⚠️ The plain reload can be answered from the ten-minute
-// cache or by a worker that has not updated; ⚠️ **and closing the app does not always end the session**, so the
-// "tried" state could repeat for ever. ⭐ This press removes the uncertainty: unregister every worker, delete
-// every cache, and reload from an address the caches have never seen. The worker re-registers and re-caches
-// the shell on the next load; offline returns once the app has opened.
+// ⭐⭐ CLEAR THE OLD COPY AND LOAD THE NEW BUILD (v614, corrected v630). ⚠️ The plain reload can be answered
+// from the ten-minute cache or by a worker that has not updated; ⚠️ **and closing the app does not always end
+// the session**, so the "tried" state could repeat for ever.
+//
+// ⚠️⚠️ **UNREGISTERING THE WORKER FIRST WAS THE FAULT (v630), and it is ported from the munchies session, which
+// measured it on her Mac on 23 Oct: the strip said this phone has v625 and the site has v628, she pressed
+// Force update, and it came back with the same sentence.** ⭐ **This app's service worker is the ONE thing that
+// forces every script to be revalidated** (`fetch(req, { cache: "no-cache" })` for code). ⚠️ **Unregistering
+// it before the reload handed the page back to the BROWSER's own ten-minute cache**, which GitHub Pages fills
+// with `max-age=600` — so the reload ran the same old modules. ⭐ **The unregister cannot clear the HTTP cache;
+// it only removed the layer that does.** ⚠️ And `?fresh=` makes a new address for the PAGE only — the modules
+// keep their own addresses.
+//
+// ⭐ TWO STAGES, in the order that works:
+//   1. Keep the worker, ask it for a new sw.js, clear its cache, reload — the reload goes through the worker,
+//      which revalidates every code file.
+//   2. If this page was ALREADY loaded from a forced address (`?fresh=`) and we are still behind, the worker
+//      itself is the stale thing: unregister it, clear everything, and load a brand-new address.
 export async function forceFresh() {
-  // ⚠️⚠️ UNREGISTERING THE WORKER WAS THE FAULT (v629). ⚠️ MEASURED ON HER MAC, 23 Oct: the strip said
-  // "this phone has v625, the site has v628", she pressed **Force update**, and it came back with the same
-  // sentence. ⭐ **This app's service worker is the ONE thing that forces every script to be revalidated**
-  // (`fetch(req, { cache: "no-cache" })` for code). ⚠️ **Unregistering it before the reload handed the page
-  // back to the BROWSER's own ten-minute cache**, which GitHub Pages fills with `max-age=600` — so the
-  // reload ran the same old modules, and the strip honestly said so again. ⭐ The unregister cannot fix the
-  // HTTP cache; it only removed the layer that does.
-  // ⭐ TWO STAGES, in the order that works:
-  //   1. Keep the worker, ask it for a new sw.js, clear its cache, reload — the reload goes through the
-  //      worker, which revalidates every code file.
-  //   2. If this page was ALREADY loaded from a forced address (`?fresh=`) and we are still behind, then the
-  //      worker itself is the stale thing: unregister it, clear everything, and reload from a new address.
   let forcedBefore = false;
   try { forcedBefore = new URL(location.href).searchParams.has("fresh"); } catch { /* no URL: stage 1 */ }
   try {
     if (typeof navigator !== "undefined" && navigator.serviceWorker
       && typeof navigator.serviceWorker.getRegistrations === "function") {
       const regs = await navigator.serviceWorker.getRegistrations();
+      // ⚠️⚠️ AND IF THERE IS NO WORKER AT ALL, PUT ONE THERE FIRST (v630). ⭐ MEASURED: a normally loaded
+      // page can have `readyState` complete and **no registration** (see `registerSW` in app.js), and with
+      // no worker the reload is answered by the browser's own ten-minute cache — the very copy this press
+      // is meant to clear. ⏱️ `ready` is capped, because a registration that never activates must not leave
+      // the press hanging: the plain reload below is what happens then.
+      if (!forcedBefore && regs.length === 0 && typeof navigator.serviceWorker.register === "function") {
+        let cap = null;
+        try {
+          await Promise.race([
+            navigator.serviceWorker.register("sw.js").then(() => navigator.serviceWorker.ready),
+            new Promise((resolve) => { cap = setTimeout(resolve, 3000); }),
+          ]);
+        } catch { /* no worker possible here: fall through to the reload */ }
+        finally { if (cap) clearTimeout(cap); }
+      }
       await Promise.all(regs.map((r) => {
         if (forcedBefore) return typeof r.unregister === "function" ? r.unregister() : null;
         return typeof r.update === "function" ? r.update() : null;

@@ -4858,6 +4858,18 @@ async function shareActiveLabel(state, group, style) {
   toast("This phone can't share a file — press Print instead.");
 }
 
+// ⚠️⚠️ THE WORDS A FAILED PRINT SAYS (v629), AND THEY NEVER NAME THE BRIDGE. A job this phone could not
+// hand to the cloud never reached the queue, so the bridge has not been asked for anything yet — asking her
+// whether it is running sent her to check a Mac that was never the problem. Each line names the one thing
+// she can check, in the order the send travels.
+function printRefusal(what, why) {
+  if (why === "not-set-up") return `Sharing is off on this phone, so nothing reached the queue — turn on Shared data in Settings, then send the ${what} again.`;
+  if (why === "sign-in") return `This phone could not sign in to the bakery's cloud — check Shared data in Settings, then send the ${what} again.`;
+  if (why === "refused") return `The bakery's cloud would not take the ${what} just now — try again in a moment.`;
+  if (why === "no-answer") return `No answer from the bakery's cloud — the ${what} did not send. Try again in a moment.`;
+  return `The ${what} did not send — try again.`;
+}
+
 // ⭐⭐ THE INVOICE ON THE SAME PRINTER (v628) — the compact page the Windows driver prints onto a 100 × 150
 // label, drawn by the app so a phone can send it. ⚠️ It is the INVOICE, not the small customer receipt.
 async function printInvoiceOverWifi(state, sheet) {
@@ -4865,9 +4877,8 @@ async function printInvoiceOverWifi(state, sheet) {
   const job = invoiceBitmap(sheet, cur, { printed: `printed ${longDate(todayISO())}` });
   if (!job) return toast("This phone could not prepare the invoice.");
   const sent = await sendPrintJob(state, job);
-  toast(sent
-    ? "Invoice sent to the Wi-Fi printer — it prints in a moment"
-    : "Could not send the invoice — is the bridge running and this phone signed in?");
+  if (!sent.ok) return toast(printRefusal("invoice", sent.why));
+  toast("Invoice sent to the Wi-Fi printer — it prints in a moment");
 }
 
 // ⭐⭐ PRINT ON WI-FI (v617) — the job goes through the shared cloud to the Mac's bridge, which prints it on
@@ -4877,9 +4888,8 @@ async function printOverWifi(state, group, style) {
   const job = labelBitmap(data.rows, 203);
   if (!job) return toast("This phone could not prepare the label for the printer.");
   const sent = await sendPrintJob(state, job);
-  toast(sent
-    ? "Sent to the Wi-Fi printer — it prints in a moment"
-    : "Could not send the label — is the bridge running and this phone signed in?");
+  if (!sent.ok) return toast(printRefusal("label", sent.why));
+  toast("Sent to the Wi-Fi printer — it prints in a moment");
 }
 
 // ⭐ SAVE A COPY (v615) — the route that always works: save the image (or the PDF), then open it in the

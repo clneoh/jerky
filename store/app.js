@@ -19,6 +19,14 @@ import { sendFeedback, loadDraft, saveDraft } from "./feedback.js";
 // read her phone and know which build the shop is running — and the address fed back with
 // a customer's words names it too. One number, one file, no second copy to forget.
 import { ENGINE_VERSION } from "../admin/js/version.js";
+// ★★ the "Good to know" bullets, from her settings when she has written them (v641)
+import { factsLines, DEFAULT_FACTS } from "./facts.js";
+// ★★ "tell me when this day frees" (v648)
+import { waitRow, hasAsked, rememberAsked } from "./waitlist.js";
+// ★★ what this phone ordered last time (v638)
+import { saveLastBasket, readLastBasket, forgetLastBasket, planReorder } from "./last_order.js";
+// ★★ the answer a tapped full day gives (v631_2)
+import { fullDayAnswer } from "./full_day.js";
 
 // ★★★ WHICH BUILD THIS FILE IS — A LITERAL, NOT AN IMPORT, AND THAT IS THE WHOLE OF v496.
 //
@@ -38,7 +46,7 @@ import { ENGINE_VERSION } from "../admin/js/version.js";
 // cache.** ⚠️ And it must be kept in step with `admin/js/version.js` by hand, which is a second place for
 // one fact: ⭐ **that is accepted here ONLY because a test fails the moment they disagree** (see
 // `store-build-notice.test.js`), so a forgotten bump is a red suite rather than a shop that lies.
-export const SHOP_BUILD = "629";
+export const SHOP_BUILD = "648";
 // "Is this page the newest one?" — the comparison and the probe's address, kept on their own so a
 // test can pin them (this file calls `render()` at the top level and cannot be imported at all).
 import { BUILD_TRIED_KEY, VERSION_URL, newerBuild } from "./build.js";
@@ -883,7 +891,8 @@ export function buildMessage(cfg, order) {
 export function mergeStorefront(base, remote) {
   if (!remote || typeof remote !== "object") return { ...base };
   const out = { ...base };
-  for (const key of ["whatsapp", "name", "tagline", "instagram", "facebook", "cutoff", "policy", "policyZh", "policyMs"]) {
+  for (const key of ["whatsapp", "name", "tagline", "instagram", "facebook", "cutoff", "policy", "policyZh", "policyMs",
+    "facts", "factsZh", "factsMs"]) {
     if (typeof remote[key] === "string" && remote[key].trim()) out[key] = remote[key].trim();
   }
   for (const key of ["capacity", "upcomingCount"]) {
@@ -1076,6 +1085,13 @@ export function mergeStorefront(base, remote) {
         // adopted, so "yes", 1 and a missing key all read as "do not ask" and the
         // card is drawn exactly as it is today.
         if (p.askNote === true) out.askNote = true;
+        // ★★ THIS PRODUCT'S OWN FOOD FACTS (v639) — hers, and re-checked here like everything else that
+        // crosses this boundary: a string, trimmed, and only when written. ⚠️ An absent key leaves the card
+        // drawn exactly as it is today, with no line and no guess.
+        for (const k of ["allergens", "keeping"]) {
+          const v = p && typeof p[k] === "string" && p[k].trim();
+          if (v) out[k] = String(p[k]).trim().slice(0, 200);
+        }
         // The thumbnail the baker set on the product. Checked against the
         // same rule the publisher used (storefront-fields.js), so anything that
         // is not a small JPEG data URL is dropped rather than drawn.
@@ -1261,6 +1277,9 @@ function renderDevFoot(cfg) {
   // build is my shop running?" — so it has to be **the build the file she is reading actually is**, not the
   // number that happens to be in a little file beside it. ⭐ Measured: with the import it said **v495 on a
   // page running v494**, which is precisely the sentence the update notice exists to make impossible.
+  // ⚠️ `SHOP_BUILD` must stay a plain number — the build notice compares DIGITS against `admin/js/version.js`,
+  // and a suffix there would make the notice blind. ⭐ The `_2` that named the second gateway went with it
+  // (v634): there is one shop again.
   holder.appendChild(el("div", { class: "dev-engine" }, `Engine v${SHOP_BUILD}`));
 }
 
@@ -1508,6 +1527,41 @@ function renderFeedback(cfg) {
 
 // The static header parts (name, tagline, delivery days, social links). Kept
 // separate so a later-published config can re-render just these.
+// ★★ "GOOD TO KNOW" IS HER OWN WORDING NOW (v641). ⚠️ One line per bullet, drawn from what the backoffice
+// published; blank falls back to the shop's own five sentences, so this panel can never be empty. ⭐ The
+// WhatsApp line stays LAST and is structural — it carries whatever number she publishes, and it is not a
+// sentence she has to remember to include.
+function paintFacts(cfg) {
+  const list = document.getElementById("facts-list");
+  if (!list || typeof list.replaceChildren !== "function") return;
+  // ⚠️ ENGLISH FALLS BACK TO THE ONE LIST THE EDITOR ALSO SHOWS (v642); 中文 and BM to their own translations,
+  // which is what makes the box and the page agree in every language she has not written for.
+  const lang = loadLang();
+  const fallback = lang === "en"
+    ? DEFAULT_FACTS
+    : ["factBake", "factCutoff", "factGet", "factPay", "factChange"].map((k) => t(k));
+  const lines = factsLines(CONFIG, lang, fallback);
+  const shown = phoneText(cfg && cfg.whatsapp);
+  list.replaceChildren(
+    ...lines.map((line) => el("li", {}, line)),
+    el("li", {},
+      el("span", {}, `${t("factAsk")} `),
+      // ⚠️⚠️ `hidden` IS SET AS A PROPERTY, NEVER PASSED TO `el()` (v643). ⭐ MEASURED on her own shop: the
+      // number was there and invisible — **`el()` writes every key it is given straight onto the element, so
+      // `hidden: false` still SET the attribute, and a `hidden` attribute hides the element whatever its
+      // value.** ⭐ This file's own tip bubble carries the same warning; it is the trap that catches whoever
+      // writes a boolean-looking attribute in an object.
+      (() => {
+        const link = el("a", {
+          class: "privacy-wa",
+          href: shown ? `https://wa.me/${waNumber(cfg.whatsapp)}` : "",
+        }, shown);
+        if (!shown) link.hidden = true;
+        return link;
+      })()));
+}
+
+
 export function renderStatic(cfg) {
   document.title = `${t("titleWord")} · ${cfg.name}`;
   document.getElementById("name").textContent = cfg.name;
@@ -1549,13 +1603,18 @@ export function renderStatic(cfg) {
   // it in Settings -> Storefront changes it here as well, and the notice can never
   // print a number that has been left behind. Hidden if there is no number at all,
   // which is better than a link to nowhere.
-  const privacyWa = document.getElementById("privacy-wa");
-  if (privacyWa) {
-    const shown = phoneText(cfg && cfg.whatsapp);
-    privacyWa.textContent = shown;
-    privacyWa.href = shown ? `https://wa.me/${waNumber(cfg.whatsapp)}` : "";
-    privacyWa.hidden = !shown;
+  // ⚠️ BOTH SHEETS NAME THE SAME NUMBER (v636_2) — one reading, two links, so the two can never disagree.
+  const shownWa = phoneText(cfg && cfg.whatsapp);
+  for (const id of ["privacy-wa"]) {
+    const link = document.getElementById(id);
+    if (!link) continue;
+    link.textContent = shownWa;
+    link.href = shownWa ? `https://wa.me/${waNumber(cfg.whatsapp)}` : "";
+    link.hidden = !shownWa;
   }
+  // ★★ and the Good to know bullets are redrawn with every static repaint — a language switch must swap every
+  // one of them, including any she wrote herself (v641).
+  paintFacts(cfg);
 
   // ⚠️ THE NOTICE'S PRESS IS NOT WIRED HERE — see the foot of this file. renderStatic()
   // runs AGAIN on every render and on every language switch, and a TOGGLE bound in here is
@@ -1729,6 +1788,17 @@ export function render() {
   const dateWrap = document.getElementById("dates");
   const menu = document.getElementById("menu");
   const cart = new Map();
+
+  // ★★ THE MENU'S OWN ANSWER, FOR THE REORDER (v638). `offerOf` lives inside `renderMenu` because that is
+  // where the day's numbers arrive; this holds the last computed lookup so "add my last order again" asks
+  // the SAME question the cards ask. ⚠️ Reassigned on every menu render; a stale one can never add something
+  // the menu is currently refusing.
+  let offerByName = () => null;
+
+  // ⚠️ The customer's own phone. Best effort everywhere: a private window has no storage and must not break
+  // the shop.
+  const shopStorage = () => (typeof localStorage !== "undefined" ? localStorage : null);
+  let lastBasket = readLastBasket(shopStorage());
   // ⚠️ A second `render()` must not lose it: the first capture wins, and if the line has been torn out of
   // the page since, the node we already hold is the one that goes back.
   stepNoteEl = stepNoteEl || document.getElementById("step-note");
@@ -2607,9 +2677,11 @@ function clearFieldMarks() {
     // than a loop body because a product filed under two categories is drawn
     // TWICE — and a DOM node can only live in one place, so each placement needs
     // a card of its own, with its own stepper.
-    const cardFor = (p) => {
+    // ★★ WHAT A PRODUCT OFFERS ON THIS DAY, COMPUTED ONCE (v638). ⚠️ The card needs it, and "add my last
+    // order again" needs the very same answer — **two computations of one rule is how a reorder came to be
+    // able to add something the card says is sold out.** ⭐ One function, two readers.
+    const offerOf = (p) => {
       const { closed, kept, shown } = menuGate(p);
-      if (!shown) return null;
       const group = groupFor(groups, p);
       const baseLeft = group && byProduct[group.baseName] != null
         ? Number(byProduct[group.baseName]) : undefined;
@@ -2627,7 +2699,18 @@ function clearFieldMarks() {
       const ownLeft = byProduct[p.name] != null ? Number(byProduct[p.name]) : undefined;
       const left = reason ? 0 : (caps ? caps.get(p.name) : ownLeft);
       const qty = cart.get(p.name) || 0;
-      const soldOut = left != null && left <= 0;
+      return { shown, group, caps, reason, unavailable, left, qty, soldOut: left != null && left <= 0 };
+    };
+
+    offerByName = (name) => {
+      const hit = (CONFIG.products || []).find((x) => x && x.name === name);
+      return hit ? offerOf(hit) : null;
+    };
+
+    const cardFor = (p) => {
+      const facts = offerOf(p);
+      if (!facts.shown) return null;
+      const { reason, unavailable, left, qty, soldOut } = facts;
       // ⚠️ THE UPPER BOUND IS DECLARED UP HERE NOW (v458) — above the typed box as well as the "+". It used
       // to sit between the two buttons, which was fine while "+" was the only thing that wanted it.
       const cap = left != null && left > 0 ? left : 99;
@@ -2833,13 +2916,26 @@ function clearFieldMarks() {
           // `.card-head` is space-between, so the words and the stamp each keep
           // their end. `min-width: 0` on the words is what lets a long product
           // name wrap instead of shoving the stamp off the card.
+          // ★★ THE ITEM AS A ROW (v633_2): what it is on the left, what it costs and how many on the right.
+          // ⚠️ THE PRICE MOVED OUT OF THE UNIT LINE and gained its own weight — `RM16.00 / loaf` read as one
+          // quiet fact, and a price is the third thing a customer looks for. The unit stays beside the name,
+          // where it describes the bread rather than the money.
           el("div", { class: "card-head" },
             el("div", { class: "card-words" },
               el("p", { class: "card-title" }, nameFor(p, lang)),
-              el("p", { class: "card-sub" }, `RM${p.price.toFixed(2)} / ${unitFor(p, lang)}`),
-              desc ? el("p", { class: "prod-desc" }, desc) : null),
-            stamp),
-          el("div", { class: "stepper" }, dec, qtyBox, inc),
+              el("p", { class: "card-sub" }, unitFor(p, lang)),
+              stamp,
+              desc ? el("p", { class: "prod-desc" }, desc) : null,
+              // ★★ THIS PRODUCT'S OWN FACTS (v639) — ⚠️ her words, drawn only when she has written them, and
+              // labelled so a customer knows what they are reading. Blank means no line at all: the shop must
+              // never fill a food fact in itself.
+              p.allergens ? el("p", { class: "prod-fact" },
+                `${t("allergenLabel")}: ${String(p.allergens).trim()}`) : null,
+              p.keeping ? el("p", { class: "prod-fact" },
+                `${t("keepingLabel")}: ${String(p.keeping).trim()}`) : null),
+            el("div", { class: "card-side" },
+              el("p", { class: "card-price" }, `RM${p.price.toFixed(2)}`),
+              el("div", { class: "stepper" }, dec, qtyBox, inc))),
           lineNoteArea,
           note,
           nextNote,
@@ -2964,6 +3060,49 @@ function clearFieldMarks() {
     box.hidden = false;
   }
 
+  // ★★ "YOUR LAST ORDER" (v638) — the regular's way back in, and the reassurance that comes with it.
+  // ⚠️ It offers only what TODAY allows: `planReorder` asks `offerByName` — the same answer the cards draw —
+  // and anything the shop would refuse is NAMED, not silently dropped. ⭐ And it says where the memory lives,
+  // because a shop that remembers you should say so, and give you the way out in the same breath.
+  function renderAgain() {
+    const slot = document.getElementById("again-slot");
+    if (!slot) return;
+    lastBasket = readLastBasket(shopStorage());
+    if (!lastBasket) { slot.replaceChildren(); return; }
+    const lines = lastBasket.items.map((i) => {
+      const prod = (CONFIG.products || []).find((x) => x && x.name === i.name);
+      return `${prod ? nameFor(prod, loadLang()) : i.name} ×${i.qty}`;
+    });
+    slot.replaceChildren(el("div", { class: "card again-card" },
+      el("p", { class: "card-title" }, t("againTitle")),
+      el("p", { class: "card-sub" }, lines.join(" · ")
+        + (lastBasket.at ? ` — ${sub(t("againWhen"), fmtDay(new Date(`${lastBasket.at}T00:00:00`)))}` : "")),
+      el("div", { class: "again-actions" },
+        el("button", {
+          type: "button", class: "again-add",
+          onclick: () => {
+            // ⚠️ THE DAY COMES FIRST, exactly as it does for a stepper press (v454): a basket for a day he has
+            // not chosen is the door beside the gate that the step lock exists to close.
+            if (!dayPicked) { sayStepFirst("needDayTitle", "needDayBody", "step1"); return; }
+            const plan = planReorder(lastBasket, offerByName);
+            for (const a of plan.add) cart.set(a.name, a.qty);
+            renderMenu();
+            renderBar();
+            paintSteps();
+            if (plan.skipped.length) {
+              menuNotice(plan.skipped.map((s) => sub(t(s.why === "gone" ? "againGone" : "againFull"), s.name)).join(" "));
+            } else if (plan.add.length) {
+              menuNotice(sub(t("againAdded"), plan.add.length));
+            }
+          },
+        }, t("againAdd")),
+        el("button", {
+          type: "button", class: "again-forget",
+          onclick: () => { forgetLastBasket(shopStorage()); renderAgain(); },
+        }, t("againForget"))),
+      el("p", { class: "card-sub again-saved" }, t("againSaved"))));
+  }
+
   function reconcileCart() {
     const notes = [];
     if (!selected) {
@@ -3084,6 +3223,12 @@ function clearFieldMarks() {
   // the grid now says so instead (see missNote).
   let missIso = null;
   let missClosed = false;
+  // ★★ THE FULL DAY THE CUSTOMER TAPPED (v631_2), a YYYY-MM-DD key or null. ⚠️ MEASURED: a day with no
+  // pans left was a struck-through number **and a dead tap** — the customer could not tell whether the shop
+  // was closed, broken, or simply full, and nothing told them the next day they could have bread. ⭐ It is
+  // remembered here rather than on the day's record so a live refresh (which rebuilds every cell) keeps the
+  // answer on screen until the customer taps elsewhere.
+  let fullIso = null;
 
   // The marks the bakery let the shop see. Nothing decides privacy here — the
   // published list is already only the standard days, never a mark she typed
@@ -3231,6 +3376,10 @@ function clearFieldMarks() {
       if (past) cls += " past";
       if (sol) cls += ` sol occ-${occColour(sol)} occ-${occStrength(sol)}`;
       const kids = [el("span", { class: "cal-num" }, String(Number(iso.slice(8, 10))))];
+      // ★★ A FULL DAY SAYS SO IN A WORD, BELOW THE NUMBER (v631_2). ⚠️ The strike-through alone left three
+      // states looking alike — open, full and not a bake day — and a word survives a customer who cannot tell
+      // the colours apart. ⚠️ It sits UNDER the number, never over it: the date is what the customer came to read.
+      if (full && !past) kids.push(el("span", { class: "cal-stamp", "aria-hidden": "true" }, t("calFull")));
       // The name waits in its own bubble and is never listed in advance. `hidden`
       // is set on the node itself, not through el(): the shop's el() skips only
       // null, so `hidden: false` would still set the attribute and hide it.
@@ -3242,18 +3391,23 @@ function clearFieldMarks() {
       // A day she delivers with room left is tapped to choose it; a marked day is
       // tapped to read its name; a day the grid cannot take an order for is tapped
       // to be told why — and the one day can be more than one of those.
-      // ⚠️⚠️ EVERY DAY WAS A BUTTON WHOSE ONLY NAME WAS ITS NUMBER (v583) — ⚠️ **"12", with no month, no
-      // weekday and no word for whether it was chosen.** ⭐ The name is the date a person says, and the
-      // chosen day says so in `aria-pressed`.
+      // ★★ AND A FULL DAY IS A PRESS TOO (v631_2). ⚠️ It was a `<span>` — a dead tap on a day a customer can
+      // clearly see something is wrong with. ⭐ It still chooses nothing; it ANSWERS and names the next day.
+      // ⚠️⚠️ EVERY DAY WAS A BUTTON WHOSE ONLY NAME WAS ITS NUMBER (v583) ⭐ The name is the date a person says.
       const dayName = fmtDay(new Date(`${iso}T00:00:00`));
-      if (open || named || askable || closed) {
+      if (open || named || askable || closed || (full && !past)) {
         return el("button", {
-          class: cls + (open || askable || closed ? " tappable" : "") + (named ? " tippable" : ""),
+          class: cls + (open || askable || closed || (full && !past) ? " tappable" : "")
+            + (named ? " tippable" : "") + (full && !past ? " tapfull" : ""),
           "aria-label": full ? `${dayName}, ${t("soldOut")}` : dayName,
           "aria-pressed": isSel ? "true" : "false",
           dataset: { iso },
           onclick: () => {
             if (named) tipIso = iso;
+            // ⚠️ ONE ANSWER AT A TIME: choosing an open day puts the full day's note away, and asking about a
+            // full day does not steal the chosen day from him.
+            if (full && !past) fullIso = iso;
+            else fullIso = null;
             if (open) { selected = iso; dayPicked = true; } // their own tap (v434)
             // Choosing a real day takes the answer away with it; asking about
             // another day it cannot take replaces it. The one tap can never be
@@ -3306,10 +3460,10 @@ function clearFieldMarks() {
           dayPicked
             ? sub(t("calChosen"), fmtDay(new Date(`${selected}T00:00:00`)))
             : sub(t("calChosenFor"), fmtDay(new Date(`${selected}T00:00:00`)))),
-        // Any day in this window with no room left, named rather than guessed at.
-        soldOutLine(specs, new Set(weeks.flat())),
-        // The answer to a tap the grid could not act on, last because it is the
-        // reply to whatever the customer just did.
+        // ★★ A DAY THEY TAPPED THAT IS FULL ANSWERS THEM (v631_2); otherwise the line names every full day in
+        // the window. ⚠️ ONE AT A TIME: two sentences about the same day would read as two different facts.
+        fullIso ? fullNote(specs, weeks) : soldOutLine(specs, new Set(weeks.flat())),
+        // The answer to a tap the grid could not act on, last because it is the reply to what they just did.
         missNote(specs)));
     // ⚠️⚠️ AND THE DAY THE CUSTOMER TAPPED TAKES THE KEYBOARD BACK (v593). ⚠️ `replaceChildren` removed the
     // cell that had focus — ⚠️ **it fell to the body and the next Tab started at the top of the shop.** ⭐ The
@@ -3338,6 +3492,98 @@ function clearFieldMarks() {
     if (specs.some((s) => dateKey(s.date) === missIso)) return null;
     return el("p", { class: "cal-miss" },
       sub(t(missClosed ? "calClose" : "calMiss"), fmtDay(new Date(`${missIso}T00:00:00`))));
+  }
+
+  // ★★ "TELL ME WHEN THIS DAY FREES" (v648). ⚠️ The number is the only thing that matters — a name is optional
+  // and the day is the one they tapped. ⭐ Every refusal says which thing is wrong, in the place they pressed.
+  function waitForm(iso, dayText) {
+    const store = shopStorage();
+    if (!iso) return null;
+    if (hasAsked(store, iso)) {
+      return el("p", { class: "full-note-next", style: "margin:10px 0 0" }, t("waitAlready"));
+    }
+    const name = el("input", { class: "input", type: "text", maxlength: "60", placeholder: t("waitName") });
+    const phone = el("input", { class: "input", type: "tel", inputmode: "tel", placeholder: t("waitPhone") });
+    // ⚠️ SET AS A PROPERTY (v643's rule): in this file `el()` writes attributes, so `hidden: true` would work
+    // but `hidden: false` would not — one spelling, so nobody has to remember which values are safe.
+    const said = el("p", { class: "full-note-next", style: "margin:8px 0 0" });
+    said.hidden = true;
+    const say = (text) => { said.textContent = text; said.hidden = false; };
+    const ask = el("button", {
+      type: "button",
+      class: "full-note-go",
+      style: "margin-top:8px",
+      onclick: async () => {
+        const row = waitRow({ day: iso, name: name.value, whatsapp: phone.value }, waNumber);
+        if (!row) return say(t("waitBad"));
+        ask.disabled = true;
+        const ok = await postWait(row);
+        ask.disabled = false;
+        if (!ok) return say(t("waitFail"));
+        rememberAsked(store, iso);
+        ask.hidden = true; name.hidden = true; phone.hidden = true;
+        say(t("waitDone"));
+      },
+    }, t("waitAsk"));
+    return el("div", { class: "wait-ask" },
+      el("p", { class: "full-note-say", style: "margin:12px 0 6px" }, t("waitTitle")),
+      el("div", { style: "display:grid;gap:6px" }, name, phone),
+      ask, said);
+  }
+
+  // ⚠️ WRITE-ONLY, and it answers true only when the row really landed — a waitlist request that silently
+  // vanished is a customer who thinks she was told.
+  async function postWait(row) {
+    const sb = CONFIG.supabase || {};
+    const base = String(sb.url || "").replace(/\/+$/, "");
+    if (!base || !sb.anonKey) return false;
+    try {
+      const res = await fetch(`${base}/rest/v1/waitlist`, {
+        method: "POST",
+        headers: { apikey: sb.anonKey, Authorization: `Bearer ${sb.anonKey}`, "Content-Type": "application/json",
+          Prefer: "return=minimal" },
+        body: JSON.stringify(row),
+      });
+      return !!(res && res.ok);
+    } catch { return false; }
+  }
+
+  // ★★ WHAT A TAPPED FULL DAY ANSWERS (v631_2). Her rule that a control which cannot act must say why, in the
+  // place it was tapped — and a customer's real question is not "why can't I?" but **"when can I?"**, so the
+  // next open day is named AND offered as a press. ⚠️ `next` is read from the SAME `specs` the grid is drawn
+  // from, so the day named here and the day that gets chosen cannot disagree.
+  function fullNote(specs, weeks) {
+    // ⭐ ONE RULE, ONE CALLER: `fullDayAnswer` says whether the day is still full and which day comes next.
+    const answer = fullDayAnswer(specs, fullIso);
+    // The day stopped being full (a cancellation, a refresh) — say what the window actually holds.
+    if (!answer.full) {
+      fullIso = null;
+      return soldOutLine(specs, new Set(weeks.flat()));
+    }
+    const day = fmtDay(new Date(`${fullIso}T00:00:00`));
+    // ⭐ THE SAME RULE THE PRESS USES — one search, so the day named and the day chosen cannot differ.
+    const next = answer.next;
+    return el("div", { class: "full-note", role: "status" },
+      el("p", { class: "full-note-say" }, sub(t("fullDaySay"), day)),
+      el("p", { class: "full-note-next" },
+        next ? sub(t("fullDayNext"), fmtDay(next.date)) : t("fullDayNone")),
+      next
+        ? el("button", {
+          type: "button",
+          class: "full-note-go",
+          onclick: () => {
+            selected = dateKey(next.date);
+            dayPicked = true;   // their own choice, made by pressing this
+            fullIso = null;
+            rerender();
+          },
+        }, sub(t("fullDayChoose"), shortDay(dateKey(next.date))))
+        : null,
+      // ★★ "TELL ME WHEN THIS DAY FREES" (v648) — P5, the customer plan's last level.
+      // ⚠️ IT IS WRITE-ONLY: the shop may ADD a request and can never read the list back, because every row is
+      // somebody else's number (see supabase/waitlist.sql). ⚠️ And one ask per day per phone, latched here, so a
+      // second press cannot fill her list.
+      waitForm(fullIso, day));
   }
 
   // "Sold out: 18 Sep, 25 Sep" — the days on screen that are already full. Empty
@@ -3377,6 +3623,30 @@ function clearFieldMarks() {
   // sentence on the screen named step 2.** ⭐ One rule with two readers is the only way those two can never
   // disagree, and this file has already paid for splitting one fact across two places (v427: a duration in
   // CSS and a moment in JS).
+  // ★★ THE FOUR STEPS AS A BAR (v633_2). ⚠️ THE LABELS ARE READ FROM THE STEP HEADINGS THEMSELVES — never
+  // typed a second time here — so the bar cannot name a step differently from the step under it, and each of
+  // the three languages arrives with its own heading. ⚠️ The words are rewritten only when a heading's text has
+  // actually changed (a language switch), because rebuilding the bar on every stepper press would restart the
+  // page's layout for a line that has not moved.
+  function paintStepBar(done) {
+    const bar = document.getElementById("stepbar");
+    if (!bar || typeof bar.replaceChildren !== "function") return;
+    // ⚠️ THREE OF THE FOUR STEPS HAVE A HEADING; THE FOURTH IS THE PLACE ORDER PRESS ITSELF — her own layout
+    // ("number 4 should not be inside the button, it should sit beside"), so its words come from the button.
+    const heads = [1, 2, 3].map((n) => document.querySelector(`#step${n} h2`))
+      .concat([document.getElementById("order-btn")]);
+    if (heads.some((h) => !h)) return;
+    const words = heads.map((h) => String(h.textContent || "").trim());
+    const shown = [...bar.children].map((n) => n.textContent);
+    if (!shown.length || shown.join("\u0000") !== words.join("\u0000")) {
+      bar.replaceChildren(...words.map((w) => el("span", { class: "stepbar-item" }, w)));
+    }
+    const current = done.findIndex((d) => !d);
+    [...bar.children].forEach((n, i) => {
+      n.className = "stepbar-item" + (done[i] ? " done" : "") + (i === current ? " on" : "");
+    });
+  }
+
   function stepsDone() {
     const nameEl = document.getElementById("name-input");
     const waEl = document.getElementById("whatsapp-input");
@@ -3432,6 +3702,7 @@ function clearFieldMarks() {
       const head = document.getElementById(`step${i + 1}`);
       if (head && head.classList) head.classList.toggle("done", done[i]);
     }
+    paintStepBar(done);
     // ★★★ AND THE PREVIOUS ORDER'S RECEIPT GOES THE MOMENT A NEW ORDER BEGINS (v499).
     //
     // ⚠️⚠️ READ OFF THE SHOP'S OWN STATE, IN ONE PLACE, AND WITH NO LISTENER ON ANY CONTROL. ⭐ **Step 1 done
@@ -3581,6 +3852,9 @@ function clearFieldMarks() {
         ? dayRows.some((r) => r && r.date === todayKey)
         : undefined);
     renderMenu();
+    // ★★ AND THE REGULAR'S WAY BACK IN (v638) — repainted with the menu, because what it may offer depends on
+    // the day that has just settled.
+    renderAgain();
     // ⚠️ LAST, and here rather than anywhere else, because EVERYTHING funnels through `rerender`: the day
     // tapped, the menu rebuilt, the 30-second refresh, the availability arriving. One call site covers
     // them all, and the one that is missed is the one that leaves a circle green on a day that has gone.
@@ -4088,6 +4362,9 @@ function clearFieldMarks() {
       // one path where the order really landed** — the same reason `rememberShopOrder` is here and
       // nowhere else — and an order that fell back to WhatsApp keeps its stamp on purpose.
       forgetVia();
+      // ⭐ AND WHAT THEY ORDERED, on their own phone (v638) — the regular's way back in. Saved HERE because
+      // this is the one path where the order really landed; a fallback to WhatsApp reached no record.
+      saveLastBasket(shopStorage(), [...cart].map(([name, qty]) => ({ name, qty })), dateKey(new Date()));
       sending = false;       // the order landed — the next customer may order (v548)
       cart.clear();
       // ★★★ AND THE MENU IS REBUILT, NOT JUST THE BAR (v549). ⚠️⚠️ The reset emptied the basket and left
@@ -4096,6 +4373,7 @@ function clearFieldMarks() {
       // fault this shop has fixed more times than any other, and the steppers are built from `cart`, so
       // they are rebuilt from it here.
       renderMenu();
+      renderAgain();
       // …and with it every note typed against it, or the next customer's first
       // look at the menu would open with the last person's words sitting in the
       // boxes. Nothing else on this page is carried over; neither is this.
@@ -5991,34 +6269,38 @@ if (typeof document !== "undefined" && document.documentElement) {
   // wrapper, so a press on the paragraphs or on the WhatsApp link inside it leaves it open;
   // only a press outside the wrapper closes it.
   // ---------------------------------------------------------------------------------
-  const privacyZone = document.getElementById("privacy-zone");
-  const privacyOpen = document.getElementById("privacy-open");
-  const privacySheet = document.getElementById("privacy-sheet");
-  if (privacyZone && privacyOpen && privacySheet) {
+  // ★★ ONE BEHAVIOUR, TWO PANELS (v636_2). ⚠️ The privacy notice and "Good to know" are the same kind of
+  // thing — a press to open, a press away to close, Escape to close — so they share one wiring. ⭐ A second
+  // copy of this logic is a second thing to keep working, and the shop has paid for that before.
+  const sheet = (openId, sheetId, zoneId) => {
+    const open = document.getElementById(openId);
+    const panel = document.getElementById(sheetId);
+    if (!open || !panel) return;
+    const zone = zoneId ? document.getElementById(zoneId) : null;
     const setOpen = (o) => {
-      privacySheet.hidden = !o;
-      privacyOpen.setAttribute("aria-expanded", o ? "true" : "false");
+      panel.hidden = !o;
+      open.setAttribute("aria-expanded", o ? "true" : "false");
     };
-    const isOpen = () => privacyOpen.getAttribute("aria-expanded") === "true";
+    const isOpen = () => open.getAttribute("aria-expanded") === "true";
 
-    privacyOpen.addEventListener("click", () => setOpen(!isOpen()));
+    open.addEventListener("click", () => setOpen(!isOpen()));
 
-    // The press that OPENED it must not be the press that closes it: this runs on the
-    // document, in the same bubble, after the button's own — and the wrapper test is what
-    // lets the button through, because the button is inside the zone.
-    //
-    // ⚠️ "AWAY" IS OUTSIDE BOTH, THE WORDS **AND** THE PANEL. Since v357 the panel is a child
-    // of the BAR rather than of #privacy-zone — it is positioned against the bar so it opens
-    // ABOVE Place order instead of on top of it. Without the second test, a press on the
-    // WhatsApp link inside the panel would count as "away" and shut the notice being read.
+    // ⚠️ "AWAY" IS OUTSIDE THE WORDS **AND** THE PANEL: a press on a link inside the panel must not count as
+    // away, or the notice would shut while it is being read.
     document.addEventListener("click", (e) => {
-      if (isOpen() && !privacyZone.contains(e.target) && !privacySheet.contains(e.target)) {
-        setOpen(false);
-      }
+      const inZone = zone ? zone.contains(e.target) : false;
+      // ⚠️⚠️ THE LANGUAGE PILL IS NOT "AWAY" (v636_2). ⭐ MEASURED: reading "Good to know" and switching to
+      // 中文 SHUT the panel — ⭐ **so a customer reading in the wrong language had to open it again to read the
+      // same words.** A language press changes the words; it is not a press elsewhere on the page.
+      const changingLanguage = e.target && e.target.closest && e.target.closest(".lang-switch");
+      if (isOpen() && !inZone && !panel.contains(e.target) && e.target !== open && !changingLanguage) setOpen(false);
     });
 
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && isOpen()) setOpen(false);
     });
-  }
+  };
+
+  sheet("privacy-open", "privacy-sheet", "privacy-zone");
+  sheet("facts-open", "facts-sheet", null);
 }

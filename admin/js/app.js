@@ -444,11 +444,17 @@ function showLogin() {
 }
 
 function registerSW() {
-  if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker.register("sw.js").catch(() => {});
-    });
-  }
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+  // ⚠️⚠️ THE LOAD LISTENER COULD BE ADDED TOO LATE TO EVER RUN (v630). ⚠️ `boot()` awaits the update
+  // probe (a network read of version.js) BEFORE this is reached, so on any load where `load` fires during
+  // that wait, the listener is added after the event and **never runs**. ⭐ MEASURED on the dev server:
+  // `document.readyState` complete, the app fully drawn, and `getRegistrations()` **empty**.
+  // ⚠️ Without the worker NOTHING revalidates the app's code (`fetch(req, { cache: "no-cache" })` in
+  // sw.js), so a pushed fix waits out the browser's ten-minute copy — and **Force update has no worker to
+  // ask**, which is what makes that press look like it did nothing.
+  const go = () => { navigator.serviceWorker.register("sw.js").catch(() => {}); };
+  if (document.readyState === "complete") go();
+  else window.addEventListener("load", go, { once: true });
 }
 
 // The app-password lock, when enabled, is the first gate on load. It is
@@ -534,7 +540,6 @@ function bootApp() {
   // Adopt the latest published storefront (name/WhatsApp/tagline/QR) so this
   // phone shows whatever the most recent backoffice user set, not a baked copy.
   refreshStorefront(state);
-  registerSW();
 }
 
 window.addEventListener("hashchange", render);
@@ -576,4 +581,11 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
 // Expose save/state to views that import from app.js without a cycle.
 export { state, save, dayMoved };
 
+// ⚠️⚠️ REGISTERED HERE, NOT AT THE END OF `bootApp()` (v630). ⭐ MEASURED on the dev server: the app drew
+// its whole screen and `getRegistrations()` was **empty** — the call at the end of `bootApp()` was not
+// reached on that load, and its `load` listener is only good if `load` has not already fired.
+// ⚠️ **A worker that is sometimes there is worse than one that is never there**, because Force update and
+// the ten-minute revalidation both quietly depend on it. ⭐ Here it runs on EVERY load: before the lock, on
+// the sign-in screen, and with sharing off.
+registerSW();
 boot();

@@ -18,6 +18,22 @@ function createEl(tag) {
     focus() {}, click() {},
   };
 }
+// ⚠️ THE COUNT AND THE STEPPER MOVED (v634): the count is now a pill UNDER THE NAME, and the stepper sits
+// in the card's price column. ⭐ These helpers WALK the card for them, so a rearrangement of the row cannot
+// silently make a test read the wrong node.
+const findClass = (node, part) => {
+  let hit = null;
+  const walk = (n) => {
+    if (!n || hit || !n.children) return;
+    for (const c of n.children) {
+      if (c && String(c.className || "").includes(part)) { hit = c; return; }
+      walk(c);
+    }
+  };
+  walk(node);
+  return hit;
+};
+
 const registry = {};
 globalThis.document = {
   createElement: createEl,
@@ -210,12 +226,18 @@ test("live availability renders: full day struck out, first open day chosen, per
   assert.equal(c.cells[0].children[0].children[0].text, "23", "the window opens on Sun 23 Aug");
   assert.equal(c.cells[9].children[0].children[0].text, "1", "…and today sits in the second row");
 
-  // Wed 2 Sep is full: not a button, plainly struck through, and not offered.
+  // Wed 2 Sep is full: struck through, marked FULL — ⚠️ AND IT IS A PRESS (v631_2). ⭐ It used to be a dead
+  // `<span>`: a customer could see something was wrong with the day and could not find out what. ⭐ It now
+  // ANSWERS with the next day that can be ordered, and still chooses nothing — which is what the last two
+  // assertions here are for.
   const d2 = cell(2);
-  assert.equal(d2.tagName, "SPAN", "a full day is not tappable");
-  assert.ok(d2.className.includes("full") && !d2.className.includes("avail"));
-  assert.ok(!d2._listeners.click, "and carries no click handler");
+  assert.equal(d2.tagName, "BUTTON", "a full day must be pressable — it is how a customer learns when they CAN order");
+  assert.ok(d2.className.includes("full") && !d2.className.includes("avail"),
+    "★ a full day was drawn as an available one");
+  assert.ok(d2._listeners && d2._listeners.click, "and it carries the press that answers");
   assert.equal(d2.children[0].children[0].text, "2", "the number is still drawn");
+  assert.ok(d2.children.some((c) => c && String(c.className).includes("cal-stamp")),
+    "★ the word FULL is gone — the day is only struck through again");
 
   // Fri 4 Sep is the first day with room, so the customer is given it.
   const d4 = cell(4);
@@ -242,15 +264,16 @@ test("live availability renders: full day struck out, first open day chosen, per
   assert.equal(cards.length, 2);
 
   const f = cards[0];
-  const fStamp = bodyOf(f).children[0].children[1];
+  const fStamp = findClass(bodyOf(f), "prod-stamp");
   assert.ok(fStamp.className.includes("prod-stamp") && !fStamp.className.includes("soldout"));
   assert.equal(fStamp.children[0].text, "Only 2 left");
 
   const s = cards[1];
-  const sStamp = bodyOf(s).children[0].children[1];
+  const sStamp = findClass(bodyOf(s), "prod-stamp");
   assert.ok(sStamp.className.includes("prod-stamp") && sStamp.className.includes("soldout"));
   assert.equal(sStamp.children[0].text, "Sold out");
-  assert.equal(bodyOf(s).children[1].children[2].disabled, true, "sold-out product's + button is disabled");
+  const sStep = findClass(bodyOf(s), "stepper");
+  assert.equal(sStep.children[2].disabled, true, "sold-out product's + button is disabled");
 
   // ★★★ THE DAY IS TAPPED FIRST (v454). The step lock refuses step 2 until HE has tapped a posting day, so
   // the four presses below were being refused outright and the count read `''` instead of `2`.
@@ -258,7 +281,7 @@ test("live availability renders: full day struck out, first open day chosen, per
   // chosen" — which is exactly the tap a customer would make.
   tapDay();
   // Stepper caps at the remaining count: Focaccia has 2 left.
-  const fStep = bodyOf(f).children[1];
+  const fStep = findClass(bodyOf(f), "stepper");
   const fQty = fStep.children[1];
   const fDec = fStep.children[0];
   const fInc = fStep.children[2];
@@ -283,8 +306,9 @@ test("tapping another open day moves the marker and swaps the product stamps", (
   assert.equal(c.chosen.children[0].text, `Your posting day: ${fmtDay(dates[2])}`);
 
   const cards = registry["menu"].children;
-  assert.equal(bodyOf(cards[0]).children[0].children[1].children[0].text, "Only 9 left");
-  const sStamp = bodyOf(cards[1]).children[0].children[1];
+  // ⚠️ The count is a pill under the name (v634) — the walk finds it wherever it sits.
+  assert.equal(findClass(bodyOf(cards[0]), "prod-stamp").children[0].text, "Only 9 left");
+  const sStamp = findClass(bodyOf(cards[1]), "prod-stamp");
   assert.ok(sStamp.className.includes("prod-stamp") && !sStamp.className.includes("soldout"));
   assert.equal(sStamp.children[0].text, "Only 12 left");
 });

@@ -189,7 +189,14 @@ test("a card carries its photo as its own left column, beside a body of everythi
   assert.equal(title.className, "card-title");
   const sub = words.children[1];
   assert.equal(title.children[0].text, "Chocolate Cake");
-  assert.equal(sub.children[0].text, "RM55.00 / whole");
+  // ⚠️ THE PRICE MOVED OUT OF THIS LINE (v634): what the bread IS stays beside the name, what it COSTS is its
+  // own bold figure in the card's right-hand column, beside the stepper that changes it.
+  assert.equal(sub.children[0].text, "whole", "the unit line now says only what the bread is");
+  const side = head.children[1];
+  assert.equal(side.className, "card-side", "the price and the stepper share the right-hand column");
+  assert.equal(side.children[0].className, "card-price");
+  assert.equal(side.children[0].children[0].text, "RM55.00", "★ the price is no longer drawn at all");
+  assert.equal(side.children[1].className, "stepper", "and the stepper sits under the price it changes");
   const desc = words.children[2];
   assert.equal(desc.className, "prod-desc");
   assert.equal(desc.children[0].text, "Rich dark ganache, 3 layers");

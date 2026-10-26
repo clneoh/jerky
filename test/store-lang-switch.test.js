@@ -121,7 +121,20 @@ const firstCardStepper = () => {
   };
   for (const k of Object.keys(registry)) walk(registry[k]);
   if (day && day._listeners && day._listeners.click) day._listeners.click[0]();
-  return registry["menu"].children[0].children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
+  // ⚠️ THE STEPPER MOVED (v634): it now sits inside the card's price column, beside the price it changes, so
+  // the card's direct children no longer hold it. ⭐ The helper WALKS the card rather than assuming a depth —
+  // a test that hard-codes the tree shape fails the day the page is rearranged, and blames the wrong thing.
+  let stepper = null;
+  const findStepper = (n) => {
+    if (!n || stepper || !n.children) return;
+    for (const c of n.children) {
+      if (c && String(c.className || "") === "stepper") { stepper = c; return; }
+      findStepper(c);
+    }
+  };
+  findStepper(registry["menu"].children[0]);
+  assert.ok(stepper, "★ the menu card has no stepper at all — the item row lost its quantity control");
+  return stepper;
 };
 // The line under the delivery calendar naming the chosen day — the one piece of
 // date text outside the grid, and so the one to read for a language switch.

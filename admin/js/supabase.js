@@ -400,6 +400,12 @@ export function storefrontPayload(state) {
       // shop-side recheck of its own lives in store/app.js's merge, as with
       // every other field that crosses this boundary.
       if (p.askNote === true) out.askNote = true;
+      // ★★ THE PRODUCT'S OWN FOOD FACTS (v639) — hers, never generated. ⚠️ Published only when written, so a
+      // product that has none crosses this boundary byte-for-byte as it always did.
+      for (const k of ["allergens", "keeping"]) {
+        const v = p && p[k];
+        if (typeof v === "string" && v.trim()) out[k] = v.trim().slice(0, 200);
+      }
       // Optional translated names for 中文 / BM shoppers. Published only when
       // written — blank falls back to the English name on the shop (nameFor).
       for (const k of ["nameZh", "nameMs"]) {
@@ -481,6 +487,11 @@ export function storefrontPayload(state) {
     policy: String(sf.policy || ""),
     policyZh: String(sf.policyZh || ""),
     policyMs: String(sf.policyMs || ""),
+    // ★★ "GOOD TO KNOW", IN HER OWN WORDS (v641). ⚠️ One sentence per line, one line per bullet on the shop.
+    // Blank publishes "" and the shop falls back to its own wording, so this can never empty the panel.
+    facts: String(sf.facts || ""),
+    factsZh: String(sf.factsZh || ""),
+    factsMs: String(sf.factsMs || ""),
     deliveryDays: (state.settings && state.settings.deliveryDays) || [],
     cutoff: (state.settings && state.settings.cutoff) || "",
     capacity: (state.settings && state.settings.defaultCapacity) || 0,
@@ -1083,15 +1094,21 @@ export async function claimReceipt(state, order, { force = false } = {}) {
 // ⭐⭐ SEND A LABEL TO THE PRINT QUEUE (v617). ⚠️ A web page cannot open a raw socket to a Wi-Fi printer, and
 // an HTTPS page cannot call a plain-HTTP device on the LAN — ⭐ so the job travels through the shared cloud
 // and the Mac's bridge prints it. The same route works on Android and iOS, with nothing to configure on the
-// phone. Returns true only when the job really landed in the queue.
+// phone.
+//
+// ⚠️⚠️ AND IT SAYS **WHY** IT FAILED (v629), because the words on screen have to be true. **This phone can
+// never see the bridge or the printer** — a job that lands in the queue is printed whenever the bridge next
+// asks for one. So a failure HERE is always about this phone reaching the bakery's cloud, and the message
+// must never ask whether the bridge is running: the job never got as far as the bridge.
 export async function sendPrintJob(state, payload, { site = printSite() } = {}) {
-  if (!payload) return false;
+  if (!payload) return { ok: false, why: "no-job" };
   const c = cfg(state);
-  if (!ready(c)) return false;
+  // Shared data off, or no address/key yet — nothing can be sent from this phone at all.
+  if (!ready(c)) return { ok: false, why: "not-set-up" };
   let token = cachedToken();
   if (!token) {
     try { token = await login(c.url, c.anonKey, c.email, c.password); }
-    catch { return false; }
+    catch { return { ok: false, why: "sign-in" }; }
   }
   try {
     const res = await fetch(`${c.url}/rest/v1/print_jobs`, {
@@ -1104,8 +1121,57 @@ export async function sendPrintJob(state, payload, { site = printSite() } = {}) 
       },
       body: JSON.stringify({ site, payload }),
     });
-    return !!(res && res.ok);
-  } catch { return false; }
+    return res && res.ok ? { ok: true, why: "" } : { ok: false, why: "refused" };
+  } catch { return { ok: false, why: "no-answer" }; }
+}
+
+// ── the waitlist (v648) ──────────────────────────────────────────────────────
+//
+// ⭐ "Tell me when this day frees up": the shop ADDS a request with the public key and can never read one back
+// (supabase/waitlist.sql). Her own signed-in phones read them here, so a full day can name who wanted it.
+// ⚠️ Every answer says whether it really happened — a card that quietly showed nothing would read as "nobody
+// is waiting", which is a claim, not an absence.
+
+export async function fetchWaitlist(state, { today = "" } = {}) {
+  const c = cfg(state);
+  if (!ready(c)) return { ok: false, reason: "not set up", rows: [] };
+  let token = cachedToken();
+  if (!token) {
+    try { token = await login(c.url, c.anonKey, c.email, c.password); }
+    catch { return { ok: false, reason: "sign-in failed", rows: [] }; }
+  }
+  const day = String(today || "").trim();
+  const filter = day ? `&day=gte.${encodeURIComponent(day)}` : "";
+  try {
+    const res = await fetch(
+      `${c.url}/rest/v1/waitlist?select=id,created_at,day,name,whatsapp&handled=eq.false${filter}`
+      + "&order=day.asc,created_at.asc&limit=100",
+      { headers: { apikey: c.anonKey, Authorization: `Bearer ${token}` } });
+    if (!res.ok) return { ok: false, reason: `HTTP ${res.status}`, rows: [] };
+    const rows = await res.json().catch(() => []);
+    return { ok: true, rows: Array.isArray(rows) ? rows : [] };
+  } catch { return { ok: false, reason: "no answer", rows: [] }; }
+}
+
+export async function markWaitlistDone(state, ids) {
+  const list = (Array.isArray(ids) ? ids : [ids]).map(Number).filter((n) => Number.isInteger(n));
+  if (!list.length) return { ok: false };
+  const c = cfg(state);
+  if (!ready(c)) return { ok: false };
+  let token = cachedToken();
+  if (!token) {
+    try { token = await login(c.url, c.anonKey, c.email, c.password); }
+    catch { return { ok: false }; }
+  }
+  try {
+    const res = await fetch(`${c.url}/rest/v1/waitlist?id=in.(${list.join(",")})`, {
+      method: "PATCH",
+      headers: { apikey: c.anonKey, Authorization: `Bearer ${token}`, "Content-Type": "application/json",
+        Prefer: "return=minimal" },
+      body: JSON.stringify({ handled: true, handled_at: new Date().toISOString() }),
+    });
+    return { ok: !!(res && res.ok) };
+  } catch { return { ok: false }; }
 }
 
 // ── the register itself (v366) ───────────────────────────────────────────────

@@ -8,6 +8,7 @@ import { parseImport } from "../validate.js";
 import { generateUpcomingDates, todayISO } from "../dates.js";
 import { syncAvailability, cachedToken, signOut, syncStorefront, maybeSync, maybeSyncStorefront, republishEveryCard } from "../supabase.js";
 import * as backups from "../backups.js";
+import { DEFAULT_FACTS } from "../../../store/facts.js";
 import * as sync from "../sync.js";
 import { refreshShareWarn } from "../sharewarn.js";
 import { translateTo, translateAllowed } from "../translate.js";
@@ -168,6 +169,41 @@ export function renderSettings(root, state) {
     placeholder: "Auto-translated Bahasa Malaysia — blank keeps English",
     onchange: () => { sf.policyMs = sfPolicyMs.value.trim(); save(state); maybeSyncStorefront(state); } });
 
+  // ★★ "GOOD TO KNOW" IN HER OWN WORDS (v641). ⚠️ One sentence per line, one line per bullet on the shop.
+  // ⭐ The box arrives holding the shop's current five lines, so she edits a sentence rather than writing the
+  // block; blank falls back to those lines, so the panel can never end up empty.
+  // ★★ THE BOX HOLDS THE SHOP'S OWN LINES (v642). ⚠️ Her words: __"the Good to know dont reflex what is in the
+  // store, what is in the store is better words"__ — ⭐ so this is not a paraphrase typed here: it is the very
+  // list the shop draws when she has written nothing, imported so the two cannot drift.
+  const FACTS_DEFAULT = DEFAULT_FACTS.join("\n");
+  const sfFacts = el("textarea", { class: "input", rows: 5,
+    value: sf.facts || FACTS_DEFAULT,
+    onchange: () => { sf.facts = sfFacts.value.trim(); save(state); maybeSyncStorefront(state); } });
+  const sfFactsZh = el("textarea", { class: "input", rows: 4, value: sf.factsZh || "",
+    placeholder: "Auto-translated 中文 — blank keeps her English, or the shop's own line",
+    onchange: () => { sf.factsZh = sfFactsZh.value.trim(); save(state); maybeSyncStorefront(state); } });
+  const sfFactsMs = el("textarea", { class: "input", rows: 4, value: sf.factsMs || "",
+    placeholder: "Auto-translated Bahasa Malaysia — blank keeps her English",
+    onchange: () => { sf.factsMs = sfFactsMs.value.trim(); save(state); maybeSyncStorefront(state); } });
+
+  async function translateFacts() {
+    const src = sfFacts.value.trim();
+    if (!src) return toast("Write the lines in English first");
+    if (!translateAllowed()) return toast("No connection — translations fill when you're back online");
+    let filled = 0;
+    for (const [lang, box] of [["zh", sfFactsZh], ["ms", sfFactsMs]]) {
+      if (box.value.trim()) continue; // hand-typed → hers, leave it alone
+      try {
+        const out = await translateTo((url) => fetch(url), src, lang);
+        if (out && out.trim()) { box.value = out.trim(); filled++; }
+      } catch { /* leave it blank and try the rest */ }
+    }
+    sf.factsZh = sfFactsZh.value.trim();
+    sf.factsMs = sfFactsMs.value.trim();
+    save(state); maybeSyncStorefront(state);
+    toast(filled ? "Translated — edit it if you like" : "Nothing to translate");
+  }
+
   async function translatePolicy() {
     const src = sfPolicy.value.trim();
     if (!src) return toast("Write the policy in English first");
@@ -234,6 +270,9 @@ export function renderSettings(root, state) {
         sfPolicy.value = sf.policy || "";
         sfPolicyZh.value = sf.policyZh || "";
         sfPolicyMs.value = sf.policyMs || "";
+        sfFacts.value = sf.facts || FACTS_DEFAULT;
+        sfFactsZh.value = sf.factsZh || "";
+        sfFactsMs.value = sf.factsMs || "";
         devName.value = dev.name;
         devWa.value = dev.whatsapp || "";
         renderDevEmails();
@@ -283,6 +322,15 @@ export function renderSettings(root, state) {
       el("div", { class: "form-grid", style: "margin-top:8px" },
         el("div", {}, el("label", {}, "中文"), sfPolicyZh),
         el("div", {}, el("label", {}, "Bahasa Malaysia"), sfPolicyMs))),
+    el("div", { class: "field", style: "margin-top:10px" },
+      el("label", {}, "Good to know (shown on the shop)"),
+      el("p", { class: "card-sub", style: "margin:0 0 5px" },
+        "The lines a customer opens under “Good to know”, above the menu. One sentence per line — each line becomes one bullet. Write them in English, tap Translate for 中文 and Bahasa Malaysia, then edit either. Clearing the box puts the shop's own wording back."),
+      sfFacts,
+      el("div", { class: "btn-row", style: "margin-top:6px" }, button("Translate", translateFacts, "soft")),
+      el("div", { class: "form-grid", style: "margin-top:8px" },
+        el("div", {}, el("label", {}, "中文"), sfFactsZh),
+        el("div", {}, el("label", {}, "Bahasa Malaysia"), sfFactsMs))),
     el("h4", { style: "margin:14px 0 0" }, "Menu"),
     el("p", { class: "card-sub", style: "margin:4px 0 0" },
       "Your menu comes from More → Products — add or hide a product there and it updates here after you publish. WhatsApp is digits only with country code — 012-345 6789 → 60123456789."),
@@ -709,6 +757,13 @@ export function renderSettings(root, state) {
   // The cloud section loads after the card renders, so the list fetch never
   // blocks the settings screen. `dead` stops a fill that outlives a re-render
   // (app.js treats a returned function as route cleanup, like Reviews does).
+  // ★★★ ONE FOLD FOR THE WHOLE LIST (v645). Her words: __"what i meant is collapse every copies, it only pop
+  // up upon clicking"__ — ⭐ **not one fold per copy: the LIST itself is the thing that should stay shut.** The
+  // card then reads as three lines of status instead of a screen of copies, and one press opens them all.
+  // ⚠️ What she opened is remembered across a refill — "Back up to cloud now" and Delete both repaint the list,
+  // and without this the list she had opened would snap shut under her thumb.
+  let copiesOpen = false;
+
   function rowEl(row) {
     const meta = [];
     if (row.summary) meta.push(row.summary);
@@ -727,6 +782,28 @@ export function renderSettings(root, state) {
         button("Put back missing orders", () => putBackOne(row), "soft"),
         button("Download", () => downloadOne(row), "ghost"),
         button("Delete", () => deleteOne(row), "ghost")));
+  }
+
+  // The list itself, as one fold whose head counts the copies.
+  function copiesFold(rows) {
+    const caret = el("span", { class: "fold-caret" }, copiesOpen ? "▾" : "▸");
+    const body = el("div", { class: "fold-body", hidden: !copiesOpen }, ...rows.map(rowEl));
+    const head = el("button", {
+      type: "button",
+      class: "fold-head copies-head",
+      style: "margin:12px 0 2px",
+      "aria-expanded": copiesOpen ? "true" : "false",
+      onclick: () => {
+        copiesOpen = !copiesOpen;
+        body.hidden = !copiesOpen;
+        head.setAttribute("aria-expanded", copiesOpen ? "true" : "false");
+        caret.textContent = copiesOpen ? "▾" : "▸";
+      },
+    },
+      el("span", { class: "fold-title" },
+        `All your copies · ${rows.length} (newest first)`),
+      caret);
+    return el("div", {}, head, body);
   }
 
   function viewOne(row) {
@@ -840,6 +917,12 @@ export function renderSettings(root, state) {
       fillBackups();
     }, "soft");
     const kids = [line(status), el("div", { class: "btn-row", style: "margin-top:8px" }, btn)];
+    // ★★★ THE COPIES THEMSELVES — RESTORED (v642). ⚠️⚠️ **v574 deleted these two lines while lifting the kept
+    // copy out of this function, and nothing noticed for sixty versions**: the card still said "Daily copy saved
+    // today" and listed none, ⭐ so **Restore, Download, Put back missing orders and Delete were unreachable —
+    // the list is the only way to any of them**, and `rowEl` below has been dead code since.
+    // ⭐ Her report, in her own words: __"normally i use to see each backup copies, collapsed, but now no"__.
+    if (rows.length) kids.push(copiesFold(rows));
     show(...kids, ...keptCopyKids());
   }
 

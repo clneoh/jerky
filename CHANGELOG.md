@@ -1,8 +1,48 @@
-# Munchies Furkidz — change history (v54 → v629)
+# Munchies Furkidz — change history (v54 → v648)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**26 Oct 2026 — engine v630 to v648: A NEW FACE FOR YOUR SHOP, AND A CUSTOMER CAN ASK TO BE TOLD
+(⚠️ ONE DATABASE STEP — see the end).**
+
+**v630 is last week's Force update fix coming back from the bakery, with one addition of theirs: if a phone has no worker registered at all, one is put there before the reload.**
+
+**1. Your shop has the design you approved.** **A photo fills the first screen**, the four numbered steps
+read as a bar, items sit in rows, and **a FULL day is now a press that answers** — *"Wednesday, 28 Oct is
+full. The next day you can have treats is Monday, 2 Nov"*, with a **Choose 2 Nov** press. **No count is
+printed on a day that is not yours to count.** ⚠️ **Your own words and rules are kept**: "Post
+(nationwide)" / "Collect (local)", the postal-address gate, and "posting day" throughout.
+
+**2. "Good to know" — written by you.** **A card near the foot of the shop carries your posting days, your
+cut-off, how an order is collected or delivered, how it is paid, how it can be changed, and your WhatsApp.**
+**The plan's words are yours to edit** — the shop shows what you wrote, not a second copy of it.
+
+**3. "Your last order", one press.** **A returning customer can put their last order back in the basket in
+one press.** ⚠️ **It is saved on their phone only** — **not on your books, not shared between customers** —
+and there is a **Forget** beside it.
+
+**4. The food facts belong to the product.** **Each product gains *What is in it* (its allergens — the
+ingredients and anything your kitchen also handles) and *Keeping it* (how long to keep it, whether it
+freezes).** ⚠️ **You write them; blank draws nothing at all** — no line reaches a customer until you fill
+it in.
+
+**5. "Tell me when this day frees up."** **A customer looking at a full day can leave a number, and you get
+the list of who asked** — **so a freed pan reaches exactly those people instead of living in a chat.**
+
+**6. The quiet nudge.** **A customer who has not ordered in a while can be written to — the criteria are
+yours and so are the words**, with the day and the deadline filled in. **It is a nudge, never a
+campaign:** the sentence may not say discount, offer, sale or free.
+
+**7. Backups read as one list.** **The copies fold rather than fill the screen**, and **the box shows the
+shop's own words** rather than the app's.
+
+**8. And a failed Wi-Fi print now says what went wrong** — it used to fail silently.
+
+**⚠️ THE ONE STEP: run `supabase/waitlist.sql` in the SQL editor.** **It only creates a table; nothing
+existing is touched, and it is safe to run twice.** **Everything else works without it — only the
+"tell me when it frees" list does not.**
 
 **23 Oct 2026 — engine v629: "FORCE UPDATE" NOW ACTUALLY FORCES IT (nothing to run, no SQL, no upload).**
 

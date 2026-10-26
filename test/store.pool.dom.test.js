@@ -143,11 +143,26 @@ function titleOf(card) {
 function cardOf(title) {
   return menuCards().find((c) => titleOf(c) === title);
 }
+// ⚠️ THE COUNT AND THE STEPPER MOVED IN v634: the count is a pill under the name and the stepper sits in the
+// price column. ⭐ These look for what they need by name rather than by the position it used to have — a
+// positional read silently lands on the wrong node and blames the view.
+function findIn(node, part) {
+  let hit = null;
+  const walk = (n) => {
+    if (!n || hit || !n.children) return;
+    for (const c of n.children) {
+      if (c && String(c.className || "").includes(part)) { hit = c; return; }
+      walk(c);
+    }
+  };
+  walk(node);
+  return hit;
+}
 function stampOf(card) {
-  const s = bodyOf(card).children[0].children[1];
+  const s = findIn(bodyOf(card), "prod-stamp");
   return s && s.children[0] ? s.children[0].text : "";
 }
-function stepperOf(card) { return bodyOf(card).children[1]; }
+function stepperOf(card) { return findIn(bodyOf(card), "stepper"); }
 // ★★★ THE QUANTITY IS A BOX THAT CAN BE TYPED INTO NOW, NOT A LABEL (v458). ⚠️ **The view changed, so the
 // way it is read changes with it** — a helper still looking for a text node answers "" for a box that is
 // plainly showing a number, and every assertion below would fail for a reason that is not its own.
@@ -208,9 +223,10 @@ test("value pack is gated on a near delivery date and freed on a far one", async
   assert.equal(stampOf(nearPack), "Sold out");
   assert.equal(stepperOf(nearPack).children[0].disabled, true);
   assert.equal(stepperOf(nearPack).children[2].disabled, true);
-  assert.ok(bodyOf(nearPack).children[2] && bodyOf(nearPack).children[2].className.includes("prod-note"),
-    "gated pack carries the advance-order note");
-  assert.match(bodyOf(nearPack).children[2].children[0].text, /close 14 days before the posting day/i);
+  const packNote = findIn(bodyOf(nearPack), "prod-note");
+  assert.ok(packNote, "gated pack carries the advance-order note");
+  // ⚠️ MUNCHIES' OWN WORD — the shop says "posting day" (the bakery says "bake day").
+  assert.match(packNote.children[0].text, /close 14 days before .*posting day/i);
   // The base single is unaffected on the same day.
   assert.equal(stampOf(cardOf("Focaccia")), "Only 12 left");
 
@@ -219,7 +235,7 @@ test("value pack is gated on a near delivery date and freed on a far one", async
   const farPack = cardOf("Focaccia Family (4 pcs)");
   assert.equal(stampOf(farPack), "Only 3 left");
   assert.equal(stepperOf(farPack).children[2].disabled, false);
-  assert.equal(bodyOf(farPack).children.length, 2, "no advance-order note on an allowed date");
+  assert.equal(findIn(bodyOf(farPack), "prod-note"), null, "no advance-order note on an allowed date");
 });
 
 test("a product's change/cancel window is drawn on its card, and absent when blank", () => {

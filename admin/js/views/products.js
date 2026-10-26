@@ -640,6 +640,18 @@ function buildEditor(state, product) {
     "data-suggest": "Chicken jerky — soft, chewy strips, no additives",
     value: product?.description || "" });
 
+  // ★★ THE PRODUCT'S OWN FOOD FACTS (v639). Her words: __"this should not be as general but on the product
+  // specific"__ — a ham sandwich, a croissant and a focaccia do not share an allergen line. ⚠️ **She writes
+  // them; the app never guesses one.** Blank on the card, and the shop draws nothing.
+  const allergens = el("textarea", { class: "input", rows: 2,
+    placeholder: "e.g. Wheat, milk, egg. Made in a kitchen that also handles nuts.",
+    "data-suggest": "Wheat, milk, egg. Made in a kitchen that also handles nuts.",
+    value: product?.allergens || "" });
+  const keeping = el("textarea", { class: "input", rows: 2,
+    placeholder: "e.g. Best on the day. Freezes well — slice first, then warm from frozen.",
+    "data-suggest": "Best on the day. Freezes well — slice first, then warm from frozen.",
+    value: product?.keeping || "" });
+
   // A quick how-to-serve line the owner sends with the bring-a-friend follow-up
   // ("how did the {product} go?"). Admin-only — never published to the shop.
   // Optional — blank keeps the follow-up message to the referral ask only.
@@ -1103,6 +1115,10 @@ function buildEditor(state, product) {
     // under "More items". The tick ORDER is kept as she left it, because the
     // first tick is the heading it lands under.
     if (!ticked.length) drop.push("categories");
+    // ⚠️ A CLEARED BOX REMOVES THE FACT (the switch rule): blank must leave no key at all, or the shop
+    // would keep publishing the sentence she deleted.
+    if (!String(allergens.value || "").trim()) drop.push("allergens");
+    if (!String(keeping.value || "").trim()) drop.push("keeping");
     const values = {
       name: pname,
       unit: chosenUom ? chosenUom.name : unitVal,
@@ -1112,6 +1128,8 @@ function buildEditor(state, product) {
       closeDays: closeVal,
       cancelDays: cancelVal,
       description: descVal || undefined,
+      allergens: String(allergens.value || "").trim().slice(0, 200) || undefined,
+      keeping: String(keeping.value || "").trim().slice(0, 200) || undefined,
       servingTip: servingVal || undefined,
       thumb: thumb || undefined,
       recipe,
@@ -1124,7 +1142,7 @@ function buildEditor(state, product) {
     return { values, tr: trCollect(), drop };
   }
 
-  return { name, unit, price, limit, closeDays, cancelDays, desc, serving, thumbFile, thumbPreview,
+  return { name, unit, price, limit, closeDays, cancelDays, desc, allergens, keeping, serving, thumbFile, thumbPreview,
     catPicker, translations, availability, parcelCheck, askNoteCheck, recipeCard, renderRecipeLines, collect };
 }
 
@@ -1205,7 +1223,15 @@ function editorFields(state, editor) {
       el("p", { class: "card-sub", style: "margin:0 0 5px" },
         "A sentence or two about what this is — e.g. chicken jerky, soft, chewy strips. Blank shows nothing."),
       editor.desc),
-    el("div", { class: "field" }, el("label", {}, "Feeding tip (sent in your follow-up message)"),
+    el("div", { class: "field" }, el("label", {}, "What is in it (customers read it on your shop)"),
+      el("p", { class: "card-sub", style: "margin:0 0 5px" },
+        "This product's own allergens — the ingredients, and anything the kitchen also handles. Written by you, never guessed. Blank shows nothing."),
+      editor.allergens),
+    el("div", { class: "field" }, el("label", {}, "Keeping it (customers read it on your shop)"),
+      el("p", { class: "card-sub", style: "margin:0 0 5px" },
+        "How long to keep this one, and whether it freezes. Blank shows nothing."),
+      editor.keeping),
+    el("div", { class: "field" }, el("label", {}, "Serving tip (sent in your follow-up message)"),
       el("p", { class: "card-sub", style: "margin:0 0 5px" },
         "A short way-to-feed line — e.g. “Tear into small pieces.” Blank keeps the follow-up simple."),
       editor.serving),

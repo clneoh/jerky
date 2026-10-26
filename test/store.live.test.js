@@ -22,6 +22,22 @@ function createEl(tag) {
     focus() {}, click() {},
   };
 }
+
+// ⚠️ THE STEPPER MOVED (v634): it now sits in the card's price column, beside the price it changes, so the
+// old positional read (`card-body.children[1]`) lands on something else. ⭐ WALK for it instead of counting.
+const stepperOf = (body) => {
+  let hit = null;
+  const walk = (n) => {
+    if (!n || hit || !n.children) return;
+    for (const c of n.children) {
+      if (c && String(c.className || "").includes("stepper")) { hit = c; return; }
+      walk(c);
+    }
+  };
+  walk(body);
+  return hit;
+};
+
 const registry = {};
 const docListeners = {};
 const winListeners = {};
@@ -259,8 +275,8 @@ test("a refresh that depletes an ordered item fixes the cart, bar and tells the 
     assert.ok(b, "the card body");
     return b;
   };
-  const qty = (i) => labelVal(bodyOf(cards[i]).children[1].children[1]);
-  const clickInc = (i) => bodyOf(cards[i]).children[1].children[2]._listeners.click[0];
+  const qty = (i) => labelVal(stepperOf(bodyOf(cards[i])).children[1]);
+  const clickInc = (i) => stepperOf(bodyOf(cards[i])).children[2]._listeners.click[0];
   clickInc(0)(); clickInc(0)();        // Focaccia ×2
   clickInc(1)(); clickInc(1)(); clickInc(1)(); // Sandwich ×3
   assert.equal(qty(0), "2");
@@ -279,9 +295,9 @@ test("a refresh that depletes an ordered item fixes the cart, bar and tells the 
   assert.ok(fetchCalls > callsBefore, "the poll re-checked the live data");
 
   const cards2 = registry["menu"].children;
-  assert.equal(labelVal(bodyOf(cards2[0]).children[1].children[1]), "0",
+  assert.equal(labelVal(stepperOf(bodyOf(cards2[0])).children[1]), "0",
     "the sold-out item is removed from the cart");
-  assert.equal(labelVal(bodyOf(cards2[1]).children[1].children[1]), "1",
+  assert.equal(labelVal(stepperOf(bodyOf(cards2[1])).children[1]), "1",
     "a quantity above what's left is clamped down");
   assert.equal(document.getElementById("bar-count").textContent, "1 item",
     "the bar reflects the corrected cart");

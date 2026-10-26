@@ -138,6 +138,75 @@ html, body {
 }
 
 /* ---------- Hero banner ---------- */
+/* ★★ THE PHOTO HERO (v631_2) — one picture, one line, one press, adapted from the reference study.
+   ⚠️ Everything below it is the shop as it already was: the same ids, the same language pills, the same
+   "Our homepage" way back, so the wiring and the three languages are untouched.
+   ⚠️ The veil is load-bearing: white type over a photograph cannot be measured against a fixed colour, so the
+   gradient is what makes it hold at 4.5:1 over both a bright crumb and a dark tray. */
+.hero.hero-photo {
+  position: relative;
+  overflow: hidden;
+  padding: 0;
+  background: #7a3a1e;
+  min-height: 300px;
+  display: flex;
+  align-items: flex-end;
+}
+.hero.hero-photo .hero-photo-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 60%;
+}
+.hero.hero-photo .hero-veil {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(38, 18, 8, .62) 0%, rgba(38, 18, 8, .18) 42%, rgba(38, 18, 8, .82) 100%);
+}
+/* ⚠️ ON A WIDE SCREEN THE HERO'S WORDS LINE UP WITH THE PAGE'S OWN COLUMN (540px), not the far-left edge —
+   a full-bleed photo with its text in the corner reads as two unrelated things. */
+.hero.hero-photo .hero-inner {
+  position: relative;
+  width: 100%;
+  max-width: 540px;
+  margin: 0 auto;
+  padding: calc(18px + env(safe-area-inset-top)) 20px 22px;
+}
+.hero.hero-photo .hero-title {
+  font-family: var(--serif);
+  font-size: 38px;
+  line-height: 1.05;
+  letter-spacing: -.01em;
+  margin: 6px 0 6px;
+  text-wrap: balance;
+}
+.hero.hero-photo .hero-sub { font-family: var(--serif); font-size: 15px; margin: 0 0 14px; }
+/* ⭐ THE ONE PRESS: a cream pill against the photograph, 48px tall for a thumb, and the same words as step 1
+   so the press and the thing it goes to are named alike. */
+.hero-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 22px;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+  box-shadow: 0 6px 18px rgba(30, 14, 6, .28);
+}
+.hero-cta::after { content: "↓"; font-size: 15px; }
+.hero-cta:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+
 .hero {
   color: #fff;
   padding: 26px 20px calc(20px + env(safe-area-inset-top));
@@ -232,6 +301,38 @@ html, body {
   -webkit-tap-highlight-color: transparent;
 }
 .hero-home:active { background: rgba(0, 0, 0, .34); }
+
+/* ★★ THE FOUR STEPS AS A BAR (v633_2) — the reference study's pattern, in her own type: a hairline over four
+   words, the step they are on in terracotta, the ones behind them in the delivery green. ⚠️ A label is allowed
+   to wrap to two lines rather than be cut: 中文 and Bahasa Malaysia are longer than the English, and an
+   ellipsised step name is a step name a customer cannot read. */
+.stepbar {
+  display: flex;
+  gap: 6px;
+  max-width: 540px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+.stepbar-item {
+  flex: 1 1 0;
+  min-width: 0;
+  border-top: 3px solid #e7d8c8;
+  padding: 7px 2px 0;
+  font-family: var(--sans);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  line-height: 1.2;
+  min-height: 32px;
+  text-transform: uppercase;
+  color: #a5947f;
+  overflow-wrap: anywhere;
+}
+.stepbar-item.on { color: var(--brown-dark); border-top-color: var(--brown); }
+.stepbar-item.done { color: var(--green); border-top-color: var(--green); }
+/* ⚠️ The sentence the bar replaces — "You'll do the 4 steps, ordering 1, 2, 3, 4…" — is still in the
+   dictionary for /store/, which keeps it. On the second gateway the bar says the same thing in less room. */
+.steps-lede { display: none; }
 
 /* ---------- Layout ---------- */
 .view {
@@ -473,6 +574,63 @@ html, body {
 }
 /* A delivery day with no room left: struck through and plainly not tappable. */
 .cal-cell.full .cal-num { color: #a99e91; text-decoration: line-through; }
+
+/* ★★ A FULL DAY SAYS SO IN A WORD (v631_2). ⚠️ The strike-through alone left three states looking alike —
+   open, full, and not a bake day — and a word survives a reader who cannot tell the colours apart.
+   ⚠️ It sits UNDER the number so the date stays the first thing read. `--red` on the cell measures
+   **5.35:1** on `--surface`, over the 4.5 this page holds every accent to. */
+/* ⚠️⚠️ THE STAMP IS ABSOLUTE, AND THAT IS NOT A STYLE CHOICE — IT IS WHAT KEEPS THE WEEK A WEEK (v633_2).
+   ⭐ MEASURED: drawn in the flow, a 39px stamp sat BESIDE the 32px number inside a flex cell, and the two
+   columns holding a full day grew to 69px — the grid then ran 15px past a 320px screen and the page scrolled
+   SIDEWAYS. ⚠️ A day cell must be the width of the week, whatever is written on it. */
+.cal-stamp {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  bottom: 1px;
+  margin: 0;
+  transform: rotate(-6deg);
+  border: 1.5px solid var(--red);
+  color: var(--red);
+  border-radius: 4px;
+  padding: 0 2px 1px;
+  font-family: var(--sans);
+  font-size: 7.5px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  line-height: 1.3;
+  text-align: center;
+}
+/* Room under the number for the stamp, and only on a day that wears one. */
+.cal-cell.full { padding-bottom: 12px; }
+/* A full day is a press, so it says so: it takes a pointer and answers on touch. */
+.cal-cell.full.tapfull { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cal-cell.full.tapfull:active { background: var(--brown-soft); }
+
+/* ★★ WHAT A TAPPED FULL DAY ANSWERS (v631_2). Its own card so the answer cannot be mistaken for the
+   standing "sold out" line, and the press inside it is the way onwards rather than a dead end. */
+.full-note {
+  margin: 10px 0 0;
+  border: 1px solid #f0d2c4;
+  background: #fdf4ef;
+  border-radius: 12px;
+  padding: 12px;
+}
+.full-note-say { margin: 0 0 4px; font-family: var(--serif); font-size: 16px; color: var(--ink); }
+.full-note-next { margin: 0 0 10px; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
+.full-note-go {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--brown);
+  color: #fff;
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
 /* A standard day the bakery marked is drawn exactly as it is in the bakery's own
    calendar: a see-through wash in the mark's own colour, so the date number and
    the green ring stay readable on top of it. A mark running over several days is
@@ -646,7 +804,42 @@ html, body {
    made the body taller than its own words need. On a card with no photo the
    body is exactly its content, so the margin resolves to nothing and the card
    is drawn exactly as it always was. */
-.menu-item .stepper { align-self: flex-end; margin-top: auto; }
+/* ★★ THE ITEM ROW (v633_2). The words and the stamp on the left, the price and the stepper on the right —
+   ⚠️ the stepper no longer sits at the card's own bottom edge, because it now belongs to the price it changes.
+   ⚠️ `margin-top: auto` is removed with it: it was what pushed the stepper down when a card had a description,
+   and leaving it would put the price at the top and the stepper at the bottom of a tall card. */
+.menu-item .stepper { align-self: flex-end; }
+.card-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.card-price {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--brown-dark);
+  white-space: nowrap;
+}
+/* ⭐ The count left is a plain green pill under the name — the same three facts the reference study draws on
+   its item rows, and a pill rather than a coloured word so "only 2 left" reads before "sold out" does. */
+.card-words .prod-stamp {
+  display: inline-block;
+  margin: 4px 0 0;
+  border-radius: 999px;
+  background: #eef4ea;
+  color: var(--green);
+  padding: 2px 9px;
+  letter-spacing: .04em;
+}
+/* ★★ THIS PRODUCT'S OWN FOOD FACTS (v639) — a quiet line under the description, in the shop's own ink and a
+   size a customer can read. ⚠️ It is her sentence, not a label with a guess after it. */
+.prod-fact { margin: 4px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--ink); }
+.card-words .prod-stamp.soldout { background: #fbe9e7; color: var(--red); }
+
 .card-head {
   display: flex;
   align-items: flex-start;
@@ -869,6 +1062,57 @@ button.prod-next.off::after { content: ""; }
    Malay one and making a 4-point notice scroll. 520px shows all three whole, and the
    `calc(100vh - 160px)` term is what stops it running off the top on a short phone (160px covers
    the bar's own height plus the gap and a little air). */
+/* ★★ THE LINE THAT OPENS "GOOD TO KNOW" (v636_2). It sits in the flow just under the day card, so it is
+   met at the moment the customer starts to wonder — and it borrows the privacy link's look, because a
+   second link style on one page is a second thing to learn. */
+.facts-line { margin: 4px 0 14px; }
+
+/* ★★ "YOUR LAST ORDER" (v638). A card, like everything else in the flow, so it reads as part of the shop
+   rather than a banner across it. ⚠️ The two presses are 44px tall: "Add these again" is the one a thumb
+   reaches for, and "Forget" must be reachable too, or the memory is not really the customer's to keep. */
+.again-card { margin: 0 0 14px; }
+.again-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 6px; }
+.again-add {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--brown);
+  color: #fff;
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 700;
+}
+.again-forget {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  background: none;
+  color: var(--brown-dark);
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: underline;
+}
+.again-saved { margin: 0; font-size: 12px; }
+.facts-line .privacy-link { font-size: 14px; }
+/* ⚠️⚠️ NOT `.privacy-sheet` — THAT ONE IS ABSOLUTE, ANCHORED TO THE ORDER BAR so it opens ABOVE Place order.
+   ⭐ MEASURED: given that class, this panel opened with **zero height and nothing on screen** — it was being
+   positioned against a bar it has nothing to do with. This one opens IN THE FLOW, under the link that opened
+   it, which is where a customer reading it expects it to be. */
+.facts-sheet {
+  margin: -6px 0 14px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.facts-sheet .privacy-sheet-head { margin: 0 0 7px; font-size: 12.5px; font-weight: 700; color: #6b5b4a; }
+.facts-sheet .privacy-sheet-list { margin: 0; padding: 0 0 0 16px; }
+.facts-sheet .privacy-sheet-list li { font-size: 13.5px; line-height: 1.5; color: var(--muted); margin: 0 0 7px; }
+.facts-sheet .privacy-wa { color: var(--brown-dark); font-weight: 700; }
+
 .privacy-sheet {
   position: absolute;
   left: 16px;
@@ -2456,3 +2700,15 @@ button.prod-next.off::after { content: ""; }
 .build-btn:hover { background: var(--brown); }
 .build-btn:focus-visible { outline: 2px solid var(--brown); outline-offset: 3px; }
 .build-btn[hidden] { display: none; }
+/* ⚠️⚠️ AT 320px THE ROW HAS TO GIVE SOMETHING UP (v633_2). ⭐ MEASURED: photo 120 + the price column 134 +
+   the gaps and the card's own padding came to more than the screen, and the page scrolled SIDEWAYS — the one
+   thing this shop may never do. ⚠️ Nothing is hidden: the picture, the price and the stepper all stay, a
+   little smaller, because a customer on a small phone needs all three more than any of them needs its size. */
+@media (max-width: 360px) {
+  .menu-item { gap: 10px; }
+  .menu-thumb { width: 92px; height: 92px; }
+  .card-side { gap: 6px; }
+  .card-price { font-size: 17px; }
+  .step-btn { width: 34px; height: 34px; font-size: 17px; }
+  .stepper-val { width: 34px; }
+}

@@ -42,6 +42,22 @@ function createEl(tag) {
   };
 }
 
+
+// ⚠️ THE STEPPER MOVED (v634) into the card's price column, so the old positional read lands on the wrong
+// node. ⭐ Walk for it; a test should not be pinned to where a control happens to sit in the tree.
+const stepperOf = (card) => {
+  let hit = null;
+  const walk = (n) => {
+    if (!n || hit || !n.children) return;
+    for (const c of n.children) {
+      if (c && String(c.className || "").includes("stepper")) { hit = c; return; }
+      walk(c);
+    }
+  };
+  walk(card);
+  return hit;
+};
+
 const registry = {};
 const head = createEl("head");
 globalThis.document = {
@@ -582,8 +598,7 @@ test("the pin and the address the order carries agree — or the pin does not tr
     tapDay();
     // The shop's own menu, driven the way test/store.test.js drives it.
     tapDay();   // ⚠️ v465: see the note in `refillBasket` — the day is HIS before step 2 opens
-    registry["menu"].children[0]
-      .children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+    stepperOf(registry["menu"].children[0]).children[2]._listeners.click[0]();
     document.getElementById("name-input").value = "Aunty Bee"; // v452: a name is required
     document.getElementById("whatsapp-input").value = "60123456789";
     document.getElementById("fulfillment")._value = "courier";
@@ -637,8 +652,7 @@ test("a pin taken from the list travels named with the customer's own words, not
   };
   try {
     tapDay();   // ⚠️ v465: see the note in `refillBasket` — the day is HIS before step 2 opens
-    registry["menu"].children[0]
-      .children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+    stepperOf(registry["menu"].children[0]).children[2]._listeners.click[0]();
     document.getElementById("name-input").value = "Aunty Bee"; // v452: a name is required
     document.getElementById("whatsapp-input").value = "60123456789";
     document.getElementById("fulfillment")._value = "courier";
@@ -753,8 +767,7 @@ test("the order carries the address the row wrote, with the pin named by that sa
   };
   try {
     tapDay();   // ⚠️ v465: see the note in `refillBasket` — the day is HIS before step 2 opens
-    registry["menu"].children[0]
-      .children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+    stepperOf(registry["menu"].children[0]).children[2]._listeners.click[0]();
     document.getElementById("name-input").value = "Aunty Bee"; // v452: a name is required
     document.getElementById("whatsapp-input").value = "60123456789";
     document.getElementById("fulfillment")._value = "courier";
@@ -792,9 +805,7 @@ function refillBasket() {
   // started clearing it — which is what the reset is FOR — the inherited state was gone and the presses
   // were correctly refused. ⭐ **They were passing on state they never set.**
   tapDay();
-  registry["menu"].children[0]
-    .children.find((c) => c.className === "card-body")
-    .children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+  stepperOf(registry["menu"].children[0]).children[2]._listeners.click[0]();
 }
 
 test("★ the pin the customer marks rides on a courier order, and never on a self-collect one", async (t) => {
@@ -890,9 +901,7 @@ test("the next customer does not inherit the last one's front door", async (t) =
     // ⭐ AND THE PROOF THAT THE CLAIM IS REALLY GONE, rather than just the colour: **pressing + is refused
     // until he taps a day of his own.**
     const barBefore = registry["bar-count"].textContent;
-    registry["menu"].children[0]
-      .children.find((c) => c.className === "card-body")
-      .children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+    stepperOf(registry["menu"].children[0]).children[2]._listeners.click[0]();
     assert.equal(registry["bar-count"].textContent, barBefore,
       "★ the next customer could fill a basket for a bake day he had never chosen");
     el("whatsapp-input").value = "60123456789";

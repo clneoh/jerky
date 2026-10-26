@@ -2,6 +2,22 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+// ⚠️ THE STEPPER MOVED (v634): it now sits inside the card's price column, beside the price it changes, so a
+// card's direct children no longer hold it. ⭐ These tests WALK the card instead of assuming a depth — a helper
+// that hard-codes the tree shape fails the day the page is rearranged and blames the wrong thing.
+const stepperIn = (card) => {
+  let hit = null;
+  const walk = (n) => {
+    if (!n || hit || !n.children) return;
+    for (const c of n.children) {
+      if (c && String(c.className || "") === "stepper") { hit = c; return; }
+      walk(c);
+    }
+  };
+  walk(card);
+  return hit;
+};
+
 // ★★ THE RECEIVED NOTICE NOW FOLLOWS HER ONE SECOND (v451). The fourth ball is greened and HELD on a timer
 // before it, so a test that reads the notice must let that second pass — and one that does not leaves a
 // pending timer that cancels the test outright (`cancelledByParent`).
@@ -337,7 +353,6 @@ test("★★★ the FIRST step outstanding is said, in his order — never a dea
   // the step the control belongs to.** Before this, this press was answered with a sentence about the
   // BASKET while the bake day was the thing he had not chosen — and the three circles beside it said step
   // 1, so the page was disagreeing with itself about one order.
-  // ⚠️ MUNCHIES' OWN WORDING: its dictionary reads "Choose your posting day first."
   assert.match(stepLine(), /Choose your posting day first/,
     "★ the first thing outstanding was not named — the refusal is answering about a later step");
   assert.equal(registry["step-note"].previousSibling, registry["dates"],
@@ -358,8 +373,7 @@ test("★★★ the FIRST step outstanding is said, in his order — never a dea
     "★ the line is not under the menu — the field step 2 is filled in with");
 
   // ── an item, and nothing else: HIS NAME FIRST, because the page asks it first
-  const stepper = registry["menu"].children[0].children.find((c) => c.className === "card-body")
-    .children.find((c) => c.className === "stepper");
+  const stepper = stepperIn(registry["menu"].children[0]);
   tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
   stepper.children[2]._listeners.click[0](); // "+"
   await press();
@@ -417,15 +431,34 @@ test("★★★ the FIRST step outstanding is said, in his order — never a dea
   // ── a number, still no way of getting it
   document.getElementById("whatsapp-input").value = "60123456789";
   await press();
-  // ⚠️⚠️ MUNCHIES' OWN MODEL, CONFIRMED BY HER 2026-10-12: it posts nationwide as its primary way,
-  // so the way is NEVER empty and the bakery's v416 "say how you will get it" stop does not exist here.
-  // **The step that IS outstanding next is the address the order is posted to** — and since v548 it
-  // answers the way the name and the number boxes do: marked, its reason underneath, the page carried to it.
+  // ⚠️ MUNCHIES HAS NO "HOW WILL YOU GET IT" STEP (v609): posting is the default, so the way is never
+  // empty and the step that is outstanding next is the ADDRESS the order is posted to.
   assert.ok(String(document.getElementById("address-input").className || "").includes("bad"),
-    "★ the postal address box was not marked, though a posted order cannot leave without one");
-  assert.match(fieldNote("address-input-note"), /postal address/i,
-    `★ the box says nothing about the address it wants (it reads "${fieldNote("address-input-note")}")`);
+    "★ the postal address was not asked for, though a posted order cannot leave without one");
 });
+
+
+// ★★★ THE STEP LOCK IS REAL NOW (v454), so a test that adds to the basket must FIRST do what a customer
+// must: tap a posting day. ⚠️⚠️ **I wrote this lock once before and REVERTED it when exactly these tests failed
+// — which is why the feature stayed unbuilt and she had to ask twice.** ⭐ **The tests move with the
+// behaviour; the behaviour does not move back for the tests.**
+function tapDay() {
+  let hit = null;
+  (function walk(n) {
+    for (const c of (n.children || [])) {
+      // ⚠️⚠️ AN **OPEN** DAY — the shop can only take an order for a day it really posts. A bare
+      // `tappable` also matches a CLOSED or askable day: the tap lands, `dayPicked` stays false,
+      // and the step lock refuses every `+`, so the basket reads empty and the test fails for a
+      // reason that has nothing to do with what it is testing.
+      if (c.tagName === "BUTTON" && String(c.className || "").includes("cal-cell")
+        && String(c.className || "").includes("tappable")
+        && String(c.className || "").includes("avail")) { hit = hit || c; return; }
+      walk(c);
+    }
+  })(registry["dates"]);
+  if (hit && hit._listeners && hit._listeners.click) hit._listeners.click[0]();
+  return !!hit;
+}
 
 test("the cut-off time is written the way it is said, in all three languages", () => {
   assert.equal(clockWords("18:00", "en"), "6pm");
@@ -819,33 +852,10 @@ test("daySpecs leaves days plain when availability is off or unknown", () => {
   assert.equal(unknown[0].soldOut, false);
 });
 
-
-// ★★★ THE STEP LOCK IS REAL NOW (v454), so a test that adds to the basket must FIRST do what a customer
-// must: tap a posting day. ⚠️⚠️ **I wrote this lock once before and REVERTED it when exactly these tests failed
-// — which is why the feature stayed unbuilt and she had to ask twice.** ⭐ **The tests move with the
-// behaviour; the behaviour does not move back for the tests.**
-function tapDay() {
-  let hit = null;
-  (function walk(n) {
-    for (const c of (n.children || [])) {
-      // ⚠️⚠️ AN **OPEN** DAY — the shop can only take an order for a day it really posts. A bare
-      // `tappable` also matches a CLOSED or askable day: the tap lands, `dayPicked` stays false,
-      // and the step lock refuses every `+`, so the basket reads empty and the test fails for a
-      // reason that has nothing to do with what it is testing.
-      if (c.tagName === "BUTTON" && String(c.className || "").includes("cal-cell")
-        && String(c.className || "").includes("tappable")
-        && String(c.className || "").includes("avail")) { hit = hit || c; return; }
-      walk(c);
-    }
-  })(registry["dates"]);
-  if (hit && hit._listeners && hit._listeners.click) hit._listeners.click[0]();
-  return !!hit;
-}
-
 test("order click sends one order and shows the success card (regression: no throw on the date label)", async () => {
   // Add one item via the first menu card's "+" button (drives the real cart).
   const card = registry["menu"].children[0];
-  const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
+  const stepper = stepperIn(card);
   tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
   stepper.children[2]._listeners.click[0](); // "+" — cart now has 1 item
   assert.equal(registry["order-btn"].disabled, false, "cart non-empty enables the button");
@@ -889,9 +899,7 @@ test("order click sends one order and shows the success card (regression: no thr
     // and left every card's stepper showing the last customer's number: the bar read "0 items / RM0.00"
     // while the card beside it still said 1. ⭐ Two things on one screen saying different numbers is the
     // fault this shop has fixed more than any other.
-    const stepperAfter = registry["menu"].children[0]
-      .children.find((c) => c.className === "card-body")
-      .children.find((c) => c.className === "stepper");
+    const stepperAfter = stepperIn(registry["menu"].children[0].children.find((c) => c.className === "card-body"));
     assert.equal(String(stepperAfter.children[1].value), "0",
       "★ the menu still shows the last customer's quantity while the bar says 0 items — **the next "
       + "customer would order from a number he did not choose**");
@@ -919,9 +927,7 @@ test("★★★ a repaint during the send does not re-open Place order", async (
   // repaint. ⭐ **A language tap, a "+", or the 30-second refresh landing during a slow send turned it back
   // on — and a second press posted the SAME ORDER AGAIN.** ⭐ The one disable the shop keeps is the one that
   // stops a slow network making him order twice, so it must survive a redraw.
-  const stepperNow = () => registry["menu"].children[0]
-    .children.find((c) => c.className === "card-body")
-    .children.find((c) => c.className === "stepper");
+  const stepperNow = () => stepperIn(registry["menu"].children[0].children.find((c) => c.className === "card-body"));
 
   tapDay();
   stepperNow().children[2]._listeners.click[0]();        // "+" — one item in the basket
@@ -959,9 +965,7 @@ test("★★★ a product that leaves the menu takes the basket with it, and the
   // or removed vanished from the page, **the basket kept its name**, and at Place order `lines` came out
   // empty while step ② still read done — ⭐ **so the press did nothing at all: no order, no message.**
   const saved = CONFIG.products.slice();
-  const stepperNow = () => registry["menu"].children[0]
-    .children.find((c) => c.className === "card-body")
-    .children.find((c) => c.className === "stepper");
+  const stepperNow = () => stepperIn(registry["menu"].children[0].children.find((c) => c.className === "card-body"));
   let posts = 0;
   const realFetch = globalThis.fetch;
   try {
@@ -998,8 +1002,7 @@ test("★★★ a product that leaves the menu takes the basket with it, and the
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 function refill() {
-  registry["menu"].children[0]
-    .children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+  stepperIn(registry["menu"].children[0].children.find((c) => c.className === "card-body")).children[2]._listeners.click[0]();
 }
 
 // ⚠️ TWO PIN TESTS WERE HERE AND MOVED TO test/store-address.test.js (v414). They placed a pin by
@@ -1026,9 +1029,7 @@ test("the receipt carries the strictest change/cancel window of the whole basket
     ],
     async () => {
       const card = registry["menu"].children[0];
-      const plus = () => card.children.find((c) => c.className === "card-body")
-        .children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
-      tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
+      const plus = () => stepperIn(card).children[2]._listeners.click[0]();
       plus();
 
       globalThis.fetch = async (url, opts) => (opts && opts.method === "POST" ? { ok: true } : { ok: true, json: async () => [] });
@@ -1123,7 +1124,7 @@ test("parseVia normalises the ?via= digits on a referral link", () => {
 
 test("an order placed from a ?via= link is stamped with the referrer", async () => {
   const card = registry["menu"].children[0];
-  const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
+  const stepper = stepperIn(card);
   tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
   stepper.children[2]._listeners.click[0](); // "+" — cart now has 1 item
 
@@ -1154,7 +1155,7 @@ test("an order placed from a ?via= link is stamped with the referrer", async () 
 
 test("an order without a ?via= link carries no referral stamp", async () => {
   const card = registry["menu"].children[0];
-  const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
+  const stepper = stepperIn(card);
   tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
   stepper.children[2]._listeners.click[0]();
 
@@ -1181,7 +1182,7 @@ test("an order without a ?via= link carries no referral stamp", async () => {
 test("order click without a WhatsApp number blocks the order (no POST)", async () => {
   // The number is compulsory — confirmations + the payment QR go over WhatsApp.
   const card = registry["menu"].children[0];
-  const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
+  const stepper = stepperIn(card);
   tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
   stepper.children[2]._listeners.click[0]();
   assert.equal(registry["order-btn"].disabled, false);
@@ -1217,9 +1218,14 @@ test("order click without a WhatsApp number blocks the order (no POST)", async (
 });
 
 test("the default Post (nationwide) order is blocked until a postal address is given", async () => {
-  const card = registry["menu"].children[0];
-  const body = card.children.find((c) => c.className === "card-body");
-  const stepper = body.children.find((c) => c.className === "stepper");
+  // ⚠️ THE MENU ONLY EXISTS ONCE A DAY IS CHOSEN, and this test used to inherit one from whichever test
+  // ran before it. ⭐ The file's own rule (see the step test's note): a test that drives the basket taps its
+  // own day, or it is reading state another test left behind.
+  tapDay();
+  // ⚠️ THE MENU IS A TREE NOW (headings over cards), so the stepper is found by walking it — the same
+  // `stepperIn` the bakery's own tests use, rather than assuming the first child is a card.
+  const stepper = stepperIn(registry["menu"]);
+  assert.ok(stepper, "the menu drew no product stepper, so this test cannot drive the basket");
   stepper.children[2]._listeners.click[0](); // "+" — cart has 1 item
   assert.equal(registry["order-btn"].disabled, false);
 
@@ -1250,7 +1256,7 @@ test("the default Post (nationwide) order is blocked until a postal address is g
 
 test("order click sanitizes a +60-style phone to wa.me digits", async () => {
   const card = registry["menu"].children[0];
-  const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
+  const stepper = stepperIn(card);
   tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
   stepper.children[2]._listeners.click[0]();
 
@@ -1762,7 +1768,7 @@ test("an order at the last stage shows the whole journey green — nothing flash
 
 test("order that reaches the app shows received WITHOUT opening WhatsApp (no popup)", async () => {
   const card = registry["menu"].children[0];
-  const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
+  const stepper = stepperIn(card);
   tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
   stepper.children[2]._listeners.click[0](); // "+" — cart has 1 item
   assert.equal(registry["order-btn"].disabled, false);
@@ -1805,7 +1811,7 @@ test("★★★ after an order, the next customer arrives with NO way chosen (v5
   // with the card edged, the "Tap to choose one" prompt gone, and no guard left to stop an order placed with a
   // way they never picked.** ⭐ The reset now returns the page to the state a new visitor sees.
   const card = registry["menu"].children[0];
-  const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
+  const stepper = stepperIn(card);
   tapDay();
   stepper.children[2]._listeners.click[0]();
   const realFetch = globalThis.fetch;
@@ -1827,7 +1833,7 @@ test("★★★ after an order, the next customer arrives with NO way chosen (v5
 
 test("WhatsApp only opens as a fallback when the order could NOT reach the app", async () => {
   const card = registry["menu"].children[0];
-  const stepper = card.children.find((c) => c.className === "card-body").children.find((c) => c.className === "stepper");
+  const stepper = stepperIn(card);
   tapDay(); // ★ the step lock: step 1 must be HIS before step 2 opens
   stepper.children[2]._listeners.click[0]();
   assert.equal(registry["order-btn"].disabled, false);
@@ -2273,7 +2279,7 @@ const cardNamed = (name) => {
   return hit;
 };
 const cardBodyOf = (card) => card.children.find((c) => hasClass(c, "card-body"));
-const plusOf = (card) => cardBodyOf(card).children.find((c) => hasClass(c, "stepper")).children[2];
+const plusOf = (card) => stepperIn(cardBodyOf(card)).children[2];
 const noteRow = (card) => cardBodyOf(card).children.find((c) => hasClass(c, "line-note-row")) || null;
 const noteAdd = (card) => (noteRow(card) ? noteRow(card).children.find((c) => hasClass(c, "line-note-add")) || null : null);
 const noteBox = (card) => (noteRow(card) ? noteRow(card).children.find((c) => hasClass(c, "line-note")) || null : null);
@@ -2484,8 +2490,7 @@ test("★★★ TWO DIFFERENT CUSTOMERS LEAVE THE SHOP IN THE SAME STATE (v506)"
   const order = async (who) => {
     render();
     tapDay();
-    registry["menu"].children[0].children.find((c) => c.className === "card-body")
-      .children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+    stepperIn(registry["menu"].children[0]).children[2]._listeners.click[0]();
     document.getElementById("name-input").value = who.name;
     document.getElementById("whatsapp-input").value = who.wa;
     const wrap = registry["fulfillment"];
@@ -2872,9 +2877,7 @@ test("a code on the order is said again above Place order", () => {
   // is that a customer who types a code sees this line, and one who never does never sees it.
   const realCodes = CONFIG.promoCodes;
   const bar = () => registry["promo-bar"];
-  const plus = () => registry["menu"].children[0]
-    .children.find((c) => c.className === "card-body")
-    .children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+  const plus = () => stepperIn(registry["menu"].children[0].children.find((c) => c.className === "card-body")).children[2]._listeners.click[0]();
   try {
     // ⚠️ AN ORDINARY BAR IS UNTOUCHED — hidden, and empty rather than holding a stale sentence.
     assert.equal(bar().hidden, true, "no code on the order means no line on the bar");
@@ -3119,8 +3122,7 @@ const pressAsk = (which) => document.getElementById(which)._listeners.click[0]()
 // arrive the way a customer does. ⚠️ A test that reached step 3 any other way would be testing a route
 // the shop no longer has, and would pass whether the lock worked or not.
 function addOneItem() {
-  const stepper = registry["menu"].children[0].children.find((c) => c.className === "card-body")
-    .children.find((c) => c.className === "stepper");
+  const stepper = stepperIn(registry["menu"].children[0]);
   stepper.children[2]._listeners.click[0](); // "+"
   assert.equal(registry["bar-count"].textContent, "1 item",
     "★ nothing went into the basket, so step 3 is still shut and this fixture proves nothing");
@@ -4043,8 +4045,7 @@ test("★★★ a new order retires the last one's receipt (v499, and the offer 
   // ⭐ AND SINCE v509 THERE IS NO OFFER TO RETIRE — only the receipt, which the new order replaces and
   // `retirePreviousOrder` takes away. ⚠️ **Nothing on this page reloads on a timer, and nothing offers to.**
   const card = registry["menu"].children[0];
-  const stepper = card.children.find((c) => c.className === "card-body")
-    .children.find((c) => c.className === "stepper");
+  const stepper = stepperIn(card);
   tapDay();
   stepper.children[2]._listeners.click[0]();
   document.getElementById("name-input").value = "Aunty Bee";
@@ -4086,8 +4087,7 @@ test("★★★ the receipt goes by itself twenty seconds after the order (v509)
   // green message goes on its own.** ⚠️ So what is asserted here is the thing she asked for and nothing
   // around it.
   const card = registry["menu"].children[0];
-  const stepper = card.children.find((c) => c.className === "card-body")
-    .children.find((c) => c.className === "stepper");
+  const stepper = stepperIn(card);
   tapDay();
   stepper.children[2]._listeners.click[0]();
   document.getElementById("name-input").value = "Aunty Bee";
@@ -4142,8 +4142,7 @@ test("★★★ and a receipt whose twenty seconds passed while the page slept g
   // in front of the NEXT customer for as long as the page stayed in the background**, which is the ordinary
   // case in a shop that runs on one phone at the counter.
   const card = registry["menu"].children[0];
-  const stepper = card.children.find((c) => c.className === "card-body")
-    .children.find((c) => c.className === "stepper");
+  const stepper = stepperIn(card);
   tapDay();
   stepper.children[2]._listeners.click[0]();
   document.getElementById("name-input").value = "Aunty Bee";
@@ -4194,8 +4193,7 @@ test("★★★ the refusal carries the page to the step that is missing — and
   // screen should scroll to step1, and below step one flashing the warning meaasge …"__
   render();                       // ⚠️ deliberately NO tapDay() — step 1 is the thing missing
   const card = registry["menu"].children[0];
-  const plus = () => card.children.find((c) => c.className === "card-body")
-    .children.find((c) => c.className === "stepper").children[2]._listeners.click[0]();
+  const plus = () => stepperIn(card).children[2]._listeners.click[0]();
 
   plus();                         // a STEP-2 control, pressed while STEP 1 is outstanding
   assert.equal(registry["bar-count"].textContent, "0 items", "precondition: the lock held at all");
@@ -4260,9 +4258,7 @@ test("★★★ the shop's quantity can be TYPED — 30 loaves is not 30 taps", 
   // type at all**, only taps. This is the shop's half of the same change.
   render();
   tapDay();   // ★ the step lock: step 1 must be HIS before step 2 opens
-  const stepperOf = () => registry["menu"].children[0]
-    .children.find((c) => c.className === "card-body")
-    .children.find((c) => c.className === "stepper");
+  const stepperOf = () => stepperIn(registry["menu"].children[0].children.find((c) => c.className === "card-body"));
   const box = stepperOf().children[1];
   assert.equal(box.tagName, "INPUT",
     "★ the quantity is still a label with no way to type into it, so 30 loaves is 30 taps");
@@ -4288,9 +4284,7 @@ test("★★ a TYPED quantity obeys the bake-day lock, exactly as the + press do
   // would be **a door in the lock that nobody had noticed**, and the one step this whole thread is about
   // would have been walked straight past.
   render();   // ⚠️ deliberately NO tapDay()
-  const stepper = () => registry["menu"].children[0]
-    .children.find((c) => c.className === "card-body")
-    .children.find((c) => c.className === "stepper");
+  const stepper = () => stepperIn(registry["menu"].children[0].children.find((c) => c.className === "card-body"));
   const box = stepper().children[1];
   assert.equal(registry["bar-count"].textContent, "0 items", "precondition: nothing is in the basket");
 
@@ -4334,8 +4328,7 @@ test("★★★ a repaint cannot erase the warning — it is not inside the menu
   // `placeStepNote`, the machinery that used to put the line back by hand after every rebuild.**
   render();
   const card = () => registry["menu"].children.find((c) => c.dataset && c.dataset.product);
-  const parts = () => card().children.find((c) => c.className === "card-body")
-    .children.find((c) => c.className === "stepper").children;
+  const parts = () => stepperIn(card().children.find((c) => c.className === "card-body")).children;
   const note = registry["step-note"];
 
   parts()[2]._listeners.click[0]();   // +
@@ -4385,8 +4378,7 @@ test("★★★ step 3 is not switched off — it answers when he touches it", (
 
   // ⚠️ AND WITH STEP 2 DONE, THE SAME BOX IS OPEN AND ASKS NOTHING — so this is a lock, not a wall.
   tapDay();
-  const stepper = registry["menu"].children[0].children.find((c) => c.className === "card-body")
-    .children.find((c) => c.className === "stepper");
+  const stepper = stepperIn(registry["menu"].children[0]);
   stepper.children[2]._listeners.click[0]();      // + — one item in the basket
   assert.equal(registry["bar-count"].textContent, "1 item", "the fixture did not reach step 3");
   assert.equal(registry["name-input"].readOnly, false, "★ the box is still held shut with an order in the basket");
@@ -4413,9 +4405,8 @@ test("★★★ the step warning blinks, and its flash ends where the words rest
   note.classList.remove("on");
   assert.equal(String(note.className).includes("flash"), false, "the flash could not be cleared");
 
-  // ⚠️ The posting day is not tapped, so a quantity is refused — the same refusal her report is about.
-  const stepper = registry["menu"].children[0].children.find((c) => c.className === "card-body")
-    .children.find((c) => c.className === "stepper");
+  // ⚠️ The bake day is not tapped, so a quantity is refused — the same refusal her report is about.
+  const stepper = stepperIn(registry["menu"].children[0]);
   const box = stepper.children[1];
   box.value = "4";
   (box._listeners.input || []).forEach((f) => f.call(box));

@@ -222,12 +222,12 @@ test("★★⚠️ the update strip sits ABOVE the lock screen, or the warning i
     + "says this phone is behind would be painted under the screen the person is looking at");
 });
 
-test("★★★ Force update revalidates through the worker first, and only drops it as a last resort (v629)", async () => {
-  // ⚠️⚠️ MEASURED ON HER MAC, 23 Oct: v614's press UNREGISTERED the worker and reloaded — and the strip came
-  // back with the same sentence. ⭐ **This app's worker is the one thing that forces every script to be
-  // revalidated (`cache: "no-cache"` for code); unregistering it handed the reload to the BROWSER's own
-  // ten-minute cache**, which GitHub Pages fills — so the same old modules ran again. ⭐ **The unregister
-  // cannot fix the HTTP cache; it only removes the layer that does.** Two stages now.
+test("★★★ Force update revalidates through the worker first, and only drops it as a last resort (v630)", async () => {
+  // ⚠️⚠️ MEASURED ON HER MAC, 23 Oct (ported from munchies, which found it): v614's press UNREGISTERED the
+  // worker and reloaded — and the strip came back with the same sentence. ⭐ **This app's worker is the one
+  // thing that forces every script to be revalidated (`cache: "no-cache"` for code); unregistering it handed
+  // the reload to the BROWSER's own ten-minute cache**, which GitHub Pages fills — so the same old modules
+  // ran again. ⭐ **The unregister cannot clear the HTTP cache; it only removes the layer that does.**
   const realNav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
   const realCaches = globalThis.caches;
   const realLocation = globalThis.location;
@@ -264,6 +264,23 @@ test("★★★ Force update revalidates through the worker first, and only drop
       + "**the last resort never runs**");
     assert.deepEqual(deleted, ["one", "two"], "★ the old cache survived the last resort");
     assert.match(went[0], /fresh=\d+/, "★ the last resort did not load a new address");
+
+    // ── and with NO worker at all, one is registered first (v630) — otherwise the reload is answered by
+    // the browser's own cache, which is the copy this press exists to clear.
+    let registered = 0;
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { serviceWorker: {
+        getRegistrations: async () => [],
+        register: async () => { registered += 1; return {}; },
+        get ready() { return Promise.resolve({}); },
+      } },
+    });
+    globalThis.location = { href: BASE, replace: (url) => { went.push(url); } };
+    await forceFresh();
+    assert.equal(registered, 1, "★ the press reloaded with NO worker — **nothing revalidates the code, so "
+      + "the ten-minute cache answers the reload with the same old files**");
+    assert.match(went[0], /fresh=\d+/, "the reload must still carry a fresh address");
   } finally {
     if (realNav) Object.defineProperty(globalThis, "navigator", realNav);
     else delete globalThis.navigator;
@@ -276,6 +293,30 @@ test("★★★ the still-behind strip's press calls the force path, not another
   const src = readFileSync(join(here, "..", "admin", "js", "freshness.js"), "utf8");
   assert.match(src, /if \(info && info\.force\) \{ forceFresh\(\); return; \}/,
     "★ the Force update button falls through to an ordinary reload — the cache answers it again");
-  assert.match(src, /getRegistrations\(\)/, "the worker is not unregistered");
+  // ⚠️ v630: the press asks the worker to UPDATE on the first go; only a page loaded from an already-forced
+  // address may drop it. A source check, because the unregister line is what the browser really runs.
+  assert.match(src, /return typeof r\.update === "function" \? r\.update\(\) : null;/,
+    "★ the worker is never asked to update — **the first press cannot force a revalidation**");
+  assert.match(src, /forcedBefore\) return typeof r\.unregister === "function" \? r\.unregister\(\) : null;/,
+    "★ the last resort is gone — a stale worker can never be dropped");
   assert.match(src, /caches\.keys\(\)/, "the caches are not cleared");
+});
+
+// ⚠️⚠️ AND THE APP MUST ACTUALLY HAVE A WORKER TO ASK (v630). Its registration waited for `load`, and
+// `boot()` awaits a network probe first — ⭐ measured on the dev server: `readyState` complete, the app
+// drawn, and `getRegistrations()` empty. ⚠️ With no worker, nothing revalidates the code and the press
+// has nothing to force.
+test("★★★ the app registers its worker even when the page is already loaded (v630)", () => {
+  const app = readFileSync(join(here, "..", "admin", "js", "app.js"), "utf8");
+  assert.match(app, /if \(document\.readyState === "complete"\) go\(\);/,
+    "★ the worker is only registered from a `load` that has not fired yet — **a fully loaded app can end "
+    + "up with no worker at all**");
+  assert.match(app, /window\.addEventListener\("load", go, \{ once: true \}\)/,
+    "the late-load path no longer registers at all");
+  // ⚠️ And the CALL must not sit behind `bootApp()`'s gates: measured on the dev server, the app drew its
+  // whole screen and had no worker at all.
+  assert.match(app, /\nregisterSW\(\);\nboot\(\);/, "★ the registration waits on the boot path — **a page "
+    + "that never reaches the end of bootApp has no worker, and Force update has nothing to ask**");
+  const bootBody = app.slice(app.indexOf("function bootApp()"), app.indexOf("window.addEventListener(\"hashchange\""));
+  assert.ok(!/registerSW\(\)/.test(bootBody), "★ bootApp still registers it as well — two call sites");
 });

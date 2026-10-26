@@ -139,7 +139,10 @@ test("★ the notice is in the page, above everything, and starts hidden", () =>
   assert.ok(bar, "the shop page has no build notice at all");
   assert.match(bar[0], /\bhidden\b/, "⚠️⚠️ it must START hidden — a notice that is up from the "
     + "first paint of every order is the fault wearing the fix's clothes");
-  assert.ok(html.indexOf('id="build-notice"') < html.indexOf('class="hero"'),
+  // ⚠️ MEASURED BY THE TAG, not by a class name (v634): the header now wears `hero hero-photo`, and a check
+  // written against the exact string `class="hero"` reported the notice as missing the moment the hero
+  // gained a second class. ⭐ A structural rule is asserted on the structure.
+  assert.ok(html.indexOf('id="build-notice"') > -1 && html.indexOf('id="build-notice"') < html.indexOf("<header"),
     "it must sit ABOVE the header — it is about the whole page, not about the shop's front");
   // The three pieces the paint turns between, each addressed by name.
   for (const id of ["build-say", "build-stuck", "build-reload"]) {

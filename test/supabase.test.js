@@ -415,6 +415,9 @@ test("storefront payload publishes the set's component and its per-product date 
       recipe: [{ productId: "prd_1", qty: 4 }], closeDays: 3, cancelDays: 2,
       validFrom: "2026-12-01", validTo: "2026-12-24", alwaysListed: true,
       askNote: true,
+      // ★ her own food facts for THIS product (v639) — a ham pack and a plain loaf do not share one
+      allergens: "Wheat, milk. Kitchen also handles nuts.",
+      keeping: "Best on the day. Freezes well.",
       // The calendar's marks, plus one entry the whitelist must not carry: a span
       // whose ends are not dates at all.
       sellRules: [{ days: [6, 0], from: "2027-01-01", to: "2027-01-31" },
@@ -436,6 +439,8 @@ test("storefront payload publishes the set's component and its per-product date 
         closeDays: 3, cancelDays: 2, validFrom: "2026-12-01", validTo: "2026-12-24",
         alwaysListed: true,
         askNote: true,
+        allergens: "Wheat, milk. Kitchen also handles nuts.",
+        keeping: "Best on the day. Freezes well.",
         sellRules: [{ days: [0, 6], from: "2027-01-01", to: "2027-01-31" }] });
     // A product without rules publishes no date keys at all — the storefront's
     // pack default (14) is applied on its side. The keep-listed switch is absent
@@ -445,7 +450,7 @@ test("storefront payload publishes the set's component and its per-product date 
     const base = payload.products.find((p) => p.name === "Focaccia");
     assert.ok(!("closeDays" in base) && !("validFrom" in base) && !("validTo" in base)
       && !("cancelDays" in base) && !("sellRules" in base) && !("alwaysListed" in base)
-      && !("askNote" in base),
+      && !("askNote" in base) && !("allergens" in base) && !("keeping" in base),
       "no marks publishes no sellRules key");
   } finally {
     globalThis.fetch = realFetch;

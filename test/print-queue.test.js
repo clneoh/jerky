@@ -69,12 +69,54 @@ test("★★ the phone sends the job to the queue and reports only a real landin
     return { ok: false };
   };
   const job = { widthMm: 100, heightMm: 150, widthBytes: 1, height: 1, data: "gA==" };
-  assert.equal(await sendPrintJob(state, job), true);
+  assert.deepEqual(await sendPrintJob(state, job), { ok: true, why: "" });
   assert.match(seen.url, /\/rest\/v1\/print_jobs$/, "★ the job did not go to the queue table");
   assert.deepEqual(seen.body.payload, job, "★ the job's payload changed on the way out");
   assert.equal(seen.body.site, "main", "★ the job does not say which printer it is for");
   globalThis.fetch = async () => ({ ok: false });
-  assert.equal(await sendPrintJob(state, job), false, "a refused insert was reported as sent");
+  assert.deepEqual(await sendPrintJob(state, job), { ok: false, why: "refused" },
+    "a refused insert was reported as sent");
+});
+
+// ⚠️⚠️ THE FAILURE SAYS WHICH ONE IT WAS (v629). **A job this phone could not hand to the cloud never reached
+// the queue, so the bridge was never asked for anything** — and the toast used to ask whether the bridge was
+// running, which sent her to check a Mac that was never the fault. Her case: a Supabase incident, nothing
+// wrong in the shop at all.
+test("★★★ a print that cannot be sent names the real cause, never the bridge (v629)", async () => {
+  const store = new Map();
+  globalThis.localStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => { store.set(k, String(v)); },
+    removeItem: (k) => store.delete(k),
+  };
+  const { sendPrintJob } = await import("../admin/js/supabase.js");
+  const job = { widthMm: 100, heightMm: 150, widthBytes: 1, height: 1, data: "gA==" };
+  const sb = { enabled: true, url: "https://p.supabase.co", anonKey: "anon", email: "a@b.c", password: "p" };
+  const state = { settings: { supabase: sb }, orders: [] };
+
+  // Sharing off: nothing on this phone can be sent, and it says what to turn on.
+  const offState = { settings: { supabase: { ...sb, enabled: false } }, orders: [] };
+  assert.deepEqual(await sendPrintJob(offState, job), { ok: false, why: "not-set-up" },
+    "★ sharing off was reported as a queue refusal");
+
+  // No cached session and the sign-in is refused.
+  store.clear();
+  globalThis.fetch = async () => ({ ok: false, status: 401 });
+  assert.deepEqual(await sendPrintJob(state, job), { ok: false, why: "sign-in" },
+    "★ a refused sign-in was reported as a queue refusal");
+
+  // A cached session, but the connection never answers.
+  store.set("bakeadmin.supabase", JSON.stringify({ access_token: "tok", expires_at: Date.now() + 3600000 }));
+  globalThis.fetch = async () => { throw new TypeError("Failed to fetch"); };
+  assert.deepEqual(await sendPrintJob(state, job), { ok: false, why: "no-answer" },
+    "★ a dead connection was reported as a refusal");
+
+  // And the words on screen never ask about the bridge: it was never reached.
+  const src = readFileSync(new URL("../admin/js/views/orders.js", import.meta.url), "utf8");
+  assert.ok(!/is the bridge running/i.test(src),
+    "★ the toast still asks whether the bridge is running — the job never got that far");
+  assert.match(src, /printRefusal\("invoice", sent\.why\)/, "the invoice's refusal is not named");
+  assert.match(src, /printRefusal\("label", sent\.why\)/, "the label's refusal is not named");
 });
 
 test("★★★ the bridge flips the bits for this printer, and only when asked (v618)", () => {

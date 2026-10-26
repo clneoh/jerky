@@ -7,9 +7,10 @@ import { capacityStatus } from "../bom.js";
 import { occColour, upcomingOccasions } from "../calendar.js";
 import { el, button, emptyState, confirmDialog } from "../ui.js";
 import { gauge } from "../gauge.js";
-import { newId, save, bakeDays } from "../state.js";
+import { newId, save, bakeDays, waNumber } from "../state.js";
 import { localChecks } from "../health.js";
-import { pendingReviewCount } from "../supabase.js";
+import { pendingReviewCount, fetchWaitlist, markWaitlistDone } from "../supabase.js";
+import { shopWeek, fourWeek } from "../measure.js";
 import {
   addTask, comingWeeks, loadRoutine, money, newOrderCount, nextBake,
   removeTask, renameTask, taskList, toggleRoutine, weekStats,
@@ -306,9 +307,76 @@ function atAGlanceBlocks(root, state, today, fc) {
   if (fc.rows.some((r) => r.dates.length)) blocks.push(comingCard(state, fc));
 
   blocks.push(weekCard(state, weekStats(state, { today })));
+  blocks.push(shopWeekCard(state));
+  blocks.push(waitCard(state));
   blocks.push(holidayCard(state, today));
   blocks.push(routineCard(root, state, today));
   return blocks;
+}
+
+// ★★ "THE SHOP THIS WEEK" (v637) — the customer plan's P0, in one quiet card.
+// ⚠️⚠️ FOUR NUMBERS, AND THE WEEK BEHIND THEM. Her rule from the plan: one number per level, read weekly, and
+// **judged in four-week blocks**, because at her volumes a single quiet week is weather. ⭐ So the last line
+// carries last week and the four-week average — a figure with nothing to compare it to is a figure she cannot
+// act on, and a number she cannot act on is decoration.
+// ⚠️ NOTHING PERSONAL IS SHOWN, and nothing leaves the machine: these are counts of her own book.
+// ⚠️ AND IT NEVER SHOUTS. No colour, no badge, no "you are behind" — the shop's own meter, not a nag.
+function shopWeekCard(state) {
+  const { now, prev } = shopWeek(state);
+  const avg = fourWeek(state);
+  const fillWords = (f) => (f == null ? "no bake days" : `bake days ${f}% full`);
+  const quiet = now.orders === 0 && prev.orders === 0 && avg.ordersPerWeek === 0;
+  return el("div", { class: "card" },
+    el("p", { class: "card-title" }, "The shop this week"),
+    quiet
+      ? el("p", { class: "card-sub" }, "No orders yet — the first one starts the count.")
+      : el("div", {},
+        el("p", { class: "card-sub" },
+          `${now.orders} order${now.orders === 1 ? "" : "s"} · ${now.firstTime} first-time · `
+          + `${now.returning} returning`),
+        el("p", { class: "card-sub" }, `Bake days ${now.fill == null ? "—" : `${now.fill}%`} full`),
+        el("p", { class: "card-sub" },
+          `Last week ${prev.orders} · ${fillWords(prev.fill)} · 4-week average ${avg.ordersPerWeek} a week`)));
+}
+
+// ★★ "WAITING TO BE TOLD" (v648) — P5: the people who asked about a full day, beside the week they asked about.
+// ⚠️ SILENT WHEN THERE IS NOTHING TO SAY, and silent when the cloud cannot be reached: a card that appeared
+// empty would be a claim ("nobody is waiting") rather than an absence. ⭐ Each row names the day, the person and
+// what she can do — message them, or mark it done.
+function waitCard(state) {
+  const box = el("div", { class: "card", hidden: true });
+  const today = todayISO();
+  fetchWaitlist(state, { today }).then((r) => {
+    if (!r.ok || !r.rows.length) return;
+    const rows = r.rows.map((row) => {
+      const w = waNumber(row.whatsapp);
+      const said = el("p", { class: "card-sub", style: "margin:8px 0 0" });
+      const done = button("Done", async () => {
+        done.disabled = true;
+        const res = await markWaitlistDone(state, [row.id]);
+        done.disabled = false;
+        if (!res.ok) { said.textContent = "Could not mark it done — try again."; return; }
+        rowEl.remove();
+        if (!box.querySelector(".wait-row")) box.hidden = true;
+      }, "ghost small");
+      const rowEl = el("div", { class: "wait-row", style: "margin-top:10px;border-top:1px solid var(--line);padding-top:8px" },
+        el("p", { class: "card-title", style: "margin:0 0 2px" },
+          `${shortDate(String(row.day))} · ${String(row.name || "").trim() || "No name given"}`),
+        el("p", { class: "card-sub", style: "margin:0" }, row.whatsapp),
+        el("div", { class: "btn-row", style: "margin:6px 0 0" },
+          w ? button("💬 Message", () => window.open(`https://wa.me/${w}`, "_blank"), "soft small") : null,
+          done),
+        said);
+      return rowEl;
+    });
+    box.replaceChildren(
+      el("h3", { style: "margin:0 0 2px" }, "Waiting to be told"),
+      el("p", { class: "card-sub", style: "margin:0" },
+        `Asked for a bake day that was full. Message them when a pan frees, then press Done.`),
+      ...rows);
+    box.hidden = false;
+  }).catch(() => {});
+  return box;
 }
 
 // "Upcoming holidays": the marked periods still to come (from today) — reminders

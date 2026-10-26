@@ -850,6 +850,45 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
+## v630–v648 — a new face for the shop, and a customer can ask to be told (26 Oct 2026)
+
+**Bakery range `24374b6..5d83c93` (v630–v648), 18 commits, 42 files, +2994/−176.** ⚠️ **ONE SQL STEP:
+`supabase/waitlist.sql`** (new table, idempotent). **No Edge Function.**
+
+⚠️ **`store2/` was a bakery experiment and is ABSENT at their HEAD** — added and deleted inside the range
+("the trial is now the shop"). Nothing to port; the design landed in `store/`.
+
+### The shop (v631_2 → v640)
+
+- **Photo hero, four-step bar, item rows.** ⚠️ **The hero is a PORTRAIT photo**; jerky's own banner is a
+  1264×466 strip, so the hero uses **`images/chicken-jerky.jpg` (1000×1333, 3:4 — the design's own
+  shape)**, with a one-line comment for swapping it.
+- **A FULL day is a press that answers** — *"…is full. The next day you can have treats is …"* with a
+  **Choose** press; **no count on a day that is not yours to count**.
+- **"Good to know"** — posting days, cut-off, collecting/delivery, paying, changing an order, WhatsApp,
+  **in her own words** (the plan is editable).
+- **"Your last order"** — one press to repeat it; **saved on the customer's phone only**, with Forget.
+- **Food facts per product** — *What is in it* and *Keeping it*; **blank draws nothing**.
+- **The waitlist** — *"tell me when this day frees up"*, a number and an optional name; the freed day
+  reaches exactly those people.
+
+### The admin
+
+- **Backups fold into one list** (v644–v645); the box shows the shop's own words (v642).
+- **A quiet nudge** (v646–v647): criteria and words are hers; **it may not say discount/offer/sale/free**.
+- **A failed Wi-Fi print says what went wrong** (v629).
+- **v630:** force update gets the no-worker case (ported from ours).
+
+### Merge notes
+
+20 hunks across 8 files. ⚠️ **The shop was a real hand-merge:** jerky's tap-answer work (`askable`,
+`closed`, `missNote`, `dayAsk`) now sits beside theirs' `fullIso`/`fullNote` — the day is a button when
+`open || named || askable || closed || (full && !past)`, and **both answers draw, one at a time**.
+**A duplicate copy of the v452 step test came in with the merge** — the file's own rule is that test must
+run *first*, so one copy was removed and the survivor moved to the top. **Localised:** the hero CTA, the
+pack note ("posting day"), the nudge's link (it asserted the bakery's domain), and the step assertion
+(jerky has no "way" step — the address is what comes next). **Suite 3937 → 3991.**
+
 ## v629 — Force update actually forces it (23 Oct 2026)
 
 **Found on her Mac, 23 Oct:** the strip read *"this phone has v625, the site has v628"*, she pressed **Force
