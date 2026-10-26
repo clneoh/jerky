@@ -46,7 +46,7 @@ import { fullDayAnswer } from "./full_day.js";
 // cache.** ⚠️ And it must be kept in step with `admin/js/version.js` by hand, which is a second place for
 // one fact: ⭐ **that is accepted here ONLY because a test fails the moment they disagree** (see
 // `store-build-notice.test.js`), so a forgotten bump is a red suite rather than a shop that lies.
-export const SHOP_BUILD = "649";
+export const SHOP_BUILD = "651";
 // "Is this page the newest one?" — the comparison and the probe's address, kept on their own so a
 // test can pin them (this file calls `render()` at the top level and cannot be imported at all).
 import { BUILD_TRIED_KEY, VERSION_URL, newerBuild } from "./build.js";
@@ -5871,12 +5871,30 @@ function paintHits(state) {
 // already open, goTo flies it there without rebuilding it, so nothing the customer has
 // already looked at is thrown away.
 //
+// The point for the suggestion the customer tapped, and then the ordinary path. ⚠️ The
+// box may have moved on while the point was in the air, and that is the same staleness rule
+// the geocoded rows obey: a pin is only ever an answer to the words under it.
+async function resolveSuggestion(hit) {
+  const input = document.getElementById("address-input");
+  const q = lookupQuery(input ? input.value : "");
+  const place = await lookup.detail(hit.placeId);
+  if (!place) { paintPin("addrFailed"); return; }
+  const now = lookupQuery(input ? input.value : "");
+  if (now !== q) { paintPin("addrStale"); return; }
+  takeHit({ lat: place.lat, lng: place.lng, label: String(place.label || hit.label || "") });
+}
+
 // pinWasAt is moved onto the choice as well, which is the one line here that is not
 // obvious: Cancel puts the pin back to whatever it was when the map session began, and
 // after this the session began at the address they just chose. Without it, picking an
 // address and then pressing Cancel would throw the address away and restore the pin
 // they had before they started typing — a customer undoing a decision they did not make.
 function takeHit(hit) {
+  // ★★ A SUGGESTION IS NOT A DOOR YET (v650). A type-ahead row carries a description and an
+  // id; the point arrives only when Google is asked for that one place. ⚠️ Treating its words
+  // as a door is exactly how a pin lands in the middle of a street — the fault this feature
+  // was built to end — so the point is fetched first and the ordinary path runs on it.
+  if (hit && hit.placeId) { resolveSuggestion(hit); return; }
   const input = document.getElementById("address-input");
   const now = lookupQuery(input ? input.value : "");
   // A row is an ANSWER to the words that were in the box when it was drawn, and the list

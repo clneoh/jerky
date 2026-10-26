@@ -61,7 +61,7 @@
 // The shop calls it at ${SUPABASE_URL}/functions/v1/shop-geocode with the anon key, the
 // same key the shop already uses for everything else (store/config.js).
 
-import { lookupAddress } from "./geocode.ts";
+import { lookupAddress, autocompletePlaces, placeDetails, googleVerdict } from "./geocode.ts";
 import { allowHit, type Hits } from "./limit.ts";
 
 // The shop is served from munchies.com.my, a different origin than supabase.co, so
@@ -109,6 +109,33 @@ Deno.serve(async (req) => {
   try { payload = await req.json(); } catch { payload = null; }
   const args = ((payload && payload.payload) || payload || {}) as Record<string, unknown>;
   const address = String(args.address || "").trim().slice(0, MAX_ADDRESS);
+  // ★★ TWO NEW MODES FOR THE TYPE-AHEAD (v650): the list a half-typed address earns, and
+  // the point for the one the customer chose. ⚠️ They answer `ok: false` when Google is not
+  // the one serving — no key, Places not enabled, a spent quota — and the shop then runs the
+  // ordinary lookup exactly as it did before this existed. **Nothing here can stop a lookup.**
+  const mode = String(args.mode || "").trim();
+  const placeId = String(args.placeId || "").trim().slice(0, 200);
+
+  // ⭐ HER OWN DIAGNOSIS (v651): "why is this the free list and not Google?" — Google's verdict,
+  // with no address data and no key in it.
+  if (mode === "verdict") {
+    if (!allowHit(hits, callerOf(req), Date.now())) return json({ ok: false, why: "refused" });
+    return json({ ok: true, ...(await googleVerdict(address || "23 Jalan Seang Tek, 10400 George Town, Pulau Pinang")) });
+  }
+
+  if (mode === "autocomplete" || mode === "place") {
+    if (!address && !placeId) return json({ ok: false, why: "empty" });
+    if (!allowHit(hits, callerOf(req), Date.now())) {
+      console.error("[shop-geocode] rate limited a caller");
+      return json({ ok: false, why: "refused" });
+    }
+    if (mode === "autocomplete") {
+      const places = await autocompletePlaces(address);
+      return json(places && places.length ? { ok: true, places } : { ok: false, why: "none" });
+    }
+    const place = await placeDetails(placeId);
+    return json(place ? { ok: true, place } : { ok: false, why: "none" });
+  }
 
   // Nothing was asked, so nothing was spent and nothing is counted. This costs no
   // upstream request, which is the thing the cap exists to protect.

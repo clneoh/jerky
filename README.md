@@ -850,6 +850,58 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
+## v651 — the lookup had stopped asking Google at all (27 Oct 2026)
+
+**Found by the diagnostic added for v650** (`mode:"verdict"`), and it explains months of *"a list
+appeared, not on the door"*.
+
+⚠️⚠️ **v561 moved the Google key from the query string into `X-Goog-Api-Key` to keep it out of Deno's
+URL-bearing errors — and the LEGACY Geocoding endpoint does not authenticate by header.** It answered
+*"You must use an API key"* to every call; the lookup treats a refusal as "ask the free pair", so **nothing
+failed and every lookup since was answered by OpenStreetMap** (roads, no house numbers).
+
+**Fix:** the key goes back in the query for the legacy endpoint, **and the protection moves to where it
+belongs** — error text is scrubbed (`key=***`) before logging, and a new test fails if any code in the
+function prints or returns a URL. **The type-ahead moves to Places (New)** (`places.googleapis.com/v1`),
+which *does* take the header — ported from the bakery's working `courier/suggest.ts`. **The courier's
+`geocode.ts` had the identical fault and is fixed too.**
+
+**Proof:** verdict `{"status":"OK"}`, and `23 Jalan Seang Tek` → **`23, Jalan Seang Tek, George Town,
+10400 George Town, Pulau Pinang, Malaysia`**.
+
+**Both functions deployed.** Suite 3997. **The shop page still needs the push for the live list.**
+
+## v650 — the address box suggests like Google Maps (26 Oct 2026)
+
+**Her report:** *"the address auto complete like not working well"* → *"i want it to be like google maps
+autocomplete"*.
+
+**Cause:** the shop asked **Geocoding** ("where is THIS address") — which needs a near-complete address and,
+half-typed, returns the middle of a street. ⚠️ And when Google refuses (spent cap, key not allowed), the
+lookup **falls through to the free OpenStreetMap pair — Malaysian roads, no house numbers.** That is *"a
+list appeared, not on the door."*
+
+**Build:**
+- **Function** (`shop-geocode`): two new modes — `autocomplete` (Places Autocomplete, `components=country:my`)
+  and `place` (Place Details → the point). Pure readers `suggestionsFrom()` / `placeFromDetails()`; **the key
+  rides in the `X-Goog-Api-Key` header, never the URL** (v561's measured rule — Deno errors embed the URL).
+  **A refusal is `null`, never an error**: no key / Places not enabled / spent quota ⇒ the shop falls back
+  to yesterday's behaviour.
+- **Client** (`store/lookup.js`): a **260 ms glance** beside the 700 ms pause. ⚠️ **The glance is only
+  scheduled when it is genuinely quicker** (`quickMs < waitMs`); if it answers, its list is the list and the
+  slower question is stood down; if not, nothing changes. **The free pair are still never asked while
+  someone types** — their own policy.
+- **Pin** (`store/app.js`): a tapped suggestion is **not** a door — `resolveSuggestion()` asks for its point,
+  re-checks the box has not moved on, then runs the ordinary `takeHit` path. **The box fills with Google's
+  own full address.**
+
+**⚠️ Two steps:** enable **Places API** on the `jienluv2bake-geocode` project **and allow it on the key**
+(Geocoding-only today), then redeploy `shop-geocode` from the repo folder. **Until then nothing changes.**
+
+**Guards:** `test/shop-geocode.test.js` (a suggestion carries words and an id, never a point; a refused
+Places call is silence) and two in `test/store-address.test.js` (a row asks for its own point before it pins;
+Google not serving leaves the old behaviour intact). **The first was watched failing.** Suite 3992 → 3996.
+
 ## v649 — every stop on the delivery run names its order (26 Oct 2026)
 
 **Bakery v649, 8 files, +61/−7, no SQL.** Her words: *"the delivery run shown a delivery on 30 sept … no

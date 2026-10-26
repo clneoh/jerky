@@ -1,8 +1,77 @@
-# Munchies Furkidz — change history (v54 → v649)
+# Munchies Furkidz — change history (v54 → v651)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**27 Oct 2026 — engine v651: THE ADDRESS LOOKUP HAD STOPPED ASKING GOOGLE AT ALL, AND NOTHING SAID SO
+(nothing to run, no SQL; the two functions are already uploaded).**
+
+**⚠️ This one is ours, and it is the reason your addresses stopped landing on the door.**
+
+**1. What was happening.** **A version in September moved your Google key from the web address into a
+request header**, to keep it out of the server's logs. **But Google's older address service cannot read a
+key from a header at all** — it answered *"you must use an API key"* to every single request. **The lookup
+treats any Google refusal as "ask the free map services instead", so nothing failed on screen: every
+lookup since has quietly been answered by OpenStreetMap, which holds Malaysian roads and no house numbers.**
+**That is the list you were seeing.**
+
+**2. How it was found.** **You asked for "Google Maps autocomplete", so a small diagnostic was added that
+asks Google the same question the lookup asks and reports Google's own answer.** **It said
+`REQUEST_DENIED` — "you must use an API key" — on a key that was plainly there.** **One command, and the
+fault named itself.** ⭐ **A silent fallback is a fault that survives every test: the app worked, the
+lookup answered, and the answer was from the wrong service.**
+
+**3. The fix.** **The key goes back where Google's address service reads it.** ⚠️ **And the protection that
+motivated the move is kept by a different means:** **the key is scrubbed out of any error text before
+anything can be written down**, and a guard now fails if any code in the function prints or returns a web
+address. **Your key has not been in a log.**
+
+**4. The type-ahead now uses Google's newer Places service**, which *does* take a header — ported from the
+bakery's own working version rather than written fresh.
+
+**5. ⚠️ And the courier's lookup had the identical fault**, silently, for the same reason. **Fixed in the
+same pass.**
+
+**⚠️ BOTH FUNCTIONS ARE ALREADY UPLOADED, so the fix is live for your customers now.** **The shop page still
+needs your push for the live type-ahead list** — until then the box behaves as it does today, but with
+Google's answers again.
+
+**26 Oct 2026 — engine v650: THE ADDRESS BOX NOW SUGGESTS LIKE GOOGLE MAPS (⚠️ TWO STEPS FOR YOU — see
+the end).**
+
+**Your words: "i found the the address auto complete like not working well" — and then "i want it to be
+like google maps autocomplete".**
+
+**1. What was happening.** **The shop was asking Google for a DOOR, not for a list** — and that question
+needs a nearly complete address, so a half-typed one comes back as the middle of a street. **Worse, when
+Google refuses (its daily cap is spent, or the key does not allow the service), the lookup silently falls
+back to the free OpenStreetMap services — which hold Malaysian roads but no house numbers.** **That is
+"a list appeared, but not on the door".**
+
+**2. So the box now asks the question Google Maps asks.** **A type-ahead list, from Google's Places
+service, while you type** — the same rows a customer recognises from Google Maps, each with the full
+address. **And the pin is only set once Google has given the point for the row that was tapped** — **a
+description is not a door, and treating it as one is how a pin lands in the middle of a street.**
+
+**3. And nothing gets slower or worse while you decide.** ⚠️ **The type-ahead is only asked if Google is
+actually serving it** — no key, **Places not enabled**, or a spent quota, and it says nothing at all: **the
+ordinary lookup runs exactly as it did yesterday.** ⚠️ **The free services are still never asked while
+someone is typing** — that is their own written policy, and the 700 ms pause is kept for them.
+
+**⚠️ TWO STEPS, AND ONLY THE FIRST IS YOURS TO DO IN A BROWSER:**
+
+**1. Turn on Google's Places API for the key.** In Google Cloud → project **`jienluv2bake-geocode`** →
+**APIs & Services → Library → "Places API" → Enable**. Then, on that key (**Credentials → the key → API
+restrictions**), **add Places API to the allowed list** — today it is restricted to the Geocoding API only,
+and a key that does not allow the service answers `REQUEST_DENIED`. ⚠️ **Until this is done the shop
+behaves exactly as it does today** — you will just keep getting the old list.
+**2. Then I redeploy the function** (`shop-geocode`) from the repo folder — the lookup's code has changed,
+and **a push does not deploy it.**
+
+**⚠️ One honest word about cost: Places is billed differently from Geocoding.** At your volume it sits
+inside Google's free monthly credit, but **the 300-a-day cap you set was on Geocoding and does not cover
+this** — set a cap on Places too, so a busy day cannot surprise you.
 
 **26 Oct 2026 — engine v649: EVERY STOP ON THE DELIVERY RUN NAMES ITS ORDER (nothing to run, no SQL,
 no upload).**

@@ -345,9 +345,13 @@ function servicesFor(): Service[] {
       // ⚠️⚠️ THE KEY RIDES IN A HEADER, NOT THE ADDRESS (v561). ⭐ In the query string it is part of the
       // URL — and Deno's request errors routinely EMBED the URL, so an unreachable Google put the key in
       // the function's own log. ⭐ `suggest.ts` already kept its key out of the address for exactly this
-      // reason; geocoding did not. ⚠️ Google accepts `X-Goog-Api-Key` on this API.
-      url: (q: string) => `${GOOGLE}?address=${encodeURIComponent(q)}&components=country:MY&language=en`,
-      headers: { "X-Goog-Api-Key": key },
+      // reason; geocoding did not. ⚠️⚠️ AND THAT CLAIM WAS WRONG (27 Oct 2026, found on the
+      // shop's side): **the legacy Geocoding endpoint does NOT authenticate by header** — it
+      // answers "You must use an API key" to every request, and the lookup then falls through to
+      // the free pair **silently**. ⭐ The key goes in the address here, and only here.
+      url: (q: string) => `${GOOGLE}?address=${encodeURIComponent(q)}`
+        + `&components=country:MY&language=en&key=${encodeURIComponent(key)}`,
+      headers: {},
       read: placesFromGoogle,
       trouble: googleTrouble,
     });

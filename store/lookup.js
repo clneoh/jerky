@@ -41,6 +41,13 @@ import { lookupQuery, readPlaces, lookupWhy, lookupLadder, askAgain } from "./ge
 // word is finished, short enough that the list feels like it is keeping up.
 const WAIT_MS = 700;
 
+// ⭐ HOW LONG BEFORE THE TYPE-AHEAD'S OWN QUESTION (v650). Google's Places API is BUILT for
+// suggestions while somebody types; Photon and Nominatim are not, and their policies are why
+// the pause above exists at all. **So the short pause is only ever spent on the question
+// Google may answer** — and when Google does not answer (no key, Places not enabled, a spent
+// quota), nothing changes: the ordinary lookup still runs at WAIT_MS exactly as before.
+const QUICK_MS = 260;
+
 // How long the shop waits for the WHOLE lookup — every rung of the ladder together —
 // before giving up on it. The function allows itself two asks of five seconds each, so
 // this is that plus room for the round trip; a patience shorter than the work would
@@ -67,13 +74,14 @@ const PATH = "/functions/v1/shop-geocode";
 // page's own fetch, read at the moment of the call rather than captured here. The three
 // timings are arguments for the same reason — a test that cannot make a budget run out
 // cannot test what happens when it does.
-export function createLookup({ fetchFn = null, waitMs = WAIT_MS, callMs = CALL_MS, retryMs = RETRY_MS, onState = () => {} } = {}) {
+export function createLookup({ fetchFn = null, waitMs = WAIT_MS, quickMs = QUICK_MS, callMs = CALL_MS, retryMs = RETRY_MS, onState = () => {} } = {}) {
   const send = fetchFn || ((...args) => globalThis.fetch(...args));
 
   // The generation counter. It is bumped by anything that discards what is in the air,
   // and an ask is only allowed to answer if its own generation is still the current one.
   let gen = 0;
   let timer = null;      // the pending pause
+  let quick = null;      // the pending type-ahead glance
   let live = null;       // the abort controller of the ask in the air, or null
   let answered = null;   // { q, key, hits } — the last question and what came back
 
@@ -87,6 +95,7 @@ export function createLookup({ fetchFn = null, waitMs = WAIT_MS, callMs = CALL_M
   function cancel() {
     gen += 1;
     if (timer) { clearTimeout(timer); timer = null; }
+    if (quick) { clearTimeout(quick); quick = null; }
     if (live) { live.abort(); live = null; }
   }
 
@@ -120,6 +129,76 @@ export function createLookup({ fetchFn = null, waitMs = WAIT_MS, callMs = CALL_M
     }
     const mine = gen;
     timer = setTimeout(() => { timer = null; run(q, mine); }, waitMs);
+    // ⭐ AND ONE QUICK GLANCE, WHICH ONLY GOOGLE MAY ANSWER (v650). If it answers, its list
+    // is the one on screen and the slower question is stood down; if it does not, that
+    // question runs exactly as it always did.
+    // ⚠️ ONLY WHEN IT IS ACTUALLY QUICKER. A glance scheduled after the ordinary pause has
+    // nothing to be quicker than — it would be a second question asked for no reason, which
+    // is also what made three of this file's own tests see calls they never made.
+    if (quickMs < waitMs) quick = setTimeout(() => { quick = null; glance(q, mine); }, quickMs);
+  }
+
+  // ★★ THE TYPE-AHEAD (v650). ⚠️ It says NOTHING when Google is not the one answering — no
+  // key, Places not enabled, a spent quota — because then the ordinary lookup is the answer
+  // and a sentence about a service the customer never asked for would be noise.
+  async function glance(q, mine) {
+    if (mine !== gen) return;
+    const sb = CONFIG.supabase || {};
+    const base = sb.url ? String(sb.url).replace(/\/+$/, "") : "";
+    if (!base || !sb.anonKey) return;
+    const hits = await suggestAsk(base, q, callMs);
+    if (mine !== gen || !hits || !hits.length) return;
+    // Google answered: this IS the list, so the slower question is no longer wanted.
+    cancel();
+    settle(q, "addrPick", hits);
+  }
+
+  async function suggestAsk(base, q, ms) {
+    const ctl = new AbortController();
+    live = ctl;
+    const kill = setTimeout(() => ctl.abort(), ms);
+    try {
+      const res = await send(`${base}${PATH}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${CONFIG.supabase.anonKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ mode: "autocomplete", address: q }),
+        signal: ctl.signal,
+      });
+      const data = res && res.ok ? await res.json().catch(() => null) : null;
+      const list = (data && data.ok === true && Array.isArray(data.places)) ? data.places : [];
+      return list
+        .map((p) => ({ placeId: String((p && p.placeId) || ""), label: String((p && p.label) || "") }))
+        .filter((p) => p.placeId && p.label);
+    } catch {
+      return null;
+    } finally { clearTimeout(kill); }
+  }
+
+  // The point for the suggestion the customer chose. ⚠️ A suggestion is NOT a place: its
+  // words are a description, and pinning them would land in the middle of a street —
+  // which is the whole fault this feature exists to end.
+  async function detail(placeId) {
+    const sb = CONFIG.supabase || {};
+    const base = sb.url ? String(sb.url).replace(/\/+$/, "") : "";
+    if (!base || !sb.anonKey || !placeId) return null;
+    try {
+      const res = await send(`${base}${PATH}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${CONFIG.supabase.anonKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ mode: "place", placeId }),
+        signal: AbortSignal.timeout ? AbortSignal.timeout(callMs) : undefined,
+      });
+      const data = res && res.ok ? await res.json().catch(() => null) : null;
+      return (data && data.ok === true && data.place) ? data.place : null;
+    } catch {
+      return null;
+    }
   }
 
   function settle(q, key, hits) {
@@ -215,5 +294,5 @@ export function createLookup({ fetchFn = null, waitMs = WAIT_MS, callMs = CALL_M
     settle(q, key, hits);
   }
 
-  return { typed, clear };
+  return { typed, clear, detail };
 }

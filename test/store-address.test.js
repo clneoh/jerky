@@ -114,9 +114,30 @@ globalThis.window.L = {
 // empty array the shop's own data calls already answer with in the other store tests.
 let reply = { ok: true, places: [] };
 let asks = [];
+// ⭐ THE TYPE-AHEAD'S OWN ASKS, COUNTED APART (v650). A glance is a question to Google only;
+// when Google is not serving it answers `ok: false` and the ordinary lookup runs exactly as
+// before. **`asks` therefore means "the lookups", which is what its assertions are about.**
+let autos = [];
+// ⭐ WHAT GOOGLE'S TYPE-AHEAD AND ITS PLACE CALL ANSWER WITH (v650). Default: not serving, which
+// is what the key does today until Places is enabled on the project.
+let autoReply = { ok: false, why: "none" };
+let detailReply = { ok: false, why: "none" };
+let details = [];
 globalThis.fetch = async (url, opts = {}) => {
   const u = String(url);
   if (u.includes("/functions/v1/shop-geocode")) {
+    let mode = "";
+    try { mode = String(JSON.parse(String(opts.body || "{}")).mode || ""); } catch { mode = ""; }
+    if (mode === "autocomplete") {
+      autos.push({ url: u, body: opts.body });
+      return { ok: true, status: 200, json: async () => autoReply };
+    }
+    if (mode === "place") {
+      let id = "";
+      try { id = String(JSON.parse(String(opts.body || "{}")).placeId || ""); } catch { id = ""; }
+      details.push({ placeId: id });
+      return { ok: true, status: 200, json: async () => detailReply };
+    }
     asks.push({ url: u, body: opts.body });
     return { ok: true, status: 200, json: async () => reply };
   }
@@ -143,6 +164,10 @@ const flush = async (rounds = 14) => { for (let i = 0; i < rounds; i++) await Pr
 function begin(t) {
   reply = { ok: true, places: [] };
   asks = [];
+  autos = [];
+  details = [];
+  autoReply = { ok: false, why: "none" };
+  detailReply = { ok: false, why: "none" };
   rec.maps.length = 0; rec.views.length = 0; rec.tiles.length = 0; rec.markers.length = 0;
   resetPin();
   t.mock.timers.enable({ apis: ["setTimeout"] });
@@ -924,4 +949,60 @@ test("the next customer does not inherit the last one's front door", async (t) =
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+
+// ── the type-ahead: a suggestion becomes a door before it becomes a pin (v650) ──
+test("★★★ a type-ahead row asks for its own point before it can set a pin (v650)", async (t) => {
+  begin(t);
+  // Google IS serving here: the list, then the point for the one tapped.
+  autoReply = { ok: true, places: [
+    { placeId: "ChIJabc", label: "23, Jalan Seang Tek, 10400 George Town, Pulau Pinang, Malaysia" },
+    { placeId: "ChIJdef", label: "23A, Jalan Seang Tek, 10400 George Town, Pulau Pinang, Malaysia" },
+  ] };
+  detailReply = { ok: true, place: {
+    lat: 5.4141, lng: 100.3288,
+    label: "23, Jalan Seang Tek, 10400 George Town, Pulau Pinang, Malaysia",
+  } };
+
+  type("23 Jalan Seang");
+  // ⭐ THE SHORT PAUSE, AND ONLY GOOGLE HEARS IT — the free pair are never asked while someone
+  // is still typing, which is their own written policy.
+  t.mock.timers.tick(260);
+  await flush();
+
+  assert.equal(autos.length, 1, "the type-ahead was not asked");
+  assert.equal(asks.length, 0, "★ the ordinary lookup went out while they were still typing");
+  const list = el("addr-list");
+  assert.equal(list.hidden, false, "the suggestions are not on screen");
+  const rows = list.children.filter((c) => String(c.className || "") === "addr-hit");
+  assert.equal(rows.length, 2, "one row per suggestion");
+  assert.equal(rows[0].textContent, "23, Jalan Seang Tek, 10400 George Town, Pulau Pinang, Malaysia");
+
+  fire(rows[0], "click");
+  await flush();
+
+  assert.deepEqual(details, [{ placeId: "ChIJabc" }],
+    "★ the row was turned into a pin without asking Google for its point — **a description is not a door**");
+  assert.equal(el("pin-status").textContent, STORE.en.pinSet,
+    "★ the chosen suggestion did not become a pin");
+  assert.equal(el("address-input").value, "23, Jalan Seang Tek, 10400 George Town, Pulau Pinang, Malaysia",
+    "★ the box was not filled with Google's own full address");
+});
+
+test("★★⚠️ and when Google is not serving, the shop behaves exactly as it did before (v650)", async (t) => {
+  begin(t);
+  autoReply = { ok: false, why: "none" };       // the key's today: Places not enabled
+  reply = { ok: true, places: [{ ...HIT }] };
+
+  type("12 Jalan Bunga, Penang");
+  t.mock.timers.tick(260);
+  await flush();
+  t.mock.timers.tick(700);
+  await flush();
+
+  const list = el("addr-list");
+  assert.equal(list.children.filter((c) => String(c.className || "") === "addr-hit").length, 1,
+    "★ the ordinary lookup's row went missing when Google did not answer — **the fallback is the whole "
+    + "point of asking Google first**");
+  assert.equal(details.length, 0, "a place was asked for with no suggestion to ask about");
 });

@@ -41,6 +41,16 @@ const PHOTON = "https://photon.komoot.io/api/";
 // which is the whole of what a customer's pin needs, and it is the one Google product
 // whose free allowance (10,000 calls a month) a shop this size will not reach.
 const GOOGLE = "https://maps.googleapis.com/maps/api/geocode/json";
+// ★★ AND GOOGLE MAPS' OWN TYPE-AHEAD (v650). ⚠️ Geocoding needs a near-complete address —
+// it answers "where is THIS address", which is why a half-typed one comes back as the middle
+// of a street. **Places Autocomplete answers a different question: "what places start with
+// these words"** — ⭐ that is the list a customer recognises from Google Maps.
+// ⚠️ IT IS A SEPARATE GOOGLE PRODUCT AND MUST BE TURNED ON: the key is restricted to the
+// Geocoding API today, so until "Places API" is enabled on the project AND allowed on the
+// key, Google answers REQUEST_DENIED here — **and this falls through to the old lookup, so
+// nothing breaks while she decides.** Two calls: the list, then the point for the one chosen.
+const GOOGLE_PLACES = "https://maps.googleapis.com/maps/api/place/autocomplete/json";
+const GOOGLE_PLACE = "https://maps.googleapis.com/maps/api/place/details/json";
 
 // The name of the secret the key is read from. Read fresh on every lookup rather than
 // captured at module load, for the reason ../courier/index.ts gives about LALAMOVE_ENV:
@@ -266,7 +276,11 @@ async function ask(
     }
     return { replied: true, places };
   } catch (err) {
-    console.error(`[shop-geocode] ${service.name} failed:`, (err as Error)?.message || err);
+    // ⚠️⚠️ THE MESSAGE CAN CONTAIN THE REQUEST'S OWN ADDRESS — and the address now carries the key
+    // (v651). ⭐ Deno's fetch errors read "error sending request for url (https://…key=…)", so the
+    // key is scrubbed out before anything is written down.
+    console.error(`[shop-geocode] ${service.name} failed:`,
+      String((err as Error)?.message || err).replace(/key=[^&\s)]+/gi, "key=***"));
     return { aborted: (err as Error)?.name === "AbortError" };
   } finally {
     clearTimeout(timer);
@@ -312,9 +326,14 @@ function servicesFor(): Service[] {
       // ⚠️⚠️ THE KEY RIDES IN A HEADER, NOT THE ADDRESS (v561). ⭐ In the query string it is part of the
       // URL — and Deno's request errors routinely EMBED the URL, so an unreachable Google put the key in
       // the function's own log. ⭐ `suggest.ts` already kept its key out of the address for exactly this
-      // reason; geocoding did not. ⚠️ Google accepts `X-Goog-Api-Key` on this API.
-      url: (q: string) => `${GOOGLE}?address=${encodeURIComponent(q)}&components=country:MY&language=en`,
-      headers: { "X-Goog-Api-Key": key },
+      // reason; geocoding did not. ⚠️⚠️ AND THAT CLAIM WAS WRONG (v651): **the legacy Geocoding
+      // endpoint does NOT authenticate by header** — it answered "You must use an API key" to
+      // every request, and the lookup fell through to the free pair, silently, from v561 until
+      // her report on 27 Oct. ⭐ **The key goes in the address here, and only here**; the new
+      // Places endpoint keeps it in a header.
+      url: (q: string) => `${GOOGLE}?address=${encodeURIComponent(q)}`
+        + `&components=country:MY&language=en&key=${encodeURIComponent(key)}`,
+      headers: {},
       read: placesFromGoogle,
       trouble: googleTrouble,
     });
@@ -391,4 +410,121 @@ export async function lookupAddress(
   if (timedOut) return { ok: false, why: "timeout" };
   if (unreachable) return { ok: false, why: "unreachable" };
   return { ok: false, why: "refused" };
+}
+
+// ── Google Maps type-ahead ───────────────────────────────────────────────────
+//
+// ⭐ THE TYPE-AHEAD ASKS GOOGLE'S **NEW** PLACES ENDPOINT (v651), which is a different host from
+// the geocoder and DOES authenticate by header. ⚠️ Pointing one at the other's endpoint is a
+// 404, not a wrong answer. Ported from the courier's own working `suggest.ts`.
+const PLACES_AUTOCOMPLETE = "https://places.googleapis.com/v1/places:autocomplete";
+const PLACES_DETAILS = "https://places.googleapis.com/v1/places/";
+// Google errors on a field you did not ask for — and sends only what you did — so the mask is
+// exact. The two things a row needs, and nothing more.
+const AUTOCOMPLETE_MASK = "suggestions.placePrediction.text.text,suggestions.placePrediction.placeId";
+const DETAILS_MASK = "location,formattedAddress";
+
+// The suggestions a half-typed address earns. ⚠️ A suggestion is NOT a place: it carries the
+// words to print and an id, and **no coordinates at all** — treating its words as a door is
+// how a pin lands in the middle of a street.
+export type Suggestion = { placeId: string; label: string };
+
+export function suggestionsFromNew(data: unknown): Suggestion[] {
+  const body = (data && typeof data === "object") ? data as Record<string, unknown> : {};
+  const list = Array.isArray(body.suggestions) ? body.suggestions : [];
+  const out: Suggestion[] = [];
+  for (const raw of list) {
+    if (!raw || typeof raw !== "object") continue;
+    const p = ((raw as Record<string, unknown>).placePrediction
+      && typeof (raw as Record<string, unknown>).placePrediction === "object")
+      ? (raw as Record<string, unknown>).placePrediction as Record<string, unknown> : null;
+    if (!p) continue;
+    const text = (p.text && typeof p.text === "object") ? p.text as Record<string, unknown> : {};
+    const id = String(p.placeId || "").trim();
+    const label = String(text.text || "").trim();
+    if (!id || !label) continue;
+    out.push({ placeId: id, label });
+    if (out.length >= MAX_PLACES) break;
+  }
+  return out;
+}
+
+// The point and the full address for the chosen suggestion.
+export function placeFromNewDetails(data: unknown): Place | null {
+  const body = (data && typeof data === "object") ? data as Record<string, unknown> : {};
+  const loc = (body.location && typeof body.location === "object") ? body.location as Record<string, unknown> : {};
+  const spot = validPoint({ lat: loc.latitude, lng: loc.longitude });
+  if (!spot) return null;
+  return { lat: spot.lat, lng: spot.lng, label: String(body.formattedAddress || "").trim() };
+}
+
+async function placesCall(url: string, key: string, mask: string, body: unknown | null): Promise<unknown | null> {
+  const ctl = new AbortController();
+  const kill = setTimeout(() => ctl.abort(), 5000);
+  try {
+    const res = await fetch(url, {
+      method: body ? "POST" : "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": key,
+        "X-Goog-FieldMask": mask,
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+      signal: ctl.signal,
+    });
+    const data = res && res.ok ? await res.json().catch(() => null) : null;
+    if (!res || !res.ok) {
+      // ⚠️ Google's own words, because "not enabled on this key" and "quota spent" arrive as
+      // different bodies with the same status.
+      const said = data && typeof data === "object"
+        ? String(((data as Record<string, unknown>).error as Record<string, unknown> | undefined)?.message || "")
+        : "";
+      console.error(`[shop-geocode] places answered HTTP ${res ? res.status : "?"}${said ? ` — ${said}` : ""}`);
+      return null;
+    }
+    return data;
+  } catch { return null; } finally { clearTimeout(kill); }
+}
+
+// Ask Google for suggestions. Null when Google is not the one answering — no key, Places not
+// enabled, a spent quota — and the caller then says nothing, so the ordinary lookup runs
+// exactly as it did before this existed.
+export async function autocompletePlaces(q: string): Promise<Suggestion[] | null> {
+  const key = envOf(GOOGLE_KEY_ENV);
+  if (!key) return null;
+  const data = await placesCall(PLACES_AUTOCOMPLETE, key, AUTOCOMPLETE_MASK, {
+    input: q, includedRegionCodes: ["my"], languageCode: "en",
+  });
+  if (!data) return null;
+  return suggestionsFromNew(data);
+}
+
+// Turn the chosen suggestion into a door.
+export async function placeDetails(placeId: string): Promise<Place | null> {
+  const key = envOf(GOOGLE_KEY_ENV);
+  if (!key || !placeId) return null;
+  const data = await placesCall(`${PLACES_DETAILS}${encodeURIComponent(placeId)}`, key, DETAILS_MASK, null);
+  if (!data) return null;
+  return placeFromNewDetails(data);
+}
+
+// ⭐⭐ WHAT GOOGLE ACTUALLY SAID (v651). ⚠️ The lookup falls through to the free pair when Google
+// refuses — right for a customer, and the reason her own diagnosis could not tell "spent quota"
+// from "not allowed on the key" from "the endpoint never took the key at all": all three arrive
+// as the same street-level list. ⭐ This asks the same endpoint the lookup asks and hands back
+// Google's verdict. ⚠️ No address data and no key — only the reason.
+export async function googleVerdict(q: string): Promise<{ status: string; message: string }> {
+  const key = envOf(GOOGLE_KEY_ENV);
+  if (!key) return { status: "NO_KEY", message: "GOOGLE_GEOCODING_KEY is not set on this project." };
+  const url = `${GOOGLE}?address=${encodeURIComponent(q)}`
+    + `&components=country:MY&language=en&key=${encodeURIComponent(key)}`;
+  try {
+    const res = await fetch(url);
+    const data = res && res.ok ? await res.json().catch(() => null) : null;
+    if (!data || typeof data !== "object") {
+      return { status: "NO_ANSWER", message: "Google did not answer (network, or a non-200 reply)." };
+    }
+    const body = data as Record<string, unknown>;
+    return { status: String(body.status || "").toUpperCase() || "NO_STATUS", message: String(body.error_message || "") };
+  } catch { return { status: "NO_ANSWER", message: "Google did not answer (network error)." }; }
 }

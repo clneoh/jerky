@@ -260,15 +260,19 @@ test("with a key set, BOTH sides ask Google FIRST, and it is the only ask when i
     assert.match(q, /components=country:MY/);
     assert.match(q, /language=en/);
     assert.match(q, /address=12%20Jalan%20Bunga/);
-    // ⚠️⚠️ AND THE KEY IS NOT IN THE ADDRESS (v561). It used to be `&key=...`, and Deno's request
-    // errors EMBED THE URL — so a Google that could not be reached wrote the key into the function's
-    // own log. ⭐ Google accepts `X-Goog-Api-Key`, so it travels in a header, on BOTH sides' ask.
-    assert.doesNotMatch(q, /key=/,
-      "★ the key is back in the URL — **an unreachable Google puts it into the function's log**, which "
-      + "is why it moved to a header");
-    assert.deepEqual(sent.map((s) => s.headers["X-Goog-Api-Key"]), ["test-key", "test-key"],
-      "★ the key is not on the header of BOTH sides' ask, so one of the two lookups sends none — "
-      + "**Google answers REQUEST_DENIED and the good answer is never asked for**");
+    // ⚠️⚠️ AND THE KEY IS IN THE ADDRESS HERE — DELIBERATELY, AND THIS IS A CORRECTION (v651).
+    // v561 moved it to `X-Goog-Api-Key` to keep it out of Deno's URL-bearing errors — and **the
+    // legacy Geocoding endpoint does not authenticate by header at all.** On 27 Oct 2026 it
+    // answered *"You must use an API key"* to every single request, so the lookup fell through to
+    // the free OpenStreetMap pair **silently** — the customer's list was roads without house
+    // numbers, and nothing anywhere said Google had been refused. ⭐ **The key goes where this
+    // endpoint reads it.** ⭐ And the protection that actually mattered is kept, one level up:
+    // **nothing in the function may log or return a URL** — see the test below.
+    assert.match(q, /key=test-key/,
+      "★ the key is not where the legacy endpoint reads it — **Google answers REQUEST_DENIED and the "
+      + "free pair answer instead, silently**");
+    assert.deepEqual(sent.map((s) => s.headers["X-Goog-Api-Key"] || ""), ["", ""],
+      "the legacy endpoint takes no header; sending one only invites the belief that it works");
   });
 });
 
@@ -580,4 +584,84 @@ test("★★★ the lookup keys its limit on the LAST forwarded address (v585)",
     "★ the geocode limit keys on the caller's own header, not the address the proxy saw");
   assert.doesNotMatch(src, /split\(","\)\[0\]/,
     "★ the first entry of x-forwarded-for is being used again");
+});
+
+// ── the type-ahead (v650) ────────────────────────────────────────────────────
+//
+// ⚠️⚠️ A SUGGESTION IS NOT A DOOR. Places Autocomplete answers "what places start with these
+// words" and hands back a description and an id — **no coordinates at all**. ⭐ Treating those
+// words as the door is exactly how a pin lands in the middle of a street, which is the fault
+// this feature was built to end. The point arrives only from the second call.
+test("★★★ a suggestion carries words and an id, never a point (v650)", async () => {
+  const { suggestionsFromNew, placeFromNewDetails } = await import("../supabase/functions/shop-geocode/geocode.ts");
+
+  const preds = suggestionsFromNew({
+    suggestions: [
+      { placePrediction: { placeId: "ChIJabc", text: { text: "23, Jalan Seang Tek, 10400 George Town, Pulau Pinang, Malaysia" } } },
+      { placePrediction: { placeId: "", text: { text: "no id — dropped" } } },
+      { placePrediction: { text: { text: "no id at all" } } },
+    ],
+  });
+  assert.deepEqual(preds, [{
+    placeId: "ChIJabc",
+    label: "23, Jalan Seang Tek, 10400 George Town, Pulau Pinang, Malaysia",
+  }], "★ a suggestion was read as something it is not — **the list must carry the id and the words only**");
+
+  // The second call is where the point comes from, and it reads the same shape the ordinary
+  // lookup does, so the shop treats all three services alike once a door is known.
+  assert.deepEqual(
+    placeFromNewDetails({
+      formattedAddress: "23, Jalan Seang Tek, 10400 George Town, Pulau Pinang, Malaysia",
+      location: { latitude: 5.4141, longitude: 100.3288 },
+    }),
+    { lat: 5.4141, lng: 100.3288, label: "23, Jalan Seang Tek, 10400 George Town, Pulau Pinang, Malaysia" });
+  assert.equal(placeFromNewDetails({ formattedAddress: "nowhere" }), null,
+    "★ a reply with no point was read as a door");
+});
+
+test("★★⚠️ and Google not serving the type-ahead is SILENCE, never a failure (v650)", async () => {
+  // ⚠️ The key is restricted to Geocoding today, so until Places is enabled the reply is
+  // REQUEST_DENIED. ⭐ The shop must fall back to the ordinary lookup exactly as before, so the
+  // answer is null — not an error the page would have to explain.
+  const { autocompletePlaces, placeDetails } = await import("../supabase/functions/shop-geocode/geocode.ts");
+  await withKey("test-key", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: false, status: 403, json: async () => ({ error: { message: "refused" } }) });
+    try {
+      assert.equal(await autocompletePlaces("12 Jalan Bunga"), null,
+        "★ a refused Places call was reported as an answer — **the shop would draw an empty list instead of "
+        + "falling back to the lookup that works**");
+      assert.equal(await placeDetails("ChIJabc"), null);
+    } finally { globalThis.fetch = realFetch; }
+  });
+  // No key at all is the same silence, and costs no request.
+  await withKey(null, async () => {
+    const realFetch = globalThis.fetch;
+    let asked = 0;
+    globalThis.fetch = async () => { asked += 1; return { ok: true, json: async () => ({}) }; };
+    try {
+      assert.equal(await autocompletePlaces("12 Jalan Bunga"), null);
+      assert.equal(asked, 0, "★ a lookup went out with no key — it could only ever be refused");
+    } finally { globalThis.fetch = realFetch; }
+  });
+});
+
+test("★★⚠️ and the key can never reach a log: no URL is ever printed (v651)", () => {
+  // ⚠️⚠️ THIS IS THE GUARD THAT MATTERED, kept after the header was found not to authenticate.
+  // ⭐ The key travels in the URL of the legacy geocoder, so the whole protection is that **no
+  // code path here prints, throws or returns a URL** — Deno's request errors embed it, which is
+  // the fault v561 was written for.
+  const files = ["geocode.ts", "place.ts", "index.ts", "limit.ts"];
+  for (const f of files) {
+    const src = readFileSync(new URL(`../supabase/functions/shop-geocode/${f}`, import.meta.url), "utf8");
+    for (const line of src.split("\n")) {
+      if (!/console\.(log|warn|error|info|debug)\s*\(/.test(line)) continue;
+      assert.doesNotMatch(line, /\burl\b|href|GOOGLE\b/i,
+        `★ ${f} prints something URL-shaped — **a key in the address plus a printed request is the "
+        + "leak v561 existed to stop**`);
+    }
+    // And no reply hands the address of the request back to the caller either.
+    assert.doesNotMatch(src, /json\(\s*\{[^}]*\burl\b/,
+      `★ ${f} returns a URL in its reply`);
+  }
 });
