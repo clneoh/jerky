@@ -19,7 +19,7 @@ Settings → Printers. It connects to the printer's IP directly.
    node print-bridge/bridge.mjs
    ```
    The first run asks for:
-   - **Supabase URL** — `https://hzpyblqygnntixkijeem.supabase.co`
+   - **Supabase URL** — `https://ircwozniiyywsowamixy.supabase.co`
    - **Anon public key** — the same one the app uses (Settings in the backoffice, or the Supabase dashboard)
    - **App login email** and **password** — your own login; typed here, never into a chat
    - **Printer IP** — the address the printer's Wi-Fi app showed you (for example `192.168.1.50`)
@@ -50,6 +50,36 @@ It uses the same saved config, so answer the setup questions once in Terminal fi
 - to stop and remove it: `sh print-bridge/uninstall-mac.sh` (the config file is left in place).
 
 ⚠️ The Mac must still be **awake** to print; sleep pauses it.
+
+## On a Linux machine (home server, Raspberry Pi)
+
+⭐ **The bridge is the same program on every machine** — same script, same config, same printer. ⭐ **A Linux box
+is the better home** for it when there is one: it stays on, so the Mac can sleep and labels still print.
+
+**First run it by hand, so it can ask for the printer's address** (the answers are saved in
+`~/.munchies-print.json`, mode 600):
+
+```
+cd ~/jerky && node print-bridge/bridge.mjs
+```
+
+⚠️ **Delete nothing and change nothing else** — the questions are the ones in step 3 above. It should say
+*"signed in to the shared queue"*. Then Ctrl-C, and install it as a service:
+
+```
+bash print-bridge/install-linux.sh
+```
+
+- it starts **at boot** and restarts itself if it stops;
+- its log is the system journal: `journalctl --user -u munchies-print -f`;
+- status: `systemctl --user status munchies-print`;
+- to stop and remove it: `bash print-bridge/uninstall-linux.sh` (the config file is left in place).
+
+⚠️ **Needs Node 18 or newer.** Raspberry Pi OS *bookworm* ships it; *bullseye* ships 12, so install the
+NodeSource build first. ⚠️ **On a headless server reached only by SSH**, one extra command lets the service run
+without anyone logged in: `sudo loginctl enable-linger $USER` (the installer checks and tells you).
+
+⚠️⚠️ **ONE BRIDGE PER SITE NAME.** Two bridges both running as `main` would **both print every label**.
 
 ## Printing
 

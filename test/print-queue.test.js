@@ -189,3 +189,51 @@ test("★★ the status command only READS the queue (v622)", () => {
   assert.equal(/method:\s*"DELETE"/.test(src), false, "★ the status command can delete a job");
   assert.equal(/\/rpc\//.test(src), false, "★ the status command calls a function");
 });
+
+// ── the bridge must never be pointed at the other business (v668) ───────────
+//
+// ⚠️⚠️ FOUND ON 2026-10-27, in this repo, while she was getting ready to TEST the printer: the bridge's own
+// README told her to paste `https://hzpyblqygnntixkijeem.supabase.co` — **the BAKERY's project.** ⭐ Following
+// the instructions would have pointed her Mac's print bridge at someone else's shared data: no labels would
+// print, and the failure would look like a printer fault rather than a wrong address. ⚠️ It came in with the
+// port, and the bridge's own files were localized while the README's one line was missed — the same shape as
+// the shop copy, in a place no test was reading.
+const BRIDGE = ["../print-bridge/README.md", "../print-bridge/bridge.mjs", "../print-bridge/install-mac.sh",
+  "../print-bridge/install-linux.sh", "../print-bridge/uninstall-linux.sh", "../print-bridge/uninstall-mac.sh"];
+
+test("★★★ the print bridge names THIS shop's project and this machine's own files", () => {
+  for (const rel of BRIDGE) {
+    const text = readFileSync(new URL(rel, import.meta.url), "utf8");
+    assert.ok(!/hzpyblqygnntixkijeem/.test(text),
+      `${rel} carries the BAKERY's Supabase project — a bridge pointed there prints nothing`);
+    assert.ok(!/jienluv2bake/.test(text), `${rel} carries the bakery's domain`);
+    assert.ok(!/bakeadmin-print|com\.bakester|bakeadmin-print\.log/.test(text),
+      `${rel} carries the bakery's identity — two bridges on one Mac must not share a config or a service`);
+    // ⚠️ AND ITS OWN NAME ON SCREEN: the first line she reads when the bridge starts said "Bakeadmin label
+    // bridge" (found 27 Oct 2026, on her Mac, mid-setup). It is the same fault as the shop copy — the code was
+    // localized and one sentence was not.
+    assert.ok(!/bakeadmin/i.test(text), `${rel} still prints the other business's name`);
+  }
+  // And the one place the whole chain is named: the project the app itself talks to.
+  const config = readFileSync(new URL("../store/config.js", import.meta.url), "utf8");
+  const ref = /([a-z]{20})\.supabase\.co/.exec(config);
+  assert.ok(ref, "the shop's own Supabase project is no longer readable from store/config.js");
+  assert.match(readFileSync(new URL("../print-bridge/README.md", import.meta.url), "utf8"), new RegExp(ref[1]),
+    "★ the bridge's instructions name a DIFFERENT project from the one the app uses");
+});
+
+test("★★★ the Linux installer is a twin of the Mac one, and names this shop", () => {
+  // ⭐ Two machines, one program: the bridge moves to a home server or a Raspberry Pi with **no code change**,
+  // so the one thing that must not drift is the identity — the service name, the config file, and the project.
+  const sh = readFileSync(new URL("../print-bridge/install-linux.sh", import.meta.url), "utf8");
+  assert.match(sh, /NAME="munchies-print"/, "the systemd unit keeps this shop's own name");
+  assert.match(sh, /\.munchies-print\.json/, "and reads the same config file the bridge writes");
+  assert.match(sh, /Restart=always/, "★ a service that does not restart itself is a service she has to watch");
+  assert.match(sh, /After=network-online\.target/,
+    "it must not race the network — signing in before it is up is the retry loop her first attempt sat in");
+  assert.match(sh, /systemctl --user enable/, "and it has to start at boot");
+  // ⚠️ It refuses to install without a config: the printer's address is only known after one run by hand.
+  assert.match(sh, /No bridge config yet/, "the installer must stop and explain, not install a bridge that cannot print");
+  // ⚠️ And it says so out loud: two bridges on one site name print every label twice.
+  assert.match(sh, /prints every label|every label prints/i, "the double-print warning is gone");
+});

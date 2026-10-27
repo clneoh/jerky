@@ -204,7 +204,7 @@ async function pollOnce(cfg, session) {
 }
 
 async function main() {
-  say("Bakeadmin label bridge — Ctrl-C to stop.");
+  say("Munchies Furkidz label bridge — Ctrl-C to stop.");
   const cfg = readConfig() || await askConfig();
   let session = null;
   let tidiedAt = 0;
