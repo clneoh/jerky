@@ -227,3 +227,18 @@ test("★★★ and a pack size of nothing divides by nothing, never by zero (v6
     assert.ok(r.slots_left >= 0, "and never negative");
   }
 });
+
+test("★★★ every published row carries its own numbers, including the clearing row (v672)", () => {
+  // ⚠️ The clearing batch exists to drop a pack's old pool columns, and it is an INSERT whenever the key is
+  // new — so a row carrying only those two columns is a null in `slots_left`, which the database refuses for
+  // the WHOLE batch. ⭐ This asserts the shape the publisher actually sends, not the shape it meant to.
+  const st = state({
+    products: [jerky(), { id: "p_pack", name: "Family Pack", price: 60, limit: 0, active: true, unit: "pack",
+      recipe: [{ productId: "prd_1", qty: 2 }] }],
+    deliveryDates: oneDate(), orders: [],
+  });
+  for (const r of computeProductSlots(st, 3)) {
+    assert.equal(Number.isFinite(r.slots_left), true, `no number on ${r.product} (${r.date})`);
+    assert.equal(Number.isFinite(r.capacity), true, `no capacity on ${r.product} (${r.date})`);
+  }
+});

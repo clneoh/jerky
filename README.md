@@ -850,6 +850,19 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
+## v672 — the product sync names the row it refused (27 Oct 2026)
+
+**The same 400 came back on a build that already had v671, so v671 did not cover every path.**
+
+- ⚠️ **A second row could arrive without its numbers.** One batch exists only to drop a pack's old pool
+  columns off a product that stopped being a pack — and when its key was not already in the table, the
+  "update" became an **INSERT of two columns**, with nothing in `slots_left`. It carries its own figures now.
+- ⭐ **A refusal names its row.** On failure only, each row is sent alone and the message names the ones the
+  database refused — `"Chicken Jerky (2026-10-28) — …"`. ⚠️ **"null value in column slots_left" told her
+  nothing she could act on.**
+
+Suite 4021.
+
 ## v671 — one bad number can no longer stop every product's count (27 Oct 2026)
 
 **Her report:** *"Sync failed: Product sync failed (HTTP 400) — null value in column slots_left violates

@@ -1,8 +1,28 @@
-# Munchies Furkidz — change history (v54 → v671)
+# Munchies Furkidz — change history (v54 → v672)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**27 Oct 2026 — engine v672: THE PRODUCT SYNC NAMES THE ROW IT REFUSED (nothing to run, no SQL, nothing to
+upload).**
+
+**The same 400 came back on a build that already had the v671 fix, so v671 did not cover every path.**
+
+**1. A SECOND ROW COULD ARRIVE WITHOUT ITS NUMBERS.** ⚠️ **One batch exists only to drop a pack's old pool
+columns off a product that stopped being a pack** — **and when that row's product and day were not already in
+the table, the "update" became an INSERT of two columns with nothing in `slots_left`, which the database
+refuses.** **That row carries its own figures now.**
+
+**2. AND A REFUSAL NAMES ITS ROW.** ⭐ **"null value in column slots_left" told you nothing you could act
+on** — not which product, not which day. **Now, when the database refuses the batch, each row is sent on its
+own and the message names the ones it refused** (*"Chicken Jerky (2026-10-28) — …"*). ⚠️ **This only runs
+after a failure**, so a healthy sync costs nothing extra.
+
+**⚠️ If the message still appears, read the product and day it now names — that is the row to look at, and
+tell me what it says.**
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **27 Oct 2026 — engine v671: ONE BAD NUMBER CAN NO LONGER STOP EVERY PRODUCT'S COUNT (nothing to run, no SQL,
 nothing to upload).**

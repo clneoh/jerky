@@ -267,7 +267,20 @@ export async function syncAvailability(state) {
     const res = await upsert("product_availability", rows, "date,product");
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      return { ok: false, reason: `Product sync failed (HTTP ${res.status})${text ? " — " + text.slice(0, 160) : ""}` };
+      // ⚠️⚠️ AND A REFUSAL NAMES ITS ROW (v671). ⭐ A 400 from this table says "null value in column
+      // slots_left" and NOTHING about which product or day, so the one person who could fix it could not even
+      // find it. ⭐ On failure only — a good sync costs nothing — each row is sent alone and the first one the
+      // database refuses is named. ⚠️ Capped, because a broken table must not become a hundred requests.
+      let culprits = [];
+      for (const row of rows.slice(0, 20)) {
+        const one = await upsert("product_availability", [row], "date,product");
+        if (one.ok) continue;
+        const why = await one.text().catch(() => "");
+        culprits.push(`${row.product} (${row.date})${why ? ` — ${why.slice(0, 80)}` : ""}`);
+        if (culprits.length >= 3) break;
+      }
+      const named = culprits.length ? ` The database refused: ${culprits.join(" · ")}.` : "";
+      return { ok: false, reason: `Product sync failed (HTTP ${res.status})${text ? " — " + text.slice(0, 160) : ""}${named}` };
     }
     // ⚠️ The clearing batch publishes no stamp, so it is not counted as a product row (v598).
     if (count) pushedProducts += rows.length;
@@ -278,7 +291,13 @@ export async function syncAvailability(state) {
   // treated it as derived and ignored its own limit and sales.** ⭐ One more batch, of explicit NULLs for the plain
   // rows: on a project without the pool columns it fails alone, exactly like the pack batch, and the singles
   // still publish.
-  const clearedRows = plainRows.map((r) => ({ date: r.date, product: r.product, pool_base: null, pool_qty: null }));
+  // ⚠️⚠️ IT CARRIES ITS OWN NUMBERS (v671). ⭐ The upsert is an INSERT that becomes an update only when the
+  // key already exists — so on a key that is NOT there yet, a row with just the pool columns and no
+  // `slots_left` is a plain INSERT with a null in a column that forbids one: **23502, and the whole batch is
+  // refused.** ⭐ The plain batch runs first and normally creates the key, so this was a corner rather than the
+  // everyday path — but a corner that fails the same way is still a sync she cannot finish.
+  const clearedRows = plainRows.map((r) => ({ date: r.date, product: r.product,
+    slots_left: r.slots_left, capacity: r.capacity, pool_base: null, pool_qty: null }));
   for (const [batch, count] of [[plainRows, true], [clearedRows, false], [packRows, true]]) {
     const batchErr = await pushProductBatch(batch, count);
     if (batchErr) return batchErr;
