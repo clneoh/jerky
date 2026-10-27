@@ -873,7 +873,7 @@ const ms = {
   factsLink: "Perlu tahu",
   factsHead: "Sebelum anda order",
   factBake: "Snek anda dibuat pada hari ia dihantar, jadi ia sampai dalam keadaan paling segar.",
-  factCutoff: "Order ditutup pada petang sebelum hari membakar anda — masa tepatnya sentiasa ada pada kad di atas kalendar.",
+  factCutoff: "Order ditutup pada petang sebelum hari pos anda — masa tepatnya sentiasa ada pada kad di atas kalendar.",
   factGet: "Kami pos ke seluruh negara, atau anda boleh ambil sendiri di tempat kami. Kos pos ialah kadar tetap setiap order, ditambah semasa kami sahkan pesanan anda di WhatsApp — jumlah di halaman ini hanya untuk snek.",
   factPay: "Order disahkan apabila bayaran sampai kepada kami — kami hantar kod QR bayaran melalui WhatsApp.",
   allergenLabel: "Kandungan",
@@ -1024,7 +1024,7 @@ const ms = {
   // exactly why it was the one nobody had looked at.** See `test/store-vocab.test.js`.
   confirmAddNameBody: "Kami guna ini untuk tahu order ini untuk siapa semasa kami mengesahkannya dengan anda.",
   confirmClosedTitle: "Order untuk hari itu sudah ditutup.",
-  confirmClosedBody: "Order untuk hari itu ditutup pada %1 sehari sebelum — sila pilih hari membakar yang lain.",
+  confirmClosedBody: "Order untuk hari itu ditutup pada %1 sehari sebelum — sila pilih hari pos yang lain.",
   confirmChangedTitle: "Order anda baru sahaja berubah.",
   confirmChangedBody: "Ada barang yang habis semasa anda menempah — kami sudah kemas kini troli anda ikut apa yang tinggal.",
   confirmChangedSub: "Sila semak order anda dan tekan Hantar order sekali lagi.",

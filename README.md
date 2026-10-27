@@ -896,6 +896,10 @@ read back on the Edit card, and nothing put them into `shared` — the fourth in
 **Suite 3998 → 4016.** ⚠️ Also localized two older leaks the sweep turned up: *"Tell the baker's helper this
 message"* (an error toast) and *"no bake day"* in the put-back dialog.
 
+⚠️ **And the shop's Malay day word is now `hari pos`** (her instruction the same day), replacing the two
+stragglers that still said `hari membakar` while the rest of the dictionary already said `hari pos`.
+`test/store-i18n.test.js` now forbids **both** `hari penghantaran` (delivery day) and `membakar`/`bakar`.
+
 ## v656 — the shop's Reload press re-asks for the files (27 Oct 2026)
 
 **Her words:** *"it fail to refresh again on browser."* **The build was already pushed and the site was

@@ -42,6 +42,11 @@ the check cannot say how many days it examined.
 **7. THE SHOP'S RELOAD PRESS RE-ASKS FOR THE FILE, NOT JUST THE PAGE** (the same fix this shop got as v656,
 now in the shared engine's own shape, with a test that drives it).
 
+**8. AND THE SHOP'S MALAY CALLS THE DAY "HARI POS", AS YOU ASKED.** ⚠️ **Two sentences still said "hari
+membakar" — the bakery's word for a baking day — while the rest of the shop's Malay already said "hari pos"
+everywhere else.** **A test now fails if either word comes back, or if the shop calls that day a delivery
+day.**
+
 **⚠️ ONE THING WHICH IS THE REAL POINT OF THIS VERSION.** Three of these faults were **boxes that took what
 you typed and never saved it**, and every one was found by you, not by the tests. **There is now a guard that
 does what a person does: types into every box on the order cards, presses Save, opens it again and checks

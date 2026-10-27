@@ -506,8 +506,17 @@ test("the shop calls that day a POSTING day, in all three languages", () => {
     "no English string calls the chosen day a delivery day");
   assert.deepEqual(offenders("zh", /派送日/), [],
     "nor does the Chinese — it says 烘焙日");
+  // ⚠️⚠️ AND THE MALAY WORD IS **"HARI POS"** (her instruction, 2026-10-27: *"change the malay to hari pos"*).
+  // ⭐ It was "hari membakar" — the bakery's bread word — while the rest of this shop's Malay already said
+  // "hari pos" everywhere else (the step, the calendar, the sold-out line). ⭐ Two stragglers lived on: the
+  // facts panel and the closed-day sentence. **Both are gone, and the rule now forbids the bread word too**,
+  // so a copied sentence cannot bring it back one dictionary entry at a time.
   assert.deepEqual(offenders("ms", /hari penghantaran/i), [],
-    "nor the Bahasa Malaysia — it says hari membakar");
+    "the Malay must not call the chosen day a delivery day — that is the confusion this rule exists for");
+  assert.deepEqual(offenders("ms", /membakar|bakar/i), [],
+    "nor may it call it a baking day — this shop dehydrates, and its own word for the day is hari pos");
+  assert.match(STORE.ms.sPickDay, /hari pos/i, "and step 1 says hari pos");
+  assert.match(STORE.ms.factCutoff, /hari pos/i, "the facts panel agrees");
 
   // And the two places a customer meets the day FIRST carry the new word in the markup itself,
   // not only in the dictionary, so the page is right before the script ever runs.
