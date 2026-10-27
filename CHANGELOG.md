@@ -1,8 +1,29 @@
-# Munchies Furkidz — change history (v54 → v668)
+# Munchies Furkidz — change history (v54 → v669)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**27 Oct 2026 — engine v669: THE SHOP'S MALAY CALLS THE DAY "HARI POS" (nothing to run, no SQL, nothing to
+upload).**
+
+**Your instruction: "change the malay to hari pos".**
+
+**1. WHAT WAS WRONG.** ⚠️ **Two sentences still said "hari membakar" — the bakery's word for a BAKING day —
+while the rest of this shop's Malay already said "hari pos" everywhere else:** the step, the calendar, the
+sold-out line and the "what is a posting day" note were all right, and these two were the stragglers. **A shop
+that dehydrates was telling some customers it bakes.**
+
+**2. WHAT IT SAYS NOW.** **The facts panel and the closed-day sentence both say "hari pos".** **A test fails if
+"hari membakar" OR "hari penghantaran" comes back**, and it requires "hari pos" in both places — so neither
+can creep back in one sentence at a time.
+
+**3. WHY THIS IS A VERSION OF ITS OWN.** ⚠️ **The copy change shipped as a separate commit under the same
+number 668 that had already been pushed half an hour earlier** — so a phone that had loaded 668 before it
+would read "668" and quietly hold the OLD Malay, and the update strip, which compares that number, could not
+tell. ⭐ **A sticker has to move whenever what a phone can see moves**, or the sticker stops being evidence.
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **27 Oct 2026 — engine v668: A COLLECTION HAS A DAY AND A TIME, A QUOTE CAN CARRY YOUR BUFFER, AND A SAVED
 CHARGE STAYS SAVED (nothing to run, no SQL, nothing to upload).**
@@ -42,10 +63,6 @@ the check cannot say how many days it examined.
 **7. THE SHOP'S RELOAD PRESS RE-ASKS FOR THE FILE, NOT JUST THE PAGE** (the same fix this shop got as v656,
 now in the shared engine's own shape, with a test that drives it).
 
-**8. AND THE SHOP'S MALAY CALLS THE DAY "HARI POS", AS YOU ASKED.** ⚠️ **Two sentences still said "hari
-membakar" — the bakery's word for a baking day — while the rest of the shop's Malay already said "hari pos"
-everywhere else.** **A test now fails if either word comes back, or if the shop calls that day a delivery
-day.**
 
 **⚠️ ONE THING WHICH IS THE REAL POINT OF THIS VERSION.** Three of these faults were **boxes that took what
 you typed and never saved it**, and every one was found by you, not by the tests. **There is now a guard that

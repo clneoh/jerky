@@ -850,6 +850,21 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
+## v669 — the shop's Malay day word (27 Oct 2026)
+
+**Her instruction:** *"change the malay to hari pos"*.
+
+⚠️ **Two sentences still said `hari membakar` while the rest of the dictionary already said `hari pos`** — the
+step, the calendar, the sold-out line and the "what is a posting day" note were right; the facts panel and the
+closed-day sentence were the stragglers. A shop that dehydrates was telling some customers it bakes.
+
+⭐ **And this is its own version number for a reason.** The copy change was first committed under **668**, half
+an hour after 668 had been pushed — so a phone that loaded 668 before it would read "668" and quietly hold the
+**old** Malay, and the update strip (which compares that number) could not tell. ⚠️ **A sticker has to move
+whenever what a phone can see moves**, or it stops being evidence.
+
+`test/store-i18n.test.js` forbids `hari membakar` **and** `hari penghantaran`, and requires `hari pos`.
+
 ## v668 — the bakery sync: a collection's day and time, the buffer, and a saved charge (27 Oct 2026)
 
 **Range: bakery `f648adc` (their v649) → `9dc95f7` (v668), 17 commits, 32 files, +1814/−113. Engine 668.
@@ -896,9 +911,8 @@ read back on the Edit card, and nothing put them into `shared` — the fourth in
 **Suite 3998 → 4016.** ⚠️ Also localized two older leaks the sweep turned up: *"Tell the baker's helper this
 message"* (an error toast) and *"no bake day"* in the put-back dialog.
 
-⚠️ **And the shop's Malay day word is now `hari pos`** (her instruction the same day), replacing the two
-stragglers that still said `hari membakar` while the rest of the dictionary already said `hari pos`.
-`test/store-i18n.test.js` now forbids **both** `hari penghantaran` (delivery day) and `membakar`/`bakar`.
+⚠️ **And the shop's Malay day word is now `hari pos`** (her instruction the same day) — see the v669 section
+above; `test/store-i18n.test.js` now forbids **both** `hari penghantaran` (delivery day) and `membakar`/`bakar`.
 
 ## v656 — the shop's Reload press re-asks for the files (27 Oct 2026)
 
