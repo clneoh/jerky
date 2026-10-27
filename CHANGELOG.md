@@ -1,8 +1,24 @@
-# Munchies Furkidz — change history (v54 → v653)
+# Munchies Furkidz — change history (v54 → v654)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**27 Oct 2026 — engine v654: A COLLECTED ORDER'S OWN DAY IS CALLED A COLLECTION (nothing to run, no SQL,
+no upload).**
+
+**Your words: "munchies also has collect date if defer from post date."**
+
+**1. One field, two meanings — and one word was wrong.** **The same date carries "the day it reaches them"
+for both ways an order leaves: a van's day for a posted one, and the COLLECTION day for one being collected
+(a Point order gets one when the trip is booked).** **The line added yesterday always said "Delivery"**, so
+**a collecting customer was handed the wrong word for their own day.**
+
+**2. It follows the way the order leaves.** **"Delivery 30 Oct" for a posted order, "Collection 30 Oct" for a
+collected one** — **and only when that day differs from the posting day**, so an ordinary order's paper is
+unchanged.
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **27 Oct 2026 — engine v653: THE CUSTOMER'S PAPER NAMES THE DELIVERY DAY WHEN IT IS A DIFFERENT DAY
 (nothing to run, no SQL, no upload).**

@@ -71,7 +71,7 @@ export function renderGuide(root, state) {
       el("p", { class: "card-sub" },
         `**Your model: the order date is yours; the posting day tells the customer when it is made and sent; the delivery date exists only if they chose a different day.** **Two of the three were already right.** ⚠️ **The third was missing from the paper that goes to the CUSTOMER** — the parcel label has printed both days, each named, since v429, **but the invoice named only the posting day.**`),
       el("p", { class: "hint" },
-        `**It names the delivery day now — and only when it is a different day**, so an ordinary order's paper is unchanged and no day is printed twice under two names. **Nothing to run, no SQL, nothing to upload.**`)),
+        `**It names that second day now — and only when it is a different day**, so an ordinary order's paper is unchanged and no day is printed twice under two names. ⚠️ **And it is named for what it is: "Delivery" on a posted order, "Collection" on one being collected** — the same date, and the wrong word would hand a collecting customer someone else's day. **Nothing to run, no SQL, nothing to upload.**`)),
     el("div", { class: "card" },
       el("p", { class: "card-title" }, "A customer's paper shows the posting day, not the order date (Engine v652, 27 October 2026)"),
       el("p", { class: "card-sub" },
