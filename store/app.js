@@ -46,10 +46,10 @@ import { fullDayAnswer } from "./full_day.js";
 // cache.** ⚠️ And it must be kept in step with `admin/js/version.js` by hand, which is a second place for
 // one fact: ⭐ **that is accepted here ONLY because a test fails the moment they disagree** (see
 // `store-build-notice.test.js`), so a forgotten bump is a red suite rather than a shop that lies.
-export const SHOP_BUILD = "656";
+export const SHOP_BUILD = "668";
 // "Is this page the newest one?" — the comparison and the probe's address, kept on their own so a
 // test can pin them (this file calls `render()` at the top level and cannot be imported at all).
-import { BUILD_TRIED_KEY, VERSION_URL, assetsToRefresh, newerBuild } from "./build.js";
+import { BUILD_TRIED_KEY, VERSION_URL, assetsToRefresh, freshenAssets, newerBuild } from "./build.js";
 // The promo-code engine, shared with the backoffice so a code the shop accepts is
 // exactly a code her app recognises. It is a leaf module (imports nothing), which
 // is why the shop can take it without pulling the backoffice's storage in.
@@ -6267,12 +6267,11 @@ if (typeof document !== "undefined" && document.documentElement) {
   // plain one is answered from the same cache that is the problem.
   // ⚠️ It is RACED WITH A BEAT: a slow connection must not leave the customer pressing a button
   // that does nothing visible. Whatever has not arrived in 2.5 s, the reload goes without it.
-  async function freshenAssets() {
-    if (typeof performance === "undefined" || typeof performance.getEntriesByType !== "function") return;
+  function thisPagesFiles() {
+    if (typeof performance === "undefined" || typeof performance.getEntriesByType !== "function") return [[], ""];
     let origin = "";
     try { origin = location.origin; } catch { /* no origin: every address is kept */ }
-    const list = assetsToRefresh(performance.getEntriesByType("resource"), origin);
-    await Promise.all(list.map((u) => fetch(u, { cache: "reload" }).catch(() => {})));
+    return [performance.getEntriesByType("resource"), origin];
   }
 
   const buildBtn = document.getElementById("build-reload");
@@ -6284,7 +6283,8 @@ if (typeof document !== "undefined" && document.documentElement) {
     const go = () => {
       if (typeof location !== "undefined" && typeof location.reload === "function") location.reload();
     };
-    Promise.race([freshenAssets(), new Promise((r) => setTimeout(r, 2500))]).then(go, go);
+    const [entries, origin] = thisPagesFiles();
+    Promise.race([freshenAssets(entries, origin), new Promise((r) => setTimeout(r, 2500))]).then(go, go);
   });
 
   // ---------------------------------------------------------------------------------

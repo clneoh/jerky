@@ -14,10 +14,9 @@
 // is skipped when the baker hasn't set one.
 
 import { byId, orderCode, orderLineName, waNumber } from "./state.js";
-import { shortDate } from "./dates.js";
 import { customerTotal, moneyLines } from "./courier.js";
 import { fulfillmentText, pointAddressFor } from "./points.js";
-import { dayLine, vanLine } from "./courier_job.js";
+import { dayBlock, dayLine, defaultWindow, vanLine } from "./courier_job.js";
 // The one place the opening line is worded, so the confirmation cannot lean over
 // while the three later messages do not (2 Oct 2026).
 import { greeting, hello } from "./messages.js";
@@ -55,8 +54,12 @@ export function buildConfirmation(state, group, trackUrl) {
   // BAKE day and its window belongs to the van, so the two never share a line. See the helper
   // for the customer who asked whether his delivery was Wednesday or Thursday.
   const day = dayLine(state, first);
-  const date = `${del ? shortDate(del.date) : String(first.deliveryDate || "")}`
-    + day.window;
+  // ⚠️⚠️ THE POSTING DAY CARRIES NO TIME (v657). Her question, on a real confirmation: __"what is the point of
+  // having time on the posting day?"__ — it read "Posting day: Wed, 28 Oct, 6-7:09 pm", ⭐ because this line
+  // appended `day.window` to the day, and on a collected order that window was the VAN's, left on the order
+  // from when it was a posted one. ⭐ A day is a day. A collection's time goes on the Collection line and a
+  // van's window on the Delivery line — never here.
+  const postIso = del ? String(del.date || "") : String(first.deliveryDate || "");
   const courier = first.fulfillment === "courier";
   // ONE wording for how the order reaches them (v299) — the confirmation and every later
   // message read the same helper, so a customer cannot be told two different things.
@@ -86,7 +89,18 @@ export function buildConfirmation(state, group, trackUrl) {
 
   let msg = `${greeting(state, `${hello(first.customerName)} Your order from ${bakery} is confirmed.`)}\n`;
   msg += `Order #${orderCode(first)}\n`;
-  msg += `${day.label}: ${date} - ${fulfillment}${address}\n`;
+  // ★★ TWO DAY LINES (v657): the posting day says only the posting day, and the next line says how it travels —
+  // ⚠️ the "how" used to sit on the day line while the van's own day sat far below the payment block.
+  msg += dayBlock(state, first, postIso);
+  // ⚠️ THE PLACE IS STILL NAMED: "Self collect at Farlim" is the line a customer needs to know WHERE, and the
+  // two day lines do not replace it. A posted order skips it — its second day line already says Delivery.
+  // ⚠️ THE HOW IS STILL SAID FOR EVERY ORDER — the day lines do not replace it, and a posted customer
+  // must still read that it is being posted.
+  if (fulfillment) msg += `${fulfillment}\n`;
+  // ⚠️ AND WHEN NO VAN DAY IS TYPED AND NO WINDOW IS SET, THE TIME IS STILL HONEST: the van is booked later,
+  // so the one sentence that says its time is to come stays.
+  if (courier && !day.vanTime && !defaultWindow(state)) msg += vanLine(day, first);
+  if (address) msg += `${address.trim()}\n`;
   msg += `Items: ${items}\n`;
   // The sum and its parts: a recorded courier charge is named so the customer can add it
   // up themselves rather than take it on trust — "the message need to show the add up for
@@ -105,7 +119,6 @@ export function buildConfirmation(state, group, trackUrl) {
   // front of the customer, so nothing ever jumps away or looks truncated.
   msg += `\nWhen you pay, put your phone number${recipient ? ` (${recipient})` : ""} in the payment description.\n`;
   msg += `Then send your TNG receipt screenshot here as a photo - thank you!\n`;
-  msg += vanLine(day, first);
   msg += `Track your order: ${trackUrl}`;
   return { recipient, message: msg };
 }

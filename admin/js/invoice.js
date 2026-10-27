@@ -52,7 +52,7 @@ import { receiptNoOfGroup } from "./receipts.js";
 import { orderCode, orderLineName, orderLinePrice, round2 } from "./state.js";
 import { longDate } from "./dates.js";
 import { refundDayOf } from "./money.js";
-import { courierDayOf } from "./courier_job.js";
+import { courierCollectDayOf, courierDayOf } from "./courier_job.js";
 
 // What one line of the order is called on paper. The quantity comes first because
 // that is how a customer reads a receipt back — "4 × Focaccia" — and the name is the
@@ -96,8 +96,11 @@ export function invoiceSheet(state, group, { from = "", bakery = "", printed = "
   // the COLLECTION day for a collected one (a Point order gets one when the trip is booked). ⭐ So a line
   // that always said "Delivery" would hand a collecting customer the wrong word for their own day.
   const postDay = deliveryDateOf(state, rows[0] || {});
-  const vanRaw = courierDayOf(rows[0] || {});
   const isPosted = String((rows[0] || {}).fulfillment || "") === "courier";
+  // ★★ AND THE DAY SHE TYPED FOR A COLLECTION OUTRANKS THE RUN'S (v657). ⚠️ One date carries "the day it
+  // reaches them" both ways, and a collected order can now carry her OWN day as well — the day the customer
+  // was promised, which is the one the paper must print. With none typed, the run's day, then the posting day.
+  const vanRaw = (isPosted ? courierDayOf(rows[0] || {}) : (courierCollectDayOf(rows[0] || {}) || courierDayOf(rows[0] || {})));
   const deliveryNote = vanRaw && vanRaw !== postDay
     ? `${isPosted ? "Delivery" : "Collection"} ${longDate(vanRaw)}`
     : "";

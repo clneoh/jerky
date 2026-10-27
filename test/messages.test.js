@@ -31,7 +31,8 @@ test("payment reminder leads with the order code and re-sends the QR", () => {
   assert.equal(built.recipient, "60123456789");
   assert.ok(built.message.includes("Order #445566"), "order code in the reminder");
   assert.ok(built.message.includes("Total: RM 30.00"), "total");
-  assert.ok(built.message.includes("Delivery: Mon, 7 Sep - Collect (local)"), "date + fulfillment");
+  assert.ok(built.message.includes("Posting day: Mon, 7 Sep"), "the posting day, on its own line");
+  assert.ok(built.message.includes("\nCollect (local)\n"), "and how it reaches them, on its own line");
   assert.ok(built.message.includes("\nhttps://img/tng.png\n"), "QR image URL on its own line");
   assert.ok(built.message.includes("put your phone number (60123456789) in the payment description"));
   assert.ok(built.message.includes("Already paid? Please ignore this message."));
@@ -88,7 +89,8 @@ test("shipped message says the order is on its way and carries the tracking numb
   assert.equal(built.recipient, "60123456789");
   assert.ok(built.message.includes("is on its way"), "the shipped wording");
   assert.ok(built.message.includes("Order #445566"), "order code in the message");
-  assert.ok(built.message.includes("Posting day: Mon, 7 Sep - Post (nationwide)"), "the posting day + how it left");
+  assert.ok(built.message.includes("Posting day: Mon, 7 Sep"), "the posting day");
+  assert.ok(built.message.includes("\nPost (nationwide)\n"), "and how it left, on its own line");
   assert.ok(built.message.includes("Items: Chicken Jerky x2"), "what was sent");
   assert.ok(built.message.includes("Tracking number: JT123456789"), "the number she typed");
   assert.ok(built.message.includes("Track your order: https://bake.app/store/?track=445566"));
@@ -155,7 +157,9 @@ test("the two messages a collecting customer gets name the place and when (v304)
   ]) {
     assert.ok(built.message.includes("Farlim, Air Itam"), `${name}: names the place`);
     assert.ok(!/ready for pickup/.test(built.message), `${name}: and never a bare "pickup" with no place`);
-    assert.ok(built.message.includes("collect 2-6 pm"), `${name}: when`);
+    // ★ AND WHEN, IN THE COLLECTION'S OWN WORDS (v657) — the hours belong with the collection, never glued to
+    // the posting day where a van's window could reach a collecting customer by mistake.
+    assert.ok(built.message.includes("2-6 pm"), `${name}: when`);
     assert.ok(!built.message.includes("10-12"), `${name}: and never the van's arrival window`);
   }
 });

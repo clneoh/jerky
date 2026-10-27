@@ -23,7 +23,7 @@ import { buildPaymentReminder, buildPickupReminder, buildShippedMessage } from "
 import { claimReceipt, incomingCapReached, maybePublishTracking, maybeSync, publishTracking, refundReceipt, sendPrintJob, stuckOrders, unrefundReceipt } from "../supabase.js";
 import { receiptLineOfGroup, receiptNoOf, receiptNoOfGroup, receiptStatusOfGroup } from "../receipts.js";
 import { couponDeclined, couponOnAny } from "../referrals.js";
-import { writeCourierCharge, courierFeeOf, courierPayerOf, courierCodOf, customerCourierFee, isCourierOrder, codeMissed, codeNotApplied, couponAgainst, customerTotal, receiptNote, receiptRows, promoOn, promoValue, promoOnBasket, refundableCharge, paymentShift } from "../courier.js";
+import { writeCourierCharge, courierFeeOf, courierPayerOf, courierCodOf, customerCourierFee, isCourierOrder, codeMissed, codeNotApplied, couponAgainst, customerTotal, receiptNote, receiptRows, promoOn, promoValue, promoOnBasket, refundableCharge, paymentShift, withBuffer } from "../courier.js";
 import { isCash, isTng, methodLabel, methodRank, methodsOf } from "../accounts.js";
 // ★ HER OWN EDITOR AND ITS ＋ CHIP (v478). The payment sheet adds an account ON THE SPOT with the
 // same form the money lists use, rather than a second way to write `state.settings.payMethods`.
@@ -896,7 +896,7 @@ function renderAll(root, state, params) {
       el("p", { class: "card-title" }, "This day could not be opened"),
       el("p", { class: "card-sub" }, `${iso || (rec && rec.date) || id} — the app hit an error drawing it.`),
       el("p", { class: "card-sub", style: "margin:10px 0 0" },
-        "Tell the baker's helper this message: " + String((err && err.message) || err)),
+        "Tell your helper this message: " + String((err && err.message) || err)),
       el("p", { class: "card-sub", style: "margin:8px 0 0" },
         "Nothing has been changed. The day is still in your list — this is only about showing it."));
   };
@@ -2007,13 +2007,52 @@ import { addressSuggester } from "../address_suggest.js";
 // same live caption — and two copies of a form are two chances to differ. `box` is whichever draft the
 // caller owns ({ day, from, to }), so a card keeping its values in the module draft and one keeping
 // them in a pop-up draft can both use it and neither has to know about the other.
-function courierWhenFields(box) {
+// ★★ THE COLLECTION DAY AND TIME SHE TYPES (v657) — the self-collect twin of the van's boxes.
+// ⚠️ EMPTY MEANS THE POSTING DAY, which is the only day a kitchen collection has ever had, so an order she
+// never touches reads exactly as it did.
+function collectWhenFields(box) {
+  // ⚠️⚠️ BOTH EVENTS, ON PURPOSE. A phone keyboard, an autofill or a paste can leave a text box firing
+  // `change` on blur and NO `input` at all — ⭐ her report was a collection whose DAY saved and whose TIME did
+  // not, which is exactly the shape of a value that never reached the draft. Writing the field on either event
+  // is idempotent, so listening to both costs nothing and closes the gap on the phone where it happens.
+  const putDay = () => { box.day = day.value; };
+  const putTime = () => { box.time = time.value; };
+  const day = el("input", { class: "input", type: "date", value: box.day || "",
+    "aria-label": "The day they collect",
+    oninput: putDay, onchange: putDay });
+  const time = el("input", { class: "input", type: "text", value: box.time || "",
+    placeholder: "e.g. 10am-12pm",
+    "aria-label": "The time they collect",
+    oninput: putTime, onchange: putTime });
+  return el("div", { class: "field" },
+    el("label", {}, "Collection day and time"),
+    el("p", { class: "card-sub", style: "margin:0 0 5px" },
+      "What the customer is told they collect. Blank means the posting day, with no time — leave it and the "
+      + "message says only the day."),
+    day, time);
+}
+
+// ⭐ `postIso` IS WHAT MAKES THE VAN DAY CHECKABLE (v657). ⚠️ An order can carry a van day EARLIER than the day
+// it is posted, and nothing on the card said so — the run then shows it on that earlier day, which reads as an
+// order out of nowhere. ⭐ **A guide, not a gate**: the day is hers to type, and this only says the day cannot
+// be right while she is looking at it.
+function courierWhenFields(box, postIso = "") {
   // ⚠️ The three handlers read the NODE, not `this`. A real DOM sets `this` to the element, but a
   // test's shim does not have to — and a handler that only works under one of those two conventions
   // is a handler half the suite cannot exercise. Reading the node is right under both.
+  const daySaid = el("p", { class: "card-sub", style: "margin:4px 0 0" });
   const day = el("input", { class: "input", type: "date", value: box.day || "",
     "aria-label": "The day the courier delivers",
-    oninput: () => { box.day = day.value; } });
+    oninput: () => { box.day = day.value; paintDay(); } });
+  // ⚠️ THE ONE THING A VAN DAY CANNOT BE: earlier than the day the order is posted.
+  function paintDay() {
+    const wants = String(box.day || "").trim();
+    const post = String(postIso || "").trim();
+    daySaid.textContent = (wants && post && wants < post)
+      ? `This is before the posting day (${shortDate(post)}) — a van would be sent for parcels that do not exist yet.`
+      : "";
+  }
+  paintDay();
   // ★★ THE PICKUP TIME (v341). Her distinction: *"for courier lalamove, there is no delivery window
   // open and delivery window closes promise… Pickup time is something user should specify."*
   // It is the time the van collects FROM HER — the one clock a single van delivery actually fixes —
@@ -2042,6 +2081,7 @@ function courierWhenFields(box) {
   return el("div", { class: "field" },
     el("label", {}, "Courier delivery date"),
     day,
+    daySaid,
     el("p", { class: "hint" }, "The day the van comes — often the morning after the delivery day. Leave it blank until you know it."),
     el("label", { style: "margin-top:12px" }, "Pickup time"),
     pickup,
@@ -2077,6 +2117,7 @@ function orderForm(state, dateId, root, selectDate, onReady) {
     // them together. It is a DRAFT shape only: the order itself carries a flat `courierDay` and the
     // existing packed `deliveryWindow`, so no order gains a nested key.
     courierWhen: { day: "", pickup: "", from: "", to: "" },
+    collectWhen: { day: "", time: "" },
     items: [{ productId: "", qty: 1, price: null }],
   });
   // The day is the SCREEN's, not the draft's: picking one switches the screen, because
@@ -2113,9 +2154,12 @@ function orderForm(state, dateId, root, selectDate, onReady) {
     [{ value: "collect", label: "Collect (local)" }, { value: "courier", label: "Post (nationwide)" }],
     draft.fulfillment, function () {
       draft.fulfillment = this.value;
-      // A courier order is not collected anywhere, so switching to Courier drops the Point
-      // rather than leaving one hidden behind a choice she has moved away from (v303).
-      if (this.value === "courier") draft.pointId = "";
+      // ★ THE POINT IS KEPT IN THE DRAFT NOW (v657). ⚠️ v303 cleared it the moment she chose Post, so a Point
+      // picked by mistake — or a switch she thought better of — took the collection with it: her report is
+      // exactly that, *"i change it to courier and key in the details, after that i change back to self
+      // collect"*. ⭐ **THE RULE IT WAS PROTECTING IS A RULE ABOUT THE SAVED ORDER, and the save already keeps
+      // it** — both writers pass `fulfillment === "courier" ? "" : draft.pointId`, so a posted order still
+      // carries no Point. What the draft does is remember what she chose, so switching back restores it.
       paintCourier();
       paintPoint();
     });
@@ -2286,6 +2330,10 @@ function orderForm(state, dateId, root, selectDate, onReady) {
       // `courierWhenFields` — so it is stored, remembered and used by the run, and published nowhere.
       shared.pickupTime = String(draft.courierWhen.pickup || "").trim();
       shared.deliveryWindow = windowAt(draft.courierWhen.from, draft.courierWhen.to);
+    } else {
+      // ★★ THE COLLECTION DAY AND TIME for a collected order (v657) — the twin of the block above.
+      shared.collectDay = String((draft.collectWhen || {}).day || "").trim();
+      shared.collectTime = String((draft.collectWhen || {}).time || "").trim();
     }
     // A courier order carries no Point, whatever the picker still holds behind it.
     const pointId = fulfillment === "courier" ? "" : draft.pointId;
@@ -2374,7 +2422,7 @@ function orderForm(state, dateId, root, selectDate, onReady) {
     const trackingSlot = el("div", {});
     const charge = courierControls(state, draft, () => {});
     courierCharge = charge;
-    const tracking = el("input", { class: "input", placeholder: "e.g. JT123456789",
+    const tracking = el("input", { class: "input", placeholder: "e.g. JT123456789", "aria-label": "Courier tracking number",
       autocomplete: "off", value: draft.trackingNo,
       oninput: function () { draft.trackingNo = this.value; } });
     // The tracking box is a PARCEL's box, so it is drawn only where a parcel is in
@@ -2433,14 +2481,18 @@ function orderForm(state, dateId, root, selectDate, onReady) {
       courierKind("van"),
       // When the van comes (v338). Under the "van" heading and above the charge, so the block reads
       // in the order she thinks in: whose door, then when, then what it costs.
-      courierWhenFields(draft.courierWhen),
+      courierWhenFields(draft.courierWhen, (date && date.date) || ""),
       charge.el,
       quote,
     ];
   }
   function paintCourier() {
     courierCharge = null;
-    courierBox.replaceChildren(...(draft.fulfillment === "courier" ? buildCourierBlock() : []));
+    // ⭐ AN ORDER SHE TAKES BY PHONE CAN BE A COLLECTION TOO (v657) — the day and time the customer is
+    // promised. ⚠️ A collection has no van, so there is nothing else on this block to ask; before this the
+    // card was empty on Collect and the day the customer was promised lived only in her head.
+    courierBox.replaceChildren(...(draft.fulfillment === "courier"
+      ? buildCourierBlock() : [collectWhenFields(draft.collectWhen)]));
   }
   paintCourier();
   paintPoint();
@@ -2640,6 +2692,12 @@ function openEditPopup(state, group, dateId, root) {
     // asking her a second time; `windowParts` answers null for anything that is not a window, so a box
     // can never be seeded with a time that was never set. Both are EMPTY on an order that has neither,
     // because nothing here is ever worked out from the delivery date.
+    // ★★ AND THE COLLECTION DAY AND TIME (v657), read back the same way — so the promise she typed comes
+    // back instead of being asked for again.
+    collectWhen: {
+      day: first.collectDay || "",
+      time: first.collectTime || "",
+    },
     courierWhen: {
       day: first.courierDay || "",
       // The time the van collects from her (v341) — read back like the day beside it, so it is
@@ -2687,7 +2745,8 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     [{ value: "collect", label: "Collect (local)" }, { value: "courier", label: "Post (nationwide)" }],
     draft.fulfillment, function () {
       draft.fulfillment = this.value;
-      if (this.value === "courier") draft.pointId = "";   // see the New order card (v303)
+      // ★ The Point stays in the draft — see the New order card. ⚠️ The SAVE still writes no Point onto a
+      // posted order; what this stops is her picked Point vanishing from a card she switched back to.
       refresh();
     });
   // ★ WHERE IT COLLECTS FROM (v303), the same list the ＋ New order card offers and the same
@@ -2717,7 +2776,7 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     value: draft.note, oninput: function () { draft.note = this.value; } });
   // The courier's tracking number, editable here as well as on the row: a number
   // read back over the phone, or one typed wrong, gets fixed in the pop-up.
-  const tracking = el("input", { class: "input", placeholder: "e.g. JT123456789",
+  const tracking = el("input", { class: "input", placeholder: "e.g. JT123456789", "aria-label": "Courier tracking number",
     value: draft.trackingNo, oninput: function () { draft.trackingNo = this.value; } });
   const orderDate = dateField(draft.orderDate, (iso) => { draft.orderDate = iso; },
     { occasions: state.occasions });
@@ -3090,6 +3149,12 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
       // (set when there is a value, DELETED when there is not), so an order that never carried one
       // still carries no key after a Save. Nothing here is ever worked out from the delivery date.
       courierDay: String(draft.courierWhen.day || "").trim(),
+      // ★★ AND HER COLLECTION DAY AND TIME (v657) — passed on the same rule: empty DELETES the key, so an
+      // order she never touched carries no key and reads as the posting day. ⚠️ Found by the round-trip guard
+      // below, which was written for exactly this: the card drew the boxes and read them back, and nothing
+      // put them into `shared` — the same shape of loss three of her fields had already suffered.
+      collectDay: String((draft.collectWhen || {}).day || "").trim(),
+      collectTime: String((draft.collectWhen || {}).time || "").trim(),
       // The time the van collects from her (v341), passed on the same rule as the day beside it:
       // empty means DELETE the key, not park an empty one.
       pickupTime: String(draft.courierWhen.pickup || "").trim(),
@@ -3185,13 +3250,17 @@ function popupEditBody(state, date, group, first, lines, draft, refresh, close, 
     // Drawn for a courier order as it always was, and also for a self-collect order that
     // still carries a charge — so a parked charge is never invisible to the only person
     // who can settle it (1 Oct 2026).
+    // ★ THE COLLECTION, BEFORE ANY VAN HEADING (v657). ⚠️ A collected order that still carries a parked
+    // charge draws the heading above — so the collection block used to sit UNDER it and read as part of a van
+    // job. ⭐ A collection has no van; it is said where a collection belongs.
+    draft.fulfillment === "courier" ? null : collectWhenFields(draft.collectWhen),
     showCharge || jobOf(first) ? courierKind("van") : null,
     // ★★ THE VAN'S OWN DAY AND WINDOW (v338) — the same three boxes and the same words as the ＋ New
     // order card, in the same place: under the "van" heading and above the charge, so both cards read
-    // in the order she thinks in. Drawn only for a courier order, because a collection happens ON the
-    // delivery date and has no van to promise. Seeded from the order's own record, so her typed day and
+    // in the order she thinks in. Drawn only for a posted order, because a collection happens ON the
+    // posting day and has no van to promise. Seeded from the order's own record, so her typed day and
     // window come back exactly as she left them.
-    draft.fulfillment === "courier" ? courierWhenFields(draft.courierWhen) : null,
+    draft.fulfillment === "courier" ? courierWhenFields(draft.courierWhen, (date && date.date) || "") : null,
     parkedCharge ? parkedChargeNote(state, first) : null,
     showCharge ? charge.el : null,
     // Same price section as the Note / tracking box carries, for the same reason that
@@ -3292,7 +3361,10 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root,
   // for the opposite outcome. They ARE the rows' own fields, so they are written back onto every row
   // BY HAND in the loop below, where an empty box DELETES the key instead of parking an empty one on
   // every line of a group. Left inside `fields`, `Object.assign` would do exactly that.
-  const { courier = null, parcel = null, pointId = "", courierDay = "", deliveryWindow = "", pickupTime = "", ...fields } = shared;
+  // ★ THE COLLECTION DAY AND TIME JOIN THEM (v657), on the same rule and for the same reason: they ARE the
+  // rows' own fields, and left inside `fields` an empty box would be parked as an empty key on every line.
+  const { courier = null, parcel = null, pointId = "", courierDay = "", deliveryWindow = "", pickupTime = "",
+    collectDay = "", collectTime = "", ...fields } = shared;
   const dest = byId(state.deliveryDates, fields.deliveryDateId) || date;
   if (!dest) return toast("Choose a delivery day");
   // The capacity guard follows the order to its destination. Capacity is derived
@@ -3418,6 +3490,9 @@ function applyPopupEdits(state, date, group, first, chosen, shared, close, root,
         // The pickup time (v341) rides the same rule — set when she typed one, DELETED when she
         // emptied the box, so an order that never carried one still carries none.
         if (pickupTime) o.pickupTime = pickupTime; else delete o.pickupTime;
+        // …and the collection promise (v657), on the identical rule.
+        if (collectDay) o.collectDay = collectDay; else delete o.collectDay;
+        if (collectTime) o.collectTime = collectTime; else delete o.collectTime;
         keptRows.push(o);
       } else {
         const row = {
@@ -3516,7 +3591,8 @@ function addNew(state, date, productId, qty, price, customerName, whatsapp, fulf
   //
   // `courierDay` and `deliveryWindow` come off the same object (v338) and ARE the row's own fields:
   // the day the van comes, and the window it comes in.
-  const { courier = null, parcel = null, trackingNo = "", courierDay = "", deliveryWindow = "", pickupTime = "" } = shared || {};
+  const { courier = null, parcel = null, trackingNo = "", courierDay = "", deliveryWindow = "", pickupTime = "",
+    collectDay = "", collectTime = "" } = shared || {};
 
   function commit() {
     // The card keeps your draft across a rebuild, so a successful add has to clear it by
@@ -3562,6 +3638,11 @@ function addNew(state, date, productId, qty, price, customerName, whatsapp, fulf
     // her records is byte-for-byte untouched by this version.
     if (String(courierDay || "").trim()) row.courierDay = String(courierDay).trim();
     if (String(pickupTime || "").trim()) row.pickupTime = String(pickupTime).trim();
+    // ★★ AND THE DAY AND TIME SHE COLLECTS (v657) — absent unless she typed it, so an order with no collection
+    // promise is byte-for-byte what this app has always written. ⚠️ `shared` carried these the moment they were
+    // asked for, but nothing here WROTE them, so the order saved with them silently dropped.
+    if (String(collectDay || "").trim()) row.collectDay = String(collectDay).trim();
+    if (String(collectTime || "").trim()) row.collectTime = String(collectTime).trim();
     if (String(deliveryWindow || "").trim()) row.deliveryWindow = String(deliveryWindow).trim();
     writeCourierCharge(state, [row], { orders: [row] }, courier);
     writeParcel(state, row, [row], parcel);
@@ -3598,7 +3679,8 @@ function addGroupNew(state, date, items, customerName, whatsapp, fulfillment, ad
   const st = deliveryStatus(date.date, state.settings);
   // See addNew — and `courierDay`/`deliveryWindow` are read here too (v338), because a group order
   // has ONE van coming to ONE door, so every row of it carries the same day and window.
-  const { courier = null, parcel = null, trackingNo = "", courierDay = "", deliveryWindow = "", pickupTime = "" } = shared || {};
+  const { courier = null, parcel = null, trackingNo = "", courierDay = "", deliveryWindow = "", pickupTime = "",
+    collectDay = "", collectTime = "" } = shared || {};
 
   function commit() {
     // See addNew: a completed add starts the card clean.
@@ -3646,6 +3728,9 @@ function addGroupNew(state, date, items, customerName, whatsapp, fulfillment, ad
     if (String(courierDay || "").trim()) for (const o of rows) o.courierDay = String(courierDay).trim();
     if (String(pickupTime || "").trim()) for (const o of rows) o.pickupTime = String(pickupTime).trim();
     if (String(deliveryWindow || "").trim()) for (const o of rows) o.deliveryWindow = String(deliveryWindow).trim();
+    // …and the collection promise (v657), on every row for the same reason as the van's day.
+    if (String(collectDay || "").trim()) for (const o of rows) o.collectDay = String(collectDay).trim();
+    if (String(collectTime || "").trim()) for (const o of rows) o.collectTime = String(collectTime).trim();
     writeCourierCharge(state, rows, { orders: rows }, courier);
     writeParcel(state, rows[0], rows, parcel);
     save(state);
@@ -3849,11 +3934,16 @@ function courierControls(state, first, onChange = () => {}) {
     // that moves the picture and skips the write.
     set: (amount) => {
       const n = strictNumber(amount);
-      if (n === null || n <= 0) return false;
-      feeRaw = String(n);
+      if (n === null || n <= 0) return 0;
+      // ⭐ THE BUFFER RIDES IN WITH THE QUOTE (v657). She asked for the quoted fee to land in the box by itself,
+      // with her safety margin added so a later, dearer booking does not eat into her own money. ⚠️ The return
+      // is now the NUMBER that went in rather than `true`, so the section that calls this can say what it did
+      // with the quote's own figure and the buffered one side by side.
+      const wrote = withBuffer(state, n);
+      feeRaw = String(wrote);
       amountInput.value = feeRaw;
       onChange();
-      return true;
+      return wrote;
     },
     // Why this charge cannot be SAVED as it stands, in words, or "" when it can. One
     // combination loses her money in silence, and it is this one: an amount in the box
@@ -4356,6 +4446,11 @@ async function openInvoice(state, group) {
     el("p", { class: "card-sub", style: "margin:0 0 10px" },
       [`${String(first.customerName || "").trim() || "No name"}`,
         orderDateOf(first) ? `placed ${longDate(orderDateOf(first))}` : ""].filter(Boolean).join(" · ")),
+    // ⭐ AND THE DAYS THE PAPER ITSELF CARRIES (v657). ⚠️ `journalBodyEl` skips a sheet's subtitle, so without
+    // this line the screen showed the placed date while the paper in her hand showed the posting day and, when
+    // they differ, the delivery or collection day too — the document and the screen disagreeing about the same
+    // invoice. ⭐ Shown as the sheet holds it, so there is no second wording to keep in step.
+    sheet.subtitle ? el("p", { class: "card-sub", style: "margin:0 0 10px" }, sheet.subtitle) : null,
     // ★ THE RECEIPT'S SERIAL ON SCREEN TOO (v360), so what she reads here is what the paper
     // says. ⚠️ AND WHEN THERE IS NO NUMBER IT SAYS WHY — never a blank, and never a made-up
     // zero, which would be the app inventing a receipt the books do not have.
@@ -4406,7 +4501,7 @@ function openNoteTrackingPopup(state, group, first, dateId, root) {
     (refresh, close) => {
       const note = el("input", { class: "input note-input", placeholder: "Collect time, delivery time, etc.",
         value: draft.note, oninput: function () { draft.note = this.value; } });
-      const tracking = el("input", { class: "input", placeholder: "e.g. JT123456789",
+      const tracking = el("input", { class: "input", placeholder: "e.g. JT123456789", "aria-label": "Courier tracking number",
         autocomplete: "off", value: draft.trackingNo, oninput: function () { draft.trackingNo = this.value; } });
       // The parcel record is drawn by the same builder the Edit pop-up uses, onto the
       // same draft — this box is the quick way in to the tracking number, and the two

@@ -56,7 +56,7 @@ import { routeById, routesOf, routesOfPoint } from "../deliveryRoutes.js";
 import { openRoutePicker } from "./deliveryRoutes.js";
 import { byId, groupOrders, save, orderCode, orderHref } from "../state.js";
 import { maybePublishTracking, maybeSync } from "../supabase.js";
-import { runChargeAmounts, splitEven, writeCourierCharge } from "../courier.js";
+import { runChargeAmounts, splitEven, writeCourierCharge, courierBufferOf, chargeIsSettled } from "../courier.js";
 import { activeCourier, courierByKey } from "../couriers.js";
 import { geocodeAddress } from "../couriers/api.js";
 import {
@@ -1288,7 +1288,9 @@ export function renderDeliveryRun(root, state, params) {
     const groups = tickedGroups();
     const load = loadOf(state, groups);
     const cur = state.settings.currency;
-    const amounts = runChargeAmounts(who, q.amount, originals, groups.length);
+    // ⭐ The buffer is hers and it goes on the CUSTOMER's charge (v657) — see runChargeAmounts, so the sentence
+    // below and the number written onto the order are the same figure.
+    const amounts = runChargeAmounts(who, q.amount, originals, groups.length, courierBufferOf(state));
     // ⚠️⚠️ A SHARED DOORSTEP CANNOT CARRY A PER-CUSTOMER PRICE (v551). ⭐ The courier is asked for ONE
     // separate price per STOP, and a Self collection Point carrying two customers is ONE stop — so those
     // prices cannot be matched to the customers one each. ⚠️ Booked anyway, **no charges were written at
@@ -1400,6 +1402,7 @@ export function renderDeliveryRun(root, state, params) {
     // is the one runChargeAmounts chose: the customer's OWN doorstep cost when they bear
     // it, so the saving from going together stays with her, or their apportioned part of
     // the run's fee when she bears it — which sums to exactly what she was charged.
+    const settled = [];
     if (pay) groups.forEach((g, i) => {
       const a = pay.read(amounts[i]);
       // ⚠️⚠️ NO PAYER MEANS NO DECISION — LEAVE THIS ORDER'S CHARGE EXACTLY AS IT WAS (v550). ⭐ Writing a
@@ -1407,6 +1410,11 @@ export function renderDeliveryRun(root, state, params) {
       // Delivery & fuel row, so booking a run with the box left on "Not recorded" quietly deleted a
       // record that was there before she pressed anything.
       if (!a || !String(a.who || "")) return;
+      // ⚠️⚠️ AND A CHARGE THAT IS ALREADY SETTLED IS FINAL (v657). ⭐ Her rule: the figure a customer has been
+      // told does not move when a later booking turns out dearer. `chargeIsSettled` is an amount AND a payer,
+      // which is the only shape `writeCourierCharge` ever writes. ⚠️ She can still change a charge by hand from
+      // the order itself; what this refuses is the BOOKING doing it behind her back.
+      if (chargeIsSettled((g.orders || [])[0])) { settled.push(g); return; }
       writeCourierCharge(state, g.orders, g, a);
     });
     busy = false;
@@ -1417,11 +1425,15 @@ export function renderDeliveryRun(root, state, params) {
     for (const g of groups) maybePublishTracking(state, g);
     statusLine.textContent = "";
     refreshDay();
-    toast(out.job && out.job.link
+    // ⭐ A settled charge is left alone, and the booking SAYS SO rather than reporting a write it did not make.
+    const kept = settled.length
+      ? ` ${settled.length === 1 ? "One customer's charge was" : `${settled.length} customers' charges were`} left as already told — a charge that has been saved is final, whatever this trip ended up costing.`
+      : "";
+    toast((out.job && out.job.link
       ? groups.length > 1
         ? `Run booked with ${holder.label} — ${groups.length} customers now share one trip. The courier's link was kept off their orders, so it cannot show them each other's doors.`
         : `Run booked with ${holder.label} — the customer's card now carries the trip's share link.`
-      : `Run booked with ${holder.label} — the courier sent back no share link, so nothing was put on the customers' cards but the trip itself.`);
+      : `Run booked with ${holder.label} — the courier sent back no share link, so nothing was put on the customers' cards but the trip itself.`) + kept);
   }
 
   // ── the charge questions ──────────────────────────────────────────────

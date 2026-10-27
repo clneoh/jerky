@@ -24,7 +24,10 @@ test("buildConfirmation shows the TNG QR and asks for the receipt in the same ch
   const built = buildConfirmation(state(), group, "https://bake.app/store/?track=445566");
   assert.equal(built.recipient, "60123456789", "wa.me digits, no + / spaces");
   assert.ok(built.message.includes("Order #445566"), "order code");
-  assert.ok(built.message.includes("Delivery: Mon, 7 Sep - Collect (local)"), "date + fulfillment");
+  // ★★ TWO LINES NOW (v657): the day says only the day, and the how is named on its own line — the old
+  // line called a COLLECTION a "Delivery", which named the wrong thing twice.
+  assert.ok(built.message.includes("Posting day: Mon, 7 Sep"), "the posting day, on its own line");
+  assert.ok(built.message.includes("\nCollect (local)\n"), "and how it reaches them, on its own line");
   assert.ok(built.message.includes("Items: Chicken Jerky x2"), "items, plain ASCII x");
   assert.ok(built.message.includes("Total: RM 30.00"), "total on its own line");
   assert.ok(built.message.includes("Pay by TNG using the QR below:"),
@@ -115,7 +118,9 @@ test("a customer collecting at a Point is told the place, the address AND when (
   const built = buildConfirmation(state({ points: [FARLIM] }), atPoint(), "");
   assert.ok(built.message.includes("Collect (local) at Farlim, Air Itam"), "WHERE — named");
   assert.ok(built.message.includes("Where: Lebuhraya Thean Teik, 11500 Air Itam"), "and the address");
-  assert.ok(built.message.includes("collect 2-6 pm"), "and WHEN — the place's own hours");
+  // ★ AND WHEN, ON THE COLLECTION'S OWN LINE (v657) — the hours belong with the collection, not glued to
+  // the posting day, where a van's window could reach a collecting customer by mistake.
+  assert.ok(built.message.includes("Collection: Mon, 7 Sep, 2-6 pm"), "and WHEN — the place's own hours");
   assert.ok(!built.message.includes("10-12"), "never the van's arrival window");
 });
 
@@ -159,7 +164,9 @@ test("a courier order at this stage is unchanged — its van is booked later (v3
   // day and delivered when the van goes, which may be the next morning. Her report — a Wednesday
   // make with a Thursday-morning van "asking whether the delivery date is wed or thurday".
   const line = built.message.split("\n").find((l) => l.startsWith("Posting day:"));
-  assert.ok(line.includes("Posting day: Mon, 7 Sep - Post (nationwide)"), `read "${line}"`);
+  assert.ok(line.includes("Posting day: Mon, 7 Sep"), `read "${line}"`);
+  assert.ok(!/\d{1,2}(?::\d\d)?\s*[-–]\s*\d{1,2}(?::\d\d)?\s*(?:am|pm)/i.test(line),
+    "⚠️ no time on the posting day — the window belongs to the van");
   assert.ok(!/collect \d|\d\s*-\s*\d+\s*(am|pm)/.test(line),
     "no time invented for a van that has not been booked — the window is stamped at booking");
   // AND THE TIME IS PROMISED RATHER THAN LEFT UNSAID: the van is booked later, so the app says so.

@@ -43,6 +43,10 @@ const sameLineFact = (a, b) => JSON.stringify(a === undefined || a === null || a
 const ORDER_LEVEL = [
   "status", "paidReceived", "paidMethod", "customerName", "whatsapp", "fulfillment", "address",
   "pointId", "note", "trackingNo", "courierDay", "deliveryWindow", "pickupTime", "orderDate",
+  // ⭐ The collection day and time are facts about the ORDER, not the line (v657) — the same class as the van's
+  // day beside them. Left out of this list, one line of a multi-item order carrying it and the other not would
+  // never be reported, and the promise on the customer's card would depend on which row it was read from.
+  "collectDay", "collectTime",
   "groupId", "receiptNo", "promo", "referredBy",
 ];
 
@@ -386,6 +390,57 @@ export function localChecks(state) {
           ? " ⭐ The kept copy was deleted, so this phone has no second chance from it — a sync or a restore is the way back."
           : " ⭐ And once you no longer need that kept text, it can be deleted from More → Settings → Backup & safety, which frees the room it takes."))
       : pass("readable", "This phone could read its saved copy"));
+  }
+
+  // ── A VAN SENT BEFORE THE PARCEL EXISTS (v657) ──────────────────────────
+  //
+  // ⚠️⚠️ A van day typed a MONTH earlier than the day the order is posted. Nothing on the card said so, and
+  // the Delivery run is keyed by the van's day — ⭐ **so the run showed a delivery on a day the bread did not
+  // exist yet**, which reads as an order out of nowhere.
+  // ⚠️ **THE RULE IS A FACT, NOT A PREFERENCE**: nothing can leave on a day it does not exist on. ⭐ And it is
+  // reported rather than blocked — a guide, not a gate — because the day is hers to type and only she knows
+  // whether the entry or the posting day is the wrong half.
+  {
+    // ⚠️⚠️ THE RULE IS ABOUT THE DAY, NOT ABOUT HOW THE ORDER LEAVES. ⭐ Asking `fulfillment === "courier"`
+    // would miss a COLLECTED order that carries a van day — a Point order gets one the moment a run is
+    // booked — while the Delivery run puts it on that day all the same. ⚠️ The same class as v303's wrong
+    // gate: a condition copied from one door and asked of a question that is not about that door.
+    const wrong = orders.filter((o) => {
+      if (!o) return false;
+      const van = String(o.courierDay || "").trim();
+      if (!van) return false;
+      // ⚠️ THE POSTING DAY IS READ EXACTLY AS the order reads it: the day it carries first, the calendar
+      // record when the order itself has none. Nothing is derived from the van day.
+      const del = byId(days, o.deliveryDateId);
+      const post = String(o.deliveryDate || (del && del.date) || "").trim();
+      return post && van < post;
+    });
+    out.push(wrong.length
+      ? fail("vanday", "No van day is before its posting day", wrong.map((o) => `#${codeOf(o)}`),
+        "These orders have a delivery date EARLIER than the day they are posted, so a van would be sent for parcels that do not exist yet — and the Delivery run shows them on that earlier day, which reads as an order out of nowhere.",
+        "Open each order and clear its Courier delivery date — on a collected order it sits in the van block, under the charge — or press Clear below. That day travels to the Delivery run, the messages and the label, so clearing it here settles every screen at once.")
+      // ⭐ AND ONE PRESS RATHER THAN FOUR A TAP: the app does it, on her press, after naming every order.
+      // It clears ONLY the impossible day; nothing else on the order is touched, and the real day can still
+      // be typed afterwards.
+      : pass("vanday", "No van day is before its posting day"));
+
+    // ⚠️⚠️ AND A PASS MUST SAY WHAT IT LOOKED AT. ⭐ "No error" is not evidence if the check cannot say how
+    // many days it examined — ⭐ this page's own rule is that a verdict counting "I could not look" as "it is
+    // fine" is worse than no verdict, and a verdict that cannot be inspected is that trap one step quieter.
+    // ⚠️ ON A PASS ONLY: on a failure the detail is the list of order codes, and this must not overwrite it.
+    if (!wrong.length) {
+      const checked = out[out.length - 1];
+      const carrying = orders.filter((o) => o && String(o.courierDay || "").trim());
+      checked.detail = [carrying.length
+        ? `${carrying.length} order${carrying.length === 1 ? " carries" : "s carry"} a courier day — every one is on or after its posting day`
+        : "No order carries a courier day, so there is nothing to be before a posting day"];
+    }
+
+    if (wrong.length) {
+      const failing = out[out.length - 1];
+      failing.repair = "clearVanDays";
+      failing.repairIds = wrong.map((o) => o.id).filter(Boolean);
+    }
   }
 
   return out;

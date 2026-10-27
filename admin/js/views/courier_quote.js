@@ -60,7 +60,7 @@ import {
   dropAddress, dropPlaceOf, fmtPlace, houseNotIn, pickupAddress, pickupPlace, resetReplacesAChoice,
   roadNotHouse, sameDoor, setDropPlace, setPickupPlace,
 } from "../courier_place.js";
-import { feeGapLine } from "../courier.js";
+import { feeGapLine, courierBufferOf } from "../courier.js";
 import { geocodeAddress } from "../couriers/api.js";
 import { activeCourier, courierByKey } from "../couriers.js";
 import { mountPinMap, openPlacePicker } from "../place_map.js";
@@ -1264,17 +1264,25 @@ export function courierQuoteSection({
       // the row above, and a zero is not a charge — so the box refuses it, and a toast
       // claiming otherwise would be the screen telling her a number had landed when
       // the very box it landed in was empty.
-      if (onUseFee(q) === false) {
+      const wrote = onUseFee(q);
+      if (!(wrote > 0)) {
         toast(`${courier.label} priced this trip at ${fmtQuote(q.amount, q.currency, cur)} — that is not a charge, so nothing was put in the box. Ask again, or type the amount.`);
         return;
       }
+      // ★ What went in is the box's own answer, not the quote again (v657): a buffer of hers may have been
+      // added, and a toast repeating the quote over a box holding more is the same fault as one claiming a fee
+      // that never landed. When there is a buffer the working is said out loud, so the extra is a fact she
+      // asked for rather than a number appearing from nowhere.
+      const fee = courierBufferOf(state) > 0
+        ? `${fmtQuote(q.amount, q.currency, cur)} + your buffer ${fmtQuote(wrote - Number(q.amount), q.currency, cur)} = ${fmtQuote(wrote, q.currency, cur)}`
+        : fmtQuote(q.amount, q.currency, cur);
       // The fee is in the box and this section is about to fold away, so this is the one
       // moment she can be told what still has to happen for it to SAVE. Her question on
       // 27 Sep 2026 was "should i book?" — booking is not what saves a charge, and the
       // payer question is the thing that does.
       toast(canBook
-        ? `Fee ${fmtQuote(q.amount, q.currency, cur)} put in the charge box — now choose who paid the courier and press Save. Booking a trip is separate: the charge saves without one.`
-        : `Fee ${fmtQuote(q.amount, q.currency, cur)} put in the charge box — now choose who paid the courier, then press Place Order.`);
+        ? `Fee ${fee} put in the charge box — now choose who paid the courier and press Save. Booking a trip is separate: the charge saves without one.`
+        : `Fee ${fee} put in the charge box — now choose who paid the courier, then press Place Order.`);
       // Folded away so the amount it just wrote is what she is looking at, with the
       // payer question under it — which is the next thing she has to answer.
       open = false;

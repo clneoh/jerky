@@ -1,8 +1,54 @@
-# Munchies Furkidz — change history (v54 → v656)
+# Munchies Furkidz — change history (v54 → v668)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**27 Oct 2026 — engine v668: A COLLECTION HAS A DAY AND A TIME, A QUOTE CAN CARRY YOUR BUFFER, AND A SAVED
+CHARGE STAYS SAVED (nothing to run, no SQL, nothing to upload).**
+
+**Synced from the bakery, v655 to v668. Munchies takes the engine's number on every sync, which is why this
+one jumps from 656 to 668.**
+
+**1. A COLLECTED ORDER NOW RECORDS WHEN THE CUSTOMER COMES.** **Both order cards — ＋ New order and the
+order's Edit — carry "Collection day and time".** **Blank means the posting day with no time, exactly as it
+always read**, so an order you never touch is unchanged.
+
+**2. AND THE MESSAGES SAY IT IN THE RIGHT PLACE.** ⚠️ **The posting-day line used to be able to carry a time —
+and that time was the VAN's, left on an order that had once been posted.** A real confirmation read
+`Posting day: Wed, 28 Oct, 6-7:09 pm` for a customer who was collecting. **The day is a day now, and a
+collection's time sits on the Collection line, where it belongs.** A collected order also stops being called
+a "Delivery": the second line says `Collection: Thu, 29 Oct, 6pm`.
+
+**3. TYPING A TIME ON A PHONE NOW STICKS.** ⚠️ One of those boxes listened for only ONE browser event, so a
+phone keyboard, an autofill or a paste could save the day and lose the time. Both events write now.
+
+**4. SWITCHING POST ↔ COLLECT NO LONGER THROWS YOUR PICK AWAY.** **The collection Point you chose stays on the
+card, so switching back restores it.** The saved order is unchanged: a posted order still carries no Point.
+
+**5. A QUOTE CAN CARRY YOUR BUFFER, AND A CHARGE YOU HAVE SAVED IS FINAL.** **Settings → Delivery charge** holds
+three answers: a **delivery window** you promise when an order carries none (leave it blank and the message
+says the time is still to come — which is the shipped default here, because munchies posts parcels), a
+**buffer in ringgit** added to a courier's own quote when you take it into the charge, and **what the charge
+is called** on the customer's message and receipt. **A charge already saved is not re-priced by a later
+booking** — the run skips it and says so. ⚠️ A figure you type yourself is never buffered.
+
+**6. "CHECK MY SYSTEM" FINDS A COURIER DAY EARLIER THAN THE POSTING DAY.** **A day typed before the parcel
+exists puts a delivery on the run on that day, and a run then shows an order out of nowhere.** The check
+names every order, and one press clears that day — nothing else on the order is touched. ⚠️ **And a passing
+check now says what it looked at** ("12 orders carry a courier day…"), because "no error" is not evidence if
+the check cannot say how many days it examined.
+
+**7. THE SHOP'S RELOAD PRESS RE-ASKS FOR THE FILE, NOT JUST THE PAGE** (the same fix this shop got as v656,
+now in the shared engine's own shape, with a test that drives it).
+
+**⚠️ ONE THING WHICH IS THE REAL POINT OF THIS VERSION.** Three of these faults were **boxes that took what
+you typed and never saved it**, and every one was found by you, not by the tests. **There is now a guard that
+does what a person does: types into every box on the order cards, presses Save, opens it again and checks
+every value came back — and it fails if a box appears that it does not check.** ⭐ **It found one more
+before this build shipped.**
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **27 Oct 2026 — engine v656: THE SHOP'S RELOAD PRESS RE-ASKS FOR THE FILES (nothing to run, no SQL,
 nothing to upload).**

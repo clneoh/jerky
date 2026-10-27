@@ -217,9 +217,9 @@ const pickCourier = (root) => {
   return sel;
 };
 
-function openEdit(st, orderId) {
+function openEdit(st, orderId, day = "d10") {
   const root = createEl("div");
-  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+  renderOrders(root, st, new URLSearchParams({ date: day }));
   const row = all(root).find((n) => n.dataset && n.dataset.order === orderId);
   tap(buttonByText(row, "Edit"));
   return root;
@@ -585,4 +585,319 @@ test("a failure that will pass on its own stays SILENT (v311)", async () => {
     await afterPause();
     assert.equal(wire.asks.length, before + 1, "a transient failure is retried");
   });
+});
+
+// ── v657: THE COLLECTION DAY AND TIME, on the card an order is taken from ───
+//
+// ⚠️ The card carried the two answers in `shared` from the day they were asked for, and `addNew` **dropped
+// them on the floor** — so the order saved with no collection promise and the confirmation said "the posting
+// day" over her own answer. These tests press Place Order and read the ORDER, which is the only place that
+// fault is visible.
+
+const collectDayBox = (root) => all(root).find((n) => isBox(n) && (n.attrs || {})["aria-label"] === "The day they collect");
+const collectTimeBox = (root) => all(root).find((n) => isBox(n) && (n.attrs || {})["aria-label"] === "The time they collect");
+const isBox = (n) => !!n && (n.tagName === "INPUT" || n.tagName === "TEXTAREA");
+
+// A card that is NOT forced to Post: the collection fields are the other half of the same answer.
+function openNewCollectCard(st) {
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d20" }));
+  tap(buttonByText(root, "New order"));
+  return root;
+}
+
+test("★★★ the collection day and time she types are saved onto the order (v657)", () => {
+  const st = state();
+  const root = openNewCollectCard(st);
+  const day = collectDayBox(root);
+  const time = collectTimeBox(root);
+  assert.ok(day && time, "a collected order is asked when and at what time it is collected");
+
+  day.value = "2026-10-29";
+  (day._listeners.input || []).forEach((f) => f.call(day));
+  time.value = "10am-12pm";
+  (time._listeners.input || []).forEach((f) => f.call(time));
+
+  pickProduct(root);
+  tap(buttonByText(root, "Place Order"));
+
+  const added = st.orders.find((o) => o.id !== "o1");
+  assert.ok(added, "the order landed");
+  assert.equal(added.collectDay, "2026-10-29", "the day she promised is on the order");
+  assert.equal(added.collectTime, "10am-12pm", "and the time, in her own words");
+});
+
+test("★★★ and a card she leaves alone writes NO collection keys at all (v657)", () => {
+  const st = state();
+  const root = openNewCollectCard(st);
+  pickProduct(root);
+  tap(buttonByText(root, "Place Order"));
+
+  const added = st.orders.find((o) => o.id !== "o1");
+  assert.ok(added, "the order landed");
+  assert.equal("collectDay" in added, false,
+    "absent means the posting day — an empty key would read as a promise she never made");
+  assert.equal("collectTime" in added, false);
+});
+
+test("★★★ a collection time typed on a phone that only fires `change` is still saved (v657)", () => {
+  // ⚠️ Her report: the collection DAY came back and the TIME did not. ⭐ A text box can fire `change` on blur
+  // and never fire `input` — an Android keyboard, an autofill, a paste — so a handler on `input` alone reads
+  // an empty box at Place Order. Both events write the same field now; this fires ONLY the one that used to be
+  // ignored.
+  const st = state();
+  const root = openNewCollectCard(st);
+  const day = collectDayBox(root);
+  const time = collectTimeBox(root);
+  day.value = "2026-10-29";
+  (day._listeners.change || []).forEach((f) => f.call(day));
+  time.value = "10am-12pm";
+  (time._listeners.change || []).forEach((f) => f.call(time));
+
+  pickProduct(root);
+  tap(buttonByText(root, "Place Order"));
+
+  const added = st.orders.find((o) => o.id !== "o1");
+  assert.ok(added, "the order landed");
+  assert.equal(added.collectDay, "2026-10-29");
+  assert.equal(added.collectTime, "10am-12pm", "★ the time her phone never fired `input` for");
+});
+
+// ── v657: switching fulfilment does not throw her collection away ───────────
+//
+// Her report: *"for an order initially i select self collect, later i change it to courier and key in the
+// details, after that i change back to self collect and the collection times field disappear?"* ⚠️ It did:
+// v303's draft cleared `pointId` the moment Post was chosen, and nothing put it back.
+
+const POINT_ST = () => {
+  const st = state();
+  st.points = [{ id: "pt_farlim", name: "Farlim, Air Itam", address: "Lebuhraya Thean Teik",
+    receiver: "Aunty Lim", phone: "60123456789", feeRM: 0, paused: false,
+    hours: { from: "10:00", to: "12:00" }, createdAt: "2026-08-12T00:00:00.000Z" }];
+  return st;
+};
+const collectFromSel = (root) => all(root).find((n) => n.tagName === "SELECT"
+  && (n.children || []).some((o) => o.value === "pt_farlim"));
+const fulfilmentSel = (root) => all(root).find((n) => n.tagName === "SELECT"
+  && (n.children || []).some((o) => o.value === "courier")
+  && (n.children || []).some((o) => o.value === "collect"));
+
+test("★★★ a Point she picked survives a switch to Post and back (v657)", () => {
+  const st = POINT_ST();
+  const root = openNewCollectCard(st);
+  const point = collectFromSel(root);
+  assert.ok(point, "the card offers where it collects from");
+  point.value = "pt_farlim";
+  (point._listeners.change || []).forEach((f) => f.call(point));
+
+  const sel = fulfilmentSel(root);
+  sel.value = "courier";
+  (sel._listeners.change || []).forEach((f) => f.call(sel));
+  const back = fulfilmentSel(root);
+  back.value = "collect";
+  (back._listeners.change || []).forEach((f) => f.call(back));
+
+  assert.equal(collectFromSel(root).value, "pt_farlim",
+    "★ her Point came back — the choice was never hers to lose");
+});
+
+test("★★★ and a posted order is still saved with no Point on it (v657)", () => {
+  // ⚠️ The rule v303 was protecting is a rule about the ORDER, and the save still keeps it.
+  const st = POINT_ST();
+  const root = openNewCollectCard(st);
+  const point = collectFromSel(root);
+  point.value = "pt_farlim";
+  (point._listeners.change || []).forEach((f) => f.call(point));
+  const sel = fulfilmentSel(root);
+  sel.value = "courier";
+  (sel._listeners.change || []).forEach((f) => f.call(sel));
+  pickProduct(root);
+  tap(buttonByText(root, "Place Order"));
+
+  const added = st.orders.find((o) => o.id !== "o1");
+  assert.ok(added, "the order landed");
+  assert.equal(added.fulfillment, "courier");
+  assert.equal(added.pointId || "", "", "★ a posted order still carries no collection Point");
+});
+
+// ── v657: the collection is not drawn as part of a van job ──────────────────
+//
+// A SELF COLLECT order that still carries a parked charge drew "Send a van" directly above "Collection day and
+// time", so the collection read as part of a van job. The collection block now comes first.
+
+test("★★★ a collected order's collection is drawn ABOVE any van heading (v657)", () => {
+  const st = state();
+  st.orders[0].courierFee = 8;
+  st.orders[0].courierPaidBy = "me";
+  openEdit(st, "o1");
+  // ⚠️ The Edit card lives in the shared pop-up layer, not under `root` — reading `root` here would find
+  // neither heading and would pass a card that had both.
+  const pop = layers["popup-layer"];
+  const nodes = all(pop).filter((n) => n.nodeType === 1 && (n.children || []).length);
+  const at = (pred) => nodes.findIndex(pred);
+  const collect = at((n) => n.textContent === "Collection day and time"
+    || (n.children || []).some((c) => c.textContent === "Collection day and time"));
+  const van = at((n) => /^Send a van/.test(String(n.textContent || "").trim()));
+
+  assert.ok(collect >= 0, "the collection is on the card at all");
+  assert.ok(van >= 0, "a parked charge still shows its van heading");
+  assert.ok(collect < van, "★ the collection came after the van heading, so it reads as a van job");
+});
+
+// ═══ THE ROUND TRIP (v657) ══════════════════════════════════════════════════
+//
+// ⚠️⚠️ THREE TIMES NOW a box on an order card has taken her typing and lost it: the collection day and time on
+// the ＋ New order card (collected, never written), and the collection time twice more. ⭐ **Every one of them
+// was found by her, not by the suite** — because no test ever did the simplest thing a person does: type
+// something, Save, open it again, look.
+//
+// This does exactly that, for EVERY box on the Edit card that writes an order-level fact. ⭐ And it fails if a
+// box appears that is neither covered nor explicitly excused, so a field added next month cannot skip the
+// question "does this survive a Save?".
+
+const ROUND_TRIP = [
+  ["Customer", "Lucy Tan"],
+  ["WhatsApp (optional)", "60129876543"],
+  ["Delivery address (if courier)", "9 Jalan Uji, Penang"],
+  ["Notes for Collection/Delivery (optional)", "Friday please"],
+  ["Courier tracking number", "JT123456789"],
+  ["The day they collect", "2026-10-29"],
+  ["The time they collect", "10am-12pm"],
+];
+// ⚠️ Excused on purpose, each for its own reason — never silently.
+const NOT_AN_ORDER_FACT = [
+  "Courier charge",          // the charge box: an amount AND a payer settle together, and it has its own tests
+  "How many",                // per LINE, not per order
+  "Selling price",           // per line
+  "Note for this item",      // per line
+];
+const boxCostLabel = (n) => /^Cost each \(/.test(String(((n && n.attrs) || {})["aria-label"] || ""));
+
+const boxesOn = (pop) => all(pop).filter(isBox);
+// ⚠️ This shim keeps no parent pointers, so a box is found by DOCUMENT ORDER: the first box after the label,
+// stopping at the next label. That is also how the app names them.
+function boxFor(pop, name) {
+  const nodes = all(pop);
+  const byAria = nodes.find((n) => isBox(n) && n.attrs && n.attrs["aria-label"] === name);
+  if (byAria) return byAria;
+  const at = nodes.findIndex((n) => n.tagName === "LABEL" && n.textContent.trim() === name);
+  if (at < 0) return null;
+  for (let j = at + 1; j < nodes.length; j++) {
+    if (nodes[j].tagName === "LABEL") return null;
+    if (isBox(nodes[j])) return nodes[j];
+  }
+  return null;
+}
+
+test("★★★ every order-fact box on the Edit card keeps what she types, through Save and a reopen (v657)", () => {
+  const st = state();
+  openEdit(st, "o1");
+  const pop = layers["popup-layer"];
+
+  const covered = new Set();
+  for (const [name, value] of ROUND_TRIP) {
+    const box = boxFor(pop, name);
+    assert.ok(box, `the card should carry ${name}`);
+    covered.add(box);
+    box.value = value;
+    (box._listeners.input || []).forEach((f) => f.call(box, { target: box }));
+    (box._listeners.change || []).forEach((f) => f.call(box, { target: box }));
+  }
+  // ⚠️ Every OTHER box on the card must be excused above, so a field added next month cannot skip the question
+  // "does this survive a Save?".
+  const unclassified = boxesOn(pop).filter((b) => !covered.has(b)
+    && !NOT_AN_ORDER_FACT.includes(String((b.attrs || {})["aria-label"] || ""))
+    && !boxCostLabel(b)).length;
+  assert.equal(unclassified, 0,
+    "★ a box on this card is neither round-tripped nor excused — decide which it is: "
+    + boxesOn(pop).filter((b) => !covered.has(b)
+      && !NOT_AN_ORDER_FACT.includes(String((b.attrs || {})["aria-label"] || ""))
+      && !boxCostLabel(b))
+      .map((b) => `${b.tagName}[${(b.attrs || {})["aria-label"] || (b.attrs || {}).placeholder || "?"}]`).join(" "));
+
+  tap(buttonByText(pop, "Save changes"));
+
+  openEdit(st, "o1");
+  const after = layers["popup-layer"];
+  const lost = [];
+  for (const [name, value] of ROUND_TRIP) {
+    const box = boxFor(after, name);
+    if (!box || box.value !== value) lost.push(`${name}: typed ${value}, came back ${box ? box.value : "(box gone)"}`);
+  }
+  assert.deepEqual(lost, [], "★ a box lost what she typed, across Save and reopen");
+});
+
+// ═══ THE ＋ NEW ORDER CARD'S ROUND TRIP (v657) ══════════════════════════════
+//
+// The new-order card is the door that LOST her collection day and time, so it is the one to check first.
+// The trip: type into every box → Place Order → ⭐ **the ORDER carries each value** → open that order's Edit
+// card and the same boxes show them again.
+
+const NEW_CARD_TRIP = [
+  ["Customer", "Lucy Tan", "customerName", "Lucy Tan"],
+  ["WhatsApp (optional)", "60123456789", "whatsapp", "60123456789"],
+  ["Notes for Collection/Delivery (optional)", "Thursday", "note", "Thursday"],
+  ["The day they collect", "2026-10-30", "collectDay", "2026-10-30"],
+  ["The time they collect", "6pm", "collectTime", "6pm"],
+];
+
+test("★★★ every order-fact box on the ＋ New order card reaches the order, and comes back on its Edit card (v657)", () => {
+  const st = state();
+  const root = openNewCollectCard(st);
+
+  for (const [name, value] of NEW_CARD_TRIP) {
+    const box = boxFor(root, name);
+    assert.ok(box, `the ＋ New order card should carry ${name}`);
+    box.value = value;
+    (box._listeners.input || []).forEach((f) => f.call(box, { target: box }));
+    (box._listeners.change || []).forEach((f) => f.call(box, { target: box }));
+  }
+  pickProduct(root);
+  tap(buttonByText(root, "Place Order"));
+
+  const made = st.orders.find((o) => o.id !== "o1");
+  assert.ok(made, "the order landed");
+  // ⚠️ The order's own record is the first half — this is the half that silently dropped the collection.
+  const notSaved = NEW_CARD_TRIP
+    .filter(([, value, field]) => String(made[field] || "") !== value)
+    .map(([name, value, field]) => `${name}: typed ${value}, the order carries ${made[field]}`);
+  assert.deepEqual(notSaved, [], "★ a box on the ＋ New order card never reached the order it created");
+
+  // ⭐ And the second half: the same order's Edit card shows them back.
+  openEdit(st, made.id, "d20");
+  const pop = layers["popup-layer"];
+  const lost = NEW_CARD_TRIP
+    .map(([name, value]) => {
+      const box = boxFor(pop, name);
+      return !box || String(box.value) !== value ? `${name}: came back ${box ? box.value : "(box gone)"}` : null;
+    })
+    .filter(Boolean);
+  assert.deepEqual(lost, [], "★ the Edit card did not show what the new-order card had just saved");
+});
+
+// ═══ THE THIRD DOOR: NOTE / TRACKING (v657) ═════════════════════════════════
+//
+// The Edit card, the ＋ New order card and the Note / tracking card are three doors onto ONE order, and a fault
+// in one is invisible from the other two.
+
+test("★★★ the Note / tracking card keeps what she types, through a Save and a reopen (v657)", () => {
+  const st = state();
+  const root = createEl("div");
+  renderOrders(root, st, new URLSearchParams({ date: "d10" }));
+  const row = all(root).find((n) => n.dataset && n.dataset.order === "o1");
+  tap(buttonByText(row, "Note / tracking"));
+
+  const typed = [["Notes for Collection/Delivery (optional)", "Leave at the gate"]];
+  const pop = layers["popup-layer"];
+  for (const [name, value] of typed) {
+    const box = boxFor(pop, name);
+    assert.ok(box, `the Note / tracking card should carry ${name}`);
+    box.value = value;
+    (box._listeners.input || []).forEach((f) => f.call(box, { target: box }));
+    (box._listeners.change || []).forEach((f) => f.call(box, { target: box }));
+  }
+  tap(buttonByText(pop, "Save"));
+
+  const order = st.orders.find((o) => o.id === "o1");
+  assert.equal(order.note, "Leave at the gate", "★ the note never reached the order");
 });

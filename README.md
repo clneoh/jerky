@@ -850,6 +850,52 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
+## v668 — the bakery sync: a collection's day and time, the buffer, and a saved charge (27 Oct 2026)
+
+**Range: bakery `f648adc` (their v649) → `9dc95f7` (v668), 17 commits, 32 files, +1814/−113. Engine 668.
+No SQL, no function deploy, no new secrets.** Everything below is a hand-merge: jerky localizes almost every
+file the range touched.
+
+- **`collectDay` / `collectTime`** — a collected order now records the day and time the customer comes
+  (`views/orders.js`: `collectWhenFields`, drawn FIRST on the Edit card so a parked charge's "Send a van"
+  heading cannot sit above it). ⚠️ **The ＋ New order card collected them and `addNew` never wrote them** —
+  that is the fault class the round trip below exists for.
+- **`dayBlock()`** (`courier_job.js`) — the two day lines, localized: `Posting day: <day>` then
+  `Delivery: <day>, <window>` or `Collection: <day>, <time>`. ⭐ **The day line strips any trailing window by
+  construction**, because a date arrives as a string built elsewhere. ⚠️ **The second line is drawn only when
+  it says something new** (a different day, a window, a time) — jerky's own v653 rule, kept.
+- **`collectTimeText()`** — her typed time, else the Point's own hours; **the order's `deliveryWindow` is the
+  VAN's and is never a collection time** (that is the contradiction v659 found on a real confirmation).
+- **`trackingSnapshot`** — the customer's card shows the day she promised and her time, never the van window.
+- **Buffer + charge label + final charge** (`courier.js`, `views/settings.js`, `views/courier_quote.js`,
+  `views/delivery_run.js`) — `courierBufferOf` / `withBuffer` / `chargeLabelOf` / `chargeIsSettled`;
+  `runChargeAmounts(…, buffer)` puts the buffer on the CUSTOMER's charge only.
+  ⚠️ **`defaultWindow` ships EMPTY here** (the bakery ships "3-8pm"; munchies posts parcels and must not
+  promise a van window).
+- **Van-day check** (`health.js`, `views/health.js`) — a courier day earlier than the posting day fails, names
+  every order, and one press clears that day. ⚠️ **The check reads EVERY order, not only posted ones** — a
+  collected Point order carries a van day and the run uses it. **A passing check states its own count.**
+- **`store/build.js`** — `freshenAssets(entries, origin, doFetch)` moved into the leaf module (the bakery's
+  shape), so the `cache: "reload"` press is now driven by a test instead of pinned by source text.
+- **Test fixes:** `test/health.test.js` counts 25→26 checks / 13→14 local; `confirm`, `messages`,
+  `delivery-run` assertions moved to the two-line shape.
+
+### ⭐ THE ROUND TRIP — the systemic guard (`test/order-address-suggest.test.js`)
+
+**Her words to the bakery: *"you expect me to check your work everytime? avoid this systemically"*** — after
+three fields she found by hand that a card collected and never saved.
+
+The guard types into **every order-fact box** on the Edit card, presses **Save changes**, reopens it and
+asserts every value came back; then does the same through the ＋ New order card (asserting the **order**
+carries each value) and the Note / tracking card. ⚠️ **It fails if a box appears that is neither round-tripped
+nor explicitly excused**, so a field added next month must answer the question.
+
+⭐ **It found a real fault in this very port before it shipped:** `collectDay`/`collectTime` were drawn and
+read back on the Edit card, and nothing put them into `shared` — the fourth instance of the same loss.
+
+**Suite 3998 → 4016.** ⚠️ Also localized two older leaks the sweep turned up: *"Tell the baker's helper this
+message"* (an error toast) and *"no bake day"* in the put-back dialog.
+
 ## v656 — the shop's Reload press re-asks for the files (27 Oct 2026)
 
 **Her words:** *"it fail to refresh again on browser."* **The build was already pushed and the site was

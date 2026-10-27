@@ -124,6 +124,42 @@ export function courierCodOf(first) {
     && !!(first && first.courierCod === true);
 }
 
+// ★★ THE BUFFER AND THE CHARGE'S OWN WORD (v657).
+//
+// The buffer is a ringgit amount she sets once in Settings; it is added to a QUOTE on its way into a charge,
+// and never to an amount she typed by hand — a typed number is already her answer, and inflating it would be
+// the app overruling her. Both readings are rounded to cents so a buffer of 2.50 cannot leave
+// RM0.30000000000001 on a customer's bill.
+export function courierBufferOf(state) {
+  const n = Number((((state || {}).settings || {}).courier || {}).buffer);
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : 0;
+}
+
+// A quote, taken into a charge. Zero stays zero: a trip the courier priced at nothing is not a charge, and a
+// buffer on top of it would be the app inventing a fee out of her safety margin.
+export function withBuffer(state, amount) {
+  const n = Number(amount);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.round((n + courierBufferOf(state)) * 100) / 100;
+}
+
+// The word in front of the charge, in her own spelling. ⚠️ It is used by the customer's own message and by her
+// receipts, so one setting words both rather than two places drifting apart.
+export const CHARGE_LABEL_DEFAULT = "Courier charge";
+export function chargeLabelOf(state) {
+  const said = String((((state || {}).settings || {}).courier || {}).chargeLabel || "").trim();
+  return said || CHARGE_LABEL_DEFAULT;
+}
+
+// ★ HAS THIS ORDER'S CHARGE ALREADY BEEN SAID TO THE CUSTOMER? An amount WITH a payer is a settled charge: it
+// can only be that pair, because `writeCourierCharge` writes the two together (v191). ⭐ Her rule is that this
+// number is FINAL — even when a later booking turns out dearer — so a booking must not re-price it.
+// ⚠️ This is a reading of the ORDER, not a lock: she can still change the charge by hand from the Edit form or
+// the Note / tracking box, which is where a change is meant to come from.
+export function chargeIsSettled(first) {
+  return courierFeeOf(first) > 0 && !!courierPayerOf(first);
+}
+
 // What the customer owes on top of the items. Nothing unless they bear it — a
 // charge you pay is your own cost and must never turn up on their total. And nothing at
 // all on an order that is not going by courier — see isCourierOrder.
@@ -429,6 +465,7 @@ export function refundableCharge(state, group) {
 // and the note disappears on its own.
 export function moneyLines(state, parts) {
   const cur = state.settings.currency;
+  const chargeWord = chargeLabelOf(state);
   const out = [`Total: ${fmtRM(parts.items, cur)}`];
   // "To pay" is printed LAST, after any promo line, so the customer can check it by
   // adding the lines above it — a discount that arrived under the total it reduced
@@ -438,9 +475,9 @@ export function moneyLines(state, parts) {
     out.push(`Postage (nationwide): ${fmtRM(parts.postage, cur)}`);
     toPay = true;
   } else if (parts.cod > 0) {
-    out.push(`Courier charge: ${fmtRM(parts.cod, cur)} - COD, pay the courier when your order reaches you`);
+    out.push(`${chargeWord}: ${fmtRM(parts.cod, cur)} - COD, pay the courier when your order reaches you`);
   } else if (parts.courier > 0) {
-    out.push(`Courier charge: ${fmtRM(parts.courier, cur)}`);
+    out.push(`${chargeWord}: ${fmtRM(parts.courier, cur)}`);
     toPay = true;
   } else if (parts.quoted) {
     out.push("Postage: quoted separately - we'll message you the exact amount");
@@ -493,6 +530,7 @@ export function moneyLines(state, parts) {
 // used only by a COD charge, which has to say where the money goes.
 export function receiptRows(state, parts) {
   const cur = state.settings.currency;
+  const chargeWord = chargeLabelOf(state);
   const rows = [{ label: "Items total", value: fmtRM(parts.items, cur) }];
   // The flat nationwide postage, on a row of its own (this shop only — the bakery has no
   // such fee). Without it a posted order's receipt reads "Items total RM30" and then
@@ -502,10 +540,10 @@ export function receiptRows(state, parts) {
   if (parts.postage > 0) {
     rows.push({ label: "Postage (nationwide)", value: fmtRM(parts.postage, cur) });
   } else if (parts.cod) {
-    rows.push({ label: "Courier charge", value: fmtRM(parts.cod, cur),
+    rows.push({ label: chargeWord, value: fmtRM(parts.cod, cur),
       note: "COD, pay the courier when your order reaches you" });
   } else if (parts.courier) {
-    rows.push({ label: "Courier charge", value: fmtRM(parts.courier, cur) });
+    rows.push({ label: chargeWord, value: fmtRM(parts.courier, cur) });
   } else if (parts.quoted) {
     // The delivery cost is not settled yet. Named so the receipt does not read as the
     // whole of what the customer owes, and carrying no figure because there is not one.
@@ -667,13 +705,17 @@ export function splitEven(total, count) {
 //     either way (customerCourierFee returns 0 for "me"), so this number is about her books
 //     and never about what they are told.
 //   anything else — no charge at all: no payer means no charge, the v127 rule.
-export function runChargeAmounts(who, fee, originals, count) {
+export function runChargeAmounts(who, fee, originals, count, buffer = 0) {
   const n = Math.floor(Number(count) || 0);
   if (!(n > 0)) return [];
   if (who === "customer") {
     const list = Array.isArray(originals) ? originals : [];
     if (list.length !== n) return [];
-    return list.map((x) => Number(x) || 0);
+    // ⭐ THE BUFFER RIDES ON THE CUSTOMER'S OWN CHARGE (v657) — the same number the screen shows, so what she
+    // reads and what is written cannot part company. It is deliberately NOT on the "me" branch: when she bears
+    // the trip, the customer is charged nothing and her books record what the courier actually took.
+    const b = Number(buffer) || 0;
+    return list.map((x) => Math.round(((Number(x) || 0) + b) * 100) / 100);
   }
   if (who === "me") return splitEven(fee, n);
   return [];

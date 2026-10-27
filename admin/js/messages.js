@@ -10,7 +10,7 @@ import { byId, orderCode, orderLineName, waNumber } from "./state.js";
 import { shortDate } from "./dates.js";
 import { customerTotal, moneyLines } from "./courier.js";
 import { fulfillmentText, orderPointName } from "./points.js";
-import { courierDayOf, dayLine, promisedWindowSuffix, trackingLine, vanLine } from "./courier_job.js";
+import { collectTimeText, courierCollectDayOf, courierDayOf, dayBlock, dayLine, defaultWindow, promisedWindowSuffix, trackingLine, vanLine } from "./courier_job.js";
 
 // The opening line, in the voice she chose on Settings (2 Oct 2026). WhatsApp
 // carries no fonts at all — the letters always come from the customer's own phone
@@ -66,7 +66,9 @@ function basics(state, group, trackUrl) {
   // day and its window is the VAN's, so they are not the same day and must not share a line —
   // see the helper for the customer who asked whether it was Wednesday or Thursday.
   const day = dayLine(state, first);
-  const date = `${del ? shortDate(del.date) : String(first.deliveryDate || "")}${day.window}`;
+  // ⚠️⚠️ NO WINDOW ON THE POSTING DAY (v657) — see `dayBlock`. It read "Posting day: Wed, 28 Oct, 6-7:09 pm"
+  // on an order the van had once carried, the time being the VAN's and left behind by a round trip.
+  const postIso = del ? String(del.date || "") : String(first.deliveryDate || "");
   const courier = first.fulfillment === "courier";
   // The same ONE wording the confirmation uses (v299), so the four messages and the
   // confirmation cannot tell a customer two different things about where to go.
@@ -89,7 +91,7 @@ function basics(state, group, trackUrl) {
   // told about and has very likely paid — restating it risks reading as still-owed.
   const charged = parts.courier > 0 || parts.cod > 0;
   const chargeLines = charged ? money.slice(1) : [];
-  return { first, recipient, items, date, day, courier, fulfillment, bakery, qr, trackUrl, trackingNo, money, charged, chargeLines };
+  return { first, recipient, items, postIso, day, courier, fulfillment, bakery, qr, trackUrl, trackingNo, money, charged, chargeLines };
 }
 
 export function buildPaymentReminder(state, group, trackUrl) {
@@ -99,8 +101,15 @@ export function buildPaymentReminder(state, group, trackUrl) {
   // line) so every WhatsApp message leads with the same scannable #CODE.
   let msg = `${greeting(state, `${hello(b.first.customerName)} A friendly reminder from ${b.bakery} about your order.`)}\n`;
   msg += `Order #${orderCode(b.first)}\n`;
-  msg += `${b.day.label}: ${b.date} - ${b.fulfillment}\n`;
-  msg += vanLine(b.day, b.first);
+  // ★★ THE SAME TWO DAY LINES AS THE CONFIRMATION (v657) — one helper, so a reminder and the
+  // confirmation cannot describe one delivery two ways, and neither can put a van's time on the posting day.
+  msg += dayBlock(state, b.first, b.postIso);
+  // ⚠️ AND THE PLACE, exactly as the confirmation names it — the reminder used to carry
+  // "- Self collect at Farlim" on the day line, so taking that off the line must not take it off the message.
+  // ⚠️ THE HOW IS STILL SAID FOR EVERY ORDER — the day lines do not replace it, and a posted customer must
+  // still read that it is being posted.
+  if (b.fulfillment) msg += `${b.fulfillment}\n`;
+  if (b.courier && !b.day.vanTime && !defaultWindow(state)) msg += vanLine(b.day, b.first);
   msg += `Items: ${b.items}\n`;
   // Shown as its parts as well as the sum: the customer is being asked for money, and a
   // figure that is RM8 more than the items they chose has to say so — and show them the
@@ -126,8 +135,15 @@ export function buildShippedMessage(state, group, trackUrl) {
   if (!b || !b.recipient) return null;
   let msg = `${greeting(state, `${hello(b.first.customerName)} Your order from ${b.bakery} is on its way.`)}\n`;
   msg += `Order #${orderCode(b.first)}\n`;
-  msg += `${b.day.label}: ${b.date} - ${b.fulfillment}\n`;
-  msg += vanLine(b.day, b.first);
+  // ★★ THE SAME TWO DAY LINES AS THE CONFIRMATION (v657) — one helper, so a reminder and the
+  // confirmation cannot describe one delivery two ways, and neither can put a van's time on the posting day.
+  msg += dayBlock(state, b.first, b.postIso);
+  // ⚠️ AND THE PLACE, exactly as the confirmation names it — the reminder used to carry
+  // "- Self collect at Farlim" on the day line, so taking that off the line must not take it off the message.
+  // ⚠️ THE HOW IS STILL SAID FOR EVERY ORDER — the day lines do not replace it, and a posted customer must
+  // still read that it is being posted.
+  if (b.fulfillment) msg += `${b.fulfillment}\n`;
+  if (b.courier && !b.day.vanTime && !defaultWindow(state)) msg += vanLine(b.day, b.first);
   msg += `Items: ${b.items}\n`;
   // One slot, two kinds of thing. A number she typed reads "Tracking number"; the
   // share link a booked trip came back with reads "Track your delivery", because it
@@ -176,11 +192,17 @@ export function buildPickupReminder(state, group, trackUrl) {
   // ⚠️ The bake day remains the FALLBACK, which is exactly right for every order collected straight
   // from the kitchen — and for the common case, a Point order whose run day she has not booked yet,
   // **this message is byte-for-byte what it was.**
+  // ★★ AND THE DAY SHE PROMISED OUTRANKS BOTH (v657): a day she typed for the collection is the day the
+  // customer was told, so it is the day this message names. Then the run's own day, then the posting day.
   const vanDay = courierDayOf(b.first);
-  const readyOn = vanDay ? shortDate(vanDay) : b.date;
+  const typedDay = courierCollectDayOf(b.first);
+  const readyOn = shortDate(typedDay || vanDay || b.postIso);
+  // ⭐ AND WHEN, ON THE SAME LINE AS THE DAY — the Point's hours, or the time she typed. The time belongs to
+  // the collection and it used to ride on the posting day instead.
+  const at = collectTimeText(state, b.first);
   msg += place
-    ? `Packed and ready to collect from ${place} on ${readyOn}.\n`
-    : `Packed and ready for collection on ${readyOn}.\n`;
+    ? `Packed and ready to collect from ${place} on ${readyOn}${at ? `, ${at}` : ""}.\n`
+    : `Packed and ready for collection on ${readyOn}${at ? `, ${at}` : ""}.\n`;
   msg += `\nTrack your order: ${b.trackUrl}`;
   return { recipient: b.recipient, message: msg };
 }

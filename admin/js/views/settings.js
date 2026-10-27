@@ -17,6 +17,7 @@ import { openPlacePicker } from "../place_map.js";
 import * as place from "../courier_place.js";
 import { callCourier } from "../couriers/api.js";
 import { activeCourier, courierLabel } from "../couriers.js";
+import { CHARGE_LABEL_DEFAULT } from "../courier.js";
 import { CONFIG } from "../../../store/config.js";
 import { isPoolablePack } from "../bom.js";
 
@@ -395,6 +396,56 @@ export function renderSettings(root, state) {
     postageNote);
   paintPostage();
 
+  // ── The charge's own three answers (v657) ────────────────────────────────
+  // ⭐ The window is what a confirmation promises when she has typed none on the order; the buffer is added to
+  // a quote on its way into the charge, so a later, dearer booking comes out of her margin rather than out of
+  // her pocket; and the label is the word the customer reads in front of the figure.
+  // ⚠️ DEVICE-LOCAL, like the dispatch time beside it: the courier block has never travelled (see state.js), so
+  // the card says so instead of letting her assume the other phone has it.
+  const cw = cur.courier ??= {};
+  const winInput = el("input", { class: "input", type: "text", value: cw.defaultWindow || "",
+    placeholder: "e.g. 3-8pm",
+    onchange: () => {
+      const v = winInput.value.trim();
+      // ⚠️ An EMPTY STRING rather than a deleted key: `normalize` fills missing keys from the shipped defaults,
+      // so a delete would put the default straight back on the next load and she could never clear it.
+      cw.defaultWindow = v;
+      save(state); toast("Saved");
+    } });
+  const bufInput = el("input", { class: "input", type: "number", inputmode: "decimal", min: "0", step: "0.01",
+    value: cw.buffer ? String(cw.buffer) : "", placeholder: "e.g. 2.00",
+    onchange: () => {
+      const n = Number(bufInput.value);
+      cw.buffer = Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : "";
+      save(state); toast("Saved");
+    } });
+  const wordInput = el("input", { class: "input", type: "text", value: cw.chargeLabel || "",
+    placeholder: CHARGE_LABEL_DEFAULT,
+    onchange: () => {
+      const v = wordInput.value.trim();
+      cw.chargeLabel = v;
+      save(state); toast("Saved");
+    } });
+  const chargeCard = el("div", { class: "card" },
+    el("h3", { style: "margin:0 0 4px" }, "Delivery charge"),
+    el("p", { class: "card-sub", style: "margin:0 0 10px" },
+      "These belong to this phone only — set them again on the other one."),
+    el("div", { class: "field" },
+      el("label", {}, "Delivery window you promise"),
+      winInput,
+      el("p", { class: "card-sub", style: "margin:4px 0 0" },
+        "Printed in the confirmation and the payment reminder when you have typed no window on the order. Leave it blank and the message says the time will be confirmed separately.")),
+    el("div", { class: "field" },
+      el("label", {}, "Buffer on a quoted price (RM)"),
+      bufInput,
+      el("p", { class: "card-sub", style: "margin:4px 0 0" },
+        "Added to a courier's own quote when you take it into the charge, so a later, dearer booking comes out of your margin. A figure you type yourself is never touched.")),
+    el("div", { class: "field" },
+      el("label", {}, "What the charge is called"),
+      wordInput,
+      el("p", { class: "card-sub", style: "margin:4px 0 0" },
+        "The word a customer reads in front of the figure, on the message and on the receipt. Blank uses the default.")));
+
   // ── Website & developer ──────────────────────────────────────────────────
   // Whose site this is and who the wish-list email reaches. Shown as the little
   // "Website by …" credit on the homepage + store footer and as the ✉ row in
@@ -668,7 +719,7 @@ export function renderSettings(root, state) {
   // scheme changed — the screen is the same card, moved whole.
   // Two cards left this row list in v315: the courier's own screen and the message
   // style now live where their work is (More -> Logistic, and More -> The shop).
-  root.replaceChildren(daysCard, lockCard, storefrontCard, postageCard, devCard, mailingCard, supabaseCard, sharedCard, backupCard, dangerCard,
+  root.replaceChildren(daysCard, lockCard, storefrontCard, postageCard, chargeCard, devCard, mailingCard, supabaseCard, sharedCard, backupCard, dangerCard,
 
     ...(sampleCard ? [sampleCard] : []));
 
@@ -832,7 +883,7 @@ export function renderSettings(root, state) {
       if (!d.count) return toast("Nothing in that copy is missing from this phone.");
       const codes = d.codes.map((c) => `#${c}`).join(", ");
       confirmDialog(
-        `${d.count} order${d.count === 1 ? "" : "s"} in "${row.label || "this copy"}" ${d.count === 1 ? "is" : "are"} not on this phone and not on the Removed list: ${codes}. Put ${d.count === 1 ? "it" : "them"} back? Nothing you still have is changed — no product, no money, no bake day, and no Removed row — and a "Before put-back" copy is saved first.`,
+        `${d.count} order${d.count === 1 ? "" : "s"} in "${row.label || "this copy"}" ${d.count === 1 ? "is" : "are"} not on this phone and not on the Removed list: ${codes}. Put ${d.count === 1 ? "it" : "them"} back? Nothing you still have is changed — no product, no money, no posting day, and no Removed row — and a "Before put-back" copy is saved first.`,
         async () => {
           const r = await backups.putBackOrders(state, row);
           if (!r.ok) return toast(String(r.reason || "Couldn't put them back"));

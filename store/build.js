@@ -123,6 +123,12 @@ export const BUILD_TRIED_KEY = "munchies.shop.build";
  */
 const BUILDABLE = /\.(?:js|mjs|css|woff2?|ttf|otf)(?:\?|$)/i;
 
+export async function freshenAssets(entries, origin, doFetch = fetch) {
+  const list = assetsToRefresh(entries, origin);
+  await Promise.all(list.map((u) => doFetch(u, { cache: "reload" }).catch(() => {})));
+  return list;
+}
+
 export function assetsToRefresh(entries, origin) {
   const keep = [];
   const seen = new Set();

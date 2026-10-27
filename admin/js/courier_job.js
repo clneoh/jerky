@@ -40,7 +40,7 @@ import {
   pickupPlace, doorSpotOf, dropAddress, validPlace, strictNumber,
 } from "./courier_place.js";
 import { byId, waNumber, orderLineName, orderDone, orderCode } from "./state.js";
-import { collectionWindowText, pointById } from "./points.js";
+import { collectionWindowText, pointById, pointWindowText } from "./points.js";
 // The window's own reading - see time_window.js for why it is a leaf of its own (v304).
 import { fmtWindow, validWindow } from "./time_window.js";
 // A date in her words ("Thu, 8 Oct"). dates.js imports nothing, so this cannot cycle.
@@ -578,6 +578,21 @@ export function courierDayOf(order) {
   return String((order.courierWhen || {}).day || "").trim();
 }
 
+// ★★ THE COLLECTION DAY AND TIME SHE TYPES ON A COLLECTED ORDER (v657) — the self-collect twin of
+// `courierDay` beside it, read in the same two shapes so a saved order and a card's own draft answer
+// the same way.
+// ⚠️ EMPTY MEANS THE POSTING DAY, which is the only day a collection at her kitchen has ever had —
+// so an order she never touched reads exactly as it always did.
+export function courierCollectDayOf(order) {
+  if (!order) return "";
+  return String(order.collectDay || (order.collectWhen || {}).day || "").trim();
+}
+
+export function courierCollectTimeOf(order) {
+  if (!order) return "";
+  return String(order.collectTime || (order.collectWhen || {}).time || "").trim();
+}
+
 // ★ THE TIME THE VAN COLLECTS FROM HER, in the same two shapes (v341).
 //
 // ⚠️ **THIS IS NOT THE CUSTOMER'S PROMISE, AND IT NEVER REACHES ONE.** Her distinction, and it is the
@@ -702,6 +717,69 @@ export function dayLine(state, order) {
   const courier = !!order && order.fulfillment === "courier";
   if (!courier) return { label: "Delivery", window: promisedWindowSuffix(state, order), vanTime: "", courier: false };
   return { label: "Posting day", window: "", vanTime: courierDeliveryText(order), courier: true };
+}
+
+// ★ WHEN A CUSTOMER COLLECTS, IN ONE PLACE (v657). ⚠️ The Point's own hours used to be glued onto the
+// POSTING day by two builders, which is how a real confirmation came to read **"Posting day: Wed, 28 Oct,
+// 6-7:09 pm"** — the time was the van's, left on an order from when it was a posted one. ⭐ Only a POINT
+// has hours that are a promise a customer can act on; the order's own `deliveryWindow` is the VAN's and is
+// never a collection time.
+export function collectTimeText(state, order) {
+  const typed = String(courierCollectTimeOf(order) || "").trim();
+  if (typed) return typed;
+  const point = pointById(state, order && order.pointId);
+  return point ? pointWindowText(point) : "";
+}
+
+// ★★ THE TWO LINES A CUSTOMER READS ABOUT DAYS (v657). ⚠️⚠️ THE FIRST IS ALWAYS THE POSTING DAY, WITH NO
+// TIME ON IT — ⚠️ today's line reads `Delivery: <day> - Collect (local)` for a collected order, which names
+// the wrong thing twice: the day is when it is SENT, and "Delivery" is not what a collecting customer does.
+// ⭐ Nothing here is ever worked out from the posting day: an empty box is an empty box.
+//
+// ⚠️⚠️ THE LINE ITSELF REFUSES A TIME. Her question about the bakery's own message — *"what is the point of
+// having time on the bake day?"* — was answered by fixing the callers, and the time came back through
+// another one. **A day arrives here as a string built somewhere else, and a string can carry anything**, so
+// any trailing window is stripped before the line is made: by construction, not by everyone remembering.
+//
+// ⚠️ THE SECOND LINE IS NAMED ONLY WHEN IT HAS SOMETHING TO SAY — jerky's own rule since v653: a day is never
+// printed twice under two names. A collection on the posting day with no time gets one line, not two.
+export function dayBlock(state, order, postIso) {
+  // ⚠️ IT TAKES EITHER SHAPE AND NEVER TRUSTS EITHER: a plain day ("2026-10-28"), or a date already
+  // assembled somewhere else — which can carry a window ("Wed, 28 Oct, 6-7:09 pm"). ⭐ The window is stripped
+  // HERE rather than in every caller, because a string can carry anything and the day is a day.
+  const raw = String(postIso || "").trim();
+  const iso = /^\d{4}-\d\d-\d\d/.test(raw) ? raw.slice(0, 10) : "";
+  const when = iso || raw.replace(/,\s*\d{1,2}(?::\d\d)?\s*[-–]\s*\d{1,2}(?::\d\d)?\s*(?:am|pm)\.?\s*$/i, "").trim();
+  if (!when) return "";
+  const dayText = iso ? shortDate(iso) : when;
+  const courier = !!order && order.fulfillment === "courier";
+  const first = `Posting day: ${dayText}\n`;
+  if (courier) {
+    // ⚠️ THE DAY COMES FIRST AND ALWAYS: `courierDeliveryText` gives only a WINDOW when no van day is
+    // typed ("2-5 pm"), so the posting day stands in — ⭐ "Delivery: 2-5 pm" names a time on no day at all.
+    const typed = courierDayOf(order);
+    // ★ AND THE WINDOW IS NAMED WHEN THERE IS ONE — hers on the order, or her own default. With neither,
+    // `vanLine` says the time is still to come, which is the honest sentence this app already had.
+    const win = windowSuffix(order).replace(/^, /, "") || defaultWindow(state);
+    // ⚠️ ONE LINE UNLESS THE SECOND ONE SAYS SOMETHING NEW — the same rule as the collection below: with no
+    // van day of its own and no window, "Delivery:" would repeat the very date printed above it.
+    if (!typed && !win) return first;
+    return first + `Delivery: ${shortDate(typed || when)}${win ? `, ${win}` : ""}\n`;
+  }
+  // ★ THE COLLECTION DAY AND TIME SHE TYPES — the day the customer is promised, or the posting day.
+  const cd = courierCollectDayOf(order);
+  const ct = collectTimeText(state, order);
+  // ⚠️ ONE LINE UNLESS THE SECOND ONE SAYS SOMETHING NEW: a different day, or a time to keep.
+  if (!cd && !ct) return first;
+  if (cd && cd === when && !ct) return first;
+  return first + `Collection: ${shortDate(cd || when)}${ct ? `, ${ct}` : ""}\n`;
+}
+
+// ★ HER DEFAULT DELIVERY WINDOW — the one printed when no window is typed on an order. ⚠️ Empty is a real
+// answer, and for THIS shop it is the shipped default: munchies posts parcels, so a window is something she
+// types once in Settings if she wants it promised, never something the app assumes.
+export function defaultWindow(state) {
+  return String((((state || {}).settings || {}).courier || {}).defaultWindow || "").trim();
 }
 
 // What the run actually carries: how many doorsteps, how many items, and which items.

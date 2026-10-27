@@ -148,7 +148,10 @@ export function defaultState() {
       // a branch in sync.js's guarded-key rules. There is no `provider` key yet on
       // purpose either: there is one courier, and a setting with one choice is a
       // control that does nothing (see js/couriers.js).
-      courier: { dispatch: "10:00" },
+      // ★★ AND THE WINDOW AND BUFFER SHE CAN SET (v657). ⚠️ `defaultWindow` ships EMPTY for this shop —
+      // munchies posts parcels, so there is no van window to promise; a figure in here would be the app
+      // promising a time on her behalf. Set one in Settings and it stands in when an order carries none.
+      courier: { dispatch: "10:00", defaultWindow: "", buffer: 0 },
       // The two lists the books are built from (16 Sep 2026). Empty means "the
       // built-in ones" — see js/accounts.js — so a phone that never edits them
       // behaves exactly as before, and both lists are shared between phones.
@@ -641,6 +644,12 @@ function normalize(s) {
           .map(Number).filter((x) => Number.isInteger(x) && x >= 0 && x <= 6))].sort((a, b) => a - b);
         return set.length ? set : d.settings.deliveryDays;
       })(),
+      // ★ The courier block fills its MISSING keys from the shipped defaults (v657) — a phone that has been
+      // running since before this holds `courier: { dispatch: "10:00" }` and nothing else, so a plain spread
+      // of her stored object would leave the new keys unset on exactly the phone that needs them. ⭐ Her
+      // stored values always win, and an EMPTY STRING is a value: that is how she clears the window and gets
+      // the honest "time to be confirmed" sentence back.
+      courier: { ...d.settings.courier, ...(((s.settings || {}).courier) || {}) },
       referrals: { ...d.settings.referrals, ...(((s.settings || {}).referrals) || {}) },
       // A hand-edited import must not put an unknown style in: the message builders
       // read exactly one value, and a third one would silently send "plain" while

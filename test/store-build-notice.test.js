@@ -18,7 +18,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { BUILD_TRIED_KEY, VERSION_URL, assetsToRefresh, buildIn, newerBuild } from "../store/build.js";
+import { BUILD_TRIED_KEY, VERSION_URL, assetsToRefresh, buildIn, freshenAssets, newerBuild } from "../store/build.js";
 import { ENGINE_VERSION } from "../admin/js/version.js";
 
 const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
@@ -205,20 +205,32 @@ test("★★★ THE PRESS RE-ASKS FOR THE FILES, OR IT CHANGES NOTHING (v656)", 
   const bind = app.indexOf('buildBtn.addEventListener("click"');
   assert.ok(bind > 0, "nothing presses the reload button");
   const press = app.slice(bind, bind + 900);
-  assert.match(press, /freshenAssets\(\)/, "the press no longer re-asks for the page's own files");
+  assert.match(press, /freshenAssets\(/, "the press no longer re-asks for the page's own files");
   // ⚠️ AND THE RELOAD IS REACHED ONLY THROUGH THE RE-ASK — held in `go` and fired from the race, so
   // no path can reload first and read the old copies anyway.
   assert.match(press,
-    /const go = \(\) => \{[\s\S]*?location\.reload\(\);[\s\S]*?\};\s*Promise\.race\(\[freshenAssets\(\),[^\]]*\]\)\.then\(go, go\);/,
+    /const go = \(\) => \{[\s\S]*?location\.reload\(\);[\s\S]*?\};[\s\S]*?Promise\.race\(\[freshenAssets\([^\]]*\]\)\.then\(go, go\);/,
     "⚠️ the reload is no longer reached through the re-ask");
-  // ⚠️ THE `cache: "reload"` IS THE FIX ITSELF — and it lives in `freshenAssets`, which is why the
-  // assertion follows the name rather than the press.
-  const def = app.indexOf("async function freshenAssets()");
-  assert.ok(def > 0, "the re-ask is gone");
-  assert.match(app.slice(def, def + 600), /cache: "reload"/,
-    "⚠️ a plain fetch is answered from the cache that is the fault");
   // ⚠️ AND IT CANNOT HANG: a slow connection must not leave a customer pressing a dead button.
   assert.match(press, /Promise\.race\(/, "the re-ask is no longer raced with a beat");
+});
+
+test("★★★ asking for a file again really goes to the network — never to the cache that is the fault", async () => {
+  // ⚠️⚠️ THE WHOLE FIX IS `cache: "reload"`. ⭐ A plain `fetch` is answered from the browser's own ten-minute
+  // copy — the very copy the press exists to escape — so this drives the real function with a recorder and
+  // asserts what was asked for, rather than hoping a comment stays true.
+  const origin = "https://munchies.com.my";
+  const asked = [];
+  const doFetch = (u, o) => { asked.push([u, o && o.cache]); return Promise.resolve(); };
+  const list = await freshenAssets([
+    { name: `${origin}/store/app.css` },
+    { name: `${origin}/store/app.js` },
+    { name: `${origin}/images/chicken-jerky.jpg` },
+    { name: "https://ircwozniiyywsowamixy.supabase.co/x" },
+  ], origin, doFetch);
+  assert.deepEqual(list, [`${origin}/store/app.css`, `${origin}/store/app.js`]);
+  assert.deepEqual(asked.map(([, c]) => c), ["reload", "reload"],
+    "⚠️ a plain fetch is answered from the cache that is the fault");
 });
 
 test("★★ the list of files to re-ask for is the PAGE'S OWN — never a hand-kept list", () => {

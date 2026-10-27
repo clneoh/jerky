@@ -1353,10 +1353,10 @@ test("a window typed on the run reaches every customer's card and messages", asy
   const shipped = buildShippedMessage(st, { orders: st.orders.slice(2) }, "https://bake.app/track");
   // ⚠️ THE WINDOW IS STILL PROMISED — but on a line of its OWN (v337). It is the VAN's window and
   // the day above it is the BAKE day, so gluing the two together named a time on the wrong day.
-  assert.ok(shipped.message.includes("Posting day: Sat, 26 Sep - Post (nationwide)"), "the bake day, named as one");
+  assert.ok(shipped.message.includes("Posting day: Sat, 26 Sep"), "the posting day, named as one");
   assert.ok(shipped.message.includes("2-5 pm"), "and the window is still promised, not just the day");
   const reminder = buildPaymentReminder(st, { orders: st.orders.slice(0, 2) }, "https://bake.app/track");
-  assert.ok(reminder.message.includes("Posting day: Sat, 26 Sep - Post (nationwide)"), "the reminder names the bake day too");
+  assert.ok(reminder.message.includes("Posting day: Sat, 26 Sep"), "the reminder names the posting day too");
   assert.ok(reminder.message.includes("2-5 pm"), "and so does the payment reminder carry the window");
 });
 
@@ -1432,7 +1432,7 @@ test("⚠️ the window rides with the VAN's day, never with the bake day (v338)
     `the window sits with the day the van comes — read "${snap.delivery}"`);
 
   const shipped = buildShippedMessage(st, { orders: st.orders.slice(2) }, "https://bake.app/track");
-  assert.ok(shipped.message.includes("Posting day: Sat, 26 Sep - Post (nationwide)"), "the bake day, named as one");
+  assert.ok(shipped.message.includes("Posting day: Sat, 26 Sep"), "the posting day, named as one");
   assert.ok(shipped.message.includes("Sun, 27 Sep, 2-5 pm"), "and the van's day said with its window");
 
   // ⚠️ THE ASSERTION THIS VERSION EXISTS FOR. The two days must never be joined into one moment —
