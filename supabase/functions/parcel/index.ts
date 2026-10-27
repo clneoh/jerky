@@ -30,7 +30,7 @@
 //   1. Sign up at www.easyparcel.my, complete the account verification, then register the
 //      key for API access (their document's own three steps). The DEMO host works without
 //      topping anything up, which is how this can be tried before a sen is spent.
-//   2. supabase functions deploy parcel --project-ref hzpyblqygnntixkijeem
+//   2. supabase functions deploy parcel --project-ref ircwozniiyywsowamixy
 //      The --project-ref is not optional in practice: without it the CLI asks "Select a
 //      project" and this repo's project list also carries a second, unrelated project, so a
 //      stray Enter can aim the deploy at the wrong one.
@@ -45,7 +45,7 @@ import {
   type Box, type Party,
 } from "./easyparcel.ts";
 
-// The app calls from jienluv2bake.com.my, a different origin than supabase.co, so the
+// The app calls from munchies.com.my, a different origin than supabase.co, so the
 // browser sends a preflight first and checks every response for these headers.
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",

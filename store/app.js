@@ -46,10 +46,10 @@ import { fullDayAnswer } from "./full_day.js";
 // cache.** ⚠️ And it must be kept in step with `admin/js/version.js` by hand, which is a second place for
 // one fact: ⭐ **that is accepted here ONLY because a test fails the moment they disagree** (see
 // `store-build-notice.test.js`), so a forgotten bump is a red suite rather than a shop that lies.
-export const SHOP_BUILD = "655";
+export const SHOP_BUILD = "656";
 // "Is this page the newest one?" — the comparison and the probe's address, kept on their own so a
 // test can pin them (this file calls `render()` at the top level and cannot be imported at all).
-import { BUILD_TRIED_KEY, VERSION_URL, newerBuild } from "./build.js";
+import { BUILD_TRIED_KEY, VERSION_URL, assetsToRefresh, newerBuild } from "./build.js";
 // The promo-code engine, shared with the backoffice so a code the shop accepts is
 // exactly a code her app recognises. It is a leaf module (imports nothing), which
 // is why the shop can take it without pulling the backoffice's storage in.
@@ -6257,13 +6257,34 @@ if (typeof document !== "undefined" && document.documentElement) {
     return true;
   }
 
+  // ⚠️⚠️ THE PRESS MUST RE-ASK FOR THE FILES, NOT ONLY FOR THE PAGE (v656). Her words, 2026-10-27:
+  // __"it fail to refresh again on browser"__ — and nothing was wrong with the build. A plain
+  // A plain page reload takes the page fresh and **everything beside it from the browser's own
+  // ten-minute copy**, so the page came back new with the OLD stylesheet still crushing the card,
+  // and a second press could not help either. ⭐ The rule this page has already learned twice (v350's
+  // dead toggle, v352): **a control that cannot work is worse than no control.**
+  // ⚠️ `cache: "reload"` is the whole fix and the reason a plain `fetch` would be pointless — a
+  // plain one is answered from the same cache that is the problem.
+  // ⚠️ It is RACED WITH A BEAT: a slow connection must not leave the customer pressing a button
+  // that does nothing visible. Whatever has not arrived in 2.5 s, the reload goes without it.
+  async function freshenAssets() {
+    if (typeof performance === "undefined" || typeof performance.getEntriesByType !== "function") return;
+    let origin = "";
+    try { origin = location.origin; } catch { /* no origin: every address is kept */ }
+    const list = assetsToRefresh(performance.getEntriesByType("resource"), origin);
+    await Promise.all(list.map((u) => fetch(u, { cache: "reload" }).catch(() => {})));
+  }
+
   const buildBtn = document.getElementById("build-reload");
   // ★★★ AND IT WARNS BEFORE IT THROWS AN ORDER AWAY (v555) — see `warnBuildOnce` below.
   if (buildBtn) buildBtn.addEventListener("click", () => {
     if (warnBuildOnce(buildBtn)) return;
     rememberBuildTried();
     paintBuildNotice();
-    if (typeof location !== "undefined" && typeof location.reload === "function") location.reload();
+    const go = () => {
+      if (typeof location !== "undefined" && typeof location.reload === "function") location.reload();
+    };
+    Promise.race([freshenAssets(), new Promise((r) => setTimeout(r, 2500))]).then(go, go);
   });
 
   // ---------------------------------------------------------------------------------

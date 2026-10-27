@@ -18,7 +18,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { BUILD_TRIED_KEY, VERSION_URL, buildIn, newerBuild } from "../store/build.js";
+import { BUILD_TRIED_KEY, VERSION_URL, assetsToRefresh, buildIn, newerBuild } from "../store/build.js";
 import { ENGINE_VERSION } from "../admin/js/version.js";
 
 const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
@@ -193,6 +193,62 @@ test("★ the notice is bound ONCE, outside the repaint", () => {
   // of the page — and it has to be exactly one.
   const hits = app.split('buildBtn.addEventListener("click"').length - 1;
   assert.equal(hits, 1, `the reload press is bound ${hits} times — it must be bound exactly once`);
+});
+
+test("★★★ THE PRESS RE-ASKS FOR THE FILES, OR IT CHANGES NOTHING (v656)", () => {
+  // ⚠️⚠️ HER REPORT, 2026-10-27: __"it fail to refresh again on browser"__ — and the build was already
+  // pushed. **A bare `location.reload()` re-asks for the PAGE and takes `app.css` and every module
+  // from the browser's own ten-minute copy**, so the page returns new with the old stylesheet and a
+  // second press cannot help. ⭐ `cache: "reload"` is the whole fix: **a plain `fetch` there would be
+  // served from the very cache that is the problem**, which is the fault this test exists to stop
+  // anyone reintroducing.
+  const bind = app.indexOf('buildBtn.addEventListener("click"');
+  assert.ok(bind > 0, "nothing presses the reload button");
+  const press = app.slice(bind, bind + 900);
+  assert.match(press, /freshenAssets\(\)/, "the press no longer re-asks for the page's own files");
+  // ⚠️ AND THE RELOAD IS REACHED ONLY THROUGH THE RE-ASK — held in `go` and fired from the race, so
+  // no path can reload first and read the old copies anyway.
+  assert.match(press,
+    /const go = \(\) => \{[\s\S]*?location\.reload\(\);[\s\S]*?\};\s*Promise\.race\(\[freshenAssets\(\),[^\]]*\]\)\.then\(go, go\);/,
+    "⚠️ the reload is no longer reached through the re-ask");
+  // ⚠️ THE `cache: "reload"` IS THE FIX ITSELF — and it lives in `freshenAssets`, which is why the
+  // assertion follows the name rather than the press.
+  const def = app.indexOf("async function freshenAssets()");
+  assert.ok(def > 0, "the re-ask is gone");
+  assert.match(app.slice(def, def + 600), /cache: "reload"/,
+    "⚠️ a plain fetch is answered from the cache that is the fault");
+  // ⚠️ AND IT CANNOT HANG: a slow connection must not leave a customer pressing a dead button.
+  assert.match(press, /Promise\.race\(/, "the re-ask is no longer raced with a beat");
+});
+
+test("★★ the list of files to re-ask for is the PAGE'S OWN — never a hand-kept list", () => {
+  // ⚠️ A module graph cannot be known from `build.js`, and a written-out list of filenames goes stale
+  // on the first file anyone adds — silently, because a missing name simply is not refreshed. The
+  // browser already knows exactly what this page loaded.
+  assert.match(app, /getEntriesByType\("resource"\)/, "the page no longer asks itself what it loaded");
+  const origin = "https://munchies.com.my";
+  const kept = assetsToRefresh([
+    { name: `${origin}/store/app.css` },
+    { name: `${origin}/store/app.js` },
+    { name: `${origin}/admin/js/promo.js` },
+    { name: `${origin}/store/app.css` },                       // the same file twice
+    { name: `${origin}/store/fonts/ShantellSans-Regular-latin.woff2` },
+    { name: `${origin}/images/chicken-jerky.jpg` },            // a photograph: a build never names one
+    { name: "https://ircwozniiyywsowamixy.supabase.co/rest/v1/x" }, // not ours
+    { name: "https://api.bigdatacloud.net/data/x" },               // not ours
+    { name: "blob:https://munchies.com.my/9c1e" },                 // not a file
+    { name: "data:text/css,body{}" },                              // not a file
+    {},                                                            // a stub with no name
+  ], origin);
+  assert.deepEqual(kept, [
+    `${origin}/store/app.css`,
+    `${origin}/store/app.js`,
+    `${origin}/admin/js/promo.js`,
+    `${origin}/store/fonts/ShantellSans-Regular-latin.woff2`,
+  ], "⚠️ another site must never be re-asked, and one file must be asked once");
+  // ⚠️ And it answers an empty list rather than throwing when the browser offers nothing at all.
+  assert.deepEqual(assetsToRefresh(undefined, origin), []);
+  assert.deepEqual(assetsToRefresh([], origin), []);
 });
 
 test("★ it asks on arrival, on the same beat as the order data, and never holds the page up", () => {

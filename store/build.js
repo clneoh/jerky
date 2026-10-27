@@ -95,3 +95,47 @@ export function newerBuild(servedText, running) {
 // origin-scoped**, and both shops run on the same phones. (`bakeadmin.shop.build` in the bakery's
 // copy of this file, and the two must never be able to read each other's flag.)
 export const BUILD_TRIED_KEY = "munchies.shop.build";
+
+/**
+ * WHICH FILES A RELOAD HAS TO RE-ASK FOR, given the resources this page loaded (v656).
+ *
+ * @param {Array<{name?: string}>} entries `performance.getEntriesByType("resource")`
+ * @param {string} origin                this site's own origin
+ * @returns {string[]} the same-origin addresses, each once
+ *
+ * ⚠️⚠️ WHY THIS EXISTS — THE FAULT SHE REPORTED ON 2026-10-27, *"it fail to refresh again on browser"*.
+ * **A plain `location.reload()` re-asks for the PAGE and takes every other file from the browser's
+ * own copy.** GitHub Pages serves `/store/` with `cache-control: max-age=600`, so for ten minutes
+ * the page comes back new while `app.css` and every module beside it come back old — the press
+ * lands on a page that looks untouched, and pressing it again cannot help.
+ * ⭐ **That is not the build being wrong; it is only the page being re-read.** So the press re-asks
+ * for the files first (`cache: "reload"` in `store/app.js`), and then reloads — and only a request
+ * that really goes to the network puts the new copy where the reload will find it.
+ * ⚠️ **THE LIST IS THE PAGE'S OWN, NOT A GUESS**: a module graph is not knowable from here, and a
+ * hand-kept list of filenames would go stale on the first file anyone adds. The browser already
+ * knows exactly what this page used.
+ * ⚠️ Same origin only: the fonts are ours, the geocoder and Supabase are not, and a reload is no
+ * reason to re-ask them.
+ * ⚠️⚠️ **AND ONLY WHAT A BUILD CHANGES — code, stylesheet and fonts.** A build number never names a
+ * photograph, and a press that quietly re-downloaded ten product photos would spend a customer's
+ * mobile data to fix something it cannot fix. ⭐ Measured on the live page: the whole resource list
+ * is 36 files, of which the photos are the large ones.
+ */
+const BUILDABLE = /\.(?:js|mjs|css|woff2?|ttf|otf)(?:\?|$)/i;
+
+export function assetsToRefresh(entries, origin) {
+  const keep = [];
+  const seen = new Set();
+  for (const e of Array.isArray(entries) ? entries : []) {
+    const name = e && typeof e.name === "string" ? e.name : "";
+    if (!/^https?:/i.test(name)) continue;
+    let url;
+    try { url = new URL(name); } catch { continue; }
+    if (origin && url.origin !== origin) continue;
+    if (!BUILDABLE.test(url.pathname)) continue;
+    if (seen.has(url.href)) continue;
+    seen.add(url.href);
+    keep.push(url.href);
+  }
+  return keep;
+}

@@ -850,6 +850,32 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
+## v656 — the shop's Reload press re-asks for the files (27 Oct 2026)
+
+**Her words:** *"it fail to refresh again on browser."* **The build was already pushed and the site was
+serving it.**
+
+⚠️⚠️ **A plain `location.reload()` re-asks for the PAGE and takes every other file from the browser's own
+copy.** GitHub Pages serves `/store/` with `cache-control: max-age=600`, so for ten minutes the page comes
+back new while **`app.css` and every module beside it come back old** — and v655 changed only the
+stylesheet, which is exactly the file that stayed behind. **A second press could not help: it does the
+same thing.**
+
+- **`store/build.js`** — `assetsToRefresh(entries, origin)`: the page's run of
+  `performance.getEntriesByType("resource")`, filtered to **same-origin code, stylesheet and fonts**.
+  ⚠️ **The list is the page's own** (a module graph is not knowable from here, and a hand-kept list of
+  filenames goes stale on the first file anyone adds). ⭐ **Photographs are left out — a build number never
+  names one**, and re-downloading ten product photos would spend a customer's data to fix nothing.
+- **`store/app.js`** — the press calls `freshenAssets()` (each file re-fetched with `cache: "reload"`, which
+  is the whole fix: **a plain fetch is answered from the cache that is the problem**) and reloads only
+  after; **raced with a 2.5 s beat** so a slow connection never leaves a dead button.
+- ⚠️ **A page that is already old cannot contain this fix** — its button is the old one. One hard reload
+  gets past that, and from then on the strip's own press suffices.
+
+**Driven in the browser:** the press re-asked for **35 files, 0 of them photos**, then reloaded onto the
+new page with no console errors. Two guards in `test/store-build-notice.test.js`, one of them pinning
+`cache: "reload"` (the mechanism without which the press is a no-op). Suite 4000.
+
 ## v653–v655 — the customer's second date, and the card on a phone (27 Oct 2026)
 
 **Her model of the three dates, verbatim:** *"order date = for merchant only; bake date/post date = to let

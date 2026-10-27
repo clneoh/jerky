@@ -1,8 +1,40 @@
-# Munchies Furkidz — change history (v54 → v655)
+# Munchies Furkidz — change history (v54 → v656)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**27 Oct 2026 — engine v656: THE SHOP'S RELOAD PRESS RE-ASKS FOR THE FILES (nothing to run, no SQL,
+nothing to upload).**
+
+**Your words: "it fail to refresh again on browser."**
+
+**1. The build was not the problem.** **v655 was already pushed and the site was serving it.** ⭐ **What
+failed was the pressing of Reload** — and the reason is worth keeping.
+
+**2. What was actually wrong.** **The shop page and every file beside it are fetched separately, and the
+browser is allowed to keep its own copy of each for ten minutes.** ⭐ **A plain reload re-asks for the PAGE
+and takes everything else from that ten-minute copy** — so the page came back new with **the old
+stylesheet still squeezing the card**, and a second press could not help either, because it does the same
+thing again. ⚠️ **v655 changed only the stylesheet, which is exactly the file that stayed behind.**
+
+**3. What it does now.** **Pressing Reload first re-asks for the page's own files — its scripts, its
+stylesheet, its fonts — and only then reloads**, so the reload finds the new copies instead of the old
+ones. ⚠️ **The list is the page's own** (the browser already knows what it loaded), **never a written-out
+list of filenames that would go stale the first time a file is added.** ⭐ **Photographs are left alone:
+a build number never names one, and re-downloading ten product photos would spend a customer's data to
+fix something it cannot fix.** ⚠️ **And it is raced with a two-and-a-half-second beat**, so a slow
+connection never leaves a customer pressing a button that appears to do nothing.
+
+**4. One thing to know.** ⚠️ **A page that is ALREADY old cannot contain this fix** — the old page's
+button is the old one. **So the first time you update past this version, press the reload on the strip
+once; if the page still looks old, close the tab and open the shop again.** From then on the strip's own
+press is enough.
+
+**⚠️ I drove the press in a browser: it re-asked for 35 files and none of them were photos, then
+reloaded onto the new page. The suite is 4000 tests passing.**
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **27 Oct 2026 — engine v655: THE PRODUCT CARD READS PROPERLY ON A PHONE (nothing to run, no SQL, no
 upload).**
