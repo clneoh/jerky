@@ -215,7 +215,7 @@ test("a free-delivery code waives the charge, and the waived charge is named", (
   const { st, g } = ordered(mkCode({ code: "FREEPOST", gives: { type: "delivery", value: 0, cap: 0 } }),
     { courierFee: 8, courierPaidBy: "customer" });
   const msg = confirm(st, g);
-  assert.ok(msg.includes("Courier charge: RM 8.00"), `the charge is still named: ${msg}`);
+  assert.ok(msg.includes("Postage: RM 8.00"), `the charge is still named: ${msg}`);
   assert.ok(msg.includes("Promo FREEPOST: -RM 8.00"), "and named again as the thing the code took off");
   assert.ok(msg.includes("To pay: RM 30.00"), "so the RM8 charge and the RM8 waiver cancel, and the goods stand");
 });
@@ -333,7 +333,7 @@ test("the money lines put the promo between the workings and the total", () => {
   const { st, g } = ordered(mkCode(), { courierFee: 8, courierPaidBy: "customer" });
   assert.deepEqual(moneyLines(st, customerTotal(st, g)), [
     "Total: RM 30.00",
-    "Courier charge: RM 8.00",
+    "Postage: RM 8.00",
     "Promo FRESH10: -RM 10.00",
     "To pay: RM 28.00",
   ]);

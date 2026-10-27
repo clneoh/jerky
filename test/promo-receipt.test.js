@@ -130,7 +130,7 @@ test("a COD charge is a row with its own rider, and stays out of the total", () 
   // for at the door.
   const { st, parts } = priced(null, { courierFee: 8, courierPaidBy: "customer", courierCod: true });
   const rows = receiptRows(st, parts);
-  assert.equal(rowFor(rows, "Courier charge")?.note, "COD, pay the courier when your order reaches you",
+  assert.equal(rowFor(rows, "Postage")?.note, "COD, pay the courier when your order reaches you",
     "the row says where the money goes");
   assert.equal(rowFor(rows, "Total").value, "RM 30.00", "and the total asks for the bread alone");
 });

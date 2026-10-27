@@ -197,7 +197,7 @@ function pickProduct(root, qty = 1) {
 }
 
 function chargeBox(root) {
-  return all(root).find((n) => n.attrs && n.attrs["aria-label"] === "Courier charge");
+  return all(root).find((n) => n.attrs && n.attrs["aria-label"] === "Postage");
 }
 const trackingBox = (root) =>
   all(root).find((n) => n.tagName === "INPUT" && n.attrs && n.attrs.placeholder === "e.g. JT123456789");

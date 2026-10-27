@@ -45,7 +45,7 @@
 //
 // Pure module: no DOM, no storage. Runs under Node for tests.
 
-import { customerTotal } from "./courier.js";
+import { chargeLabelOf, customerTotal } from "./courier.js";
 import { deliveryDateOf } from "./customers.js";
 import { fmtRM } from "./state.js";
 import { receiptNoOfGroup } from "./receipts.js";
@@ -122,7 +122,7 @@ export function invoiceSheet(state, group, { from = "", bakery = "", printed = "
   // line would make the sheet's own arithmetic wrong.
   const cur = (state.settings && state.settings.currency) || "RM";
   const codNote = (Number(t.cod) || 0) > 0
-    ? `Courier charge ${fmtRM(t.cod, cur)} is paid to the driver on delivery (cash on delivery).`
+    ? `${chargeLabelOf(state)} ${fmtRM(t.cod, cur)} is paid to the driver on delivery (cash on delivery).`
     : "";
 
   // ⚠️⚠️ A REFUNDED SALE'S INVOICE NEVER SAID SO (v577). ⭐ The caller always passes a serial, so

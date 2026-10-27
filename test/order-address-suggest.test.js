@@ -766,7 +766,7 @@ const ROUND_TRIP = [
 ];
 // ⚠️ Excused on purpose, each for its own reason — never silently.
 const NOT_AN_ORDER_FACT = [
-  "Courier charge",          // the charge box: an amount AND a payer settle together, and it has its own tests
+  "Postage",          // the charge box: an amount AND a payer settle together, and it has its own tests
   "How many",                // per LINE, not per order
   "Selling price",           // per line
   "Note for this item",      // per line

@@ -15,7 +15,7 @@
 //     than left with a total that reads like the whole cost — on both surfaces the
 //     customer sees, because they are read side by side.
 //   • Recording a charge ends it, with no second mechanism: the note disappears and
-//     the ordinary "Courier charge / To pay" pair takes over, because the recorded
+//     the ordinary "Postage / To pay" pair takes over, because the recorded
 //     charge has always replaced the flat fee on that order.
 //
 // Pure — state.js, courier.js and supabase.js are side-effect free under Node, so
@@ -121,7 +121,7 @@ test("recording a charge ends the quote, with no second switch to remember", () 
   assert.equal(parts.quoted, false, "the delivery cost is settled now");
   assert.deepEqual(moneyLines(st, parts), [
     "Total: RM 30.00",
-    "Courier charge: RM 12.00",
+    "Postage: RM 12.00",
     "To pay: RM 42.00",
   ], "the ordinary charge pair takes over — the same rule as in flat mode");
 });

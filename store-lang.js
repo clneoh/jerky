@@ -461,11 +461,14 @@ const en = {
   // from the published total would be too high. The same line, in the same place, is in
   // the customer's WhatsApp message — see moneyLines in admin/js/courier.js, which owns
   // the English wording there.
-  courierCharge: "Courier charge: %1",
+  // ⚠️ THIS SHOP POSTS. The engine's word is "Courier charge" (a van); munchies' is its own, and it
+  // matches the default in `admin/js/courier.js`. ⚠️ If she renames the charge in Settings, HER messages and
+  // receipts follow that setting but these two shop strings do NOT — edit them here as well.
+  courierCharge: "Postage: %1",
   // The same charge when the courier collects it at the door: COD is the word
   // Malaysians know for a parcel the receiver pays for, so it is kept, with what to
   // do about it spelled out beside it (19 Sep 2026).
-  courierCod: "Courier charge: %1 - COD, pay the courier on delivery",
+  courierCod: "Postage: %1 - COD, pay the courier on delivery",
   // When the delivery cost is not settled at all: the shop quotes each posted order by
   // courier, and this order has no charge recorded on it yet (28 Sep 2026). Carries no
   // figure, so it is not a %1 string — and it is word for word what the customer's
@@ -774,8 +777,8 @@ const zh = {
   trkTotal: "总计：%1",
   trackingNo: "快递单号：%1",
   trackDelivery: "查询您的订单：",
-  courierCharge: "快递费：%1",
-  courierCod: "快递费：%1 - 货到付款，收货时付给送货员",
+  courierCharge: "邮费：%1",
+  courierCod: "邮费：%1 - 货到付款，收货时付给送货员",
   postageQuoted: "邮费：另行报价 — 我们会把准确金额发给你",
   promoLine: "优惠码 %1：-%2",
   promoFriend: "朋友推荐优惠：-%1",
@@ -1057,8 +1060,8 @@ const ms = {
   trkTotal: "Jumlah keseluruhan: %1",
   trackingNo: "Nombor penjejakan: %1",
   trackDelivery: "Jejak order anda:",
-  courierCharge: "Caj kurier: %1",
-  courierCod: "Caj kurier: %1 - COD, bayar kepada kurier semasa penghantaran",
+  courierCharge: "Kos pos: %1",
+  courierCod: "Kos pos: %1 - COD, bayar kepada kurier semasa penghantaran",
   postageQuoted: "Pos: disebut berasingan — kami akan beritahu jumlah tepat kepada anda",
   promoLine: "Kod %1: -%2",
   promoFriend: "Diskaun bawa rakan yang dihantar kepada anda: -%1",

@@ -1,8 +1,47 @@
-# Munchies Furkidz — change history (v54 → v669)
+# Munchies Furkidz — change history (v54 → v671)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**27 Oct 2026 — engine v671: ONE BAD NUMBER CAN NO LONGER STOP EVERY PRODUCT'S COUNT (nothing to run, no SQL,
+nothing to upload).**
+
+**Your report: "Sync failed: Product sync failed (HTTP 400) — null value in column slots_left violates
+not-null constraint".**
+
+**1. WHAT IT WAS.** ⚠️ **The fault was in the sending, not in your database.** **A count is worked out from a
+product's daily limit and what is already ordered; if one of those figures had gone bad, the sum became a
+number the app cannot send — and the moment it is sent, JSON turns it into an EMPTY value.** **The database
+refuses an empty value in that column, and because all your products are published in ONE call, that single
+row rejected every product's "only N left" at once.**
+
+**2. WHAT IT DOES NOW.** **Nothing that is not a real number can be sent**: a broken figure is published as
+**0** — "sold out" for that one product, which can never oversell — and the rest of the shop updates normally.
+**A pack size of zero can no longer divide by zero either.**
+
+**3. AND IT TELLS YOU WHICH ONE.** ⭐ **"Check my system" gained a check, "Every count the shop publishes is a
+real number", which NAMES the product or order carrying the bad figure** — because "sync failed" without a
+name is a fault you cannot act on. **Open that product and type its limit again as a whole number.**
+
+**Nothing to run, no SQL, nothing to upload.**
+
+**27 Oct 2026 — engine v670: THE CHARGE IS CALLED "POSTAGE" EVERYWHERE (nothing to run, no SQL, nothing to
+upload).**
+
+**Your instruction: "make the order card say postage".**
+
+**1. WHAT WAS WRONG.** ⚠️ **Your own order card said "Courier charge (optional)" while the customer's message
+and the shop said something the setting could change** — **two words for one figure**, and the word "courier"
+on a shop that posts parcels.
+
+**2. WHAT IT SAYS NOW.** **The order card's box, the refund row, the invoice's cash-on-delivery note and the
+shop's own card all say "Postage".** ⭐ **And the box follows the setting**: if you rename the charge in
+**Settings → Delivery charge → "What the charge is called"**, your order card and the customer's message move
+together. ⚠️ **The shop's own two sentences are translated in the shop's files**, so a rename does not reach
+them — that is written down where they live.
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **27 Oct 2026 — engine v669: THE SHOP'S MALAY CALLS THE DAY "HARI POS" (nothing to run, no SQL, nothing to
 upload).**

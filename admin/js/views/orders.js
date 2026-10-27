@@ -23,7 +23,7 @@ import { buildPaymentReminder, buildPickupReminder, buildShippedMessage } from "
 import { claimReceipt, incomingCapReached, maybePublishTracking, maybeSync, publishTracking, refundReceipt, sendPrintJob, stuckOrders, unrefundReceipt } from "../supabase.js";
 import { receiptLineOfGroup, receiptNoOf, receiptNoOfGroup, receiptStatusOfGroup } from "../receipts.js";
 import { couponDeclined, couponOnAny } from "../referrals.js";
-import { writeCourierCharge, courierFeeOf, courierPayerOf, courierCodOf, customerCourierFee, isCourierOrder, codeMissed, codeNotApplied, couponAgainst, customerTotal, receiptNote, receiptRows, promoOn, promoValue, promoOnBasket, refundableCharge, paymentShift, withBuffer } from "../courier.js";
+import { writeCourierCharge, courierFeeOf, courierPayerOf, courierCodOf, customerCourierFee, isCourierOrder, codeMissed, codeNotApplied, couponAgainst, customerTotal, receiptNote, receiptRows, promoOn, promoValue, promoOnBasket, refundableCharge, paymentShift, withBuffer, chargeLabelOf } from "../courier.js";
 import { isCash, isTng, methodLabel, methodRank, methodsOf } from "../accounts.js";
 // ★ HER OWN EDITOR AND ITS ＋ CHIP (v478). The payment sheet adds an account ON THE SPOT with the
 // same form the money lists use, rather than a second way to write `state.settings.payMethods`.
@@ -3901,12 +3901,16 @@ export function courierPayQuestions(state, first, onChange = () => {}, { default
 // types.
 function courierControls(state, first, onChange = () => {}) {
   let feeRaw = courierFeeOf(first) ? String(courierFeeOf(first)) : "";
+  // ⚠️ THE BOX WEARS THE SAME WORD AS THE CUSTOMER'S MESSAGE (v670). ⭐ It used to be a hard-coded
+  // "Courier charge (optional)", so renaming the charge in Settings changed what the customer read and left
+  // her own screen saying something else — two words for one figure, which is how the two drift apart.
+  const chargeWord = chargeLabelOf(state);
 
   const amountInput = el("input", { class: "input", type: "number", inputmode: "decimal", min: "0", step: "0.01",
-    placeholder: "e.g. 8.00", value: feeRaw, "aria-label": "Courier charge",
+    placeholder: "e.g. 8.00", value: feeRaw, "aria-label": chargeWord,
     oninput: function () { feeRaw = this.value; onChange(); } });
   const amountField = el("div", { class: "field" },
-    el("label", {}, "Courier charge (optional)"),
+    el("label", {}, `${chargeWord} (optional)`),
     amountInput);
   const pay = courierPayQuestions(state, first, onChange, { defaultPayer: "customer" });
   // What the box holds, read ONE way. Both the save and the guard below ask this, so
@@ -5999,7 +6003,7 @@ export function refundOrder(state, group, first, { root, dateId, fromEdit = fals
       const box = el("input", { type: "checkbox", onchange: () => { courierWanted = box.checked; sync(); } });
       courierUI = { box, amt };
       rows.push(el("label", { class: "refund-row" }, box,
-        el("span", { class: "refund-what" }, "Courier charge"), amt));
+        el("span", { class: "refund-what" }, chargeLabelOf(state)), amt));
     }
 
     sumEl = el("b", {}, "");

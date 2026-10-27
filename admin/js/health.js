@@ -392,6 +392,36 @@ export function localChecks(state) {
       : pass("readable", "This phone could read its saved copy"));
   }
 
+  // ── A NUMBER THE SHOP CANNOT READ (v671) ────────────────────────────────
+  //
+  // ⚠️⚠️ HER REPORT, 27 Oct: **"Product sync failed (HTTP 400) — null value in column slots_left violates
+  // not-null constraint"**. ⭐ **The cause is JSON: `Infinity` and `NaN` both serialise to `null`** — so a
+  // limit or a quantity that had gone bad reached the database as a null, in a column that forbids one, and
+  // **one such row rejects the whole product batch**, so no product's "Only N left" stamp updates.
+  // ⭐ The publisher now refuses to send a non-number at all (it sends 0, the direction that cannot
+  // oversell), and THIS check is what names the record behind it, because "sync failed" without a name is a
+  // fault she cannot act on.
+  {
+    const bad = [];
+    for (const p of (state.products || [])) {
+      if (!p) continue;
+      const limit = p.limit;
+      // Only a product that CLAIMS a limit is published; an unlimited one carries no number to be wrong.
+      if (limit !== "" && limit != null && !Number.isFinite(Number(limit))) bad.push(`product "${p.name || "(no name)"}"`);
+      for (const line of (p.recipe || [])) {
+        if (line && line.productId && !Number.isFinite(Number(line.qty))) bad.push(`"${p.name || "(no name)"}" recipe`);
+      }
+    }
+    for (const o of orders) {
+      if (o && !Number.isFinite(Number(o.qty))) bad.push(`order #${codeOf(o)}`);
+    }
+    out.push(bad.length
+      ? fail("numbers", "Every count the shop publishes is a real number", bad.slice(0, 12),
+        "One of these carries a figure the app can no longer read — a limit, a recipe amount or an ordered quantity that is not a plain number. The shop publishes these counts as numbers, and a broken one is sent as an empty value that the database refuses, which stops EVERY product's \"only N left\" from updating.",
+        "Open each one and type its figure again — a whole number with no letters, spaces or symbols. Check my system clears itself once they read properly.")
+      : pass("numbers", "Every count the shop publishes is a real number"));
+  }
+
   // ── A VAN SENT BEFORE THE PARCEL EXISTS (v657) ──────────────────────────
   //
   // ⚠️⚠️ A van day typed a MONTH earlier than the day the order is posted. Nothing on the card said so, and

@@ -20,7 +20,7 @@
 //     customerTotal() carries a fourth part, `postage`, which is 0 whenever a charge
 //     is recorded and the flat fee otherwise.
 //   • This app's messages have always been shaped "Total: <items>", then the delivery
-//     line, then "To pay: <sum>" — not "Items total / Courier charge / Total". So the
+//     line, then "To pay: <sum>" — not "Items total / Postage / Total". So the
 //     add-up pinned here is Total + charge = To pay, and the posted message (which has
 //     never quoted an items total) is checked for a self-contained block instead.
 
@@ -111,7 +111,7 @@ test("a charge on an order that is NOT going by courier is nothing, wherever it 
 
 
     "the items alone — the courier is not carrying anything");
-  assert.ok(!buildConfirmation(st, g, "https://x/track").message.includes("Courier charge"),
+  assert.ok(!buildConfirmation(st, g, "https://x/track").message.includes("Postage"),
     "and the confirmation does not name a charge that is not being asked for");
   assert.ok(buildConfirmation(st, g, "https://x/track").message.includes("Total: RM 30.00"),
     "the goods still print — a plain order is the one figure, correct for a collect order");
@@ -228,14 +228,14 @@ test("the customer's total carries their courier charge, and says so", () => {
 
   const reminder = buildPaymentReminder(st, g, "https://x/track");
   assert.match(reminder.message, /Items: Focaccia x2/);
-  assert.match(reminder.message, /Courier charge: RM 8\.00/,
+  assert.match(reminder.message, /Postage: RM 8\.00/,
     "named above the sum, not left to be discovered inside it");
   assert.match(reminder.message, /To pay: RM 38\.00/, "the RM30 of bread plus the RM8 charge");
-  assert.ok(reminder.message.indexOf("Courier charge") < reminder.message.indexOf("To pay:"),
+  assert.ok(reminder.message.indexOf("Postage") < reminder.message.indexOf("To pay:"),
     "the charge is read before the sum it is part of");
 
   const shipped = buildShippedMessage(st, g, "https://x/track");
-  assert.match(shipped.message, /Courier charge: RM 8\.00/, "and the posted message carries it too");
+  assert.match(shipped.message, /Postage: RM 8\.00/, "and the posted message carries it too");
   assert.match(shipped.message, /To pay: RM 38\.00/,
     "and ends on the same sum the reminder quoted, so the two can never disagree");
 });
@@ -252,9 +252,9 @@ test("the confirmation carries their charge, because it is the message that asks
   const g = groupOf(st);
 
   const msg = buildConfirmation(st, g, "https://x/track").message;
-  assert.match(msg, /Courier charge: RM 8\.00/, "named, not folded silently into the sum");
+  assert.match(msg, /Postage: RM 8\.00/, "named, not folded silently into the sum");
   assert.match(msg, /To pay: RM 38\.00/, "the RM30 of bread plus the RM8 charge");
-  assert.ok(msg.indexOf("Courier charge") < msg.indexOf("To pay:"),
+  assert.ok(msg.indexOf("Postage") < msg.indexOf("To pay:"),
     "read before the sum it is part of");
 });
 
@@ -289,7 +289,7 @@ test("every message that quotes the charge shows the customer the sum that reach
     shipped: buildShippedMessage(st, g, "https://x/track").message,
   };
   for (const [which, message] of Object.entries(messages)) {
-    const courier = pickRM(message, "Courier charge");
+    const courier = pickRM(message, "Postage");
     const toPay = pickRM(message, "To pay");
     assert.equal(courier, 8, `the ${which} names the charge itself, so there is no mystery RM8`);
     assert.equal(toPay, 38, `and the ${which} quotes the sum the customer is asked for`);
@@ -311,7 +311,7 @@ test("a charge SHE bore never reaches the confirmation either", () => {
 
   const msg = buildConfirmation(st, g, "https://x/track").message;
   assert.match(msg, /Total: RM 30\.00/, "what they owe is the bread, and only the bread");
-  assert.doesNotMatch(msg, /Courier charge/,
+  assert.doesNotMatch(msg, /Postage/,
     "asking them for a charge she is absorbing would be taking money she is not owed");
 });
 
@@ -323,7 +323,7 @@ test("an order with no charge confirms exactly as it did before this existed", (
     g, "https://x/track").message;
   assert.equal(buildConfirmation(st, g, "https://x/track").message, plain,
     "byte for byte — nothing about an order without a charge moved");
-  assert.doesNotMatch(plain, /Courier charge/);
+  assert.doesNotMatch(plain, /Postage/);
 });
 
 test("a charge SHE bore is absent from the customer's total, and from what they are told", () => {
@@ -336,9 +336,9 @@ test("a charge SHE bore is absent from the customer's total, and from what they 
 
   const reminder = buildPaymentReminder(st, g, "https://x/track");
   assert.match(reminder.message, /Total: RM 30\.00/, "what they owe is the bread, and only the bread");
-  assert.doesNotMatch(reminder.message, /Courier charge/,
+  assert.doesNotMatch(reminder.message, /Postage/,
     "she is absorbing it — telling the customer about it would ask them for money they do not owe");
-  assert.doesNotMatch(buildShippedMessage(st, g, "https://x/track").message, /Courier charge/);
+  assert.doesNotMatch(buildShippedMessage(st, g, "https://x/track").message, /Postage/);
   assert.doesNotMatch(buildShippedMessage(st, g, "https://x/track").message, /Total:/,
     "and with no charge to explain, the shipped message is left exactly as it was");
 });
@@ -365,7 +365,7 @@ test("a charge SHE bore absorbs the flat postage too, and says nothing about del
 
   const msg = buildConfirmation(st, groupOf(st), "https://x/track").message;
   assert.doesNotMatch(msg, /Postage/, "the flat fee an absorbed charge replaces must not reappear");
-  assert.doesNotMatch(msg, /Courier charge/);
+  assert.doesNotMatch(msg, /Postage/);
   assert.doesNotMatch(msg, /To pay:/, "and with nothing left to add, there is no sum to ask for");
 });
 
@@ -388,7 +388,7 @@ test("no charge at all leaves every message exactly as it was", () => {
   const g = groupOf(st);
   const reminder = buildPaymentReminder(st, g, "https://x/track").message;
   assert.match(reminder, /Total: RM 30\.00/);
-  assert.doesNotMatch(reminder, /Courier charge/);
+  assert.doesNotMatch(reminder, /Postage/);
   assert.equal(reminder, buildPaymentReminder(state({ orders: orders({ whatsapp: "60123456789" }) }),
     g, "https://x/track").message, "byte for byte the same as an order this feature never touched");
 });
@@ -492,7 +492,7 @@ test("COD stays out of the total in all three messages, and is named as COD in e
     shipped: buildShippedMessage(st, g, "https://x/track").message,
   };
   for (const [which, message] of Object.entries(messages)) {
-    assert.match(message, /Courier charge: RM 8\.00 - COD, pay the courier when your order reaches you/,
+    assert.match(message, /Postage: RM 8\.00 - COD, pay the courier when your order reaches you/,
       `the ${which} says who is paid and when — COD on its own reads as paying for the goods`);
     // This app's shape prints the items figure as "Total", so a COD charge leaves that
     // line at the bread — it is the "To pay" line that disappears, because a COD charge
@@ -515,7 +515,7 @@ test("the COD charge is still shown in full, so the customer can add up what the
   const g = codOrder(st);
   const message = buildConfirmation(st, g, "https://x/track").message;
   const items = pickRM(message, "Total");
-  const cod = pickRM(message, "Courier charge");
+  const cod = pickRM(message, "Postage");
   assert.equal(items, 30);
   assert.equal(cod, 8, "the RM8 is not hidden — it is re-labelled, not removed");
   assert.equal(items + cod, 38, "what changes hands altogether is still bread + charge, whoever is paid");
@@ -531,12 +531,12 @@ test("an advance charge and a no-charge order are byte-identical to what v127 pr
   advance.orders[0].whatsapp = "60123456789";
   advance.orders[0].fulfillment = "courier";
   const msg = buildPaymentReminder(advance, groupOf(advance), "https://x/track").message;
-  assert.match(msg, /Total: RM 30\.00\nCourier charge: RM 8\.00\nTo pay: RM 38\.00\n/,
+  assert.match(msg, /Total: RM 30\.00\nPostage: RM 8\.00\nTo pay: RM 38\.00\n/,
     "the v127 lines, in the v127 order, with the v127 figures — the courier box added no line and moved none");
 
   // The one line that must NOT be there alongside it: the flat postage, which this
   // charge stands in for. Both together is the double-charge this rule exists to stop.
-  assert.doesNotMatch(msg, /Postage/,
+  assert.doesNotMatch(msg, /Postage \(nationwide\)/,
     "a recorded charge replaces the flat postage rather than being added to it");
 
   const none = state({ settings: { currency: "RM", storefront: { postageRM: 8, postageSet: true } } });
@@ -545,7 +545,7 @@ test("an advance charge and a no-charge order are byte-identical to what v127 pr
   const plain = buildPaymentReminder(none, groupOf(none), "https://x/track").message;
   assert.match(plain, /Postage \(nationwide\): RM 8\.00\nTo pay: RM 38\.00\n/,
     "and an order with no charge recorded is quoted the flat postage, exactly as before this existed");
-  assert.doesNotMatch(plain, /Courier charge/,
+  assert.doesNotMatch(plain, /^Postage: /m,
     "the two are never printed together");
 });
 

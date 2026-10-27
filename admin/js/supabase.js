@@ -139,14 +139,25 @@ export function computeProductSlots(state, horizon = 10) {
       const anyId = ids.find(Boolean);
       const pr = anyId ? poolRemaining(state, anyId, base.id) : null;
       const booked = pr ? pr.booked : 0;
-      const baseLeft = Math.max(0, capacity - booked);
-      rows.push({ date, product: base.name, slots_left: baseLeft, capacity });
+      // ⚠️⚠️ A NUMBER THAT IS NOT A NUMBER NEVER REACHES THE WIRE (v671). ⭐ Her report, 27 Oct: **"Product
+      // sync failed (HTTP 400) — null value in column slots_left violates not-null constraint"**. ⚠️ **The
+      // cause is JSON itself: `Infinity` and `NaN` both serialise to `null`**, so a limit or a booked count
+      // that had gone bad arrived as a null in a column that forbids one — and because the backoffice publishes
+      // the batch in ONE call, **that one row rejected every product's stamp at once**.
+      // ⭐ `whole()` is the only thing that leaves here, so no arithmetic above it can put a null on the wire.
+      // ⚠️ Zero is the direction that cannot oversell: a broken figure reads "Sold out" for that one product
+      // rather than selling stock nobody counted — and `limitProblems()` on Check my system NAMES it.
+      const whole = (n) => (Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0);
+      const baseLeft = whole(capacity - booked);
+      rows.push({ date, product: base.name, slots_left: baseLeft, capacity: whole(capacity) });
       for (const pack of packsByBase.get(base.id) || []) {
         rows.push({
           date,
           product: pack.name,
-          slots_left: Math.floor(baseLeft / pack.baseQty),
-          capacity: Math.floor(capacity / pack.baseQty),
+          // A pack size of zero would divide by nothing; `isPoolablePack` says it cannot happen, and this
+          // refuses it anyway rather than trusting a reading to stay true after a hand-edited import.
+          slots_left: whole(pack.baseQty > 0 ? baseLeft / pack.baseQty : 0),
+          capacity: whole(pack.baseQty > 0 ? capacity / pack.baseQty : 0),
           pool_base: base.name,
           pool_qty: pack.baseQty,
         });

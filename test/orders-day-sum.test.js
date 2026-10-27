@@ -692,7 +692,7 @@ test("the courier box says what the customer owes, and moves the moment they bea
   const box = feeInput(pop);
   box.value = "8";
   box._listeners.input[0].call(box); // the handler reads this.value
-  assert.ok(money(pop, ...ITEMS_30, "Courier charge", "RM 8.00", "Total", "RM 38.00"),
+  assert.ok(money(pop, ...ITEMS_30, "Postage", "RM 8.00", "Total", "RM 38.00"),
     "so a typed amount is theirs without any further answer — that is what the default means");
 
   const unowned = selWith(pop, "The customer paid it");
@@ -705,7 +705,7 @@ test("the courier box says what the customer owes, and moves the moment they bea
   theirs.value = "customer";
   theirs._listeners.change[0]();
   pop = layers["popup-layer"]; // the body repaints on the payer, as the method line does
-  assert.ok(money(pop, ...ITEMS_30, "Courier charge", "RM 8.00", "Total", "RM 38.00"),
+  assert.ok(money(pop, ...ITEMS_30, "Postage", "RM 8.00", "Total", "RM 38.00"),
     "now it is their money: the bread, the charge, and the sum she will ask for, told apart");
 
   const mine = selWith(pop, "I paid it");
@@ -752,7 +752,7 @@ test("the Edit pop-up's order total counts a charge the customer bears, and name
   renderOrders(root, st, new URLSearchParams({ date: "d10" }));
 
   buttonByText(root, "Edit")._listeners.click[0]();
-  assert.ok(money(layers["popup-layer"], ...ITEMS_30, "Courier charge", "RM 8.00", "Total", "RM 38.00"),
+  assert.ok(money(layers["popup-layer"], ...ITEMS_30, "Postage", "RM 8.00", "Total", "RM 38.00"),
     "the figure she reads as the order's worth includes what the customer pays the courier");
 });
 
@@ -803,7 +803,7 @@ test("the Edit pop-up's order total counts the code off, and names it", () => {
   renderOrders(root, st, new URLSearchParams({ date: "d10" }));
 
   buttonByText(root, "Edit")._listeners.click[0]();
-  assert.ok(money(layers["popup-layer"], ...ITEMS_30, "Courier charge", "RM 8.00",
+  assert.ok(money(layers["popup-layer"], ...ITEMS_30, "Postage", "RM 8.00",
     "Promo FRESH10", "-RM 10.00", "Total", "RM 28.00"),
     "the goods, the charge, the code — a line she can add up as she reads it");
 });
@@ -864,7 +864,7 @@ test("a self collect order parks the charge on the Note / tracking card too, and
   const pop = layers["popup-layer"];
   const text = popText(pop);
   assert.ok(money(pop, ...ITEMS_30, "Total", "RM 30.00"), "the customer's total is the items alone");
-  assert.ok(!money(pop, "Courier charge", "RM 8.00"),
+  assert.ok(!money(pop, "Postage", "RM 8.00"),
     "the parked charge is not counted into what they owe, here or anywhere");
   assert.ok(all(pop).some((n) => String(n.className).includes("parked-charge")),
     "and it is NAMED rather than silently dropped, the same as on the Edit card");
@@ -1163,14 +1163,14 @@ test("the box names what the courier collects, and keeps it out of the total she
   theirs.value = "customer";
   theirs._listeners.change[0]();
   let pop2 = layers["popup-layer"];
-  assert.ok(money(pop2, ...ITEMS_30, "Courier charge", "RM 8.00", "Total", "RM 38.00"),
+  assert.ok(money(pop2, ...ITEMS_30, "Postage", "RM 8.00", "Total", "RM 38.00"),
     "with the order, the charge is inside what she asks for, exactly as v126 read it");
 
   const sel = codSelIn(pop2);
   sel.value = "cod";
   sel._listeners.change[0]();
   const codText = receiptText(layers["popup-layer"]);
-  // The COD row's label carries its own rider ("Courier charge — COD, pay the courier
+  // The COD row's label carries its own rider ("Postage — COD, pay the courier
   // when your order reaches you"), so the rows are read one at a time rather than as one
   // contiguous run.
   assert.ok(codText.includes("Items total | RM 30.00") && codText.includes("Total | RM 30.00"),
@@ -1449,7 +1449,7 @@ test("Edit's own total follows the fee box as she types, and names the charge", 
   const theirs = selWith(pop, "The customer paid it");
   theirs.value = "customer";
   theirs._listeners.change[0]();
-  assert.ok(money(pop, ...ITEMS_30, "Courier charge", "RM 8.00", "Total", "RM 38.00"),
+  assert.ok(money(pop, ...ITEMS_30, "Postage", "RM 8.00", "Total", "RM 38.00"),
     "the figure she reads here moves with the box — a total that only moved after a save is one she cannot check");
 
   const sel = codSelIn(pop);
@@ -1876,7 +1876,7 @@ test("a price from the courier lands in the charge box, and the customer's total
   const payer = selWith(pop, "The customer paid it");
   assert.ok(payer, "the payer is still hers to answer");
   assert.deepEqual(openedOn(payer), ["The customer paid it"], "and it opens on The customer paid it (v216)");
-  assert.ok(money(pop, ...ITEMS_30, "Courier charge", "RM 12.50", "Total", "RM 42.50"),
+  assert.ok(money(pop, ...ITEMS_30, "Postage", "RM 12.50", "Total", "RM 42.50"),
     "the same number she would have got by typing 12.50 into the box herself");
 
   payer.value = "me";

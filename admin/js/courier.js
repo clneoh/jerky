@@ -145,7 +145,12 @@ export function withBuffer(state, amount) {
 
 // The word in front of the charge, in her own spelling. ⚠️ It is used by the customer's own message and by her
 // receipts, so one setting words both rather than two places drifting apart.
-export const CHARGE_LABEL_DEFAULT = "Courier charge";
+// ⚠️ "Postage" IS THIS SHOP'S WORD, NOT THE ENGINE'S (v670, her instruction: __"make the order card say postage"__).
+// The bakery's default was "Courier charge", because it runs a van; **munchies posts parcels**, and every other
+// word on this screen already says postage — "Postage (nationwide)" on the receipt, the flat postage in
+// Settings, the shop's own "Postage is a flat fee per order". ⭐ **One word, set once, and it is changeable in
+// Settings → Delivery charge → "What the charge is called".**
+export const CHARGE_LABEL_DEFAULT = "Postage";
 export function chargeLabelOf(state) {
   const said = String((((state || {}).settings || {}).courier || {}).chargeLabel || "").trim();
   return said || CHARGE_LABEL_DEFAULT;

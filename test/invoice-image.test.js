@@ -16,7 +16,7 @@ const sheet = () => ({
     { what: "Code SAVE5", amount: 5, dir: "out" },
   ],
   totals: [{ label: "Total", amount: 379 }],
-  note: "Courier charge RM 8.00 is paid to the driver on delivery (cash on delivery).",
+  note: "Postage RM 8.00 is paid to the driver on delivery (cash on delivery).",
 });
 const texts = (ops) => ops.filter((o) => o.kind === "text").map((o) => o.text).join(" | ");
 

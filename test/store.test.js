@@ -1878,7 +1878,7 @@ const cardLabels = (box) => {
 const byExactClass = (box, name) =>
   box.children.find((c) => String(c.className || "").split(/\s+/).includes(name));
 // This shop's card names a charge in ONE line of words with its figure —
-// "Courier charge: RM8.00" — rather than the bakery's two-half money row (v277),
+// "Postage: RM8.00" — rather than the bakery's two-half money row (v277),
 // because the flat postage here is never published and the card draws no money
 // block at all (see store/app.js' `track-fee` line). So the whole line is read at
 // once, rather than a left label and a right figure read apart.
@@ -2005,7 +2005,7 @@ test("a courier charge the customer bears is named on the card, and the lookup a
       "and customer, for the same reason: the name was in the row all along and the card never received it");
     const fee = deepByClass(box, "track-fee");
     assert.ok(fee, "the charge is named on its own line, above the total that includes it");
-    assert.equal(feeText(fee), "Courier charge: RM8.00",
+    assert.equal(feeText(fee), "Postage: RM8.00",
       "the charge is named and its figure given, on one line, above the total that includes it");
     assert.equal(byExactClass(box, "track-note").children[0].text, "For Ain",
       "and the customer's own name reaches the card");
@@ -2094,7 +2094,7 @@ test("a Courier COD charge tells the customer to pay the courier, not you", asyn
       "the lookup names courier_cod — it sends only the columns listed, so the card can never know the charge is COD until this asks for it, and would word it as money owed to the baker");
     const fee = deepByClass(box, "track-fee");
     assert.ok(fee, "the charge is still named in full — the customer has to know what the courier will ask for");
-    assert.equal(feeText(fee), "Courier charge: RM8.00 - COD, pay the courier on delivery",
+    assert.equal(feeText(fee), "Postage: RM8.00 - COD, pay the courier on delivery",
       "where the money goes is kept with the words, so the customer reads who takes it");
     assert.equal(byExactClass(box, "track-note").children[0].text, "For Ain");
   } finally {
@@ -2113,7 +2113,7 @@ test("a charge paid with the order still reads as the plain charge", async () =>
   globalThis.fetch = async (url) => ({ ok: true, json: async () => [onlySelected(url, posted)] });
   try {
     await trackOrder("A3F9C2", "0123456789");
-    assert.match(feeText(deepByClass(box, "track-fee")), /Courier charge/,
+    assert.match(feeText(deepByClass(box, "track-fee")), /Postage/,
       "no COD wording, and no flag sent — as every row published before this column existed");
   } finally {
     globalThis.fetch = async () => ({ ok: true, json: async () => [] });

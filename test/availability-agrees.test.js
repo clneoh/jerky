@@ -189,3 +189,41 @@ test("an order left behind by a DELETED day still counts as itself", () => {
   assert.equal(poolRemaining(st, "del_gone", "prd_1").booked, 5, "and the pool with it");
   assert.equal(bookedUnitsOnDate(st, DATE), 0, "while the real day it was NOT booked on stays empty");
 });
+
+// ── a number the database can refuse (v671) ─────────────────────────────────
+//
+// ⚠️⚠️ HER REPORT, 27 Oct: __"Product sync failed (HTTP 400) — null value in column slots_left
+// violates not-null constraint"__. ⭐ **The cause is JSON, not SQL: `Infinity` and `NaN` both
+// serialise to `null`** — so a limit that had gone bad reached the column as a null, and because
+// the backoffice publishes the batch in ONE call, **that one row stopped EVERY product's
+// "only N left" from updating**. ⭐ These two tests are the ones that would have caught it.
+
+test("★★★ a figure the app cannot read is never published as a null (v671)", () => {
+  // A limit that reads as Infinity — the shape a hand-edited or pasted figure can leave behind.
+  const st = state({ products: [jerky({ limit: "1e999" })], deliveryDates: oneDate(), orders: [] });
+  const rows = computeProductSlots(st, 3);
+  assert.ok(rows.length > 0, "the product is still published at all");
+  for (const r of rows) {
+    assert.equal(Number.isFinite(r.slots_left), true, `★ slots_left is not a number on ${r.date}/${r.product}`);
+    assert.equal(Number.isFinite(r.capacity), true, `★ capacity is not a number on ${r.date}/${r.product}`);
+    assert.equal(JSON.stringify(r).includes(":null"), false,
+      `★ a null reached the payload on ${r.date}/${r.product} — that is what the database refused`);
+  }
+});
+
+test("★★★ and a pack size of nothing divides by nothing, never by zero (v671)", () => {
+  // ⚠️ `isPoolablePack` says a pack size cannot be zero; this refuses it anyway, because a
+  // reading that is true today can stop being true after an import she did not type.
+  const st = state({
+    products: [jerky(), { id: "p_pack", name: "Family Pack", price: 60, limit: 0, active: true, unit: "pack",
+      recipe: [] }],
+    deliveryDates: oneDate(), orders: [],
+  });
+  // A pack whose size reads as zero: the division below it must not become Infinity.
+  st.products[1].recipe = [{ productId: "prd_1", qty: 0 }];
+  const rows = computeProductSlots(st, 2).filter((r) => r.product === "Family Pack");
+  for (const r of rows) {
+    assert.equal(Number.isFinite(r.slots_left), true, "a pack's count is a real number");
+    assert.ok(r.slots_left >= 0, "and never negative");
+  }
+});

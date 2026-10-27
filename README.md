@@ -850,6 +850,40 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
+## v671 — one bad number can no longer stop every product's count (27 Oct 2026)
+
+**Her report:** *"Sync failed: Product sync failed (HTTP 400) — null value in column slots_left violates
+not-null constraint"*.
+
+⚠️ **JSON, not SQL: `Infinity` and `NaN` both serialise to `null`.** A limit or booked count that had gone bad
+reached `product_availability.slots_left` as a null, the column refused it, and **because the batch is one
+call, one row rejected every product's stamp**.
+
+- `computeProductSlots` now runs every published figure through `whole()` — `Number.isFinite` else **0** (the
+  direction that cannot oversell), plus a pack-size guard so `baseQty <= 0` cannot divide by zero.
+- **`health.js` gains `numbers`** — *"Every count the shop publishes is a real number"* — naming the product or
+  order carrying the unreadable figure. ⚠️ **"sync failed" with no name is a fault she cannot act on.**
+- Two tests in `test/availability-agrees.test.js` (an `Infinity` limit publishes no null; a zero pack size
+  divides by nothing). Health counts 26 → 27 / 14 → 15.
+
+Suite 4020.
+
+## v670 — the charge is called "Postage" (27 Oct 2026)
+
+**Her instruction:** *"make the order card say postage"*.
+
+⚠️ The order card's box was a hard-coded **"Courier charge (optional)"** while the customer's message used
+`chargeLabelOf(state)` — **two words for one figure**, and the wrong one on a shop that posts parcels.
+
+- `CHARGE_LABEL_DEFAULT` is **"Postage"** for this shop (the bakery's stays "Courier charge" — it runs a van).
+- `courierControls` (order card), the refund row (`views/orders.js`) and the invoice's COD note
+  (`invoice.js`) all read the same word, so renaming it in Settings moves every one of them together.
+- `store-lang.js`'s `courierCharge` / `courierCod` are **Postage / 邮费 / Kos pos**. ⚠️ **These two shop
+  strings are translated copy, not the setting** — a rename in Settings does not reach them, and the comment
+  there says so.
+
+39 assertions renamed across 9 test files. Suite 4018.
+
 ## v669 — the shop's Malay day word (27 Oct 2026)
 
 **Her instruction:** *"change the malay to hari pos"*.
