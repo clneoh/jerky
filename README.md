@@ -850,6 +850,18 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
+## v652 — the customer's paper shows the posting day, not the order date (27 Oct 2026)
+
+**Her words:** *"for customer side, their concern is post date, not order date, order date is for
+merchant."*
+
+**`invoiceSheet`'s `subtitle` was `orderDateOf(first)`** — the placed date, on the sheet that goes in the
+parcel and (via `invoice_image.js`) on the Wi-Fi label. **It is the order's posting day now**
+(`deliveryDateOf`), and **the placed day stays on her own screen**, in the order's row and card.
+
+**Guard:** `test/invoice.test.js` — the subtitle is the posting day, and "no date" now means **no day of
+either kind** (a row with a posting day and no placed date is an ordinary order and prints that day).
+
 ## v651 — the lookup had stopped asking Google at all (27 Oct 2026)
 
 **Found by the diagnostic added for v650** (`mode:"verdict"`), and it explains months of *"a list

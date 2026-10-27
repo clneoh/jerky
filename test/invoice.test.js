@@ -49,11 +49,13 @@ const line = (over = {}) => ({
 });
 
 test("★★★ an order with no date prints NO date, never NaN (v592)", () => {
-  // ⚠️⚠️ MEASURED: `longDate("")` is "NaN undefined NaN", and the invoice passed `orderDateOf` straight into
-  // it — ⚠️ **an imported or hand-edited row with no date printed that under the title**, while the screen
+  // ⚠️⚠️ MEASURED: `longDate("")` is "NaN undefined NaN", and the invoice passed the date straight into it
+  // — ⚠️ **an imported or hand-edited row with no date printed that under the title**, while the screen
   // showed nothing.
+  // ⚠️ AND SINCE v652 THE DATE ON THIS PAPER IS THE POSTING DAY, so "undated" means no day of either kind:
+  // a row with a posting day but no placed date is a perfectly ordinary order and it prints that day.
   const st = state();
-  const g = group([line({ orderDate: "", createdAt: "", deliveryDate: "" })]);
+  const g = group([line({ orderDate: "", createdAt: "", deliveryDate: "", deliveryDateId: "" })]);
   const inv = invoiceSheet(st, g);
   assert.equal(inv.subtitle, "", "★ an undated order printed a subtitle");
   assert.equal(journalSheet(inv).subtitle, "", "and the sheet the PDF reads carries it too");
@@ -205,7 +207,10 @@ test("an invoice is one order: the items at the price they were SOLD at, then th
   const { st, g } = cart();
   const s = journalSheet(invoiceSheet(st, g, { bakery: "Jien Luv 2 Bake" }));
   assert.equal(s.title, "Invoice #ABC123");
-  assert.equal(s.subtitle, "15 Sep 2026", "the day the order was placed, which a reprint keeps");
+  // ⚠️ THE POSTING DAY, NOT THE PLACED DAY (v652). Her words: __"for customer side, their concern is post
+  // date, not order date, order date is for merchant."__ ⭐ The sheet goes in the parcel and is handed to
+  // the customer; the day THEY care about is when it is posted. The placed day stays on her own screen.
+  assert.equal(s.subtitle, "18 Sep 2026", "the day it is posted — the day the customer cares about");
   assert.deepEqual(s.lines.map((l) => [l.what, l.amount]), [["2 × Focaccia", 30]]);
   assert.deepEqual(s.totals, [{ label: "Total", amount: 30, cls: "pl-total" }]);
 });
@@ -326,4 +331,35 @@ test("every other journal is unchanged by the letterhead", () => {
   const s = journalSheet({ title: "Sales", bakery: "Jien Luv 2 Bake", lines: [{ what: "Focaccia", amount: 30 }] });
   assert.equal(s.from, "");
   assert.deepEqual(fromLines(s.from, s.bakery), []);
+});
+
+test("★★★ the customer's paper names the DELIVERY day only when it is a different day (v653)", () => {
+  // ⚠️⚠️ HER MODEL, in her words: __"bake date/post date = to let customer know when is the cooking done.
+  // delivery date = if customer choose some date other than the 2nd date."__ ⭐ The parcel LABEL has printed
+  // both, each named, since v429 — **and the paper that goes to the CUSTOMER named only the posting day.**
+  const st = state();
+  // A van day of its own: the invoice says when it is posted (the subtitle) AND when it arrives.
+  const van = invoiceSheet(st, group([line({ fulfillment: "courier", courierDay: "2026-09-22" })]));
+  assert.match(van.note, /Delivery 22 Sep 2026/,
+    "★ the arrival day was left off the customer's paper — **they are told when it is posted and not when "
+    + "it reaches them**");
+
+  // ⭐ AND A COLLECTED ORDER'S OWN DAY IS CALLED A COLLECTION (v654). Her words: __"munchies also has
+  // collect date if defer from post date."__ ⚠️ The same field carries the day it reaches them for both
+  // ways an order leaves, so the WORD has to follow the way.
+  const collection = invoiceSheet(st, group([line({ fulfillment: "collect", courierDay: "2026-09-22" })]));
+  assert.match(collection.note, /Collection 22 Sep 2026/,
+    "★ a collected order's day was called a delivery — **the wrong word for the customer's own day**");
+  assert.doesNotMatch(collection.note, /Delivery 22 Sep 2026/,
+    "★ the same day was named twice, once with the wrong word");
+
+  // No van day: byte-for-byte the paper it always was.
+  const none = invoiceSheet(st, group([line()]));
+  assert.doesNotMatch(String(none.note || ""), /Delivery/,
+    "★ a delivery line appeared on an order that has no second day");
+
+  // A van day equal to the posting day is not a second fact, so it is not printed twice.
+  const same = invoiceSheet(st, group([line({ courierDay: "2026-09-18" })]));
+  assert.doesNotMatch(String(same.note || ""), /Delivery/,
+    "★ the same day was printed twice under two names");
 });

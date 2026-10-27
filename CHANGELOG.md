@@ -1,8 +1,45 @@
-# Munchies Furkidz — change history (v54 → v651)
+# Munchies Furkidz — change history (v54 → v653)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**27 Oct 2026 — engine v653: THE CUSTOMER'S PAPER NAMES THE DELIVERY DAY WHEN IT IS A DIFFERENT DAY
+(nothing to run, no SQL, no upload).**
+
+**Your model, in your words: "order date = for merchant only; bake date/post date = to let customer know
+when is the cooking done; delivery date = if customer choose some date other than the 2nd date."**
+
+**1. Two of the three were already in the app.** **The order date is yours and is off the customer's paper
+since v652.** **The posting day is the one the customer reads** — on the invoice and on the label.
+
+**2. The third was missing from the customer's paper.** **The parcel label has printed both days, each
+named, since v429 — *"so whoever packs a bag sees when to make it and when it leaves"*. But the paper that
+goes to the CUSTOMER named only the posting day**, so a customer whose parcel was arriving on a different
+day was told when it was posted and never when it would reach them.
+
+**3. It is named now — and only when it is a different day.** **An order with no second day prints exactly
+what it printed before**, and a delivery day that is the same day is not printed twice under two names.
+
+**Nothing to run, no SQL, nothing to upload.**
+
+**27 Oct 2026 — engine v652: A CUSTOMER'S PAPER SHOWS THE DAY THEY CARE ABOUT (nothing to run, no SQL,
+no upload).**
+
+**Your words: "for customer side, their concern is post date, not order date, order date is for
+merchant."**
+
+**1. The paper had the merchant's date on it.** **The invoice — the one that goes in the parcel and the one
+that prints on the label — carried the day the ORDER was placed.** **That is your date, and the least useful
+one to the person holding the box.**
+
+**2. It carries the POSTING day now** — **the day the parcel is going, which is the day they are waiting
+for.** **The placed day has not gone anywhere:** it is on the order's row and its card, where you work.
+
+**3. And an order with no day at all still prints no date**, rather than a broken one — unchanged, and now
+tested as "no day of either kind" rather than "no placed date".
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **27 Oct 2026 — engine v651: THE ADDRESS LOOKUP HAD STOPPED ASKING GOOGLE AT ALL, AND NOTHING SAID SO
 (nothing to run, no SQL; the two functions are already uploaded).**

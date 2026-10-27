@@ -46,12 +46,13 @@
 // Pure module: no DOM, no storage. Runs under Node for tests.
 
 import { customerTotal } from "./courier.js";
-import { orderDateOf } from "./customers.js";
+import { deliveryDateOf } from "./customers.js";
 import { fmtRM } from "./state.js";
 import { receiptNoOfGroup } from "./receipts.js";
 import { orderCode, orderLineName, orderLinePrice, round2 } from "./state.js";
 import { longDate } from "./dates.js";
 import { refundDayOf } from "./money.js";
+import { courierDayOf } from "./courier_job.js";
 
 // What one line of the order is called on paper. The quantity comes first because
 // that is how a customer reads a receipt back — "4 × Focaccia" — and the name is the
@@ -89,6 +90,17 @@ export function invoiceNo(group) {
 // no settings of its own, so it stays pure and testable).
 export function invoiceSheet(state, group, { from = "", bakery = "", printed = "", receipt = "", receiptStatus = "" } = {}) {
   const rows = (group && group.orders) || [];
+  // ⚠️ THE SECOND CUSTOMER DATE, NAMED ONLY WHEN IT DIFFERS — AND NAMED FOR WHAT IT IS (v654).
+  // ⭐ Her words, 27 Oct 2026: __"munchies also has collect date if defer from post date."__ ⚠️ The same
+  // field carries "the day it reaches them" for BOTH ways an order leaves: a van's day for a posted one,
+  // the COLLECTION day for a collected one (a Point order gets one when the trip is booked). ⭐ So a line
+  // that always said "Delivery" would hand a collecting customer the wrong word for their own day.
+  const postDay = deliveryDateOf(state, rows[0] || {});
+  const vanRaw = courierDayOf(rows[0] || {});
+  const isPosted = String((rows[0] || {}).fulfillment || "") === "courier";
+  const deliveryNote = vanRaw && vanRaw !== postDay
+    ? `${isPosted ? "Delivery" : "Collection"} ${longDate(vanRaw)}`
+    : "";
   const first = rows[0] || {};
   const t = customerTotal(state, group);
 
@@ -157,7 +169,13 @@ export function invoiceSheet(state, group, { from = "", bakery = "", printed = "
     // (measured) — the comment above claimed `orderDateOf` answered "", and it does, but the CALL was still
     // made: ⚠️ **an imported or hand-edited row with no order date printed that under the title**, while the
     // screen showed nothing. ⭐ The line is either a real day or absent.
-    subtitle: orderDateOf(first) ? longDate(orderDateOf(first)) : "",
+    // ⚠️⚠️ THE CUSTOMER'S PAPER CARRIES THE DAY THEY CARE ABOUT (v652). ⭐ Her words, 27 Oct
+    // 2026: __"for customer side, their concern is post date, not order date, order date is for
+    // merchant."__ ⭐ **The sheet used to print the day the ORDER was placed** — the merchant's
+    // fact, and the least useful one to the person holding the parcel. ⚠️ It is the POSTING day
+    // now, and the placed day stays where it belongs: on her own screen, in the order's row and
+    // its card. ⭐ An order with no day still prints no date rather than "NaN undefined NaN".
+    subtitle: deliveryDateOf(state, first) ? longDate(deliveryDateOf(state, first)) : "",
     // ⚠️⚠️ AND WHO IT IS FOR, ON PAPER (v572). ⭐ The screen said "Aunty Bee · placed …" and the sheet said
     // nothing, so a printed invoice could only be matched to an order by its code. The address rides with it
     // for a courier order, because that is the document that goes in the parcel.
@@ -167,7 +185,13 @@ export function invoiceSheet(state, group, { from = "", bakery = "", printed = "
     bakery,
     from,
     printed,
-    note: [codNote, refundNote].filter(Boolean).join("\n\n"),
+    // ★★ AND THE THIRD DATE, WHEN THE CUSTOMER CHOSE ONE (v653). Her model, in her words: __"bake
+    // date/post date = to let customer know when is the cooking done. delivery date = if customer choose
+    // some date other than the 2nd date."__ ⭐ The parcel label has printed both, each named, since v429
+    // (*"so whoever packs a bag sees when to make it and when it leaves"*) — **and the paper that goes to
+    // the CUSTOMER did not name the arrival day at all.** ⚠️ It does only when there IS one and it is a
+    // DIFFERENT day, so an ordinary order's invoice is byte-for-byte what it was.
+    note: [deliveryNote, codNote, refundNote].filter(Boolean).join("\n\n"),
     lines,
     // ⚠️⚠️ THE TOTAL IS WHAT THE LINES ABOVE IT ADD UP TO (v551). ⭐ MEASURED: two lines at RM0.005 each
     // printed as "RM 0.01" and "RM 0.01" — a reader's sum of **RM0.02** — under **Total RM0.01**, because
