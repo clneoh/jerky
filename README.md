@@ -850,6 +850,26 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
+## v653–v655 — the customer's second date, and the card on a phone (27 Oct 2026)
+
+**Her model of the three dates, verbatim:** *"order date = for merchant only; bake date/post date = to let
+customer know when is the cooking done; delivery date = if customer choose some date other than the 2nd
+date"* — then *"munchies also has collect date if defer from post date."*
+
+- **v653** — the customer's paper (invoice and Wi-Fi label) **names the second day when it exists and
+  differs** from the posting day. The parcel label has printed both since v429; it was the customer's paper
+  that named only one.
+- **v654** — **one field carries "the day it reaches them" both ways**, so the word follows: **`Delivery`**
+  on a posted order, **`Collection`** on a collected one. v653's line said "Delivery" for both.
+- **v655** — ⚠️ **the product card on a phone**, from her screenshot. **Measured at 412 px: the description
+  column had ~90 px** (photo 120 + price/stepper on the same row), so it printed **one word per line** and
+  "ONLY 10 LEFT" broke into three. **`store/app.css` gains ≤560 px** (the head wraps; `.card-side` takes its
+  own line, photo 88 px — **words 90 → 252 px**) **and ≤400 px** (price and stepper wrap: measured at 320,
+  they want 194 px beside a 158 px column). **Verified in the browser at 412 and 320: no card overflows, no
+  sideways scroll.**
+
+Suite 3998.
+
 ## v652 — the customer's paper shows the posting day, not the order date (27 Oct 2026)
 
 **Her words:** *"for customer side, their concern is post date, not order date, order date is for

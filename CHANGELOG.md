@@ -1,8 +1,29 @@
-# Munchies Furkidz — change history (v54 → v654)
+# Munchies Furkidz — change history (v54 → v655)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**27 Oct 2026 — engine v655: THE PRODUCT CARD READS PROPERLY ON A PHONE (nothing to run, no SQL, no
+upload).**
+
+**Your words, with the picture: "on phone the product card look like this, it should not be".**
+
+**1. What was wrong.** **The card is a photo beside the words, and inside the words a second row of price and
+quantity.** ⚠️ **On a phone the photo took 120 of the ~380 pixels, and the price and quantity took most of
+what was left — so the description was squeezed into about 90 pixels and printed ONE WORD TO A LINE, and
+"ONLY 10 LEFT" broke into three lines.** **Measured, not guessed: at 412 pixels the words had 90 pixels.**
+
+**2. What it does now.** **On a phone the price and quantity drop to their own line under the words** —
+**the same two facts, the same row shape, and the words get 252 pixels instead of 90.** **The photo is
+smaller too (88 pixels), because the words need that space more than the picture does.**
+
+**3. And on a very small phone the price and quantity wrap** rather than run off the side of the card —
+**measured at 320 pixels, where they wanted 194 and the space beside the photo was 158.**
+
+**⚠️ I checked it at 412 and at 320 in a browser: no card overflows, and the page never scrolls sideways.**
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **27 Oct 2026 — engine v654: A COLLECTED ORDER'S OWN DAY IS CALLED A COLLECTION (nothing to run, no SQL,
 no upload).**

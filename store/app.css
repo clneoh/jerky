@@ -877,6 +877,34 @@ html, body {
   background: #f1e9de;
 }
 
+/* ★★★ THE ITEM ROW ON A PHONE (v655). ⚠️⚠️ MEASURED ON HER PHONE, 27 Oct: at 412 px the card is a 120 px
+   photo beside the body, and inside the body a second row of WORDS + PRICE + STEPPER — ⚠️ **which left the
+   words about 90 px, so the description printed one word to a line and "ONLY 10 LEFT" broke into three
+   lines.** ⭐ The row shape is right; it simply has more in it than a phone can hold side by side.
+   ⭐ SO ON A NARROW SCREEN THE PRICE AND STEPPER DROP TO THEIR OWN LINE, under the words — the same two
+   facts, the row's own shape, and the words get the width they need. ⚠️ The photo shrinks with them: at
+   120 px it was a third of the card, and the words need that third more than the picture does. */
+@media (max-width: 560px) {
+  .menu-thumb { width: 88px; height: 88px; }
+  .card-head { flex-wrap: wrap; }
+  .card-side {
+    flex: 1 1 100%;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .menu-item .stepper { align-self: center; }
+}
+
+/* ⚠️ AND ON A VERY NARROW PHONE THE PRICE AND STEPPER WRAP (v655). ⚠️ MEASURED at 320 px: the body beside
+   the 88 px photo is 158 px, while the price and the stepper want 194 — ⚠️ **the row ran off the side of the
+   card.** ⭐ The same two facts, wrapped rather than shrunk: the price on its own line and the stepper under
+   it, both still inside the card. Nothing is lost and nothing overlaps. */
+@media (max-width: 400px) {
+  .card-side { flex-wrap: wrap; row-gap: 8px; }
+}
+
 /* The shop's category headings. A heading belongs to the cards under it, so it
    sits close to them and far from the group above — otherwise a full-width
    heading reads as a divider between two groups rather than the name of one.
