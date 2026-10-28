@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { packBitmap, bytesToBase64, labelBitmap } from "../admin/js/label_image.js";
 import { tsplForBitmap } from "../print-bridge/tspl.mjs";
 
@@ -226,14 +227,78 @@ test("★★★ the Linux installer is a twin of the Mac one, and names this sho
   // ⭐ Two machines, one program: the bridge moves to a home server or a Raspberry Pi with **no code change**,
   // so the one thing that must not drift is the identity — the service name, the config file, and the project.
   const sh = readFileSync(new URL("../print-bridge/install-linux.sh", import.meta.url), "utf8");
-  assert.match(sh, /NAME="munchies-print"/, "the systemd unit keeps this shop's own name");
+  // ⚠️ ONE MACHINE, SEVERAL BRIDGES: the unit carries the SITE, so two printers on one box are two units.
+  assert.match(sh, /UNIT="munchies-print@\$SITE\.service"/, "the systemd unit keeps this shop's own name");
+  assert.match(sh, /does not say site/, "★ and it refuses to install a bridge whose config names a different site");
   assert.match(sh, /\.munchies-print\.json/, "and reads the same config file the bridge writes");
   assert.match(sh, /Restart=always/, "★ a service that does not restart itself is a service she has to watch");
   assert.match(sh, /After=network-online\.target/,
     "it must not race the network — signing in before it is up is the retry loop her first attempt sat in");
-  assert.match(sh, /systemctl --user enable/, "and it has to start at boot");
+  assert.match(sh, /systemctl enable/, "and it has to start at boot");
   // ⚠️ It refuses to install without a config: the printer's address is only known after one run by hand.
-  assert.match(sh, /No bridge config yet/, "the installer must stop and explain, not install a bridge that cannot print");
+  assert.match(sh, /No config at/, "the installer must stop and explain, not install a bridge that cannot print");
   // ⚠️ And it says so out loud: two bridges on one site name print every label twice.
-  assert.match(sh, /prints every label|every label prints/i, "the double-print warning is gone");
+  assert.match(sh, /print each other's labels|prints every label|every label prints/i,
+    "the double-print warning is gone");
+});
+
+// ⭐ WHERE IS THE PRINTER, WHEN ITS ADDRESS HAS MOVED.
+// ⚠️ The printer's address comes from the router unless a reservation is set, so one morning it can be at a
+// different number — and the bridge fails every job while the printer itself is perfectly well.
+import { addressForMac, cleanPrinterHost, pickPrinterHost } from "../print-bridge/printer.mjs";
+
+test("★★★ the printer's own MAC is found in this machine's address table", () => {
+  const arp = [
+    "? (192.168.51.1) at 44:1c:a8:11:22:33 on en0 ifscope [ethernet]",
+    "? (192.168.51.48) at a4:83:e7:01:02:03 on en0 ifscope [ethernet]",
+    "? (192.168.51.61) at 38:44:be:88:37:a0 on en0 ifscope [ethernet]",
+  ].join("\n");
+  assert.equal(addressForMac(arp), "192.168.51.61", "★ the printer's address was not found");
+  // ⚠️ An address the table does not hold is "" — never a guess, and never another device's number.
+  assert.equal(addressForMac("? (192.168.51.5) at aa:bb:cc:dd:ee:ff on en0 ifscope [ethernet]"), "");
+  assert.equal(addressForMac(""), "");
+  // ⚠️ And a MAC match must be the WHOLE address, not a prefix of another device's.
+  const near = "? (192.168.51.70) at 38:44:be:88:37:a1 on en0 ifscope [ethernet]";
+  assert.equal(addressForMac(near), "", "★ a neighbour's MAC was read as the printer's");
+});
+
+test("★★★ a typed address is used only when it looks like one", () => {
+  assert.equal(cleanPrinterHost(" 192.168.51.32 "), "192.168.51.32");
+  assert.equal(cleanPrinterHost("printer.local"), "printer.local");
+  // ⚠️ An impossible address is NOT a hostname — it must be refused, not passed through as a name.
+  assert.equal(cleanPrinterHost("192.168.51.999"), "", "★ an impossible address was accepted");
+  assert.equal(cleanPrinterHost("http://192.168.51.32/print"), "");
+  assert.equal(cleanPrinterHost("192.168.51.32:9100"), "", "the port is not part of the address");
+  assert.equal(cleanPrinterHost(""), "");
+  assert.equal(cleanPrinterHost(null), "");
+});
+
+test("★★★ the app's address wins, and this machine's own is the fallback that keeps printing", () => {
+  assert.deepEqual(pickPrinterHost("192.168.51.61", "192.168.51.32"),
+    { host: "192.168.51.61", from: "the address set in the app" });
+  // ⚠️ A blank or mistyped setting must never stop a label — the machine's own address carries on.
+  assert.deepEqual(pickPrinterHost("", "192.168.51.32"),
+    { host: "192.168.51.32", from: "this computer's own config" });
+  assert.deepEqual(pickPrinterHost("nonsense!!", "192.168.51.32"),
+    { host: "192.168.51.32", from: "this computer's own config" });
+  // And with neither, it says so rather than printing to nothing.
+  assert.equal(pickPrinterHost("", "").host, "");
+});
+
+test("★★★ BRIDGE_CONFIG points a second bridge at its own file", () => {
+  // ⚠️ Driven as a real process, because the path is read once at start-up — a unit test that re-imported the
+  // module could not tell "reads the variable" from "reads it the first time".
+  let out = "";
+  try {
+    execFileSync(process.execPath, ["print-bridge/bridge.mjs"], {
+      env: { ...process.env, BRIDGE_NO_PROMPT: "1", BRIDGE_CONFIG: "/tmp/no-such-bridge-config.json" },
+      encoding: "utf8",
+      timeout: 15000,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (err) {
+    out = String((err && (err.stdout || err.message)) || "");
+  }
+  assert.match(out, /No bridge config at \/tmp\/no-such-bridge-config\.json/,
+    "★ the bridge ignored BRIDGE_CONFIG and looked somewhere else — a second site would read the first site's file");
 });

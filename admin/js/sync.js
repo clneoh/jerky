@@ -264,6 +264,10 @@ function recordPayload(kind, rec) {
       // the default always would let a phone that never touched the choice push it
       // over the phone that did.
       ...(rec.messageStyle === "greeting" ? { messageStyle: "greeting" } : {}),
+      // ⭐ WHERE THE PRINTER IS, SET FROM HER PHONE (v675). ⚠️ THE BRIDGE READS THIS ROW — it is the only way a
+      // moved address can be fixed from Settings instead of in a file on the computer. ⚠️ GUARDED, like the keys
+      // around it: a phone that never set one must not push a blank over the phone that did.
+      ...(String(rec.printerHost || "").trim() ? { printerHost: String(rec.printerHost).trim() } : {}),
       // The scenario she has built, only once she has built one — same guard as
       // the two lists below: a phone that never opened the planner must not push
       // an empty scenario over the one she designed on the other phone.

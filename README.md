@@ -850,6 +850,34 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
+## v675 — the bakery sync: shop visits, the printer's address, and one computer many sites (28 Oct 2026)
+
+**Range: bakery `9dc95f7` (v668) → `8cee0e8` (v675), 5 commits. ⚠️ ONE SQL STEP: `supabase/shop_visits.sql`.**
+Everything hand-merged; the print-bridge files were taken wholesale and their identity localized.
+
+- **`store/visits.js` + `supabase/shop_visits.sql`** — one visit per page load, INSERT-only for `anon`, read back
+  by the owner through the `shop_visit_days` view. ⚠️ **VISITS, not people** — no cookie, no address.
+  `admin/js/supabase.js` gains `fetchShopVisits`; `views/dashboard.js` shows
+  *"Shop visited N times in the last 7 days · N days with no order."* ⚠️ **A failed read shows nothing**, and an
+  empty table is told apart from a failed read.
+- **Printer address from the phone** — `settings.js` gains *Label printer address (for the bridge)*, `sync.js`
+  publishes `printerHost` (guarded, like `messageStyle`), and `print-bridge/printer.mjs` decides:
+  **the app's address wins, the machine's own config is the fallback**, and `addressForMac` finds the printer by
+  its hardware address when the router moves it. ⚠️ `cleanPrinterHost` refuses `192.168.51.999`, URLs and ports.
+- **One machine, several bridges** — `install-linux.sh` takes a site and a config path, writes
+  `munchies-print@<site>.service`, and **refuses to install when the config names a different site**.
+  `BRIDGE_CONFIG` + `BRIDGE_NO_PROMPT` make a headless/Docker run possible.
+- **Product sync (their v673)** — `finiteSlotRows()` **drops and NAMES** any row whose count is not finite, and
+  `availabilityBatches()` builds all three batches in one pure place **including the clearing row that caused her
+  400**. ⭐ This replaced the local clamp: the engine publishes nothing it cannot read and tells her what it left
+  out (`syncAvailability().warning`, shown in Settings).
+
+⚠️ **Localized:** the bridge's config/service/log names (`munchies-print@`, `~/.munchies-print.json`), its banner
+and its two "this Mac" strings (it runs on Linux now), the bakery project id in its README, and the SQL policy
+name. ⚠️ **`test/print-queue.test.js` fails if the other business's name, domain or project appears in the bridge.**
+
+Suite 4021 → 4025.
+
 ## v672 — the product sync names the row it refused (27 Oct 2026)
 
 **The same 400 came back on a build that already had v671, so v671 did not cover every path.**

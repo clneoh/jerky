@@ -46,10 +46,11 @@ import { fullDayAnswer } from "./full_day.js";
 // cache.** ⚠️ And it must be kept in step with `admin/js/version.js` by hand, which is a second place for
 // one fact: ⭐ **that is accepted here ONLY because a test fails the moment they disagree** (see
 // `store-build-notice.test.js`), so a forgotten bump is a red suite rather than a shop that lies.
-export const SHOP_BUILD = "672";
+export const SHOP_BUILD = "675";
 // "Is this page the newest one?" — the comparison and the probe's address, kept on their own so a
 // test can pin them (this file calls `render()` at the top level and cannot be imported at all).
 import { BUILD_TRIED_KEY, VERSION_URL, assetsToRefresh, freshenAssets, newerBuild } from "./build.js";
+import { shopLookCounter, postShopLook } from "./visits.js";
 // The promo-code engine, shared with the backoffice so a code the shop accepts is
 // exactly a code her app recognises. It is a leaf module (imports nothing), which
 // is why the shop can take it without pulling the backoffice's storage in.
@@ -188,6 +189,9 @@ export function postLabelOpen(code, cfg) {
 // with it would count the same open twice. Nothing about the customer is kept — one boolean
 // for the life of the tab.
 const countLabelOpen = labelOpenCounter(postLabelOpen);
+
+// ⭐ One visit per page load, counted in her own Supabase — see store/visits.js (v675).
+const countShopLook = shopLookCounter(postShopLook);
 
 // Fill %1, %2, … placeholders left-to-right.
 function sub(s) {
@@ -3942,6 +3946,8 @@ function clearFieldMarks() {
             // follow the arrival of the list it is checked against — and latched inside, so
             // the 30-second poll below cannot count the same open again.
             countLabelOpen(location.search, publishedCodes(), CONFIG.supabase);
+            // ⭐ And one visit for the shop itself — the number she reads next to her orders (v675).
+            countShopLook("shop", CONFIG.supabase);
           } catch { /* corrupt config → keep the local one */ }
         }
       }

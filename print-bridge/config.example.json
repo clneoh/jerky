@@ -1,0 +1,10 @@
+{
+  "url": "https://hzpyblqygnntixkijeem.supabase.co",
+  "anonKey": "PASTE_THE_ANON_PUBLIC_KEY_HERE",
+  "email": "PASTE_YOUR_APP_LOGIN_EMAIL_HERE",
+  "password": "PASTE_YOUR_APP_LOGIN_PASSWORD_HERE",
+  "site": "main",
+  "printerHost": "192.168.51.32",
+  "printerPort": 9100,
+  "gapMm": 2
+}

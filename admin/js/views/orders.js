@@ -47,6 +47,7 @@ import { bakeryName, journalBodyEl, journalButtons } from "../journal.js";
 import { invoiceCurrency, invoiceNo, invoiceSheet } from "../invoice.js";
 import { labelCanPdf, labelPdf, labelPdfName } from "../label_pdf.js";
 import { labelBitmap, labelImageFile } from "../label_image.js";
+import { printSite } from "../print_site.js";
 import { invoiceBitmap } from "../invoice_image.js";
 import { orderPointName, setOrderPoint } from "../points.js";
 import { pointChoices } from "../pointAreas.js";
@@ -4977,7 +4978,7 @@ async function printInvoiceOverWifi(state, sheet) {
   if (!job) return toast("This phone could not prepare the invoice.");
   const sent = await sendPrintJob(state, job);
   if (!sent.ok) return toast(printRefusal("invoice", sent.why));
-  toast("Invoice sent to the Wi-Fi printer — it prints in a moment");
+  toast(`Invoice sent to the "${printSite()}" printer — it prints in a moment`);
 }
 
 // ⭐⭐ PRINT ON WI-FI (v617) — the job goes through the shared cloud to the Mac's bridge, which prints it on
@@ -4988,7 +4989,7 @@ async function printOverWifi(state, group, style) {
   if (!job) return toast("This phone could not prepare the label for the printer.");
   const sent = await sendPrintJob(state, job);
   if (!sent.ok) return toast(printRefusal("label", sent.why));
-  toast("Sent to the Wi-Fi printer — it prints in a moment");
+  toast(`Sent to the "${printSite()}" printer — it prints in a moment`);
 }
 
 // ⭐ SAVE A COPY (v615) — the route that always works: save the image (or the PDF), then open it in the

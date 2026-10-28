@@ -139,25 +139,14 @@ export function computeProductSlots(state, horizon = 10) {
       const anyId = ids.find(Boolean);
       const pr = anyId ? poolRemaining(state, anyId, base.id) : null;
       const booked = pr ? pr.booked : 0;
-      // ⚠️⚠️ A NUMBER THAT IS NOT A NUMBER NEVER REACHES THE WIRE (v671). ⭐ Her report, 27 Oct: **"Product
-      // sync failed (HTTP 400) — null value in column slots_left violates not-null constraint"**. ⚠️ **The
-      // cause is JSON itself: `Infinity` and `NaN` both serialise to `null`**, so a limit or a booked count
-      // that had gone bad arrived as a null in a column that forbids one — and because the backoffice publishes
-      // the batch in ONE call, **that one row rejected every product's stamp at once**.
-      // ⭐ `whole()` is the only thing that leaves here, so no arithmetic above it can put a null on the wire.
-      // ⚠️ Zero is the direction that cannot oversell: a broken figure reads "Sold out" for that one product
-      // rather than selling stock nobody counted — and `limitProblems()` on Check my system NAMES it.
-      const whole = (n) => (Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0);
-      const baseLeft = whole(capacity - booked);
-      rows.push({ date, product: base.name, slots_left: baseLeft, capacity: whole(capacity) });
+      const baseLeft = Math.max(0, capacity - booked);
+      rows.push({ date, product: base.name, slots_left: baseLeft, capacity });
       for (const pack of packsByBase.get(base.id) || []) {
         rows.push({
           date,
           product: pack.name,
-          // A pack size of zero would divide by nothing; `isPoolablePack` says it cannot happen, and this
-          // refuses it anyway rather than trusting a reading to stay true after a hand-edited import.
-          slots_left: whole(pack.baseQty > 0 ? baseLeft / pack.baseQty : 0),
-          capacity: whole(pack.baseQty > 0 ? capacity / pack.baseQty : 0),
+          slots_left: Math.floor(baseLeft / pack.baseQty),
+          capacity: Math.floor(capacity / pack.baseQty),
           pool_base: base.name,
           pool_qty: pack.baseQty,
         });
@@ -209,6 +198,39 @@ export async function login(url, anonKey, email, password) {
 }
 
 // Publish the current slots. Returns {ok:true, pushed, at} or {ok:false, reason}.
+// ⚠️⚠️ A COUNT THAT IS NOT A NUMBER MUST NEVER BE SENT (v675). ⭐ **Her production fault, 27 Oct 2026:
+// `POST product_availability` answered "HTTP 400 — null value in column slots_left ... violates not-null
+// constraint", and because the whole batch is one request, ONE bad row stopped every product's stamp.**
+// ⭐ `JSON.stringify` turns `NaN` and `Infinity` into `null`, so a computed figure that went wrong becomes a
+// NOT NULL violation — ⭐ **and the message names the column, never the product.** ⚠️ So rows are checked HERE,
+// at the one place that talks to the cloud: anything that is not a finite number is DROPPED and NAMED, and
+// everything else still publishes.
+export function finiteSlotRows(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const kept = [];
+  const dropped = [];
+  for (const r of list) {
+    const ok = Number.isFinite(Number(r && r.slots_left)) && Number.isFinite(Number(r && r.capacity));
+    if (ok) kept.push(r);
+    else dropped.push(`${String((r && r.date) || "?")} · ${String((r && r.product) || "?")}`);
+  }
+  return { kept, dropped };
+}
+
+// ⭐ THE THREE BATCHES, BUILT IN ONE PLACE SO THEY CAN BE HELD TO ACCOUNT (v675). `product_availability` has
+// NOT NULL columns, and ⚠️ **a batch is one request: one row missing a count fails every row with it.** ⭐ So
+// the shapes are built here, pure, and a test walks ALL of them — including the clearing batch, which is the
+// one that shipped without a count and produced her HTTP 400.
+export function availabilityBatches(productRows) {
+  const rows = Array.isArray(productRows) ? productRows : [];
+  const plain = rows.filter((r) => !("pool_base" in r));
+  const packs = rows.filter((r) => "pool_base" in r);
+  const cleared = plain.map((r) => ({
+    date: r.date, product: r.product, slots_left: r.slots_left, capacity: r.capacity,
+    pool_base: null, pool_qty: null,
+  }));
+  return { plain, cleared, packs };
+}
 export async function syncAvailability(state) {
   const c = cfg(state);
   if (!ready(c)) return { ok: false, reason: "Supabase not configured" };
@@ -243,7 +265,9 @@ export async function syncAvailability(state) {
   const horizon = realDates > 0 ? realDates : 10;
 
   const rows = computeSlots(state, horizon);
-  const res = await upsert("availability", rows, "date");
+  const days = finiteSlotRows(rows);
+  const res = days.kept.length ? await upsert("availability", days.kept, "date") : { ok: true };
+  const warned = days.dropped.length ? ` ⚠️ ${days.dropped.length} day row(s) had no usable count and were not published: ${days.dropped.join(" · ")}.` : "";
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     return { ok: false, reason: `Sync failed (HTTP ${res.status})${text ? " — " + text.slice(0, 120) : ""}` };
@@ -258,29 +282,19 @@ export async function syncAvailability(state) {
   // needs the pool columns — if those aren't in the table yet
   // (supabase/shared_pool_slots.sql hasn't run), that batch alone fails while
   // the plain singles still go through.
-  const productRows = computeProductSlots(state, horizon);
-  const plainRows = productRows.filter((r) => !("pool_base" in r));
-  const packRows = productRows.filter((r) => "pool_base" in r);
+  const productCheck = finiteSlotRows(computeProductSlots(state, horizon));
+  const productRows = productCheck.kept;
+  const productWarned = productCheck.dropped.length
+    ? ` ⚠️ ${productCheck.dropped.length} product row(s) had no usable count and were not published: ${productCheck.dropped.join(" · ")}.`
+    : "";
+  const { plain: plainRows, cleared: clearedRows, packs: packRows } = availabilityBatches(productRows);
   let pushedProducts = 0;
   const pushProductBatch = async (rows, count = true) => {
     if (!rows.length) return null;
     const res = await upsert("product_availability", rows, "date,product");
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      // ⚠️⚠️ AND A REFUSAL NAMES ITS ROW (v671). ⭐ A 400 from this table says "null value in column
-      // slots_left" and NOTHING about which product or day, so the one person who could fix it could not even
-      // find it. ⭐ On failure only — a good sync costs nothing — each row is sent alone and the first one the
-      // database refuses is named. ⚠️ Capped, because a broken table must not become a hundred requests.
-      let culprits = [];
-      for (const row of rows.slice(0, 20)) {
-        const one = await upsert("product_availability", [row], "date,product");
-        if (one.ok) continue;
-        const why = await one.text().catch(() => "");
-        culprits.push(`${row.product} (${row.date})${why ? ` — ${why.slice(0, 80)}` : ""}`);
-        if (culprits.length >= 3) break;
-      }
-      const named = culprits.length ? ` The database refused: ${culprits.join(" · ")}.` : "";
-      return { ok: false, reason: `Product sync failed (HTTP ${res.status})${text ? " — " + text.slice(0, 160) : ""}${named}` };
+      return { ok: false, reason: `Product sync failed (HTTP ${res.status})${text ? " — " + text.slice(0, 160) : ""}` };
     }
     // ⚠️ The clearing batch publishes no stamp, so it is not counted as a product row (v598).
     if (count) pushedProducts += rows.length;
@@ -291,13 +305,6 @@ export async function syncAvailability(state) {
   // treated it as derived and ignored its own limit and sales.** ⭐ One more batch, of explicit NULLs for the plain
   // rows: on a project without the pool columns it fails alone, exactly like the pack batch, and the singles
   // still publish.
-  // ⚠️⚠️ IT CARRIES ITS OWN NUMBERS (v671). ⭐ The upsert is an INSERT that becomes an update only when the
-  // key already exists — so on a key that is NOT there yet, a row with just the pool columns and no
-  // `slots_left` is a plain INSERT with a null in a column that forbids one: **23502, and the whole batch is
-  // refused.** ⭐ The plain batch runs first and normally creates the key, so this was a corner rather than the
-  // everyday path — but a corner that fails the same way is still a sync she cannot finish.
-  const clearedRows = plainRows.map((r) => ({ date: r.date, product: r.product,
-    slots_left: r.slots_left, capacity: r.capacity, pool_base: null, pool_qty: null }));
   for (const [batch, count] of [[plainRows, true], [clearedRows, false], [packRows, true]]) {
     const batchErr = await pushProductBatch(batch, count);
     if (batchErr) return batchErr;
@@ -336,7 +343,10 @@ export async function syncAvailability(state) {
     const names = productRows.map((r) => `"${r.product}"`).join(",");
     if (names) await clean(`date=in.(${active})&product=not.in.(${names})`);
   }
-  return { ok: true, pushed: rows.length, pushedProducts, at: new Date().toISOString() };
+  return { ok: true, pushed: days.kept.length, pushedProducts, at: new Date().toISOString(),
+    // ⚠️ A ROW THAT WAS DROPPED IS SAID OUT LOUD, never swallowed: the shop is published without it, and she is
+    // the only person who can fix the product or the day it came from.
+    warning: `${warned}${productWarned}`.trim() || "" };
 }
 
 // Debounced auto-publish, called after order/capacity changes so a burst of
@@ -2045,3 +2055,38 @@ export async function fetchPromoVisits(state, codes) {
   }
 }
 
+
+// ★★★ HOW MANY TIMES THE SHOP WAS LOOKED AT, BY DAY (v675). ⭐ Her question: __"how many people looked and did
+// not buy"__. ⚠️ **VISITS, NOT PEOPLE** — the shop keeps no cookie and no address, so this cannot say how many
+// customers there were. ⭐ It can say whether anyone came at all, which with her own order count is the whole
+// question: a day with 40 visits and no order is a shop nobody wanted that day, and a day with 4 visits and 3
+// orders is a shop that is working.
+//
+// ⚠️ Reads the DAILY VIEW, never the raw table: one row per day however many visits there were.
+export async function fetchShopVisits(state, days = 28) {
+  const c = cfg(state);
+  if (!ready(c)) return { ok: false, reason: "Supabase not configured" };
+  const from = new Date(Date.now() - (Math.max(1, Number(days) || 28) - 1) * 86400000)
+    .toISOString()
+    .slice(0, 10);
+  try {
+    const auth = await reviewAuth(c);
+    const res = await fetch(
+      `${c.url}/rest/v1/shop_visit_days?select=page,day,n&day=gte.${from}&order=day.asc&limit=1000`,
+      { headers: auth });
+    if (!res.ok) return { ok: false, reason: `Supabase said ${res.status}` };
+    const rows = await res.json().catch(() => null);
+    if (!Array.isArray(rows)) return { ok: false, reason: "the answer was not a list" };
+    // ⚠️ An EMPTY list is a real answer — the table exists and nobody has looked — and it is told apart from a
+    // read that failed, because "no one visited" and "I could not look" are different facts.
+    const byDay = new Map();
+    for (const r of rows) {
+      const d = String((r && r.day) || "").slice(0, 10);
+      if (!d) continue;
+      byDay.set(d, (byDay.get(d) || 0) + (Number(r && r.n) || 0));
+    }
+    return { ok: true, byDay, total: [...byDay.values()].reduce((s, n) => s + n, 0) };
+  } catch (err) {
+    return { ok: false, reason: err.message || "could not be read" };
+  }
+}

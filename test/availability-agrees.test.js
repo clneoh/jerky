@@ -24,7 +24,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { bookedUnitsOnDate, effectiveCapacity, capacityStatus, productRemaining, poolRemaining } from "../admin/js/bom.js";
-import { computeSlots, computeProductSlots } from "../admin/js/supabase.js";
+import { computeSlots, computeProductSlots, finiteSlotRows, availabilityBatches } from "../admin/js/supabase.js";
 
 // ⚠️⚠️ A HARDCODED FUTURE DATE IS A TEST THAT EXPIRES — and this one did (found 2026-10-12, when
 // nextDeliveryDates began filtering the 9th out as past). The fixture keeps her report's shape
@@ -198,47 +198,58 @@ test("an order left behind by a DELETED day still counts as itself", () => {
 // the backoffice publishes the batch in ONE call, **that one row stopped EVERY product's
 // "only N left" from updating**. ⭐ These two tests are the ones that would have caught it.
 
-test("★★★ a figure the app cannot read is never published as a null (v671)", () => {
-  // A limit that reads as Infinity — the shape a hand-edited or pasted figure can leave behind.
-  const st = state({ products: [jerky({ limit: "1e999" })], deliveryDates: oneDate(), orders: [] });
-  const rows = computeProductSlots(st, 3);
-  assert.ok(rows.length > 0, "the product is still published at all");
-  for (const r of rows) {
-    assert.equal(Number.isFinite(r.slots_left), true, `★ slots_left is not a number on ${r.date}/${r.product}`);
-    assert.equal(Number.isFinite(r.capacity), true, `★ capacity is not a number on ${r.date}/${r.product}`);
-    assert.equal(JSON.stringify(r).includes(":null"), false,
-      `★ a null reached the payload on ${r.date}/${r.product} — that is what the database refused`);
-  }
+test("★★★ a figure the app cannot read is DROPPED AND NAMED, never sent as a null (v675)", () => {
+  // ⚠️⚠️ Her production fault, 27 Oct 2026: `null value in column slots_left … violates not-null constraint`.
+  // ⭐ JSON turns `Infinity` and `NaN` into `null`, and one bad row fails the WHOLE batch. ⭐ So the boundary
+  // drops it and NAMES it — the shop publishes everything else, and she is told which product did not go.
+  const rows = [
+    { date: "2026-10-30", product: "Chicken Jerky", slots_left: 5, capacity: 12 },
+    { date: "2026-10-30", product: "Duck Jerky", slots_left: Infinity, capacity: 12 },
+    { date: "2026-10-30", product: "Sardine Bites", slots_left: 3, capacity: NaN },
+  ];
+  const { kept, dropped } = finiteSlotRows(rows);
+  assert.deepEqual(kept.map((r) => r.product), ["Chicken Jerky"], "the good row still publishes");
+  assert.equal(dropped.length, 2, "both unusable rows are held back");
+  assert.match(dropped.join(" "), /Duck Jerky/, "★ and the product is NAMED — the database never does");
+  assert.match(dropped.join(" "), /Sardine Bites/);
+  // ⚠️ And nothing that survives can carry a null through JSON.
+  assert.equal(JSON.stringify(kept).includes(":null"), false);
+  // ⚠️ A stub, an empty list and a missing list are all "nothing to publish", never a throw.
+  assert.deepEqual(finiteSlotRows(undefined).kept, []);
+  assert.deepEqual(finiteSlotRows([]).dropped, []);
 });
 
-test("★★★ and a pack size of nothing divides by nothing, never by zero (v671)", () => {
-  // ⚠️ `isPoolablePack` says a pack size cannot be zero; this refuses it anyway, because a
-  // reading that is true today can stop being true after an import she did not type.
+test("★★★ the clearing batch carries its own numbers — the row that actually produced her 400 (v675)", () => {
+  // ⚠️⚠️ The upsert is an INSERT that becomes an update only when the key already exists. The clearing batch
+  // exists only to drop a pack's old pool columns, and when it shipped with just `date` and `product`, the row
+  // went in with nothing in `slots_left` — ⭐ **the null the database refused.**
+  const { plain, cleared, packs } = availabilityBatches([
+    { date: "2026-10-30", product: "Chicken Jerky", slots_left: 5, capacity: 12 },
+    { date: "2026-10-30", product: "Family Pack", slots_left: 2, capacity: 3, pool_base: "Chicken Jerky", pool_qty: 4 },
+  ]);
+  assert.deepEqual(plain.map((r) => r.product), ["Chicken Jerky"]);
+  assert.deepEqual(packs.map((r) => r.product), ["Family Pack"]);
+  assert.equal(cleared.length, 1);
+  const c = cleared[0];
+  assert.equal(c.slots_left, 5, "★ slots_left rides on the clearing row, or the insert is a null");
+  assert.equal(c.capacity, 12, "and capacity too");
+  assert.equal(c.pool_base, null, "and the pool columns really are cleared");
+  assert.equal(c.pool_qty, null);
+});
+
+test("★ a pack size of nothing cannot put Infinity on the wire either (v675)", () => {
   const st = state({
     products: [jerky(), { id: "p_pack", name: "Family Pack", price: 60, limit: 0, active: true, unit: "pack",
       recipe: [] }],
     deliveryDates: oneDate(), orders: [],
   });
-  // A pack whose size reads as zero: the division below it must not become Infinity.
   st.products[1].recipe = [{ productId: "prd_1", qty: 0 }];
-  const rows = computeProductSlots(st, 2).filter((r) => r.product === "Family Pack");
-  for (const r of rows) {
-    assert.equal(Number.isFinite(r.slots_left), true, "a pack's count is a real number");
-    assert.ok(r.slots_left >= 0, "and never negative");
+  const { kept, dropped } = finiteSlotRows(computeProductSlots(st, 2));
+  for (const r of kept) {
+    assert.equal(Number.isFinite(r.slots_left), true, `a published count is a real number on ${r.product}`);
+    assert.equal(Number.isFinite(r.capacity), true);
   }
-});
-
-test("★★★ every published row carries its own numbers, including the clearing row (v672)", () => {
-  // ⚠️ The clearing batch exists to drop a pack's old pool columns, and it is an INSERT whenever the key is
-  // new — so a row carrying only those two columns is a null in `slots_left`, which the database refuses for
-  // the WHOLE batch. ⭐ This asserts the shape the publisher actually sends, not the shape it meant to.
-  const st = state({
-    products: [jerky(), { id: "p_pack", name: "Family Pack", price: 60, limit: 0, active: true, unit: "pack",
-      recipe: [{ productId: "prd_1", qty: 2 }] }],
-    deliveryDates: oneDate(), orders: [],
-  });
-  for (const r of computeProductSlots(st, 3)) {
-    assert.equal(Number.isFinite(r.slots_left), true, `no number on ${r.product} (${r.date})`);
-    assert.equal(Number.isFinite(r.capacity), true, `no capacity on ${r.product} (${r.date})`);
-  }
+  // Whatever division by nothing produced, it is either finite or named — never a silent null.
+  assert.equal(JSON.stringify(kept).includes(":null"), false);
+  assert.equal(dropped.every((d) => typeof d === "string"), true, "anything dropped is described, not silent");
 });

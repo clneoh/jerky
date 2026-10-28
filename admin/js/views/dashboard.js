@@ -2,14 +2,15 @@
 // and the next delivery dates shown one week at a time as small fuel dials.
 
 import { navigate } from "../app.js";
-import { dayListLabel, generateUpcomingDates, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
+import { addDays, dayListLabel, generateUpcomingDates, longDate, shortDate, todayISO, weekdayName } from "../dates.js";
+import { orderDateOf } from "../customers.js";
 import { capacityStatus } from "../bom.js";
 import { occColour, upcomingOccasions } from "../calendar.js";
 import { el, button, emptyState, confirmDialog } from "../ui.js";
 import { gauge } from "../gauge.js";
 import { newId, save, bakeDays, waNumber } from "../state.js";
 import { localChecks } from "../health.js";
-import { pendingReviewCount, fetchWaitlist, markWaitlistDone } from "../supabase.js";
+import { pendingReviewCount, fetchWaitlist, markWaitlistDone, fetchShopVisits } from "../supabase.js";
 import { shopWeek, fourWeek } from "../measure.js";
 import {
   addTask, comingWeeks, loadRoutine, money, newOrderCount, nextBake,
@@ -324,6 +325,34 @@ function atAGlanceBlocks(root, state, today, fc) {
 function shopWeekCard(state) {
   const { now, prev } = shopWeek(state);
   const avg = fourWeek(state);
+  const looksLine = el("p", { class: "card-sub" });
+  looksLine.hidden = true;
+  // ⭐ Fill it when the cloud answers, and say nothing at all if it cannot: ⚠️ **"nobody looked" is a claim, and
+  // a failed read is not evidence for it.** The order counts above stand on their own without it.
+  fetchShopVisits(state, 28).then((r) => {
+    if (!r.ok) return;
+    const days = [...r.byDay.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    if (!days.length) return; // the table is there and nobody has looked yet — a real absence, not "0 visits"
+    const from = addDays(todayISO(), -6);
+    const last7 = days.filter(([d]) => d >= from);
+    const visits7 = last7.reduce((sum, [, n]) => sum + n, 0);
+    // ⚠️ THE WORD IS "VISITED" — her own suggestion, and it is the right one: ⭐ **a visit is an EVENT, not a
+    // person** — "42 visits" never claims 42 customers, it says what was counted, and it reads like a shop.
+    // ⚠️ One page open is one visit.
+    // ⭐ AND THE NUMBER CLOSEST TO HER REAL QUESTION: a day the shop was visited and not one order was placed.
+    // ⚠️ Orders are counted by the day they were PLACED — the day the customer was in the shop.
+    const placedBy = new Map();
+    for (const o of state.orders || []) {
+      const d = orderDateOf(o);
+      if (d) placedBy.set(d, (placedBy.get(d) || 0) + 1);
+    }
+    const silent = days.filter(([d, n]) => d >= from && n > 0 && !placedBy.get(d)).length;
+    looksLine.textContent = visits7
+      ? `Shop visited ${visits7} time${visits7 === 1 ? "" : "s"} in the last 7 days`
+        + (silent ? ` · ${silent} day${silent === 1 ? "" : "s"} with no order.` : ".")
+      : `Shop not visited in the last 7 days.`;
+    looksLine.hidden = false;
+  });
   const fillWords = (f) => (f == null ? "no bake days" : `bake days ${f}% full`);
   const quiet = now.orders === 0 && prev.orders === 0 && avg.ordersPerWeek === 0;
   return el("div", { class: "card" },
@@ -336,7 +365,12 @@ function shopWeekCard(state) {
           + `${now.returning} returning`),
         el("p", { class: "card-sub" }, `Bake days ${now.fill == null ? "—" : `${now.fill}%`} full`),
         el("p", { class: "card-sub" },
-          `Last week ${prev.orders} · ${fillWords(prev.fill)} · 4-week average ${avg.ordersPerWeek} a week`)));
+          `Last week ${prev.orders} · ${fillWords(prev.fill)} · 4-week average ${avg.ordersPerWeek} a week`),
+        // ⭐ HOW MANY TIMES THE SHOP WAS VISITED — filled when the cloud answers, silent until then.
+        // ⚠️ **VISITS, NOT PEOPLE**: no cookie is kept, so this cannot say how many customers came. What it says
+        // is whether anyone came at all, and beside the order count that is her question answered — *did they
+        // look and not buy?* ⚠️ And a figure that has not come back is never shown as 0: "nobody looked" is a claim.
+        looksLine));
 }
 
 // ★★ "WAITING TO BE TOLD" (v648) — P5: the people who asked about a full day, beside the week they asked about.

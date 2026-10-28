@@ -552,7 +552,21 @@ export function renderSettings(root, state) {
         onchange: function () { const v = setPrintSite(this.value); this.value = v; toast("Saved for this device"); } }),
       el("p", { class: "card-sub", style: "margin:4px 0 0" },
         "This must match the name entered when the print bridge was started on this site's computer — "
-        + "\"main\" unless you chose another. It stays on this device; the orders themselves are shared.")));
+        + "\"main\" unless you chose another. It stays on this device; the orders themselves are shared.")),
+    // ★★ THE PRINTER'S ADDRESS, SET FROM THE PHONE (v675). ⚠️ The phone still cannot print — a web page has no
+    // raw connection and this printer has no print page — but ⭐ **it can tell the computer where the printer is**,
+    // so a printer that came up on a different number is fixed here instead of in a file on that machine.
+    // ⚠️ It TRAVELS (it is in your settings), and the bridge's own config stays as the fallback: a blank or
+    // mistyped address never stops a label, it just hands the job back to what the machine already knows.
+    el("div", { class: "field", style: "margin-top:14px" },
+      el("label", {}, "Label printer address (for the bridge)"),
+      el("input", { class: "input", type: "text", value: String(cur.printerHost || ""), maxlength: "60",
+        placeholder: "e.g. 192.168.51.32", inputmode: "url",
+        onchange: function () { cur.printerHost = String(this.value || "").trim(); save(state); toast("Saved"); } }),
+      el("p", { class: "card-sub", style: "margin:4px 0 0" },
+        "The address the printer was given on your Wi-Fi. Your phone cannot print by itself — the bridge on the "
+        + "computer does the printing — so this tells it where to look. Leave it blank and the computer uses the "
+        + "address it was set up with.")));
 
 
 
@@ -583,6 +597,9 @@ export function renderSettings(root, state) {
     const r = await syncAvailability(state);
     sbStatus.textContent = r.ok
       ? `Synced ${r.pushed} upcoming date(s) at ${new Date(r.at).toLocaleTimeString()}.`
+        // ⭐ AND A ROW THE CLOUD WOULD HAVE REFUSED IS NAMED HERE — the shop is published without it, so staying
+        // silent would be the app quietly dropping a product's count.
+        + (r.warning ? ` ${r.warning}` : "")
       : `Sync failed: ${r.reason}`;
     sbBtn.disabled = false;
     sbBtn.textContent = "Sync now";

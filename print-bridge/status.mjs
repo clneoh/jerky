@@ -5,10 +5,18 @@
 // `site` matches this bridge and whether it is still `new`. ⚠️ It never prints, updates or deletes anything.
 
 import { readFileSync, existsSync } from "node:fs";
+import net from "node:net";
+import { execFile } from "node:child_process";
+import { PRINTER_MAC, addressForMac } from "./printer.mjs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const CONFIG_PATH = join(homedir(), ".munchies-print.json");
+// ⭐ WHICH CONFIG — so ONE MACHINE CAN BE MORE THAN ONE BRIDGE (v672). ⚠️ Her plan: a bakery kitchen and a
+// munchies kitchen, each its own printer and its own site name. ⭐ One file path per instance is all it takes:
+// `BRIDGE_CONFIG` names it, and with nothing set the old default is used, so every bridge already running keeps
+// working unchanged.
+const CONFIG_PATH = String(process.env.BRIDGE_CONFIG || "").trim()
+  || join(homedir(), ".munchies-print.json");
 
 function say(msg) { process.stdout.write(`${msg}\n`); }
 
@@ -59,6 +67,50 @@ async function main() {
     say(`could not read the queue: ${err.message}`);
     process.exit(1);
   }
+  await sayWhereThePrinterIs(cfg);
+}
+
+// ★★★ WHERE IS THE PRINTER, WHEN THE ADDRESS HAS MOVED (v669).
+//
+// ⚠️⚠️ The printer's address comes from the router's DHCP unless a reservation is set, so one morning it can be
+// at a different number — and ⭐ **the bridge fails every job with a connection error while the printer itself is
+// perfectly well.** ⭐ This is READ-ONLY: it opens one TCP connection (which is also what WAKES the printer) and,
+// if that fails, looks up the printer's own MAC in this Mac's address table and prints the address it is at now,
+// with the one line to change. It never edits the config and never prints a label.
+function canConnect(host, port, ms = 4000) {
+  return new Promise((resolve) => {
+    const sock = net.connect({ host, port });
+    const done = (ok) => { try { sock.destroy(); } catch { /* already gone */ } resolve(ok); };
+    const timer = setTimeout(() => done(false), ms);
+    sock.on("connect", () => { clearTimeout(timer); done(true); });
+    sock.on("error", () => { clearTimeout(timer); done(false); });
+  });
+}
+
+const arpTable = () => new Promise((resolve) => {
+  execFile("arp", ["-an"], { timeout: 5000 }, (err, out) => resolve(err ? "" : String(out || "")));
+});
+
+async function sayWhereThePrinterIs(cfg) {
+  const host = String(cfg.printerHost || "");
+  const port = Number(cfg.printerPort) || 9100;
+  if (!host) { say("⚠️ no printerHost in the config — the bridge has nowhere to print."); return; }
+  say(`printer: ${host}:${port}`);
+  if (await canConnect(host, port)) {
+    // ⭐ A reply is what wakes it; silence is NOT proof it is missing (it does not answer a ping at rest).
+    say(`  ✔ answered at ${host} — that is where it is right now.`);
+    return;
+  }
+  say(`  ✘ nothing answered at ${host}:${port}.`);
+  const found = addressForMac(await arpTable());
+  if (found && found !== host) {
+    say(`  ⚠️ the printer's own MAC (${PRINTER_MAC}) is at ${found} on this network now — the address has MOVED.`);
+    say(`  fix: change "printerHost" in ${CONFIG_PATH} to "${found}", then restart the bridge:`);
+    say("       launchctl kickstart -k gui/$(id -u)/com.munchies.printbridge");
+    return;
+  }
+  say("  ⚠️ its MAC is not in this Mac's address table either — the printer may be off, or on another network.");
+  say("  ⚠️ A fixed address from the router (a DHCP reservation for " + PRINTER_MAC + ") stops this happening at all.");
 }
 
 main();

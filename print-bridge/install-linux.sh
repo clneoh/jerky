@@ -1,108 +1,64 @@
-#!/usr/bin/env bash
-# print-bridge/install-linux.sh — run the label print bridge as a background service on Linux.
+#!/bin/sh
+# print-bridge/install-linux.sh — run the label bridge in the background on a Linux server (Ubuntu / Debian).
 #
-# ⭐ The Linux twin of `install-mac.sh`, and it does the same job a different way: macOS starts it with
-# launchd, Linux with **systemd**. ⚠️ The bridge itself is byte-identical — same script, same config, same
-# protocol — so a bridge moved from the Mac to a home server needs no code change at all.
+# ⭐ The Mac's installer uses launchd; Linux uses systemd. Same program, same config file
+# (~/.munchies-print.json) — ⚠️ a bridge that only knows how to start on one operating system is a bridge that
+# stops when she moves it.
 #
-# ⚠️⚠️ IT IS A *USER* SERVICE ON PURPOSE. Nothing here needs root: the unit lives in YOUR home directory, the
-# config stays `~/.munchies-print.json` (mode 600), and the log goes to your own journal. ⭐ Root is asked for
-# exactly once, and only to let the service start at boot WITHOUT anyone logging in (`enable-linger`).
-#
-# ⚠️⚠️ ONE BRIDGE PER SITE NAME. If this machine and another bridge both run as "main", **every label prints
-# twice.** Stop the other one before you install this.
-#
-# Usage:   bash print-bridge/install-linux.sh
-# Remove:  bash print-bridge/uninstall-linux.sh
+# Usage:  sh print-bridge/install-linux.sh [site] [config-path]
+#         sh print-bridge/install-linux.sh                 → site "main", ~/.munchies-print.json
+#         sh print-bridge/install-linux.sh kitchen         → site "kitchen", ~/.munchies-print-kitchen.json
+#         ⚠️ ONE MACHINE, SEVERAL BRIDGES (v672): each site gets its OWN unit and its OWN config, so a bakery
+#         kitchen and a second printer never argue over one file or print each other's labels.
+# ⚠️ Run it as the USER WHO HAS THE CONFIG, not with sudo — the service then runs as that user and can read its
+# own ~/.munchies-print.json. (sudo is used internally only for the one step that needs it.)
 
-set -euo pipefail
+set -e
 
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPT="$DIR/print-bridge/bridge.mjs"
 NODE="$(command -v node || true)"
-NAME="munchies-print"
-UNIT_DIR="$HOME/.config/systemd/user"
-UNIT="$UNIT_DIR/$NAME.service"
+SITE="${1:-main}"
+CFG="${2:-$HOME/.munchies-print.json}"
+# ⚠️ The unit's name carries the site, so two bridges on one machine are two units — and `systemctl status
+# munchies-print@kitchen` is unambiguous about which printer it is talking about.
+UNIT="munchies-print@$SITE.service"
 
 if [ -z "$NODE" ]; then
-  echo "Node is not installed (or not on PATH)."
-  echo "  Debian/Ubuntu:  sudo apt install nodejs npm   (then check: node -v)"
-  echo "  Raspberry Pi OS: sudo apt install nodejs      (Raspberry Pi OS ships v18 or newer)"
-  echo "Node 18 or newer is required, then run this again."
+  echo "Node is not installed (or not on PATH). Install Node 18 or newer, then run this again."
+  exit 1
+fi
+if [ ! -f "$CFG" ]; then
+  echo "No config at $CFG — copy print-bridge/config.example.json there and fill it in (see"
+  echo "print-bridge/README.md, \"Running it on a server\"). The bridge cannot start without the queue's address and login."
+  exit 1
+fi
+if ! grep -q "\"site\"[[:space:]]*:[[:space:]]*\"$SITE\"" "$CFG"; then
+  echo "⚠️  $CFG does not say site \"$SITE\". Set it there, or the two bridges print each other's labels."
   exit 1
 fi
 
-NODE_MAJOR="$("$NODE" -p 'process.versions.node.split(".")[0]')"
-if [ "$NODE_MAJOR" -lt 18 ]; then
-  echo "Node $("$NODE" -v) is too old — the bridge needs 18 or newer."
-  echo "  Raspberry Pi OS 'bullseye' ships 12; install the NodeSource build or use 'bookworm' or newer."
-  exit 1
-fi
-
-if [ ! -f "$SCRIPT" ]; then
-  echo "The bridge script is not at $SCRIPT — is this the jerky folder?"
-  exit 1
-fi
-
-if [ ! -f "$HOME/.munchies-print.json" ]; then
-  echo "No bridge config yet. Run it once by hand first, so it can ask for the printer's address:"
-  echo "  cd \"$DIR\" && node print-bridge/bridge.mjs"
-  echo "Answer its questions, press Ctrl-C once it says \"signed in to the shared queue\", then run this again."
-  exit 1
-fi
-
-if ! systemctl --user show-environment >/dev/null 2>&1; then
-  echo "This shell cannot reach the user systemd manager."
-  echo "On a server you reach only by SSH, run:  sudo loginctl enable-linger $USER   then log out and back in."
-  exit 1
-fi
-
-mkdir -p "$UNIT_DIR"
-
-# ⚠️ `Restart=always` is the point of installing it: a bridge that crashed at 3am must come back by itself.
-# ⚠️ `After=network-online.target` stops it racing the Wi-Fi: signing in before the network is up would leave
-# it in the retry loop her first attempt sat in.
-cat > "$UNIT" <<EOF
+echo "Installing $UNIT so the bridge starts at boot and restarts if it stops…"
+sudo tee "/etc/systemd/system/$UNIT" >/dev/null <<UNITFILE
 [Unit]
-Description=Munchies Furkidz label print bridge
+Description=Munchies Furkidz print bridge for GP1326D Gprinter (site $SITE)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
+User=$USER
+Environment=BRIDGE_NO_PROMPT=1
+Environment=BRIDGE_CONFIG=$CFG
 WorkingDirectory=$DIR
 ExecStart=$NODE $SCRIPT
 Restart=always
-RestartSec=10
-# The label job is small and the printer is on the LAN; nothing here needs privileges.
-NoNewPrivileges=true
-PrivateTmp=true
+RestartSec=5
 
 [Install]
-WantedBy=default.target
-EOF
+WantedBy=multi-user.target
+UNITFILE
 
-systemctl --user daemon-reload
-systemctl --user enable "$NAME.service"
-systemctl --user restart "$NAME.service"
-
-# ⭐ Start at boot without anyone logging in. ⚠️ This is the one step that needs root, and it is optional: an
-# unprivileged home server someone logs into is fine without it.
-if ! loginctl show-user "$USER" --property=Linger 2>/dev/null | grep -q "Linger=yes"; then
-  echo
-  echo "One more step so it starts at boot with nobody logged in:"
-  echo "  sudo loginctl enable-linger $USER"
-fi
-
-sleep 2
-echo
-if systemctl --user is-active --quiet "$NAME.service"; then
-  echo "Installed and running. It now starts at boot and restarts itself if it stops."
-else
-  echo "Installed, but it is NOT running. Look at why:"
-  echo "  journalctl --user -u $NAME -n 40 --no-pager"
-  exit 1
-fi
-echo "  status: systemctl --user status $NAME"
-echo "  log:    journalctl --user -u $NAME -f"
-echo "  stop:   systemctl --user stop $NAME"
+sudo systemctl daemon-reload
+sudo systemctl enable --now "$UNIT"
+echo "Started. Check it with:  systemctl status $UNIT   ·   journalctl -u $UNIT -f"

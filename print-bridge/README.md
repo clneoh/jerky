@@ -1,4 +1,4 @@
-# The label print bridge (Mac)
+# The print bridge for the GP1326D Gprinter
 
 Your printer is a **Gprinter GP-1326D** on Wi-Fi. It speaks **TSPL** over a raw TCP connection (port 9100), and
 it has **no IPP/AirPrint and no web page** — which is why Android, iOS and Chrome cannot see it. This bridge is
@@ -51,36 +51,6 @@ It uses the same saved config, so answer the setup questions once in Terminal fi
 
 ⚠️ The Mac must still be **awake** to print; sleep pauses it.
 
-## On a Linux machine (home server, Raspberry Pi)
-
-⭐ **The bridge is the same program on every machine** — same script, same config, same printer. ⭐ **A Linux box
-is the better home** for it when there is one: it stays on, so the Mac can sleep and labels still print.
-
-**First run it by hand, so it can ask for the printer's address** (the answers are saved in
-`~/.munchies-print.json`, mode 600):
-
-```
-cd ~/jerky && node print-bridge/bridge.mjs
-```
-
-⚠️ **Delete nothing and change nothing else** — the questions are the ones in step 3 above. It should say
-*"signed in to the shared queue"*. Then Ctrl-C, and install it as a service:
-
-```
-bash print-bridge/install-linux.sh
-```
-
-- it starts **at boot** and restarts itself if it stops;
-- its log is the system journal: `journalctl --user -u munchies-print -f`;
-- status: `systemctl --user status munchies-print`;
-- to stop and remove it: `bash print-bridge/uninstall-linux.sh` (the config file is left in place).
-
-⚠️ **Needs Node 18 or newer.** Raspberry Pi OS *bookworm* ships it; *bullseye* ships 12, so install the
-NodeSource build first. ⚠️ **On a headless server reached only by SSH**, one extra command lets the service run
-without anyone logged in: `sudo loginctl enable-linger $USER` (the installer checks and tells you).
-
-⚠️⚠️ **ONE BRIDGE PER SITE NAME.** Two bridges both running as `main` would **both print every label**.
-
 ## Printing
 
 In the backoffice: an order at **Baked** or later → **Print label** → choose the style → **Print over Wi-Fi**.
@@ -121,3 +91,91 @@ If it is `new` and the site matches, the service is not polling.
 
 Keep the Mac awake while you expect labels: System Settings → Lock Screen → "Prevent automatic sleeping when
 the display is off" (or simply leave a Terminal window active).
+
+## Running it on a server (Ubuntu — the UGREEN box at 192.168.51.90, a Pi, any always-on Linux)
+
+⭐ **The Mac is only one place this can run.** The bridge is plain Node with no macOS calls in it, so an
+always-on Linux box in the house prints the labels just as well — and keeps printing when the Mac is asleep.
+
+⚠️ **It still prints OVER THE NETWORK.** The printer stays on Wi-Fi; this asks it at `<address>:9100`. **USB is
+not used** — the bridge speaks TCP 9100 and nothing else.
+
+### The config, written by hand
+
+The first-run questions need a terminal, and a server or a container has none. So write the file yourself:
+`~/.munchies-print.json`, readable only by you:
+
+```json
+{
+  "url": "https://ircwozniiyywsowamixy.supabase.co",
+  "anonKey": "<the anon public key the app uses>",
+  "email": "<your app login email>",
+  "password": "<your app login password>",
+  "site": "main",
+  "printerHost": "192.168.51.32",
+  "printerPort": 9100,
+  "gapMm": 2
+}
+```
+
+```bash
+chmod 600 ~/.munchies-print.json
+```
+
+⚠️ **Your login email and password are typed ON THE SERVER, never into a chat** — and the file holds them, which
+is why it is `chmod 600` and never in this repo. ⭐ **And `printerHost` is optional once v670 is on:** the app's
+**Settings → Label printer address** wins when it is set, and this file is the fallback.
+
+### More than one printer on one machine (a second site)
+
+⭐ **One server can be several bridges.** Each site gets its **own config file** and its **own service**, so a
+bakery kitchen and a second printer never share a file and never print each other's labels:
+
+```bash
+cp ~/print-bridge/config.example.json ~/.munchies-print-kitchen.json
+# edit it: "site": "kitchen", and that site's printer address
+chmod 600 ~/.munchies-print-kitchen.json
+sh ~/print-bridge/install-linux.sh kitchen ~/.munchies-print-kitchen.json
+```
+
+- The unit becomes **`munchies-print@kitchen.service`**, so `systemctl status munchies-print@kitchen` is
+  unambiguous.
+- ⚠️ **The `site` in the file must match the name you pass** — the installer refuses to install if they differ,
+  because two bridges with one name both print every label.
+- ⚠️ **A second APP is a second cloud.** Munchies' labels come from munchies' own queue: its config needs
+  *its* project's `url`, `anonKey` and login, not the munchies'.
+
+### Route 1 — as a service (recommended)
+
+```bash
+sh print-bridge/install-linux.sh
+```
+
+It starts at boot, restarts if it stops, and logs to the journal:
+
+```bash
+systemctl status munchies-print
+journalctl -u munchies-print -f
+```
+
+### Route 2 — as a container
+
+```bash
+docker build -t gp1326d-print print-bridge
+docker run -d --name gp1326d-print --restart unless-stopped \
+  --network host -v "$HOME/.munchies-print.json:/config/.munchies-print.json:ro" \
+  gp1326d-print
+```
+
+- **`--network host`** is what lets it reach the printer on your home network. ⚠️ Without it the container
+  cannot see `192.168.x.x` at all.
+- The config is **mounted read-only**, never baked into the image.
+- ⚠️ `BRIDGE_NO_PROMPT=1` is set in the image: with no terminal, a first-run question would hang for ever and
+  look exactly like a bridge that is running.
+
+### Which address does the server need?
+
+**None of its own.** DHCP is fine — the server only has to be on the same Wi-Fi as the printer and to reach the
+internet. ⭐ **The printer's address is the one that matters**, and since v670 you fix it from the phone:
+Settings → **Label printer address (for the bridge)**. If that box is blank, the address in this file is used,
+and if the printer has moved, `node print-bridge/status.mjs` on that machine will name the address it is at now.

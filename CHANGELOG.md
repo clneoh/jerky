@@ -1,8 +1,40 @@
-# Munchies Furkidz — change history (v54 → v672)
+# Munchies Furkidz — change history (v54 → v675)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**28 Oct 2026 — engine v675: HOW MANY TIMES THE SHOP WAS VISITED, THE PRINTER'S ADDRESS FROM YOUR PHONE, AND THE
+PRODUCT SYNC FIXED FOR GOOD (ONE DATABASE STEP: `supabase/shop_visits.sql`).**
+
+**Synced from the bakery, v669 to v675. Munchies takes the engine's number on every sync, so this one goes
+672 → 675.**
+
+**1. THE SHOP NOW COUNTS ITS VISITS.** ⭐ **Your question: "how many people looked and did not buy".** ⚠️ **It counts
+VISITS, not people** — no cookie, no address, nothing about the customer is kept — **so it can never say how many
+customers there were, and it does not pretend to.** ⭐ **What it says, on the Home screen beside your orders:
+"Shop visited 42 times in the last 7 days · 2 days with no order."** ⚠️ **A day with visits and no order is the
+answer to your question**, and a failed read shows nothing at all rather than "nobody came".
+
+**2. THE PRINTER'S ADDRESS CAN BE SET FROM YOUR PHONE.** **Settings → Label printer address.** ⚠️ **The phone still
+cannot print** — the bridge on the computer does — **but it can tell that computer where the printer is**, so a
+printer that came up on a different number is fixed here instead of in a file. ⭐ **The bridge also finds the
+printer by its own hardware address**, so a new number on your Wi-Fi is picked up by itself. ⭐ **And the "Print"
+message now names which printer it went to** ("Sent to the **kitchen** printer").
+
+**3. ONE COMPUTER, SEVERAL SITES.** **Each site gets its own bridge with its own settings file and its own service
+name** (`main`, `kitchen`), and the installer REFUSES to install one whose settings name a different site —
+⚠️ **because two bridges with one name both print every label.**
+
+**4. THE PRODUCT SYNC FAULT IS FIXED THE ENGINE'S WAY.** ⚠️ **A count that is not a real number is now DROPPED and
+NAMED before anything is sent** — so one bad row can no longer stop every product's "only N left" — **and
+Settings tells you which product or day was left out.** ⭐ **The row that actually caused your 400 was the one that
+clears a stopped pack's columns**; it now carries its own figures.
+
+**⚠️ ONE STEP FOR YOU: run `supabase/shop_visits.sql` in the SQL editor.** **It is one paste, it is safe to run
+twice, and it returns a read-back row.** **Nothing else breaks without it — only the visit count stays quiet.**
+
+**Nothing to run on the phone beyond a reload.**
 
 **27 Oct 2026 — engine v672: THE PRODUCT SYNC NAMES THE ROW IT REFUSED (nothing to run, no SQL, nothing to
 upload).**
