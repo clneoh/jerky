@@ -1,8 +1,24 @@
-# Munchies Furkidz — change history (v54 → v675)
+# Munchies Furkidz — change history (v54 → v676)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**30 Oct 2026 — engine v676: THE SHOP'S HERO IS ITS OWN PHOTO NOW (nothing to run, no SQL, nothing to upload).**
+
+**Your question: "why the hero is replace?"**
+
+**1. WHAT WAS HAPPENING.** ⚠️ **The shop's front-page photo was pointing at the Chicken Jerky product photo — the
+same file the Chicken Jerky card on your homepage uses.** ⭐ **So replacing that product's photo also replaced the
+shop's hero, and nothing said so.** The hero needed a portrait picture, and that product photo happened to be one,
+so it was borrowed.
+
+**2. WHAT IT DOES NOW.** **The shop has its own file: `images/hero-shop.jpg`, a copy of what the hero shows
+today — so nothing looks different.** ⭐ **From now on: replace `hero-shop.jpg` to change the hero, replace a
+product's own file to change that product, and neither moves the other.** **A test fails if the hero ever points
+at a product's photo again.**
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **28 Oct 2026 — engine v675: HOW MANY TIMES THE SHOP WAS VISITED, THE PRINTER'S ADDRESS FROM YOUR PHONE, AND THE
 PRODUCT SYNC FIXED FOR GOOD (ONE DATABASE STEP: `supabase/shop_visits.sql`).**

@@ -850,6 +850,23 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
+## v676 — the shop's hero is its own photo (30 Oct 2026)
+
+**Her question:** *"why the hero is replace?"*
+
+⚠️ **It wasn't replaced by the app — it WAS a product photo.** `store/index.html`'s hero pointed at
+`../images/chicken-jerky.jpg`, the **same file** the Chicken Jerky card on `index.html` uses, so replacing that
+product's photo silently replaced the shop's front page. (The hero needs a portrait frame and that photo happened
+to be 3:4.)
+
+- `images/hero-shop.jpg` is a **byte-identical copy** of what the hero showed, and `store/index.html` points at
+  it — **no visual change**.
+- ⭐ The comment above the tag now says which file to replace for which thing.
+- ⭐ **`test/store-build-notice.test.js` fails if the hero ever names a file a product card uses** (watched
+  failing, then restored).
+
+Suite 4025 → 4026.
+
 ## v675 — the bakery sync: shop visits, the printer's address, and one computer many sites (28 Oct 2026)
 
 **Range: bakery `9dc95f7` (v668) → `8cee0e8` (v675), 5 commits. ⚠️ ONE SQL STEP: `supabase/shop_visits.sql`.**

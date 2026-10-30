@@ -16,7 +16,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { BUILD_TRIED_KEY, VERSION_URL, assetsToRefresh, buildIn, freshenAssets, newerBuild } from "../store/build.js";
 import { ENGINE_VERSION } from "../admin/js/version.js";
@@ -365,3 +365,19 @@ test("★★★ the notice is the BACKOFFICE'S STRIP, at the size she asked for 
     "★ nothing measures the order bar — the page's own foot padding is built on that number");
 });
 
+
+test("★★★ the shop's hero is the SHOP'S photo, never a product's (v676)", () => {
+  // ⚠️⚠️ HER QUESTION, 2026-10-30: __"why the hero is replace?"__ — ⭐ **because the hero pointed at
+  // `images/chicken-jerky.jpg`, the very file the Chicken Jerky card on the homepage uses.** Replacing that
+  // product's photo replaced the shop's front page with it, and nothing said so.
+  // ⭐ The rule is not "never reuse a file"; it is that the two must be able to CHANGE independently.
+  const shopHtml = readFileSync(new URL("../store/index.html", import.meta.url), "utf8");
+  const home = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const hero = /class="hero-photo-img"\s+src="\.\.\/(images\/[^"]+)"/.exec(shopHtml);
+  assert.ok(hero, "the shop no longer has a hero photo — this guard is watching nothing");
+  const productPhotos = [...home.matchAll(/<img\s+src="(images\/[^"]+)"/g)].map((m) => m[1]);
+  assert.equal(productPhotos.includes(hero[1]), false,
+    `★ the hero (${hero[1]}) is also a product's photo — changing that product would change the shop's front page`);
+  // ⚠️ And the file really exists, or the shop opens on a broken frame.
+  assert.equal(existsSync(new URL(`../${hero[1]}`, import.meta.url)), true, `${hero[1]} is missing`);
+});

@@ -50,8 +50,13 @@
 
   <header class="hero hero-photo">
     <!-- ★★ ONE PHOTO, ONE LINE, ONE PRESS (v631_2). ⚠️ The photo is an <img>, never a CSS background.
-         OWNER: any PORTRAIT photo here — one of images/ is the simplest swap (this one is 3:4). -->
-    <img class="hero-photo-img" src="../images/chicken-jerky.jpg" alt="" width="1000" height="1333"
+         OWNER: any PORTRAIT photo here — this one is 3:4 (1000x1333).
+         ⚠️⚠️ AND IT IS THE SHOP'S OWN FILE NOW, NOT A PRODUCT'S (v676). ⭐ It used to point at
+         images/chicken-jerky.jpg — ⭐ **the same file the Chicken Jerky card on the homepage uses** — so
+         replacing that product's photo silently replaced the shop's hero as well. ⭐ **To change the hero,
+         replace images/hero-shop.jpg; to change a product, replace that product's own file. Neither moves
+         the other.** -->
+    <img class="hero-photo-img" src="../images/hero-shop.jpg" alt="" width="1000" height="1333"
          fetchpriority="high" decoding="async">
     <span class="hero-veil" aria-hidden="true"></span>
     <div class="hero-inner">
