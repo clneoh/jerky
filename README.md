@@ -850,7 +850,7 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
-## v676 — the shop's hero is its own photo (30 Oct 2026)
+## v676–v677 — the shop's hero is its own photo (30 Oct 2026)
 
 **Her question:** *"why the hero is replace?"*
 
@@ -859,11 +859,12 @@ day's line can actually be changed**; watched failing on the old code. Suite 387
 product's photo silently replaced the shop's front page. (The hero needs a portrait frame and that photo happened
 to be 3:4.)
 
-- `images/hero-shop.jpg` is a **byte-identical copy** of what the hero showed, and `store/index.html` points at
-  it — **no visual change**.
+- ⭐ **v677, her word: the hero is `images/hero-family.jpg`**, the same family photo the homepage banner uses
+  (828×1000 in a 3:4 frame — almost no crop). The intermediate `hero-shop.jpg` copy was deleted unused.
 - ⭐ The comment above the tag now says which file to replace for which thing.
-- ⭐ **`test/store-build-notice.test.js` fails if the hero ever names a file a product card uses** (watched
-  failing, then restored).
+- ⭐ **`test/store-build-notice.test.js` fails if the hero ever names a file a PRODUCT CARD uses** (watched
+  failing, then restored). ⚠️ It is scoped to the product grid on purpose: the hero sharing the homepage's
+  *family banner* is a correct design, sharing a *product's* photo is the fault.
 
 Suite 4025 → 4026.
 

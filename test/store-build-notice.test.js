@@ -375,7 +375,12 @@ test("★★★ the shop's hero is the SHOP'S photo, never a product's (v676)", 
   const home = readFileSync(new URL("../index.html", import.meta.url), "utf8");
   const hero = /class="hero-photo-img"\s+src="\.\.\/(images\/[^"]+)"/.exec(shopHtml);
   assert.ok(hero, "the shop no longer has a hero photo — this guard is watching nothing");
-  const productPhotos = [...home.matchAll(/<img\s+src="(images\/[^"]+)"/g)].map((m) => m[1]);
+  // ⚠️ ONLY THE PRODUCT CARDS — the shop's hero may legitimately be a photo the HOMEPAGE also shows as a
+  // banner (the family shot is), and forbidding that would fail a correct design. ⭐ The fault was sharing a
+  // file with a PRODUCT, whose card is what she swaps when a treat's photo changes.
+  const grid = (home.match(/<div class="products">([\s\S]*?)<\/div>\s*<\/section>/) || ["", ""])[1];
+  assert.ok(grid.includes("product-card"), "the product grid could no longer be found — this guard is watching nothing");
+  const productPhotos = [...grid.matchAll(/<img\s+src="(images\/[^"]+)"/g)].map((m) => m[1]);
   assert.equal(productPhotos.includes(hero[1]), false,
     `★ the hero (${hero[1]}) is also a product's photo — changing that product would change the shop's front page`);
   // ⚠️ And the file really exists, or the shop opens on a broken frame.

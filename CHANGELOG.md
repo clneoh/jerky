@@ -1,8 +1,26 @@
-# Munchies Furkidz — change history (v54 → v676)
+# Munchies Furkidz — change history (v54 → v677)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**30 Oct 2026 — engine v677: THE SHOP'S HERO IS THE FAMILY PHOTO (nothing to run, no SQL, nothing to upload).**
+
+**Your instruction: "i want the orginal hero".**
+
+**1. WHAT IT SHOWS NOW.** **The shop's front page carries the Munchies Furkidz family photo — the same one your
+homepage shows as "The Munchies Furkidz family".** **It nearly matches the tall frame, so almost none of it is
+cut off** (828×1000 in a 3:4 window).
+
+**2. AND IT IS ITS OWN FILE.** ⚠️ **The hero used to point at the Chicken Jerky product photo** — **so changing
+that product's picture also changed your front page, which is why the hero looked "replaced".** ⭐ **Now the hero
+and a product change independently:** replace `images/hero-family.jpg` to change the shop's front page, replace
+a product's own file to change that product, and neither moves the other.
+
+**3. ONE HOUSEKEEPING POINT.** **The copy made yesterday (`hero-shop.jpg`) is deleted — it was a duplicate of the
+chicken jerky picture and nothing uses it any more.**
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **30 Oct 2026 — engine v676: THE SHOP'S HERO IS ITS OWN PHOTO NOW (nothing to run, no SQL, nothing to upload).**
 
