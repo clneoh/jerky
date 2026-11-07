@@ -183,3 +183,19 @@ test("★★ every doorstep offers the tug, and the tug can MAKE a route (v421)"
   assert.match(routes, /const routes = routesOf\(state\);\n\s*const nameBox/,
     "⚠️ reading the list as the pop-up is DRAWN, so the name box and the list cannot disagree");
 });
+
+test("★★★ Home says DELIVERY days, because the row it means says Delivery dates (v686)", () => {
+  // ⚠️ HER INSTRUCTION, 2026-11-07: __"change it to delivery days"__ — about Home's "Bake days 40% full".
+  // ⭐ **It was the last place on Home saying "bake days", while the row it refers to is "📅 Delivery dates"** —
+  // a card naming one thing and its own signpost naming another. ⚠️ And "message them when a pan frees" carried
+  // the bakery's kitchen into a shop screen.
+  // ⚠️ This is pinned over the FILE, not one string: the wording was spread across three lines.
+  const dash = readFileSync(new URL("../admin/js/views/dashboard.js", import.meta.url), "utf8");
+  const visible = dash.split("\n")
+    .filter((l) => !/^\s*(\/\/|\*)/.test(l))            // comments may keep the engine's voice
+    .join("\n");
+  assert.equal(/bake day/i.test(visible), false,
+    "★ a Home screen still says 'bake day' — the menu row it means is 'Delivery dates'");
+  assert.equal(/\bpan\b/i.test(visible), false, "★ a Home screen talks about a pan");
+  assert.match(visible, /Delivery days \$\{/, "and the fill line names delivery days");
+});

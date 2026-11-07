@@ -850,6 +850,21 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
+## v686 — Home says delivery days (7 Nov 2026)
+
+**Her instruction:** *"change it to delivery days"*.
+
+⚠️ **Home's shop card read "Bake days 40% full" while the row it refers to is "📅 Delivery dates"** — a card
+naming one thing and its own signpost naming another. ⚠️ **And the waitlist card said "Message them when a PAN
+frees"** — the bakery's kitchen on a shop screen.
+
+`views/dashboard.js`: `fillWords`/the fill line say **delivery days**, and the waiting card says **"when a day
+frees"**. ⭐ **`test/screen-names.test.js` fails if Home ever says "bake day" or "pan" again** (watched failing).
+⚠️ The Production line keeps its bread words — that is her instruction, and this guard is scoped to the Home
+screen only.
+
+Suite 4042.
+
 ## v685 — the bakery sync: sell days that end, and a shop that says so (6 Nov 2026)
 
 **Range: bakery `8cee0e8` (v675) → `358a92a` (v685), 10 versions. No SQL. ⚠️ The courier function's two fixes

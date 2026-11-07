@@ -363,7 +363,9 @@ function shopWeekCard(state) {
       : `Shop not visited in the last 7 days.`;
     looksLine.hidden = false;
   });
-  const fillWords = (f) => (f == null ? "no bake days" : `bake days ${f}% full`);
+  // ⚠️ HER WORD, and the menu already uses it: the row she taps is "📅 Delivery dates" (her instruction,
+  // 2026-11-07: __"change it to delivery days"__). ⭐ The card was the last place on Home still saying "bake days".
+  const fillWords = (f) => (f == null ? "no delivery days" : `delivery days ${f}% full`);
   const quiet = now.orders === 0 && prev.orders === 0 && avg.ordersPerWeek === 0;
   return el("div", { class: "card" },
     el("p", { class: "card-title" }, "The shop this week"),
@@ -373,7 +375,7 @@ function shopWeekCard(state) {
         el("p", { class: "card-sub" },
           `${now.orders} order${now.orders === 1 ? "" : "s"} · ${now.firstTime} first-time · `
           + `${now.returning} returning`),
-        el("p", { class: "card-sub" }, `Bake days ${now.fill == null ? "—" : `${now.fill}%`} full`),
+        el("p", { class: "card-sub" }, `Delivery days ${now.fill == null ? "—" : `${now.fill}%`} full`),
         el("p", { class: "card-sub" },
           `Last week ${prev.orders} · ${fillWords(prev.fill)} · 4-week average ${avg.ordersPerWeek} a week`),
         // ⭐ HOW MANY TIMES THE SHOP WAS VISITED — filled when the cloud answers, silent until then.
@@ -416,7 +418,7 @@ function waitCard(state) {
     box.replaceChildren(
       el("h3", { style: "margin:0 0 2px" }, "Waiting to be told"),
       el("p", { class: "card-sub", style: "margin:0" },
-        `Asked for a bake day that was full. Message them when a pan frees, then press Done.`),
+        `Asked to be told when a day was full. Message them when a day frees, then press Done.`),
       ...rows);
     box.hidden = false;
   }).catch(() => {});

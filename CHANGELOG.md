@@ -1,8 +1,25 @@
-# Munchies Furkidz — change history (v54 → v685)
+# Munchies Furkidz — change history (v54 → v686)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**7 Nov 2026 — engine v686: HOME SAYS DELIVERY DAYS (nothing to run, no SQL, nothing to upload).**
+
+**Your instruction: "change it to delivery days".**
+
+**1. WHAT IT SAID.** ⚠️ **Home's shop card read "Bake days 40% full" — while the row it refers to is "📅 Delivery
+dates".** **A card naming one thing and its own signpost naming another.** **It says Delivery days now**, on that
+line and in the "last week" line beside it.
+
+**2. AND ONE MORE, JUST BESIDE IT.** ⚠️ **The "Waiting to be told" card said "Asked for a bake day that was full.
+Message them when a PAN frees"** — **the bakery's kitchen, on your shop screen.** **It now says "Asked to be told
+when a day was full. Message them when a day frees".**
+
+**3. A TEST NOW HOLDS IT.** **It fails if the Home screen ever says "bake day" or "pan" again** — checked by
+watching it fail first.
+
+**Nothing to run, no SQL, nothing to upload.**
 
 **6 Nov 2026 — engine v685: A PRODUCT WHOSE SELL DAYS RUN OUT CANNOT DISAPPEAR QUIETLY ANY MORE (nothing to run,
 no SQL, nothing to upload).**
