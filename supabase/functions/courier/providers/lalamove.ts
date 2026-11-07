@@ -111,12 +111,30 @@ const PLAIN_ERRORS: Record<string, string> = {
 // The API answers a failure as { message, errors: [{ id, code, message }] } with a
 // non-2xx status. Both the code and the id are read, because the two have carried
 // the code in different releases.
+// ⚠️⚠️ THE VENDOR'S OWN CODE AND SENTENCE, KEPT (v683). ⭐ `plainReason` turns a code into a sentence she can
+// act on — ⚠️ **and throws the code away in the process**, so ⭐ *"Lalamove would not accept part of this trip"*
+// sitting under six working prices could not be diagnosed at all: ⚠️ not by her, not by me, and not by anybody
+// reading it later. ⭐ One vehicle refused while five were priced is a question only Lalamove can answer, and the
+// answer is in the envelope this reads. ⭐ Nothing here replaces `plainReason` — it travels BESIDE it.
+export function errorDetail(data: unknown): { code: string; vendor: string } {
+  const body = (data && typeof data === "object") ? data as Record<string, unknown> : {};
+  const errors = Array.isArray(body.errors) ? body.errors as Array<Record<string, unknown>> : [];
+  const first = (errors[0] || {}) as Record<string, unknown>;
+  return {
+    code: String(first.code || first.id || "").trim(),
+    vendor: String(first.message || body.message || "").trim(),
+  };
+}
+
 export function plainReason(data: unknown, status: number): string {
   const body = (data && typeof data === "object") ? data as Record<string, unknown> : {};
   const errors = Array.isArray(body.errors) ? body.errors as Array<Record<string, unknown>> : [];
+  let unknownCode = "";
   for (const e of errors) {
     const code = String((e && (e.code || e.id)) || "").trim();
-    if (code && PLAIN_ERRORS[code]) return PLAIN_ERRORS[code];
+    if (!code) continue;
+    if (PLAIN_ERRORS[code]) return PLAIN_ERRORS[code];
+    if (!unknownCode) unknownCode = code;
   }
   const first = errors.length ? String(errors[0].message || "").trim() : "";
   const message = String(body.message || "").trim();
@@ -124,8 +142,16 @@ export function plainReason(data: unknown, status: number): string {
   if (status === 401 || status === 403) {
     return "Lalamove refused the key — check the api key and secret in the function's secrets, and whether they are the sandbox pair or the live pair.";
   }
-  return detail
-    ? `Lalamove would not do that: ${detail}`
+  // ⚠️⚠️ NEVER THE COURIER'S OWN WORDS ON HER SCREEN (v683). ⭐ Her words, and the reason this line changed:
+  // __"the things that frighten me was when i saw the app respond with non sense word"__. ⚠️ **This is where
+  // that came from**: a code the table above does not recognise had its RAW vendor message printed straight into
+  // the panel — ⭐ the six-vehicle list was already doing it with furniture blurbs, and an unknown error did the
+  // same with whatever the vendor happened to write. ⭐ A sentence a person wrote, plus the code, which is the
+  // part worth keeping. ⚠️ The vendor's own wording still reaches the FUNCTION'S LOG, where it can be read
+  // without frightening anybody.
+  if (detail) console.error("[courier] unread vendor error:", detail);
+  return unknownCode
+    ? `Lalamove refused this one, for a reason the app does not recognise (code ${unknownCode}).`
     : `Lalamove answered with an error (HTTP ${status}).`;
 }
 

@@ -1024,6 +1024,18 @@ textarea[data-suggest]:placeholder-shown { background-position: right 9px top 12
    is a prominent show/hide control for a product rather than a form field. */
 .avail-listed { display: flex; align-items: flex-start; gap: 10px; margin: 12px 0 2px; }
 .avail-listed-text { font-size: 13px; color: var(--muted); line-height: 1.35; }
+
+/* ⚠️ THE MARKS HAVE RUN OUT (v678). ⭐ A product whose last sell day is behind it is not on sale, and
+   ⚠️ the folded header is the only line the baker reads without opening the card — so the state wears
+   the app's own closed-badge colours there, and the warning sits at the top of the card with the one
+   press that clears it. */
+.avail-sum-warn { color: var(--red); font-weight: 600; }
+.avail-ended {
+  margin: 10px 0 0; padding: 10px 12px; border-radius: 10px;
+  background: var(--red-bg); border: 1px solid rgba(181, 65, 53, .28);
+}
+.avail-ended-head { margin: 0; font-weight: 600; color: var(--red); font-size: 14px; }
+.avail-ended-text { margin: 4px 0 10px; font-size: 13px; line-height: 1.4; color: var(--ink); }
 .switch { flex: none; position: relative; display: inline-block; width: 44px; height: 25px; margin-top: 1px; }
 /* ⚠️⚠️ THE INPUT IS THE TARGET, AND IT IS 36px TALL AND CENTRED (v568). ⭐ The switch draws 25px; a separate
    rule tried to grow the input, but it was written BEFORE this one, so `inset: 0; height: 100%` won and the
@@ -3400,6 +3412,21 @@ option.tone-off { color: var(--muted); }
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 42vw;
+}
+/* ⚠️⚠️ AND THE WARNING WRAPS, INSTEAD OF LOSING ITS DATE (v678). ⚠️ `.avail-sum` is one line with a 42vw cap
+   and an ellipsis, and every measurement at 375px came out 1–3px short of "Not on sale since 31 Oct 2026" — so
+   the year was the first thing the ellipsis ate, ⚠️ **and a warning ending in "…" reads as unfinished.** ⭐ Two
+   lines is the honest shape: the whole sentence, the date included.
+   ⚠️⚠️ AND THE CARD'S TITLE MUST NOT SHRINK, OR THE TWO OVERLAP. `.avail-head` carries `min-width: 0`, so with
+   a taller summary beside it the title's box collapsed and its text spilled across the warning — ⭐ measured on
+   the real card, not guessed. `flex: none` keeps the title its own width and the summary wraps under itself.
+   ⚠️ Both rules must sit AFTER `.avail-sum` — same specificity, later wins. */
+.avail-head { flex: none; }
+.avail-sum.avail-sum-warn {
+  max-width: none;
+  white-space: normal;
+  text-overflow: clip;
+  line-height: 1.3;
 }
 .avail-body { margin-top: 2px; }
 

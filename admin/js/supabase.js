@@ -113,10 +113,14 @@ export function computeSlots(state, horizon = 10) {
 // that let the database tell derived rows apart (they recompute from the pool,
 // never self-decrement). The base's own row stays in whole pieces.
 export function computeProductSlots(state, horizon = 10) {
+  // ⚠️⚠️ A PRODUCT THAT IS NOT ON THE SHOP PUBLISHES NO AVAILABILITY (v678). ⚠️ This asked only
+  // `active !== false`, so a draft or an unpriced product published a daily count the shop never used — and
+  // ⚠️ **that row outlived the product**, because the cleanup below deletes by DATE and never by product.
+  // ⭐ It is the same question the menu publish asks, and now the same answer: `onTheShop`.
   const packs = state.products
-    .filter((p) => p.active !== false && isPoolablePack(state, p));
+    .filter((p) => onTheShop(state, p) && isPoolablePack(state, p));
   const bases = state.products
-    .filter((p) => p.active !== false && Number(p.limit) > 0);
+    .filter((p) => onTheShop(state, p) && Number(p.limit) > 0);
   const packsByBase = new Map();
   for (const p of packs) {
     const { baseId, baseQty } = isPoolablePack(state, p);
@@ -217,10 +221,19 @@ export function finiteSlotRows(rows) {
   return { kept, dropped };
 }
 
-// ⭐ THE THREE BATCHES, BUILT IN ONE PLACE SO THEY CAN BE HELD TO ACCOUNT (v675). `product_availability` has
-// NOT NULL columns, and ⚠️ **a batch is one request: one row missing a count fails every row with it.** ⭐ So
-// the shapes are built here, pure, and a test walks ALL of them — including the clearing batch, which is the
-// one that shipped without a count and produced her HTTP 400.
+// A list of values as PostgREST's `in.(...)` wants it: double-quoted, with a quote or a backslash inside one
+// escaped. ⚠️ NOT HYPOTHETICAL — her own product is called `Focaccia 9"x12" ~ 850g`, and a name written into a
+// query unescaped would either fail the request or match the wrong row. ⭐ Pure, so a test can read the shape.
+export function restInList(values) {
+  return (Array.isArray(values) ? values : [])
+    .map((v) => `"${String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`)
+    .join(",");
+}
+
+// ⭐ THE THREE BATCHES, BUILT IN ONE PLACE SO THEY CAN BE HELD TO ACCOUNT (v673). `product_availability` has
+// **NOT NULL** columns, and ⚠️ **a batch is one request: one row missing a count fails every row with it.** ⭐ So
+// the shapes are built here, pure, and a test walks ALL of them — including the clearing batch, which is the one
+// that shipped without a count and produced her HTTP 400.
 export function availabilityBatches(productRows) {
   const rows = Array.isArray(productRows) ? productRows : [];
   const plain = rows.filter((r) => !("pool_base" in r));
@@ -231,6 +244,32 @@ export function availabilityBatches(productRows) {
   }));
   return { plain, cleared, packs };
 }
+
+// Delete the `product_availability` rows for these dates whose product is NOT one we just published.
+// ⚠️ It READS first and only ever names rows the server itself listed, so a quoting mistake can fail the
+// delete (housekeeping, swallowed) but can never select a product we are keeping. Returns how many product
+// names it removed, for the caller's own accounting.
+async function pruneStaleProducts(c, token, activeDates, published) {
+  const headers = { apikey: c.anonKey, Authorization: `Bearer ${token}` };
+  try {
+    const res = await fetch(
+      `${c.url}/rest/v1/product_availability?select=product&date=in.(${activeDates})`,
+      { headers });
+    if (!res.ok) return 0;
+    const listed = await res.json();
+    if (!Array.isArray(listed)) return 0;
+    const keep = new Set(published.map((r) => String(r.product)));
+    const stale = [...new Set(listed.map((r) => r && r.product).filter((n) => n && !keep.has(String(n))))];
+    if (!stale.length) return 0;
+    await fetch(
+      `${c.url}/rest/v1/product_availability?date=in.(${activeDates})&product=in.(${restInList(stale)})`,
+      { method: "DELETE", headers });
+    return stale.length;
+  } catch (err) {
+    return 0;
+  }
+}
+
 export async function syncAvailability(state) {
   const c = cfg(state);
   if (!ready(c)) return { ok: false, reason: "Supabase not configured" };
@@ -331,17 +370,15 @@ export async function syncAvailability(state) {
         method: "DELETE",
         headers: { apikey: c.anonKey, Authorization: `Bearer ${token}` },
       }).catch(() => {});
-    await fetch(`${c.url}/rest/v1/availability?date=not.in.(${active})`, {
-      method: "DELETE",
-      headers: { apikey: c.anonKey, Authorization: `Bearer ${token}` },
-    }).catch(() => {});
-    await clean(`date=not.in.(${active})`);
-    // …and, for the dates she IS publishing, any product name she no longer publishes.
-    // ⚠️ GUARDED ON A NON-EMPTY LIST: `not.in.()` with nothing to keep matches everything and
-    // would wipe the table. A shop with no limited product publishes no rows, and then there is
-    // nothing to keep — but also nothing to delete a name FOR, so skipping is right.
-    const names = productRows.map((r) => `"${r.product}"`).join(",");
-    if (names) await clean(`date=in.(${active})&product=not.in.(${names})`);
+    await clean("availability");
+    await clean("product_availability");
+    // ⚠️⚠️ AND A PRODUCT THAT HAS LEFT THE SHOP LOSES ITS ROWS (v678). ⚠️ The two deletes above only ever ask
+    // about DATES, so a product removed from the menu kept a published count for every date still managed —
+    // ⭐ forever. That is the Sandwich: one product on her shop, eighteen days of rows for a bread the shop
+    // never offered. ⭐ So what we just published is the whole truth for those dates, and anything else
+    // published for them goes. Best-effort like the rest of the housekeeping: a failure leaves the stale row,
+    // it never touches a live one.
+    await pruneStaleProducts(c, token, active, productRows);
   }
   return { ok: true, pushed: days.kept.length, pushedProducts, at: new Date().toISOString(),
     // ⚠️ A ROW THAT WAS DROPPED IS SAID OUT LOUD, never swallowed: the shop is published without it, and she is
@@ -371,6 +408,23 @@ export function maybeSync(state) {
 // WHOLE-CLASS bug, not one bug: **the next list that reaches the shop will forget the same call
 // unless something fails when it does.**"* The collection areas are that next list, and what fails
 // now is a test on the shape rather than a silence.
+// ── WHAT "ON THE SHOP" MEANS, IN ONE PLACE (v678) ──────────────────────────
+//
+// ⚠️⚠️ TWO FUNCTIONS ANSWERED THIS QUESTION AND THEY COULD ANSWER IT DIFFERENTLY. The menu publish below
+// decided which products the customer sees; `computeProductSlots` decided whose availability to publish — and
+// ⚠️ **that one only asked `active !== false`, which a draft or an unpriced product passes.** ⭐ The result was
+// a phantom: her shop carried EXACTLY ONE product while `product_availability` carried a Sandwich row for all
+// eighteen coming days. ⭐ Her question — __"there is only one product which is the foccacia only, why you
+// mention sandwich?"__ — was the right one to ask, and the answer was that I had read a row the shop never
+// showed anybody.
+//
+// ⭐ One rule, two readers. A product is on the shop when it is not a draft, not switched off, has a name and a
+// price above zero, and is not a pack whose base has been hidden.
+export function onTheShop(state, p) {
+  return !!(p && p.draft !== true && p.active !== false && String(p.name || "").trim()
+    && Number(p.price) > 0 && !hiddenPackBase(state, p));
+}
+
 export function storefrontPayload(state) {
   const sf = (state.settings && state.settings.storefront) || {};
   // The storefront menu is the backoffice's product list (active only) — one
@@ -381,11 +435,10 @@ export function storefrontPayload(state) {
     // cleared price into a FREE loaf: the shop drew RM0.00 and accepted the order, while the homepage's own
     // price reader refused zero and kept its typed figure. ⭐ Only a priced product reaches the shop; the
     // Products screen says which ones are waiting for a price.
-    .filter((p) => p && p.draft !== true && p.active !== false && String(p.name || "").trim()
-      && Number(p.price) > 0
-      // ⚠️ AND A PACK WHOSE BASE IS HIDDEN IS NOT OFFERED (v598) — its cap has left the shop, so selling it
-      // would be selling pieces of a bread she has taken off.
-      && !hiddenPackBase(state, p))
+    // ⚠️ AND A PACK WHOSE BASE IS HIDDEN IS NOT OFFERED (v598) — its cap has left the shop, so selling it
+    // would be selling pieces of a bread she has taken off.
+    // ⭐ THE WHOLE TEST IS `onTheShop` NOW (v678), because `computeProductSlots` asks the same question.
+    .filter((p) => onTheShop(state, p))
     .map((p) => {
       const out = {
         name: String(p.name).trim(),
@@ -620,6 +673,26 @@ export async function syncStorefront(state) {
     return { ok: false, reason: `Storefront sync failed (HTTP ${res.status})${text ? " — " + text.slice(0, 120) : ""}` };
   }
   return { ok: true, at: new Date().toISOString() };
+}
+
+// ⭐⭐ ONE PRESS, AND THE TRUTH ABOUT WHETHER IT LANDED (v681).
+//
+// ⚠️⚠️ `maybeSyncStorefront` and `maybeSync` BOTH RETURN IN SILENCE WHEN THE PHONE IS NOT SIGNED IN, and both
+// swallow a failed request on the auto path. ⭐ So a repair could say "Back on sale" while the shop saw nothing
+// at all — ⚠️ **which is exactly what she reported twice: __"the same thing, nothning done"__ while her cloud
+// still carried all ten marks.** ⭐ A confirmation that does not know whether it reached the shop is not a
+// confirmation. This one waits, and answers.
+export async function publishNow(state) {
+  const c = cfg(state);
+  if (!ready(c)) {
+    return { ok: false, signedOut: true,
+      reason: "this phone is not signed in to shared data, so nothing can reach your shop" };
+  }
+  const sf = await syncStorefront(state);
+  if (!sf || sf.ok === false) return { ok: false, reason: (sf && sf.reason) || "the shop would not take it" };
+  const av = await syncAvailability(state);
+  if (!av || av.ok === false) return { ok: false, reason: (av && av.reason) || "the shop would not take it" };
+  return { ok: true };
 }
 
 let sfTimer = null;

@@ -170,11 +170,27 @@ const EN_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
 // "Sat", "Sat & Sun", "Mon, Wed & Fri" — in the bakery's week order.
+//
+// ⚠️ A RUN OF THREE OR MORE CONSECUTIVE WEEKDAYS COLLAPSES TO A DASHED RANGE (v678). ⭐ The Availability card's
+// weekday headings write one mark per weekday, so an everyday product carried five marks per month and its
+// header read "Mon, Tue, Wed, Thu & Fri · 1-30 Sep 2026" — ⚠️ **a wall of weekdays she could not read, wrapped
+// around the one fact that mattered (the end date).** ⭐ Two-day sets stay as they were: "Sat & Sun" is the
+// weekend, and a dash there would read as a range through the week.
 function dayList(days) {
-  const names = normDays(days)
-    .sort((a, b) => WEEK_ORDER.indexOf(a) - WEEK_ORDER.indexOf(b))
-    .map((d) => EN_DAYS[d]);
-  if (!names.length) return "";
+  const order = normDays(days).sort((a, b) => WEEK_ORDER.indexOf(a) - WEEK_ORDER.indexOf(b));
+  if (!order.length) return "";
+  const runs = [];
+  for (const d of order) {
+    const at = runs[runs.length - 1];
+    const prev = at && at[at.length - 1];
+    if (at && WEEK_ORDER.indexOf(d) === WEEK_ORDER.indexOf(prev) + 1) at.push(d);
+    else runs.push([d]);
+  }
+  // ⚠️ A SHORT RUN IS SPELLED OUT, NOT JOINED HERE — the final join below already puts " & " before the last
+  // name, so joining a two-day run inside this map produced "Mon & Tue & Sat".
+  const names = runs.flatMap((run) => (run.length >= 3
+    ? [`${EN_DAYS[run[0]]}–${EN_DAYS[run[run.length - 1]]}`]
+    : run.map((d) => EN_DAYS[d])));
   if (names.length === 1) return names[0];
   return `${names.slice(0, -1).join(", ")} & ${names[names.length - 1]}`;
 }
@@ -217,6 +233,48 @@ export function rulesSummary(rules) {
 
 export function availSummary(product) {
   return rulesSummary(availRules(product));
+}
+
+// "31 Oct 2026" — one day, written out.
+export function dayLabel(iso) {
+  if (!isDayKey(iso)) return "";
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${d} ${EN_MONTHS[m - 1]} ${y}`;
+}
+
+// ── WHEN THE MARKS RUN OUT ──────────────────────────────────────────────────
+//
+// ⚠️⚠️ EVERY MARK THAT NAMES AN END DATE STOPS SELLING THE DAY AFTER IT. ⭐ Her own shop went dark on 1 Nov 2026
+// for exactly this: the Focaccia's marks covered September and October, nothing carried into November, and
+// ⚠️ **no screen said so.** The shop quietly showed "Only available for bake days up to Saturday, 31 Oct."
+// while she went looking for a fault in the calendar, the courier and the products.
+//
+// ⭐ The cause is the card's own shape: **a weekday heading marks only the month on screen**, so every mark
+// made that way has an end date by construction — and a product that sells every week still needs re-marking
+// every month, for ever. ⭐ So the end date is not a detail. It is the one fact about the marks that has to be
+// readable without opening the card.
+//
+//   "none"   no marks at all — sells every bake day
+//   "open"   some mark has no end date, so it never runs out
+//   "live"   every mark ends; the last one is still ahead
+//   "ended"  every mark ends, and the last one is behind us — NOT ON SALE NOW
+export function availState(rules, today) {
+  const list = normRules(rules);
+  if (!list.length) return { kind: "none" };
+  if (list.some((r) => !r.to)) return { kind: "open" };
+  const ends = list.map((r) => r.to).sort();
+  const last = ends[ends.length - 1];
+  return { kind: isDayKey(today) && last < today ? "ended" : "live", date: last };
+}
+
+// The folded header's own clause about the end (English, backoffice only — the shop words its own sentence
+// in the visitor's language). "" when there is nothing to say, because a product with no marks sells always.
+export function availEndText(rules, today) {
+  const s = availState(rules, today);
+  if (s.kind === "none") return "";
+  if (s.kind === "open") return "no end date";
+  if (s.kind === "ended") return `not on sale since ${dayLabel(s.date)}`;
+  return `ends ${dayLabel(s.date)}`;
 }
 
 // The month's own bounds — what tapping a weekday heading marks, so a mark made

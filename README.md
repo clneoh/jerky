@@ -850,6 +850,38 @@ first watched failing.
 **Guard:** a new test opens the card on a two-day sale, asserts both lines are listed **and that the other
 day's line can actually be changed**; watched failing on the old code. Suite 3877 → 3878.
 
+## v685 — the bakery sync: sell days that end, and a shop that says so (6 Nov 2026)
+
+**Range: bakery `8cee0e8` (v675) → `358a92a` (v685), 10 versions. No SQL. ⚠️ The courier function's two fixes
+need `supabase functions deploy courier` to be live; the courier is off on this shop, so nothing depends on it.**
+
+- **Sell days that run out (v677/v678)** — `availability.js` now says when a marked run ENDS
+  (`sellRunEnds`/`endedSince`), `views/products.js` paints it on the closed Availability card
+  (*"Not on sale since 31 Oct 2026"*), a warning carries **one press** that clears the marks, and
+  `health.js` gains **`selldays`** naming the product and its last sell day.
+- **The press really saves (v679–v681)** — it saves the product, publishes the **menu and the counts**, and
+  reports whether the shop took it (`publishNow` + the `signedOut` case). Saving or hiding a product now
+  republishes both too.
+- **Only what is on the shop publishes a count (v678)** — `computeProductSlots` asks `onTheShop`, so a draft or
+  unpriced product no longer stamps a row; the stale-product sweep is the **engine's** (`pruneStaleProducts`,
+  read-then-delete with `restInList` escaping) — ⭐ it replaced jerky's own `product=not.in.` sweep, and jerky's
+  two duplicate tests were dropped in favour of the engine's, as this file's own precedent does.
+- **`restInList`** — PostgREST `in.(...)` values, quote- and backslash-escaped. ⚠️ Not hypothetical: a product
+  name carrying a double quote would otherwise fail or match the wrong row.
+- **Weekly block and sale-only days (v676/v677)** — this week no longer folds into next; a sale-only day is not
+  drawn as a delivery day and gets its own repair press.
+- **Courier panel (v682/v683)** — vehicles named by class, an unrecognised error said in a person's sentence, and
+  Lalamove's own words go to the function's log only.
+
+⚠️ **NOT ported: v684/v685's SEO block** (`index.html` title/OG/structured data, `sitemap.xml`, `llms.txt`,
+`robots.txt`, the Google verification tag). ⭐ That is the bakery's own content and its own Search Console
+property — munchies needs its own. Held for her decision.
+
+⚠️ **Localized:** four "bake day" strings this merge brought into the Products and Check-my-system screens
+(the same screen already says "delivery day").
+
+Suite 4026 → 4041.
+
 ## v676–v677 — the shop's hero is its own photo (30 Oct 2026)
 
 **Her question:** *"why the hero is replace?"*

@@ -273,47 +273,58 @@ function forecastState() {
   });
 }
 
-test("comingWeeks returns four Mon–Sun rows with the dates each week holds", () => {
+test("comingWeeks returns four Sun–Sat rows, and a date belongs to ITS OWN week (v676)", () => {
+  // ⚠️⚠️ THE OLD RULE folded every date up to Week 1's end into Week 1 — so this week's bake days sat under NEXT
+  // week's label and the range stretched over twelve days. ⭐ Her report: "why sat 31 Oct, included, that is not a
+  // bake day???" — the day was hers and real; the block it landed in was wrong. ⭐ And the week is the SUNDAY one,
+  // the same week the to-do list names on this screen.
   const w = comingWeeks(forecastState(), { today: TODAY });
   assert.equal(w.rows.length, 4);
   assert.deepEqual(
     w.rows.map((r) => [r.start, r.end]),
-    [["2026-09-14", "2026-09-20"], ["2026-09-21", "2026-09-27"],
-     ["2026-09-28", "2026-10-04"], ["2026-10-05", "2026-10-11"]],
-    "windows are four Mon–Sun weeks from the coming Monday");
+    [["2026-09-06", "2026-09-12"], ["2026-09-13", "2026-09-19"],
+     ["2026-09-20", "2026-09-26"], ["2026-09-27", "2026-10-03"]],
+    "windows are four Sun–Sat weeks from the Sunday of THIS week");
 
   const ids = (r) => r.dates.map((d) => d.id);
-  assert.deepEqual(ids(w.rows[0]), ["g", "d1", "d2", "d3"],
-    "the pre-Monday date folds into Week 1 alongside its Mon/Wed/Fri dates");
-  assert.deepEqual(ids(w.rows[1]), ["d4"]);
-  assert.deepEqual(ids(w.rows[2]), ["d5"], "30 Sep sits in Week 3 across the month edge");
-  assert.deepEqual(ids(w.rows[3]), ["d6"]);
-  assert.deepEqual(w.later.map((d) => d.id), ["dLater"], "past the window comes back under later");
+  assert.deepEqual(ids(w.rows[0]), ["g"], "Friday 11 Sep is THIS week, and it belongs here");
+  assert.deepEqual(ids(w.rows[1]), ["d1", "d2", "d3"],
+    "⚠️ a date belongs to the week it falls in, never to a later row");
+  assert.deepEqual(ids(w.rows[2]), ["d4"]);
+  assert.deepEqual(ids(w.rows[3]), ["d5"], "30 Sep sits in the last week, across the month edge");
+  assert.deepEqual(w.later.map((d) => d.id), ["d6", "dLater"], "past the window comes back under later");
 });
 
 test("comingWeeks totals: booked/free come from capacity, money flags unpriced", () => {
   const w = comingWeeks(forecastState(), { today: TODAY });
+  // ⭐ Week 1 is THIS week: one date (Friday 11 Sep) and no orders on it.
   const week1 = w.rows[0];
-  // d1: 2+1 booked of 12, d2: 4 of 12, d3 and g: 0 of 12.
-  assert.equal(week1.booked, 7, "pieces booked on Week-1 dates");
-  assert.equal(week1.capacity, 48, "four dates × capacity 12");
-  assert.equal(week1.free, (12 - 3) + (12 - 4) + 12 + 12, "free slots only on the open remainder");
-  assert.equal(week1.rm, (2 * 15) + (4 * 8), "priced items sum; the unpriced Sandwich adds 0");
-  assert.equal(week1.unpriced, true, "an ordered product has no price → flagged");
+  assert.equal(week1.booked, 0, "nothing is booked on this week's single date");
+  assert.equal(week1.capacity, 12, "one date × capacity 12");
+  assert.equal(week1.free, 12);
+  assert.equal(week1.rm, 0);
+  assert.equal(week1.unpriced, false, "no orders, so nothing to flag");
 
-  assert.equal(w.rows[1].booked, 3);
-  assert.equal(w.rows[1].rm, 3 * 15, "week-2 money");
-  assert.equal(w.rows[1].unpriced, false);
-  assert.equal(w.rows[2].booked, 0, "an empty week is 0/0 with no flag");
-  assert.equal(w.rows[2].rm, 0);
-  assert.equal(w.rows[3].booked, 0);
+  // ⭐ Week 2 holds d1 (2+1 booked of 12), d2 (4 of 12) and d3 (0 of 12).
+  const week2 = w.rows[1];
+  assert.equal(week2.booked, 7, "pieces booked on Week-2 dates");
+  assert.equal(week2.capacity, 36, "three dates × capacity 12");
+  assert.equal(week2.free, (12 - 3) + (12 - 4) + 12, "free slots only on the open remainder");
+  assert.equal(week2.rm, (2 * 15) + (4 * 8), "priced items sum; the unpriced Sandwich adds 0");
+  assert.equal(week2.unpriced, true, "an ordered product has no price → flagged");
+
+  assert.equal(w.rows[2].booked, 3);
+  assert.equal(w.rows[2].rm, 3 * 15, "week-3 money");
+  assert.equal(w.rows[2].unpriced, false);
+  assert.equal(w.rows[3].booked, 0, "an empty week is 0/0 with no flag");
+  assert.equal(w.rows[3].rm, 0);
 });
 
 test("comingWeeks: weeks count can be shrunk; no dates → empty rows and later", () => {
   const two = comingWeeks(forecastState(), { today: TODAY, weeks: 2 });
   assert.equal(two.rows.length, 2, "only two windows when asked");
   assert.deepEqual(two.later.map((d) => d.id),
-    ["d5", "d6", "dLater"], "dates past the two-week window all become later");
+    ["d4", "d5", "d6", "dLater"], "dates past the two-week window all become later");
 
   const empty = comingWeeks(baseState(), { today: TODAY });
   assert.ok(empty.rows.every((r) => r.dates.length === 0), "no dates → empty weeks");
@@ -364,4 +375,47 @@ test("task helpers: remove deletes one row; deleting all stays empty (no preset 
   for (const t of WEEKLY_TASKS) removeTask(s2, t.id);
   assert.deepEqual(s2.settings.tasks, [], "empty list is authoritative");
   assert.deepEqual(taskList(s2), [], "taskList honours the stored empty list");
+});
+
+test("★★★ her own card: this week's bake days stay in THIS week (v676)", () => {
+  // ⚠️⚠️ REPRODUCED FROM HER SCREENSHOT, 28 Oct 2026 (a Wednesday): the first block was labelled "28 Oct – 8 Nov"
+  // and held **eleven days** — Wed 28, Fri 30, Sat 31, Mon 2, Wed 4, Fri 6, Sat 7 — because the first row took
+  // EVERY upcoming date up to its end, so this week's days were folded into next week's block.
+  const st = baseState({
+    settings: { currency: "RM", defaultCapacity: 12 },
+    products: [{ id: "p1", name: "Focaccia", price: 16, recipe: [] }],
+    deliveryDates: ["2026-10-28", "2026-10-30", "2026-10-31", "2026-11-02",
+      "2026-11-04", "2026-11-06", "2026-11-07"].map((date, i) => ({ id: `x${i}`, date })),
+    orders: [],
+  });
+  const w = comingWeeks(st, { today: "2026-10-28" });
+  const ids = (r) => r.dates.map((d) => d.date);
+  assert.deepEqual(w.rows.map((r) => [r.start, r.end]), [
+    ["2026-10-25", "2026-10-31"], ["2026-11-01", "2026-11-07"],
+    ["2026-11-08", "2026-11-14"], ["2026-11-15", "2026-11-21"],
+  ], "★ the weeks are Sunday-to-Saturday, starting with THIS week");
+  assert.deepEqual(ids(w.rows[0]), ["2026-10-28", "2026-10-30", "2026-10-31"],
+    "★ this week's bakes were folded into next week's block — the twelve-day label she saw");
+  assert.deepEqual(ids(w.rows[1]), ["2026-11-02", "2026-11-04", "2026-11-06", "2026-11-07"]);
+});
+
+test("★★★ a sale-only day is flagged, so the card cannot dress it as a bake day (v677)", () => {
+  // ⭐ Her report, twice: "sat 7 Nov is not marked", then "sat 31 Oct also not marked". ⚠️ Both were sale-only days
+  // (a HAND SALE on a day she does not bake — v606): the shop never offers them, Bake days leaves them out, and the
+  // Coming-4-weeks card drew them exactly like bake days.
+  const st = baseState({
+    settings: { currency: "RM", defaultCapacity: 12 },
+    products: [{ id: "p1", name: "Focaccia", price: 16, recipe: [] }],
+    deliveryDates: [
+      { id: "a", date: "2026-10-30" },
+      { id: "b", date: "2026-10-31", recordOnly: true },   // a Saturday, a hand sale
+      { id: "c", date: "2026-11-02" },
+    ],
+    orders: [],
+  });
+  const w = comingWeeks(st, { today: "2026-10-28" });
+  const byDate = (d) => w.rows.flatMap((r) => r.dates).find((x) => x.date === d);
+  assert.equal(byDate("2026-10-31").saleOnly, true, "★ a hand-sale day is not marked as a bake day");
+  assert.equal(byDate("2026-10-30").saleOnly, false);
+  assert.equal(byDate("2026-11-02").saleOnly, false);
 });

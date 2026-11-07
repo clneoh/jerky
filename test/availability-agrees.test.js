@@ -45,7 +45,11 @@ function state({ products, deliveryDates, orders, defaultCapacity = 12 }) {
 }
 
 const oneDate = () => [{ id: "del_9", date: DATE }];
-const jerky = (over = {}) => ({ id: "prd_1", name: "Chicken Jerky", active: true, limit: 12, recipe: [], ...over });
+// ⚠️ A PRICE, BECAUSE THE ENGINE NOW ASKS `onTheShop` BEFORE IT PUBLISHES A COUNT (v678): a product with no
+// price is not on the shop, so it no longer stamps a row at all. ⭐ The fixture needs one to be a product she
+// sells — without it every test here measured an empty list instead of a count.
+const jerky = (over = {}) => ({ id: "prd_1", name: "Chicken Jerky", price: 15, unit: "pouch",
+  active: true, limit: 12, recipe: [], ...over });
 
 // The two numbers she compa: what the shop would publish, and what the app's chip says.
 function bothNumbers(st) {
@@ -163,7 +167,9 @@ test("★ a value pack draws from the WHOLE day's pool — once, not once per re
   const st = state({
     products: [
       jerky({ limit: 12 }),
-      { id: "prd_pack", name: "Chicken Jerky (4 pcs)", active: true, recipe: [{ productId: "prd_1", qty: 4, unit: "pouch" }] },
+      // ⚠️ A pack is only on the shop with a price too (v678) — a pack with none publishes no derived row.
+      { id: "prd_pack", name: "Chicken Jerky (4 pcs)", price: 55, unit: "pack", active: true,
+        recipe: [{ productId: "prd_1", qty: 4, unit: "pouch" }] },
     ],
     deliveryDates: twoRecords(),
     orders: [

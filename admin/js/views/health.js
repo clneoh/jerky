@@ -14,10 +14,10 @@
 
 import { el, button, confirmDialog, toast } from "../ui.js";
 import { hideSparesBlocked, runHealthChecks } from "../health.js";
-import { claimReceipt, pullReceiptRegister, maybeSync } from "../supabase.js";
+import { claimReceipt, pullReceiptRegister, maybeSync, maybeSyncStorefront, publishNow } from "../supabase.js";
 import * as backups from "../backups.js";
 import * as sync from "../sync.js";
-import { save, saveFailure, duplicateIngredientPlan, removeOrders, updateOrderBadge, orderCode } from "../state.js";
+import { byId, save, saveFailure, duplicateIngredientPlan, removeOrders, updateOrderBadge, orderCode } from "../state.js";
 import { fmtStockAmount } from "../purchasing.js";
 import { shortDate } from "../dates.js";
 import { STOCK_LOG_CAP, reconcileCards } from "../stock.js";
@@ -98,6 +98,17 @@ export function renderHealth(root, state) {
             button(`Remove the ${r.repairIds.length} order${r.repairIds.length === 1 ? "" : "s"} with no posting day`,
               () => removeOrphans(r.repairIds), "danger"))
         : null,
+      r.status === "fail" && r.repair === "clearSaleDays" && (r.repairIds || []).length
+        ? el("div", { class: "btn-row", style: "margin:8px 0 0" },
+            button(`Clear ${r.repairIds.length} empty sale-only day${r.repairIds.length === 1 ? "" : "s"}`,
+              () => clearSaleDays(r.repairIds), "primary"))
+        : null,
+      // ⭐ ONE PRESS PUTS A DARK PRODUCT BACK ON THE SHOP (v678).
+      r.status === "fail" && r.repair === "clearSellDays" && (r.repairIds || []).length
+        ? el("div", { class: "btn-row", style: "margin:8px 0 0" },
+            button(`Sell every bake day again — ${r.repairIds.length} product${r.repairIds.length === 1 ? "" : "s"}`,
+              () => clearSellDays(r.repairIds), "primary"))
+        : null,
       r.status === "fail" && r.repair === "clearVanDays" && (r.repairIds || []).length
         ? el("div", { class: "btn-row", style: "margin:8px 0 0" },
             button(`Clear the courier day on ${r.repairIds.length} order${r.repairIds.length === 1 ? "" : "s"}`,
@@ -150,7 +161,65 @@ export function renderHealth(root, state) {
   // run before the parcel exists. ⭐ The app does it — on her press, after the confirmation NAMES EVERY ORDER.
   // ⚠️ It deletes only `courierDay`; the posting day, the money and the customer are untouched, and if a van
   // really is coming she types the real day on the order as before.
-  function clearVanDays(ids) {
+  // ⭐⭐ REMOVE A SALE-ONLY DAY THAT HOLDS NOTHING (v677). ⚠️ Those days are invisible on Bake days by design, so
+  // without this press she has no way to take one back — ⭐ and one was still being drawn on Home as a bake day.
+  // ⚠️ It removes the DAY only, and only when no order points at it. If one has an order, the check does not
+  // list it and this cannot reach it.
+  // ⭐⭐ A PRODUCT WHOSE SELL DAYS HAVE ALL ENDED CANNOT BE ORDERED AT ALL (v678). ⚠️ Her Focaccia's marks
+  // stopped on 31 Oct 2026, the shop went dark on 1 Nov, and ⚠️ **every other screen read as though nothing was
+  // wrong** — so the repair has to be here, in the place she looks when something is wrong. ⭐ It removes only
+  // the sell-day marks: **no marks means every bake day**, which is what an everyday product says. ⚠️ The
+  // product itself, its price, its recipe, its limits and its photos are not touched.
+  function clearSellDays(ids) {
+    const todo = [...new Set((ids || []).map(String))];
+    const products = todo.map((id) => byId(state.products, id)).filter(Boolean);
+    if (!products.length) return toast("Nothing to clear");
+    const one = products.length === 1;
+    const names = products.map((p) => p.name).join("\n");
+    confirmDialog(
+      `Put ${one ? "this product" : `these ${products.length} products`} back on sale every bake day?\n\n${names}`
+      + `\n\nEvery sell day marked on ${one ? "it" : "them"} is behind us, so ${one ? "it cannot be" : "they cannot be"} ordered at all. Removing the marks makes ${one ? "it" : "them"} sell on every delivery day, with no end date. Nothing else about ${one ? "it" : "them"} changes.`,
+      () => {
+        for (const p of products) {
+          delete p.sellRules;
+          delete p.validFrom;
+          delete p.validTo;
+        }
+        save(state);
+        // ⚠️⚠️ AND IT SAYS WHETHER THE SHOP ACTUALLY GOT IT (v681). ⚠️ The auto-publishers return in silence
+        // when the phone is not signed in — ⭐ so this press used to confirm a repair the shop never heard of.
+        toast("Saving to your shop…");
+        publishNow(state).then((r) => {
+          if (r.ok) toast(`${products.length} product${products.length === 1 ? "" : "s"} back on sale — your shop is updated`);
+          else if (r.signedOut) toast("Saved on this phone, but NOT sent to your shop: not signed in. Go to More → Settings → Shared data, sign in, then press Sync now.");
+          else toast(`Saved on this phone, but your shop did not take it — ${r.reason}`);
+        }).catch(() => toast("Saved on this phone, but it did not reach your shop."));
+        run(true);
+      },
+      { yesLabel: "Put them back on sale", danger: true });
+  }
+
+  function clearSaleDays(ids) {
+    const todo = [...new Set((ids || []).map(String))];
+    if (!todo.length) return toast("Nothing to clear");
+    const days = todo
+      .map((id) => (state.deliveryDates || []).find((d) => d && String(d.id) === id))
+      .filter(Boolean);
+    const when = days.map((d) => shortDate(d.date)).join("  ·  ");
+    confirmDialog(
+      `Remove ${days.length} empty day${days.length === 1 ? "" : "s"}?\n\n${when}`
+      + "\n\nThey hold a hand sale and nothing is booked on them. No order is touched — a day with an order on it is not on this list.",
+      () => {
+        const gone = new Set(days.map((d) => String(d.id)));
+        state.deliveryDates = (state.deliveryDates || []).filter((d) => !gone.has(String(d && d.id)));
+        save(state);
+        maybeSync(state);
+        maybeSyncStorefront(state);
+        toast(`${days.length} day${days.length === 1 ? "" : "s"} removed`);
+        run(true);
+      },
+      { yesLabel: "Remove them" });
+  }  function clearVanDays(ids) {
     const todo = [...new Set((ids || []).map(String))];
     if (!todo.length) return toast("Nothing to clear");
     const rows = todo.map((id) => (state.orders || []).find((x) => x && String(x.id) === id)).filter(Boolean);

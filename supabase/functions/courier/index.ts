@@ -56,7 +56,7 @@
 // documents.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { LALAMOVE_KEY, LALAMOVE_LABEL, hostFor, servicesIn, quotation, cities, placeOrder, orderDetail, orderWithDriver, cancelOrder, notSetUpReason, type LlmConfig } from "./providers/lalamove.ts";
+import { LALAMOVE_KEY, LALAMOVE_LABEL, hostFor, servicesIn, quotation, cities, placeOrder, orderDetail, orderWithDriver, cancelOrder, notSetUpReason, errorDetail, type LlmConfig } from "./providers/lalamove.ts";
 import { geocodeAddress } from "./geocode.ts";
 import { suggestAddresses, allowSuggestion, type HitRecord } from "./suggest.ts";
 import { validPoint } from "./place.ts";
@@ -198,7 +198,11 @@ Deno.serve(async (req) => {
         const one = out.data as Record<string, unknown>;
         quotes.push({ serviceType: services[i], ...(one && typeof one === "object" ? one : {}) });
       } else {
-        failed.push({ service: services[i], reason: out.reason });
+        // ⚠️⚠️ AND WHAT LALAMOVE ACTUALLY SAID (v683). ⭐ A plain sentence is what she needs on the screen;
+        // ⚠️ the vendor's own code and wording are what say WHY, and they used to be discarded here. ⭐ The app
+        // shows the sentence and keeps the code beside it — a vehicle refused while the others price is a
+        // question only Lalamove can answer.
+        failed.push({ service: services[i], reason: out.reason, ...errorDetail(out.data) });
         console.error(`[courier] quotation refused for ${services[i]}:`, out.reason);
       }
     }

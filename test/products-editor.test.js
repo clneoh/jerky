@@ -10,14 +10,15 @@ import assert from "node:assert/strict";
 // --- DOM shim (mirrors test/orders.test.js, plus a querySelector that finds a
 // descendant by id, which the recipe card needs) ---
 function createEl(tag) {
-  return {
+  // ⚠️⚠️ `classList` IS REAL, NOT A PLACEBO (v678). ⚠️ It used to be `{ add() {}, remove() {}, toggle() {} }`,
+  // so every `classList.toggle(...)` in a view was a **silent no-op** — ⭐ and a test that asked whether a class
+  // was there got `false` for the same reason whether the view had set it or not. ⚠️ **The Availability card's
+  // "not on sale" state is drawn as a class**, so the fault was invisible to this file: the shim could not
+  // express what the view does. ⭐ The skill's own rule — when the shim cannot express it, fix the shim.
+  const node = {
     tagName: String(tag || "").toUpperCase(), nodeType: 1, children: [], attrs: {}, dataset: {},
-    className: "", style: {}, textContent: "", value: "", checked: false, disabled: false,
+    _cls: new Set(), style: {}, textContent: "", value: "", checked: false, disabled: false,
     scrollTop: 0, hidden: false, _listeners: {},
-    classList: {
-      add() {}, remove() {}, toggle() {},
-      contains() { return false; },
-    },
     appendChild(c) { if (c != null) { this.children.push(c); if (c.nodeType === 1) c.parent = this; } return c; },
     append(...cs) { for (const c of cs) { const n = c == null ? { nodeType: 3, text: "null" } : c; this.children.push(n); if (n.nodeType === 1) n.parent = this; } },
     replaceChildren(...cs) { this.children = []; for (const c of cs) { const n = c == null ? { nodeType: 3, text: "null" } : c; this.children.push(n); if (n.nodeType === 1) n.parent = this; } },
@@ -48,6 +49,22 @@ function createEl(tag) {
       return walk(this);
     },
   };
+  // `className` and `classList` are two views of one set, as in the real DOM.
+  Object.defineProperty(node, "className", {
+    get() { return [...node._cls].join(" "); },
+    set(v) { node._cls = new Set(String(v).split(/\s+/).filter(Boolean)); },
+  });
+  node.classList = {
+    add: (c) => node._cls.add(String(c)),
+    remove: (c) => node._cls.delete(String(c)),
+    contains: (c) => node._cls.has(String(c)),
+    toggle(c, force) {
+      const on = force === undefined ? !node._cls.has(String(c)) : !!force;
+      if (on) node._cls.add(String(c)); else node._cls.delete(String(c));
+      return on;
+    },
+  };
+  return node;
 }
 // The layer divs that confirmDialog / showPopup fill and hide. There is no real
 // <body> here, so getElementById hands back these stand-ins (nothing in the
@@ -233,21 +250,28 @@ test("an older product's from–to window opens in the card as one mark, and a s
   doc.body.replaceChildren();
   resetLayers();
   const state = freshState();
+  // ⚠️⚠️ THE WINDOW IS IN NEXT YEAR, NOT IN A FIXED ONE (v678). ⭐ The folded header now names the END DATE
+  // ("1-24 Dec 2026 · ends 24 Dec 2026", and "Not on sale since …" once that day passes), so a fixture
+  // pinned to a date would ⚠️ **turn a correct app red on the day it arrived** — exactly what happened to the
+  // consolidated-invoice tests on 1 Nov 2026. ⭐ Next year is always ahead, so the assertion cannot rot.
+  const y = new Date().getFullYear() + 1;
+  const from = `${y}-12-01`;
+  const to = `${y}-12-24`;
   state.products = [{ id: "p1", name: "CNY Gift Set", unit: "u_loaf", active: true,
-    validFrom: "2026-12-01", validTo: "2026-12-24" }];
+    validFrom: from, validTo: to }];
   const root = render(state);
   fire(buttonByText(root, "Edit"));
   const pop = layers["popup-layer"];
 
   const a = availHandles(pop);
-  assert.equal(a.summary.textContent, "1-24 Dec 2026",
-    "the header reads the old window without the card ever being opened");
+  assert.equal(a.summary.textContent, `1-24 Dec ${y} · ends 24 Dec ${y}`,
+    "the header reads the old window, and when it ends, without the card ever being opened");
 
   walk(pop).find((n) => n.tagName === "SELECT").value = "u_loaf";
   fire(buttonByText(pop, "Update product"));
 
   const saved = state.products[0];
-  assert.deepEqual(saved.sellRules, [{ days: [], from: "2026-12-01", to: "2026-12-24" }]);
+  assert.deepEqual(saved.sellRules, [{ days: [], from, to }]);
   assert.equal(saved.validFrom, undefined, "the old pair is dropped — its period survives as a mark");
   assert.equal(saved.validTo, undefined);
 });
@@ -1002,11 +1026,16 @@ test("a tap outside the card folds it away; a tap on a line leaves it open", () 
 
 // The card itself: header button, body, header summary. `open` is separate because
 // the body is only built once the header is tapped.
-const availHead = (root) => walk(root).find((n) => n.className === "fold-head"
-  && walk(n).some((c) => c.className === "avail-sum"));
+// ⚠️ A CLASS IS ASKED ABOUT, NOT COMPARED (v678). ⚠️ These matched `className === "avail-sum"`, which was true
+// only while the shim's `classList` was a no-op — ⭐ the moment a second class could be added ("avail-sum
+// avail-sum-warn") the helper stopped finding the header at all, and the failure looked like the card had
+// vanished rather than like the helper being brittle.
+const hasClass = (n, c) => String((n && n.className) || "").split(/\s+/).includes(c);
+const availHead = (root) => walk(root).find((n) => hasClass(n, "fold-head")
+  && walk(n).some((c) => hasClass(c, "avail-sum")));
 const availHandles = (root) => ({
   head: availHead(root),
-  summary: walk(availHead(root)).find((n) => n.className === "avail-sum"),
+  summary: walk(availHead(root)).find((n) => hasClass(n, "avail-sum")),
   body: walk(root).find((n) => n.className === "fold-body avail-body"),
 });
 const openAvail = (root) => { const a = availHandles(root); fire(a.head); return a; };
@@ -1263,7 +1292,12 @@ test("a mark that has already ended is kept — a dated special stays dated", ()
   const root = render(state);
   fire(buttonByText(root, "Edit"));
   const pop = layers["popup-layer"];
-  assert.equal(availHandles(pop).summary.textContent, "1-15 Aug 2026", "the finished mark is what the product holds");
+  // ⚠️⚠️ AND THE HEADER NOW SAYS SO (v678). ⭐ Before, the folded header of a product that could not be
+  // ordered at all read "1-15 Aug 2026" — a period, with no hint that it was over. ⭐ That is the exact line
+  // her Focaccia carried while her shop showed it as Unavailable, and it is why four days passed before
+  // anybody could see the cause.
+  assert.equal(availHandles(pop).summary.textContent, "Not on sale since 15 Aug 2026",
+    "the header of a product whose every sell day is behind it must say so, not just name the period");
 
   fire(availHead(pop));
   tapCell(pop, 20);
@@ -1274,6 +1308,86 @@ test("a mark that has already ended is kept — a dated special stays dated", ()
     { days: [], from: "2026-08-01", to: "2026-08-15" },
     { days: [], from: "2026-09-20", to: "2026-09-20" },
   ], "the finished mark is kept: dropping it would leave no marks, and no marks means every day");
+});
+
+test("★★★ a product that cannot be sold says so, and one press puts it back on sale (v678)", () => {
+  // ⚠️⚠️ HER OWN REPORT, ON 4 NOV 2026: __"enven now when i open up my store, the store show 1 product only which
+  // is the foccacia but with zero availibility."__ ⚠️ The card's folded header listed ten expired periods and
+  // named no end — ⭐ so the one screen where the cause lived read as though nothing was wrong.
+  doc.body.replaceChildren();
+  resetLayers();
+  const state = freshState();
+  // ⚠️ THE FIXTURE IS DATED AGAINST THIS FILE'S FROZEN CLOCK (1 Sep 2026, at the top), so "every sell day is
+  // behind us" stays true for ever — the same date-rot trap v678 fixed in the consolidated-invoice tests.
+  // ⭐ Her shape exactly: one mark per weekday, one month at a time, and nothing after the last month.
+  state.products = [{ id: "p1", name: 'Focaccia 9"x12"', unit: "u_loaf", active: true,
+    sellRules: [
+      { days: [1, 2, 3, 4, 5], from: "2026-07-01", to: "2026-07-31" },
+      { days: [1, 2, 3, 4, 5], from: "2026-08-01", to: "2026-08-31" },
+    ] }];
+  const root = render(state);
+  fire(buttonByText(root, "Edit"));
+  const pop = layers["popup-layer"];
+
+  // ⭐ THE FOLDED HEADER — the only line she reads without opening the card.
+  const summary = availHandles(pop).summary;
+  assert.equal(summary.textContent, "Not on sale since 31 Aug 2026",
+    "★ the folded header of a product that cannot be ordered still names a period and no end");
+  assert.ok(String(summary.className || "").includes("avail-sum-warn"),
+    "★ the state is not drawn as one — it reads like an ordinary period");
+
+  openAvail(pop);
+  const warn = walk(pop).find((n) => (n.className || "") === "avail-ended");
+  assert.ok(warn, "★ the card drew no warning at all, so the cause is still invisible");
+
+  // ⭐ AND THE PRESS REALLY PUTS IT BACK — driven, not asserted to exist.
+  fire(walk(warn).find((n) => n.tagName === "BUTTON"));
+  const yes = walk(layers["confirm-layer"]).find((n) => n.tagName === "BUTTON"
+    && (n.children || []).some((c) => c.text === "Remove the marks and save"));
+  assert.ok(yes, "the repair asks first — removing ten marks is not a slip of the finger");
+  fire(yes);
+
+  assert.deepEqual(markLabels(pop), [], "★ the marks are still there");
+  assert.equal(availHandles(pop).summary.textContent, "Every day",
+    "★ with nothing marked it must read as selling every bake day");
+
+  // ⚠️⚠️ AND IT IS SAVED BY THAT PRESS ALONE (v680). ⚠️ The first version only cleared the marks IN THE FORM:
+  // ⭐ the red warning went, the title said "Every day" — ⚠️ **and nothing was written.** Close the pop-up and
+  // the product was exactly as it was, which is precisely what she reported after v679 went live. ⭐ So this
+  // asserts on the SAVED product, not on the pop-up, and it never presses "Update product" at all.
+  assert.equal(state.products[0].sellRules, undefined,
+    "★ the repair cleared the screen but did not save — a press that looks done and changes nothing");
+  assert.equal(state.products[0].validTo, undefined);
+});
+
+test("★★ the repair says whether it actually reached the shop (v681)", async () => {
+  // ⚠️⚠️ SHE PRESSED IT TWICE AND NOTHING HAPPENED. ⭐ The auto-publishers return **in silence** when the phone
+  // is not signed in to shared data, so ⚠️ **the repair said "Back on sale" while her cloud still carried all ten
+  // marks.** ⭐ A confirmation that cannot tell whether it reached the shop is not a confirmation.
+  doc.body.replaceChildren();
+  resetLayers();
+  const state = freshState(); // `settings.supabase` is `{}` — this phone is signed OUT
+  state.products = [{ id: "p1", name: "Focaccia", unit: "u_loaf", active: true,
+    sellRules: [{ days: [1], from: "2026-07-01", to: "2026-07-31" }] }];
+  const root = render(state);
+  fire(buttonByText(root, "Edit"));
+  const pop = layers["popup-layer"];
+  openAvail(pop);
+  const warn = walk(pop).find((n) => (n.className || "") === "avail-ended");
+  assert.ok(warn, "the card drew no warning, so this test is not testing the repair at all");
+  fire(walk(warn).find((n) => n.tagName === "BUTTON"));
+  const yes = walk(layers["confirm-layer"]).find((n) => n.tagName === "BUTTON"
+    && (n.children || []).some((c) => c.text === "Remove the marks and save"));
+  fire(yes);
+  for (let i = 0; i < 8; i++) await null; // let the publish answer land
+
+  const last = doc.body.children[doc.body.children.length - 1];
+  const said = String((last && last.textContent) || "");
+  assert.match(said, /NOT sent to your shop/,
+    `★ the repair claimed success without knowing — it said: ${said}`);
+  assert.match(said, /Shared data/, "and it does not say what to do about it");
+  // ⚠️ AND THE MARKET IS STILL SAVED — the repair is not rolled back; it is only honestly reported.
+  assert.equal(state.products[0].sellRules, undefined);
 });
 
 test("taking the last mark off is the one way back to selling every delivery day", () => {

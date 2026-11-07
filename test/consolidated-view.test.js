@@ -92,7 +92,13 @@ const press = (root, label) => {
   return b;
 };
 
-const OCT = (d) => `2026-10-${String(d).padStart(2, "0")}`;
+// ⚠️⚠️ THE FIXTURE FOLLOWS THE CALENDAR, BECAUSE THE SCREEN FOLLOWS IT TOO (v678). ⭐ These orders were pinned
+// to October 2026 and the screen opens on THIS month — so on 1 Nov 2026 the document honestly said "Nothing was
+// sold in this period" and ⚠️ **three tests went red on an app that was behaving correctly.** ⭐ A fixture whose
+// month is hard-coded tests the calendar, not the screen, and it fails silently on a date nobody is watching.
+const NOW = new Date();
+const THIS_MONTH_KEY = `${NOW.getFullYear()}-${String(NOW.getMonth() + 1).padStart(2, "0")}`;
+const THIS_MONTH = (d) => `${THIS_MONTH_KEY}-${String(d).padStart(2, "0")}`;
 let n = 0;
 function state() {
   n = 0;
@@ -100,7 +106,7 @@ function state() {
     n += 1;
     return { id: `o${n}`, groupId: over.groupId || `o${n}`, status: "paid", paidReceived: true,
       paidMethod: "cash", productId: "p1", qty: 1, unitPrice: 16,
-      deliveryDate: OCT(5), customerName: "Aunty Bee", whatsapp: "60111111111", ...over };
+      deliveryDate: THIS_MONTH(5), customerName: "Aunty Bee", whatsapp: "60111111111", ...over };
   };
   return {
     settings: { currency: "RM" },
@@ -110,8 +116,8 @@ function state() {
     // so a "g1"/"g2" pair would give both orders the code "1" and "2" — and a test that the
     // press carries the RIGHT order would pass while proving nothing (the v378 lesson).
     orders: [
-      order({ groupId: "beef01", deliveryDate: OCT(5) }),
-      order({ groupId: "cafe02", deliveryDate: OCT(20), customerName: "Mei Ling", whatsapp: "60222222222" }),
+      order({ groupId: "beef01", deliveryDate: THIS_MONTH(5) }),
+      order({ groupId: "cafe02", deliveryDate: THIS_MONTH(20), customerName: "Mei Ling", whatsapp: "60222222222" }),
     ],
   };
 }
@@ -309,7 +315,7 @@ test("⚠️ the PRINTED sheet carries no link at all", () => {
   // DOM until Print is pressed, so a walk of the screen would find no sheet and this test would pass
   // over nothing at all — the vacuous shape this project has shipped twice.
   const st = state();
-  const sheet = consolidatedSheet(st, { kind: "month", anchor: "2026-10", customerKey: "" });
+  const sheet = consolidatedSheet(st, { kind: "month", anchor: THIS_MONTH_KEY, customerKey: "" });
   const paper = journalSheetEl(sheet, "RM");
 
   assert.ok(walk(paper).some((n) => n.nodeType === 3 && /#/.test(String(n.text))),

@@ -1,8 +1,51 @@
-# Munchies Furkidz — change history (v54 → v677)
+# Munchies Furkidz — change history (v54 → v685)
 
 What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
+
+**6 Nov 2026 — engine v685: A PRODUCT WHOSE SELL DAYS RUN OUT CANNOT DISAPPEAR QUIETLY ANY MORE (nothing to run,
+no SQL, nothing to upload).**
+
+**Synced from the bakery, v676 to v685. Munchies takes the engine's number on every sync, so this goes 677 →
+685.**
+
+**1. THE BIG ONE: A SHOP CANNOT GO DARK WITHOUT TELLING YOU.** ⚠️ **A product's sell-day marks run one month at a
+time — a weekday letter marks every one of that weekday in that month, and then it simply ENDS.** **The bakery's
+Focaccia stopped on 31 October and its shop went dark on 1 November, and not one screen said why.** **Now:** **the
+Availability card's title names the end date** ("Mon–Fri · ends 30 Sep 2026", or in red "Not on sale since 31 Oct
+2026"), **the card carries a warning with ONE press that puts it back on sale every day**, **and "Check my
+system" finds it too**, naming the product and its last sell day.
+
+**2. AND THAT PRESS REALLY SAVES.** ⚠️ **The first version of that button only changed the screen** — **it cleared
+the marks in the form, turned the title to "Every day", and wrote nothing.** **It now saves the product, publishes
+the menu AND the counts, and tells you whether your shop actually got it** — including the honest "saved on this
+phone, but NOT sent to your shop: not signed in".
+
+**3. SAVING A PRODUCT NOW REPUBLISHES THE COUNTS TOO**, not only the menu — **so a day stops reading the fallback
+number after you fix a product**, and a hidden product's old rows actually leave the shop.
+
+**4. A PRODUCT NO LONGER ON THE SHOP PUBLISHES NO COUNT.** ⚠️ **A draft or an unpriced product used to put a daily
+"only N left" on the shop that nobody could buy** — and that row never went away, because the cleanup deleted by
+DATE and never by product. **Now the sweep reads what the shop holds and removes the names that are no longer
+yours** (the engine's version, which is safer than the one this app had).
+
+**5. THE COMING 4 WEEKS BLOCK STOPS FOLDING THIS WEEK INTO NEXT**, and a day that only exists to hold a hand sale
+is no longer drawn as a delivery day.
+
+**6. THE COURIER PANEL STOPS SHOWING THE COURIER'S OWN WORDS.** **A vehicle is named by its class (Motorcycle,
+Car, 4x4, Van, 7ft Van, 9ft Van, Truck, Lorry)**, and an unrecognised error is said in a sentence a person wrote.
+⚠️ **That half lives in the courier function, which a push does not upload** — see the note below.
+
+**⚠️ TWO THINGS FOR YOU, NEITHER URGENT:**
+- **The courier function's two fixes are not live until it is uploaded.** The courier is switched off on this
+  shop, so nothing you use today depends on it.
+- **The bakery's two newest versions are about ITS homepage being found by Google** — a title, Open Graph tags,
+  structured data, a sitemap, and a verification tag from Search Console. **None of that is munchies' content**,
+  so it is NOT in this build; ask me and we will do the same for munchies.com.my, which needs one thing only you
+  can get (a verification tag from your own Google account).
+
+**Nothing to run, no SQL.**
 
 **30 Oct 2026 — engine v677: THE SHOP'S HERO IS THE FAMILY PHOTO (nothing to run, no SQL, nothing to upload).**
 

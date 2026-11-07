@@ -41,9 +41,18 @@ function sender(src, which) {
   return { name: m[1].trim(), address: m[2].trim() };
 }
 
-// The brand, as the homepage declares it: the leading words of the `<title>`, before
-// the tagline that follows the dash, pipe or dot separator.
+// The brand, as the homepage declares it.
+//
+// ⚠️⚠️ IT IS READ FROM `og:site_name` NOW, NOT FROM THE TITLE'S LEADING WORDS (v684). ⚠️ The old reader took
+// everything before the first dash — ⭐ **which was only ever right while the title happened to start with the
+// brand + a dash.** ⭐ Then the title became concept-first for search — "Small Batch Bakery in Penang —
+// Focaccia | Jien Luv 2 Bake" — and ⚠️ **this reader silently produced "Small Batch Bakery in Penang" as the
+// sender on every customer email.** ⭐ The suite caught it, which is the point; the reader should not have had a
+// shape to depend on. `og:site_name` says the brand and nothing else.
 function brandFromHomepage() {
+  const meta = HOME_SRC.match(/<meta\s+property="og:site_name"\s+content="([^"]+)"/i);
+  if (meta) return meta[1].trim();
+  // ⚠️ A page with no og:site_name is still readable — but only when the title leads with the brand.
   const m = HOME_SRC.match(/<title>([\s\S]*?)<\/title>/);
   assert.ok(m, "the homepage still has a <title>, which is where the brand is declared");
   return m[1].split(/\s*[—–|·]\s*/)[0].trim();

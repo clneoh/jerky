@@ -79,6 +79,32 @@ const SERVICE_ORDER = ["MOTORCYCLE", "CAR", "VAN", "7FT_VAN", "9FT_VAN", "4X4", 
 // this market's own fleet start with a number, and without it "7FT_VAN" reads as
 // "7ft Van" and "4X4" as "4x4" — the vehicle's name spelled wrong on the only row she
 // can use to tell it from the car.
+// ⭐⭐ THE VEHICLE'S NAME, NOT ITS BROCHURE (v682). ⚠️⚠️ Lalamove's cities reply carries only a `description`,
+// and it is a paragraph about FURNITURE: ⭐ her quote panel read __"Ideal for small item delivery. Single bed,
+// 2-seater sofa, small dining table."__ — ⚠️ **and her question was __"what is the 2 seater"__.** ⭐ She asked a
+// baker's question about a sofa brochure, because the panel never told her the thing she chooses on: the vehicle.
+// ⭐ So a KNOWN key names itself ("4X4" -> "4x4", "7FT_VAN" -> "7ft Van"), and the description is only a fallback
+// when the key is one this file has never seen.
+const VEHICLE_NAMES = {
+  MOTORCYCLE: "Motorcycle",
+  CAR: "Car",
+  VAN: "Van",
+  "7FT_VAN": "7ft Van",
+  "9FT_VAN": "9ft Van",
+  "4X4": "4x4",
+  TRUCK: "Truck",
+  LORRY: "Lorry",
+};
+
+export function serviceName(key, description = "") {
+  const k = String(key || "").trim().toUpperCase();
+  if (VEHICLE_NAMES[k]) return VEHICLE_NAMES[k];
+  // An unknown key: the first sentence of the vendor's own words is the closest thing to a name it has.
+  const said = String(description || "").trim();
+  if (said) return said.split(". ")[0].trim().replace(/[.:;,]+$/, "");
+  return serviceLabel(k);
+}
+
 export function serviceLabel(key, name = "") {
   const said = String(name || "").trim();
   if (said) return said;
@@ -108,9 +134,11 @@ export function normaliseVehicles(raw) {
   for (const s of list) {
     const key = String((s && s.key) || "").trim();
     if (!key || seen.has(key)) continue;
-    // ⚠️⚠️ THE CITIES REPLY CARRIES `description`, NOT `name` (v566) — see the server's own note. ⭐ The
-    // vendor's words are used when present; `serviceLabel` is the fallback table, not the source.
-    seen.set(key, { key, name: serviceLabel(key, (s && (s.description || s.name))) });
+    // ⚠️⚠️ THE CITIES REPLY CARRIES `description`, NOT `name` (v566) — and ⚠️ **it is a paragraph about
+    // furniture, not a name** (v682). ⭐ `serviceName` names a known key itself and keeps the vendor's words
+    // only as a fallback; the description still travels on `detail` so nothing is lost.
+    const detail = String((s && (s.description || s.name)) || "").trim();
+    seen.set(key, { key, name: serviceName(key, detail), detail });
   }
   return sortServices([...seen.values()]);
 }
@@ -283,8 +311,16 @@ export function normaliseQuotes(out, now = Date.now(), points = []) {
     const one = normaliseQuote(q, now, service, points);
     if (one) quotes.push(one);
   }
+  // ⚠️ AND THE VENDOR'S OWN CODE TRAVELS WITH IT (v683). ⭐ The plain sentence says what happened; the code and
+  // Lalamove's own wording say WHY, and they are the only things that can answer "one vehicle out of six was
+  // refused". ⭐ Kept beside the sentence, never instead of it.
   const failed = (Array.isArray(out && out.failed) ? out.failed : [])
-    .map((f) => ({ service: String((f && f.service) || ""), reason: String((f && f.reason) || "").trim() }))
+    .map((f) => ({
+      service: String((f && f.service) || ""),
+      reason: String((f && f.reason) || "").trim(),
+      code: String((f && f.code) || "").trim(),
+      vendor: String((f && f.vendor) || "").trim(),
+    }))
     .filter((f) => f.service || f.reason);
   return { quotes, failed };
 }

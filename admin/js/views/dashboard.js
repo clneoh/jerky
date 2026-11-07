@@ -163,7 +163,10 @@ function rangeLabel(startISO, endISO) {
 // The visible start of a week row: when an early date folded into Week 1, label
 // from that date rather than the Monday.
 function rowStart(week) {
-  return week.dates.length && week.dates[0].date < week.start ? week.dates[0].date : week.start;
+  // ⚠️ The FIRST BAKE day, never a sale-only one (v677): a hand sale on a Saturday must not stretch the label of a
+  // week whose bake days start on Monday.
+  const first = (week.dates || [])[0];
+  return first && first.date < week.start ? first.date : week.start;
 }
 
 function chipDate(state, d) {
@@ -176,18 +179,25 @@ function chipDate(state, d) {
 
 function comingCard(state, fc) {
   const rows = fc.rows.map((r) => {
-    const first = r.dates[0];
+    // ⭐ A SALE-ONLY DAY IS NOT A BAKE DAY (v677). ⭐ Her report, twice: __"sat 7 Nov is not marked"__, then
+    // __"sat 31 Oct also not marked"__ — ⚠️ **both were right**: they are days a HAND SALE sits on (v606), which the
+    // shop never offers and which **Bake days leaves out** — ⭐ while this card read the raw list and drew them as
+    // though she bakes on Saturdays. ⚠️ They are COUNTED, never dropped silently: a day with an order on it must not
+    // vanish from the screen that is about the weeks ahead.
+    const bakeDays = r.dates.filter((d) => !d.saleOnly);
+    const saleOnly = r.dates.length - bakeDays.length;
+    const first = bakeDays[0];
+    const saleNote = saleOnly ? ` · ${saleOnly} sale-only day${saleOnly === 1 ? "" : "s"}` : "";
     const body = r.dates.length
       ? el("div", {},
           el("div", { class: "fore-line1" },
-            el("span", { class: "fore-range" }, rangeLabel(rowStart(r), r.end)),
-            el("span", { class: "fore-chips" }, ...r.dates.map((d) => chipDate(state, d)))),
+            el("span", { class: "fore-range" }, rangeLabel(rowStart({ ...r, dates: bakeDays }), r.end)),
+            el("span", { class: "fore-chips" }, ...bakeDays.map((d) => chipDate(state, d)))),
           el("p", { class: "fore-stats" },
             el("span", {}, `${r.booked} booked`),
             el("span", { class: "muted" },
-              ` · est. ${money(state, r.rm)}${r.unpriced ? " · some items unpriced" : ""} · ${r.free} free`)))
-      : el("p", { class: "fore-empty" }, "no delivery dates yet");
-    return el("div", {
+              ` · est. ${money(state, r.rm)}${r.unpriced ? " · some items unpriced" : ""} · ${r.free} free${saleNote}`)))
+      : el("p", { class: "fore-empty" }, "no delivery dates yet");    return el("div", {
       class: `fore-row${first ? " tappable" : ""}`,
       onclick: first ? () => navigate(`#/orders?date=${first.id}`) : null,
     }, body);

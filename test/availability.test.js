@@ -9,8 +9,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  availRules, availSummary, dayOfWeek, isDayKey, monthBounds, normDays, normRule,
-  normRules, ruleLabel, ruleOpen, rulesOpen, rulesSummary, sellOpen,
+  availEndText, availRules, availState, availSummary, dayLabel, dayOfWeek, isDayKey, monthBounds,
+  normDays, normRule, normRules, ruleLabel, ruleOpen, rulesOpen, rulesSummary, sellOpen,
   sellReason,
 } from "../availability.js";
 
@@ -183,6 +183,55 @@ test("availSummary answers for a whole product, legacy pair included", () => {
   assert.equal(availSummary({ validFrom: "2026-12-01", validTo: "2026-12-24" }), "1-24 Dec 2026",
     "an old from–to product reads in the header before she ever opens the card");
   assert.equal(availSummary({ sellRules: [{ days: [6, 0] }] }), "Sat & Sun");
+});
+
+// ── ⭐ v678: WHEN THE MARKS RUN OUT ─────────────────────────────────────────
+//
+// ⚠️⚠️ HER SHOP WENT DARK ON 1 NOV 2026. The Focaccia's marks covered September and October and stopped on
+// 31 Oct; from 1 Nov the product could not be ordered on any day, and ⚠️ **no screen said so** — the folded
+// header listed ten expired periods and named no end. ⭐ These pin the one fact that had been unreadable.
+
+test("★ a run of three or more weekdays reads as a range, so the end date is not buried", () => {
+  // ⚠️ A weekday heading writes one mark per weekday, so an everyday product carries five marks a month and the
+  // header read "Mon, Tue, Wed, Thu & Fri · 1-30 Sep 2026" — ⚠️ **a wall of weekdays wrapping around the one
+  // fact that mattered.**
+  assert.equal(ruleLabel({ days: [1, 2, 3, 4, 5], from: "2026-09-01", to: "2026-09-30" }),
+    "Mon–Fri · 1-30 Sep 2026");
+  assert.equal(ruleLabel({ days: [6, 0] }), "Sat & Sun",
+    "two days stay as they were — a dash through the week would read as Mon–Sun");
+  assert.equal(ruleLabel({ days: [1, 3, 5] }), "Mon, Wed & Fri",
+    "a set with gaps is not a range");
+  assert.equal(ruleLabel({ days: [1, 2, 6] }), "Mon, Tue & Sat",
+    "a short run inside a longer set stays spelled out, in the list's own punctuation");
+});
+
+test("★★ availState says whether the marks are still ahead, open, or behind us", () => {
+  const sep = { days: [1, 2, 3, 4, 5], from: "2026-09-01", to: "2026-09-30" };
+  const oct = { days: [1, 2, 3, 4, 5], from: "2026-10-01", to: "2026-10-31" };
+  assert.deepEqual(availState([], "2026-11-04"), { kind: "none" },
+    "no marks is not an expiry — it is every bake day");
+  assert.deepEqual(availState([{ days: [6] }], "2026-11-04"), { kind: "open" },
+    "a mark with no end date never runs out");
+  assert.deepEqual(availState([{ days: [6], from: "2026-12-05" }], "2026-11-04"), { kind: "open" },
+    "a start with no end is open, not expiring");
+  assert.deepEqual(availState([sep, oct], "2026-11-04"), { kind: "ended", date: "2026-10-31" },
+    "★ her own Focaccia on 4 Nov: every mark has ended");
+  assert.deepEqual(availState([sep, oct], "2026-10-15"), { kind: "live", date: "2026-10-31" },
+    "and still live while the last end date is ahead");
+  // ⚠️ THE LAST DAY ITSELF IS STILL A SELL DAY — the product stops the day AFTER it.
+  assert.deepEqual(availState([sep, oct], "2026-10-31"), { kind: "live", date: "2026-10-31" },
+    "the product sold on its last end date, so that day is not 'ended'");
+});
+
+test("★★ availEndText is the clause the folded header carries", () => {
+  assert.equal(availEndText([], "2026-11-04"), "", "a product with no marks has no end to name");
+  assert.equal(availEndText([{ days: [6] }], "2026-11-04"), "no end date");
+  assert.equal(availEndText([{ days: [], from: "2026-10-01", to: "2026-10-31" }], "2026-11-04"),
+    "not on sale since 31 Oct 2026", "★ the sentence her shop was missing");
+  assert.equal(availEndText([{ days: [], from: "2026-12-01", to: "2026-12-24" }], "2026-11-04"),
+    "ends 24 Dec 2026");
+  assert.equal(dayLabel("2026-10-31"), "31 Oct 2026");
+  assert.equal(dayLabel("nonsense"), "", "a date that is not one says nothing");
 });
 
 test("monthBounds is the whole month a weekday tap marks", () => {

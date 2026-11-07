@@ -1377,8 +1377,37 @@ export function courierQuoteSection({
       // out while the card is open has to be able to say so. Clocks run in the order they
       // were pushed, so this one runs after every row has written its entry.
       clocks.push(publishWhy);
+      // ⚠️⚠️ A REFUSED VEHICLE IS NAMED BY ITS FIRST SENTENCE, NOT ITS WHOLE BROCHURE (v682). ⭐ Lalamove's
+      // cities reply carries no short name — only a `description` paragraph — so this row read
+      // ⚠️ **"…king / queen size bed.: Lalamove would not accept part of this trip."** — a full stop glued to a
+      // colon, and the one line she most needs to read buried in marketing copy. ⭐ She reported it as
+      // __"seriously error"__, and she was right that it reads as one.
+      const shortName = (s) => {
+        const said = String(s || "").trim();
+        if (!said) return "";
+        const first = said.split(". ")[0].trim();   // no look-behind: older iPhones reject the regex
+        return first.replace(/[.:;,]+$/, "");
+      };
+      // ⚠️⚠️ AND LALAMOVE'S OWN CODE AND WORDING GO UNDER IT (v683). ⭐ The plain sentence says what happened;
+      // ⚠️ **without the code nobody — not her, not me — could ever find out WHY one vehicle out of six was
+      // refused.** ⭐ The sentence stays the headline; the vendor's answer is the small print beneath it, shown
+      // only when the courier actually said something.
+      // ⚠️⚠️ THE SCREEN SHOWS THE CODE, NEVER THE COURIER'S OWN PROSE (v683). ⭐ Her words: __"the things that
+      // frighten me was when i saw the app respond with non sense word"__ — ⚠️ and she was reading Lalamove's
+      // furniture blurb where a vehicle's name belonged. ⭐ A code is a token she can read past; a paragraph of
+      // vendor text on a bakery's delivery panel is the app looking broken. ⚠️ NO COURIER'S NAME IN HERE either —
+      // this view is the same for every courier, and a guard in the suite says so.
       const missed = failed.map((f) => el("p", { class: "card-sub", style: "margin:6px 0 0" },
-        `${String(f.name || f.service || "A vehicle").trim()}: ${f.reason}`));
+        `${shortName(f.name || f.service) || "A vehicle"} — ${f.reason}`,
+        f.code ? el("span", { style: "display:block;opacity:.7;margin-top:2px" }, `Error code ${f.code}`) : null));
+      // ⭐ AND IT SAYS THE OTHER PRICES ARE STILL GOOD (v682). ⚠️ "Lalamove would not accept part of this trip"
+      // under a page of working prices read as "this is broken" — ⭐ the failure is ONE vehicle, and every price
+      // above it can be booked. The sentence is not reassurance for its own sake: without it she cannot tell
+      // whether the whole trip is spoiled.
+      if (failed.length && quotes.length) {
+        missed.push(el("p", { class: "card-sub", style: "margin:6px 0 0" },
+          `The ${quotes.length} price${quotes.length === 1 ? "" : "s"} above ${quotes.length === 1 ? "is" : "are"} not affected — you can book any of ${quotes.length === 1 ? "it" : "them"}.`));
+      }
       // Why no row can be booked, when that is the case.
       const blocked = quotes.length ? liveJobProblem(list) : "";
       // `.filter(Boolean)` and NOT a bare `?: null`. replaceChildren is a DOM method, so

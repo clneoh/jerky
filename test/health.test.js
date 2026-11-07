@@ -81,9 +81,9 @@ test("★★ a healthy book passes every check — and every check actually RAN"
   // ⚠️ THE COUNT IS THE POINT. `[].every(...)` is TRUE — a check list that had quietly emptied itself
   // would pass every assertion above, on a phone with no checks at all. This project has been bitten by
   // that exact shape before (v381's doors).
-  // 27 since v671: "Every count the shop publishes is a real number" joins the page.
-  assert.equal(res.total, 27, `the check list is no longer twenty-seven checks (it is ${res.total})`);
-  assert.equal(res.passedChecks, 27);
+  // 29 since v685: "No product has run out of sell days" and the sale-only-day check join the page (v677/v678).
+  assert.equal(res.total, 29, `the check list is no longer twenty-nine checks (it is ${res.total})`);
+  assert.equal(res.passedChecks, 29);
   assert.equal(res.failed, 0);
 });
 
@@ -282,7 +282,7 @@ test("★★⚠️ A CHECK THAT COULD NOT RUN IS SKIPPED — IT IS NEVER A PASS"
     "★ shared data that could not be read was reported as a pass by the reverse check too");
   assert.equal(resultOf(res, "waiting").status, "pass",
     "the waiting count is a local number and does not need the cloud to be readable");
-  assert.equal(res.passedChecks, 18, "a skipped check was counted among the passes");
+  assert.equal(res.passedChecks, 20, "a skipped check was counted among the passes");
   assert.equal(res.skippedChecks, 9, "the skipped checks were not counted separately");
   assert.equal(resultOf(res, "refunded").status, "skipped",
     "★ an unreadable register was reported as a pass by the refund check");
@@ -359,8 +359,8 @@ test("⚠️ a phone with no orders at all is checked without throwing", () => {
   const bare = { settings: { currency: "RM" }, products: [], deliveryDates: [], orders: [], removedOrders: [] };
   const res = runChecks(bare, { register: [], copies: COPIES });
   assert.equal(res.failed, 0, "an empty book reported a fault");
-  assert.equal(res.total, 27, "the checks did not all run on an empty book");
-  assert.equal(localChecks(bare).length, 15, "the local checks are not fifteen");
+  assert.equal(res.total, 29, "the checks did not all run on an empty book");
+  assert.equal(localChecks(bare).length, 17, "the local checks are not seventeen");
   assert.equal(registerChecks(bare, []).length, 3, "the register checks are not three");
   assert.equal(backupChecks(bare, { orders: [] }).length, 1, "the copy check is not one");
 });
