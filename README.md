@@ -101,6 +101,32 @@ can't create duplicate orders.
 
 Preview it locally at http://localhost:8000/store/.
 
+### Two storefronts: `/store/` and `/store2/`
+
+`store2/` is a **second look at the same shop**, published at
+`https://munchies.com.my/store2/`. It is not a fork: `store2/app.js` is one line —
+`import "../store/app.js";` — so both pages run the identical engine (calendar,
+menu, basket, Supabase read, track box, WhatsApp hand-off). A fix to the shop
+appears on both doors; there is no second copy to keep in sync.
+
+- `store2/index.html` carries the same 84 ids and the same `data-i18n` keys as
+  `store/index.html`, so every element the engine looks up exists on both. Only
+  the `<body class="store2">`, the title/`theme-color`/`robots` meta and the extra
+  stylesheet differ.
+- `store2/theme.css` is **presentation only**, and every selector starts with
+  `body.store2` — `/store/` never wears that class, so a rule here cannot repaint
+  it. `test/store2.test.js` walks the sheet and fails on any unscoped selector,
+  on a remote `url()`, on a missing id, or on a second `import`.
+- The basket, the language choice and the posting day live on the same origin, so
+  they carry between the two pages; visits are counted separately by `visits.js`
+  (`location.pathname`).
+- Links the admin builds by itself (referral link, promo card, track link) still
+  point at `/store/`. Both land in the same order list.
+- `/store2/` is `noindex, follow`: it is a design alternative, not a second
+  listing for search engines.
+
+Preview it locally at http://localhost:8000/store2/.
+
 With live Supabase configured, what customers see is edited in the backoffice —
 **More → Settings → Storefront** — and published automatically (no redeploy).
 That covers the business name, tagline, WhatsApp number and social links — and

@@ -1,0 +1,1239 @@
+/* ============================================================================
+   store2/theme.css — the second shop's skin. PRESENTATION ONLY.
+   ----------------------------------------------------------------------------
+   This file is loaded after store/app.css and must never change behaviour.
+   EVERY selector starts with `body.store2`, so /store/ (which never has that
+   class) cannot be touched by a single rule here.  The engine, markup, ids and
+   language keys are shared with /store/; only the paint is different.
+   ========================================================================= */
+
+
+/* ── 1. Palette & depth ──────────────────────────────────────────────────── */
+
+body.store2 {
+  --bg: #fbf3e7;
+  --surface: #fffcf7;
+  --ink: #33231a;
+  --muted: #6f5a49;
+  --line: #efe0cf;
+  --brown: #b04523;
+  --brown-dark: #8c3417;
+  --green: #2f6b45;
+  --red: #b32d22;
+  --amber: #8a5710;
+  --amber-bg: #fdf3e3;
+  --brown-soft: #f7e7d5;
+  --radius: 20px;
+  --shadow: 0 1px 2px rgba(51, 35, 26, .05), 0 8px 22px rgba(51, 35, 26, .07);
+  --shadow-lg: 0 2px 6px rgba(51, 35, 26, .06), 0 20px 46px rgba(51, 35, 26, .16);
+  --s2-cream: #f7e7d5;
+  --s2-sun: #e9a23b;
+  color: var(--ink);
+  background:
+    radial-gradient(42rem 32rem at 8% -6%, rgba(176, 69, 35, .075), transparent 62%),
+    radial-gradient(36rem 30rem at 104% 22%, rgba(47, 107, 69, .055), transparent 60%),
+    var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+
+/* ── 2. Hidden-state guards ─────────────────────────────────────────────────
+   Base hides these with [hidden] at two-class specificity.  Any display value
+   added below would otherwise beat it, so each one that gets a display is
+   pinned back off here.  (`.cal-tip` is deliberately absent: its hover reveal
+   is the desktop way of naming a marked day, exactly as in /store/.)          */
+
+body.store2 .build-notice[hidden],
+body.store2 .build-say[hidden],
+body.store2 .build-btn[hidden],
+body.store2 .ask-scrim[hidden],
+body.store2 .promo-clear[hidden],
+body.store2 .promo-words[hidden],
+body.store2 .seg-prompt[hidden],
+body.store2 .addr-body[hidden],
+body.store2 .point-pick[hidden],
+body.store2 .point-list[hidden],
+body.store2 .privacy-sheet[hidden],
+body.store2 .facts-sheet[hidden],
+body.store2 .track-result[hidden],
+body.store2 .confirm-msg[hidden] {
+  display: none !important;
+}
+
+
+/* ── 3. Hero ────────────────────────────────────────────────────────────── */
+
+body.store2 .hero.hero-photo {
+  min-height: clamp(336px, 46vh, 468px);
+  align-items: flex-end;
+  border-radius: 0 0 30px 30px;
+  box-shadow: 0 20px 44px rgba(51, 35, 26, .20);
+  background: #6d351f;
+  isolation: isolate;
+}
+
+body.store2 .hero.hero-photo .hero-photo-img {
+  object-position: center 56%;
+  transform: scale(1.015);
+  filter: saturate(1.06) contrast(1.03);
+}
+
+body.store2 .hero.hero-photo .hero-veil {
+  background:
+    linear-gradient(180deg,
+      rgba(42, 21, 9, .90) 0%,
+      rgba(42, 21, 9, .62) 24%,
+      rgba(42, 21, 9, .18) 50%,
+      rgba(42, 21, 9, .94) 100%),
+    radial-gradient(120% 90% at 80% 0%, rgba(255, 196, 120, .16), transparent 60%);
+}
+
+body.store2 .hero.hero-photo .hero-inner {
+  max-width: 680px;
+  padding: calc(22px + env(safe-area-inset-top)) 22px 30px;
+}
+
+body.store2 .hero-inner::after {
+  content: "";
+  position: absolute;
+  right: -46px;
+  bottom: -58px;
+  width: 190px;
+  height: 190px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle at 40% 38%, rgba(255, 199, 128, .22), transparent 68%);
+}
+
+body.store2 .hero-top {
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+body.store2 .hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  margin: 0;
+  padding: 6px 11px;
+  border: 1px solid rgba(255, 255, 255, .26);
+  border-radius: 999px;
+  background: rgba(30, 15, 7, .34);
+  color: #fff7ec;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: .14em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+body.store2 .lang-switch {
+  gap: 5px;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, .22);
+  border-radius: 999px;
+  background: rgba(28, 14, 7, .32);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+body.store2 .lang-pill {
+  min-height: 32px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, .92);
+  font-size: 11px;
+  letter-spacing: .02em;
+  transition: background-color .18s ease, color .18s ease;
+}
+
+body.store2 .lang-pill.is-on {
+  background: #fffaf2;
+  color: var(--brown-dark);
+  box-shadow: 0 2px 8px rgba(20, 9, 3, .28);
+}
+
+body.store2 .lang-pill:not(.is-on):active { background: rgba(255, 255, 255, .18); }
+
+body.store2 .hero-title {
+  max-width: 16ch;
+  margin: 10px 0 8px;
+  font-size: clamp(36px, 8.6vw, 56px);
+  font-weight: 700;
+  line-height: 1.01;
+  letter-spacing: -.025em;
+  text-shadow: 0 3px 20px rgba(20, 9, 3, .34);
+  text-wrap: balance;
+}
+
+body.store2 .hero-sub {
+  max-width: 34ch;
+  margin: 0 0 12px;
+  font-family: var(--serif);
+  font-size: clamp(15px, 3.7vw, 18px);
+  line-height: 1.45;
+  color: rgba(255, 249, 241, .93);
+  text-shadow: 0 2px 12px rgba(20, 9, 3, .30);
+}
+
+body.store2 .hero-home {
+  min-height: 38px;
+  margin-top: 4px;
+  padding: 7px 14px;
+  border: 1px solid rgba(255, 255, 255, .30);
+  background: rgba(28, 14, 7, .30);
+  font-size: 12px;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+body.store2 .hero-home:active { background: rgba(28, 14, 7, .48); }
+
+body.store2 .hero-cta {
+  display: inline-flex;
+  gap: 10px;
+  min-height: 50px;
+  margin-top: 16px;
+  padding: 0 10px 0 22px;
+  background: #fff8ee;
+  color: var(--brown-dark);
+  font-size: 15.5px;
+  letter-spacing: .005em;
+  box-shadow: 0 8px 24px rgba(20, 9, 3, .34), inset 0 -2px 0 rgba(176, 69, 35, .10);
+}
+
+body.store2 .hero-cta::after {
+  content: "↓";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-left: 2px;
+  border-radius: 50%;
+  background: rgba(176, 69, 35, .12);
+  color: var(--brown-dark);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+body.store2 .hero-cta:active { transform: translateY(1px); }
+
+
+/* ── 4. Page column & step progress ─────────────────────────────────────── */
+
+body.store2 .view {
+  max-width: 680px;
+  padding: 16px 16px calc(var(--bar-h, 92px) + var(--strip-h, 0px) + 22px);
+}
+
+body.store2 .stepbar {
+  max-width: 680px;
+  gap: 4px;
+  margin: 0 0 10px;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 252, 247, .86);
+  box-shadow: var(--shadow);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+body.store2 .stepbar-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 6px 3px;
+  border-top: 0;
+  border-radius: 999px;
+  color: #9a8676;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .075em;
+  line-height: 1.2;
+  text-align: center;
+}
+
+body.store2 .stepbar-item.on {
+  background: var(--brown-soft);
+  color: var(--brown-dark);
+  box-shadow: inset 0 0 0 1px rgba(176, 69, 35, .18);
+}
+
+body.store2 .stepbar-item.done {
+  background: rgba(47, 107, 69, .10);
+  color: var(--green);
+  box-shadow: inset 0 0 0 1px rgba(47, 107, 69, .14);
+}
+
+body.store2 .section {
+  margin: 24px 2px 12px;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+  color: var(--ink);
+}
+
+body.store2 .section:first-child { margin-top: 6px; }
+
+body.store2 .step-head {
+  gap: 11px;
+  margin: 26px 2px 10px;
+}
+
+body.store2 .step-head .section { margin: 0; }
+
+body.store2 .step-num {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(150deg, #c2572f, var(--brown));
+  box-shadow: 0 3px 9px rgba(176, 69, 35, .30);
+  font-size: 15px;
+}
+
+body.store2 .step-head.done .step-num {
+  background: linear-gradient(150deg, #3e8157, var(--green));
+  box-shadow: 0 3px 9px rgba(47, 107, 69, .28);
+}
+
+body.store2 .bake-day-what {
+  margin: 0 4px 10px 45px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+
+/* ── 5. Cards, info strip & notices ─────────────────────────────────────── */
+
+body.store2 .card {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+body.store2 .info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px 16px;
+  padding: 14px 16px;
+}
+
+/* ⚠️ THE MARKUP HAS A BARE COLON between the label and the value
+   (`<strong>Posting days</strong>: <span>…</span>`). The label is a block here, so that colon
+   would drop onto the value's line and read as a stray ": Mon, Wed, Fri". With the row's font
+   size at 0 the loose text node disappears; the label and value each restore their own size. */
+body.store2 .info-row {
+  margin: 0;
+  font-size: 0;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+body.store2 .info-row strong {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: .10em;
+  text-transform: uppercase;
+}
+
+body.store2 .info-val {
+  color: var(--ink);
+  font-size: 14.5px;
+  font-weight: 700;
+}
+
+body.store2 .facts-line {
+  margin: 12px 2px 6px;
+}
+
+body.store2 .facts-sheet {
+  padding: 14px 16px;
+  border-radius: 16px;
+}
+
+body.store2 .menu-note {
+  padding: 12px 14px;
+  border: 1px solid #efd9ae;
+  border-radius: 14px;
+  background: #fdf4e4;
+  color: #7c5312;
+}
+
+body.store2 .referral-banner {
+  padding: 12px 15px;
+  border: 1px solid #c4dfc4;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #eef8ee, #e6f3e7);
+  color: #28612e;
+  font-size: 13px;
+}
+
+body.store2 .confirm-msg {
+  padding: 13px 15px;
+  border-radius: 14px;
+  background: #ecf7ec;
+  border-color: #c4dfc4;
+  color: #28612e;
+}
+
+body.store2 .confirm-msg.warn {
+  background: #fdf4e4;
+  border-color: #efd9ae;
+  color: #7c5312;
+}
+
+body.store2 .answer {
+  padding: 15px 17px;
+  border: 1px solid rgba(176, 69, 35, .32);
+  border-left: 4px solid var(--brown);
+  border-radius: 16px;
+  background: linear-gradient(105deg, #fffaf2 0%, #fdf1e3 100%);
+  box-shadow: var(--shadow);
+}
+
+body.store2 .answer-kicker {
+  color: var(--brown-dark);
+  font-size: 10.5px;
+  letter-spacing: .12em;
+}
+
+body.store2 .answer-big {
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+body.store2 .answer-sub { color: var(--muted); font-size: 13px; }
+
+body.store2 .answer.ok {
+  border-color: rgba(47, 107, 69, .34);
+  border-left-color: var(--green);
+  background: linear-gradient(105deg, #fbfdf9 0%, #eef6ee 100%);
+}
+
+body.store2 .answer.ok .answer-kicker { color: var(--green); }
+
+
+/* ── 6. Calendar ────────────────────────────────────────────────────────── */
+
+body.store2 .cal {
+  padding: 14px 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+}
+
+body.store2 .cal-head {
+  gap: 12px;
+  margin: 0 0 10px;
+}
+
+body.store2 .cal-title {
+  font-size: 17px;
+  letter-spacing: -.01em;
+}
+
+body.store2 .cal-nav {
+  min-width: 38px;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fffefb, #fbf4ea);
+  box-shadow: 0 1px 2px rgba(51, 35, 26, .06);
+  font-size: 18px;
+}
+
+body.store2 .cal-nav:active {
+  background: var(--brown-soft);
+  color: var(--brown-dark);
+}
+
+body.store2 .cal-grid { gap: 3px; }
+
+body.store2 .cal-dow {
+  padding: 3px 0 6px;
+  color: #9a8676;
+  font-size: 9.5px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+body.store2 .cal-cell {
+  min-height: 46px;
+  border-radius: 14px;
+  font-size: 15px;
+  transition: background-color .15s ease;
+}
+
+body.store2 .cal-num {
+  width: 34px;
+  height: 34px;
+  font-weight: 600;
+}
+
+body.store2 .cal-cell.avail { font-weight: 700; }
+
+body.store2 .cal-cell.avail .cal-num {
+  box-shadow: inset 0 0 0 1.5px var(--green);
+  color: var(--green);
+  background: rgba(47, 107, 69, .045);
+}
+
+body.store2 .cal-cell.avail.tappable:active {
+  background: var(--brown-soft);
+}
+
+body.store2 .cal-cell.avail.tappable:active .cal-num { background: transparent; }
+
+body.store2 .cal-cell.sel {
+  border-radius: 14px;
+  background: linear-gradient(180deg, #bd522c, var(--brown));
+  color: #fff;
+  box-shadow: 0 5px 14px rgba(176, 69, 35, .32);
+}
+
+/* ⭐ THE BALL IS A WHITE COIN, NOT A HOLE IN THE BROWN. The engine's own rule (store/app.css,
+   v510) is that "a day the shop posts" and "the day I chose" are two SHAPES, because choosing a
+   day does not un-post it: the chosen day is a filled shape, and the day inside it still wears
+   its ball. ⚠️ Filling the cell and dropping the ring made the two facts one — so the ball keeps
+   its green ring here, lifted onto cream so the green stays legible (5.6:1) instead of
+   disappearing into the terracotta. The legend under the grid stays true. */
+body.store2 .cal-cell.sel .cal-num {
+  background: #fffdf9;
+  box-shadow: inset 0 0 0 2px var(--green);
+  color: var(--green);
+  font-weight: 800;
+}
+
+body.store2 .cal-cell.today:not(.sel) .cal-num::before {
+  animation: s2-today-glow 2.8s ease-in-out infinite;
+}
+
+body.store2 .cal-cell.today:not(.sel):not(.avail) .cal-num {
+  color: var(--brown-dark);
+}
+
+body.store2 .cal-cell.full .cal-num { color: #aa9a8b; }
+
+body.store2 .cal-stamp {
+  left: 2px;
+  right: 2px;
+  bottom: 0;
+  border-width: 1px;
+  font-size: 7px;
+  letter-spacing: .05em;
+}
+
+body.store2 .full-note {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid #f0d3c4;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fdf6f1, #fdf1e9);
+}
+
+body.store2 .full-note-go {
+  background: linear-gradient(180deg, #c2572f, var(--brown));
+  box-shadow: 0 4px 12px rgba(176, 69, 35, .26);
+}
+
+body.store2 .cal-chosen {
+  margin: 12px 0 0;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: var(--brown-soft);
+  color: var(--ink);
+  font-size: 14px;
+}
+
+body.store2 .cal-key {
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+body.store2 .cal-key-dot {
+  width: 14px;
+  height: 14px;
+  background: rgba(47, 107, 69, .05);
+}
+
+body.store2 .cal-miss {
+  border-radius: 10px;
+  background: var(--brown-soft);
+  color: var(--brown-dark);
+}
+
+body.store2 .occ-paper {
+  inset: 3px 2px;
+  border-radius: 11px;
+}
+
+body.store2 .cal-cell.sol::before { border-radius: 11px; }
+
+body.store2 .cal-tip {
+  padding: 5px 9px;
+  border-radius: 9px;
+  background: #3a271d;
+  font-size: 11px;
+  box-shadow: 0 6px 16px rgba(51, 35, 26, .28);
+}
+
+
+/* ── 7. Menu cards & steppers ───────────────────────────────────────────── */
+
+body.store2 .menu-item {
+  align-items: flex-start;
+  gap: 14px;
+  padding: 13px;
+  border-radius: 18px;
+}
+
+body.store2 .menu-thumb {
+  width: 108px;
+  height: 108px;
+  border-radius: 14px;
+  background: #f2e8db;
+  box-shadow: inset 0 0 0 1px rgba(51, 35, 26, .06);
+}
+
+body.store2 .card-body { gap: 10px; }
+
+body.store2 .card-head { gap: 12px; }
+
+body.store2 .card-title {
+  margin: 0 0 3px;
+  font-size: 17px;
+  line-height: 1.25;
+  letter-spacing: -.005em;
+}
+
+body.store2 .card-sub {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+body.store2 .prod-desc {
+  margin-top: 5px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+body.store2 .prod-fact { font-size: 12px; line-height: 1.45; }
+
+/* ⚠️⚠️ TWO STAMPS, TWO BACKGROUNDS — DO NOT COLLAPSE THEM. `.card-head .prod-stamp` is the
+   tilted badge beside the product's name; `.card-words .prod-stamp` is the quiet "only N left"
+   pill under it. Painting both with the badge's terracotta put the pill's own **green** ink on
+   brown — measured at **1.5:1**, which is not "a bit dim", it is unreadable. ⭐ So the badge
+   keeps the warm gradient (with white ink) and the pill keeps its soft green field, only
+   rounder and with a hairline. */
+body.store2 .card-head .prod-stamp {
+  padding: 3px 8px;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #c2572f, var(--brown));
+  color: #fff;
+  box-shadow: 0 2px 5px rgba(80, 50, 30, .22);
+}
+
+body.store2 .card-words .prod-stamp {
+  padding: 3px 9px;
+  border: 1px solid rgba(47, 107, 69, .20);
+  border-radius: 8px;
+  background: #eef4ea;
+  color: var(--green);
+  box-shadow: none;
+}
+
+body.store2 .card-words .prod-stamp.soldout {
+  border-color: rgba(179, 45, 34, .22);
+  background: #fbe9e7;
+  color: var(--red);
+}
+
+body.store2 .card-side {
+  align-items: flex-end;
+  gap: 9px;
+}
+
+body.store2 .card-price {
+  color: var(--brown-dark);
+  font-size: 21px;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+body.store2 .stepper {
+  border: 1px solid rgba(176, 69, 35, .22);
+  background: #fffdf9;
+  box-shadow: 0 2px 8px rgba(51, 35, 26, .07);
+}
+
+body.store2 .step-btn {
+  width: 44px;
+  height: 44px;
+  background: var(--brown-soft);
+  color: var(--brown-dark);
+  font-size: 20px;
+  line-height: 1;
+}
+
+body.store2 .step-btn:active { background: #f2d8c3; }
+
+body.store2 .stepper-val {
+  width: 46px;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+body.store2 .menu-item.soldout {
+  background: #fdfbf7;
+}
+
+body.store2 .menu-item.soldout .step-btn {
+  background: #f2e9dd;
+  color: #7a6856;
+}
+
+body.store2 .prod-next {
+  border-radius: 10px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+body.store2 .prod-next.off { animation: none; }
+
+body.store2 .menu-cat {
+  margin: 26px 2px 10px;
+  font-size: 18px;
+}
+
+body.store2 .menu-cat-sub { font-size: 15px; }
+
+
+/* ── 8. Forms, delivery choice & collection points ──────────────────────── */
+
+body.store2 .field { margin-bottom: 14px; }
+
+body.store2 .field label,
+body.store2 .field .field-label {
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+
+body.store2 .input {
+  min-height: 50px;
+  padding: 13px 14px;
+  border: 1px solid #e8d7c4;
+  border-radius: 14px;
+  background: #fffefb;
+  box-shadow: inset 0 1px 2px rgba(51, 35, 26, .035);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+body.store2 .input:focus {
+  outline: none;
+  border-color: var(--brown);
+  box-shadow: 0 0 0 3px rgba(176, 69, 35, .16);
+}
+
+body.store2 .input.locked {
+  background: #f7f0e6;
+  border-color: var(--line);
+  box-shadow: none;
+}
+
+body.store2 .seg { gap: 10px; }
+
+body.store2 .seg-opt {
+  border: 1px solid #e8d7c4;
+  border-radius: 16px;
+  background: #fffefb;
+  transition: border-color .15s ease, background-color .15s ease;
+}
+
+body.store2 .seg-opt.active {
+  border-color: var(--brown);
+  background: linear-gradient(180deg, #fffaf3, var(--brown-soft));
+  box-shadow: 0 3px 11px rgba(176, 69, 35, .10);
+}
+
+body.store2 .seg-btn { padding: 12px 14px; }
+
+body.store2 .seg-name {
+  font-size: 17px;
+  color: var(--ink);
+}
+
+body.store2 .seg-opt.active .seg-name { color: var(--brown-dark); }
+
+body.store2 .seg-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(176, 69, 35, .09);
+  color: var(--brown-dark);
+  font-size: 12px;
+  transition: transform .18s ease;
+}
+
+body.store2 .seg-opt.active .seg-caret { transform: rotate(90deg); }
+
+body.store2 .seg-sub {
+  margin-top: 4px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+body.store2 .addr-body,
+body.store2 .point-list {
+  padding: 10px 12px 12px;
+}
+
+body.store2 .point-opt {
+  border: 1px solid rgba(176, 69, 35, .30);
+  border-radius: 14px;
+  padding: 11px 13px;
+}
+
+body.store2 .point-opt.active {
+  padding: 10px 12px;
+  background: #fffdf9;
+  box-shadow: 0 2px 8px rgba(176, 69, 35, .10);
+}
+
+body.store2 .point-name { font-size: 14px; }
+
+body.store2 .addr-list {
+  border-radius: 14px;
+  box-shadow: 0 4px 14px rgba(51, 35, 26, .07);
+}
+
+body.store2 .addr-hit:active { background: #f8efe3; }
+
+body.store2 .pin-btn,
+body.store2 .track-btn {
+  border-radius: 13px;
+}
+
+body.store2 .track-btn {
+  background: linear-gradient(180deg, #c2572f, var(--brown));
+  box-shadow: 0 3px 9px rgba(176, 69, 35, .24);
+}
+
+body.store2 .track-btn:active { background: var(--brown-dark); }
+
+body.store2 .pin-box { border-radius: 14px; background: #fbf6ee; }
+
+body.store2 .pin-canvas { border-radius: 12px; }
+
+
+/* ── 9. Tracking ────────────────────────────────────────────────────────── */
+
+body.store2 #track-section .card { overflow: hidden; }
+
+body.store2 .track-result {
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+  font-size: 14px;
+}
+
+body.store2 .track-result a {
+  min-height: 40px;
+  padding: 8px 15px;
+  background: var(--brown-soft);
+  color: var(--brown-dark);
+}
+
+body.store2 .tj { margin: 8px 0 12px; }
+
+body.store2 .tj-step::after {
+  top: 13px;
+  height: 3px;
+  background: #ece0d1;
+}
+
+body.store2 .tj-step.done::after { background: #4a9166; }
+
+body.store2 .tj-node {
+  width: 20px;
+  height: 20px;
+  background: #ddcfbf;
+}
+
+body.store2 .tj-step.done .tj-node { background: #3e8a58; }
+
+body.store2 .tj-step.now .tj-node {
+  width: 26px;
+  height: 26px;
+  background: var(--brown);
+  animation: s2-tj-pulse 1.6s ease-in-out infinite;
+}
+
+body.store2 .tj-step.done .tj-label { color: #2f6f46; }
+body.store2 .tj-step.now .tj-label { color: var(--brown-dark); }
+
+body.store2 .track-code { font-size: 15px; }
+
+body.store2 .track-result .track-no {
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: #fbf4ea;
+}
+
+body.store2 .track-trip,
+body.store2 .track-driver { color: var(--ink); }
+
+
+/* ── 10. Social, footer & feedback ──────────────────────────────────────── */
+
+body.store2 .social {
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+body.store2 .social a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 15px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--brown-dark);
+  font-size: 12.5px;
+  box-shadow: 0 2px 8px rgba(51, 35, 26, .06);
+}
+
+body.store2 .dev-foot {
+  margin: 20px 0 6px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+body.store2 .fb-foot { margin-top: 18px; }
+
+body.store2 .fb-input {
+  border-radius: 12px;
+  background: #fffefb;
+  min-height: 44px;
+}
+
+body.store2 .fb-input:focus {
+  box-shadow: 0 0 0 3px rgba(176, 69, 35, .16);
+  border-color: var(--brown);
+}
+
+body.store2 .fb-say.fb-done { color: var(--green); }
+body.store2 .fb-say.fb-bad { color: var(--red); }
+
+
+/* ── 11. Sticky order bar & build notice ────────────────────────────────── */
+
+body.store2 .order-bar {
+  max-width: 680px;
+  padding: 11px 15px calc(11px + env(safe-area-inset-bottom));
+  border: 1px solid rgba(176, 69, 35, .13);
+  border-bottom: 0;
+  border-radius: 24px 24px 0 0;
+  background: rgba(255, 252, 247, .94);
+  box-shadow: 0 -10px 30px rgba(51, 35, 26, .12);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  backdrop-filter: blur(16px) saturate(1.15);
+}
+
+body.store2 .order-bar-row { gap: 10px; margin-bottom: 7px; }
+
+body.store2 .bar-count {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+body.store2 .bar-total {
+  font-size: 21px;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+body.store2 .bar-step {
+  width: 28px;
+  height: 28px;
+  background: linear-gradient(150deg, #c2572f, var(--brown));
+  font-size: 15px;
+  box-shadow: 0 2px 7px rgba(176, 69, 35, .26);
+}
+
+body.store2 .bar-step.done {
+  background: linear-gradient(150deg, #3e8157, var(--green));
+  box-shadow: 0 2px 7px rgba(47, 107, 69, .24);
+}
+
+body.store2 .order-bar .btn {
+  min-height: 50px;
+  padding: 14px 20px;
+  background: linear-gradient(180deg, #c2572f 0%, var(--brown) 55%, #a03d1d 100%);
+  font-size: 15.5px;
+  letter-spacing: .01em;
+  box-shadow: 0 5px 16px rgba(176, 69, 35, .30), inset 0 1px 0 rgba(255, 255, 255, .18);
+}
+
+body.store2 .order-bar .btn:disabled {
+  opacity: .48;
+  box-shadow: none;
+}
+
+body.store2 .promo-bar {
+  margin-bottom: 7px;
+  color: var(--brown-dark);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+body.store2 .order-notice {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+body.store2 .privacy-sheet {
+  left: 12px;
+  right: 12px;
+  border-radius: 20px;
+  box-shadow: var(--shadow-lg);
+}
+
+body.store2 .build-notice {
+  left: 0;
+  right: 0;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 11px 14px;
+  border: 1px solid #ecd4a5;
+  border-bottom: 0;
+  border-radius: 18px 18px 0 0;
+  background: #fdf3e3;
+  font-size: 15px;
+  box-shadow: 0 -8px 24px rgba(51, 35, 26, .12);
+}
+
+body.store2 .build-btn {
+  border-radius: 999px;
+  background: linear-gradient(180deg, #c2572f, var(--brown));
+  color: #fff;
+}
+
+
+/* ── 12. Ask dialog & promo slides ──────────────────────────────────────── */
+
+body.store2 .ask-scrim {
+  padding: 22px;
+  background: rgba(38, 24, 16, .52);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+body.store2 .ask-card {
+  max-width: 360px;
+  padding: 20px 18px 16px;
+  border-radius: 22px;
+  box-shadow: var(--shadow-lg);
+}
+
+body.store2 .ask-card .confirm-title { font-size: 17px; }
+
+body.store2 .ask-quiet {
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+body.store2 .ask-go {
+  background: linear-gradient(180deg, #c2572f, var(--brown));
+  box-shadow: 0 4px 12px rgba(176, 69, 35, .28);
+}
+
+body.store2 .promo-today {
+  margin-bottom: 16px;
+  color: #7c5312;
+}
+
+body.store2 .promo-slide {
+  padding: 10px 13px;
+  border: 1px solid #efd9ae;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fdf6e8, #fdf1dc);
+  box-shadow: 0 2px 8px rgba(51, 35, 26, .05);
+}
+
+body.store2 .promo-dots { margin-top: 8px; }
+
+body.store2 .promo-dot::before { background: #bb8a4c; }
+body.store2 .promo-dot.is-on::before { background: #7c5312; }
+
+body.store2 .promo-box {
+  padding: 14px 16px;
+  background: rgba(255, 252, 247, .82);
+}
+
+body.store2 .promo-apply {
+  border-radius: 13px;
+  background: linear-gradient(180deg, #c2572f, var(--brown));
+  box-shadow: 0 3px 9px rgba(176, 69, 35, .22);
+}
+
+body.store2 .promo-say.good { color: #28612e; }
+body.store2 .promo-say.bad { color: var(--red); }
+
+
+/* ── 13. Step notes, flashes & small print ──────────────────────────────── */
+
+body.store2 .step-note {
+  margin: 12px 2px 6px;
+  padding: 11px 14px;
+  border-left: 4px solid var(--brown-dark);
+  border-radius: 0 14px 14px 0;
+  background: var(--brown-soft);
+  font-size: 13.5px;
+}
+
+body.store2 .field-note {
+  border-radius: 0 12px 12px 0;
+  padding: 8px 11px;
+  font-size: 13px;
+}
+
+body.store2 .privacy-sheet-head,
+body.store2 .facts-sheet .privacy-sheet-head {
+  color: #6b5b4a;
+  font-size: 12px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+body.store2 .privacy-sheet-list { color: #5f5042; line-height: 1.55; }
+
+body.store2 .privacy-link { padding: 7px 5px; }
+
+body.store2 .steps-lede { color: var(--muted); }
+
+/* ⭐ A KEYBOARD/SWITCH VISITOR STILL GETS A RING — just one from this palette instead of the
+   browser's default blue, which read as a foreign colour on the terracotta calendar. It sits
+   OUTSIDE the element (offset 2px) so a chosen day's brown fill never swallows it. */
+body.store2 .cal-cell:focus-visible,
+body.store2 .cal-nav:focus-visible,
+body.store2 .lang-pill:focus-visible,
+body.store2 .hero-cta:focus-visible,
+body.store2 .hero-home:focus-visible,
+body.store2 .seg-btn:focus-visible,
+body.store2 .step-btn:focus-visible,
+body.store2 .track-btn:focus-visible,
+body.store2 .pin-btn:focus-visible,
+body.store2 .social a:focus-visible {
+  outline: 2px solid var(--brown-dark);
+  outline-offset: 2px;
+}
+
+
+/* ── 14. Small screens ──────────────────────────────────────────────────── */
+
+@media (max-width: 560px) {
+  body.store2 .hero.hero-photo { min-height: 330px; border-radius: 0 0 24px 24px; }
+  body.store2 .hero.hero-photo .hero-inner { padding: calc(18px + env(safe-area-inset-top)) 18px 26px; }
+  body.store2 .hero-title { font-size: clamp(34px, 9.6vw, 46px); }
+  body.store2 .view { padding: 12px 12px calc(var(--bar-h, 92px) + var(--strip-h, 0px) + 20px); }
+  body.store2 .stepbar { padding: 6px; gap: 3px; }
+  body.store2 .stepbar-item { font-size: 9px; letter-spacing: .05em; }
+  body.store2 .card { padding: 14px; border-radius: 18px; }
+  body.store2 .menu-thumb { width: 96px; height: 96px; }
+  body.store2 .cal-grid { gap: 2px; }
+  body.store2 .cal-cell { min-height: 44px; }
+  body.store2 .order-bar { padding-left: 12px; padding-right: 12px; border-radius: 20px 20px 0 0; }
+  body.store2 .build-notice { border-radius: 16px 16px 0 0; }
+}
+
+@media (max-width: 400px) {
+  body.store2 .view { padding-left: 10px; padding-right: 10px; }
+  body.store2 .hero.hero-photo .hero-inner { padding-left: 15px; padding-right: 15px; }
+  body.store2 .hero-title { font-size: 32px; }
+  body.store2 .hero-sub { font-size: 14.5px; }
+  body.store2 .stepbar-item { font-size: 8.5px; }
+  body.store2 .section { font-size: 18px; }
+  body.store2 .step-head { margin-top: 22px; }
+  body.store2 .card-price { font-size: 19px; }
+  body.store2 .menu-item { gap: 11px; }
+  body.store2 .menu-thumb { width: 88px; height: 88px; }
+  body.store2 .cal { padding: 12px 8px 10px; }
+  body.store2 .cal-num { width: 32px; height: 32px; }
+  body.store2 .seg-name { font-size: 16px; }
+}
+
+@media (max-width: 360px) {
+  body.store2 .menu-item { gap: 10px; }
+  body.store2 .menu-thumb { width: 82px; height: 82px; }
+  body.store2 .card-title { font-size: 16px; }
+  body.store2 .card-price { font-size: 18px; }
+  body.store2 .step-btn { width: 40px; height: 40px; font-size: 18px; }
+  body.store2 .stepper-val { width: 36px; }
+  body.store2 .stepbar-item { font-size: 8px; }
+  body.store2 .cal-num { width: 30px; height: 30px; }
+  body.store2 .cal-cell { min-height: 42px; }
+}
+
+
+/* ── 15. Wide screens ───────────────────────────────────────────────────── */
+
+@media (min-width: 900px) {
+  body.store2 .hero.hero-photo { min-height: 440px; }
+  body.store2 .hero.hero-photo .hero-inner { padding-bottom: 36px; }
+  body.store2 .view { padding-top: 20px; }
+  body.store2 .card { padding: 18px; }
+  body.store2 .menu-item { padding: 15px; }
+  body.store2 .menu-thumb { width: 118px; height: 118px; }
+  body.store2 .cal { padding: 16px 14px 14px; }
+}
+
+
+/* ── 16. Motion ─────────────────────────────────────────────────────────── */
+
+@keyframes s2-today-glow {
+  0%, 100% { box-shadow: 0 0 6px 2px rgba(176, 69, 35, .16); }
+  50%      { box-shadow: 0 0 13px 5px rgba(176, 69, 35, .28); }
+}
+
+@keyframes s2-tj-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(176, 69, 35, .20); }
+  50%      { box-shadow: 0 0 0 10px rgba(176, 69, 35, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.store2 .lang-pill,
+  body.store2 .seg-caret,
+  body.store2 .input,
+  body.store2 .seg-opt { transition: none; }
+  body.store2 .cal-cell.today:not(.sel) .cal-num::before {
+    animation: none;
+    box-shadow: 0 0 8px 3px rgba(176, 69, 35, .22);
+  }
+  body.store2 .tj-step.now .tj-node {
+    animation: none;
+    box-shadow: 0 0 0 4px rgba(176, 69, 35, .18);
+  }
+}

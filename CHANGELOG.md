@@ -4,6 +4,36 @@ What changed in each version of the backoffice app, newest first. Each version
 number is the "Engine" you can see on the app's **More** screen, so you can
 always tell which build a phone is running.
 
+**9 Nov 2026 — no new engine (still v686), A SECOND SHOP PAGE AT /store2/ (nothing to run, no SQL, nothing to
+upload).**
+
+**Your instruction: "i have a store page with url: munchies.com.my/store/, pls make another functional store
+version with a more attractive, publish it as munchies.com.my/store2/".**
+
+**1. WHAT IT IS.** The same order page, published a second time at **munchies.com.my/store2/**, wearing a
+warmer look: a rounded photo header with a dark warm veil, one glass language pill instead of three circles,
+the posting days as a soft pill bar, a bigger month calendar whose chosen day is a filled terracotta shape,
+rounder product cards with a 44 px stepper, 50 px input boxes, a dashed track card and a blurred cream bottom
+bar with a gradient Place order button.
+
+**2. AND WHAT IT IS NOT.** ⚠️ **It is not a second shop.** The page runs the one engine — `store2/app.js` is
+literally one line, `import "../store/app.js";` — so the products, prices, posting days, sold-out counts, the
+basket, the three languages, the calendar, the track box and the WhatsApp hand-off are the same code. **An
+order from either page lands in the same New Orders inbox.** There is nothing new to set up and no second copy
+to keep in sync: a fix to the shop shows up on both doors.
+
+**3. /store/ IS UNTOUCHED.** ⚠️ **Not one rule of the new skin can reach it.** Every selector in
+`store2/theme.css` begins with `body.store2`, a class only the new page wears, and a test walks the whole
+stylesheet and fails on any rule that does not. The original page's files were not edited at all.
+
+**4. TWO THINGS WORTH KNOWING.** The basket and the language choice carry between the two pages (same website),
+and the visits are counted separately so you can see which link customers use. **Links your app builds by
+itself — a referral link, a promo card, a track link in a WhatsApp message — still point at /store/**; both
+end in the same order. /store2/ asks search engines not to list it (`noindex`), since it is a design
+alternative rather than a second shop.
+
+**Nothing to run, no SQL, nothing to upload.**
+
 **7 Nov 2026 — engine v686: HOME SAYS DELIVERY DAYS (nothing to run, no SQL, nothing to upload).**
 
 **Your instruction: "change it to delivery days".**
